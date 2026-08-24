@@ -11,17 +11,20 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { safeEffort } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL, VENICE_SHIM_PORT } from '../constants';
+import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
 
-const VENICE_SHIM_BASE_URL = `http://127.0.0.1:${VENICE_SHIM_PORT}`; // claude appends /v1/messages
+// claude appends /v1/messages; "venice" is this vendor's path segment on
+// Tars's shared OpenAI-compatible bridge (see services/openai-bridge.ts for
+// why a path segment, not a port or a header, is how the bridge is addressed).
+const VENICE_BRIDGE_BASE_URL = `http://127.0.0.1:${OPENAI_BRIDGE_PORT}/venice`;
 
 /**
  * Venice AI has no Anthropic-compatible endpoint (confirmed against
  * docs.venice.ai: /chat/completions, /embeddings, /images/*, /audio/*,
  * /video/*, /models - OpenAI-compatible only, no /v1/messages). Unlike every
  * other alt provider here, the claude binary cannot reach it directly. It is
- * routed through Tars's own local translation shim instead - see
- * services/venice-shim.ts for the wire-format translation and, importantly,
+ * routed through Tars's own local translation bridge instead - see
+ * services/openai-bridge.ts for the wire-format translation and, importantly,
  * for why ANTHROPIC_API_KEY below is Tars's own local API token and NOT the
  * user's Venice key.
  */
@@ -117,17 +120,17 @@ export class VeniceProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
     };
 
-    // Only wire the shim once a Venice key exists to forward - same gate
+    // Only wire the bridge once a Venice key exists to forward - same gate
     // DeepSeek/Moonshot/etc. use for their own key, just with no OpenRouter
     // fallback (Venice is not on OpenRouter, see the design note).
     if (appSettings?.veniceApiKey) {
-      vars.ANTHROPIC_BASE_URL = VENICE_SHIM_BASE_URL;
+      vars.ANTHROPIC_BASE_URL = VENICE_BRIDGE_BASE_URL;
       // NOT the Venice key. The claude binary sends this as `x-api-key` to
-      // whatever ANTHROPIC_BASE_URL points at; here that's Tars's own shim on
+      // whatever ANTHROPIC_BASE_URL points at; here that's Tars's own bridge on
       // 127.0.0.1, which authenticates the request with Tars's local API
       // token (the same one api-server.ts already guards /api/* with) and
       // only then reads the real Venice key from app-settings.json itself to
-      // attach to the outbound call. See services/venice-shim.ts.
+      // attach to the outbound call. See services/openai-bridge.ts.
       //
       // Lazy require, not a top-level import: providers/index.ts pulls this
       // file in, and api-server.ts's route registration pulls in agent-routes.ts,
@@ -223,7 +226,7 @@ cd "${params.projectPath}"
 echo "=== Task started at $(date) ===" >> "${params.logPath}"
 unset CLAUDECODE
 export CLAUDE_PROVIDER="venice"
-export ANTHROPIC_BASE_URL="${VENICE_SHIM_BASE_URL}"
+export ANTHROPIC_BASE_URL="${VENICE_BRIDGE_BASE_URL}"
 export ANTHROPIC_API_KEY="$(cat "${DATA_DIR_SHELL}/api-token" 2>/dev/null)"
 "${params.binaryPath}" ${flags} --output-format stream-json --verbose --mcp-config "${params.mcpConfigPath}" --add-dir "${DATA_DIR}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
 echo "=== Task completed at $(date) ===" >> "${params.logPath}"
