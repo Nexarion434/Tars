@@ -1,4 +1,4 @@
-const { spawnSync } = require('node:child_process');
+const { isDeveloperIdSigned } = require('./mac-signing');
 
 /**
  * electron-builder `afterSign` hook.
@@ -55,18 +55,3 @@ exports.default = async function notarizing(context) {
 
   console.log('Notarization complete');
 };
-
-/**
- * `codesign -dv` writes to stderr. An ad-hoc signature reports the `adhoc`
- * flag and no `TeamIdentifier`; a Developer ID one reports the team.
- */
-function isDeveloperIdSigned(appPath) {
-  // codesign exits non-zero when the bundle is unsigned, and describes what it
-  // found on stderr either way, so both streams are read and the status ignored.
-  const result = spawnSync('codesign', ['-dv', '--verbose=4', appPath], { encoding: 'utf8' });
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-
-  if (/TeamIdentifier=not set/.test(output)) return false;
-  if (/\badhoc\b/.test(output)) return false;
-  return /TeamIdentifier=\S+/.test(output);
-}

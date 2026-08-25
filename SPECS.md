@@ -666,7 +666,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Renderer | `ELECTRON_BUILD=1 next build` with `src/app/api` and `src/app/icon.tsx` moved aside behind an `EXIT` trap, output to `out/` |
 | MCP servers | each `mcp-*` built with its own esbuild bundle, shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
-| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized by the `build.afterSign` hook (`scripts/notarize.js`) via `@electron/notarize` |
+| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`. `build.afterSign` (`scripts/notarize.js`) notarizes and staples the `.app` via `@electron/notarize`; `build.afterAllArtifactBuild` (`scripts/notarize-artifacts.js`) submits and staples each dmg. Both skip when the signature is ad-hoc |
 | Updates | `electron-updater` against `JeanBrasse/Tars` releases |
 | Node | ≥20, `.nvmrc` pinned |
 

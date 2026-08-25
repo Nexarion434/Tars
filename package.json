@@ -33,6 +33,7 @@
       "repo": "Tars"
     },
     "afterSign": "scripts/notarize.js",
+    "afterAllArtifactBuild": "scripts/notarize-artifacts.js",
     "directories": {
       "output": "release"
     },

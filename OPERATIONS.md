@@ -362,14 +362,22 @@ keychain profile named `Tars` when `APPLE_ID` is unset, otherwise
 `APPLE_ID`/`APPLE_APP_PASSWORD`/`APPLE_TEAM_ID`.
 
 It is wired up: `build.afterSign` in `package.json` points at it, so `npm run electron:build`
-notarizes as part of the build.
+notarizes as part of the build. `@electron/notarize` staples the ticket to the `.app`, which
+also covers the zip `electron-updater` downloads, because the zip is made from the stapled
+bundle afterwards.
 
-The hook runs `codesign -dv --verbose=4` on the app it is handed first, and **skips with a
-warning when the signature is ad-hoc**, because Apple's notary service refuses anything not
-signed with a Developer ID certificate. That keeps a credential-less local build working. It
-also means a machine with no certificate installed still produces a dmg that every other Mac
-calls damaged, and says so on the console while it builds. A Developer ID Application
-certificate in the keychain is the only thing that makes a distributable build possible.
+The dmg is a separate artefact that `afterSign` never sees, and Gatekeeper evaluates it on its
+own when someone mounts a copy that came from another machine. `build.afterAllArtifactBuild`
+points at `scripts/notarize-artifacts.js`, which submits every dmg the build produced, staples
+it and validates the staple.
+
+Both hooks run `codesign -dv --verbose=4` on the packaged app first
+(`scripts/mac-signing.js`, shared between them) and **skip with a warning when the signature
+is ad-hoc**, because Apple's notary service refuses anything not signed with a Developer ID
+certificate. That keeps a credential-less local build working. It also means a machine with no
+certificate installed still produces a dmg that every other Mac calls damaged, and says so on
+the console while it builds. A Developer ID Application certificate in the keychain is the
+only thing that makes a distributable build possible.
 
 To notarize an existing artefact by hand:
 
@@ -379,12 +387,31 @@ xcrun stapler staple release/Tars-1.5.0-arm64.dmg
 spctl -a -vvv -t install release/mac-arm64/Tars.app
 ```
 
-To create the keychain profile once:
+#### One-time setup on a build machine
+
+Everything above is inert without an Apple Developer Program membership, which is what buys
+the certificate. There is no way around it: Gatekeeper's requirement is a Developer ID
+signature plus a notarization ticket, and both are issued by Apple against a paid account.
+
+1. Enrol at [developer.apple.com/programme](https://developer.apple.com/programs/), as an
+   individual or an organisation. Note the Team ID.
+2. Create a **Developer ID Application** certificate and install it in the login keychain.
+   Xcode does both: Settings > Accounts > your Apple ID > Manage Certificates > + > Developer
+   ID Application. `security find-identity -v -p codesigning` should then list it.
+   electron-builder discovers it on its own, so nothing in `package.json` names it.
+3. Create an app-specific password at [appleid.apple.com](https://appleid.apple.com), then
+   store the notarization credentials under the profile name the hooks expect:
 
 ```bash
 xcrun notarytool store-credentials Tars \
   --apple-id <apple-id> --team-id <team-id> --password <app-specific-password>
 ```
+
+`npm run electron:build` then signs, notarizes and staples on its own, and the dmg opens
+everywhere with no command to run and nothing to explain. On a CI runner, pass the certificate
+as `CSC_LINK` (base64 `.p12`) and `CSC_KEY_PASSWORD`, and the notarization credentials as
+`APPLE_ID`, `APPLE_APP_PASSWORD` and `APPLE_TEAM_ID`, which both hooks prefer over the
+keychain profile.
 
 ### The update feed and the repo mismatch
 
