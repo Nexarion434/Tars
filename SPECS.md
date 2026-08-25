@@ -666,7 +666,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 | Renderer | `ELECTRON_BUILD=1 next build` with `src/app/api` and `src/app/icon.tsx` moved aside behind an `EXIT` trap, output to `out/` |
 | MCP servers | each `mcp-*` built with its own esbuild bundle, shipped as `extraResources` filtered to `package.json` + `dist/bundle.js` |
 | asarUnpack | `out/`, `hooks/`, `electron/resources/`, `better-sqlite3`, `node-pty` |
-| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized via `@electron/notarize` |
+| Target | macOS dmg + zip, hardened runtime, `build/entitlements.mac.plist`, notarized by the `build.afterSign` hook (`scripts/notarize.js`) via `@electron/notarize` |
 | Updates | `electron-updater` against `JeanBrasse/Tars` releases |
 | Node | ≥20, `.nvmrc` pinned |
 
@@ -688,4 +688,5 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 - **The API token is a single flat credential.** No per-agent scoping, no rotation UI.
 - **The webhook is the only surface designed to leave the machine**, and it needs an operator-provided tunnel; nothing in the app opens one.
 - **`installBundledSkills()` currently ships nothing.** Its only remaining job is deleting stale `world-builder` copies left by older versions, and only when the file content is recognizably ours.
+- **A build machine with no Developer ID certificate ships a dmg macOS calls damaged.** electron-builder falls back to an ad-hoc signature, Apple's notary service refuses to notarize one, so `scripts/notarize.js` skips and Gatekeeper rejects the result on every Mac except the one that built it. The receiver can clear the quarantine flag by hand; nothing in the repo can substitute for the certificate.
 - **macOS only.** `electron-builder` targets `--mac`; `window-all-closed` quits on other platforms but nothing else is tested there.

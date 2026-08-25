@@ -7,6 +7,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'A downloaded build no longer arrives as an app macOS calls damaged. The release build was signing itself ad-hoc and skipping Apple entirely, because the step that submits it for notarization existed in the repo and was never called, so every copy handed to somebody else was refused by Gatekeeper on sight. The step now runs as part of the build. A machine with no Developer ID certificate cannot be notarized at all, so it says so while it builds rather than producing a dmg that only works where it was made',
+      'The install instructions say what to do when you already have one of those builds. Clearing the quarantine flag takes one command, and it is written down in the README next to the download link instead of being something you have to know',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',

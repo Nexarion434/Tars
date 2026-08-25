@@ -361,10 +361,17 @@ shells that inherit `DYLD_*` from the environment.
 keychain profile named `Tars` when `APPLE_ID` is unset, otherwise
 `APPLE_ID`/`APPLE_APP_PASSWORD`/`APPLE_TEAM_ID`.
 
-> **It is not wired up.** There is no `afterSign` key in the `build` block of `package.json`,
-> so `electron-builder` never calls it. `npm run electron:build` today produces a signed but
-> **un-notarized** app; on another Mac Gatekeeper will refuse it. Either add
-> `"afterSign": "scripts/notarize.js"` to `build`, or notarize by hand:
+It is wired up: `build.afterSign` in `package.json` points at it, so `npm run electron:build`
+notarizes as part of the build.
+
+The hook runs `codesign -dv --verbose=4` on the app it is handed first, and **skips with a
+warning when the signature is ad-hoc**, because Apple's notary service refuses anything not
+signed with a Developer ID certificate. That keeps a credential-less local build working. It
+also means a machine with no certificate installed still produces a dmg that every other Mac
+calls damaged, and says so on the console while it builds. A Developer ID Application
+certificate in the keychain is the only thing that makes a distributable build possible.
+
+To notarize an existing artefact by hand:
 
 ```bash
 xcrun notarytool submit release/Tars-1.5.0-arm64.dmg --keychain-profile Tars --wait
@@ -427,6 +434,25 @@ gh release create v1.5.1 release/*.dmg release/*.zip release/latest-mac.yml \
 `latest-mac.yml` must be in the release assets or `electron-updater` throws and every client
 silently drops to the GitHub-API fallback, which, per the mismatch above, is looking at the
 other repo.
+
+Step 4 is the one that catches the failure users report as **"Tars is damaged and can't be
+opened. You should move it to the Trash."** That is Gatekeeper on a build it cannot verify,
+not a corrupted download. `codesign -dv --verbose=4` on a build fit to hand out reports a
+`TeamIdentifier` and no `adhoc` flag; if it reports `flags=0x20002(adhoc,linker-signed)` and
+`TeamIdentifier=not set`, no certificate was installed on the build machine, notarization was
+skipped, and the dmg will be refused on every Mac but the one that built it. `spctl -a -vvv -t
+install release/mac-arm64/Tars.app` is the same check from Gatekeeper's own side.
+
+Someone already holding such a build can clear the quarantine flag rather than wait for a
+signed one:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Tars.app
+```
+
+Recent macOS releases have removed the Control-click "Open anyway" shortcut for apps in this
+state, so System Settings > Privacy & Security is the only path left in the interface, and it
+does not always offer one for a "damaged" verdict. The command above still works.
 
 ---
 

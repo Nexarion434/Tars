@@ -96,6 +96,23 @@ you do not configure paths unless something lives somewhere unusual.
 Building from source is in [OPERATIONS.md](OPERATIONS.md#development). Node 22
 is required; Node 18 fails at startup.
 
+### If macOS says the app is damaged
+
+`"Tars" is damaged and can't be opened. You should move it to the Trash.` is
+what Gatekeeper says about an app it cannot verify. It is not a broken
+download. A build that has not been signed with an Apple Developer ID
+certificate and notarized by Apple is refused the moment it arrives from
+another machine, and this is the wording macOS uses for it.
+
+If you trust where the build came from, clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Tars.app
+```
+
+Then open it normally. Building from source avoids the question entirely: an
+app you compiled yourself is never quarantined.
+
 ---
 
 ## How a task actually travels
