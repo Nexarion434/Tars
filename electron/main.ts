@@ -80,6 +80,7 @@ import {
   getClaudeHistory,
 } from './services/claude-service';
 import { configureStatusHooks } from './services/hooks-manager';
+import { startAgentLivenessSweep, stopAgentLivenessSweep } from './services/agent-liveness';
 import { loadCatalog } from './services/model-catalog';
 import { startAgentAutosave, stopAgentAutosave, appendAgentOutput } from './core/agent-manager';
 import {
@@ -642,6 +643,11 @@ app.whenReady().then(async () => {
   setupMemoryBackends(appSettings);
   await configureStatusHooks();
 
+  // Nothing else ever contradicts a status the hooks got wrong. This does:
+  // once a minute, every agent still labelled `running` is checked against
+  // the process that would be doing the work.
+  startAgentLivenessSweep();
+
   // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
   initAutoUpdater(getMainWindow);
   setMainWindowGetter(getMainWindow);
@@ -687,6 +693,7 @@ app.on('before-quit', () => {
   console.log('App quitting, saving agents and killing all PTY processes...');
   destroyTray();
   stopAgentAutosave();
+  stopAgentLivenessSweep();
   stopOverseerWatch();
   saveAgents();
   killAllPty();

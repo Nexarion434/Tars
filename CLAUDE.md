@@ -40,6 +40,7 @@
 | `electron/services/mcp-orchestrator.ts` | Resolves the seven bundled servers under `process.resourcesPath` and writes them into each CLI's MCP config |
 | `electron/services/model-catalog.ts` | Live model list and per-million-token prices from models.dev, cached at `~/.dorothy/model-catalog.json`, with a compiled-in floor. Never let a network failure zero a price |
 | `electron/services/usage-ledger.ts`, `transcript-usage.ts` | The two token sources: ACP turns recorded as they happen (covers every CLI), and `~/.claude/projects/**/*.jsonl` reconstructed after the fact (Claude only) |
+| `electron/services/agent-liveness.ts` | Whether an agent is really working. Reconciles a `running` that no live PTY or ACP turn backs, on `/wait`, `/health`, both agent reads, and a 60 s sweep |
 | `electron/services/memory-hub.ts` | The Brain page's backends (Hermes, gbrain, Honcho) over MCP HTTP |
 | `electron/services/git-review.ts` | The Review page. Every git call goes through `execFile` with an argv array, never a shell |
 | `electron/utils/worktree-path.ts` | Where an agent's worktree is allowed to live. The traversal guard: read the comment before relaxing anything |
@@ -54,7 +55,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 16 pages, 16 settings sections, 3 overlays = 35 surfaces |
 | `scripts/design-lint.sh` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, and the raw Tailwind palette outside `src/components/ui/` |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
-| `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh` / `on-stop.sh` own the status lifecycle |
+| `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh` / `on-stop.sh` own the status lifecycle. All of them source `hooks/lib.sh` for `TARS_API_URL` (honours `DOROTHY_API_PORT`) and `api_post`, which retries: a lost post used to strand a status for the day |
 
 ## Environment Variables
 

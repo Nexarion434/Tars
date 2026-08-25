@@ -126,10 +126,12 @@ rm -rf ~/Tars-sandbox
 
 Logs land in `~/Tars-sandbox/tars.log`.
 
-> **Caveat the script does not mention:** the shell hooks in `hooks/` hardcode
-> `http://127.0.0.1:31415`: all 14 occurrences. An agent spawned from the sandbox posts its
-> status, output and observations to your **production** instance. Treat sandbox agent status
-> as untrustworthy, and never debug the status lifecycle from the sandbox.
+The hooks follow the sandbox. They used to hardcode `http://127.0.0.1:31415`, all 14
+occurrences of it, so an agent spawned from the sandbox posted its status, output and
+observations into your **production** instance and sandbox agent status could not be trusted
+for anything. They now build their base URL from `DOROTHY_API_PORT` through `hooks/lib.sh`,
+which every hook (including the Gemini set in `hooks/gemini/`) sources. The status lifecycle
+can be debugged in the sandbox.
 
 ### Lint
 
@@ -568,8 +570,21 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | POST | `/api/webhooks/hermes` |
 
 `GET /api/agents/:id/wait` long-polls; default `?timeout=300` seconds, and the MCP client
-raises its own fetch timeout to 600 s for any path containing `/wait` so the client never
-aborts before the server resolves.
+raises its own timeout to 600 s for any path containing `/wait` so the client never gives up
+before the server resolves.
+
+The client is `node:http`, not `fetch`, and that is load-bearing. Node's `fetch` is undici,
+which applies a `headersTimeout` and a `bodyTimeout` of 300000 ms each that nothing in this
+repo sets or can see. Both count silence, and a long poll is silence by definition: `/wait`
+and `/run-task` send no byte at all until there is something to report. Measured against a
+server that never answers, `fetch` died at 302 s with `TypeError: fetch failed` and no status,
+no code and no duration, while a `node:http` request on the same server was still open at
+400 s. That error is what an orchestrator saw two or three minutes into a delegation. Do not
+put `fetch` back in `mcp-orchestrator/src/utils/api.ts`.
+
+`GET /api/agents/:id/wait` also reconciles the status before it decides whether to hold the
+connection open, so a stale `running` is answered at once instead of holding a caller for its
+whole timeout waiting on a change nothing is left to make. See the liveness section below.
 
 Route matching is first-match, and parameterised routes are `RegExp` with exactly one capture
 group mapped to `params.id`.
@@ -600,26 +615,12 @@ an orchestrator cannot pick another project's agent ID out of a global listing.
 The identity comes from HTTP headers the MCP client injects out of its PTY environment
 (`CLAUDE_AGENT_ID`, `CLAUDE_PROJECT_PATH`, set by `initAgentPty`).
 
-> **Known defect: read this before debugging a delegation failure.** The server reads
-> `x-dorothy-caller-project` (`agent-routes.ts:337`). Both MCP clients send
-> `X-Tars-Caller-Project` (`mcp-orchestrator/src/utils/api.ts:53`, `mcp-memory/src/utils/api.ts:53`).
-> The names do not match, so `callerProject()` is always `undefined` for MCP callers, and the
-> `X-Tars-Client: mcp` branch fires unconditionally:
->
-> ```
-> 403 This agent has no identity, so its calls cannot be scoped to a project.
->     Restart the agent from Tars so it is spawned with CLAUDE_AGENT_ID and CLAUDE_PROJECT_PATH.
-> ```
->
-> Restarting the agent does not help: the env vars are already there. Confirm with:
->
-> ```bash
-> grep -rn "caller-project" electron/services/api-routes/agent-routes.ts
-> grep -rn "Caller-Project" mcp-orchestrator/src/utils/api.ts
-> ```
->
-> The unit test at `__tests__/electron/services/api-routes/agent-routes.test.ts:500` asserts the
-> server-side spelling, so the suite is green either way. The two must be made to agree.
+> This used to be a header-name mismatch, and the note describing it survived the fix. The
+> clients send `X-Tars-Caller-Project`; `callerHeader()` in `agent-routes.ts` now accepts that
+> **and** the older `x-dorothy-caller-project`, so the rename is safe in either order and a
+> bundle on disk that predates it still scopes correctly. If you see
+> `403 This agent has no identity`, the caller really was spawned without
+> `CLAUDE_AGENT_ID` / `CLAUDE_PROJECT_PATH`; check the PTY environment rather than the spelling.
 
 Genuine cross-project denials read differently and are recoverable:
 
@@ -648,6 +649,44 @@ both behave identically. It:
    `Agent "X" is blocked on a permission dialog; a typed message cannot answer it.`
 3. types the message into a live `running`/`waiting` session (`mode: "message"`), or
 4. spawns a fresh session with the message as the prompt (`mode: "start"`).
+
+### `POST /api/agents/:id/run-task` is all or nothing
+
+`run-task` delegates over the Agent Client Protocol, which runs **beside** the terminal rather
+than in it: nothing is typed into the PTY, so if the turn fails there is no trace of the task
+anywhere except the agent record. It used to write `status: running`, `currentTask` and
+`lastActivity` before awaiting the turn and put none of them back on failure, which is how an
+orchestrator was told its task had been assigned while the agent sat at an empty prompt with
+`secondsSinceActivity` climbing.
+
+The route now snapshots those three fields and restores them when the turn throws or reports
+failure, answering `502` with `retryWithDispatch: true` so `delegate_task` falls back to a
+terminal dispatch against an agent that is genuinely free. `delegate_task` no longer swallows
+the reason either: if the fallback fails too, both failures are reported and the answer says
+in as many words that the agent has **not** been given the task.
+
+### Agent liveness: why a status is not taken at its word
+
+`electron/services/agent-liveness.ts`. An agent's status is written by the hook scripts and by
+nothing else, and a lost post is permanent: nothing used to contradict it, so an agent stayed
+`running` with a thousand seconds of silence behind it and anything waiting on it waited
+forever.
+
+`reconcileAgentStatus()` corrects `running` to `idle` when either the PTY that would be doing
+the work is gone, or `lastActivity` is older than `GHOST_AFTER_MS` (10 minutes). It runs on
+`/wait`, `/health`, `GET /api/agents` and `GET /api/agents/:id`, and on a 60-second sweep
+started from `main.ts`.
+
+Three things it deliberately never touches:
+
+- `waiting`, which is motionless on purpose. An agent parked at a permission dialog emits
+  nothing for as long as nobody answers it, and `/wait` already treats it as terminal.
+- an agent with an ACP turn in flight, registered by `beginAcpTurn()` / `endAcpTurn()` around
+  the `run-task` await. An ACP turn produces no PTY output at all and is the one silent
+  `running` that is true.
+- anything other than `running`. `idle` is the correction because nothing here knows whether
+  the task succeeded, only that nothing is doing it, and it is what `on-stop.sh` would have
+  posted had its curl arrived.
 
 ---
 
@@ -778,8 +817,9 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
 - `session-start.sh`: POSTs `{agent_id, session_id, status: idle, source}` to
   `/api/hooks/status`. Only `SessionStart` sends `source`; the server records the session id
   **without** touching status, because the status lifecycle belongs to `UserPromptSubmit`/`Stop`.
-  It retries once after 1 s: a lost registration makes the stale-session guard ignore every
-  later status post from that session. It then fetches `/api/agents/$CLAUDE_AGENT_ID/bootstrap`
+  It goes through `api_post`, which retries, plus one more attempt after 1 s on an empty
+  body: a lost registration makes the stale-session guard ignore every later status post from
+  that session. It then fetches `/api/agents/$CLAUDE_AGENT_ID/bootstrap`
   (identity + team roster) and `/api/memory/context`, and injects both as
   `hookSpecificOutput.additionalContext`.
 - `post-tool-use.sh`: marks the agent `running` and POSTs the observation to
@@ -789,6 +829,18 @@ Separate scripts from `hooks/gemini/`: `session-start.sh`, `user-prompt-submit.s
   has no `tac`, and tolerant of a truncated final line still being flushed), truncates to
   4 000 chars, POSTs to `/api/hooks/output`, then `/api/hooks/status` idle and
   `/api/hooks/agent-stopped`.
+
+### `hooks/lib.sh`
+
+Every hook sources it (`hooks/gemini/*` as `../lib.sh`). It defines two things:
+
+- `TARS_API_URL`, built from `DOROTHY_API_PORT` and defaulting to 31415, so the hooks follow
+  whichever Tars spawned the agent instead of always addressing the production one.
+- `api_post <path> <json>`, three attempts about 0.4 s and 1.2 s apart. Every post used to be
+  one `curl --max-time 3` whose result was discarded, and the status lifecycle is these posts
+  and nothing else: when the one saying `idle` was lost, nothing ever said it again and the
+  agent stayed `running` for the rest of the day. Only transport failures are retried; a 4xx
+  is the server having considered the post and refused it, which retrying cannot change.
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
@@ -813,7 +865,7 @@ which jq curl
 | agents stuck `idle` while clearly working | `jq` not on the hook's PATH: every script `exit 0`s with `{"continue":true}` and posts nothing |
 | status posts ignored after a restart | `SessionStart` registration was lost; the stale-session guard drops later posts. Stop and re-dispatch the agent |
 | no memory injected at session start | `/api/memory/context` returned empty, or `$HOME/.dorothy/api-token` is unreadable; `/api/memory/*` is **not** auth-exempt |
-| sandbox/E2E agent status shows up in prod | hooks hardcode `31415`; see *Run a second Tars beside your live one* |
+| agent stuck `running` long after it finished | a status post was lost. The liveness sweep corrects it within a minute; if it does not, check `hasAcpTurn` is not holding it and that `lastActivity` is being stamped |
 
 ---
 
