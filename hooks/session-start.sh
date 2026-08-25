@@ -12,15 +12,15 @@ SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
 
 echo "[$(date)] SESSION_START hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
 
-# API endpoint
-API_URL="http://127.0.0.1:31415"
+# API endpoint, retries and health check
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 
 # Check if API is available
-if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
+if ! api_up; then
   # API not running, just continue
   echo '{"continue":true,"suppressOutput":true}'
   exit 0
@@ -29,18 +29,16 @@ fi
 # Register this session as the agent's owner. The server recognizes the
 # `source` field (only SessionStart sends it) and records session_id WITHOUT
 # touching status — the status lifecycle belongs to UserPromptSubmit/Stop.
-# Retry once: if registration is lost, the stale-session guard would ignore
-# every later status post from this session.
-RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
-  -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\"}" 2>&1)
+# api_post retries: if registration is lost, the stale-session guard would
+# ignore every later status post from this session. One more attempt on an
+# empty body too, which is a server that answered without saying anything.
+REGISTRATION="{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\"}"
+RESULT=$(api_post /api/hooks/status "$REGISTRATION" 2>&1)
 if [ -z "$RESULT" ]; then
   sleep 1
-  RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
-    -H "Content-Type: application/json" \
-    -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\"}" 2>&1)
+  RESULT=$(api_post /api/hooks/status "$REGISTRATION" 2>&1)
 fi
-echo "[$(date)] SESSION_START curl result: $RESULT" >> /tmp/dorothy-hooks.log
+echo "[$(date)] SESSION_START registration result: $RESULT" >> /tmp/dorothy-hooks.log
 
 # The /api/agents and /api/memory endpoints require the API token (only
 # /api/hooks/* and /api/health are auth-exempt).
@@ -55,12 +53,12 @@ fi
 BOOTSTRAP=""
 if [ -n "$CLAUDE_AGENT_ID" ] && [ -n "$API_TOKEN" ]; then
   BOOTSTRAP=$(curl -s --connect-timeout 2 --max-time 3 -H @<(printf "Authorization: Bearer %s" "$API_TOKEN") \
-    "$API_URL/api/agents/$CLAUDE_AGENT_ID/bootstrap" 2>/dev/null | jq -r '.context // empty' 2>/dev/null)
+    "$TARS_API_URL/api/agents/$CLAUDE_AGENT_ID/bootstrap" 2>/dev/null | jq -r '.context // empty' 2>/dev/null)
 fi
 
 # Get memory context for this agent/project
 CONTEXT=$(curl -s --connect-timeout 2 --max-time 3 -H @<(printf "Authorization: Bearer %s" "$API_TOKEN") \
-  "$API_URL/api/memory/context?agent_id=$AGENT_ID&project_path=$PROJECT_PATH" 2>/dev/null)
+  "$TARS_API_URL/api/memory/context?agent_id=$AGENT_ID&project_path=$PROJECT_PATH" 2>/dev/null)
 MEMORY_CONTENT=""
 if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "null" ] && [ "$CONTEXT" != "{}" ]; then
   MEMORY_CONTENT=$(echo "$CONTEXT" | jq -r '.context // empty' 2>/dev/null)

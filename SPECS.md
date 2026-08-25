@@ -58,6 +58,8 @@ orchestrator agent's CLI
 
 - **Two transports, not one.** ACP returns a receipt; the PTY does not. `delegate_task` tries ACP first and degrades to terminal dispatch. Everything the user watches is still a real terminal.
 - **The server decides message-vs-spawn.** `POST /api/agents/:id/dispatch` makes that call under the main process's single-threaded event loop. The earlier GET-status-then-POST pattern raced and could type into a dead PTY.
+- **A delegation that fails leaves no trace of itself.** `/run-task` snapshots `status`, `currentTask` and `lastActivity` and restores them when the ACP turn throws or reports failure. An ACP turn runs beside the terminal, so a task that did not run is otherwise recorded nowhere but the agent's card, and an orchestrator reads that card as "assigned".
+- **The MCP client speaks `node:http`, never `fetch`.** Node's fetch is undici, which cuts a request that has been silent for 300 s and reports it as `TypeError: fetch failed`. A long poll is silence by definition, so every wait and every long delegation died on a clock nothing in Tars set.
 - **Session ownership is explicit.** A dispatch tombstones the old session id; only the session registered by `SessionStart` may drive status. Hooks of a killed PTY survive the kill by seconds and would otherwise flip the new task's status.
 - **Providers are a strategy interface, not conditionals.** 19 methods on `CLIProvider`; 15 implementations. Adding a vendor is a file in `electron/providers/` plus one line in the registry.
 - **Thirteen of the nineteen providers are the `claude` binary re-pointed.** `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` in the PTY environment, either at the vendor's Anthropic-compatible endpoint or through OpenRouter. They inherit Claude Code's hooks, skills and MCP config for free.
@@ -679,9 +681,8 @@ E2E: Playwright, `testDir: ./e2e`, one worker, serial: one Electron instance dri
 ## §13 Known limitations
 
 - **Delivery over the PTY is fire-and-forget.** `/dispatch` returns when bytes are written. Only `/run-task` returns a receipt.
-- **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path.
-- **The `/run-task` status event name does not match what `/wait` listens on.** `emit('status', …)` vs `` `status:${agentId}` ``.
-- **The caller-identity header name has drifted between the MCP source and the server.** Shipped bundles still send the old name and work; rebuilding the MCP servers disables project scoping and 403s every guarded route until one side is renamed.
+- **Status lifecycle depends on hooks, which four providers do not have.** `codex`, `grok`, `opencode` and `pi` only ever transition on PTY exit. `wait_for_agent` and `lastCleanOutput` are effectively unavailable for them on the terminal path. `agent-liveness.ts` reconciles a stale `running` for every provider, but reconciling is not the same as reporting: it says the work stopped, never what it produced.
+- **Reconciling a ghost status is a judgement, not a reading.** A `running` agent with no PTY byte for ten minutes is called idle. A CLI that could genuinely work that long in complete silence, emitting no spinner, no token count and no tool output, would be idled underneath itself.
 - **`pi` has no ACP fallback entry.** If the ACP registry has never been reachable, `pi` has no ACP mode at all.
 - **`app-settings.json`, `hermes-connection.json` and `projects.json` are written non-atomically.** Only `agents.json` is written atomically (temp file plus `renameSync`); `templates.json` gets a backup copy but is then overwritten in place.
 - **`agent.output` retains 600 chunks live and 100 on disk.** `/logs` searches only what is retained; there is no persistent log store.

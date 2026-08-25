@@ -697,6 +697,11 @@ export function registerAgentTools(server: McpServer): void {
     },
     async ({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }) => {
       try {
+        // Why the ACP path gave up, if it did. Reported only when the
+        // terminal fallback below fails too: on its own it is just a CLI
+        // without an ACP mode, which is not worth an error.
+        let acpError: string | undefined;
+
         // Preferred path: run the task over the Agent Client Protocol, which
         // returns the agent's actual answer, why the turn ended and what it
         // cost. Falls back to the terminal dispatch below for CLIs that have
@@ -734,13 +739,37 @@ export function registerAgentTools(server: McpServer): void {
               isError: !acp.ok,
             };
           }
-        } catch {
-          // ACP unavailable for this agent. The terminal path still works.
+        } catch (err) {
+          // ACP unavailable for this agent, or the run itself failed. The
+          // terminal path below still works, and the server has already put
+          // the agent's record back the way it found it, so dispatching now
+          // is dispatching to an agent that is genuinely free.
+          //
+          // This used to be a bare `catch {}`. Discarding the reason is how a
+          // delegation that died mid-flight came back looking like "this CLI
+          // has no ACP mode": no error reached the orchestrator, while the
+          // agent's card said it had been given the task. Keep it and report
+          // it if the fallback fails too.
+          acpError = err instanceof Error ? err.message : String(err);
         }
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
         // lock, so a stale status can never route the prompt to a dead PTY.
-        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
+        let dispatched: DispatchResult;
+        try {
+          dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return {
+            content: [{
+              type: "text",
+              text: `Delegation to "${id}" did not happen. The terminal dispatch failed: ${reason}` +
+                (acpError ? `\nThe ACP path had failed first: ${acpError}` : "") +
+                `\n\nThe agent has NOT been given this task. Check it with get_agent, then delegate again.`,
+            }],
+            isError: true,
+          };
+        }
         const agentName = dispatched.agent.name || id;
 
         // Wait for completion via long-poll

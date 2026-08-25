@@ -12,8 +12,8 @@ TITLE=$(echo "$INPUT" | jq -r '.title // empty')
 NOTIFICATION_TYPE=$(echo "$INPUT" | jq -r '.notification_type // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 
-# API endpoint
-API_URL="http://127.0.0.1:31415"
+# API endpoint, retries and health check
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
@@ -27,23 +27,21 @@ if [ -z "$NOTIFICATION_TYPE" ]; then
 fi
 
 # Check if API is available
-if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
+if ! api_up; then
   echo '{"continue":true,"suppressOutput":true}'
   exit 0
 fi
 
 # Forward notification to our API
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/notification" \
-  -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"type\": \"$NOTIFICATION_TYPE\", \"title\": $(echo "$TITLE" | jq -Rs .), \"message\": $(echo "$MESSAGE" | jq -Rs .)}" \
+api_post /api/hooks/notification \
+  "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"type\": \"$NOTIFICATION_TYPE\", \"title\": $(echo "$TITLE" | jq -Rs .), \"message\": $(echo "$MESSAGE" | jq -Rs .)}" \
   > /dev/null 2>&1
 
 # Permission prompts are handled by the dedicated PermissionRequest hook.
 # Idle prompts still set waiting here since there's no dedicated hook for them.
 if [ "$NOTIFICATION_TYPE" = "idle_prompt" ]; then
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
-    -H "Content-Type: application/json" \
-    -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"waiting\", \"waiting_reason\": \"idle\"}" \
+  api_post /api/hooks/status \
+    "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"waiting\", \"waiting_reason\": \"idle\"}" \
     > /dev/null 2>&1
 fi
 

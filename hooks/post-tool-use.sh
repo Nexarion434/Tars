@@ -16,9 +16,9 @@ if [ -z "$TOOL_NAME" ]; then
   exit 0
 fi
 
-# API endpoint
-BASE_URL="http://127.0.0.1:31415"
-API_URL="$BASE_URL/api/memory/remember"
+# API endpoint, retries and health check
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+API_URL="$TARS_API_URL/api/memory/remember"
 
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
@@ -26,7 +26,11 @@ PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 
 # Update agent status to "running" — this hook fires after each tool use,
 # which signals Claude is actively working (e.g. after permission is granted)
-curl -s --connect-timeout 1 --max-time 3 -X POST "$BASE_URL/api/hooks/status" \
+# Not api_post: this fires after every single tool call, and it is a
+# keepalive rather than a transition. Losing one costs nothing because the
+# next tool use posts again a second later, and retrying each of them would
+# put three curls in the way of every tool the agent runs.
+curl -s --connect-timeout 1 --max-time 3 -X POST "$TARS_API_URL/api/hooks/status" \
   -H "Content-Type: application/json" \
   -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"running\"}" \
   > /dev/null 2>&1

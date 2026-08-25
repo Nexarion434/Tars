@@ -16,6 +16,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { beginAcpTurn, endAcpTurn, reconcileFromRuntime } from '../agent-liveness';
 import { withSessionTruth, sessionModel } from '../agent-truth';
 
 /**
@@ -277,6 +278,8 @@ async function spawnAgentSession(
   // dropped as belonging to a session that no longer exists.
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
+  agent.ptyCols = ptyProcess.cols;
+  agent.ptyRows = ptyProcess.rows;
   agent.status = 'running';
   agent.currentTask = prompt;
   agent.output = [];
@@ -519,6 +522,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     const timeoutSec = parseInt(req.url.searchParams.get('timeout') || '300', 10);
+    // A wait is the one call that pays the full price of a stale `running`:
+    // it would hold the connection open for its whole timeout waiting on a
+    // status change that nothing is left to make. Check the label against the
+    // process before believing it.
+    if (reconcileFromRuntime(agent)) {
+      saveAgents();
+      emitAgentStatus(agent.id);
+    }
     const currentStatus = agent.status;
 
     // Return immediately if already in terminal state
@@ -589,6 +600,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (caller && !showAll) {
       agentValues = agentValues.filter(a => a.projectPath === caller);
     }
+    // The roster an orchestrator reads before it picks someone to delegate to.
+    // A ghost `running` here is what makes it skip a free agent. Emitting on
+    // the ones that actually changed keeps the window and anyone holding a
+    // /wait in step with what this call just corrected; a listing where
+    // nothing was wrong writes and emits nothing, which is every listing.
+    const corrected = agentValues.filter(a => reconcileFromRuntime(a));
+    if (corrected.length > 0) {
+      saveAgents();
+      for (const a of corrected) emitAgentStatus(a.id);
+    }
     const agentList = agentValues.map(withSessionTruth).map(a => ({
       id: a.id,
       name: a.name,
@@ -612,6 +633,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
       return;
+    }
+    // get_agent and the output-fetch retry loop both land here; both are
+    // asking "is it still working?", which is the question a stale label
+    // answers wrongly.
+    if (reconcileFromRuntime(agent)) {
+      saveAgents();
+      emitAgentStatus(agent.id);
     }
     const full = req.url.searchParams.get('full') === 'true';
     sendJson({ agent: full ? agent : projectAgent(agent) });
@@ -677,6 +705,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!agent) {
       sendJson({ error: 'Agent not found' }, 404);
       return;
+    }
+    if (reconcileFromRuntime(agent)) {
+      saveAgents();
+      emitAgentStatus(agent.id);
     }
     const ptyAlive = !!(agent.ptyId && ptyProcesses.has(agent.ptyId));
     const lastActivityMs = Date.parse(agent.lastActivity || '') || 0;
@@ -845,7 +877,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    // Everything this route is about to overwrite, kept so a delegation that
+    // never happened can be taken back. An ACP turn runs beside the terminal,
+    // not in it: nothing types into the PTY, so if the turn fails there is no
+    // trace of the task anywhere except these three fields. Leaving them set
+    // is what told an orchestrator its task was assigned while the agent sat
+    // at an empty prompt - the assignment existed only in the record.
     const wasStatus = agent.status;
+    const wasTask = agent.currentTask;
+    const wasActivity = agent.lastActivity;
+
     agent.status = 'running';
     agent.currentTask = task.slice(0, 100);
     agent.lastActivity = new Date().toISOString();
@@ -854,21 +895,60 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // nobody and a caller waiting on this agent hung until its timeout.
     emitAgentStatus(agent.id);
 
-    const result = await delegateOverAcp({
-      agent,
-      task,
-      appSettings: ctx.getAppSettings(),
-      isOrchestrator: agent.role === 'orchestrator',
-      timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
-    });
+    // Held for as long as the turn runs. An ACP agent shows no PTY activity
+    // at all, so without this the liveness sweep would read a perfectly
+    // healthy delegation as a ghost and reconcile it to idle underneath us.
+    beginAcpTurn(agent.id);
 
-    agent.status = result.ok ? 'idle' : wasStatus === 'running' ? 'idle' : wasStatus;
+    let result: Awaited<ReturnType<typeof delegateOverAcp>>;
+    try {
+      result = await delegateOverAcp({
+        agent,
+        task,
+        appSettings: ctx.getAppSettings(),
+        isOrchestrator: agent.role === 'orchestrator',
+        timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
+      });
+    } catch (err) {
+      // The turn threw rather than answering: nothing ran. Put the record
+      // back exactly as it was and say so, so the caller can fall back to a
+      // terminal dispatch against an agent that is genuinely free.
+      agent.status = wasStatus;
+      agent.currentTask = wasTask;
+      agent.lastActivity = wasActivity;
+      saveAgents();
+      emitAgentStatus(agent.id);
+      sendJson({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        retryWithDispatch: true,
+      }, 502);
+      return;
+    } finally {
+      endAcpTurn(agent.id);
+    }
+
+    if (!result.ok) {
+      // Same reasoning as the throw above: a turn that reports failure did
+      // not do the work, so the task must not stay on the agent's card. Its
+      // text, if it produced any, is still worth keeping.
+      agent.status = wasStatus === 'running' ? 'idle' : wasStatus;
+      agent.currentTask = wasTask;
+      agent.lastActivity = new Date().toISOString();
+      if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
+      saveAgents();
+      emitAgentStatus(agent.id);
+      sendJson(result, 502);
+      return;
+    }
+
+    agent.status = 'idle';
     agent.lastActivity = new Date().toISOString();
     if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
     saveAgents();
     emitAgentStatus(agent.id);
 
-    sendJson(result, result.ok ? 200 : 502);
+    sendJson(result, 200);
   });
 
   // POST /api/agents/:id/stop

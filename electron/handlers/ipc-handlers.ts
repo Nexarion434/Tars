@@ -431,6 +431,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       createdAt: now,
       ptyId,
       ptyCwd: cwd,
+      ptyCols: ptyProcess.cols,
+      ptyRows: ptyProcess.rows,
       character: config.character || 'robot',
       name: config.name || `Agent ${id.slice(0, 4)}`,
       permissionMode: config.permissionMode || 'normal',
@@ -630,6 +632,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       ptyProcesses.set(newPtyId, newPty);
       agent.ptyId = newPtyId;
       agent.ptyCwd = cwd;
+      agent.ptyCols = newPty.cols;
+      agent.ptyRows = newPty.rows;
 
       // Re-attach event handlers
       newPty.onData((data) => {
@@ -1127,6 +1131,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       if (ptyProcess) {
         try {
           ptyProcess.resize(cols, rows);
+          // Read back rather than storing the requested values: a resize that
+          // was clamped or refused must not leave the record claiming a
+          // geometry the PTY never adopted.
+          agent.ptyCols = ptyProcess.cols;
+          agent.ptyRows = ptyProcess.rows;
           return { success: true };
         } catch (err) {
           console.error('Failed to resize PTY:', err);

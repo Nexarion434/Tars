@@ -6,6 +6,11 @@ const mockPtyProcess = {
   onExit: vi.fn(),
   kill: vi.fn(),
   write: vi.fn(),
+  // node-pty reports the geometry it actually adopted. spawnAgentSession
+  // records it onto the agent so the renderer can replay the output buffer at
+  // the width it was written at.
+  cols: 120,
+  rows: 40,
 };
 
 vi.mock('node-pty', () => ({
@@ -393,6 +398,28 @@ describe('agent-routes', () => {
         previousStatus: 'idle',
         agent: { id: 'a1', name: 'Worker', status: 'running' },
       });
+    });
+
+    it('records the geometry the fresh PTY was given', async () => {
+      // The output buffer this session is about to fill was written at this
+      // width. The renderer replays that buffer into xterm when the terminal
+      // is opened, and replaying it at any other width redraws it wrong:
+      // wrapped lines break in the wrong places and the history shows twice.
+      // Read from the PTY, not from the spawn options, so a geometry the PTY
+      // did not adopt is never recorded as if it had.
+      const agent = makeAgent({ id: 'a1', status: 'idle' });
+      agents.set('a1', agent);
+
+      const app = makeRouteApp();
+      registerAgentRoutes(app, ctx);
+      await findHandler(app, 'POST', 'dispatch')(
+        makeReq({ params: { id: 'a1' }, body: { message: 'do the task' } }),
+        vi.fn(),
+        ctx,
+      );
+
+      expect(agent.ptyCols).toBe(mockPtyProcess.cols);
+      expect(agent.ptyRows).toBe(mockPtyProcess.rows);
     });
 
     it('spawns fresh when status says waiting but the PTY is dead', async () => {

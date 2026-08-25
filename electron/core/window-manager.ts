@@ -64,6 +64,64 @@ export function resolveDevUrl(raw: string | undefined = process.env.DOROTHY_DEV_
 }
 
 /**
+ * Running under the e2e harness.
+ *
+ * The suite drives a real, painting window, because that is the only thing
+ * worth photographing. But nobody should have to watch it: thirty-five
+ * surfaces means a window appearing, flashing through page after page and
+ * vanishing, taking focus off whatever was being typed into at the time,
+ * several times a run.
+ */
+function isE2E(): boolean {
+  return process.env.DOROTHY_E2E === '1';
+}
+
+/**
+ * Make the e2e window impossible to see, without changing a single pixel of
+ * what it draws.
+ *
+ * Transparent, and left exactly where it was.
+ *
+ * The screenshots are compared against committed baselines at a threshold of
+ * 0.002, so the constraint here is that the page must rasterise identically.
+ * Two runs of the unchanged app differ by zero pixels out of 1 296 000, which
+ * makes that measurable rather than a matter of opinion. Against that
+ * baseline, on the Agents surface:
+ *
+ *   opacity 0, showInactive                          0 pixels
+ *   moved to -4000,-4000 (enableLargerThanScreen)   13 379 pixels  = 0.0103
+ *   opacity 0, showInactive, app.dock.hide()        13 370 pixels  = 0.0103
+ *
+ * So off-screen is out, and hiding the Dock icon is out with it. Both leave
+ * the window in a state where AppKit never makes it the active window - a
+ * window on no display, or an accessory app's window that was never activated
+ * - and an inactive window's text is rasterised differently across the whole
+ * page, 317 rows of it. Either one would have forced every baseline in the
+ * suite to be re-recorded to a rendering nobody actually ships.
+ *
+ * Opacity avoids all of that because Chromium is not involved: AppKit applies
+ * the alpha when it composites the window onto the screen, long after the page
+ * has been rasterised. The window keeps its display, its backing scale factor
+ * and its active state, and goes on producing frames for the capture.
+ *
+ * The other two halves of "invisible" cost nothing. `showInactive` orders the
+ * window in without activating it, so focus stays wherever the user left it,
+ * and click-through means a window nobody can see cannot swallow a click at
+ * the place it happens to be sitting. Playwright is unaffected by the latter:
+ * its clicks are CDP input events delivered straight to the renderer, never
+ * OS-level clicks.
+ *
+ * What this does not do is hide the Dock tile, per the measurement above. A
+ * tile in the Dock is not what anyone was complaining about; a window taking
+ * over the screen and stealing focus thirty-five times a run is.
+ */
+function hideFromView(win: BrowserWindow): void {
+  win.setOpacity(0);
+  win.setIgnoreMouseEvents(true);
+  win.showInactive();
+}
+
+/**
  * Get the main window instance
  */
 export function getMainWindow(): BrowserWindow | null {
@@ -81,6 +139,8 @@ export function setMainWindow(window: BrowserWindow | null) {
  * Create the main application window
  */
 export function createWindow() {
+  const e2e = isE2E();
+
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -89,6 +149,12 @@ export function createWindow() {
     title: 'Tars',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#121212',
+    // Under the e2e harness, born unshown and made transparent before it is
+    // ordered in: setting the opacity of a window that has already appeared is
+    // what produces the flash. The size is deliberately untouched, here and in
+    // hideFromView: the window is what sets the viewport the baselines were
+    // recorded at.
+    ...(e2e ? { show: false, skipTaskbar: true } : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -97,6 +163,10 @@ export function createWindow() {
       webviewTag: false,
     },
   });
+
+  if (e2e) {
+    hideFromView(mainWindow);
+  }
 
   hardenWindow(mainWindow);
 
