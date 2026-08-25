@@ -13,14 +13,14 @@ REASON=$(echo "$INPUT" | jq -r '.reason // "other"')
 
 echo "[$(date)] SESSION_END hook. AGENT_ID=${CLAUDE_AGENT_ID:-unset} SESSION_ID=$SESSION_ID" >> /tmp/dorothy-hooks.log
 
-# API endpoint
-API_URL="http://127.0.0.1:31415"
+# API endpoint, retries and health check
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # Get agent ID from environment or use session ID
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 
 # Check if API is available
-if ! curl -s --connect-timeout 1 "$API_URL/api/health" > /dev/null 2>&1; then
+if ! api_up; then
   echo '{"continue":true,"suppressOutput":true}'
   exit 0
 fi
@@ -38,17 +38,15 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     | last // empty' "$TRANSCRIPT_PATH" 2>/dev/null | head -c 4000)
 
   if [ -n "$LAST_ASSISTANT_MSG" ]; then
-    curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" \
-      -H "Content-Type: application/json" \
-      -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$LAST_ASSISTANT_MSG" | jq -Rs .)}" \
+    api_post /api/hooks/output \
+      "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$LAST_ASSISTANT_MSG" | jq -Rs .)}" \
       > /dev/null 2>&1
   fi
 fi
 
 # Update agent status to "completed" (session ended)
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" \
-  -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"completed\", \"reason\": \"$REASON\"}" \
+api_post /api/hooks/status \
+  "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"completed\", \"reason\": \"$REASON\"}" \
   > /dev/null 2>&1
 
 # Output hook response

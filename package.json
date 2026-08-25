@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.6.15",
+  "version": "1.6.16",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -29,7 +29,7 @@
     "productName": "Tars",
     "publish": {
       "provider": "github",
-      "owner": "JeanBrasse",
+      "owner": "Nexarion434",
       "repo": "Tars"
     },
     "directories": {

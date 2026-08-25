@@ -12,7 +12,8 @@ if [ -z "$TOOL_NAME" ]; then
   exit 0
 fi
 
-API_URL="http://127.0.0.1:31415/api/memory/remember"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
+API_URL="$TARS_API_URL/api/memory/remember"
 
 AGENT_ID="${DOROTHY_AGENT_ID:-$SESSION_ID}"
 PROJECT_PATH="${DOROTHY_PROJECT_PATH:-$CWD}"

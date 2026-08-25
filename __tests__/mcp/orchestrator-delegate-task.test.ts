@@ -132,3 +132,73 @@ describe('delegate_task auto-continue', () => {
     expect(result.content[0].text.toLowerCase()).toContain('waiting');
   });
 });
+
+// ============================================================================
+// delegate_task's silent-failure path.
+//
+// The ACP attempt sat inside a bare `catch {}`. That catch is there for a real
+// reason - a CLI with no ACP mode has to fall through to the terminal dispatch
+// - but it swallowed every other failure with it, including a delegation cut
+// mid-flight. What reached the orchestrator was either nothing at all or a
+// dispatch that also failed, reported as if the task had gone out. Meanwhile
+// the agent's card said it had been given the task, because /run-task had
+// written it there before the turn even started.
+//
+// The server takes its half back (run-task-rollback.test.ts). This is the
+// other half: the client says what happened instead of losing it.
+// ============================================================================
+describe('delegate_task when the delegation does not happen', () => {
+  async function loadDelegateTask() {
+    const { registerAgentTools } = await import('../../mcp-orchestrator/src/tools/agents.js');
+    const server = makeFakeServer();
+    registerAgentTools(server as never);
+    return server.tools.get('delegate_task')!;
+  }
+
+  it('reports both failures rather than claiming the task was assigned', async () => {
+    const delegateTask = await loadDelegateTask();
+
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw new Error('Timed out after 360s waiting for POST /api/agents/a1/run-task');
+      if (endpoint.includes('/dispatch')) throw new Error('connect ECONNREFUSED 127.0.0.1:31415');
+      return {};
+    });
+
+    const result = await delegateTask({ id: 'a1', prompt: 'do the thing' }) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0].text;
+    // The thing an orchestrator has to be told, in as many words.
+    expect(text).toContain('has NOT been given this task');
+    expect(text).toContain('ECONNREFUSED');
+    // And why the preferred path gave up first, which is the actual diagnosis.
+    expect(text).toContain('Timed out after 360s');
+  });
+
+  it('still falls through quietly when the CLI simply has no ACP mode', async () => {
+    // The case the catch exists for. A provider without ACP is not an error
+    // and must not be reported as one.
+    const delegateTask = await loadDelegateTask();
+
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw new Error('codex has no ACP mode; use /dispatch');
+      if (endpoint.includes('/dispatch')) {
+        return { success: true, mode: 'start', agent: { id: 'a1', name: 'Worker', status: 'running' } };
+      }
+      if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'all done' };
+      return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'all done' } };
+    });
+
+    const result = await delegateTask({ id: 'a1', prompt: 'do the thing' }) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('all done');
+    expect(result.content[0].text).not.toContain('has NOT been given this task');
+  });
+});

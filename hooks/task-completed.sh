@@ -2,7 +2,7 @@
 LOG="/tmp/dorothy-hooks-debug.log"
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-API_URL="http://127.0.0.1:31415"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 AGENT_ID="${CLAUDE_AGENT_ID:-$SESSION_ID}"
 echo "========================================" >> "$LOG"
 echo "[$(date)] TASK_COMPLETED — AGENT=$AGENT_ID" >> "$LOG"
@@ -24,7 +24,7 @@ if [ -z "$LAST_MSG" ]; then
 fi
 if [ -n "$LAST_MSG" ]; then
   TRIMMED=$(printf '%s' "$LAST_MSG" | head -c 4000)
-  curl -s --max-time 3 -X POST "$API_URL/api/hooks/output" -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
+  api_post /api/hooks/output "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"output\": $(printf '%s' "$TRIMMED" | jq -Rs .)}" >> "$LOG" 2>&1
 fi
-curl -s --max-time 3 -X POST "$API_URL/api/hooks/task-completed" -H "Content-Type: application/json" -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
+api_post /api/hooks/task-completed "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\"}" > /dev/null 2>&1
 echo '{"continue":true,"suppressOutput":true}'

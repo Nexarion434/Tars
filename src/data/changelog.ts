@@ -7,6 +7,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'The three window buttons no longer sit on the Tars logo. macOS draws them over the top left of the window, which is exactly where the mark and the wordmark were, so the red button covered the orange square and the yellow one landed on the T. The top of the sidebar is now left to them and the brand sits under them; the menu below it has not moved a pixel',
+      'Opening the terminal of an agent that is working shows its screen once instead of dozens of stacked copies. What Tars stores is not a log, it is the picture the tool was painting, and each new picture wipes the previous one by counting the lines it took at the width it was drawn at. Tars was replaying all of it into a panel of a different width, so every wipe missed and left another copy behind, and a few minutes of work turned into an unreadable wall. The panel now replays at the width the work was recorded at and changes width afterwards, in the order that lets the tool repaint itself cleanly',
+      'A task handed to an agent has either been given to it or not. A delegation that failed on its way out still wrote the task onto the agent, so the card said it was working on something that had never reached it: an orchestrator moved on believing the job was assigned while the terminal sat at an empty prompt and the idle counter climbed. The task is now taken back off the agent when the delegation does not happen, and the reason it did not is reported instead of being thrown away',
+      'Delegating a piece of work that takes more than five minutes returns its result. The connection was cut at exactly five minutes of quiet by a timer underneath Node that nothing in Tars set, and a delegation is quiet by definition until the agent answers, so every long one came back as a bare connection error with no reason attached. The timeout the caller asked for is now the only one there is',
+      'An agent stops showing as busy hours after it finished. Its status was posted by a script running beside it, and if one of those posts was lost there was nothing in Tars that ever said otherwise: the agent stayed labelled running for the rest of the day, and anyone waiting on it waited forever. The posts now retry, and Tars checks the label against the process every minute and corrects it',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',

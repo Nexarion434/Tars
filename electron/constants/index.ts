@@ -49,9 +49,11 @@ export const VAULT_DIR = path.join(DATA_DIR, 'vault');
 export const VAULT_DB_FILE = path.join(DATA_DIR, 'vault.db');
 export const API_TOKEN_FILE = path.join(DATA_DIR, 'api-token');
 
-// Updates come from the fork. Pointing this at the upstream repo offered an
-// upstream build as an update to a fork install, which would overwrite it.
-export const GITHUB_REPO = 'JeanBrasse/Tars';
+// Where update checks look, and the only repo this build will ever offer an
+// update from. Pointing it anywhere but the repo this build was published to
+// offers somebody else's build as an update to this install, which would
+// overwrite it.
+export const GITHUB_REPO = 'Nexarion434/Tars';
 
 export const MIME_TYPES: { [key: string]: string } = {
   '.html': 'text/html',

@@ -57,6 +57,13 @@ export interface AgentStatus {
   /** CWD the active PTY was spawned with. Used to detect stale PTYs when
    *  the agent's worktreePath changes after the PTY was started. Not persisted. */
   ptyCwd?: string;
+  /** Geometry `output` was recorded at: the PTY's own cols/rows, kept in step
+   *  with every resize. The renderer replays the retained buffer into xterm on
+   *  open, and a buffer written at one width and replayed at another is redrawn
+   *  wrong: wrapped lines break in the wrong places and the terminal shows the
+   *  history twice. Read these rather than assuming the current pane size. */
+  ptyCols?: number;
+  ptyRows?: number;
   character?: AgentCharacter;
   name?: string;
   pathMissing?: boolean;
