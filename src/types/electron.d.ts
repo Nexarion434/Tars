@@ -246,6 +246,12 @@ export interface AgentStatus {
   lastActivity: string;
   error?: string;
   ptyId?: string;
+  /** Geometry the retained `output` was recorded at. Replaying the buffer into
+   *  xterm at any other width redraws it wrong: wrapped lines break in the
+   *  wrong places and the history appears twice. Size the terminal from these
+   *  before writing the buffer into it. */
+  ptyCols?: number;
+  ptyRows?: number;
   character?: AgentCharacter;
   name?: string;
   statusLine?: string;    // ANSI-stripped last meaningful output line

@@ -602,6 +602,8 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
+  agent.ptyCols = ptyProcess.cols;
+  agent.ptyRows = ptyProcess.rows;
 
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);

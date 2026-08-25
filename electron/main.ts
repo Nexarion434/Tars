@@ -507,6 +507,8 @@ app.whenReady().then(async () => {
         lastActivity: new Date().toISOString(),
         ptyId,
         ptyCwd: cwd,
+        ptyCols: ptyProcess.cols,
+        ptyRows: ptyProcess.rows,
         character: config.character || 'robot',
         name: config.name || `Agent ${id.slice(0, 4)}`,
         permissionMode: config.permissionMode || 'auto',

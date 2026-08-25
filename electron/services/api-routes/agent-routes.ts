@@ -278,6 +278,8 @@ async function spawnAgentSession(
   // dropped as belonging to a session that no longer exists.
   if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
   agent.ptyCwd = rawWorkingDir;
+  agent.ptyCols = ptyProcess.cols;
+  agent.ptyRows = ptyProcess.rows;
   agent.status = 'running';
   agent.currentTask = prompt;
   agent.output = [];
