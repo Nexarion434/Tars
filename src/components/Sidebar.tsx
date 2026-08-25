@@ -165,8 +165,24 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
         {/* Logo - top area also serves as drag region for macOS traffic lights.
             54px tall so the first nav row starts at y=54; the 18px inset and the
             14px mark slot line the mark up with the nav icons and the wordmark
-            with the nav labels. */}
-        <div className="window-drag flex items-center h-[54px] px-[18px] shrink-0">
+            with the nav labels.
+
+            The traffic lights float over the top left of the window and land on
+            exactly this row, which is why they used to sit on the mark and the
+            wordmark. The top 28px of the row is theirs - the same 28 the drag
+            strip in ClientLayout already claims - so the brand sits under them
+            rather than beside them. The row keeps its 54, so the first nav row
+            still starts at y=54 and nothing below here moves.
+
+            The band is not given back in fullscreen, where macOS draws no
+            lights. It cannot be: the renderer has no way to tell fullscreen
+            from a zoomed window, since Electron answers `browser` to the
+            `display-mode` query in both, and on a display with a notch the two
+            states have the same geometry. Guessing and guessing wrong would put
+            the lights back on the wordmark, and what the band costs when it is
+            not needed is 28px of space above the brand, which reads as room at
+            the top of the column rather than as a gap. */}
+        <div className="window-drag flex items-center h-[54px] px-[18px] shrink-0 pt-7">
           <Brand
             markClassName="w-[13px] h-[13px]"
             wordmarkClassName="font-serif text-xl text-foreground"

@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'The three window buttons no longer sit on the Tars logo. macOS draws them over the top left of the window, which is exactly where the mark and the wordmark were, so the red button covered the orange square and the yellow one landed on the T. The top of the sidebar is now left to them and the brand sits under them; the menu below it has not moved a pixel',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',
