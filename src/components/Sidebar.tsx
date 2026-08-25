@@ -162,10 +162,16 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className="fixed left-0 top-0 h-screen bg-card border-r border-border flex-col z-50 hidden lg:flex"
       >
-        {/* Logo - top area also serves as drag region for macOS traffic lights.
-            54px tall so the first nav row starts at y=54; the 18px inset and the
-            14px mark slot line the mark up with the nav icons and the wordmark
-            with the nav labels. */}
+        {/* macOS draws the close, minimise and zoom buttons over the top-left
+            corner of the window (titleBarStyle: 'hiddenInset'), which is the
+            corner the brand occupies: the mark landed under them and the
+            wordmark next to them. This strip is the room they need, and it
+            drags the window like the row below it. */}
+        <div className="window-drag h-8 shrink-0" />
+
+        {/* Logo. 54px tall so the first nav row starts at y=86; the 18px inset
+            and the 14px mark slot line the mark up with the nav icons and the
+            wordmark with the nav labels. */}
         <div className="window-drag flex items-center h-[54px] px-[18px] shrink-0">
           <Brand
             markClassName="w-[13px] h-[13px]"

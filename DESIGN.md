@@ -289,7 +289,10 @@ exceptions in the tree. Don't add a third.
 The shell is identical on all sixty-odd frames.
 
 - **Sidebar: 240px** (72 collapsed). `surface` fill, `border` on its right edge.
-  Brand at the top (10px square + wordmark), the nav in the middle, then a
+  Brand at the top (10px square + wordmark), under a 32px empty strip that is
+  where macOS draws the close, minimise and zoom buttons: the window is
+  `hiddenInset`, so that corner belongs to the system and nothing of ours may
+  be placed in it. The nav starts at y=86. Then in the middle the nav, then a
   What's new row and a connection line (a green dot and the word `Connected`,
   no port and no mono) and below those the Settings link and the Light/Dark
   toggle, which are what actually sit at the very bottom.

@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 34,
+    version: '1.6.16',
+    date: '2026-08-25',
+    updates: [
+      'The window buttons no longer sit on top of the logo. macOS draws close, minimise and zoom over the top-left corner of the window, which is the corner the mark and the name occupy, so the three of them were stacked on each other and the name was half unreadable. The column now starts below them',
+    ],
+  },
+  {
     id: 33,
     version: '1.6.15',
     date: '2026-08-25',
