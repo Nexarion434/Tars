@@ -293,6 +293,16 @@ The shell is identical on all sixty-odd frames.
   What's new row and a connection line (a green dot and the word `Connected`,
   no port and no mono) and below those the Settings link and the Light/Dark
   toggle, which are what actually sit at the very bottom.
+- **The traffic-light band: the top 28px of the sidebar belongs to macOS.**
+  The window is `titleBarStyle: 'hiddenInset'`, so the three buttons are drawn
+  over the renderer at the top left of the column, on top of whatever is there.
+  The brand row is 54 tall and keeps its 54; the band is `pt-7` inside it, so
+  the mark and the wordmark sit under the buttons and the first nav row still
+  starts at y=54. It is the same 28 as the drag strip in `ClientLayout`.
+  Nothing else may be placed in that band, and the band stays in fullscreen
+  even though the buttons do not: the renderer cannot tell fullscreen from a
+  zoomed window, and reclaiming those 28px on a guess puts the buttons back on
+  the wordmark.
 - **Header.** A 24px serif title, a 12.5px subtitle in `text-secondary` saying
   what the screen is for, and the page's actions right-aligned on the same block.
   `ui/PageHeader` carries only its own `pb-3.5`; the 22px top gutter is the page
