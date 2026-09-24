@@ -101,6 +101,8 @@ describe('hermes-client, as recorded before the D2 refactor', () => {
       ['signInHermes', () => c.signInHermes(conn, { username: 'jeanbrasse', password: 'pw' })],
       ['fetchHermesBoard', () => c.fetchHermesBoard(conn)],
       ['fetchHermesBoard board', () => c.fetchHermesBoard(conn, 'b 1')],
+      // Added when main was merged in (#171 gave the board a tenant), recorded on main's own client first.
+      ['fetchHermesBoard tenant', () => c.fetchHermesBoard(conn, 'b 1', '/Users/demo/my project')],
       ['getHermesTask', () => c.getHermesTask(conn, 't 1')],
       ['createHermesTask', () => c.createHermesTask(conn, { title: 'x', column: 'todo' })],
       ['updateHermesTask', () => c.updateHermesTask(conn, 't1', { status: 'done' })],
