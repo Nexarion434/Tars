@@ -454,17 +454,21 @@ the old command ran it). The path now reaches a fixed, encoded script as data,
 in the environment, never in the code; only an existing local `.wav` is played,
 a UNC path is refused before it is opened (the lookup alone would send the
 account's NTLM hash to that host), and PowerShell is System32's, by its full
-path, with no profile (`electron/platform/sound.ts`).
+path, with no profile (`electron/platform/sound.ts`). A symlink or junction on
+the way that leads to a share or a device is refused as well. Known gap: a
+drive letter mapped to a share (`net use X: \\host\share`) passes the check as
+`X:\a.wav`, and playing it contacts that host.
 
 **Replacing a file someone is reading.** The atomic writes (§5, ETHOS 7) end in
 a rename over the live file, which Windows refuses while any process has it
 open, even to read. They are tried again for about a second and then fail with
 a message that names the file and says it may be held open by another program
-(`electron/platform/rename-replacing.ts`); `agents.json` goes the same way. What
-that buys depends on the machine's load, and was measured under twenty reading
-processes: a plain rename failed 198 times in 200 on this machine idle, and 16
-to 25 times in 60 at 51 to 82% CPU, where the retrying writes failed 0 times in
-60 each (three runs, 2026-09-25). Four hundred retrying writes all landed on
-the idle machine; at 73% CPU the reviewer measured 110 of 400 failing after
-their second. A save can therefore still fail on a busy machine, with an error
-that says so; no reader ever saw a partial file.
+(`electron/platform/rename-replacing.ts`); `agents.json` goes the same way.
+What holds in every measurement: the retry is bounded, it is never worse than
+a plain rename, and no reader ever saw a partial file. How much it buys does
+not reproduce: under twenty reading processes the numbers moved from one run
+to the next, and the file was at times held for several seconds (6 to 10 s,
+seen by the reviewer's probe; an antivirus or another holder, unconfirmed),
+which a one-second retry does not cover. A save can therefore still fail, with
+an error that names the file. The measurement is kept, opt-in:
+`TARS_STRESS=1 npx vitest run __tests__/electron/platform/rename-replacing.test.ts`.

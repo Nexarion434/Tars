@@ -47,7 +47,9 @@ const realReadLink: ReadLink = (p) => {
  * refusing a UNC path is for (the reviewer's gate). Walked a segment at a
  * time with lstat and readlink, which never open the target, so the answer
  * comes before anything is contacted. A loop, or more than 32 links, is
- * refused too.
+ * refused too. Known gap: a drive letter mapped to a share (`net use X:
+ * \\host\share`) is not a link, and `X:\a.wav` passes (Node has no drive-type
+ * query; SECURITY.md section 7).
  */
 function linkLeavesMachine(file: string, readLink: ReadLink): boolean {
   const w = path.win32;
