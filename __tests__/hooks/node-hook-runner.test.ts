@@ -41,6 +41,15 @@ import * as path from 'node:path';
  * 12. The Windows bugs kept: a backslash path pasted raw into JSON (A13) or
  *     into a query string (A14).
  * 13. An unknown event swallowed silently instead of failing loudly.
+ * 14. A transcript read whole: memory grows with the session, and past
+ *     Node's string limit (about 512 MB) the read throws and the output is
+ *     lost without a word (win-reviewer, item 2). The runner reads it from
+ *     the end, 1 MB at a time, and stops at the last assistant text.
+ * 15. That backwards read losing what the .sh finds: a record cut across a
+ *     chunk boundary, a multibyte character split in two, a last line still
+ *     being flushed. And when the last text is further from the end than
+ *     the cap (8 MB), the output is not posted, idle and agent-stopped still
+ *     are: documented here, since the .sh would have read the whole file.
  *
  * Every case below states the requests and stdout the .sh produces (read off
  * the script). Where bash, curl and jq exist (CI on Linux and macOS) the .sh
@@ -701,6 +710,81 @@ describe('the runner never blocks the CLI', () => {
     expect(run.stderr).toContain('no-such-event');
     expect(recorded).toEqual([]);
   }, 30_000);
+});
+
+describe('a long transcript', () => {
+  const MB = 1024 * 1024;
+  /** A user record of about 1 KB, with multibyte text so chunk edges fall inside characters. */
+  const filler = (i: number) => JSON.stringify({ type: 'user', message: { content: `step ${i} ${'é€😀'.repeat(120)}` } });
+  const toolOnly = (i: number) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: `echo ${i} ${'x'.repeat(900)}` } }] } });
+  const text = (t: string) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: t }] } });
+
+  function writeLines(file: string, parts: Array<{ count: number; line: (i: number) => string } | string>): void {
+    const fd = fs.openSync(file, 'w');
+    try {
+      for (const part of parts) {
+        if (typeof part === 'string') { fs.writeSync(fd, `${part}\n`); continue; }
+        let batch = '';
+        for (let i = 0; i < part.count; i++) {
+          batch += `${part.line(i)}\n`;
+          if (batch.length > MB) { fs.writeSync(fd, batch); batch = ''; }
+        }
+        if (batch) fs.writeSync(fd, batch);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  async function stopWith(file: string): Promise<{ run: Run; requests: Recorded[] }> {
+    const home = caseHome('long-transcript');
+    recorded = [];
+    seen = 0;
+    responder = () => ({});
+    const run = await runNode('on-stop', baseEnv(home, AGENT), JSON.stringify({ session_id: S, transcript_path: file }));
+    await settle(3);
+    return { run, requests: recorded };
+  }
+
+  it('14, 15. finds the last text at the end of a 40 MB transcript, past tool records and a partial line', async () => {
+    const file = path.join(tmp, 'long.jsonl');
+    const last = `The answer, ${'ü'.repeat(3000)} and more`;
+    writeLines(file, [
+      { count: 40 * 1024, line: filler },
+      text('an older answer'),
+      text(last),
+      { count: 300, line: toolOnly },
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"still flush',
+    ]);
+    expect(fs.statSync(file).size).toBeGreaterThan(40 * MB);
+
+    const { run, requests } = await stopWith(file);
+    expect(run.code).toBe(0);
+    expect(run.ms).toBeLessThan(10_000);
+    const output = requests.find(r => r.path === '/api/hooks/output');
+    expect(output?.body).toEqual({ agent_id: 'agent-1', session_id: S, output: Buffer.from(last).subarray(0, 4000).toString('utf8').replace(/\n+$/, '') });
+    expect(requests.map(r => r.path)).toEqual(['/api/hooks/output', '/api/hooks/status', '/api/hooks/agent-stopped']);
+  }, 60_000);
+
+  it('14. finds a text record that straddles the 1 MB chunk boundaries', async () => {
+    const file = path.join(tmp, 'straddle.jsonl');
+    const big = `start ${'z'.repeat(3 * MB)} end`;
+    writeLines(file, [{ count: 100, line: filler }, text(big), { count: 5, line: toolOnly }]);
+    const { requests } = await stopWith(file);
+    const output = requests.find(r => r.path === '/api/hooks/output');
+    expect((output?.body as { output: string }).output).toBe(big.slice(0, 4000));
+  }, 60_000);
+
+  it('15. posts no output when the last text is further than 8 MB from the end, and still settles the agent', async () => {
+    const file = path.join(tmp, 'beyond.jsonl');
+    writeLines(file, [text('too far back'), { count: 9 * 1024, line: toolOnly }]);
+    expect(fs.statSync(file).size).toBeGreaterThan(8 * MB);
+
+    const { run, requests } = await stopWith(file);
+    expect(run.code).toBe(0);
+    expect(requests.map(r => r.path)).toEqual(['/api/hooks/status', '/api/hooks/agent-stopped']);
+    expect(run.stdout).toBe(CONTINUE);
+  }, 60_000);
 });
 
 describe('the runner logs where the .sh logs', () => {

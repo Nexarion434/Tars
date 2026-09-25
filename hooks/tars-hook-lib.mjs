@@ -234,6 +234,28 @@ export async function postWithRetry(url, token, body) {
   return result;
 }
 
+/** How much of a transcript is read at a time, and at most, from its end. */
+export const TRANSCRIPT_CHUNK_BYTES = 1024 * 1024;
+export const TRANSCRIPT_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The text of one transcript record as the .sh reads it: '' when it is not an
+ * assistant record or holds no text, JQ_ERROR where jq would stop on it.
+ */
+function assistantText(record) {
+  const type = jqPath(record, ['type']);
+  if (type === JQ_ERROR) return JQ_ERROR;
+  if (type !== 'assistant') return '';
+  let content = jqPath(record, ['message', 'content']);
+  if (content === JQ_ERROR) return JQ_ERROR;
+  if (content === null || content === false) content = [];
+  if (!Array.isArray(content)) return jqToString(content);
+  return content
+    .filter(block => block !== null && typeof block === 'object' && !Array.isArray(block) && block.type === 'text')
+    .map(block => (block.text === undefined || block.text === null ? '' : typeof block.text === 'string' ? block.text : JSON.stringify(block.text)))
+    .join('\n');
+}
+
 /**
  * The last assistant text of a transcript, as on-stop.sh, session-end.sh and
  * task-completed.sh read it with
@@ -245,43 +267,62 @@ export async function postWithRetry(url, token, body) {
  *     | select(length>0) ] | last // empty' | head -c 4000
  *
  * Line by line, a line that does not parse skipped (Claude Code may still be
- * flushing the last one); a record that parses to something jq cannot index
- * voids the whole run, as the jq error does.
+ * flushing the last one), a record jq cannot index ending the run with
+ * nothing, as the jq error does.
+ *
+ * Read from the end rather than whole: a transcript grows with its session,
+ * and read whole past Node's string limit (about 512 MB) it throws and the
+ * output is lost without a word. Chunks of 1 MB are read backwards, split on
+ * the newline byte (never inside a character), and the scan stops at the
+ * last record with text. It gives up at 8 MB from the end: a last answer
+ * followed by that much tool traffic is not posted (the .sh would have found
+ * it), and the Stop hook still posts idle and agent-stopped. The one other
+ * difference: a record jq cannot index before the last text is not seen, so
+ * it no longer voids the answer.
  */
 export function lastAssistantMessage(file) {
-  let text;
+  let fd;
   try {
-    text = fs.readFileSync(file, 'utf8');
+    fd = fs.openSync(file, 'r');
   } catch {
     return '';
   }
-  const found = [];
-  for (const line of text.split('\n')) {
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      continue;
+  try {
+    const size = fs.fstatSync(fd).size;
+    let pos = size;
+    // Bytes read but not yet scanned: the start of the window, whose first
+    // line may continue in the chunk before it.
+    let pending = Buffer.alloc(0);
+    while (pos > 0 && size - pos < TRANSCRIPT_MAX_BYTES) {
+      const length = Math.min(TRANSCRIPT_CHUNK_BYTES, pos, TRANSCRIPT_MAX_BYTES - (size - pos));
+      pos -= length;
+      const chunk = Buffer.alloc(length);
+      fs.readSync(fd, chunk, 0, length, pos);
+      pending = Buffer.concat([chunk, pending]);
+      // Complete lines only, unless this is the start of the file.
+      const cut = pos > 0 ? pending.indexOf(0x0a) : -1;
+      if (pos > 0 && cut < 0) continue;
+      const complete = pos > 0 ? pending.subarray(cut + 1) : pending;
+      pending = pos > 0 ? pending.subarray(0, cut + 1) : Buffer.alloc(0);
+      const lines = complete.toString('utf8').split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        let record;
+        try {
+          record = JSON.parse(lines[i]);
+        } catch {
+          continue;
+        }
+        const text = assistantText(record);
+        if (text === JQ_ERROR) return '';
+        if (Array.from(text).length > 0) return subst(headBytes(`${text}\n`, 4000));
+      }
     }
-    const type = jqPath(record, ['type']);
-    if (type === JQ_ERROR) return '';
-    if (type !== 'assistant') continue;
-    let content = jqPath(record, ['message', 'content']);
-    if (content === JQ_ERROR) return '';
-    if (content === null || content === false) content = [];
-    let joined;
-    if (Array.isArray(content)) {
-      joined = content
-        .filter(block => block !== null && typeof block === 'object' && !Array.isArray(block) && block.type === 'text')
-        .map(block => (block.text === undefined || block.text === null ? '' : typeof block.text === 'string' ? block.text : JSON.stringify(block.text)))
-        .join('\n');
-    } else {
-      joined = jqToString(content);
-    }
-    if (Array.from(joined).length > 0) found.push(joined);
+    return '';
+  } catch {
+    return '';
+  } finally {
+    try { fs.closeSync(fd); } catch { /* already closed */ }
   }
-  if (found.length === 0) return '';
-  return subst(headBytes(`${found[found.length - 1]}\n`, 4000));
 }
 
 /** Print what the hook answers the CLI, and leave once it is written (a pipe on Windows is asynchronous). */
