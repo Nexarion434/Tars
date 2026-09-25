@@ -12,6 +12,7 @@ import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-mana
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { spawnAgentPty, agentShell } from './agent-pty';
+import { killPty } from './pty-kill';
 import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
@@ -204,7 +205,7 @@ export function killStalePty(agent: AgentStatus): boolean {
   const existing = ptyProcesses.get(agent.ptyId);
   if (existing) {
     try {
-      existing.kill();
+      killPty(existing);
     } catch (err) {
       console.warn(`Failed to kill stale PTY for agent ${agent.id}:`, err);
     }
@@ -1026,7 +1027,7 @@ export async function startCliInTerminal(
   const shell = shellId ? deps.ptyProcesses.get(shellId) : undefined;
   if (shellId) deps.ptyProcesses.delete(shellId);
   agent.ptyId = undefined;
-  shell?.kill();
+  if (shell) killPty(shell);
 
   cliToStart.set(agent, launch);
   let opened: string;

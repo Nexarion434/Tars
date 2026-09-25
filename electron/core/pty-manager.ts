@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
 import { resolveShell, shellArgs } from '../platform';
+import { killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { BrowserWindow } from 'electron';
@@ -17,7 +18,7 @@ export function killPty(ptyId: string, isQuick = false): boolean {
   const processes = isQuick ? quickPtyProcesses : ptyProcesses;
   const ptyProcess = processes.get(ptyId);
   if (ptyProcess) {
-    ptyProcess.kill();
+    endTerminal(ptyProcess);
     processes.delete(ptyId);
     return true;
   }
@@ -31,7 +32,7 @@ export function killAllPty(): void {
   for (const map of allMaps) {
     for (const [id, proc] of map) {
       try {
-        proc.kill();
+        endTerminal(proc);
         killed++;
       } catch (err) {
         console.warn(`Failed to kill PTY ${id}:`, err);

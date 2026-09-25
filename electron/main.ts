@@ -53,6 +53,7 @@ import {
   setFieldProbe,
 } from './core/pty-manager';
 import { lastLocalCommandAt } from './services/agent-truth';
+import { killPty } from './core/pty-kill';
 
 import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
@@ -527,7 +528,7 @@ app.whenReady().then(async () => {
         if (agent.ptyId) {
           const ptyProcess = ptyProcesses.get(agent.ptyId);
           if (ptyProcess) {
-            ptyProcess.kill();
+            killPty(ptyProcess);
           }
           ptyProcesses.delete(agent.ptyId);
         }

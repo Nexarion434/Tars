@@ -28,6 +28,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { killPty } from '../core/pty-kill';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -232,7 +233,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('pty:kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = ptyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       ptyProcesses.delete(id);
       return { success: true };
     }
@@ -599,7 +600,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // guarantees they're in the process environment from the start.
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
-        oldPty.kill();
+        killPty(oldPty);
         ptyProcesses.delete(agent.ptyId!);
       }
 
@@ -1049,7 +1050,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // the next start/dispatch respawns with the new provider's env.
         const staleProviderPty = ptyProcesses.get(agent.ptyId);
         if (staleProviderPty) {
-          staleProviderPty.kill();
+          killPty(staleProviderPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1075,7 +1076,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // with the old binary.
         const staleCliPty = ptyProcesses.get(agent.ptyId);
         if (staleCliPty) {
-          staleCliPty.kill();
+          killPty(staleCliPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1154,7 +1155,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
       agent.ptyId = undefined;
@@ -1210,7 +1211,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
       // Nullify so pending onExit callbacks won't mutate state
@@ -1408,7 +1409,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('skill:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = skillPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       skillPtyProcesses.delete(id);
       return { success: true };
     }
@@ -1602,7 +1603,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('plugin:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = pluginPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       pluginPtyProcesses.delete(id);
       return { success: true };
     }
@@ -3004,7 +3005,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:killPty', async (_event, { ptyId }: { ptyId: string }) => {
     const ptyProcess = quickPtyProcesses.get(ptyId);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       quickPtyProcesses.delete(ptyId);
       return { success: true };
     }
