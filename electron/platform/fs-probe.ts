@@ -16,9 +16,18 @@ export const realFs: FsProbe = {
   isFile(p) {
     try {
       return fs.statSync(p).isFile();
-    } catch {
-      // Missing, unreadable or a broken link: not a file we can start.
-      return false;
+    } catch (err) {
+      // A Windows app execution alias (%LOCALAPPDATA%\Microsoft\WindowsApps\
+      // wt.exe, and pwsh.exe or python.exe from the Store): a link Node cannot
+      // follow into its package (stat EACCES, measured), which CreateProcess
+      // starts all the same. Missing, unreadable otherwise, or a broken link:
+      // not a file we can start.
+      if ((err as NodeJS.ErrnoException)?.code !== 'EACCES') return false;
+      try {
+        return fs.lstatSync(p).isSymbolicLink();
+      } catch {
+        return false;
+      }
     }
   },
   readFile(p) {

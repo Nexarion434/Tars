@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
+import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
   fetchHermesMemoryFiles,
@@ -62,16 +63,8 @@ export interface SourceStatus {
 
 /* ── Local sources ─────────────────────────────────────── */
 
-function candidateProjectDirs(projectPath: string): string[] {
-  return [...new Set([
-    projectPath.replace(/[^a-zA-Z0-9]/g, '-'),
-    projectPath.replace(/[/.]/g, '-'),
-    projectPath.replace(/\//g, '-'),
-  ])];
-}
-
 export function projectMemoryDir(projectPath: string): string | null {
-  for (const dir of candidateProjectDirs(projectPath)) {
+  for (const dir of claudeProjectDirNames(projectPath)) {
     const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, 'memory');
     if (fs.existsSync(candidate)) return candidate;
   }
@@ -413,7 +406,7 @@ export function writeProjectMemory(projectPath: string, content: string, file = 
 
   let dir = projectMemoryDir(projectPath);
   if (!dir) {
-    dir = path.join(CLAUDE_PROJECTS_DIR, projectPath.replace(/[^a-zA-Z0-9]/g, '-'), 'memory');
+    dir = path.join(CLAUDE_PROJECTS_DIR, encodeClaudeProjectDir(projectPath), 'memory');
   }
   try {
     fs.mkdirSync(dir, { recursive: true });
