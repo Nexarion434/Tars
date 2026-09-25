@@ -43,6 +43,7 @@ vi.mock('../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() =>
 import { registerHooksRoutes } from '../../electron/services/api-routes/hooks-routes';
 import { agents } from '../../electron/core/agent-manager';
 import { ClaudeProvider } from '../../electron/providers/claude-provider';
+import { nodeHookCommand } from '../../electron/utils/hook-command';
 import type { RouteApp, RouteContext, RouteRequest } from '../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../electron/types';
 import { sid } from '../fixtures/session-id';
@@ -456,7 +457,11 @@ describe('the hook reaches every claude-family CLI', () => {
       await provider.configureHooks(HOOKS_DIR);
 
       const settings = JSON.parse(fs.readFileSync(path.join(provider.configDir, 'settings.json'), 'utf-8'));
-      expect(settings.hooks.StopFailure?.[0]?.hooks?.[0]?.command).toBe(HOOK);
+      // On win32 the CLI runs the Node runner for the same event (decision D1, hook-command.ts).
+      const expected = process.platform === 'win32'
+        ? nodeHookCommand(path.join(HOOKS_DIR, 'tars-hook.mjs'), 'stop-failure')
+        : HOOK;
+      expect(settings.hooks.StopFailure?.[0]?.hooks?.[0]?.command).toBe(expected);
     } finally {
       restoreHome();
     }

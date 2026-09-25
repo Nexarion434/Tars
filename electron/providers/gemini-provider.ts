@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
+import { usesNodeHooks } from '../utils/hook-command';
+import { configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -147,10 +149,15 @@ export class GeminiProvider implements CLIProvider {
     };
   }
 
-  async configureHooks(hooksDir: string): Promise<void> {
+  async configureHooks(hooksDir: string, platform: NodeJS.Platform = process.platform): Promise<void> {
     const geminiHooksDir = path.join(hooksDir, 'gemini');
     if (!fs.existsSync(geminiHooksDir)) {
       console.log('Gemini hooks directory not found at', geminiHooksDir);
+      return;
+    }
+    // Windows: the Node runner, not the .sh (decision D1, see hook-command.ts).
+    if (usesNodeHooks(platform)) {
+      configureGeminiNodeHooks(this.configDir, hooksDir);
       return;
     }
 
