@@ -23,15 +23,16 @@ export function encodeClaudeProjectDir(projectPath: string): string {
  * own first, then the two spellings Tars used to read (`/` and `.` to `-`, and
  * `/` alone, as memory-hub tried), so nothing found before is lost.
  *
- * A spelling that is not one folder name is never tried. On win32 the old
- * spellings of a Windows path keep `\` and `:`: they name no folder Claude
- * writes, and `/` alone left `C:\p\..\..\x` able to walk out of
- * ~/.claude/projects, where memory-hub writes. darwin/linux: no spelling holds
- * a `/`, so nothing is dropped there.
+ * A spelling that is not one folder name is never tried. `/` alone turns `..`
+ * into `..`, which is the parent of ~/.claude/projects, where memory-hub
+ * writes: a name of dots only is dropped on every platform (the reviewer's
+ * gate). On win32 the old spellings of a Windows path also keep `\` and `:`:
+ * they name no folder Claude writes, and `C:\p\..\..\x` would walk out.
+ * darwin/linux: no spelling holds a `/`, so only the dots are dropped there.
  */
 export function claudeProjectDirNames(projectPath: string, platform: NodeJS.Platform = process.platform): string[] {
   const legacy = [projectPath.replace(/[/.]/g, '-'), projectPath.replace(/\//g, '-')];
-  const oneFolder = platform === 'win32' ? (n: string) => !/[\\/:]/.test(n) && !/^\.+$/.test(n) : () => true;
+  const oneFolder = (n: string) => !/^\.+$/.test(n) && !(platform === 'win32' && /[\\/:]/.test(n));
   return [...new Set([encodeClaudeProjectDir(projectPath), ...legacy.filter(oneFolder)])];
 }
 

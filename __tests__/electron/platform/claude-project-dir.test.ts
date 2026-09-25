@@ -77,6 +77,17 @@ describe('2, 3. the folder names to read, Claude\'s first', () => {
     }
   });
 
+  // The reviewer's gate: on darwin/linux `project_path: ".."` gave the old spelling `..`,
+  // and memory-hub wrote into ~/.claude/memory. A name of dots only is never a folder to try.
+  it('darwin/linux: never a spelling made of dots only', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(claudeProjectDirNames('..', platform)).toEqual(['--']);
+      expect(claudeProjectDirNames('.', platform)).toEqual(['-']);
+      expect(claudeProjectDirNames('...', platform)).toEqual(['---']);
+      for (const name of claudeProjectDirNames('/a/../b', platform)) expect(name).not.toMatch(/^\.+$/);
+    }
+  });
+
   it('win32: Claude\'s alone', () => {
     expect(claudeProjectDirNames('C:\\Users\\x\\my_proj.v2', 'win32')).toEqual(['C--Users-x-my-proj-v2']);
   });
