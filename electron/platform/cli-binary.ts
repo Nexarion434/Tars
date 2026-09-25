@@ -52,8 +52,32 @@ const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 const NODE_SCRIPT = /\.(c|m)?js$/i;
 const w = path.win32;
 
+/**
+ * Bounds on reading a shim. npm's and Node's shims are about 20 lines and
+ * under 1 KB; anything past these is not one, and a hostile one must not
+ * cost more than a few milliseconds (win-reviewer, 2026-09-25: 60 lines of
+ * `SET "_prog=%_prog%"` used to expand to 60^4 values).
+ */
+const MAX_SHIM_CHARS = 64 * 1024;
+const MAX_SHIM_LINES = 256;
+/** How many values a shim's program or target may take across its branches. */
+const MAX_SHIM_VALUES = 16;
+const MAX_DETAIL = 500;
+
 function fail(reason: CliBinaryFailureReason, name: string, detail: string, file?: string): CliBinaryFailure {
-  return file === undefined ? { ok: false, reason, name, detail } : { ok: false, reason, name, path: file, detail };
+  const bounded = detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL)}...` : detail;
+  return file === undefined ? { ok: false, reason, name, detail: bounded } : { ok: false, reason, name, path: file, detail: bounded };
+}
+
+/**
+ * A drive-absolute (`C:\...`) or UNC (`\\server\share\...`) path with no
+ * other colon. Anything else Windows would resolve against the current
+ * directory or drive (`bin`, `.`, `\dir`, `C:dir`), which is a planting hole,
+ * or read as an NTFS alternate data stream (`claude.exe:evil`).
+ */
+function isPlainAbsolute(p: string): boolean {
+  if (/^[a-z]:[\\/]/i.test(p)) return !p.slice(2).includes(':');
+  return /^[\\/]{2}[^\\/]/.test(p) && !p.includes(':');
 }
 
 /** PATHEXT as lowercase extensions, in order. */
@@ -63,9 +87,9 @@ function pathExts(env: Env): string[] {
   return exts.length ? exts : DEFAULT_PATHEXT.toLowerCase().split(';');
 }
 
-/** The absolute directories of the PATH, unquoted. Relative entries would search the current directory. */
+/** The plain absolute directories of the PATH, unquoted (see isPlainAbsolute). */
 function pathDirs(env: Env): string[] {
-  return pathEntries(getPath(env, 'win32'), 'win32').map(unquoteEntry).filter((d) => w.isAbsolute(d) && /^([a-z]:|\\\\)/i.test(d));
+  return pathEntries(getPath(env, 'win32'), 'win32').map(unquoteEntry).filter(isPlainAbsolute);
 }
 
 /**
@@ -96,8 +120,11 @@ export function resolveCliBinary(
   }
   const exts = pathExts(env);
   const hasSeparator = /[\\/]/.test(given);
-  if (hasSeparator && !(w.isAbsolute(given) && /^([a-z]:|\\\\)/i.test(given))) {
-    return fail('invalid-name', name, 'A relative path: give the CLI as a bare name or an absolute path.');
+  if (!hasSeparator && given.includes(':')) {
+    return fail('invalid-name', name, 'A colon in a bare name: a drive-relative path or an NTFS stream, not a command.');
+  }
+  if (hasSeparator && !isPlainAbsolute(given)) {
+    return fail('invalid-name', name, 'Not a plain absolute path (a relative path, or a colon past the drive letter): give the CLI as a bare name or an absolute path.');
   }
 
   const dirs = hasSeparator ? [w.dirname(given)] : pathDirs(env);
@@ -177,7 +204,9 @@ function readShim(shim: string, name: string, env: Env, fs: FsProbe): CliBinary 
   } catch (err) {
     return unrecognised(`it could not be read (${err instanceof Error ? err.message : String(err)})`);
   }
+  if (text.length > MAX_SHIM_CHARS) return unrecognised(`it is ${text.length} characters, larger than any npm shim`);
   const lines = text.split(/\r?\n/);
+  if (lines.length > MAX_SHIM_LINES) return unrecognised(`it has ${lines.length} lines, more than any npm shim`);
   const invocation = [...lines].reverse().find((l) => l.includes('%*'));
   if (!invocation) return unrecognised('no line passes the arguments on (%*)');
 
@@ -189,26 +218,50 @@ function readShim(shim: string, name: string, env: Env, fs: FsProbe): CliBinary 
 
   const dir = w.dirname(shim);
   const sets = assignments(lines);
-  /** Every value a token can take: %VAR% through its assignments, %~dp0 and %dp0% as the shim's folder. */
-  const expand = (token: string, depth = 0): string[] => {
+  /**
+   * Every value a token can take: %VAR% through its assignments (four levels
+   * deep), %~dp0 and %dp0% as the shim's folder. Deduplicated and memoised per
+   * token and depth, so self- or mutually-referencing variables cost a few
+   * steps; null once more than MAX_SHIM_VALUES distinct values appear.
+   */
+  const memo = new Map<string, string[] | null>();
+  const expand = (token: string, depth = 0): string[] | null => {
+    const key = `${depth}\0${token}`;
+    const known = memo.get(key);
+    if (known !== undefined) return known;
     const whole = /^%([A-Za-z_][\w]*)%$/.exec(token);
-    if (whole && whole[1].toLowerCase() !== 'dp0' && depth < 4) {
-      const values = sets.get(whole[1].toLowerCase());
-      return values ? values.flatMap((v) => expand(v, depth + 1)) : [token];
+    const values = whole && whole[1].toLowerCase() !== 'dp0' && depth < 4 ? sets.get(whole[1].toLowerCase()) : undefined;
+    let result: string[] | null;
+    if (values) {
+      const acc = new Set<string>();
+      result = [];
+      for (const value of new Set(values)) {
+        const sub = expand(value, depth + 1);
+        if (sub) for (const s of sub) acc.add(s);
+        if (!sub || acc.size > MAX_SHIM_VALUES) { result = null; break; }
+      }
+      if (result) result = [...acc];
+    } else {
+      // A function, not a replacement string: a folder named `x$&y` or `x$'y`
+      // would otherwise be read as a pattern and resolve somewhere else.
+      const out = token.replace(/%~dp0|%dp0%/gi, () => `${dir}\\`);
+      result = [/%/.test(out) ? out : w.normalize(out)];
     }
-    const out = token.replace(/%~dp0|%dp0%/gi, `${dir}\\`);
-    return [/%/.test(out) ? out : w.normalize(out)];
+    memo.set(key, result);
+    return result;
   };
+  const tooMany = () => unrecognised(`its variables take more than ${MAX_SHIM_VALUES} values`);
 
   // A program must be node whichever branch of the shim set it; a target is
   // its first assignment, the shim's default. Node's npx.cmd later switches to
   // a globally installed npm's npx-cli.js when one exists; that override is
-  // not followed (the global npm's own npx.cmd, in %APPDATA%\npm, is found
-  // first on the PATH Tars builds anyway).
+  // not followed: `npx` then runs the npx-cli.js bundled with that Node.
   if (tokens.length === 1) {
-    const [target] = expand(tokens[0]);
+    const targets = expand(tokens[0]);
+    if (!targets) return tooMany();
+    const [target] = targets;
     const ext = w.extname(target).toLowerCase();
-    if (/%/.test(target) || !w.isAbsolute(target) || (ext !== '.exe' && ext !== '.com')) {
+    if (/%/.test(target) || !isPlainAbsolute(target) || (ext !== '.exe' && ext !== '.com')) {
       return unrecognised(`it starts ${tokens[0]}, not a native .exe beside it`);
     }
     if (!fs.isFile(target)) return fail('shim-target-missing', name, `${shim} starts ${target}, which is not there.`, shim);
@@ -217,10 +270,13 @@ function readShim(shim: string, name: string, env: Env, fs: FsProbe): CliBinary 
 
   const [program, scriptToken] = tokens;
   const programs = expand(program);
+  if (!programs) return tooMany();
   const isNode = (p: string) => ['node', 'node.exe'].includes(w.basename(p).toLowerCase());
   if (!programs.every(isNode)) return unrecognised(`it runs ${programs.join(' or ')}, not node`);
-  const [script] = expand(scriptToken);
-  if (/%/.test(script) || !w.isAbsolute(script) || !NODE_SCRIPT.test(script)) {
+  const scripts = expand(scriptToken);
+  if (!scripts) return tooMany();
+  const [script] = scripts;
+  if (/%/.test(script) || !isPlainAbsolute(script) || !NODE_SCRIPT.test(script)) {
     return unrecognised(`its script ${scriptToken} is not a .js file beside it`);
   }
   if (!fs.isFile(script)) return fail('shim-target-missing', name, `${shim} runs ${script}, which is not there.`, shim);

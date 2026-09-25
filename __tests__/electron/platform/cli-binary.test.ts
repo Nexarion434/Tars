@@ -41,6 +41,20 @@ import { realFs, type FsProbe } from '../../../electron/platform/fs-probe';
  * 14. The real shim formats on this machine (npm's cmd-shim with a node
  *    target, with a native exe target, and Node's own npx.cmd) are not
  *    recognised.
+ *
+ * Added at win-reviewer's gate (2026-09-25), written before the fixes:
+ * 15. The disk is asked about a relative path at all: Windows resolves it
+ *    against the current directory, so a relative PATH entry (`.`, `bin`,
+ *    `\dir`) finds a planted claude.exe. The fake disk below resolves
+ *    relative paths against a fake cwd that holds one, and records the probe.
+ * 16. A shim folder whose name holds `$&`, `$'` or `` $` `` resolves elsewhere:
+ *    %dp0% replaced through a replacement string reads them as patterns.
+ * 17. A shim whose variables reference themselves or each other blows up:
+ *    60 lines of `SET "_prog=%_prog%"` gave 60^4 values (seconds of blocking,
+ *    and a failure message joining them all). It must answer in under 50 ms
+ *    with a bounded message; an oversized shim file is refused unread past a cap.
+ * 18. A `:` beyond the drive letter reaches the disk: `claude:evil` (or a
+ *    shim script `x:evil.js`) names an NTFS alternate data stream.
  */
 
 // The three formats as npm 10 / Node 22 write them, copied from this machine
@@ -77,15 +91,30 @@ const LOCAL = `${HOME}\\.local\\bin`;
 const NODEJS = 'C:\\Program Files (x86)\\nodejs';
 
 /** A Windows disk in memory: case-insensitive, backslash paths, contents readable. */
-function fakeWinFs(files: Record<string, string>): FsProbe & { reads: string[] } {
+const FAKE_CWD = 'C:\\cwd-plant';
+const isDriveOrUnc = (p: string) => /^([a-z]:\\|\\\\)/i.test(p);
+
+/**
+ * A Windows disk in memory: case-insensitive, backslash paths, contents
+ * readable. A relative path resolves against FAKE_CWD, as Windows would
+ * against the current directory, and is recorded.
+ */
+function fakeWinFs(files: Record<string, string>): FsProbe & { reads: string[]; relativeProbes: string[] } {
   const map = new Map(Object.entries(files).map(([k, v]) => [k.toLowerCase(), v]));
   const reads: string[] = [];
+  const relativeProbes: string[] = [];
+  const onDisk = (p: string) => {
+    if (isDriveOrUnc(p)) return p;
+    relativeProbes.push(p);
+    return path.win32.resolve(FAKE_CWD, p);
+  };
   return {
     reads,
-    isFile: (p) => map.has(p.toLowerCase()),
+    relativeProbes,
+    isFile: (p) => map.has(onDisk(p).toLowerCase()),
     readFile: (p) => {
       reads.push(p);
-      const v = map.get(p.toLowerCase());
+      const v = map.get(onDisk(p).toLowerCase());
       if (v === undefined) throw Object.assign(new Error(`ENOENT ${p}`), { code: 'ENOENT' });
       return v;
     },
@@ -183,8 +212,12 @@ describe('win32: bare names on the PATH', () => {
     expect(resolveCliBinary('npx', env(`"${NODEJS}"`), 'win32', disk)).toMatchObject({ ok: true, file: `${NODEJS}\\node.exe` });
   });
 
-  it('9. relative PATH entries are not searched', () => {
-    expect(resolveCliBinary('claude', env('.;bin;cwd-plant'), 'win32', disk)).toMatchObject({ ok: false, reason: 'not-found' });
+  it('9, 15. relative PATH entries are not searched: the claude.exe planted in the cwd is never found or probed', () => {
+    const probing = fakeWinFs(DISK);
+    for (const entry of ['.', 'bin\\..', '\\cwd-plant', 'C:cwd-plant', '.\\']) {
+      expect([entry, resolveCliBinary('claude', env(entry), 'win32', probing)]).toMatchObject([entry, { ok: false, reason: 'not-found' }]);
+    }
+    expect(probing.relativeProbes).toEqual([]);
   });
 
   it('2. only the sh shim anywhere: a typed failure naming it, never the file', () => {
@@ -249,6 +282,91 @@ describe('win32: typed failures, never a guess', () => {
 
   it.each(['', '   ', 'cl"aude', '.\\bin\\claude', 'bin/claude', 'a|b', 'a\0b'])('12. refuses the name %j', (name) => {
     expect(resolveCliBinary(name, env(NODEJS), 'win32', disk)).toMatchObject({ ok: false, reason: 'invalid-name' });
+  });
+
+  it.each(['claude:evil', 'claude.exe:evil', 'C:\\ads\\claude:evil', 'C:\\ads\\claude.exe:evil', 'C:\\ads:x\\claude.exe', 'C:', 'c:claude'])(
+    '18. refuses a colon other than the drive letter\'s in %j, before any disk access',
+    (name) => {
+      const probing = fakeWinFs({ ...DISK, 'C:\\ads\\claude:evil.exe': 'MZ', 'C:\\ads\\claude.exe:evil': 'MZ', 'C:\\ads:x\\claude.exe': 'MZ' });
+      let touched = 0;
+      const counting: FsProbe = { isFile: (p) => { touched++; return probing.isFile(p); }, readFile: probing.readFile };
+      expect(resolveCliBinary(name, env(`C:\\ads;${NODEJS}`), 'win32', counting)).toMatchObject({ ok: false, reason: 'invalid-name' });
+      expect(touched).toBe(0);
+    },
+  );
+
+  it('18. a drive colon and a UNC path are still fine', () => {
+    expect(resolveCliBinary('C:\\both\\tool.exe', env(''), 'win32', disk)).toMatchObject({ ok: true });
+    expect(resolveCliBinary('\\\\server\\share\\tool.exe', env(''), 'win32', fakeWinFs({ '\\\\server\\share\\tool.exe': 'MZ' })))
+      .toMatchObject({ ok: true, file: '\\\\server\\share\\tool.exe' });
+  });
+
+  it('18. a PATH entry holding a stream colon is not searched', () => {
+    const probing = fakeWinFs({ 'C:\\ads:x\\claude.exe': 'MZ' });
+    expect(resolveCliBinary('claude', env('C:\\ads:x'), 'win32', probing)).toMatchObject({ ok: false, reason: 'not-found' });
+  });
+
+  it('18. a shim whose script names a stream is not read through', () => {
+    const probing = fakeWinFs({
+      'C:\\ads\\evil.cmd': CMD_SHIM_NODE('x:evil.js'),
+      'C:\\ads\\x:evil.js': '',
+      'C:\\ads\\node.exe': 'MZ',
+    });
+    expect(resolveCliBinary('C:\\ads\\evil.cmd', env(''), 'win32', probing)).toMatchObject({ ok: false, reason: 'unrecognised-shim' });
+  });
+});
+
+describe('win32: shim folders with $ patterns in their name (16)', () => {
+  it.each(['C:\\x$&y\\npm', "C:\\x$'y\\npm", 'C:\\x$`y\\npm', 'C:\\x$$y\\npm', 'C:\\x$1y\\npm'])('%s', (dir) => {
+    const disk = fakeWinFs({
+      [`${dir}\\q.cmd`]: CMD_SHIM_NODE('node_modules\\q\\cli.js'),
+      [`${dir}\\node_modules\\q\\cli.js`]: '',
+      [`${dir}\\node.exe`]: 'MZ',
+      [`${dir}\\e.cmd`]: CMD_SHIM_EXE('node_modules\\e\\e.exe'),
+      [`${dir}\\node_modules\\e\\e.exe`]: 'MZ',
+    });
+    expect(resolveCliBinary('q', env(dir), 'win32', disk)).toEqual({
+      ok: true, file: `${dir}\\node.exe`, prefixArgs: [`${dir}\\node_modules\\q\\cli.js`], via: 'npm-shim-node',
+    });
+    expect(resolveCliBinary('e', env(dir), 'win32', disk)).toEqual({
+      ok: true, file: `${dir}\\node_modules\\e\\e.exe`, prefixArgs: [], via: 'npm-shim-exe',
+    });
+  });
+});
+
+describe('win32: hostile shims are bounded (17)', () => {
+  const invocation = 'endLocal & "%_prog%"  "%dp0%\\x.js" %*';
+  const time = (fn: () => unknown) => { const t = performance.now(); const out = fn(); return { out, ms: performance.now() - t }; };
+  const shimDisk = (text: string) => fakeWinFs({ 'C:\\h\\h.cmd': text, 'C:\\h\\x.js': '', 'C:\\h\\node.exe': 'MZ' });
+
+  it.each([
+    ['60 self-references', [...Array(60)].map(() => 'SET "_prog=%_prog%"').join('\r\n')],
+    ['60 mutual references', [...Array(60)].map((_, i) => `SET "_prog=%v${i % 3}%"\r\nSET "v${i % 3}=%_prog%"`).join('\r\n')],
+    ['400 distinct values', [...Array(400)].map((_, i) => `SET "_prog=C:\\n${i}\\node.exe"`).join('\r\n')],
+    ['4 variables of 20 values chained', [...Array(20)].flatMap((_, i) => [
+      `SET "_prog=%a%"`, `SET "a=%b${i}%"`, `SET "b${i}=%c%"`, `SET "c=C:\\n${i}\\node.exe"`,
+    ]).join('\r\n')],
+  ])('%s: answers in under 50 ms with a bounded message', (_label, sets) => {
+    const disk = shimDisk(`@ECHO off\r\n${sets}\r\n${invocation}\r\n`);
+    resolveCliBinary('C:\\h\\h.cmd', env(''), 'win32', disk); // warm the regexes
+    const { out, ms } = time(() => resolveCliBinary('C:\\h\\h.cmd', env(''), 'win32', disk));
+    expect(ms).toBeLessThan(50);
+    if (!(out as { ok: boolean }).ok) expect((out as { detail: string }).detail.length).toBeLessThanOrEqual(600);
+  });
+
+  it('an oversized shim is refused without being parsed', () => {
+    const big = `@ECHO off\r\n${'REM padding\r\n'.repeat(20_000)}"%dp0%\\x.exe" %*\r\n`;
+    const disk = fakeWinFs({ 'C:\\h\\big.cmd': big, 'C:\\h\\x.exe': 'MZ' });
+    const { out, ms } = time(() => resolveCliBinary('C:\\h\\big.cmd', env(''), 'win32', disk));
+    expect(out).toMatchObject({ ok: false, reason: 'unrecognised-shim' });
+    expect(ms).toBeLessThan(50);
+    expect((out as { detail: string }).detail.length).toBeLessThanOrEqual(600);
+  });
+
+  it('a failure message stays bounded whatever the name', () => {
+    const out = resolveCliBinary(`C:\\${'d'.repeat(5000)}\\claude.exe`, env(''), 'win32', fakeWinFs({}));
+    expect(out).toMatchObject({ ok: false, reason: 'not-found' });
+    expect((out as { detail: string }).detail.length).toBeLessThanOrEqual(600);
   });
 });
 
