@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
@@ -264,7 +265,10 @@ export class ClaudeProvider implements CLIProvider {
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
       // execCliSync resolves the name first: on Windows claude is an npm
       // claude.cmd or a claude.exe, and a bare name finds only the latter.
-      execCliSync('claude', ['mcp', 'add', '-s', 'user', name, command, ...args], {
+      // `--` before the server's command (claude mcp add --help): without it
+      // a flag of the server's own, gws's `-s drive`, is read as claude's
+      // scope and the add fails ("Invalid scope: drive").
+      execCliSync('claude', ['mcp', 'add', '-s', 'user', name, '--', command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
@@ -322,7 +326,7 @@ export class ClaudeProvider implements CLIProvider {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
         const existing = config?.mcpServers?.[name];
         if (!existing?.args?.length) continue;
-        if (existing.args[existing.args.length - 1] === expectedServerPath) return true;
+        if (mcpEntryRuns(existing, expectedServerPath)) return true;
       } catch {
         // try the next candidate
       }

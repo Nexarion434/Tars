@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
@@ -178,7 +179,7 @@ export class OpenCodeProvider implements CLIProvider {
       if (!config.mcpServers || typeof config.mcpServers !== 'object') return false;
       const server = config.mcpServers[name];
       if (!server) return false;
-      return JSON.stringify(server).includes(expectedServerPath);
+      return mcpEntryRuns(server, expectedServerPath);
     } catch {
       return false;
     }

@@ -109,7 +109,7 @@ describe('ClaudeProvider', () => {
       // expands.
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'claude',
-        ['mcp', 'add', '-s', 'user', 'test-server', 'node', '/path/to/bundle.js'],
+        ['mcp', 'add', '-s', 'user', 'test-server', '--', 'node', '/path/to/bundle.js'],
         expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
       );
     });

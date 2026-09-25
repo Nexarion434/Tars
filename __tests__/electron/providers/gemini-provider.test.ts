@@ -68,7 +68,7 @@ describe('GeminiProvider', () => {
       // expands.
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'gemini',
-        ['mcp', 'add', '-s', 'user', 'my-mcp', 'node', '/path/to/bundle.js'],
+        ['mcp', 'add', '-s', 'user', 'my-mcp', 'node', '--', '/path/to/bundle.js'],
         expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
       );
     });

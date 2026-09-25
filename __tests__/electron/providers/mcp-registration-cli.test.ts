@@ -26,6 +26,13 @@ import { CMD_SHIM_NODE, SH_SHIM } from './win-fake-disk';
  *    setup) and `claude mcp list` (its status) still start the bare name.
  * 6. With no CLI to be found, the failure is swallowed: it must be logged
  *    with its reason, and the fallback file still written.
+ * Added at win-reviewer's gate (2026-09-25), written before the fix:
+ * 7. A server whose own args carry a flag (`gws mcp -s drive`) reaches claude
+ *    or gemini with no `--` in front of them: both read that `-s` as their
+ *    own scope option (claude answers `Invalid scope: drive`, measured on
+ *    claude 2.1.220), the add fails and the fallback file is written instead.
+ *    claude: `<name> -- <command> [args...]` (its --help); gemini:
+ *    `<name> <command> -- [args...]` (yargs, populate--, in its add.ts).
  */
 
 let root: string;
@@ -105,10 +112,10 @@ afterEach(() => {
 });
 
 const ADD_ARGV: Record<Cli, string[]> = {
-  claude: ['mcp', 'add', '-s', 'user', NAME, 'node', '<server>'],
-  codex: ['mcp', 'add', NAME, '--', 'node', '<server>'],
-  gemini: ['mcp', 'add', '-s', 'user', NAME, 'node', '<server>'],
-  grok: ['mcp', 'add', NAME, 'node', '--', '<server>'],
+  claude: ['mcp', 'add', '-s', 'user', NAME, '--', 'node', '<server>', '-s', 'drive'],
+  codex: ['mcp', 'add', NAME, '--', 'node', '<server>', '-s', 'drive'],
+  gemini: ['mcp', 'add', '-s', 'user', NAME, 'node', '--', '<server>', '-s', 'drive'],
+  grok: ['mcp', 'add', NAME, 'node', '--', '<server>', '-s', 'drive'],
 };
 const REMOVE_ARGV: Record<Cli, string[]> = {
   claude: ['mcp', 'remove', '-s', 'user', NAME],
@@ -126,7 +133,7 @@ const FALLBACK_FILE: Record<Cli, string[]> = {
 describe.each(CLIS)('%s mcp add / remove through the installed CLI', (cli) => {
   it('add reaches the CLI with the argv intact, and writes no fallback', async () => {
     installFakeCli(cli);
-    await (await provider(cli)).registerMcpServer(NAME, 'node', [SERVER]);
+    await (await provider(cli)).registerMcpServer(NAME, 'node', [SERVER, '-s', 'drive']);
 
     expect(recorded()).toEqual([{ cli, argv: ADD_ARGV[cli].map((a) => (a === '<server>' ? SERVER : a)) }]);
     expect(fs.existsSync(path.join(home, ...FALLBACK_FILE[cli]))).toBe(false);
@@ -175,7 +182,7 @@ describe("the orchestrator's own claude calls (Settings > orchestrator)", () => 
     expect(recorded().map((r) => r.argv)).toEqual([
       ['mcp', 'remove', '-s', 'user', 'claude-mgr-orchestrator'],
       ['mcp', 'remove', 'claude-mgr-orchestrator'],
-      ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', bundle],
+      ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', '--', 'node', bundle],
     ]);
   });
 

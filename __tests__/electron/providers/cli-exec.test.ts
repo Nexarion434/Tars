@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
-  CliNotRunnableError, cliEnv, cliInvocation, findWindowsCli, stdioServerCommand, windowsCliDirs, windowsCliFile,
+  CliNotRunnableError, cliEnv, cliInvocation, findWindowsCli, nodeServerCommand, stdioServerCommand, windowsCliDirs, windowsCliFile,
   windowsGcloudDirs,
 } from '../../../electron/providers/cli-exec';
 import { CMD_SHIM_EXE, CMD_SHIM_NODE, GCLOUD_CMD, NODE_DIST_NPX, SH_SHIM, fakeWinFs } from './win-fake-disk';
@@ -61,6 +61,18 @@ import { CMD_SHIM_EXE, CMD_SHIM_NODE, GCLOUD_CMD, NODE_DIST_NPX, SH_SHIM, fakeWi
  * 21. An npm node shim (codex.cmd) is refused because node is not on this
  *    PATH: node is found when the CLI starts, on the agent's PATH, which
  *    carries the node configured in Settings.
+ * Added at win-reviewer's gate (2026-09-25), written before the fix:
+ * 22. stdioServerCommand writes the absolute path of today's node.exe for an
+ *    npm node shim (npx, gws.cmd) when that node is simply the one the PATH
+ *    finds: under nvm or fnm the entry dies at the next Node switch, and
+ *    isMcpServerRegistered, which compares the script, never rewrites it.
+ *    It must be bare `node` then, and the full path only for a node.exe that
+ *    sits beside the shim and is not the PATH's.
+ * nodeServerCommand (one of Tars's own servers: node for .js, npx tsx for .ts)
+ * 23. The .ts form writes `npx` (a .cmd no CLI can start) on win32, or the
+ *    .js form anything but `node <path>`; darwin/linux differ from before.
+ * 24. An unresolved npx is dropped silently: it must be kept as given and
+ *    logged with the reason.
  */
 
 const HOME = 'C:\\Users\\Nico Las';
@@ -155,9 +167,19 @@ describe('stdioServerCommand', () => {
     expect(disk.probes).toEqual([]);
   });
 
-  it('win32: npx becomes node.exe with npx-cli.js in front', () => {
+  it('win32: npx becomes node with npx-cli.js in front, bare `node` when node.exe beside it is the PATH\'s', () => {
     const out = stdioServerCommand('npx', ['tsx', 'C:\\srv (1)\\s.ts'], winEnv(NODEJS), 'win32', fakeWinFs(DISK));
-    expect(out).toEqual({ command: `${NODEJS}\\node.exe`, args: [`${NODEJS}\\node_modules\\npm\\bin\\npx-cli.js`, 'tsx', 'C:\\srv (1)\\s.ts'] });
+    expect(out).toEqual({ command: 'node', args: [`${NODEJS}\\node_modules\\npm\\bin\\npx-cli.js`, 'tsx', 'C:\\srv (1)\\s.ts'] });
+  });
+
+  it('win32: an npm shim with no node beside it writes bare `node`, the node the PATH finds', () => {
+    const out = stdioServerCommand('codex', ['mcp'], winEnv(`${NPM};${NODEJS}`), 'win32', fakeWinFs(DISK));
+    expect(out).toEqual({ command: 'node', args: [`${NPM}\\node_modules\\@openai\\codex\\bin\\codex.js`, 'mcp'] });
+  });
+
+  it('win32: a node.exe beside the shim that is not the PATH\'s keeps its full path', () => {
+    const out = stdioServerCommand('npx', ['tsx', 'C:\\s.ts'], winEnv(`C:\\other-node;${NODEJS}`), 'win32', fakeWinFs({ ...DISK, 'C:\\other-node\\node.exe': 'MZ' }));
+    expect(out).toEqual({ command: `${NODEJS}\\node.exe`, args: [`${NODEJS}\\node_modules\\npm\\bin\\npx-cli.js`, 'tsx', 'C:\\s.ts'] });
   });
 
   it('win32: node, a real exe on the PATH, stays `node`', () => {
@@ -169,6 +191,30 @@ describe('stdioServerCommand', () => {
     expect(out.command).toBe('npx');
     expect(out.args).toEqual(['tsx', 'C:\\s.ts']);
     expect(out.unresolved?.reason).toBe('not-found');
+  });
+});
+
+describe('nodeServerCommand', () => {
+  it.each(['darwin', 'linux'] as const)('%s: node <path> for .js, npx tsx <path> for .ts, as before', (platform) => {
+    expect(nodeServerCommand('/a/b.js', 's', { PATH: '/usr/bin' }, platform, fakeWinFs(DISK))).toEqual({ command: 'node', args: ['/a/b.js'] });
+    expect(nodeServerCommand('/a/b.ts', 's', { PATH: '/usr/bin' }, platform, fakeWinFs(DISK))).toEqual({ command: 'npx', args: ['tsx', '/a/b.ts'] });
+  });
+
+  it('win32: the .ts form is node and npx-cli.js, never npx.cmd', () => {
+    expect(nodeServerCommand('C:\\t (x)\\s.ts', 'tasmania', winEnv(NODEJS), 'win32', fakeWinFs(DISK)))
+      .toEqual({ command: 'node', args: [`${NODEJS}\\node_modules\\npm\\bin\\npx-cli.js`, 'tsx', 'C:\\t (x)\\s.ts'] });
+  });
+
+  it('win32: no npx anywhere keeps npx and says why', () => {
+    const warned: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(' ')); };
+    try {
+      expect(nodeServerCommand('C:\\s.ts', 'tasmania', winEnv('C:\\empty'), 'win32', fakeWinFs(DISK))).toEqual({ command: 'npx', args: ['tsx', 'C:\\s.ts'] });
+    } finally {
+      console.warn = warn;
+    }
+    expect(warned.join('\n')).toMatch(/tasmania.*npx.*not-found/);
   });
 });
 

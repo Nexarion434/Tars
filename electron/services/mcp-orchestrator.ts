@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type { AppSettings } from '../types';
 import { getAllProviders } from '../providers';
-import { execCli, cliFailureText, stdioServerCommand, CliNotRunnableError } from '../providers/cli-exec';
+import { execCli, cliFailureText, nodeServerCommand, CliNotRunnableError } from '../providers/cli-exec';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -112,12 +112,9 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
         continue;
       }
 
-      const isTypeScript = serverPath.endsWith('.ts');
       // What each CLI will start: on Windows `npx` is an npm .cmd no CLI's
-      // spawn can start, so it is written as node.exe and npx-cli.js.
-      const server = stdioServerCommand(isTypeScript ? 'npx' : 'node', isTypeScript ? ['tsx', serverPath] : [serverPath]);
-      if (server.unresolved) console.warn(`MCP server ${name}: ${server.unresolved.name} not resolved (${server.unresolved.reason}): ${server.unresolved.detail}`);
-      const { command, args } = server;
+      // spawn can start, so it is written as node and npx-cli.js.
+      const { command, args } = nodeServerCommand(serverPath, name);
 
       for (const provider of providers) {
         try {
@@ -407,7 +404,8 @@ export function setupOrchestratorSetupHandler(): void {
       }
 
       // Add the MCP server using claude mcp add with -s user for global scope
-      const addArgs = ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', orchestratorPath];
+      // `--` before the server's command: claude reads a flag after it as its own.
+      const addArgs = ['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', '--', 'node', orchestratorPath];
       console.log('Running: claude', addArgs.join(' '));
 
       try {

@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
@@ -234,7 +235,10 @@ export class GeminiProvider implements CLIProvider {
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
       // execCliSync resolves the name first: on Windows gemini is an npm
       // gemini.cmd, which a bare name never finds.
-      execCliSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
+      // `--` before the server's args: gemini's parser (yargs, populate--)
+      // reads a flag of the server's own, gws's `-s drive`, as its scope
+      // otherwise. Its syntax is `<name> <commandOrUrl> -- [args...]`.
+      execCliSync('gemini', ['mcp', 'add', '-s', 'user', name, command, '--', ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
@@ -308,7 +312,7 @@ export class GeminiProvider implements CLIProvider {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
       const existing = settings?.mcpServers?.[name];
       if (!existing?.args) return false;
-      return existing.args[existing.args.length - 1] === expectedServerPath;
+      return mcpEntryRuns(existing, expectedServerPath);
     } catch {
       return false;
     }

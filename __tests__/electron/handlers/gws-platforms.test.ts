@@ -199,7 +199,7 @@ describe.runIf(process.platform === 'win32')('win32 (real files; the lookup itse
     expect(shellLines).toEqual([]);
   });
 
-  it('registers gws as node.exe and its script, never the .cmd', async () => {
+  it('registers gws as `node` and its script, never the .cmd nor the path of today\'s node.exe', async () => {
     unpin = pinPlatform('win32');
     const { script } = installWindowsGws();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -207,11 +207,7 @@ describe.runIf(process.platform === 'win32')('win32 (real files; the lookup itse
 
     await handlers.get('gws:setup')!({}, 'drive,gmail');
 
-    expect(registered).toHaveLength(1);
-    const [name, command, args] = registered[0] as [string, string, string[]];
-    expect(name).toBe('google-workspace');
-    expect(path.basename(command).toLowerCase()).toBe('node.exe');
-    expect(args).toEqual([script, 'mcp', '-s', 'drive,gmail']);
+    expect(registered).toEqual([['google-workspace', 'node', [script, 'mcp', '-s', 'drive,gmail']]]);
   });
 
   it('the MCP status asks the providers for what setup wrote: the script, not the .cmd', async () => {

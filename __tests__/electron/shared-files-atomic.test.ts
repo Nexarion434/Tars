@@ -478,7 +478,8 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
   it('registers beside the servers already there', async () => {
     await register();
 
-    expect(claudeRuns).toEqual([['mcp', 'add', '-s', 'user', 'google-workspace', gws.command, ...gws.args]]);
+    // `--` before the command: gws's own `-s` is otherwise claude's scope.
+    expect(claudeRuns).toEqual([['mcp', 'add', '-s', 'user', 'google-workspace', '--', gws.command, ...gws.args]]);
     expect(readAsJson(mcpJson())).toEqual({ mcpServers: { ...servers.mcpServers, 'google-workspace': gws } });
   });
 
@@ -885,7 +886,7 @@ describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` 
     expect(await setup()).toMatchObject({ success: true, method: 'mcp-json-fallback' });
 
     // An argv: the path is an argument of its own, never inside a shell string.
-    expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', bundle]);
+    expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', '--', 'node', bundle]);
     // Bounded for good: the default SIGTERM leaves a child that ignores it
     // running, and the setup waiting on it (the gate of #128).
     expect(claudeOptions.at(-1)).toMatchObject({ timeout: 15_000, killSignal: 'SIGKILL' });

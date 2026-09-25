@@ -95,19 +95,48 @@ export function cliFailureText(err: unknown): string {
 /**
  * The command and args to write into a CLI's MCP config for a stdio server,
  * which that CLI starts later with its own spawn. win32: an npm shim (`npx`,
- * a gws.cmd) cannot be started that way, so it becomes node.exe (or the
- * shim's .exe) with the script in front of the args. A real .exe the PATH
- * finds (`node`) stays as named, so the next node upgrade does not break the
- * entry. A command that cannot be resolved is kept as given and the reason
- * handed back, for the caller to log. darwin/linux: as given.
+ * a gws.cmd) cannot be started that way, so it becomes node (or the shim's
+ * .exe) with the script in front of the args. Node is written as bare `node`
+ * whenever the node the shim would run is the one the PATH finds, and a real
+ * .exe the PATH finds (`node`) stays as named: the absolute path of today's
+ * node.exe dies at the next nvm or fnm switch, and isMcpServerRegistered,
+ * which compares the script, would never rewrite it. Only a node.exe beside
+ * the shim that the PATH does not give keeps its full path. A command that
+ * cannot be resolved is kept as given and the reason handed back, for the
+ * caller to log. darwin/linux: as given.
  */
 export function stdioServerCommand(
   command: string, args: string[], env?: Env, platform: NodeJS.Platform = process.platform, fs: FsProbe = realFs,
 ): { command: string; args: string[]; unresolved?: CliBinaryFailure } {
-  const binary = resolveCliBinary(command, env ?? cliEnv(platform) ?? process.env, platform, fs);
+  const lookupEnv = env ?? cliEnv(platform) ?? process.env;
+  const binary = resolveCliBinary(command, lookupEnv, platform, fs);
   if (!binary.ok) return { command, args, unresolved: binary };
   if (binary.via === 'as-given' || binary.via === 'exe') return { command, args };
-  return { command: binary.file, args: [...binary.prefixArgs, ...args] };
+  const withScript = [...binary.prefixArgs, ...args];
+  if (binary.via === 'npm-shim-node') {
+    const pathNode = resolveCliBinary('node', lookupEnv, platform, fs);
+    if (pathNode.ok && pathNode.via === 'exe' && pathNode.file.toLowerCase() === binary.file.toLowerCase()) {
+      return { command: 'node', args: withScript };
+    }
+  }
+  return { command: binary.file, args: withScript };
+}
+
+/**
+ * One of Tars's own MCP servers (a bundled one, or the user's Tasmania):
+ * `node <path>` for a .js, `npx tsx <path>` for a .ts, as each CLI will start
+ * it (stdioServerCommand). An npx that cannot be resolved is written as given
+ * and logged with the reason, under `label`.
+ */
+export function nodeServerCommand(
+  serverPath: string, label: string, env?: Env, platform: NodeJS.Platform = process.platform, fs: FsProbe = realFs,
+): { command: string; args: string[] } {
+  const isTypeScript = serverPath.endsWith('.ts');
+  const server = stdioServerCommand(isTypeScript ? 'npx' : 'node', isTypeScript ? ['tsx', serverPath] : [serverPath], env, platform, fs);
+  if (server.unresolved) {
+    console.warn(`MCP server ${label}: ${server.unresolved.name} not resolved (${server.unresolved.reason}): ${server.unresolved.detail}`);
+  }
+  return { command: server.command, args: server.args };
 }
 
 // ── Finding a CLI on Windows (Settings > CLI paths, Google Workspace) ─────────
