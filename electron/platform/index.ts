@@ -21,7 +21,7 @@ export {
 } from './windows-command-line';
 export { toLaunch, LaunchError, type Launch, type PosixLaunch, type DirectLaunch, type LaunchErrorCode } from './launch';
 export { killTree, KillTreeError, type KillTreeResult, type KillTreeDeps, type KillTreeErrorCode } from './kill-tree';
-export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot } from './path-compare';
+export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot, pathKey } from './path-compare';
 export { isUnsafePathSegment } from './windows-names';
 export { projectName } from './project-name';
 export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';

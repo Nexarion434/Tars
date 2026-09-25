@@ -25,6 +25,13 @@ import * as path from 'node:path';
  *    a root the project file reader reads from.
  * 6. A project folder under the home is still read (the guard does not
  *    refuse everything).
+ *
+ * Added at win-reviewer's gate (2026-09-25), written before the fix:
+ * 7. The home is listed as a project when it is spelled otherwise than
+ *    os.homedir(): a lowercase drive (Claude's folder `c--Users-x`, from a cwd
+ *    typed `c:\...`), another case, `/`, a trailing separator.
+ * 8. win32: one project spelled twice (`C:epo`, `c:epo`) is listed twice.
+ * 9. The dedupe merges two different folders.
  */
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -52,6 +59,8 @@ const handlers = new Map<string, Handler>();
 
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../../electron/handlers/ipc-handlers';
 import { DATA_DIR } from '../../../electron/constants';
+import { encodeClaudeProjectDir } from '../../../electron/platform';
+import { resetProjectIndex } from '../../../electron/services/project-index';
 
 const onWindows = process.platform === 'win32';
 
@@ -122,6 +131,50 @@ describe('fs:list-projects', () => {
     // The darwin/linux check is case-sensitive: `Worktrees` was listed, and is.
     customProjects([worktree]);
     expect(await listed()).toContain(worktree);
+  });
+});
+
+describe('fs:list-projects and the home', () => {
+  const home = os.homedir();
+  const lowerDrive = (p: string) => p.replace(/^[A-Z]:/, d => d.toLowerCase());
+  const claudeDir = path.join(home, '.claude', 'projects');
+  afterAll(() => fs.rmSync(claudeDir, { recursive: true, force: true }));
+
+  it('7. never lists the home, however the added projects spell it', async () => {
+    const spellings = onWindows
+      ? [lowerDrive(home), home.toLowerCase(), home.toUpperCase(), home.replace(/\\/g, '/'), `${home}\\`]
+      : [`${home}/`];
+    customProjects([repo, ...spellings]);
+
+    const paths = await listed();
+
+    expect(paths).toContain(repo);
+    for (const p of spellings) expect(paths, p).not.toContain(p);
+  });
+
+  it.runIf(onWindows)('7. never lists the home from the Claude folder for a lowercase drive (c--Users-x)', async () => {
+    customProjects([repo]);
+    const folder = path.join(claudeDir, encodeClaudeProjectDir(lowerDrive(home)));
+    expect(path.basename(folder)).toMatch(/^[a-z]--/);
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, '11111111-2222-4333-8444-555555555555.jsonl'), '{}\n');
+    resetProjectIndex();
+
+    const paths = await listed();
+
+    expect(paths.filter(p => p.toLowerCase() === home.toLowerCase())).toEqual([]);
+    expect(paths).toContain(repo);
+  });
+
+  it.runIf(onWindows)('8, 9. lists a project once whatever its spellings, and two projects twice', async () => {
+    const other = path.join(work, 'repo2');
+    fs.mkdirSync(other, { recursive: true });
+    customProjects([repo, lowerDrive(repo), repo.toUpperCase(), `${repo}\\`, other]);
+
+    const paths = await listed();
+
+    expect(paths.filter(p => p.toLowerCase().replace(/\\+$/, '') === repo.toLowerCase())).toEqual([repo]);
+    expect(paths).toContain(other);
   });
 });
 
