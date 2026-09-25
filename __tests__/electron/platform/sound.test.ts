@@ -79,6 +79,41 @@ describe('the command that plays a notification sound on Windows', () => {
   });
 });
 
+/**
+ * The reviewer's gate: the path is local, but a link on the way can lead to a
+ * share, and opening the file then contacts that host all the same.
+ * 8. a link (symlink or junction) at any level whose target is a UNC path,
+ *    `\\?\UNC\...`, a device (`\\.\...`) or `\\?\GLOBALROOT` is followed;
+ * 9. the link is followed to find that out (reading its target must not open it);
+ * 10. a link to a local folder is refused, or a loop of links hangs.
+ */
+describe('8, 9, 10. links on the way to the file', () => {
+  const file = 'C:\\s\\sub\\ding.wav';
+  const opened: string[] = [];
+  const disk = { isFile: (p: string) => { opened.push(p); return true; }, readFile: () => '' };
+  const links = (map: Record<string, string>) => (p: string) => map[p.toLowerCase()] ?? null;
+
+  it('refuses a link to a share or a device, before anything is opened', () => {
+    for (const target of ['\\\\attacker\\share', '//attacker/share', '\\\\?\\UNC\\attacker\\share', '\\\\.\\pipe\\x', '\\\\?\\GLOBALROOT\\Device\\Mup\\h\\s']) {
+      for (const at of ['c:\\s', 'c:\\s\\sub', 'c:\\s\\sub\\ding.wav']) {
+        opened.length = 0;
+        const r = windowsSoundCommand(file, { env, fs: disk, readLink: links({ [at]: target }) });
+        expect(r.ok, `${at} -> ${target}`).toBe(false);
+        expect(opened).toEqual([]);
+      }
+    }
+  });
+
+  it('follows links to local folders, whatever form the target takes, and ends a loop', () => {
+    for (const target of ['D:\\sounds', '\\\\?\\D:\\sounds', 'sounds2']) {
+      expect(windowsSoundCommand(file, { env, fs: disk, readLink: links({ 'c:\\s': target }) }).ok, target).toBe(true);
+    }
+    // A local link whose own target is on a share is still a share.
+    expect(windowsSoundCommand(file, { env, fs: disk, readLink: links({ 'c:\\s': 'D:\\x', 'd:\\x\\sub': '\\\\h\\s' }) }).ok).toBe(false);
+    expect(windowsSoundCommand(file, { env, fs: disk, readLink: links({ 'c:\\s': 'C:\\t', 'c:\\t': 'C:\\s' }) }).ok).toBe(false);
+  });
+});
+
 /** A valid 8 kHz mono PCM wave of `ms` silence. */
 function wave(ms: number): Buffer {
   const samples = Math.round(8 * ms);
@@ -122,6 +157,18 @@ describe.runIf(process.platform === 'win32')('7. on this machine, with the real 
       expect({ name, code: r.code, stderr: r.stderr }).toEqual({ name, code: 0, stderr: '' });
       expect(fs.existsSync(path.join(dir, 'canary')), name).toBe(false);
     }
+  }, 60_000);
+
+  it('plays a file reached through a junction to a local folder', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sound-junction-')));
+    made.push(dir);
+    fs.mkdirSync(path.join(dir, 'real'));
+    fs.writeFileSync(path.join(dir, 'real', 'ding.wav'), wave(20));
+    fs.symlinkSync(path.join(dir, 'real'), path.join(dir, 'via'), 'junction');
+    const cmd = windowsSoundCommand(path.join(dir, 'via', 'ding.wav'));
+    expect(cmd.ok).toBe(true);
+    if (!cmd.ok) return;
+    expect((await run(cmd.file, cmd.args, { cwd: dir, env: cmd.env })).code).toBe(0);
   }, 60_000);
 
   it('the witness: the old command, given the same file names, runs the canary', async () => {
