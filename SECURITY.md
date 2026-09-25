@@ -459,6 +459,12 @@ path, with no profile (`electron/platform/sound.ts`).
 **Replacing a file someone is reading.** The atomic writes (§5, ETHOS 7) end in
 a rename over the live file, which Windows refuses while any process has it
 open, even to read. They are tried again for about a second and then fail with
-a message that names the file (`electron/platform/rename-replacing.ts`); under
-twenty reading processes, four hundred writes all landed and no reader saw a
-partial file.
+a message that names the file and says it may be held open by another program
+(`electron/platform/rename-replacing.ts`); `agents.json` goes the same way. What
+that buys depends on the machine's load, and was measured under twenty reading
+processes: a plain rename failed 198 times in 200 on this machine idle, and 16
+to 25 times in 60 at 51 to 82% CPU, where the retrying writes failed 0 times in
+60 each (three runs, 2026-09-25). Four hundred retrying writes all landed on
+the idle machine; at 73% CPU the reviewer measured 110 of 400 failing after
+their second. A save can therefore still fail on a busy machine, with an error
+that says so; no reader ever saw a partial file.

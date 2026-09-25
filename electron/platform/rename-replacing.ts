@@ -55,7 +55,8 @@ export function renameReplacingSync(from: string, to: string, deps: RenameDeps =
       if (!code || !HELD.has(code)) throw err;
       if (spent >= RENAME_RETRY_BUDGET_MS) {
         const e = err as NodeJS.ErrnoException;
-        e.message = `Could not replace ${to}: it was held open by another program for ${spent} ms (${code}). ${e.message}`;
+        // "may be": a genuine permission error answers the same codes, and is retried then reported alike.
+        e.message = `Could not replace ${to}: it may be held open by another program (still ${code} after ${spent} ms). ${e.message}`;
         throw e;
       }
       sleep(Math.min(wait, RENAME_RETRY_BUDGET_MS - spent));

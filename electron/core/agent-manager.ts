@@ -17,6 +17,7 @@ import { getProvider } from '../providers';
 import { extractStatusLine } from '../utils/ansi';
 import { carriedByTrim } from '../utils/terminal-modes';
 import { updateSharedJsonSync } from '../utils/shared-file';
+import { renameReplacingSync } from '../platform/rename-replacing';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
@@ -493,7 +494,7 @@ export function saveAgents() {
     const json = JSON.stringify(payload, null, 2);
     const tmp = `${AGENTS_FILE}.tmp`;
     fs.writeFileSync(tmp, json);
-    fs.renameSync(tmp, AGENTS_FILE);
+    renameReplacingSync(tmp, AGENTS_FILE);
     // Remembered only when there is something to lose: see
     // backupPreviousGeneration for why an empty list is deliberately forgotten.
     const remember = payload.agents.length > 0;
