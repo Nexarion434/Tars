@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
-import { withoutHomeCover } from '../platform/home-root';
+import { isUnderSafeRoot } from '../platform/home-root';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -240,27 +240,28 @@ function isUnder(root: string, candidate: string): boolean {
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }
 
-/** Roots local-file:// may read from: the user's own project and app data. */
+/**
+ * Roots local-file:// may read from: the user's own project and app data, and
+ * none that is the home or above it: one such made every file of the home a
+ * local-file:// URL. Only the roots the file is under are judged
+ * (platform/home-root.ts).
+ */
 function isUnderAllowedRoot(filePath: string): boolean {
   const roots = [
     DATA_DIR,
     path.join(os.homedir(), '.claude'),
     ...listKnownProjectRoots(),
   ];
-  return roots.some(root => isUnder(root, filePath));
+  return isUnderSafeRoot(filePath, roots, isUnder);
 }
 
-/**
- * Project folders the user added, read fresh so a new project works at once.
- * None that is the home or above it: one such made every file of the home a
- * local-file:// URL (platform/home-root.ts).
- */
+/** Project folders the user added, read fresh so a new project works at once. */
 function listKnownProjectRoots(): string[] {
   try {
     const file = dataPath('projects.json');
     if (!fs.existsSync(file)) return [];
     const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return Array.isArray(parsed) ? withoutHomeCover(parsed.filter((p): p is string => typeof p === 'string')) : [];
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
   } catch {
     return [];
   }

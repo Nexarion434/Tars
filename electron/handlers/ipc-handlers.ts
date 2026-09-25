@@ -49,7 +49,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, withoutHomeCover } from '../platform';
+import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -2385,24 +2385,25 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * shell:exec: a path containing $(...) or a backtick executed arbitrary
    * code as soon as the page opened.
    */
-  /**
-   * Roots a free-form file path is allowed to live under. None is the home or
-   * above it: a project added as `~`, `/Users` or the drive's Users folder
-   * made every file of the home readable and writable here
-   * (platform/home-root.ts).
-   */
-  const textFileRoots = () => withoutHomeCover([
+  /** Roots a free-form file path is allowed to live under. */
+  const textFileRoots = () => [
     path.join(os.homedir(), '.claude'),
     path.join(os.homedir(), '.codex'),
     path.join(os.homedir(), '.gemini'),
     path.join(os.homedir(), '.grok'),
     DATA_DIR,
     ...readCustomProjects(),
-  ]);
+  ];
 
+  /**
+   * Under a root that is not the home nor above it: a project added as `~`,
+   * `/Users` or the drive's Users folder made every file of the home readable
+   * and writable here (platform/home-root.ts). Only the roots the path is
+   * under are judged, so a project on an offline share costs nothing.
+   */
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return textFileRoots().some(root => resolved === root || resolved.startsWith(root + path.sep));
+    return isUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep));
   };
 
   /**
@@ -2486,11 +2487,10 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       }
     } catch { /* skills unreadable, skip */ }
 
-    // Not the home nor above it, in any spelling or through a link (platform/home-root.ts).
-    return withoutHomeCover(roots
+    return roots
       .filter(r => typeof r === 'string' && r && path.isAbsolute(r))
       .map(r => path.resolve(r))
-      .filter(r => r !== path.parse(r).root));
+      .filter(r => r !== path.parse(r).root);
   };
 
   ipcMain.handle('fs:read-project-files', async (_event, params: { paths: string[]; relative: string[] }) => {
@@ -2501,7 +2501,9 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     for (const base of paths) {
       if (typeof base !== 'string' || !path.isAbsolute(base)) continue;
       const resolvedBase = path.resolve(base);
-      const allowed = roots.some(root => resolvedBase === root || resolvedBase.startsWith(root + path.sep));
+      // Not under the home nor above it, in any spelling or through a link;
+      // only the roots the base is under are judged (platform/home-root.ts).
+      const allowed = isUnderSafeRoot(resolvedBase, roots, (root, b) => b === root || b.startsWith(root + path.sep));
       if (!allowed) continue;
       for (const rel of relative) {
         if (typeof rel !== 'string' || rel.includes('..')) continue;
