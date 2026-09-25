@@ -17,6 +17,9 @@
 //     shell's $(...) used to drop;
 //   - the character classes are ASCII, as grep's are in the C.UTF-8 locale Git
 //     Bash runs it in, measured on 2026-09-25: é next to a # is not [:alnum:].
+//     So it is stricter than grep in a UTF-8 locale on macOS or Linux: a
+//     non-ASCII letter or space beside a hex or before a comment marker can
+//     make it flag a line grep let through, never the other way round.
 //
 // grep answered in three ways, and only one of them was a pass: 0 found a line,
 // 1 found none, 2 could not search. Until 17/09 the shell script threw grep's

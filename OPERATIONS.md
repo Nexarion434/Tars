@@ -343,6 +343,8 @@ It also exits 1 when it could not search, instead of reading that as a clean tre
 it cannot open, a pattern it cannot parse, a missing `src/`, or no file read at all. It prints
 how many files it read first. It is the Node port of the grep script it replaced
 (`scripts/design-lint.sh`, which needed bash), with the same checks, lines and exit codes.
+It reads letters, digits and spaces as ASCII only, so it is stricter than grep in a UTF-8
+locale on macOS or Linux: it can flag a line grep let through, never the other way round.
 
 The hex rule excludes two more places, each because writing a colour out is their job:
 `src/app/globals.css`, where every colour the app uses is named once, and comment lines in
