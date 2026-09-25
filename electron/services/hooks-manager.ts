@@ -1,21 +1,11 @@
-import { app } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getAllProviders } from '../providers';
+import { getHooksPath } from '../utils/hooks-path';
 
-/**
- * Get the path to the bundled hooks directory
- * @returns {string} The absolute path to the hooks directory
- */
-export function getHooksPath(): string {
-  let appPath = app.getAppPath();
-  // If running from asar, use unpacked path
-  if (appPath.includes('app.asar')) {
-    appPath = appPath.replace('app.asar', 'app.asar.unpacked');
-  }
-  return path.join(appPath, 'hooks');
-}
+/** The bundled hooks directory; in utils/hooks-path.ts, which statusline.ts imports too. */
+export { getHooksPath };
 
 /**
  * Configure hooks for all providers that support them.
