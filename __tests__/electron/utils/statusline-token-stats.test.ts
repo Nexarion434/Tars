@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * ~/.dorothy/token-stats.json is written by the status line script and by
@@ -23,6 +24,7 @@ let script: string;
 let home: string;
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   // The status line runs on jq. A machine without it has no token stats at
   // all, and a case that skipped itself there would pass without running.
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
@@ -70,7 +72,7 @@ const NEW_SESSION = {
   date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), provider: 'claude',
 };
 
-describe('the status line writing token-stats.json', () => {
+describe.skipIf(shHooksNotShipped())('the status line writing token-stats.json', () => {
   it('starts again from an empty object when the file is empty', () => {
     fs.writeFileSync(statsFile(), '');
 

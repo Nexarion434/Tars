@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 /**
  * The session gets registered, whatever the API is doing.
@@ -190,7 +191,7 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-describe('an API that is alive but slow still gets the registration', () => {
+describe.skipIf(shHooksNotShipped())('an API that is alive but slow still gets the registration', () => {
   // The regression the bounded probe introduced. Well past any deadline a
   // probe could reasonably be given, and past the 3s the POST itself allows,
   // so this fails for a probe at 2s and at 5s alike.
@@ -236,7 +237,7 @@ describe('an API that is alive but slow still gets the registration', () => {
   }, 60_000);
 });
 
-describe('an API that accepts and never answers does not swallow the session', () => {
+describe.skipIf(shHooksNotShipped())('an API that accepts and never answers does not swallow the session', () => {
   it('session-start still posts, and returns inside the hook timeout', async () => {
     const api = await startServer('half-open');
     try {
@@ -353,7 +354,7 @@ describe('the properties that keep it that way', () => {
  */
 const NO_API_BUDGET_MS = 8_000;
 
-describe('an API that is not running', () => {
+describe.skipIf(shHooksNotShipped())('an API that is not running', () => {
   const HOOKS = ['session-start.sh', 'user-prompt-submit.sh', 'notification.sh',
                  'permission-request.sh', 'session-end.sh'];
 

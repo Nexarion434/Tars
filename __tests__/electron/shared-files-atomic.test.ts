@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { hasPosixModes } from '../setup/platform-limits';
 
 /**
  * The files Tars shares with other programs are never seen half-written.
@@ -265,7 +266,7 @@ describe('~/.claude.json, through ensureProjectTrusted', () => {
     expect(fs.statSync(claudeJson()).mtimeMs).toBe(before.mtimeMs);
   });
 
-  it('keeps the file readable by its owner only', () => {
+  it.skipIf(!hasPosixModes())('keeps the file readable by its owner only', () => {
     claudeConfig();
 
     ensureProjectTrusted('/work/new-project');
@@ -517,7 +518,7 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
     expect(writes).toEqual([]);
   });
 
-  it("keeps the file's own mode, and creates a new one readable by its owner only", async () => {
+  it.skipIf(!hasPosixModes())("keeps the file's own mode, and creates a new one readable by its owner only", async () => {
     fs.chmodSync(mcpJson(), 0o644);
     await register();
     expect(fs.statSync(mcpJson()).mode & 0o777).toBe(0o644);
@@ -686,7 +687,7 @@ describe('~/.claude.json, through the memory backends Tars registers at launch',
       ...config,
       mcpServers: { ...config.mcpServers, honcho: { type: 'http', url: 'https://honcho.example/mcp', headers: { Authorization: 'Bearer hk_example' } } },
     });
-    expect(fs.statSync(claudeJson()).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(claudeJson()).mode & 0o777).toBe(0o600);
   });
 
   it('never shows a reader a partial file while it writes', () => {
