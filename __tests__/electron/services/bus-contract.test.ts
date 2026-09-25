@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * The bus contract, the six points that are settled.
@@ -1535,10 +1534,11 @@ describe('files for a room', () => {
     expect(terminal.written.join('')).not.toMatch(/[\x7f-\x9f\u202a-\u202e\u2066-\u2069]/);
   });
 
-  it.skipIf(cannotSymlink())('refuses to stage through a bus-files folder that is a link', async () => {
+  it('refuses to stage through a bus-files folder that is a link', async () => {
     const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-elsewhere-'));
     fs.rmSync(path.join(tmp, 'bus-files'), { recursive: true, force: true });
-    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'));
+    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    fs.symlinkSync(elsewhere, path.join(tmp, 'bus-files'), 'junction');
     try {
       const result = await stage([{ name: 'a.txt', mimeType: 'text/plain', data: new Uint8Array([1]) }]);
 

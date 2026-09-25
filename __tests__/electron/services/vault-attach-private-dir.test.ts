@@ -169,10 +169,11 @@ describe('attaching a file to a vault document', () => {
     expect(attachments()).toEqual([]);
   });
 
-  it.skipIf(cannotSymlink())('refuses the private directory reached through a symlink', async () => {
+  it('refuses the private directory reached through a symlink', async () => {
     const link = path.join(tmp, 'innocent-looking');
     fs.rmSync(link, { force: true });
-    fs.symlinkSync(privateDir, link);
+    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    fs.symlinkSync(privateDir, link, 'junction');
     secretFile();
 
     const { status, text } = await call('POST', `/api/vault/documents/${documentId}/attach`, {
@@ -206,7 +207,7 @@ describe('attaching a file to a vault document', () => {
     expect(attachments()).toEqual([]);
   });
 
-  it.skipIf(cannotSymlink())('still attaches a file with two ordinary names, and a copy of a private file', async () => {
+  it('still attaches a file with two ordinary names, and a copy of a private file', async () => {
     const first = path.join(tmp, 'store-first.txt');
     const second = path.join(tmp, 'store-second.txt');
     fs.writeFileSync(first, 'one file, two names');
@@ -218,7 +219,7 @@ describe('attaching a file to a vault document', () => {
     // must not take it.
     const exit = path.join(privateDir, 'to-the-pair');
     fs.rmSync(exit, { force: true });
-    fs.symlinkSync(tmp, exit);
+    fs.symlinkSync(tmp, exit, 'junction');
 
     try {
       for (const file of [second, copy]) {

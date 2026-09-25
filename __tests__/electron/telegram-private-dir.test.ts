@@ -79,7 +79,6 @@ vi.mock('https', () => {
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';
-import { cannotSymlink } from '../setup/symlink-privilege';
 
 const home = os.homedir();
 const PRIVATE_FILES = [
@@ -102,7 +101,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
     expect(isSafeTelegramPath(ORDINARY)).toBe(true);
   });
 
-  it.skipIf(cannotSymlink())('refuses them under the other names the file system gives them (case, Data volume, symlink)', () => {
+  it('refuses them under the other names the file system gives them (case, Data volume, symlink)', () => {
     // The audit's lead #21 on the vault, the same prefix test here: an existing
     // key or secret, named another way, passed. Files that exist, since only
     // an existing file has another name.
@@ -119,7 +118,8 @@ describe('the guard of the app\'s own Telegram routes', () => {
     const link = path.join(home, 'Documents', 'keys');
     fs.mkdirSync(path.dirname(link), { recursive: true });
     fs.rmSync(link, { force: true });
-    fs.symlinkSync(ssh, link);
+    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    fs.symlinkSync(ssh, link, 'junction');
     aliases.push(path.join(link, 'id_rsa'));
     for (const alias of aliases) expect(isSafeTelegramPath(alias), alias).toBe(false);
     // The witness: an ordinary file that exists still goes.
@@ -137,7 +137,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
    * 3. a copy, which is another file with the same bytes, is refused;
    * 4. the search leaves a protected directory through a symlink inside it.
    */
-  it.skipIf(cannotSymlink())('refuses a hard link to a file in the private directory or in ~/.ssh, and nothing else with two names', () => {
+  it('refuses a hard link to a file in the private directory or in ~/.ssh, and nothing else with two names', () => {
     const docs = path.join(home, 'Documents');
     fs.mkdirSync(docs, { recursive: true });
     fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
@@ -162,7 +162,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
     fs.copyFileSync(PRIVATE_FILES[1], copy);
     const exit = path.join(home, '.tars-private', 'to-documents');
     fs.rmSync(exit, { force: true });
-    fs.symlinkSync(docs, exit);
+    fs.symlinkSync(docs, exit, 'junction');
     try {
       expect(isSafeTelegramPath(second), 'a file with two ordinary names').toBe(true);
       expect(isSafeTelegramPath(copy), 'a copy is another file').toBe(true);
@@ -241,7 +241,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       fs.copyFileSync(secret, copy);
       const exit = path.join(tmpHome, '.tars-private', 'to-documents');
       fs.rmSync(exit, { force: true });
-      fs.symlinkSync(docs, exit);
+      fs.symlinkSync(docs, exit, 'junction');
       try {
         for (const file of [link(first, 'store-second.pdf'), copy]) {
           const result = await send({ [arg]: file });
@@ -269,7 +269,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       expect(ordinary.content[0].text).toContain('File not found');
     });
 
-    it.skipIf(cannotSymlink())(`${tool} refuses the private directory under its other names (case, symlink)`, async () => {
+    it(`${tool} refuses the private directory under its other names (case, symlink)`, async () => {
       // The audit's lead #21, on this guard: a segment compared by its exact
       // spelling, and the path as named rather than the file it opens.
       const secret = path.join(tmpHome, '.tars-private', 'hermes-webhook-secret');
@@ -278,7 +278,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       const link = path.join(tmpHome, 'Documents', `looks-harmless-${tool}`);
       fs.mkdirSync(path.dirname(link), { recursive: true });
       fs.rmSync(link, { force: true });
-      fs.symlinkSync(path.dirname(secret), link);
+      fs.symlinkSync(path.dirname(secret), link, 'junction');
       const aliases = [path.join(link, 'hermes-webhook-secret')];
       const upper = path.join(tmpHome, '.TARS-PRIVATE', 'hermes-webhook-secret');
       if (fs.existsSync(upper)) aliases.push(upper);

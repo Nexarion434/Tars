@@ -8,7 +8,6 @@ import {
   consumeResumeSessionId,
   resetResumeTracking,
 } from '../../electron/utils/resume-session';
-import { cannotSymlink } from '../setup/symlink-privilege';
 
 /**
  * Resuming an agent's conversation after a restart.
@@ -199,14 +198,16 @@ describe('the wiring holds', () => {
  * 3. a saved path that no longer exists throws while it is resolved, and fails the start instead of starting fresh;
  * 4. a worktree reached through a symlink, which is where such an agent ran, is not resolved either.
  */
-describe.skipIf(cannotSymlink())('a project reached through a symlink', () => {
+describe('a project reached through a symlink', () => {
   let real = '';
   let link = '';
 
   beforeEach(() => {
     real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-real-')));
     link = path.join(home, `project-link-${path.basename(real)}`);
-    fs.symlinkSync(real, link);
+    // A junction: a link to a directory that Windows lets any account make
+    // (Developer Mode off, decision D4); the type is ignored off Windows.
+    fs.symlinkSync(real, link, 'junction');
   });
 
   it('finds the transcript claude filed under the real path', () => {
@@ -229,7 +230,7 @@ describe.skipIf(cannotSymlink())('a project reached through a symlink', () => {
   it('resolves a worktree reached through a symlink too', () => {
     const worktreeReal = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-worktree-')));
     const worktreeLink = path.join(home, `worktree-link-${path.basename(worktreeReal)}`);
-    fs.symlinkSync(worktreeReal, worktreeLink);
+    fs.symlinkSync(worktreeReal, worktreeLink, 'junction');
     writeTranscript(worktreeReal, SESSION);
     expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link, worktreePath: worktreeLink }, home)).toBe(SESSION);
   });
