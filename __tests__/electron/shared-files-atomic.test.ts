@@ -82,6 +82,7 @@ import { setupMemoryBackends, setupOrchestratorSetupHandler, setupOrchestratorRe
 import { enableStatusLine, disableStatusLine } from '../../electron/utils/statusline';
 import { KANBAN_FILE, dataPath } from '../../electron/constants';
 import type { AppSettings } from '../../electron/types';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 const nodeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
 const home = () => os.homedir();
@@ -279,7 +280,7 @@ describe('~/.claude.json, through ensureProjectTrusted', () => {
     });
   });
 
-  it('updates the file a link points at, and leaves the link a link', () => {
+  it.skipIf(cannotSymlink())('updates the file a link points at, and leaves the link a link', () => {
     const dotfiles = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-dotfiles-'));
     fs.writeFileSync(path.join(dotfiles, 'claude.json'), JSON.stringify({ projects: {} }), { mode: 0o600 });
     fs.symlinkSync(path.join(dotfiles, 'claude.json'), claudeJson());
@@ -928,7 +929,7 @@ describe("fs:write-text-file and Claude's own files", () => {
     expect(fs.readFileSync(file, 'utf-8')).toBe(before);
   });
 
-  it('refuses them through a link too', async () => {
+  it.skipIf(cannotSymlink())('refuses them through a link too', async () => {
     fs.symlinkSync(claudeSettings(), path.join(home(), '.claude', 'CLAUDE.md'));
     const before = fs.readFileSync(claudeSettings(), 'utf-8');
 

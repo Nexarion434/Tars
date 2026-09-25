@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { narrowDataDir } from '../../electron/utils/secret-file';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false, getVersion: () => '0.0.0', on: vi.fn() },
@@ -88,7 +89,7 @@ describe('narrowDataDir', () => {
     expect(mode(vault)).toBe(0o700);
   });
 
-  it('4. does not follow a link to change the file it points to', () => {
+  it.skipIf(cannotSymlink())('4. does not follow a link to change the file it points to', () => {
     const dir = dataDir();
     const outside = file(path.dirname(dir), 'project-file.txt', 0o644);
     fs.symlinkSync(outside, path.join(dir, 'link'));

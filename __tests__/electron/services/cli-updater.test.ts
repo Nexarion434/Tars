@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { runCliUpdatePass, updateCli, startCliUpdates, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * Tars keeps claude and Amp up to date itself, and never under a session it
@@ -177,7 +178,7 @@ function hasLsof(): boolean {
 }
 
 describe('claude through its native installer', () => {
-  it('runs `claude update` as one argument, and reads the new version off the link', async () => {
+  it.skipIf(cannotSymlink())('runs `claude update` as one argument, and reads the new version off the link', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const ctx = ctxFor(home);
@@ -191,7 +192,7 @@ describe('claude through its native installer', () => {
     expect(logLines(ctx)[0]).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z claude updated 1\.0\.0 to 1\.0\.1: Successfully updated from 1\.0\.0 to version 1\.0\.1 \(\d+\.\d s\)$/);
   });
 
-  it('does not wait for a running session, whose version stays on disk', async () => {
+  it.skipIf(cannotSymlink())('does not wait for a running session, whose version stays on disk', async () => {
     const home = path.join(root, 'home');
     const first = nativeClaude(home);
     const ctx = ctxFor(home);
@@ -206,7 +207,7 @@ describe('claude through its native installer', () => {
     expect(fs.existsSync(first)).toBe(true);
   }, 60_000);
 
-  it('takes an update that exits 0 and moves nothing as unchanged, in claude\'s own words', async () => {
+  it.skipIf(cannotSymlink())('takes an update that exits 0 and moves nothing as unchanged, in claude\'s own words', async () => {
     // What `claude update` does under the administrator lockdown, measured on 2.1.280.
     const home = path.join(root, 'home');
     nativeClaude(home);
@@ -219,7 +220,7 @@ describe('claude through its native installer', () => {
     expect(result.detail).toBe('Updates are disabled by your administrator. Contact your IT team to get the latest version.');
   });
 
-  it('logs every failure with the line that explains it', async () => {
+  it.skipIf(cannotSymlink())('logs every failure with the line that explains it', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const ctx = ctxFor(home, { FAKE_CLAUDE_MODE: 'fail' });
@@ -234,7 +235,7 @@ describe('claude through its native installer', () => {
     expect(linkedVersion(home)).toBe('1.0.0');
   });
 
-  it('writes a check that changes nothing once, and the next change again', async () => {
+  it.skipIf(cannotSymlink())('writes a check that changes nothing once, and the next change again', async () => {
     const home = path.join(root, 'home');
     nativeClaude(home);
     const current = ctxFor(home, { FAKE_CLAUDE_MODE: 'current' });
@@ -250,7 +251,7 @@ describe('claude through its native installer', () => {
     expect(recorded()).toHaveLength(3);
   });
 
-  it.each([
+  it.skipIf(cannotSymlink()).each([
     ['DISABLE_AUTOUPDATER in ~/.claude/settings.json', { settings: { env: { DISABLE_AUTOUPDATER: '1' } } }, 'DISABLE_AUTOUPDATER is set in ~/.claude/settings.json'],
     ['DISABLE_UPDATES in the environment', { env: { DISABLE_UPDATES: 'true' } }, 'DISABLE_UPDATES is set in the environment Tars was started with'],
     ['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC in settings', { settings: { env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 'yes-please' } } }, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set in ~/.claude/settings.json'],
@@ -271,7 +272,7 @@ describe('claude through its native installer', () => {
     expect(recorded()).toEqual([]);
   });
 
-  it('reads autoUpdates: false written by the native installer itself as no opinion, as claude does', async () => {
+  it.skipIf(cannotSymlink())('reads autoUpdates: false written by the native installer itself as no opinion, as claude does', async () => {
     // Noah's ~/.claude.json, as the native installer leaves it on every install.
     const home = path.join(root, 'home');
     nativeClaude(home);
@@ -280,7 +281,7 @@ describe('claude through its native installer', () => {
     expect((await updateCli('claude', 'claude', ctxFor(home))).outcome).toBe('updated');
   });
 
-  it('never touches an install that lives outside the home it runs in', async () => {
+  it.skipIf(cannotSymlink())('never touches an install that lives outside the home it runs in', async () => {
     // A sandbox or a test run: HOME is a scratch folder, the claude on PATH is the real one.
     const realHome = path.join(root, 'real-home');
     nativeClaude(realHome);
@@ -295,7 +296,7 @@ describe('claude through its native installer', () => {
     expect(linkedVersion(realHome)).toBe('1.0.0');
   });
 
-  it('refuses a Settings path that names one version, which the update would never move', async () => {
+  it.skipIf(cannotSymlink())('refuses a Settings path that names one version, which the update would never move', async () => {
     const home = path.join(root, 'home');
     const pinned = nativeClaude(home);
 
@@ -388,7 +389,7 @@ describe('amp as a global npm package', () => {
     }
   }, 120_000);
 
-  it.each([
+  it.skipIf(cannotSymlink()).each([
     ['the same version', '0.0.1'],
     ['an older one', '0.0.0'],
     ['the same release with another build hash', '0.0.1-gdeadbe'],
@@ -403,7 +404,7 @@ describe('amp as a global npm package', () => {
     expect(recorded().map(c => c[1])).toEqual(['view']);
   });
 
-  it.each([
+  it.skipIf(cannotSymlink()).each([
     ['nothing newer', { FAKE_LATEST: '0.0.1' }],
     ['a view that fails', { FAKE_LATEST: '' }],
   ])('keeps npm\'s cache out of the home, and removes it, when there is %s', async (_name, env) => {
@@ -422,7 +423,7 @@ describe('amp as a global npm package', () => {
     expect(fs.existsSync(path.dirname(caches[0]))).toBe(false);
   });
 
-  it('leaves amp alone when the user turned its updates off in their own settings', async () => {
+  it.skipIf(cannotSymlink())('leaves amp alone when the user turned its updates off in their own settings', async () => {
     const home = path.join(root, 'home');
     const prefix = path.join(home, 'npm-global');
     npmAmp(prefix);
@@ -435,7 +436,7 @@ describe('amp as a global npm package', () => {
     expect(recorded()).toEqual([]);
   });
 
-  it('never touches a global prefix outside the home it runs in', async () => {
+  it.skipIf(cannotSymlink())('never touches a global prefix outside the home it runs in', async () => {
     const prefix = path.join(root, 'elsewhere');
     npmAmp(prefix);
     const home = path.join(root, 'home');
@@ -449,7 +450,7 @@ describe('amp as a global npm package', () => {
 });
 
 describe('the CLIs Tars does not update', () => {
-  it('names one it has no measured path for, and runs nothing', async () => {
+  it.skipIf(cannotSymlink())('names one it has no measured path for, and runs nothing', async () => {
     const home = path.join(root, 'home');
     const prefix = path.join(home, 'npm-global');
     npmAmp(prefix, '1.0.0', false, '@openai/codex');
@@ -461,7 +462,7 @@ describe('the CLIs Tars does not update', () => {
     expect(recorded()).toEqual([]);
   });
 
-  it('names claude installed any other way than the native installer', async () => {
+  it.skipIf(cannotSymlink())('names claude installed any other way than the native installer', async () => {
     const home = path.join(root, 'home');
     const prefix = path.join(home, 'npm-global');
     npmAmp(prefix, '2.1.0', false, '@anthropic-ai/claude-code');
@@ -487,7 +488,7 @@ describe('the schedule main.ts starts', () => {
     }
   });
 
-  it('updates the claude a launch would find, 5 s after it starts, into ~/.dorothy/cli-updates.log', async () => {
+  it.skipIf(cannotSymlink())('updates the claude a launch would find, 5 s after it starts, into ~/.dorothy/cli-updates.log', async () => {
     // The suite's own throwaway HOME, which is where the app's paths point
     // here: ~/.local/bin is on the PATH buildFullPath composes, and any real
     // CLI further down that PATH lives outside this home and is left alone.

@@ -83,7 +83,8 @@ describe('the project index', () => {
   it('lists folders and links to folders, not files, and nothing for a missing root', async () => {
     fs.mkdirSync(path.join(root, '-a'));
     fs.mkdirSync(path.join(tmp, 'elsewhere'));
-    fs.symlinkSync(path.join(tmp, 'elsewhere'), path.join(root, '-b'));
+    // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+    fs.symlinkSync(path.join(tmp, 'elsewhere'), path.join(root, '-b'), 'junction');
     fs.writeFileSync(path.join(root, '.DS_Store'), '');
 
     expect((await projectFolders(root)).map(f => f.name).sort()).toEqual(['-a', '-b']);
