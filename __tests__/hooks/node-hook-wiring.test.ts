@@ -39,12 +39,17 @@ import { moveTestHome } from '../setup/test-home';
  * 10. A user's own script taken for Tars's because it has the same name
  *     (`~/.claude/hooks/on-stop.sh`, `C:/me/hooks/notification.sh`): it
  *     would be repointed at the runner and its copies deleted. A .sh is
- *     Tars's only under a Tars install (`app.asar.unpacked/hooks/`), or in a
- *     hooks folder that also holds Tars's `tars-hook.sh`/`tars-hook.mjs`, and
- *     never under the CLI's own config folder (win-reviewer, blocker 1).
+ *     Tars's only in this app's own hooks folder, or in a hooks folder that
+ *     also holds Tars's `tars-hook.sh`/`tars-hook.mjs`, and never under the
+ *     CLI's own config folder (win-reviewer, blocker 1).
  * 11. PowerShell also ends a string at a typographic quote: U+201C to U+201E
  *     end a double-quoted one, U+2018 to U+201B a single-quoted one. A path
  *     holding them is quoted with the other kind, or refused (review item 3).
+ * 12. Another app's hooks taken for Tars's because they sit in an Electron
+ *     install too: the installed Dorothy keeps `.sh` and `.cmd` hooks under
+ *     `...\Programs\Dorothy\resources\app.asar.unpacked\hooks\`, with no
+ *     tars-hook.sh or tars-hook.mjs. Tars never touches another app's hooks
+ *     (orchestrator decision), so `app.asar.unpacked` alone proves nothing.
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
@@ -60,8 +65,25 @@ function oldCheckout(): string {
   fs.writeFileSync(path.join(hooks, 'tars-hook.sh'), '# Tars\n');
   return hooks;
 }
-/** Where an installed Tars keeps its hooks: need not exist on this machine. */
-const PACKAGED = 'C:\\Users\\me\\AppData\\Local\\Programs\\tars\\resources\\app.asar.unpacked\\hooks';
+/** An installed Tars, older than this one: its hooks folder holds Tars's tars-hook.sh like every Tars since 1.8. */
+function packagedTars(): string {
+  const hooks = path.join(fs.mkdtempSync(path.join(tmp, 'Programs-tars-')), 'resources', 'app.asar.unpacked', 'hooks');
+  fs.mkdirSync(path.join(hooks, 'gemini'), { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'tars-hook.sh'), '# Tars\n');
+  return hooks;
+}
+/** The installed Dorothy, as it is laid out on this machine: its own .sh and .cmd hooks, no tars-hook. */
+function dorothyInstall(): string {
+  const hooks = path.join(fs.mkdtempSync(path.join(tmp, 'Programs-Dorothy-')), 'resources', 'app.asar.unpacked', 'hooks');
+  fs.mkdirSync(path.join(hooks, 'gemini'), { recursive: true });
+  for (const name of ['on-stop', 'session-start', 'notification']) {
+    for (const ext of ['.sh', '.cmd', '.ps1']) fs.writeFileSync(path.join(hooks, `${name}${ext}`), '');
+    for (const ext of ['.sh', '.cmd']) fs.writeFileSync(path.join(hooks, 'gemini', `${name}${ext}`), '');
+  }
+  fs.writeFileSync(path.join(hooks, '_hooks-common.ps1'), '');
+  return hooks;
+}
+const DOROTHY_AS_INSTALLED = 'C:\\Users\\nicol\\AppData\\Local\\Programs\\Dorothy\\resources\\app.asar.unpacked\\hooks';
 
 const CLAUDE_EVENTS: Array<[string, string, string | undefined]> = [
   ['PostToolUse', 'post-tool-use', '*'],
@@ -169,6 +191,7 @@ describe('on win32, Claude runs the Node runner', () => {
 
   it('replaces the .sh entries a previous Tars wrote, removes their copies, keeps the user\'s hooks and settings', async () => {
     const old = oldCheckout();
+    const PACKAGED = packagedTars();
     const userHook = { type: 'command', command: 'C:\\me\\my-stop.ps1', timeout: 5 };
     fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
     fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
@@ -226,6 +249,27 @@ describe('on win32, Claude runs the Node runner', () => {
     ]);
   });
 
+  it('leaves the installed Dorothy\'s hooks alone, .sh and .cmd, and adds its own beside them', async () => {
+    const dorothy = dorothyInstall();
+    const theirs = {
+      Stop: [
+        { hooks: [{ type: 'command', command: path.join(dorothy, 'on-stop.sh'), timeout: 30 }] },
+        { hooks: [{ type: 'command', command: `${DOROTHY_AS_INSTALLED.replace(/\\/g, '/')}/on-stop.cmd`, timeout: 30 }] },
+        { hooks: [{ type: 'command', command: `${DOROTHY_AS_INSTALLED}\\on-stop.sh`, timeout: 30 }] },
+      ],
+      SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: path.join(dorothy, 'session-start.cmd'), timeout: 30 }] }],
+    };
+    fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ hooks: theirs }, null, 2));
+
+    await configure();
+    await configure();
+
+    const s = read(claudeSettingsFile());
+    expect(s.hooks.Stop).toEqual([...theirs.Stop, { hooks: [{ type: 'command', command: runnerCmd('on-stop'), timeout: 30 }] }]);
+    expect(s.hooks.SessionStart).toEqual([...theirs.SessionStart, { matcher: '*', hooks: [{ type: 'command', command: runnerCmd('session-start'), timeout: 30 }] }]);
+  });
+
   it('points an entry of a moved checkout at this one', async () => {
     fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
     fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
@@ -263,6 +307,7 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
 
   it('cleans the copies the old probe appended at every start (A11), and the UserPromptSubmit entry', async () => {
     const old = oldCheckout();
+    const PACKAGED = packagedTars();
     const sh = (f: string) => (f === 'on-stop.sh' ? path.join(PACKAGED, 'gemini', f) : path.join(old, 'gemini', f));
     const entry = (f: string, matcher?: string) => ({ hooks: [{ type: 'command', command: sh(f), timeout: 10000 }], ...(matcher ? { matcher } : {}) });
     fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
@@ -294,6 +339,29 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
     for (const [type, event, matcher] of G_EVENTS.filter(e => e[0] !== 'SessionEnd')) {
       expect(s.hooks[type], type).toEqual([{ hooks: [{ type: 'command', command: runnerCmd(event), timeout: 10000 }], ...(matcher ? { matcher } : {}) }]);
     }
+  });
+
+  it('leaves the installed Dorothy\'s Gemini hooks alone and adds its own beside them', async () => {
+    const dorothy = dorothyInstall();
+    const theirs = {
+      AfterAgent: [
+        { hooks: [{ type: 'command', command: path.join(dorothy, 'gemini', 'on-stop.sh'), timeout: 10000 }] },
+        { hooks: [{ type: 'command', command: `${DOROTHY_AS_INSTALLED}\\gemini\\on-stop.sh`, timeout: 10000 }] },
+        { hooks: [{ type: 'command', command: `${DOROTHY_AS_INSTALLED}\\gemini\\on-stop.sh`, timeout: 10000 }] },
+      ],
+      Notification: [{ matcher: '*', hooks: [{ type: 'command', command: path.join(dorothy, 'gemini', 'notification.cmd'), timeout: 10000 }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: `${DOROTHY_AS_INSTALLED}\\gemini\\user-prompt-submit.sh`, timeout: 10000 }] }],
+    };
+    fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+    fs.writeFileSync(geminiSettingsFile(), JSON.stringify({ hooks: theirs }, null, 2));
+
+    await configure();
+    await configure();
+
+    const s = read(geminiSettingsFile());
+    expect(s.hooks.AfterAgent).toEqual([...theirs.AfterAgent, { hooks: [{ type: 'command', command: runnerCmd('gemini/on-stop'), timeout: 10000 }] }]);
+    expect(s.hooks.Notification).toEqual([...theirs.Notification, { matcher: '*', hooks: [{ type: 'command', command: runnerCmd('gemini/notification'), timeout: 10000 }] }]);
+    expect(s.hooks.UserPromptSubmit).toEqual(theirs.UserPromptSubmit);
   });
 
   it('twice writes nothing the second time', async () => {

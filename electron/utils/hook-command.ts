@@ -61,20 +61,26 @@ export function nodeHookCommand(script: string, ...args: string[]): string {
 
 /**
  * A matcher for the .sh command a previous Tars wrote: the bare absolute path
- * `<hooks>/<rel>` of a Tars install, and nothing else.
+ * `<hooks>/<rel>` of a Tars hooks folder, and nothing else.
  *
  * The name alone proves nothing: `on-stop.sh` or `notification.sh` is what a
- * user calls their own hook too, and a false match repoints it at the runner
- * and deletes its copies. So a .sh is Tars's only
- *  - in the hooks folder of a packaged Tars (`.../app.asar.unpacked/hooks/`),
+ * user calls their own hook too, and what other apps ship (the installed
+ * Dorothy keeps its own in `.../Programs/Dorothy/resources/app.asar.unpacked/
+ * hooks/`). A false match repoints it at the runner and
+ * deletes its copies, and Tars never touches another app's hooks. So a .sh
+ * is Tars's only
+ *  - in `hooksDir`, this app's own hooks folder, the one the runner is
+ *    resolved from (this install or this dev checkout),
  *  - or in a hooks folder that holds Tars's own `tars-hook.sh` or
- *    `tars-hook.mjs` beside it (a dev checkout, this one or an older one),
+ *    `tars-hook.mjs` beside it (an older Tars, installed or checked out;
+ *    every Tars since 1.8 ships tars-hook.sh),
  * and never under the CLI's config folder (`cliConfigDir`, or any `.claude`
  * or `.gemini` folder), whatever it holds: that is where users keep theirs.
  */
-export function legacyShCommand(rel: string, cliConfigDir: string): (command: string) => boolean {
+export function legacyShCommand(rel: string, cliConfigDir: string, hooksDir: string): (command: string) => boolean {
   const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
   const configRoot = norm(path.resolve(cliConfigDir)).toLowerCase();
+  const ownRoot = norm(path.resolve(hooksDir)).toLowerCase();
   const tail = `/hooks/${rel}`;
   return command => {
     const raw = command.trim();
@@ -84,7 +90,7 @@ export function legacyShCommand(rel: string, cliConfigDir: string): (command: st
     const lower = file.toLowerCase();
     if (lower.startsWith(`${configRoot}/`) || /\/\.(claude|gemini)\//.test(lower)) return false;
     const hooksRoot = file.slice(0, file.length - rel.length - 1);
-    if (/\/app\.asar\.unpacked\/hooks$/i.test(hooksRoot)) return true;
+    if (hooksRoot.toLowerCase() === ownRoot) return true;
     return ['tars-hook.sh', 'tars-hook.mjs'].some(name => fs.existsSync(path.join(hooksRoot, name)));
   };
 }

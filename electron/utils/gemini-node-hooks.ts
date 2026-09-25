@@ -34,7 +34,7 @@ export function configureGeminiNodeHooks(configDir: string, hooksDir: string): v
     { type: 'Notification', file: 'notification.sh', matcher: '*' },
     { type: 'BeforeAgent', file: 'user-prompt-submit.sh', matcher: undefined, formerTypes: ['UserPromptSubmit'] },
   ].map(({ file, ...rest }) => ({
-    ...rest, event: `gemini/${file.replace(/\.sh$/, '')}`, isLegacy: legacyShCommand(`gemini/${file}`, configDir),
+    ...rest, event: `gemini/${file.replace(/\.sh$/, '')}`, isLegacy: legacyShCommand(`gemini/${file}`, configDir, hooksDir),
   }));
 
   type Settings = { hooks?: HookTable; security?: Record<string, unknown>; [key: string]: unknown };
