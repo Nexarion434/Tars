@@ -464,7 +464,8 @@ function telegramFiles(home) {
   put(".ssh/id_rsa", "KEY");
   put(".dorothy/app-settings.json.bak", "{}");
   put(".tars-private/hermes-webhook-secret", "SECRET");
-  fs.symlinkSync(path.join(home, ".dorothy"), path.join(home, "work", "innocent"));
+  // A junction: Windows lets any account make one (decision D4); the type is ignored off Windows.
+  fs.symlinkSync(path.join(home, ".dorothy"), path.join(home, "work", "innocent"), "junction");
   fs.linkSync(path.join(home, ".tars-private", "hermes-webhook-secret"), path.join(home, "work", "notes.txt"));
 }
 

@@ -31,6 +31,7 @@ vi.mock('electron', () => ({ app: { getAppPath: () => process.cwd() } }));
 
 import * as os from 'node:os';
 import { removeLegacyHookLogs } from '../../../electron/services/hooks-manager';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 let dir: string;
 let files: string[];
@@ -55,7 +56,7 @@ describe('the logs the old hooks left in /tmp', () => {
     for (const file of files) expect(fs.existsSync(file)).toBe(false);
   });
 
-  it('never follow a link planted there, nor remove the link', () => {
+  it.skipIf(cannotSymlink())('never follow a link planted there, nor remove the link', () => {
     const target = path.join(dir, 'somebody-else-s-file');
     fs.writeFileSync(target, 'keep me');
     fs.symlinkSync(target, files[0]);

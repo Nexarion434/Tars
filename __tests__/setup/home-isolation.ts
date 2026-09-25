@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { homeVariables } from './test-home';
 
 /**
  * The suite runs in a HOME of its own, and cannot write into the one it started in.
@@ -32,14 +33,44 @@ import { fileURLToPath } from 'node:url';
  * swallows the error, as ensureProjectTrusted does. The repository is the one
  * place under that home a test may write. What it cannot see: a native module
  * writing on its own (better-sqlite3), and a child given the real HOME
- * explicitly.
+ * explicitly. On Windows, two more: a child spawned with an environment that
+ * lacks USERPROFILE (libuv then asks Windows for the account's real profile,
+ * so its os.homedir() is the real one), and any program that asks Windows for
+ * the profile folder directly instead of reading the environment, as
+ * Electron's getPath('home') does.
+ *
+ * Windows, measured on 2026-09-25: `os.homedir()` reads USERPROFILE, not HOME,
+ * so HOME alone left DATA_DIR on the real %USERPROFILE%\.dorothy. There the
+ * profile variables move with HOME (USERPROFILE, HOMEDRIVE + HOMEPATH, APPDATA,
+ * LOCALAPPDATA), and the ones the run started with are protected as HOME is.
+ * And the temp dir lives under the account home (%LOCALAPPDATA%\Temp), so the
+ * guard refused every test that wrote into it, 463 of them: the temp dir is let
+ * through when it lies under a protected home, and nothing it contains that is
+ * protected in its own right (a sandbox HOME made there) is. macOS and Linux
+ * keep their temp dir outside the home, and get neither change.
  */
 
 type Violation = { op: string; path: string; stack: string };
 
+/** The Windows variables that name the profile, moved with HOME on win32. */
+const PROFILE_VARIABLES = ['USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA'] as const;
+const onWindows = process.platform === 'win32';
+/** \\.\pipe\name or \\?\pipe\name, either slash: the Windows pipe namespace. */
+const NAMED_PIPE = /^[\\/]{2}[.?][\\/]pipe[\\/]/i;
+/** A `.` or `..` segment: Windows collapses it, and `\\.\pipe\..\C:\...` is a file. */
+const DOT_SEGMENT = /(^|[\\/])\.{1,2}([\\/]|$)/;
+
+/** A genuine named pipe: in the pipe namespace, and nothing in its name that climbs out of it. */
+function isNamedPipe(target: string): boolean {
+  const prefix = NAMED_PIPE.exec(target);
+  return prefix !== null && !DOT_SEGMENT.test(target.slice(prefix[0].length));
+}
+
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
+  /** On Windows, the profile variables as the run found them. Empty elsewhere. */
+  originalProfile: Record<string, string | undefined>;
   /** The account's home directory, which no environment variable can move. */
   accountHome: string;
   throwawayHome: string;
@@ -97,6 +128,7 @@ function accountHome(): string {
 const firstRun = !globals[KEY];
 const guard: HomeGuard = globals[KEY] ?? {
   originalHome: process.env.HOME,
+  originalProfile: onWindows ? Object.fromEntries(PROFILE_VARIABLES.map(key => [key, process.env[key]])) : {},
   accountHome: accountHome(),
   throwawayHome: '',
   protectedRoots: [],
@@ -111,21 +143,40 @@ const guard: HomeGuard = globals[KEY] ?? {
 globals[KEY] = guard;
 
 if (firstRun) {
-  for (const home of [guard.originalHome, guard.accountHome]) {
+  const { USERPROFILE, APPDATA, LOCALAPPDATA } = guard.originalProfile;
+  for (const home of [guard.originalHome, guard.accountHome, USERPROFILE, APPDATA, LOCALAPPDATA]) {
     if (home) guard.protect(home);
   }
 }
 
 guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-'));
 guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome)];
-process.env.HOME = guard.throwawayHome;
+const temp = canonical(os.tmpdir());
+if (guard.protectedRoots.some(root => temp !== root && inside(temp, root))) guard.allowedRoots.push(temp);
+// HOME, and on Windows the variables that name the profile: test-home.ts's list.
+const moved = homeVariables(guard.throwawayHome);
+for (const dir of [moved.APPDATA, moved.LOCALAPPDATA]) if (dir) fs.mkdirSync(dir, { recursive: true });
+Object.assign(process.env, moved);
 
+/**
+ * Refused when some protected root holds the target and no allowed root inside
+ * that protected root does. An allowed root lets through only what is more
+ * specific than the protection it overrides: the temp dir opens up the account
+ * home around it, never a protected folder made inside it.
+ */
 function violationAt(value: unknown): string | undefined {
   const target = pathOf(value);
   if (target === undefined) return undefined;
+  // A Windows named pipe (\\.\pipe\..., as node-pty's ConPTY input) is not a
+  // file under any home, and resolving one opens it: realpath took the pipe's
+  // only connection, and node-pty's own open then failed with EBUSY. One that
+  // climbs out with `..` is a file, and is checked as one.
+  if (isNamedPipe(target)) return undefined;
   const resolved = canonical(target);
-  if (!guard.protectedRoots.some(root => inside(resolved, root))) return undefined;
-  if (guard.allowedRoots.some(root => inside(resolved, root))) return undefined;
+  const protectedBy = guard.protectedRoots.filter(root => inside(resolved, root));
+  if (protectedBy.length === 0) return undefined;
+  const allowedBy = guard.allowedRoots.filter(root => inside(resolved, root));
+  if (protectedBy.every(root => allowedBy.some(allowed => inside(allowed, root)))) return undefined;
   return resolved;
 }
 
@@ -215,6 +266,10 @@ afterAll(() => {
   fs.rmSync(guard.throwawayHome, { recursive: true, force: true });
   if (guard.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = guard.originalHome;
+  for (const [key, value] of Object.entries(guard.originalProfile)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   if (found.length > 0) {
     const lines = found.map(v => {
       const where = v.stack.split('\n').find(line => line.includes(process.cwd()) && !line.includes('home-isolation.ts'));

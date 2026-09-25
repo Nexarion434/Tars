@@ -110,9 +110,15 @@ function scriptUnderTest(name: string, port: number): string {
   return out;
 }
 
-/** Run a hook the way Claude Code does, and kill it where Claude Code would. */
+/**
+ * Run a hook the way Claude Code does, and kill it where Claude Code would.
+ *
+ * A child that never starts (no /bin/bash, as on Windows) emits `error` and
+ * never `exit`: waiting on `exit` alone left the whole file hanging with no
+ * test failing. It rejects with the spawn error instead.
+ */
 function runHook(name: string, port: number, stdin: unknown): Promise<{ ms: number; killed: boolean }> {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const started = Date.now();
     const child = spawn('/bin/bash', [scriptUnderTest(name, port)], {
       env: { ...process.env, CLAUDE_AGENT_ID: 'hook-test-agent', CLAUDE_PROJECT_PATH: tmp, HOME: tmp },
@@ -122,6 +128,12 @@ function runHook(name: string, port: number, stdin: unknown): Promise<{ ms: numb
     child.stderr.resume();
     const killer = setTimeout(() => child.kill('SIGKILL'), HOOK_TIMEOUT_MS);
     let settled = false;
+    child.on('error', error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      reject(error);
+    });
     child.on('exit', () => {
       if (settled) return;
       settled = true;
@@ -133,9 +145,13 @@ function runHook(name: string, port: number, stdin: unknown): Promise<{ ms: numb
   });
 }
 
-/** As runHook, but keeping stdout: the hook's answer to the CLI is a contract. */
+/**
+ * As runHook, but keeping stdout: the hook's answer to the CLI is a contract.
+ * Killed at the same hook timeout, and rejected on a spawn error, for the same
+ * reason: a hook that cannot run fails its test instead of hanging the file.
+ */
 function runHookCapturing(name: string, port: number, stdin: unknown): Promise<{ ms: number; out: string }> {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const started = Date.now();
     const child = spawn('/bin/bash', [scriptUnderTest(name, port)], {
       env: { ...process.env, CLAUDE_AGENT_ID: 'hook-test-agent', CLAUDE_PROJECT_PATH: tmp, HOME: tmp },
@@ -143,7 +159,20 @@ function runHookCapturing(name: string, port: number, stdin: unknown): Promise<{
     let out = '';
     child.stdout.on('data', d => { out += String(d); });
     child.stderr.resume();
-    child.on('exit', () => resolve({ ms: Date.now() - started, out }));
+    const killer = setTimeout(() => child.kill('SIGKILL'), HOOK_TIMEOUT_MS);
+    let settled = false;
+    child.on('error', error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      reject(error);
+    });
+    child.on('exit', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      resolve({ ms: Date.now() - started, out });
+    });
     child.stdin.end(JSON.stringify(stdin));
   });
 }

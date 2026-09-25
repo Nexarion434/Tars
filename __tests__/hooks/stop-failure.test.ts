@@ -47,6 +47,7 @@ import { nodeHookCommand } from '../../electron/utils/hook-command';
 import type { RouteApp, RouteContext, RouteRequest } from '../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../electron/types';
 import { sid } from '../fixtures/session-id';
+import { moveTestHome } from '../setup/test-home';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const HOOK = path.join(HOOKS_DIR, 'stop-failure.sh');
@@ -447,8 +448,7 @@ describe('the waiting notification after a failed turn', () => {
 describe('the hook reaches every claude-family CLI', () => {
   it('is registered for StopFailure in the settings they all read', async () => {
     const home = fs.mkdtempSync(path.join(tmp, 'home-'));
-    const realHome = process.env.HOME;
-    process.env.HOME = home;
+    const restoreHome = moveTestHome(home);
     try {
       const provider = new ClaudeProvider();
       // This writes a settings file. Refuse to write the real one.
@@ -463,7 +463,7 @@ describe('the hook reaches every claude-family CLI', () => {
         : HOOK;
       expect(settings.hooks.StopFailure?.[0]?.hooks?.[0]?.command).toBe(expected);
     } finally {
-      process.env.HOME = realHome;
+      restoreHome();
     }
   });
 

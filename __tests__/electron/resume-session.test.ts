@@ -205,7 +205,9 @@ describe('a project reached through a symlink', () => {
   beforeEach(() => {
     real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-real-')));
     link = path.join(home, `project-link-${path.basename(real)}`);
-    fs.symlinkSync(real, link);
+    // A junction: a link to a directory that Windows lets any account make
+    // (Developer Mode off, decision D4); the type is ignored off Windows.
+    fs.symlinkSync(real, link, 'junction');
   });
 
   it('finds the transcript claude filed under the real path', () => {
@@ -228,7 +230,7 @@ describe('a project reached through a symlink', () => {
   it('resolves a worktree reached through a symlink too', () => {
     const worktreeReal = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-worktree-')));
     const worktreeLink = path.join(home, `worktree-link-${path.basename(worktreeReal)}`);
-    fs.symlinkSync(worktreeReal, worktreeLink);
+    fs.symlinkSync(worktreeReal, worktreeLink, 'junction');
     writeTranscript(worktreeReal, SESSION);
     expect(resolveResumeSessionId({ resumableSessionId: SESSION, projectPath: link, worktreePath: worktreeLink }, home)).toBe(SESSION);
   });

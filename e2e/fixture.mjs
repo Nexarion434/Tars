@@ -536,6 +536,34 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
 const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', 'logs', 'crashDumps'];
 
 /**
+ * Windows names the home in its own variables, and the app reads them, not
+ * HOME. Measured on 2026-09-25: `os.homedir()` is USERPROFILE, so DATA_DIR
+ * followed it to the caller's profile, and so did Electron's appData (and the
+ * cache under it), which is USERPROFILE\AppData\Roaming whatever APPDATA says.
+ * The profile variables are all pointed at the sandbox. Electron's
+ * getPath('home') answers the account's profile whatever the environment says,
+ * and nothing of the app's own is kept there, so that one value is not held
+ * against the launch; what the app does keep under a home, `os.homedir()` and
+ * DATA_DIR, is asked of it and must land in the sandbox.
+ */
+const onWindows = process.platform === 'win32';
+
+function windowsHome(sandboxHome) {
+  if (!onWindows) return {};
+  const roaming = path.join(sandboxHome, 'AppData', 'Roaming');
+  const local = path.join(sandboxHome, 'AppData', 'Local');
+  for (const dir of [roaming, local]) fs.mkdirSync(dir, { recursive: true });
+  const drive = path.parse(sandboxHome).root.replace(/[\\/]+$/, '');
+  return {
+    USERPROFILE: sandboxHome,
+    HOMEDRIVE: drive,
+    HOMEPATH: sandboxHome.slice(drive.length),
+    APPDATA: roaming,
+    LOCALAPPDATA: local,
+  };
+}
+
+/**
  * The one way a spec starts the app: inside its sandbox, Chromium profile
  * included, or not at all.
  *
@@ -558,7 +586,7 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, ...opti
   const app = await electron.launch({
     ...options,
     args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
-    env: { ...inheritable(process.env), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+    env: { ...inheritable(process.env), ...env, ...windowsHome(sandboxHome), HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
   });
   // What the app inherited, checked the way its folders are below: a run
   // started by an agent inside Tars carries that agent's CLAUDE_MGR_API_URL
@@ -571,17 +599,36 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, ...opti
     throw new Error(`the app inherited the caller's ${leaked.join(', ')}; launchSandboxed hands it nothing of that family`);
   }
   if (process.env.E2E_TRACE === 'on') await traceApp(app);
-  const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries(
-    names.map(name => {
+  const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries([
+    ...names.map(name => {
       try {
         return [name, running.getPath(name)];
       } catch (error) {
         return [name, `unavailable: ${error}`];
       }
     }),
-  ), ELECTRON_PATHS);
+    // The home the app's own code resolves, and the data directory it computed
+    // from it at load: the constants module beside the app's main script, the
+    // instance the main process already holds (a require returns it cached).
+    ...[
+      ['os.homedir()', () => process.getBuiltinModule('node:os').homedir()],
+      ['DATA_DIR', () => {
+        const { join, dirname } = process.getBuiltinModule('node:path');
+        const manifest = join(running.getAppPath(), 'package.json');
+        const load = process.getBuiltinModule('node:module').createRequire(manifest);
+        return load(join(running.getAppPath(), dirname(load(manifest).main), 'constants')).DATA_DIR;
+      }],
+    ].map(([name, read]) => {
+      try {
+        return [name, read()];
+      } catch (error) {
+        return [name, `unavailable: ${error}`];
+      }
+    }),
+  ]), ELECTRON_PATHS);
   const roots = [sandboxHome, fs.realpathSync(sandboxHome)];
   const outside = Object.entries(landed)
+    .filter(([name]) => !(onWindows && name === 'home'))
     .filter(([, where]) => !roots.some(root => where === root || where.startsWith(root + path.sep)));
   if (outside.length > 0) {
     await app.close();
