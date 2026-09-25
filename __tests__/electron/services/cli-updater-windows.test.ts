@@ -5,11 +5,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 /** The process listing, as the product runs it, unless a case takes it away (as the ACP tests take ps away). */
 const listingBroken = { value: false };
+/** What the updater asked of every process it started: the file and whether its console window is hidden. */
+const started: { file: string; windowsHide: unknown }[] = [];
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
     ...actual,
     execFile: ((file: string, ...rest: unknown[]) => {
+      const options = rest.find(r => r && typeof r === 'object' && !Array.isArray(r)) as { windowsHide?: unknown } | undefined;
+      started.push({ file, windowsHide: options?.windowsHide });
       if (listingBroken.value && /[\\/]powershell\.exe$/i.test(file)) {
         const done = rest.find(r => typeof r === 'function') as ((err: Error, out: string, errOut: string) => void) | undefined;
         setImmediate(() => done?.(Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' }), '', ''));
@@ -77,6 +81,14 @@ import type { AppSettings } from '../../../electron/types';
  *    not installed, instead of saying why.
  * 14. The schedule main.ts starts does not reach the native claude a launch
  *    on Windows would find.
+ *
+ * Added at win-reviewer's gate (2026-09-25), written before the fixes:
+ * 15. A process running the package's script by a path spelled with forward
+ *    slashes (`node C:/.../node_modules/pkg/bin/cli.js`, or in another case)
+ *    reads as not running, and npm replaces the folder under it.
+ * 16. A process the updater starts (the busy check, npm view and install,
+ *    claude.exe update) opens a console window: in the packaged app, a window
+ *    flashing up every thirty minutes.
  */
 
 const onWindows = process.platform === 'win32';
@@ -418,6 +430,38 @@ describe.skipIf(!onWindows)('amp as a global npm package, on Windows', () => {
     expect(result, JSON.stringify(result)).toMatchObject({ outcome: 'deferred' });
     expect(result.detail).toContain('could not be checked');
     expect(recorded().map(c => c[1])).toEqual(['view']);
+  });
+
+  it('15. waits for a process that names the package with forward slashes, in another case', async () => {
+    const home = path.join(root, 'home');
+    const prefix = npmPrefix(home);
+    const script = npmAmp(prefix);
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
+    // C:/USERS/.../node_modules/@SOURCEGRAPH/amp/bin/amp.js: the same file for Windows.
+    const spelled = script.replace(/\\/g, '/').replace(/@sourcegraph/, '@SOURCEGRAPH');
+    const session = await startSession(process.execPath, [spelled], ctx.env);
+
+    const held = await updateCli('amp', 'amp', ctx);
+
+    expect(held.outcome, JSON.stringify(held)).toBe('deferred');
+    expect(held.detail).toContain(`pid ${session.pid}`);
+    expect(recorded().map(c => c[1])).toEqual(['view']);
+  });
+
+  it('16. hides the console window of every process it starts', async () => {
+    const home = path.join(root, 'home');
+    const prefix = npmPrefix(home);
+    npmAmp(prefix);
+    nativeClaude(home);
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
+    started.length = 0;
+
+    await runCliUpdatePass([{ cli: 'claude', command: 'claude' }, { cli: 'amp', command: 'amp' }], ctx);
+
+    const kinds = started.map(s => path.win32.basename(s.file).toLowerCase());
+    // claude.exe update, the busy check (PowerShell, twice) and npm (node.exe, three times).
+    expect(kinds).toEqual(expect.arrayContaining(['claude.exe', 'powershell.exe', 'node.exe']));
+    expect(started.filter(s => s.windowsHide !== true), 'started with a console window').toEqual([]);
   });
 
   it('12. never touches a global prefix outside the home it runs in', async () => {

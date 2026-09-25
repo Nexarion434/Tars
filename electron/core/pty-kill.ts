@@ -1,4 +1,5 @@
 import { fork as nodeFork, type ChildProcess, type ForkOptions } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { IPty } from 'node-pty';
 
@@ -30,9 +31,10 @@ import type { IPty } from 'node-pty';
  *
  * This reaches into node-pty's WindowsPtyAgent (`_agent`, its
  * `_getConsoleProcessList`, `_useConpty`, `_useConptyDll`, `_innerPid` and
- * `exitCode`), as installed at 1.1.0. Any other shape, winpty,
- * `useConptyDll` (whose kill forks nothing) or another version, is left to
- * node-pty. darwin/linux: pty.kill(), and nothing of node-pty is read.
+ * `exitCode`), as installed at 1.1.0, and only a node-pty whose package.json
+ * says 1.1.x is touched. Any other version, one whose version cannot be read,
+ * any other shape, winpty, and `useConptyDll` (whose kill forks nothing) are
+ * left to node-pty. darwin/linux: pty.kill(), and nothing of node-pty is read.
  */
 
 export interface PtyKillDeps {
@@ -42,6 +44,26 @@ export interface PtyKillDeps {
   listAgent?: string;
   /** How long the helper gets to answer, node-pty's own five seconds. */
   timeoutMs?: number;
+  /** The installed node-pty's version, null when it cannot be read. Read from its package.json by default. */
+  nodePtyVersion?: string | null;
+}
+
+/** The internals below are node-pty 1.1's; no other release was read. */
+const HANDLED_NODE_PTY = /^1\.1\.\d+$/;
+
+let installedVersion: string | null | undefined;
+
+/** The installed node-pty's package.json version, read once; null when it cannot be read. */
+function installedNodePtyVersion(): string | null {
+  if (installedVersion !== undefined) return installedVersion;
+  try {
+    const manifest = path.join(path.dirname(require.resolve('node-pty')), '..', 'package.json');
+    const version = (JSON.parse(fs.readFileSync(manifest, 'utf8')) as { version?: unknown }).version;
+    installedVersion = typeof version === 'string' ? version : null;
+  } catch {
+    installedVersion = null;
+  }
+  return installedVersion;
 }
 
 interface ConptyAgent {
@@ -60,6 +82,8 @@ export function killPty(pty: IPty, deps: PtyKillDeps = {}): void {
 }
 
 function listConsoleSafely(pty: IPty, deps: PtyKillDeps): void {
+  const version = deps.nodePtyVersion !== undefined ? deps.nodePtyVersion : installedNodePtyVersion();
+  if (!version || !HANDLED_NODE_PTY.test(version)) return;
   const agent = (pty as unknown as { _agent?: ConptyAgent })._agent;
   if (!agent || agent._useConpty !== true || agent._useConptyDll === true) return;
   if (typeof agent._getConsoleProcessList !== 'function' || typeof agent._innerPid !== 'number') return;
@@ -72,6 +96,8 @@ function consoleProcesses(agent: ConptyAgent, shellPid: number, deps: PtyKillDep
     let helper: ChildProcess;
     try {
       helper = (deps.fork ?? nodeFork)(deps.listAgent ?? defaultListAgent(), [String(shellPid)], { silent: true });
+      // No windowsHide: fork has none, and needs none. It starts process.execPath,
+      // electron.exe in the app, a GUI program that opens no console window.
     } catch (err) {
       // kill() still closes the pseudo console, which ends what runs on it.
       console.warn(`[pty] could not list the processes on the console of ${shellPid}:`, err);

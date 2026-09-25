@@ -41,6 +41,11 @@ import type { IPty } from 'node-pty';
  *    AttachConsole failure, an uncaught exception, a running shell left, or a
  *    list helper left running. The same run with a plain pty.kill() must show
  *    the failure, or the case proves nothing.
+ *
+ * Added at win-reviewer's gate (2026-09-25), written before the fix:
+ * 9. A node-pty other than 1.1.x, or one whose version cannot be read, has
+ *    its internals touched on the strength of their names alone, where it
+ *    must get node-pty's own kill().
  */
 
 type Agent = {
@@ -172,6 +177,25 @@ describe('killPty', () => {
     }
   });
 
+  it('9. leaves a node-pty other than 1.1.x, or of no known version, to its own kill()', () => {
+    for (const nodePtyVersion of ['1.2.0', '1.0.9', '2.1.0', '1.10.0', undefined]) {
+      const forks = fakeFork();
+      const agent = conpty();
+      const listBefore = agent._getConsoleProcessList;
+      const pty = { _agent: agent, killCalls: 0, kill() { pty.killCalls++; } };
+
+      killPty(pty as unknown as IPty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT, nodePtyVersion: nodePtyVersion ?? null });
+
+      expect(pty.killCalls, String(nodePtyVersion)).toBe(1);
+      expect(agent._getConsoleProcessList, String(nodePtyVersion)).toBe(listBefore);
+    }
+    // And 1.1.x, the one read, is handled: the case above is not vacuous.
+    const agent = conpty();
+    const listBefore = agent._getConsoleProcessList;
+    killPty({ _agent: agent, kill() {} } as unknown as IPty, { platform: 'win32', fork: fakeFork().fork, listAgent: LIST_AGENT, nodePtyVersion: '1.1.7' });
+    expect(agent._getConsoleProcessList).not.toBe(listBefore);
+  });
+
   it('7. still kills, and ends nothing, when the helper cannot be forked', async () => {
     const { pty, ended, listed } = fakeTerminal(conpty());
 
@@ -225,6 +249,9 @@ describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals'
     const env = {
       ...process.env,
       NODE_PTY: req.resolve('node-pty'),
+      // The helper, compiled into a scratch folder, finds node-pty and reads
+      // its version the way it does inside the app: by resolving it.
+      NODE_PATH: path.join(repo, 'node_modules'),
       PTY_KILL: path.join(dir, 'pty-kill.js'),
       LIST_AGENT: path.join(path.dirname(req.resolve('node-pty')), 'conpty_console_list_agent.js'),
     };
