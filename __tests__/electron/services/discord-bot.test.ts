@@ -37,7 +37,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-discord-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-discord-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn>; say: (data: string) => void };
@@ -133,7 +133,10 @@ beforeAll(() => {
 afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
 
 
-const PROJECT = path.join(tmpHome, 'projects', 'atlas');
+// Joined the way the linux this file pins spells a path. On a Windows host
+// path.join writes a backslash, which a linux reader of the path keeps as part
+// of a folder name; darwin and linux get the same string either way.
+const PROJECT = path.posix.join(tmpHome, 'projects', 'atlas');
 
 function baseSettings(): AppSettings {
   return {

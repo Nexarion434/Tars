@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fakeGh, publishedAssets, sha256, type FakeGh, type FakeGhState, type FakeRelease } from './fake-gh';
 import { main, moveToCanonical, Refusal, verifyArtifacts } from '../../scripts/release.mjs';
+import { skipOnWindows } from '../setup/platform-limits';
 
 /**
  * `npm run release`, the only way a release is published, and every way it
@@ -47,6 +48,18 @@ const found = xml.match(new RegExp('<key>' + key + '</key>\\s*<string>([^<]*)</s
 if (!found) process.exit(1);
 process.stdout.write(found[1] + '\n');
 `;
+
+/**
+ * The cases whose run reaches that read, which no stand-in can answer on
+ * Windows: execFile('plutil') there starts plutil.com or plutil.exe and nothing
+ * else, and node itself under that name, as the fake gh is, takes plutil's
+ * `-extract` for one of its own options and exits before any script runs. A
+ * release is cut on a Mac (electron-builder --mac); these run on macOS, Linux
+ * and CI.
+ */
+const noPlutil = () => skipOnWindows('release.mjs reads the built app\'s version with plutil, which Windows lacks and '
+  + 'no stand-in can answer there (execFile finds only plutil.com or plutil.exe, and node under that name takes '
+  + '-extract for its own option); a release is cut on a Mac, and these run on macOS, Linux and CI');
 
 function standInPlutil(): () => void {
   const installed = (process.env.PATH ?? '').split(path.delimiter).some(dir => dir && fs.existsSync(path.join(dir, 'plutil')));
@@ -348,7 +361,7 @@ describe('npm run release, before anything is built', () => {
 });
 
 describe('npm run release --dry-run', () => {
-  it('builds, publishes, moves and deletes nothing, from a worktree with a build ready', async () => {
+  it.skipIf(noPlutil())('builds, publishes, moves and deletes nothing, from a worktree with a build ready', async () => {
     const { root, dir } = checkout();
     // The folder that is kept holds five older published versions: a real run
     // would prune two of them.
@@ -520,7 +533,7 @@ describe('npm run release, before it builds', () => {
 
 // Each case runs git, npm and a dozen gh processes: seconds on a busy machine, not milliseconds.
 describe('npm run release, publishing', { timeout: 30_000 }, () => {
-  it('publishes the build it checked, built without CI, GH_TOKEN or GITHUB_TOKEN', async () => {
+  it.skipIf(noPlutil())('publishes the build it checked, built without CI, GH_TOKEN or GITHUB_TOKEN', async () => {
     // With any of the three, electron-builder publishes by itself, before step
     // 3 has checked anything. Placeholders only: nothing here reaches GitHub.
     const { dir } = checkout();
@@ -550,7 +563,7 @@ describe('npm run release, publishing', { timeout: 30_000 }, () => {
     expect(result.out).toContain(`9. ${path.join(fs.realpathSync(kept), `Tars-${VERSION}-arm64.dmg`)}`);
   });
 
-  it('builds over an earlier attempt at this same version, never published, and publishes the new build', async () => {
+  it.skipIf(noPlutil())('builds over an earlier attempt at this same version, never published, and publishes the new build', async () => {
     // A release that stopped after its build leaves that build in release/, and
     // the retry replaces it rather than refusing: nothing of it can be public,
     // since step 1 stops on a release or a tag of this version on GitHub.
@@ -590,7 +603,7 @@ describe('npm run release, publishing', { timeout: 30_000 }, () => {
     expect(gh.state().releases?.[`v${VERSION}`]?.assets.map(asset => asset.name)).toEqual(['latest-mac.yml']);
   });
 
-  it.each([
+  it.skipIf(noPlutil()).each([
     ['its tag on another commit', { target: 'f'.repeat(40) }, `v${VERSION} points at ${'f'.repeat(40)}, not at the commit built`],
     ['the dmg with other bytes', { digests: { [`Tars-${VERSION}-arm64.dmg`]: sha256('other bytes') } }, `GitHub serves Tars-${VERSION}-arm64.dmg with ${sha256('other bytes')}`],
     ['another latest-mac.yml', { manifest: `version: ${VERSION}\n` }, 'the latest-mac.yml GitHub serves is not the one checked'],
@@ -625,7 +638,7 @@ describe('checking a build against its manifest', () => {
     fs.writeFileSync(file, text.replace(from, to));
   };
 
-  it('accepts the build as the harness lays it out, so each refusal below is its own check', async () => {
+  it.skipIf(noPlutil())('accepts the build as the harness lays it out, so each refusal below is its own check', async () => {
     await expect(verifyArtifacts(build(() => {}), VERSION)).resolves.toMatchObject({ yml: expect.stringMatching(/latest-mac\.yml$/) });
   });
 
@@ -652,7 +665,7 @@ describe('checking a build against its manifest', () => {
     await expect(verifyArtifacts(releaseDir, VERSION)).rejects.toThrow(`latest-mac.yml gives Tars-${VERSION}-arm64.dmg ${dmgBytes + 1} bytes, the file has ${dmgBytes}`);
   });
 
-  it('stops on a built app that says another version', async () => {
+  it.skipIf(noPlutil())('stops on a built app that says another version', async () => {
     const releaseDir = build(dir => rewrite(path.join(dir, 'mac-arm64', 'Tars.app', 'Contents', 'Info.plist'), `<string>${VERSION}</string>`, '<string>2.0.0</string>'));
 
     await expect(verifyArtifacts(releaseDir, VERSION)).rejects.toThrow(`the built app says 2.0.0, not ${VERSION}`);

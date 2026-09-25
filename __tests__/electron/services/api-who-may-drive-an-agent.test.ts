@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { sid } from '../../fixtures/session-id';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * Who may start, stop, message, dispatch to, run a task on, delete and create
@@ -555,7 +556,7 @@ describe('Hermes, the one caller published off this machine', () => {
     expect(terminal.written.join('')).not.toContain('fallback');
     expect(fs.existsSync(HERMES_SECRET_LEGACY), 'the secret is still in the directory every agent is handed').toBe(false);
     expect(fs.readFileSync(HERMES_SECRET, 'utf-8')).toBe(SECRET);
-    expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
   });
 
   it('once moved, a secret an older build left in ~/.dorothy opens nothing, and goes', async () => {

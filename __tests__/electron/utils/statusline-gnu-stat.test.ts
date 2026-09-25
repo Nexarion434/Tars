@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { enableStatusLine } from '../../../electron/utils/statusline';
+import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
  * The status line's git cache, on a GNU system (Linux).
@@ -25,6 +26,7 @@ let script: string;
 const dirs: string[] = [];
 
 beforeAll(() => {
+  if (shHooksNotShipped()) return;
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it');
   enableStatusLine();
@@ -59,7 +61,7 @@ function bench(flavour: 'gnu' | 'bsd') {
   return { render, gitCalls };
 }
 
-describe('the git cache of the status line', () => {
+describe.skipIf(shHooksNotShipped())('the git cache of the status line', () => {
   it('1. is reused within its TTL on GNU stat', () => {
     const b = bench('gnu');
     b.render();

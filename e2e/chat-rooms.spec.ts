@@ -1,5 +1,7 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
@@ -33,8 +35,9 @@ test.beforeAll(async () => {
   // path that follows TMPDIR moves the head with the machine (3,842 to 5,111 px
   // between /tmp and macOS's /var/folders, measured for 1.9.0) and, once long,
   // cuts the room's name to its first letter. Spelled /tmp, not /private/tmp:
-  // the fixture compares the app's folders with it.
-  sandboxHome = fs.mkdtempSync('/tmp/dorothy-e2e-chat-');
+  // the fixture compares the app's folders with it. Windows has no /tmp (the
+  // literal made C:\tmp): there the temp dir, and references of its own.
+  sandboxHome = fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'dorothy-e2e-chat-'));
   seedSandbox(sandboxHome, { chatRooms: true });
   app = await launchSandboxed(electron, sandboxHome, {
     timezoneId: 'UTC',

@@ -14,7 +14,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-acp-stop-routes-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-acp-stop-routes-${process.pid}-${Date.now()}`),
 }));
 const serverBundle = path.join(tmpHome, 'bundle.js');
 

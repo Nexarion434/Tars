@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -40,8 +40,7 @@ const REPAINTS = 1000;
  * writes, then a long turn of repaints that set no mode.
  */
 function recorder(log: string, resizes: string): string {
-  return `#!${process.execPath}
-const fs = require('fs');
+  return `const fs = require('fs');
 process.stdin.setRawMode(true);
 process.stdin.resume();
 process.stdin.on('data', chunk => fs.appendFileSync(${JSON.stringify(log)}, chunk));
@@ -80,8 +79,7 @@ test('a panel remounted after a long turn, and the agent window, still send the 
   const resizes = path.join(home, 'resizes.txt');
   fs.writeFileSync(log, '');
   fs.writeFileSync(resizes, '');
-  const cli = path.join(home, `${AGENT.id}.cjs`);
-  fs.writeFileSync(cli, recorder(log, resizes), { mode: 0o755 });
+  const cli = writeNodeCli(path.join(home, `${AGENT.id}.cjs`), recorder(log, resizes));
   // The reader alone, idle and without a terminal, so the board's auto start
   // runs it through the agent's own CLI path.
   fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{

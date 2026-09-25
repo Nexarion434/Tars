@@ -522,8 +522,14 @@ export function seedSandbox(home, { panelHistory = false, chatRooms = false } = 
   }
 
   if (panelHistory) {
-    // Claude Code's directory name for the project: every `/` and `.` becomes `-`.
-    const transcripts = path.join(home, '.claude', 'projects', PROJECT.replace(/[/.]/g, '-'));
+    // Claude Code's directory name for the project: every character that is
+    // not an ASCII letter or digit becomes `-`, so `C:\Users\...` is
+    // `C--Users-...` (read from the folders Claude writes, 2026-09-25). `/` and
+    // `.` alone, the rule written here before, is a name Claude never gives a
+    // Windows path. Written out rather than taken from the app, as
+    // claude-projects-paths.spec.ts does; a sandbox path is far below the 200
+    // characters past which Claude shortens the name.
+    const transcripts = path.join(home, '.claude', 'projects', PROJECT.replace(/[^a-zA-Z0-9]/g, '-'));
     fs.mkdirSync(transcripts, { recursive: true });
     fs.writeFileSync(
       path.join(transcripts, `${HISTORY_SESSION}.jsonl`),
@@ -664,14 +670,35 @@ function inheritable(env) {
 function writeFakeCli(home) {
   const dir = path.join(home, 'bin');
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'fake-cli.cjs');
-  fs.writeFileSync(file, [
-    `#!${process.execPath}`,
+  return writeNodeCli(path.join(dir, 'fake-cli.cjs'), [
     "process.stdout.write('\\x1b[2J\\x1b[Ha CLI of the E2E sandbox: no model, no network, no hook\\r\\n> ');",
     'process.stdin.resume();',
     '',
-  ].join('\n'), { mode: 0o755 });
-  return file;
+  ].join('\n'));
+}
+
+/**
+ * A node script written as a CLI an agent can be given as its `cliPath`, and
+ * the path to give it.
+ *
+ * darwin and linux: `file` itself, a `#!node` script, mode 0755, started as
+ * any executable is. Windows starts no shebang file, and Tars refuses one as
+ * "not a Windows executable" (resolveCliBinary, audit B/E-02), which is right:
+ * there a node CLI is installed by npm as a cmd-shim. So on win32 the same
+ * script (node skips its shebang line) gets npm's shim beside it, as npm 10
+ * writes one and as agent-launch.spec.ts installs its recorder: node.exe
+ * beside the shim, else `node` from the PATH. The shim is the path returned.
+ */
+export function writeNodeCli(file, source) {
+  fs.writeFileSync(file, `#!${process.execPath}\n${source}`, { mode: 0o755 });
+  if (!onWindows) return file;
+  const shim = path.join(path.dirname(file), `${path.basename(file, path.extname(file))}.cmd`);
+  fs.writeFileSync(shim, [
+    '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
+    'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (', '  SET "_prog=node"', ')', '',
+    `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${path.basename(file)}" %*`, '',
+  ].join('\r\n'));
+  return shim;
 }
 
 /**

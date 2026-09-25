@@ -210,7 +210,8 @@ describe('a session the API started', () => {
     expect(spawned).toHaveLength(1);
     const [login, dashC, command] = spawned[0].spawnedWith;
     expect([login, dashC]).toEqual(['-l', '-c']);
-    expect(command).toMatch(new RegExp(`^cd '${project}' && exec '`));
+    // The path escaped for the pattern: a Windows path's `\` would read as escapes.
+    expect(command).toMatch(new RegExp(`^cd '${project.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' && exec '`));
   });
 
   it('takes a /dispatch at its prompt into the same session, as on 2026-09-23 at 02:22:24 it did not', async () => {

@@ -309,7 +309,7 @@ describe('the API path, which is every delegation and dispatch', () => {
     // node-pty is rebuilt against Electron's ABI, so spawning one here would
     // test the build rather than the behaviour; a PTY and a pipe inherit the
     // environment identically, and what matters is that the CLI would read it.
-    const seen = execFileSync('/bin/sh', ['-c', 'printf %s "$DISABLE_AUTOUPDATER"'], {
+    const seen = execFileSync(process.execPath, ['-e', 'process.stdout.write(process.env.DISABLE_AUTOUPDATER ?? "")'], {
       env: spawnCalls[0].env,
       encoding: 'utf-8',
     });

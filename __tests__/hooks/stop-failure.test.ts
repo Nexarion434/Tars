@@ -48,6 +48,7 @@ import type { RouteApp, RouteContext, RouteRequest } from '../../electron/servic
 import type { AgentStatus, AppSettings } from '../../electron/types';
 import { sid } from '../fixtures/session-id';
 import { moveTestHome } from '../setup/test-home';
+import { shHooksNotShipped } from '../setup/platform-limits';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const HOOK = path.join(HOOKS_DIR, 'stop-failure.sh');
@@ -207,7 +208,7 @@ async function failTurn(payload: Record<string, unknown>): Promise<void> {
   }
 }
 
-describe('a turn that fails on an API error', () => {
+describe.skipIf(shHooksNotShipped())('a turn that fails on an API error', () => {
   it('puts the agent in error with the words the CLI wrote instead of an answer', async () => {
     const agent = putAgent();
     // The order the CLI measured: the turn begins, then fails.
@@ -296,7 +297,7 @@ describe('a turn that fails on an API error', () => {
  * noteTurnStarted clears it on a new turn even for an agent left in `error`.
  * TeamRail shows the sentence only while the status is `error`.
  */
-describe('a failed turn left alone', () => {
+describe.skipIf(shHooksNotShipped())('a failed turn left alone', () => {
   it('still shows the failure when the idle prompt comes a minute later', async () => {
     const agent = putAgent();
     post({ agent_id: 'a1', session_id: SESSION, status: 'running', event: 'UserPromptSubmit' });
@@ -361,7 +362,7 @@ describe('a failed turn left alone', () => {
  * asserted there would be the setting's doing and not the guard's. The second
  * test is the proof that it is live in this harness.
  */
-describe('the waiting notification after a failed turn', () => {
+describe.skipIf(shHooksNotShipped())('the waiting notification after a failed turn', () => {
   function withTheAppDefaults(): void {
     Object.assign(ctx.getAppSettings(), { notificationsEnabled: true, notifyOnWaiting: true, notifyOnError: true });
   }
@@ -467,7 +468,7 @@ describe('the hook reaches every claude-family CLI', () => {
     }
   });
 
-  it('is executable, since the CLI runs it by path', () => {
+  it.skipIf(shHooksNotShipped())('is executable, since the CLI runs it by path', () => {
     expect(fs.statSync(HOOK).mode & 0o111).not.toBe(0);
   });
 });
