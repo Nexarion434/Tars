@@ -49,7 +49,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary } from '../platform';
+import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -2357,8 +2357,8 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const seen = new Set<string>();
 
       const push = async (p: string, id: string, custom = false) => {
-        if (!p || p === '/' || p === os.homedir()) return;
-        if (seen.has(p) || /\/\.?worktrees\//.test(p)) return;
+        if (!p || isFilesystemRoot(p) || p === os.homedir()) return;
+        if (seen.has(p) || isInsideWorktreesDir(p)) return;
         seen.add(p);
         if (!await fs.promises.access(p).then(() => true, () => false)) return;
         projects.push({ id, path: p, name: path.basename(p), ...(custom ? { custom: true } : {}) });
@@ -2484,7 +2484,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     return roots
       .filter(r => typeof r === 'string' && r && path.isAbsolute(r))
       .map(r => path.resolve(r))
-      .filter(r => r !== path.parse(r).root && r !== os.homedir());
+      .filter(r => r !== path.parse(r).root && !samePath(r, os.homedir()));
   };
 
   ipcMain.handle('fs:read-project-files', async (_event, params: { paths: string[]; relative: string[] }) => {
