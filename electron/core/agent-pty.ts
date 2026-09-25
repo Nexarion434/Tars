@@ -5,12 +5,23 @@ import { mintAgentToken, revokeTerminalToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
+import { resolveShell, shellArgs, type Env, type FsProbe } from '../platform';
 
 /**
- * How each agent PTY was started: the shell, as it was given to node-pty, and
- * whether it was handed a command to run (`-c`) rather than left interactive.
+ * How each agent PTY was started: the shell, as it was given to node-pty,
+ * whether it runs one command (a shell handed `-c`, or on Windows the CLI
+ * itself) rather than waiting at a prompt, and the environment its caller
+ * gave it, which a CLI started in its place on Windows inherits.
  */
-const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean }>();
+const spawnedAs = new WeakMap<pty.IPty, { shell: string; runsCommand: boolean; env: Env }>();
+
+/**
+ * The name every agent terminal is given. node-pty on Windows answers it when
+ * asked what runs in the terminal, whatever does (lib/windowsTerminal.js
+ * returns `opts.name`; measured by the Windows port's audit, A6): it cannot
+ * see the foreground process there.
+ */
+const TERMINAL_NAME = 'xterm-256color';
 
 /** When each agent PTY last printed something, and whether it has at all. */
 const heardFrom = new WeakMap<pty.IPty, { lastAt: number }>();
@@ -65,8 +76,20 @@ const NODE_PTY_HELPER = 'spawn-helper';
 export function spawnAgentPty(opts: {
   /** The provider's binary, which decides what Tars is allowed to impose. */
   binaryName: string;
+  /** The program: a shell, or on Windows the CLI itself (platform/launch.ts). */
   shell: string;
-  args: string[];
+  /**
+   * Its arguments. A CLI started directly on Windows passes the command line
+   * toLaunch quoted, as one string, which node-pty appends as it is.
+   */
+  args: string[] | string;
+  /**
+   * Whether the program runs one command and ends with it (a shell handed
+   * `-c`, the CLI itself) rather than waiting at a prompt. Said by the caller:
+   * it used to be read from a `-c` among the args, which a CLI started
+   * directly never has.
+   */
+  runsCommand: boolean;
   cwd: string;
   cols: number;
   rows: number;
@@ -85,7 +108,7 @@ export function spawnAgentPty(opts: {
   const token = agentId ? mintAgentToken(agentId) : undefined;
 
   const spawned = pty.spawn(opts.shell, opts.args, {
-    name: 'xterm-256color',
+    name: TERMINAL_NAME,
     cols: size.cols,
     rows: size.rows,
     cwd: opts.cwd,
@@ -116,7 +139,7 @@ export function spawnAgentPty(opts: {
       ...managedCliEnv(opts.binaryName),
     } as { [key: string]: string },
   });
-  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.args.includes('-c') });
+  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: opts.env });
   // Whose terminal this is, so a message that has to wait for a draft in it
   // can name the agent whose panel should say so. Here because this is the
   // one function that spawns an agent's terminal, and a caller that has to
@@ -192,10 +215,17 @@ export function spawnAgentPty(opts: {
  * can be read, starting and then running, and an interactive shell never does
  * at its prompt, where a typed line would run as a command.
  */
-export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
+export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.Platform = process.platform): boolean {
   if (!ptyProcess) return false;
   const spawned = spawnedAs.get(ptyProcess);
   if (!spawned) return false;
+  // Windows: node-pty answers the terminal's name there, never what runs in it
+  // (TERMINAL_NAME above), so nothing is read from it. A terminal runs a CLI
+  // when its process is the CLI, for as long as it lives (its record goes on
+  // exit). The shell an agent waits in there is never typed into, a start
+  // replaces it (startCliInTerminal), so it holds no CLI: read as one, a bot
+  // typed its task into PowerShell as a message and agent:get reported a CLI.
+  if (platform === 'win32') return spawned.runsCommand;
   let foreground: string | undefined;
   try {
     foreground = ptyProcess.process;
@@ -208,6 +238,37 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined): boolean {
   return foreground !== path.basename(spawned.shell)
     && foreground !== spawned.shell
     && foreground !== NODE_PTY_HELPER;
+}
+
+/**
+ * The environment an agent terminal was spawned with, as its caller gave it:
+ * what a CLI started in its place inherits on Windows (startCliInTerminal,
+ * agent-manager.ts), so it runs with the identity, provider and PATH its
+ * terminal had. Undefined for a terminal that did not come from spawnAgentPty
+ * or has exited.
+ */
+export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
+  return ptyProcess ? spawnedAs.get(ptyProcess)?.env : undefined;
+}
+
+/**
+ * The shell an agent's terminal waits in until its CLI starts.
+ *
+ * darwin/linux: `/bin/bash -l`, as always, since the launch line typed into it
+ * is bash. win32: nothing is typed into it (decision D2: a start replaces it
+ * with the CLI), so it is the shell a person gets there (decision D3), the
+ * user's terminalShell setting first, with that shell's own arguments.
+ */
+export function agentShell(opts: {
+  setting?: string;
+  platform?: NodeJS.Platform;
+  env?: Env;
+  fs?: FsProbe;
+} = {}): { shell: string; args: string[] } {
+  const platform = opts.platform ?? process.platform;
+  if (platform !== 'win32') return { shell: '/bin/bash', args: ['-l'] };
+  const shell = resolveShell({ ...opts, platform });
+  return { shell, args: shellArgs(shell, platform) };
 }
 
 /**

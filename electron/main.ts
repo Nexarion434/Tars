@@ -16,7 +16,7 @@ import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { defaultShell } from './utils/default-shell';
+import { resolveShell, shellArgs } from './platform';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
@@ -559,7 +559,9 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = defaultShell();
+      // The shell a person gets (decision D3): on Windows nothing is typed
+      // into it, the start replaces it with the CLI (startCliInTerminal).
+      const shell = resolveShell({ setting: appSettings.terminalShell });
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {
@@ -576,7 +578,8 @@ app.whenReady().then(async () => {
       const ptyProcess = spawnAgentPty({
         binaryName: getProvider('claude').binaryName,
         shell,
-        args: ['-l'],
+        args: shellArgs(shell),
+        runsCommand: false,
         cols: 120,
         rows: 30,
         cwd,
@@ -630,6 +633,13 @@ app.whenReady().then(async () => {
 
       ptyProcess.onExit(({ exitCode }) => {
         const agent = agents.get(id);
+        // Only for the terminal the agent still names: a start that replaces
+        // it (the CLI started in its place on Windows, a restart, the local
+        // switch) is not the agent completing its board task.
+        if (agent && agent.ptyId !== ptyId) {
+          ptyProcesses.delete(ptyId);
+          return;
+        }
         if (agent) {
           const newStatus = exitCode === 0 ? 'completed' : 'error';
           agent.status = newStatus;

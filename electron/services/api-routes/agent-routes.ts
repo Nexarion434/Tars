@@ -10,6 +10,7 @@ import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
+import { toLaunch, withPath, LaunchError } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
@@ -86,11 +87,10 @@ async function spawnAgentSession(
   ctx: RouteContext,
   sendJson: SendJson
 ): Promise<boolean> {
-  // Raw cwd for pty.spawn, shell-escaped form for the `cd` command. These
+  // Raw cwd for pty.spawn; toLaunch quotes it for the `cd` command. These
   // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.
   const rawWorkingDir = agent.worktreePath || agent.projectPath;
-  const workingDir = rawWorkingDir.replace(/'/g, "'\\''");
 
   // Resolve provider and binary: honours the per-agent CLI override, custom
   // CLI paths in Settings, and the agent's provider (claude / codex / gemini /
@@ -237,15 +237,6 @@ async function spawnAgentSession(
     }
   }
 
-  // `exec`: the shell hands its terminal to the CLI instead of waiting on it.
-  // Without it the CLI ran inside the shell's process group and the terminal
-  // named `bash` for the CLI's whole life, so everything that reads what runs
-  // there (cliRunningIn, in core/agent-pty.ts) took a live session for a bare
-  // shell. The provider builds one simple command, the quoted binary and its
-  // arguments, which is what exec needs; a test holds every provider to it.
-  const command = `cd '${workingDir}' && exec ${cliCommand}`;
-
-  const shell = '/bin/bash';
   // Include user-configured CLI dirs so non-claude binaries resolve too.
   const fullPath = buildFullPath(cliPathDirs(appSettings.cliPaths as unknown as Record<string, unknown> | undefined));
 
@@ -277,8 +268,7 @@ async function spawnAgentSession(
   // (MCP project scoping and the hooks depend on them), and provider-specified
   // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
   const spawnEnv: Record<string, string | undefined> = {
-    ...process.env,
-    PATH: fullPath,
+    ...withPath(process.env, fullPath, process.platform),
     TERM: 'xterm-256color',
     ...providerEnvVars,
     ...tasmaniaEnv,
@@ -304,17 +294,35 @@ async function spawnAgentSession(
   const launch = launchBegins(agent.id, { withTask: !!prompt.trim() });
   let ptyProcess: ReturnType<typeof spawnAgentPty>;
   try {
+    // darwin/linux: `/bin/bash -l -c "cd '<dir>' && exec <cmd>"`. `exec`: the
+    // shell hands its terminal to the CLI instead of waiting on it. Without it
+    // the CLI ran inside the shell's process group and the terminal named
+    // `bash` for the CLI's whole life, so everything that reads what runs
+    // there (cliRunningIn, in core/agent-pty.ts) took a live session for a bare
+    // shell. The provider builds one simple command, the quoted binary and its
+    // arguments, which is what exec needs; a test holds every provider to it.
+    // win32: that command read back into argv and the CLI started as the
+    // terminal's process, with no shell (platform/launch.ts, decision D2).
+    const start = toLaunch(cliCommand, rawWorkingDir, spawnEnv);
     ptyProcess = spawnAgentPty({
       binaryName: cliProvider.binaryName,
-      shell,
-      args: ['-l', '-c', command],
+      ...(start.platform === 'win32'
+        ? { shell: start.file, args: start.commandLine }
+        : { shell: start.shell, args: start.args }),
+      runsCommand: true,
       cols: 120,
       rows: 40,
       cwd: rawWorkingDir,
-      env: spawnEnv,
+      env: start.env,
     });
   } catch (err) {
     launchAbandoned(agent.id, launch);
+    // A CLI Windows cannot start as it is configured: said to the caller, as
+    // a provider that refuses its configuration is above.
+    if (err instanceof LaunchError) {
+      sendJson({ error: err.message }, 400);
+      return false;
+    }
     throw err;
   }
 

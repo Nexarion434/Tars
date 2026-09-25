@@ -1,5 +1,5 @@
 import * as pty from 'node-pty';
-import { defaultShell } from '../utils/default-shell';
+import { resolveShell, shellArgs } from '../platform';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { BrowserWindow } from 'electron';
@@ -848,11 +848,13 @@ export function createQuickPty(
   cwd: string | undefined,
   cols: number | undefined,
   rows: number | undefined,
-  mainWindow: BrowserWindow | null
+  mainWindow: BrowserWindow | null,
+  /** The user's terminalShell setting, read on Windows only (decision D3). */
+  shellSetting?: string,
 ): string {
-  const shell = defaultShell();
+  const shell = resolveShell({ setting: shellSetting });
 
-  const ptyProcess = pty.spawn(shell, ['-l'], {
+  const ptyProcess = pty.spawn(shell, shellArgs(shell), {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,

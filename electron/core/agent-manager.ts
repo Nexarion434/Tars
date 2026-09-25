@@ -10,7 +10,9 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { rolesOnLoad } from './agent-role';
 import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
-import { spawnAgentPty } from './agent-pty';
+import type * as pty from 'node-pty';
+import { spawnAgentPty, agentShell } from './agent-pty';
+import { withPath, type DirectLaunch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
@@ -921,6 +923,60 @@ export async function initAgentPty(
   }
 }
 
+/**
+ * The CLI initAgentPty starts in place of a shell, handed over by
+ * startCliInTerminal and taken once. Keyed by the agent record because every
+ * caller reaches initAgentPty through a wrapper that passes the agent alone
+ * (main.ts, the bots, the IPC handlers).
+ */
+const cliToStart = new WeakMap<AgentStatus, DirectLaunch>();
+
+/**
+ * Start an agent's CLI as its terminal's own process, where darwin and linux
+ * type the launch line into the shell waiting there (decision D2, win32).
+ *
+ * Nothing is typed on Windows: a line typed into PowerShell runs each line of
+ * a multi-line prompt as a command (audit A4, proved), and PowerShell 5.1 has
+ * no `&&`. So the waiting shell is killed and the terminal opened again
+ * through initAgentPty, the one function that spawns an agent's terminal,
+ * with the CLI as its process, in the launch's folder and environment.
+ *
+ * The agent names no terminal while its shell is killed: every onExit of an
+ * agent terminal acts only for the terminal its agent names, and the shell
+ * ending is not the agent stopping.
+ */
+export async function startCliInTerminal(
+  agent: AgentStatus,
+  launch: DirectLaunch,
+  deps: { ptyProcesses: Map<string, pty.IPty>; initAgentPty: (agent: AgentStatus) => Promise<string> },
+): Promise<pty.IPty> {
+  const shellId = agent.ptyId;
+  const shell = shellId ? deps.ptyProcesses.get(shellId) : undefined;
+  if (shellId) deps.ptyProcesses.delete(shellId);
+  agent.ptyId = undefined;
+  shell?.kill();
+
+  cliToStart.set(agent, launch);
+  let opened: string;
+  try {
+    opened = await deps.initAgentPty(agent);
+  } catch (err) {
+    cliToStart.delete(agent);
+    throw err;
+  }
+  agent.ptyId = opened;
+  // Still here, initAgentPty never took it: it handed back the terminal a call
+  // before this one was already opening, a shell, not this CLI.
+  if (cliToStart.delete(agent)) {
+    throw new Error(
+      `${agent.name || agent.id}: another terminal was being opened for this agent, so its CLI was not started. Start it again.`,
+    );
+  }
+  const cli = deps.ptyProcesses.get(agent.ptyId);
+  if (!cli) throw new Error(`${agent.name || agent.id}: the terminal of its CLI is gone as soon as it was opened.`);
+  return cli;
+}
+
 async function initAgentPtyLocked(
   agent: AgentStatus,
   mainWindow: BrowserWindow | null,
@@ -931,7 +987,37 @@ async function initAgentPtyLocked(
   // and the call it was queued behind may have just created the PTY it wanted.
   if (agent.ptyId && ptyProcesses.has(agent.ptyId)) return agent.ptyId;
 
-  const shell = '/bin/bash';
+  const cli = cliToStart.get(agent);
+  cliToStart.delete(agent);
+  const { ptyProcess, cwd } = cli ? spawnCli(agent, cli) : await spawnShell(agent);
+
+  const ptyId = uuidv4();
+  ptyProcesses.set(ptyId, ptyProcess);
+  agent.ptyCwd = cwd;
+
+  attachAgentTerminal(agent, ptyId, ptyProcess, handleStatusChangeNotificationCallback, saveAgentsCallback);
+  return ptyId;
+}
+
+/** The CLI as the terminal's process, with the launch's folder and environment (win32, decision D2). */
+function spawnCli(agent: AgentStatus, launch: DirectLaunch): { ptyProcess: pty.IPty; cwd: string } {
+  ensureProjectTrusted(launch.cwd);
+  console.log(`Starting the CLI of agent ${agent.id} in ${launch.cwd}: ${launch.file}`);
+  const ptyProcess = spawnAgentPty({
+    binaryName: getProvider(agent.provider).binaryName,
+    shell: launch.file,
+    args: launch.commandLine,
+    runsCommand: true,
+    cols: 120,
+    rows: 30,
+    cwd: launch.cwd,
+    env: launch.env,
+  });
+  return { ptyProcess, cwd: launch.cwd };
+}
+
+/** The shell an agent's terminal waits in, with the environment its CLI will have. */
+async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; cwd: string }> {
   let cwd = agent.worktreePath || agent.projectPath;
 
   if (!fs.existsSync(cwd)) {
@@ -994,14 +1080,13 @@ async function initAgentPtyLocked(
 
   const ptyProcess = spawnAgentPty({
     binaryName: agentProvider.binaryName,
-    shell,
-    args: ['-l'],
+    ...agentShell({ setting: savedSettings.terminalShell as string | undefined }),
+    runsCommand: false,
     cols: 120,
     rows: 30,
     cwd,
     env: {
-      ...process.env as { [key: string]: string },
-      PATH: fullPath,
+      ...withPath(process.env, fullPath, process.platform),
       ...providerEnvVars,
       // CLAUDE_MGR_API_URL is imposed by spawnAgentPty, on the one line that
       // starts a process, so the API-driven spawn cannot miss it as it did.
@@ -1010,11 +1095,17 @@ async function initAgentPtyLocked(
       ...tasmaniaEnv,
     },
   });
+  return { ptyProcess, cwd };
+}
 
-  const ptyId = uuidv4();
-  ptyProcesses.set(ptyId, ptyProcess);
-  agent.ptyCwd = cwd;
-
+/** What an agent terminal's output and exit do, whichever process it runs. */
+function attachAgentTerminal(
+  agent: AgentStatus,
+  ptyId: string,
+  ptyProcess: pty.IPty,
+  handleStatusChangeNotificationCallback: (agent: AgentStatus, newStatus: string) => void,
+  saveAgentsCallback: () => void,
+): void {
   ptyProcess.onData((data) => {
     const agentData = agents.get(agent.id);
     if (agentData) {
@@ -1060,6 +1151,4 @@ async function initAgentPtyLocked(
     });
     scheduleTick();
   });
-
-  return ptyId;
 }
