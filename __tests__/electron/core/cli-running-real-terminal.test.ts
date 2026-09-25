@@ -27,7 +27,7 @@ const opened: pty.IPty[] = [];
 
 function open(args: string[]): pty.IPty {
   const terminal = spawnAgentPty({
-    binaryName: 'claude', shell: '/bin/bash', args, cwd: '/tmp', cols: 80, rows: 24,
+    binaryName: 'claude', shell: '/bin/bash', args, runsCommand: args.includes('-c'), cwd: '/tmp', cols: 80, rows: 24,
     env: { PATH: '/usr/bin:/bin', HOME: process.env.HOME, TERM: 'xterm-256color' },
   });
   opened.push(terminal);

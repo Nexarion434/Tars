@@ -114,3 +114,13 @@ describe('an agent spawned by a Tars whose HOME is a sandbox', () => {
     expect(command, "the agent was handed the account's MCP config").not.toContain(dirs.electronHome);
   });
 });
+
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux, once the home above
+// has moved as the host names it; the win32 launch (the CLI as the terminal's
+// process) is held by launch-call-sites.test.ts and agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeEach(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterEach(() => { Object.defineProperty(process, 'platform', hostPlatform); });

@@ -86,6 +86,17 @@ import * as pty from 'node-pty';
 import type { AgentStatus } from '../../../electron/types';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
+// The launch these hold is darwin and linux's: a line typed into the shell, or
+// `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
+// CLI as the terminal's process) is held by launch-call-sites.test.ts and
+// agent-terminal-win32.test.ts.
+const hostPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeAll(() => {
+  if (process.platform === 'win32') Object.defineProperty(process, 'platform', { ...hostPlatform, value: 'linux' });
+});
+afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
+
+
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
 let ptyProcesses: typeof import('../../../electron/core/pty-manager')['ptyProcesses'];

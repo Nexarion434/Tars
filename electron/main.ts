@@ -16,7 +16,7 @@ import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { defaultShell } from './utils/default-shell';
+import { resolveShell, shellArgs } from './platform';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
@@ -88,7 +88,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe, boardAgentExited } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
 import { forgetRestart } from './core/agent-restart';
 import {
@@ -559,7 +559,9 @@ app.whenReady().then(async () => {
       const { v4: uuidv4 } = await import('uuid');
 
       const id = uuidv4();
-      const shell = defaultShell();
+      // The shell a person gets (decision D3): on Windows nothing is typed
+      // into it, the start replaces it with the CLI (startCliInTerminal).
+      const shell = resolveShell({ setting: appSettings.terminalShell });
       let cwd = config.projectPath;
 
       if (!fs.existsSync(cwd)) {
@@ -576,7 +578,8 @@ app.whenReady().then(async () => {
       const ptyProcess = spawnAgentPty({
         binaryName: getProvider('claude').binaryName,
         shell,
-        args: ['-l'],
+        args: shellArgs(shell),
+        runsCommand: false,
         cols: 120,
         rows: 30,
         cwd,
@@ -628,31 +631,7 @@ app.whenReady().then(async () => {
         scheduleTick();
       });
 
-      ptyProcess.onExit(({ exitCode }) => {
-        const agent = agents.get(id);
-        if (agent) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
-          agent.status = newStatus;
-          agent.lastActivity = new Date().toISOString();
-          handleStatusChangeNotificationWrapper(agent, newStatus);
-        }
-        ptyProcesses.delete(ptyId);
-        // Emit status event so kanban sync can detect completion
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId: id,
-          status: exitCode === 0 ? 'completed' : 'error',
-          timestamp: new Date().toISOString(),
-        });
-        broadcastToAllWindows('agent:complete', {
-          type: 'complete',
-          agentId: id,
-          ptyId,
-          exitCode,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
+      ptyProcess.onExit(({ exitCode }) => boardAgentExited(id, ptyId, exitCode, handleStatusChangeNotificationWrapper));
 
       return status;
     },
