@@ -50,6 +50,7 @@ import vm from 'node:vm';
 import {
   canonicalReleaseDir, compareVersions, prune, publicationOf, publishRepo, run, sha256Of, versionOf,
 } from './prune-releases.mjs';
+import { npmCommand } from './npm-command.mjs';
 
 /** A reason to stop. Everything else thrown is a bug and is left to crash. */
 export class Refusal extends Error {}
@@ -451,7 +452,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       log(`2. npm run electron:build, without CI, GH_TOKEN or GITHUB_TOKEN${over}`);
       const env = { ...process.env };
       for (const key of ['CI', 'GH_TOKEN', 'GITHUB_TOKEN']) delete env[key];
-      const build = spawnSync('npm', ['run', 'electron:build'], { cwd: root, env, stdio: 'inherit' });
+      const npm = npmCommand('npm', ['run', 'electron:build']);
+      const build = spawnSync(npm.command, npm.args, { cwd: root, env, stdio: 'inherit' });
       if (build.status !== 0) throw new Refusal('npm run electron:build failed');
     }
 
