@@ -1,0 +1,255 @@
+import { describe, it, expect } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
+import ts from 'typescript';
+
+import { killPty, type PtyKillDeps } from '../../../electron/core/pty-kill';
+import type { IPty } from 'node-pty';
+
+/**
+ * Killing a terminal on Windows raises no error (audit A22, matrix row 17).
+ *
+ * node-pty 1.1 ends a ConPTY terminal by forking conpty_console_list_agent.js
+ * with the shell's pid to list the processes on its console. That helper
+ * throws `AttachConsole failed` when the shell has no console any more: every
+ * kill of a terminal whose shell has exited. Reproduced before this was
+ * written, Windows 11 26200, node-pty 1.1.0: 3 of 3 exited cmd.exe, under
+ * Node 22 and under Electron 44. Five seconds later node-pty kills the dead
+ * shell's pid anyway, which Windows may have given to another process.
+ *
+ * How it fails, written before the code (2026-09-25):
+ * 1. darwin/linux: anything but pty.kill(), or node-pty's internals read.
+ * 2. win32, the shell has exited: the list helper is forked anyway (and
+ *    throws AttachConsole failed), or a pid is killed from a stale list.
+ * 3. win32, the shell runs: the processes on its console are not listed and
+ *    ended as node-pty ends them, or the helper's output reaches Tars's own.
+ * 4. win32, the helper fails without a list (the shell exited meanwhile):
+ *    the shell's pid is killed regardless, as node-pty's five second fallback
+ *    does, instead of nothing.
+ * 5. win32, the helper never answers: nothing is ended, or the shell's pid is
+ *    ended after the shell has exited.
+ * 6. win32, a terminal that is not ConPTY through the inbox console (winpty,
+ *    useConptyDll, a node-pty of another shape): altered, or not killed.
+ * 7. win32, the helper cannot be forked at all: the kill throws, or the
+ *    terminal is left running.
+ * 8. For real, 10 exited and 10 running ConPTY terminals killed: an
+ *    AttachConsole failure, an uncaught exception, a running shell left, or a
+ *    list helper left running. The same run with a plain pty.kill() must show
+ *    the failure, or the case proves nothing.
+ */
+
+type Agent = {
+  _useConpty?: boolean;
+  _useConptyDll?: boolean;
+  _innerPid?: number;
+  exitCode?: number;
+  _getConsoleProcessList?: () => Promise<number[]>;
+};
+
+/** A node-pty WindowsTerminal as far as kill() goes: it asks its agent for the console's processes and ends them. */
+function fakeTerminal(agent: Agent | undefined) {
+  const ended: number[] = [];
+  let listed: Promise<unknown> | undefined;
+  const pty = {
+    _agent: agent,
+    killCalls: 0,
+    kill() {
+      pty.killCalls++;
+      if (agent?._getConsoleProcessList) listed = agent._getConsoleProcessList().then(list => { ended.push(...list); });
+    },
+  };
+  return { pty: pty as unknown as IPty & { killCalls: number }, ended, listed: () => listed };
+}
+
+const original = () => Promise.reject(new Error('node-pty\'s own list was asked for'));
+const conpty = (over: Partial<Agent> = {}): Agent => ({
+  _useConpty: true, _useConptyDll: false, _innerPid: 4242, exitCode: undefined, _getConsoleProcessList: original, ...over,
+});
+
+/** A forked list helper, driven by the case. */
+function fakeFork() {
+  const calls: { module: string; args: string[]; options: unknown }[] = [];
+  const children: (EventEmitter & { stdout: PassThrough; stderr: PassThrough; killed: boolean; kill: () => void })[] = [];
+  const fork: NonNullable<PtyKillDeps['fork']> = (module, args, options) => {
+    calls.push({ module, args, options });
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(), stderr: new PassThrough(), killed: false,
+      kill() { child.killed = true; setImmediate(() => child.emit('close', null, 'SIGTERM')); },
+    });
+    children.push(child);
+    return child as never;
+  };
+  return { fork, calls, children };
+}
+
+const LIST_AGENT = 'C:\\x\\node_modules\\node-pty\\lib\\conpty_console_list_agent.js';
+
+describe('killPty', () => {
+  it('1. is pty.kill() on darwin and linux, and reads nothing of node-pty', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const pty = { killCalls: 0, kill() { pty.killCalls++; } };
+      Object.defineProperty(pty, '_agent', { get() { throw new Error('node-pty internals were read'); } });
+
+      killPty(pty as unknown as IPty, { platform });
+
+      expect(pty.killCalls).toBe(1);
+    }
+  });
+
+  it('2. forks nothing and ends nothing once the shell has exited', async () => {
+    const forks = fakeFork();
+    const { pty, ended, listed } = fakeTerminal(conpty({ exitCode: 0 }));
+
+    killPty(pty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT });
+    await listed();
+
+    expect(pty.killCalls).toBe(1);
+    expect(forks.calls).toHaveLength(0);
+    expect(ended).toEqual([]);
+  });
+
+  it('3. lists a running shell\'s console through the same helper, silently, and ends what it names', async () => {
+    const forks = fakeFork();
+    const { pty, ended, listed } = fakeTerminal(conpty());
+
+    killPty(pty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT });
+    expect(forks.calls).toEqual([{ module: LIST_AGENT, args: ['4242'], options: { silent: true } }]);
+    forks.children[0].emit('message', { consoleProcessList: [4242, 5151] });
+    forks.children[0].emit('close', 0, null);
+    await listed();
+
+    expect(ended).toEqual([4242, 5151]);
+  });
+
+  it('4. ends nothing when the helper fails without a list, the shell gone meanwhile', async () => {
+    const forks = fakeFork();
+    const { pty, ended, listed } = fakeTerminal(conpty());
+
+    killPty(pty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT });
+    const child = forks.children[0];
+    child.stderr.write('Error: AttachConsole failed\n');
+    child.stderr.end();
+    child.stdout.end();
+    child.emit('close', 1, null);
+    await listed();
+
+    expect(ended).toEqual([]);
+    // Read, not left to fill: a helper that says more than a pipe holds must not hang.
+    expect(child.stderr.readableFlowing).toBe(true);
+  });
+
+  it('5. ends the shell alone when the helper never answers, and only while the shell still runs', async () => {
+    for (const exitsMeanwhile of [false, true]) {
+      const forks = fakeFork();
+      const agent = conpty();
+      const { pty, ended, listed } = fakeTerminal(agent);
+
+      killPty(pty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT, timeoutMs: 30 });
+      if (exitsMeanwhile) agent.exitCode = 0;
+      await listed();
+
+      expect(forks.children[0].killed).toBe(true);
+      expect(ended).toEqual(exitsMeanwhile ? [] : [4242]);
+    }
+  });
+
+  it('6. leaves winpty, useConptyDll and any other shape to node-pty, and still kills', () => {
+    for (const agent of [conpty({ _useConpty: false }), conpty({ _useConptyDll: true }), { _useConpty: true } as Agent, undefined]) {
+      const forks = fakeFork();
+      const listBefore = agent?._getConsoleProcessList;
+      const pty = { _agent: agent, killCalls: 0, kill() { pty.killCalls++; } };
+
+      killPty(pty as unknown as IPty, { platform: 'win32', fork: forks.fork, listAgent: LIST_AGENT });
+
+      expect(pty.killCalls).toBe(1);
+      expect(agent?._getConsoleProcessList).toBe(listBefore);
+      expect(forks.calls).toHaveLength(0);
+    }
+  });
+
+  it('7. still kills, and ends nothing, when the helper cannot be forked', async () => {
+    const { pty, ended, listed } = fakeTerminal(conpty());
+
+    expect(() => killPty(pty, {
+      platform: 'win32', listAgent: LIST_AGENT, fork: () => { throw Object.assign(new Error('spawn EACCES'), { code: 'EACCES' }); },
+    })).not.toThrow();
+    await listed();
+
+    expect(pty.killCalls).toBe(1);
+    expect(ended).toEqual([]);
+  });
+});
+
+/**
+ * The harness runs in a process of its own, so that what the forked helpers
+ * print lands in a pipe this test reads rather than in vitest's own stderr.
+ * It loads the helper compiled from this worktree's source, and node-pty from
+ * this worktree's node_modules.
+ */
+const HARNESS = String.raw`
+const pty = require(process.env.NODE_PTY);
+const { killPty } = require(process.env.PTY_KILL);
+const mode = process.argv[2];
+const uncaught = [];
+process.on('uncaughtException', err => uncaught.push(String(err)));
+const cmd = (process.env.SystemRoot || 'C:\\Windows') + '\\System32\\cmd.exe';
+const spawn = args => pty.spawn(cmd, args, { cwd: process.cwd(), env: process.env, cols: 80, rows: 24 });
+const exited = Array.from({ length: 10 }, () => spawn(['/d', '/c', 'exit 0']));
+const running = Array.from({ length: 10 }, () => spawn(['/d', '/q', '/k']));
+const kill = mode === 'plain' ? t => t.kill() : t => killPty(t, { listAgent: process.env.LIST_AGENT });
+Promise.all(exited.map(t => new Promise(resolve => t.onExit(resolve)))).then(() => new Promise(r => setTimeout(r, 1500))).then(() => {
+  for (const t of [...exited, ...running]) kill(t);
+  // Past node-pty's own five seconds, and the helper's.
+  setTimeout(() => {
+    const alive = running.map(t => t.pid).filter(pid => { try { process.kill(pid, 0); return true; } catch { return false; } });
+    process.stdout.write(JSON.stringify({ uncaught, alive, running: running.map(t => t.pid) }) + '\n');
+    process.exit(0);
+  }, 7000);
+});
+`;
+
+describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals', () => {
+  it('8. raises no AttachConsole failure and leaves nothing running, where a plain kill() does fail', { timeout: 60_000 }, () => {
+    const repo = process.cwd();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-pty-kill-'));
+    const source = fs.readFileSync(path.join(repo, 'electron', 'core', 'pty-kill.ts'), 'utf8');
+    const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } });
+    fs.writeFileSync(path.join(dir, 'pty-kill.js'), compiled.outputText);
+    fs.writeFileSync(path.join(dir, 'harness.js'), HARNESS);
+    const req = createRequire(path.join(repo, 'package.json'));
+    const env = {
+      ...process.env,
+      NODE_PTY: req.resolve('node-pty'),
+      PTY_KILL: path.join(dir, 'pty-kill.js'),
+      LIST_AGENT: path.join(path.dirname(req.resolve('node-pty')), 'conpty_console_list_agent.js'),
+    };
+    // Both streams kept: the forked helpers print on stderr, the harness reports on stdout.
+    const runCapturing = (mode: 'plain' | 'killPty') => {
+      const r = spawnSync(process.execPath, [path.join(dir, 'harness.js'), mode], { env, cwd: dir, encoding: 'utf8', timeout: 40_000 });
+      const report = JSON.parse(r.stdout.trim().split('\n').pop() || '{}') as { uncaught: string[]; alive: number[]; running: number[] };
+      return { stderr: r.stderr, report };
+    };
+    try {
+      const plain = runCapturing('plain');
+      expect(plain.stderr, 'the negative witness: a plain kill() of an exited terminal no longer fails, and this helper may go').toMatch(/AttachConsole failed/);
+
+      const safe = runCapturing('killPty');
+      expect(safe.stderr).not.toMatch(/AttachConsole failed/);
+      expect(safe.report.uncaught).toEqual([]);
+      expect(safe.report.running).toHaveLength(10);
+      expect(safe.report.alive, 'a running terminal outlived its kill').toEqual([]);
+      const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      const helpers = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+        // Not this PowerShell, whose own command line holds the name.
+        "@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*conpty_console_list_agent*' }).Count"], { encoding: 'utf8' }).trim();
+      expect(helpers, 'a list helper was left running').toBe('0');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
