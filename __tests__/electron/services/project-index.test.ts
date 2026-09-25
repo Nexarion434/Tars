@@ -20,10 +20,12 @@ vi.mock('../../../electron/utils/decode-project-path', async (importOriginal) =>
 });
 
 import { projectFolders, decodedProjectPath, resetProjectIndex, REDECODE_MS } from '../../../electron/services/project-index';
+import { encodeClaudeProjectDir } from '../../../electron/platform';
 
 let tmp: string;
 let root: string;
-const encode = (p: string) => p.replace(/[/.]/g, '-');
+// Claude Code's own folder name. `[/.]` left a Windows path's drive and backslashes in it.
+const encode = encodeClaudeProjectDir;
 
 beforeEach(() => {
   resetProjectIndex();

@@ -7,8 +7,8 @@ import { decodeProjectPath } from '../utils/decode-project-path';
  * path each one stands for, read without blocking the main process.
  *
  * Decoding a folder name back to its path is what costs: Claude Code writes
- * both `/` and `.` as `-`, so decodeProjectPath tries the separators against
- * the disk, segment by segment. On Noah's 27 folders that was 101 ms of
+ * every character but letters and digits as `-`, so decodeProjectPath tries
+ * the separators against the disk, segment by segment. On Noah's 27 folders that was 101 ms of
  * existsSync, and fs:list-projects (Dashboard, Agents, Projects, Brain),
  * memory:list-projects, fs:read-project-files and the project scan of
  * claude:getData each paid it again on every call: 104 to 397 ms per call,

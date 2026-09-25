@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { renameReplacingSync } from '../platform/rename-replacing';
 
 /**
  * Writing a file that holds credentials.
@@ -60,13 +61,16 @@ export function writeSecretFileSync(filePath: string, contents: string): void {
  * file in place; the rename then made the link the secret file itself. Found
  * by the audit of lot 4. A leftover temp file from a write that died goes the
  * same way; it used to be written over.
+ *
+ * On Windows the rename fails while another program holds the file open, even
+ * to read it; it is retried for about a second (platform/rename-replacing.ts).
  */
 export function writeAtomicSync(filePath: string, contents: string, mode?: number): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp`;
   fs.rmSync(tmp, { force: true });
   fs.writeFileSync(tmp, contents, { flag: 'wx', mode: mode ?? 0o666 });
-  fs.renameSync(tmp, filePath);
+  renameReplacingSync(tmp, filePath);
 }
 
 /**

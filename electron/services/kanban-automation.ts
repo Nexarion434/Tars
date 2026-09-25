@@ -14,6 +14,7 @@ import type { AgentStatus, AgentCharacter } from '../types';
 import { launchAgent } from '../core/agent-launch';
 import type { KanbanTask } from '../handlers/kanban-handlers';
 import * as os from 'os';
+import { samePath } from '../platform/path-compare';
 
 // Dependencies interface
 export interface KanbanAutomationDependencies {
@@ -70,7 +71,7 @@ export async function findMatchingAgent(
   if (requiredSkills.length > 0) {
     const matchingWithSkills = idleAgents.find(agent => {
       const agentPath = normalizePath(agent.projectPath);
-      const hasMatchingProject = agentPath === normalizedProjectPath;
+      const hasMatchingProject = samePath(agentPath, normalizedProjectPath);
       const hasRequiredSkills = requiredSkills.every(skill =>
         agent.skills.some(s => s.toLowerCase().includes(skill.toLowerCase()))
       );
@@ -86,7 +87,7 @@ export async function findMatchingAgent(
   // Priority 2: Idle agent with same project (any skills)
   const matchingProject = idleAgents.find(agent => {
     const agentPath = normalizePath(agent.projectPath);
-    return agentPath === normalizedProjectPath;
+    return samePath(agentPath, normalizedProjectPath);
   });
 
   if (matchingProject) {

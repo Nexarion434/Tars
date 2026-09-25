@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
 
 /**
  * Whether an agent's last session can actually be resumed.
@@ -13,20 +14,30 @@ import * as path from 'path';
  * than not starting at all, so the id is only ever used once the file backing
  * it has been found.
  *
- * The project directory name is Claude Code's own encoding: every `/` and `.`
- * in the path becomes `-` (see decode-project-path.ts, which reverses it).
- * Encoding is lossy, so several paths can encode to the same directory name;
- * that is fine here, because the session id is a UUID and the check is only
- * asking whether this exact transcript exists.
+ * The project directory name is Claude Code's own encoding: every character
+ * of the path that is not a letter or a digit becomes `-` (platform/
+ * claude-project-dir.ts; decode-project-path.ts reverses it). On macOS that is
+ * mostly `/` and `.`, the rule this file used to apply, which named no folder
+ * Claude writes on Windows (`C:\Users\x` stayed `C:\Users\x`). Encoding is
+ * lossy, so several paths can encode to the same directory name; that is fine
+ * here, because the session id is a UUID and the check is only asking whether
+ * this exact transcript exists.
  */
 
 /** Claude Code's project directory name for a filesystem path. */
 export function encodeProjectDirName(projectPath: string): string {
-  return projectPath.replace(/[/.]/g, '-');
+  return encodeClaudeProjectDir(projectPath);
 }
 
+/**
+ * Where a session's transcript is: under Claude's folder name for the path,
+ * or, on macOS and Linux, under a spelling Tars used to read when the file is
+ * there and not under Claude's. The first that exists, else Claude's.
+ */
 export function transcriptPath(projectPath: string, sessionId: string, homeDir = os.homedir()): string {
-  return path.join(homeDir, '.claude', 'projects', encodeProjectDirName(projectPath), `${sessionId}.jsonl`);
+  const files = claudeProjectDirNames(projectPath)
+    .map(dir => path.join(homeDir, '.claude', 'projects', dir, `${sessionId}.jsonl`));
+  return (files.length > 1 && files.find(file => fs.existsSync(file))) || files[0];
 }
 
 /**

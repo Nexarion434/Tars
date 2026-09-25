@@ -1,6 +1,7 @@
 /**
  * The platform layer: every decision that differs between darwin/linux and
- * win32 in how Tars starts and ends processes. Callers import from here and
+ * win32 in how Tars starts and ends processes, and how it names, compares,
+ * guards and replaces files. Callers import from here and
  * pass no `if (win32)` of their own. darwin and linux get what they got
  * before this layer existed, byte for byte.
  */
@@ -15,3 +16,7 @@ export {
 } from './windows-command-line';
 export { toLaunch, LaunchError, type Launch, type PosixLaunch, type DirectLaunch, type LaunchErrorCode } from './launch';
 export { killTree, KillTreeError, type KillTreeResult, type KillTreeDeps, type KillTreeErrorCode } from './kill-tree';
+export { samePath, isUnder, isInsideWorktreesDir } from './path-compare';
+export { isUnsafePathSegment } from './windows-names';
+export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';
+export { renameReplacingSync, RENAME_RETRY_BUDGET_MS, type RenameDeps } from './rename-replacing';

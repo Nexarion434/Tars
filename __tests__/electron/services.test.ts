@@ -261,6 +261,16 @@ describe('kanban-automation', () => {
       const result = await kanbanMod.findMatchingAgent('/project', []);
       expect(result).toBe('1');
     });
+
+    // Audit B U-08: only a trailing '/' was stripped, then '===': `C:\x`,
+    // `c:\x\` and `C:/x` never matched on Windows. Written before the fix.
+    it.runIf(process.platform === 'win32')('on Windows, matches the project whatever its case or separators', async () => {
+      mockAgents.set('1', { id: '1', status: 'idle', projectPath: 'c:\\Work\\Project\\', skills: [] });
+      for (const asked of ['C:\\work\\project', 'C:/Work/Project', 'C:\\Work\\Project']) {
+        expect(await kanbanMod.findMatchingAgent(asked, []), asked).toBe('1');
+      }
+      expect(await kanbanMod.findMatchingAgent('C:\\Work\\Project2', [])).toBeNull();
+    });
   });
 
   describe('createAgentForTask', () => {

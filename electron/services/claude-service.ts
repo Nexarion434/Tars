@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { decodedProjectPath } from './project-index';
 import { computeTranscriptUsage } from './transcript-usage';
+import { isInsideWorktreesDir } from '../platform/path-compare';
 
 // Type definitions for Claude data structures
 export interface ClaudeSettings {
@@ -267,7 +268,7 @@ export async function getClaudeProjects(): Promise<ClaudeProject[]> {
       // rather than projects of their own ('main', 'feat-backend' cards).
       if (!decodedPath || decodedPath === '/' || decodedPath === os.homedir()) continue;
       if (!fs.existsSync(decodedPath)) continue;
-      if (/\/\.?worktrees\//.test(decodedPath)) continue;
+      if (isInsideWorktreesDir(decodedPath)) continue;
       if (seenPaths.has(decodedPath)) continue;
       seenPaths.add(decodedPath);
 

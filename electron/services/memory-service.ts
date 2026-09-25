@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
+import { encodeClaudeProjectDir } from '../platform/claude-project-dir';
 
 export interface MemoryFile {
   name: string;
@@ -81,9 +82,9 @@ async function readMemoryFileAsync(filePath: string): Promise<MemoryFile> {
   return memoryFile(filePath, stat, content);
 }
 
-/** Claude Code's own encoding: every '/' and '.' becomes '-'. */
+/** Claude Code's own encoding: every character that is not a letter or a digit becomes '-'. */
 function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/[/.]/g, '-');
+  return encodeClaudeProjectDir(projectPath);
 }
 
 /**
@@ -199,8 +200,8 @@ export function createMemoryFile(memoryDir: string, fileName: string, content: s
     if (!isWithinProjectsDir(memoryDir)) {
       return { success: false, error: 'Access denied' };
     }
-    // Reject path traversal in fileName
-    if (fileName.includes('/') || fileName.includes('..')) {
+    // Reject path traversal and a subdirectory in fileName (`\` separates too, on Windows)
+    if (fileName.includes('/') || fileName.includes(path.sep) || fileName.includes('..')) {
       return { success: false, error: 'Invalid file name' };
     }
     if (!fs.existsSync(memoryDir)) {
