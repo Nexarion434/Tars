@@ -97,7 +97,7 @@ import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 import type { AgentTickItem } from '../../../../electron/utils/agents-tick';
-import { useTestHome } from '../../../setup/test-home';
+import { moveTestHome } from '../../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-routes-window-home-'));
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-routes-window-project-'));
@@ -114,7 +114,7 @@ beforeEach(() => {
   ptyProcesses.clear();
   vi.mocked(writeProgrammaticInput).mockClear();
   // Starting a session pre-accepts workspace trust in ~/.claude.json.
-  restoreHome = useTestHome(home);
+  restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 
   routes = {

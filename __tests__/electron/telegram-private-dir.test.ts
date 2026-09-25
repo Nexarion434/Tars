@@ -79,7 +79,7 @@ vi.mock('https', () => {
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';
-import { useTestHome } from '../setup/test-home';
+import { moveTestHome } from '../setup/test-home';
 
 const home = os.homedir();
 const PRIVATE_FILES = [
@@ -188,7 +188,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
 
   beforeAll(async () => {
     // The server reads its settings from the home it starts in.
-    restoreHome = useTestHome(tmpHome);
+    restoreHome = moveTestHome(tmpHome);
     fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
     fs.writeFileSync(path.join(tmpHome, '.dorothy', 'app-settings.json'), JSON.stringify({
       telegramBotToken: 'not-a-real-bot', telegramChatId: '1',

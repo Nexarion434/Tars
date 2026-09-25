@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { homeVariables, useTestHome, withTestHome } from './test-home';
+import { homeVariables, moveTestHome, withTestHome } from './test-home';
 
 /**
  * The witness for test-home.ts, the one way a test moves the home.
@@ -45,7 +45,7 @@ describe('moving the home for a test', () => {
     const home = freshDir();
     const before = snapshot();
     as('win32');
-    const restore = useTestHome(home);
+    const restore = moveTestHome(home);
     try {
       expect(process.env.HOME).toBe(home);
       expect(process.env.USERPROFILE).toBe(home);
@@ -64,11 +64,13 @@ describe('moving the home for a test', () => {
     const home = freshDir();
     const before = snapshot();
     as(platform);
-    const restore = useTestHome(home);
+    const restore = moveTestHome(home);
     try {
       expect(process.env.HOME).toBe(home);
-      const { HOME: _home, ...others } = snapshot();
-      const { HOME: _before, ...othersBefore } = before;
+      const others = snapshot();
+      const othersBefore = { ...before };
+      delete others.HOME;
+      delete othersBefore.HOME;
       expect(others).toEqual(othersBefore);
       expect(homeVariables(home)).toEqual({ HOME: home });
       if (realPlatform !== 'win32') expect(os.homedir()).toBe(home);
@@ -84,7 +86,7 @@ describe('moving the home for a test', () => {
     const savedAppData = process.env.APPDATA;
     delete process.env.APPDATA;
     try {
-      const restore = useTestHome(home);
+      const restore = moveTestHome(home);
       restore();
       expect('APPDATA' in process.env).toBe(false);
     } finally {

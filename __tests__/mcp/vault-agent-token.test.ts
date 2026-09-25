@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { useTestHome } from '../setup/test-home';
+import { moveTestHome } from '../setup/test-home';
 
 /**
  * mcp-vault presents the agent's own token when it has one.
@@ -45,7 +45,7 @@ beforeEach(() => {
   // The shared file an agent without a token of its own falls back to.
   fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
   fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
-  restoreHome = useTestHome(home);
+  restoreHome = moveTestHome(home);
 });
 
 afterEach(() => {

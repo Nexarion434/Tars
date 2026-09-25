@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/core/agent-manager', () => ({ agents }));
 
 import { registerTranscriptHandlers } from '../../../electron/handlers/transcript-handlers';
-import { useTestHome } from '../../setup/test-home';
+import { moveTestHome } from '../../setup/test-home';
 
 const PROJECT = '/Users/someone/work/demo.app';
 const PROJECT_DIR = '-Users-someone-work-demo-app';
@@ -37,7 +37,7 @@ beforeEach(() => {
   // The handler finds ~ through os.homedir(), which follows HOME. Asserted
   // rather than assumed: if it ever stopped, these reads would head for a real
   // ~/.claude, and this line fails first.
-  restoreHome = useTestHome(home);
+  restoreHome = moveTestHome(home);
   expect(os.homedir()).toBe(home);
 
   agents.clear();

@@ -32,7 +32,7 @@ export function homeVariables(home: string): Record<string, string> {
 }
 
 /** Move the home to `home`. Returns what puts every moved variable back as it was, unset included. */
-export function useTestHome(home: string): () => void {
+export function moveTestHome(home: string): () => void {
   const next = homeVariables(home);
   const before = Object.fromEntries(Object.keys(next).map(key => [key, process.env[key]]));
   Object.assign(process.env, next);
@@ -46,7 +46,7 @@ export function useTestHome(home: string): () => void {
 
 /** Run `body` with the home moved to `home`, and put it back once it returns, throws or settles. */
 export function withTestHome<T>(home: string, body: () => T): T {
-  const restore = useTestHome(home);
+  const restore = moveTestHome(home);
   let result: T;
   try {
     result = body();

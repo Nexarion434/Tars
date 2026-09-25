@@ -81,7 +81,7 @@ import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { sid } from '../../../fixtures/session-id';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
-import { useTestHome } from '../../../setup/test-home';
+import { moveTestHome } from '../../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-false-waiting-home-'));
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-false-waiting-project-'));
@@ -107,7 +107,7 @@ beforeEach(() => {
   ptyProcesses.clear();
   vi.mocked(writeProgrammaticInput).mockClear();
   vi.mocked(delegateOverAcp).mockReset();
-  restoreHome = useTestHome(home);
+  restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 
   routes = {

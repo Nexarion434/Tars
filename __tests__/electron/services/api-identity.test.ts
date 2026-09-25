@@ -67,7 +67,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 import type { AgentStatus, BusMessage } from '../../../electron/types';
-import { useTestHome } from '../../setup/test-home';
+import { moveTestHome } from '../../setup/test-home';
 
 // Imported once the constants above exist: the mock factory reads them, and a
 // static import would run it first. Held from here on, so that the modules the
@@ -386,7 +386,7 @@ describe('the MCP servers that call the API', () => {
     for (const k of KEYS) delete process.env[k];
     const { HOME: agentHome = home, ...rest } = env;
     Object.assign(process.env, { CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, ...rest });
-    restoreHome = useTestHome(agentHome);
+    restoreHome = moveTestHome(agentHome);
   }
 
   afterEach(() => {

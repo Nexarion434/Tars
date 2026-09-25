@@ -40,7 +40,7 @@ import { initAgentPty, agents } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { agentForToken } from '../../../electron/core/agent-tokens';
 import type { AgentStatus } from '../../../electron/types';
-import { useTestHome } from '../../setup/test-home';
+import { moveTestHome } from '../../setup/test-home';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-token-spawn-home-'));
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-token-spawn-cwd-'));
@@ -52,7 +52,7 @@ beforeEach(() => {
   // initAgentPty pre-accepts the workspace trust dialog by writing
   // ~/.claude.json, which is the real file of whoever runs the suite unless
   // HOME points elsewhere. Checked, not assumed.
-  restoreHome = useTestHome(home);
+  restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 });
 
