@@ -104,8 +104,11 @@ beforeAll(async () => {
   documentId = JSON.parse(created.text).document.id;
 });
 
-afterAll(() => {
+afterAll(async () => {
   api.stopApiServer();
+  // Closed before its folder goes: Windows will not delete a database file
+  // still open (EBUSY), where macOS and Linux unlink it from under the handle.
+  (await import('../../../electron/services/vault-db')).closeVaultDb();
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.rmSync(privateDir, { recursive: true, force: true });
 });
