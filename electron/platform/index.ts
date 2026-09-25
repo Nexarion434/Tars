@@ -20,4 +20,5 @@ export { samePath, isUnder, isInsideWorktreesDir } from './path-compare';
 export { isUnsafePathSegment } from './windows-names';
 export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';
 export { windowsSoundCommand, type SoundCommand } from './sound';
+export { credentialStoreDirs } from './credential-stores';
 export { renameReplacingSync, RENAME_RETRY_BUDGET_MS, type RenameDeps } from './rename-replacing';

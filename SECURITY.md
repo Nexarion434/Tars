@@ -399,3 +399,66 @@ list Noah keeps in Settings, and nobody when the list is empty.
   the bot posts can ping (`allowedMentions` with nothing in it). Its invite asks
   for View Channels and Send Messages and nothing else: until the Audit's gate
   of #195 it asked for Read Message History too, which the bot never uses.
+
+## 7. Windows
+
+Measured on Nicolas's machine, Windows 11 Pro 26200, on the fork's `windows`
+branch at `4b26873f`, on the 25th of September 2026. §1 holds there
+unchanged: one account, every agent runs as it. What differs is what stands
+in for the POSIX modes, and where the credentials of other programs live.
+
+**No file mode is a boundary on Windows.** Every `0o600`, `0o700` and `chmod`
+in this file's §5 and in `electron/utils/secret-file.ts` does nothing there:
+Node maps `chmod` to the read-only attribute and nothing else, so
+`app-settings.json`, `api-token`, `~/.tars-private` and its files come out
+with whatever the folder above them hands down. What protects them is the
+profile's access list. `C:\Users\<name>` grants SYSTEM, the Administrators
+group and the account itself, nobody else, and a file under it inherits that:
+another standard account on the machine cannot open it. A file Tars writes
+outside the profile (a project on another drive, `C:\tmp`) has whatever that
+place grants, often every authenticated user.
+
+The profile's list is not always the one that applies. On this machine
+`~\.dorothy` carries an entry of its own, not inherited, that grants read to
+`CodexSandboxUsers` on the folder and everything created in it (`icacls`,
+2026-09-25: `CodexSandboxUsers:(OI)(CI)(RX)`), put there by something other
+than Tars. So `api-token` and `app-settings.json`, which would be `0600` on a
+Mac, are readable by that group's accounts here. Tars neither made that entry
+nor checks for one. The entries on `~\.dorothy` are `icacls
+"%USERPROFILE%\.dorothy"` away, and `icacls <file> /inheritance:r /grant:r
+"%USERNAME%:F"` would narrow one file to its owner. Tars does not run that
+today: nothing yet shows that every reader of those files (the app, the hooks,
+the seven MCP servers, a CLI in a sandbox of its own) still opens them
+afterwards, and a Codex sandbox that reads `~\.dorothy` may be exactly the
+reader that entry is for.
+
+**Credentials that are not dotfiles.** Both ways an agent has of sending a file
+to Telegram (the app's `/api/telegram/send-*` routes and the Telegram MCP
+server) refuse the home's dotfiles by name (§5). Windows programs keep theirs
+under `%APPDATA%` and `%LOCALAPPDATA%` instead, and until this lot both guards
+sent them: the GitHub CLI's `hosts.yml`, gcloud's `credentials.db`, the
+browsers' profiles (cookies, saved passwords), DPAPI's master keys
+(`Microsoft\Protect`, which decrypt the rest), the Credential Manager's files,
+Tars's own Electron profile (`%APPDATA%\tars`). Both guards refuse those now,
+without regard to case, where the variables point and in their default place
+(`electron/platform/credential-stores.ts`, the server's copy held equal to it by
+a test). The list is of stores, not of every program: a tool that keeps a token
+somewhere else in AppData is not on it. macOS has the same gap in `~/Library`
+(Keychains, browser profiles, Tars's own profile), left as it was.
+
+**The notification sound was a way to run code.** Its path is read from
+`app-settings.json`, which every agent can write (§5), and Windows played it by
+pasting the path into PowerShell code: a file named with a `'` ran what
+followed, in a process the main process started (measured with a canary file:
+the old command ran it). The path now reaches a fixed, encoded script as data,
+in the environment, never in the code; only an existing local `.wav` is played,
+a UNC path is refused before it is opened (the lookup alone would send the
+account's NTLM hash to that host), and PowerShell is System32's, by its full
+path, with no profile (`electron/platform/sound.ts`).
+
+**Replacing a file someone is reading.** The atomic writes (§5, ETHOS 7) end in
+a rename over the live file, which Windows refuses while any process has it
+open, even to read. They are tried again for about a second and then fail with
+a message that names the file (`electron/platform/rename-replacing.ts`); under
+twenty reading processes, four hundred writes all landed and no reader saw a
+partial file.
