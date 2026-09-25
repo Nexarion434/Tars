@@ -156,6 +156,16 @@ describe('the gh the scripts run', () => {
 
     expect(() => missing.install()).toThrow(/is not the fake/);
     expect(process.env.PATH).toBe(before);
+    missing.uninstall();
+  });
+
+  it('leaves no folder behind in the temp dir once uninstalled', () => {
+    const other = fakeGh();
+    const folder = path.dirname(other.bin);
+    other.install();
+    other.uninstall();
+
+    expect(fs.existsSync(folder), folder).toBe(false);
   });
 });
 

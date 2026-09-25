@@ -187,7 +187,7 @@ export type FakeGh = {
    * and changes nothing, when the gh that PATH would run is not this fake.
    */
   install(): void;
-  /** Put the PATH back as it was. */
+  /** Put the PATH back as it was, and remove the fake's folder: read state() and calls() before. */
   uninstall(): void;
   setState(state: FakeGhState): void;
   /** What the fake GitHub holds now, with what `release create` added to it. */
@@ -254,8 +254,9 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      // A copy of node when the hard link could not be made: not left in the temp dir.
-      if (onWindows) fs.rmSync(gh, { force: true });
+      // The fake's folder with it (on Windows, a hard link or a copy of node):
+      // nothing a test made is left in the temp dir.
+      fs.rmSync(dir, { recursive: true, force: true });
     },
     setState(next) {
       fs.writeFileSync(stateFile, JSON.stringify(next));
