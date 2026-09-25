@@ -33,13 +33,28 @@ import { fileURLToPath } from 'node:url';
  * place under that home a test may write. What it cannot see: a native module
  * writing on its own (better-sqlite3), and a child given the real HOME
  * explicitly.
+ *
+ * Windows, measured on 2026-09-25: `os.homedir()` reads USERPROFILE, not HOME,
+ * so HOME alone left DATA_DIR on the real %USERPROFILE%\.dorothy. There the
+ * profile variables move with HOME (USERPROFILE, HOMEDRIVE + HOMEPATH, APPDATA,
+ * LOCALAPPDATA), and the ones the run started with are protected as HOME is.
+ * And the temp dir lives under the account home (%LOCALAPPDATA%\Temp), so the
+ * guard refused every test that wrote into it, 463 of them: the temp dir is let
+ * through when it lies under a protected home, and nothing it contains that is
+ * protected in its own right (a sandbox HOME made there) is. macOS and Linux
+ * keep their temp dir outside the home, and get neither change.
  */
 
 type Violation = { op: string; path: string; stack: string };
 
+/** The Windows variables that name the profile, moved with HOME on win32. */
+const PROFILE_VARIABLES = ['USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA'] as const;
+const onWindows = process.platform === 'win32';
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
+  /** On Windows, the profile variables as the run found them. Empty elsewhere. */
+  originalProfile: Record<string, string | undefined>;
   /** The account's home directory, which no environment variable can move. */
   accountHome: string;
   throwawayHome: string;
@@ -97,6 +112,7 @@ function accountHome(): string {
 const firstRun = !globals[KEY];
 const guard: HomeGuard = globals[KEY] ?? {
   originalHome: process.env.HOME,
+  originalProfile: onWindows ? Object.fromEntries(PROFILE_VARIABLES.map(key => [key, process.env[key]])) : {},
   accountHome: accountHome(),
   throwawayHome: '',
   protectedRoots: [],
@@ -111,21 +127,44 @@ const guard: HomeGuard = globals[KEY] ?? {
 globals[KEY] = guard;
 
 if (firstRun) {
-  for (const home of [guard.originalHome, guard.accountHome]) {
+  const { USERPROFILE, APPDATA, LOCALAPPDATA } = guard.originalProfile;
+  for (const home of [guard.originalHome, guard.accountHome, USERPROFILE, APPDATA, LOCALAPPDATA]) {
     if (home) guard.protect(home);
   }
 }
 
 guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-'));
 guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome)];
+const temp = canonical(os.tmpdir());
+if (guard.protectedRoots.some(root => temp !== root && inside(temp, root))) guard.allowedRoots.push(temp);
 process.env.HOME = guard.throwawayHome;
+if (onWindows) {
+  const roaming = path.join(guard.throwawayHome, 'AppData', 'Roaming');
+  const local = path.join(guard.throwawayHome, 'AppData', 'Local');
+  fs.mkdirSync(roaming, { recursive: true });
+  fs.mkdirSync(local, { recursive: true });
+  const { root } = path.parse(guard.throwawayHome);
+  process.env.USERPROFILE = guard.throwawayHome;
+  process.env.HOMEDRIVE = root.replace(/[\\/]+$/, '');
+  process.env.HOMEPATH = guard.throwawayHome.slice(process.env.HOMEDRIVE.length);
+  process.env.APPDATA = roaming;
+  process.env.LOCALAPPDATA = local;
+}
 
+/**
+ * Refused when some protected root holds the target and no allowed root inside
+ * that protected root does. An allowed root lets through only what is more
+ * specific than the protection it overrides: the temp dir opens up the account
+ * home around it, never a protected folder made inside it.
+ */
 function violationAt(value: unknown): string | undefined {
   const target = pathOf(value);
   if (target === undefined) return undefined;
   const resolved = canonical(target);
-  if (!guard.protectedRoots.some(root => inside(resolved, root))) return undefined;
-  if (guard.allowedRoots.some(root => inside(resolved, root))) return undefined;
+  const protectedBy = guard.protectedRoots.filter(root => inside(resolved, root));
+  if (protectedBy.length === 0) return undefined;
+  const allowedBy = guard.allowedRoots.filter(root => inside(resolved, root));
+  if (protectedBy.every(root => allowedBy.some(allowed => inside(allowed, root)))) return undefined;
   return resolved;
 }
 
@@ -215,6 +254,10 @@ afterAll(() => {
   fs.rmSync(guard.throwawayHome, { recursive: true, force: true });
   if (guard.originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = guard.originalHome;
+  for (const [key, value] of Object.entries(guard.originalProfile)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   if (found.length > 0) {
     const lines = found.map(v => {
       const where = v.stack.split('\n').find(line => line.includes(process.cwd()) && !line.includes('home-isolation.ts'));
