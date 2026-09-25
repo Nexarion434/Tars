@@ -89,7 +89,10 @@ test('twenty terminals ended through every kill site raise no AttachConsole fail
       const { internalToken } = req(`${dist}/core/agent-tokens.js`);
       type Pty = { pid: number; write(data: string): void; _agent?: { exitCode?: number } };
       // Where ipcMain.handle keeps each handler, as it registered it.
-      const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, ...args: unknown[]) => unknown> })._invokeHandlers;
+      const handlers = (ipcMain as unknown as { _invokeHandlers?: unknown })._invokeHandlers as Map<string, (event: unknown, ...args: unknown[]) => unknown>;
+      if (!(handlers instanceof Map)) {
+        throw new Error('ipcMain._invokeHandlers is not a Map in this Electron: the spec calls the kill sites through it and must be updated to how this version keeps its ipcMain.handle handlers');
+      }
       /** An ipcMain.handle handler, called as Electron's invoke calls it: awaited, with the event first. */
       const invoke = async (channel: string, ...args: unknown[]) => {
         const handler = handlers.get(channel);
