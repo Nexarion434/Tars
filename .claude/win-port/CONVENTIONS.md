@@ -16,6 +16,22 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
 - Absent: VS Build Tools C++, `jq`, `pwsh` 7. Present: Windows PowerShell 5.1, `wt.exe`, Python 3.10, Git for Windows, `gh`.
 - Never install software, change system settings, or touch the real `%USERPROFILE%\.dorothy`,
   `%USERPROFILE%\.claude` or `%APPDATA%\tars`. Tests and manual runs use a sandbox home.
+- **Safe test shell (mandatory until win-qa's harness lot is merged into `windows`).** On Windows
+  `os.homedir()` reads `USERPROFILE`, not `HOME`, and Electron's own `getPath('home')` ignores the
+  environment. Before `npm test`, `vitest`, `npm run e2e` or starting the app, in that shell:
+  ```powershell
+  $sb = Join-Path $env:TEMP ("tars-sb-" + [guid]::NewGuid().ToString('N').Substring(0,8))
+  New-Item -ItemType Directory -Force "$sb\AppData\Roaming","$sb\AppData\Local" | Out-Null
+  $env:HOME=$sb; $env:USERPROFILE=$sb; $env:APPDATA="$sb\AppData\Roaming"; $env:LOCALAPPDATA="$sb\AppData\Local"
+  ```
+  Tests that spawn `gh` must hit the fake, never `gh.exe` (release/prune-releases tests).
+- **Grep from Git Bash**: `export MSYS_NO_PATHCONV=1` first, or use the Grep tool (MSYS rewrites
+  `/tmp`-like patterns and a search returns a false zero).
+- **Encoding**: Windows PowerShell 5.1 `Get-Content`/`Set-Content` default to ANSI and mangle
+  UTF-8 accents. Edit files with the Edit/Write tools or Node, never a PowerShell read-modify-write.
+- **Symlinks**: Developer Mode is off on this machine (Nicolas's decision D4). A test that needs
+  `fs.symlinkSync` detects the missing privilege on win32 and skips with a stated reason; it must
+  still run on macOS, Linux and CI `windows-latest`.
 
 ## Git
 
@@ -23,6 +39,12 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
 - One lot = one branch `win/<topic>` from `windows`, in your own worktree:
   `git worktree add .claude/worktrees/<agent>-<topic> -b win/<topic> windows`.
   Work only inside that worktree. Never edit a file inside another agent's worktree.
+- **node_modules in a worktree**: link the main checkout's install instead of reinstalling:
+  `cmd /c mklink /J node_modules "..\..\..\node_modules"` from the worktree root (a junction, no
+  admin needed). Same for each `mcp-*/node_modules` you need. **Before removing a worktree, delete
+  the junctions first** with `cmd /c rmdir node_modules` (never `Remove-Item -Recurse`, never
+  `git worktree remove --force` with a junction inside: both can follow it and wipe the main install).
+  If your lot changes `package.json` dependencies, run `npm install` in the worktree instead and say so.
 - Stay inside the file scope your agent file declares. Need a change outside it: say so in
   your report, do not make it.
 - Commit subjects: lowercase, `feat:` / `fix:` / `chore:` / `test:` / `perf:` / `security:`.
