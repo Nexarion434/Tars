@@ -25,8 +25,10 @@
  */
 
 import { execFile } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { npmCommand } from './npm-command.mjs';
 
 const run = promisify(execFile);
 
@@ -247,14 +249,25 @@ function runEverything() {
 }
 
 function runSuite() {
-  const child = execFile('npx', ['playwright', 'test'], { cwd: process.cwd() });
+  const npx = npmCommand('npx', ['playwright', 'test']);
+  const child = execFile(npx.command, npx.args, { cwd: process.cwd() });
   child.stdout?.pipe(process.stdout);
   child.stderr?.pipe(process.stderr);
   return new Promise(resolve => child.on('close', code => resolve(code ?? 1)));
 }
 
-// Only when run as a command, so the decision above can be imported and tested.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Only when run as a command, so the decision above can be imported and tested. Node runs a
+// module from its real path, so argv[1] is compared resolved, as in release.mjs: typed through
+// a junction, a subst drive or a symlink, it never matched and e2e:auto ran nothing.
+function invokedDirectly() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   main().then(code => process.exit(code)).catch(async err => {
     // Runs the suite it announces. It used to announce it and exit 1 with nothing run.
     console.error('[scope] could not decide, running everything:', err);
