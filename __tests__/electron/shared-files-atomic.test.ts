@@ -427,7 +427,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
     await configureHooks();
 
     expect(stopHook()).toBe(OUR_STOP);
-    expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(claudeSettings()).mode & 0o777).toBe(0o600);
   });
 
   it('keeps a change Claude made between the read and the rename', async () => {
