@@ -50,6 +50,8 @@ type Violation = { op: string; path: string; stack: string };
 /** The Windows variables that name the profile, moved with HOME on win32. */
 const PROFILE_VARIABLES = ['USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA'] as const;
 const onWindows = process.platform === 'win32';
+/** \\.\pipe\name or \\?\pipe\name, either slash: the Windows pipe namespace. */
+const NAMED_PIPE = /^[\\/]{2}[.?][\\/]pipe[\\/]/i;
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
@@ -160,6 +162,10 @@ if (onWindows) {
 function violationAt(value: unknown): string | undefined {
   const target = pathOf(value);
   if (target === undefined) return undefined;
+  // A Windows named pipe (\\.\pipe\..., as node-pty's ConPTY input) is not a
+  // file under any home, and resolving one opens it: realpath took the pipe's
+  // only connection, and node-pty's own open then failed with EBUSY.
+  if (NAMED_PIPE.test(target)) return undefined;
   const resolved = canonical(target);
   const protectedBy = guard.protectedRoots.filter(root => inside(resolved, root));
   if (protectedBy.length === 0) return undefined;
