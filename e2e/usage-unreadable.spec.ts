@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, seedSandbox } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
+// Mode 0000 where there are modes; on Windows an ACL entry denying the file's data (see the file).
+import { makeUnreadable } from '../__tests__/setup/file-access';
 
 /**
  * The Usage page saying what it could not read.
@@ -46,7 +48,7 @@ test('names how many transcripts it could not read, and prices the rest', async 
   fs.writeFileSync(path.join(projects, 'good.jsonl'), [assistantLine(1), assistantLine(2)].join('\n'));
   const blocked = path.join(projects, 'blocked.jsonl');
   fs.writeFileSync(blocked, assistantLine(3));
-  fs.chmodSync(blocked, 0o000);
+  const readable = makeUnreadable(blocked, 0o600);
 
   const app = await launchSandboxed(electron, home, {
     env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31491), DOROTHY_E2E: '1' },
@@ -67,6 +69,6 @@ test('names how many transcripts it could not read, and prices the rest', async 
   expect(body).not.toContain('2 transcripts could not be read');
 
   await app.close();
-  fs.chmodSync(blocked, 0o600);
+  readable();
   fs.rmSync(home, { recursive: true, force: true });
 });
