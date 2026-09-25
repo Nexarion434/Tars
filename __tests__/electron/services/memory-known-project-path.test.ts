@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -35,6 +35,7 @@ vi.mock('../../../electron/utils/decode-project-path', () => ({
 
 const HOST = process.platform;
 afterEach(() => { Object.defineProperty(process, 'platform', { value: HOST, configurable: true }); });
+afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 describe.each(['darwin', 'linux'] as const)('Brain on %s', (platform) => {
   it('1, 2, 3. lists the known project once, under its own path, with its memory', async () => {
