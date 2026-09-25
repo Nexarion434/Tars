@@ -33,17 +33,26 @@ export function usesNodeHooks(platform: NodeJS.Platform = process.platform): boo
  *    turns `\\server` into `\server` even inside double quotes; Node takes
  *    `C:/...` and `//server/share/...` as they are;
  *  - double quotes, which both shells read the same way unless the path holds
- *    `$` or a backtick (expanded by both, escaped differently by each); then
- *    single quotes, which both read literally unless the path holds a `'`;
- *  - a path with both is refused, loudly, rather than wired to fail.
+ *    `$` or a backtick (expanded by both, escaped differently by each) or a
+ *    typographic double quote, U+201C to U+201E, where PowerShell ends a
+ *    double-quoted string as it does at `"`; then single quotes, which both
+ *    read literally unless the path holds a `'` or a typographic single quote,
+ *    U+2018 to U+201B, which PowerShell takes for one;
+ *  - a path that neither form carries is refused, loudly, rather than wired
+ *    to fail.
  * The arguments are Tars's own event names, never user input.
  */
+/** What ends or expands a double-quoted string in Git Bash or PowerShell. */
+const BREAKS_DOUBLE_QUOTES = /[$`"\u201C-\u201E]/;
+/** What ends a single-quoted string in Git Bash or PowerShell. */
+const BREAKS_SINGLE_QUOTES = /['\u2018-\u201B]/;
+
 export function nodeHookCommand(script: string, ...args: string[]): string {
   const p = script.replace(/\\/g, '/');
   let quoted: string;
-  if (!/[$`"]/.test(p)) quoted = `"${p}"`;
-  else if (!p.includes("'")) quoted = `'${p}'`;
-  else throw new Error(`The hooks path ${script} cannot be quoted for both Git Bash and PowerShell: it holds a quote and a $ or backtick.`);
+  if (!BREAKS_DOUBLE_QUOTES.test(p)) quoted = `"${p}"`;
+  else if (!BREAKS_SINGLE_QUOTES.test(p)) quoted = `'${p}'`;
+  else throw new Error(`The hooks path ${script} cannot be quoted for both Git Bash and PowerShell: it holds a single quote and a $, a backtick or a double quote.`);
   for (const arg of args) {
     if (!/^[A-Za-z0-9/_.-]+$/.test(arg)) throw new Error(`Not a hook event name: ${arg}`);
   }
@@ -51,14 +60,33 @@ export function nodeHookCommand(script: string, ...args: string[]): string {
 }
 
 /**
- * A matcher for the .sh command a previous Tars wrote, `<hooksDir>/<rel>`:
- * the file name under a `hooks` folder, either separator, so a user's own
- * `my-on-stop.sh` is not taken for Tars's.
+ * A matcher for the .sh command a previous Tars wrote: the bare absolute path
+ * `<hooks>/<rel>` of a Tars install, and nothing else.
+ *
+ * The name alone proves nothing: `on-stop.sh` or `notification.sh` is what a
+ * user calls their own hook too, and a false match repoints it at the runner
+ * and deletes its copies. So a .sh is Tars's only
+ *  - in the hooks folder of a packaged Tars (`.../app.asar.unpacked/hooks/`),
+ *  - or in a hooks folder that holds Tars's own `tars-hook.sh` or
+ *    `tars-hook.mjs` beside it (a dev checkout, this one or an older one),
+ * and never under the CLI's config folder (`cliConfigDir`, or any `.claude`
+ * or `.gemini` folder), whatever it holds: that is where users keep theirs.
  */
-export function legacyShCommand(rel: string): (command: string) => boolean {
-  const escaped = rel.split('/').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\\\/]');
-  const re = new RegExp(`(^|[\\\\/])hooks[\\\\/]${escaped}$`);
-  return command => re.test(command.trim());
+export function legacyShCommand(rel: string, cliConfigDir: string): (command: string) => boolean {
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const configRoot = norm(path.resolve(cliConfigDir)).toLowerCase();
+  const tail = `/hooks/${rel}`;
+  return command => {
+    const raw = command.trim();
+    if (!path.win32.isAbsolute(raw) && !path.posix.isAbsolute(raw)) return false;
+    const file = norm(raw);
+    if (!file.toLowerCase().endsWith(tail.toLowerCase())) return false;
+    const lower = file.toLowerCase();
+    if (lower.startsWith(`${configRoot}/`) || /\/\.(claude|gemini)\//.test(lower)) return false;
+    const hooksRoot = file.slice(0, file.length - rel.length - 1);
+    if (/\/app\.asar\.unpacked\/hooks$/i.test(hooksRoot)) return true;
+    return ['tars-hook.sh', 'tars-hook.mjs'].some(name => fs.existsSync(path.join(hooksRoot, name)));
+  };
 }
 
 /** A Node hook command Tars wrote, from any checkout: which script it runs and with what event. */

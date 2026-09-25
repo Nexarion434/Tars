@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { moveTestHome } from '../setup/test-home';
 
 /**
  * Where the hooks are wired: `configureHooks` of the Claude and Gemini
@@ -35,12 +36,32 @@ import * as path from 'node:path';
  *     on a `'`.
  *  9. The statusline command is unquoted, or turning it off does not
  *     recognise the Node form as Tars's and leaves it behind.
+ * 10. A user's own script taken for Tars's because it has the same name
+ *     (`~/.claude/hooks/on-stop.sh`, `C:/me/hooks/notification.sh`): it
+ *     would be repointed at the runner and its copies deleted. A .sh is
+ *     Tars's only under a Tars install (`app.asar.unpacked/hooks/`), or in a
+ *     hooks folder that also holds Tars's `tars-hook.sh`/`tars-hook.mjs`, and
+ *     never under the CLI's own config folder (win-reviewer, blocker 1).
+ * 11. PowerShell also ends a string at a typographic quote: U+201C to U+201E
+ *     end a double-quoted one, U+2018 to U+201B a single-quoted one. A path
+ *     holding them is quoted with the other kind, or refused (review item 3).
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-hook-wiring-'));
 const fwd = (p: string) => p.replace(/\\/g, '/');
 const runnerCmd = (event: string) => `node "${fwd(path.join(HOOKS_DIR, 'tars-hook.mjs'))}" ${event}`;
+
+/** A dev checkout of an older Tars: its hooks folder holds tars-hook.sh beside the scripts. */
+function oldCheckout(): string {
+  const dir = fs.mkdtempSync(path.join(tmp, 'old-checkout-'));
+  const hooks = path.join(dir, 'hooks');
+  fs.mkdirSync(path.join(hooks, 'gemini'), { recursive: true });
+  fs.writeFileSync(path.join(hooks, 'tars-hook.sh'), '# Tars\n');
+  return hooks;
+}
+/** Where an installed Tars keeps its hooks: need not exist on this machine. */
+const PACKAGED = 'C:\\Users\\me\\AppData\\Local\\Programs\\tars\\resources\\app.asar.unpacked\\hooks';
 
 const CLAUDE_EVENTS: Array<[string, string, string | undefined]> = [
   ['PostToolUse', 'post-tool-use', '*'],
@@ -55,18 +76,18 @@ const CLAUDE_EVENTS: Array<[string, string, string | undefined]> = [
 ];
 
 let home = '';
-const saved: Record<string, string | undefined> = {};
+let restoreHome: () => void = () => {};
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(tmp, 'home-'));
-  for (const k of ['HOME', 'USERPROFILE']) { saved[k] = process.env[k]; process.env[k] = home; }
+  restoreHome = moveTestHome(home);
   expect(os.homedir()).toBe(home);
 });
 
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 afterEach(() => {
-  for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  restoreHome();
   vi.resetModules();
 });
 
@@ -147,18 +168,18 @@ describe('on win32, Claude runs the Node runner', () => {
   });
 
   it('replaces the .sh entries a previous Tars wrote, removes their copies, keeps the user\'s hooks and settings', async () => {
-    const winSh = (f: string) => `C:\\old\\Tars\\hooks\\${f}`;
+    const old = oldCheckout();
     const userHook = { type: 'command', command: 'C:\\me\\my-stop.ps1', timeout: 5 };
     fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
     fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
       model: 'opus',
       hooks: {
         Stop: [
-          { hooks: [{ type: 'command', command: winSh('on-stop.sh'), timeout: 30 }] },
+          { hooks: [{ type: 'command', command: path.join(old, 'on-stop.sh'), timeout: 30 }] },
           { hooks: [userHook] },
-          { hooks: [{ type: 'command', command: winSh('on-stop.sh'), timeout: 30 }] },
+          { hooks: [{ type: 'command', command: path.join(PACKAGED, 'on-stop.sh'), timeout: 30 }] },
         ],
-        SessionStart: [{ matcher: 'startup', hooks: [{ type: 'command', command: winSh('session-start.sh'), timeout: 45 }] }],
+        SessionStart: [{ matcher: 'startup', hooks: [{ type: 'command', command: path.join(PACKAGED, 'session-start.sh'), timeout: 45 }] }],
         PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }],
       },
     }, null, 2));
@@ -176,6 +197,33 @@ describe('on win32, Claude runs the Node runner', () => {
     // The user's matcher and timeout on Tars's own entry are theirs to keep.
     expect(s.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [{ type: 'command', command: runnerCmd('session-start'), timeout: 45 }] }]);
     expect(JSON.stringify(s)).not.toContain('.sh');
+  });
+
+  it('never takes a user\'s own script of the same name for Tars\'s', async () => {
+    // The worst case: a hooks folder in the CLI's own config folder, even holding a tars-hook.sh.
+    const inConfig = path.join(home, '.claude', 'hooks');
+    fs.mkdirSync(inConfig, { recursive: true });
+    fs.writeFileSync(path.join(inConfig, 'tars-hook.sh'), '# copied by the user\n');
+    const elsewhere = path.join(tmp, 'me', 'hooks');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    const mine = [
+      path.join(inConfig, 'on-stop.sh'),
+      'C:\\Users\\me\\.claude\\hooks\\on-stop.sh',
+      'C:\\me\\my-on-stop.sh',
+      path.join(elsewhere, 'on-stop.sh'),
+      'bash ~/.claude/hooks/on-stop.sh',
+    ];
+    const userEntries = mine.map(command => ({ hooks: [{ type: 'command', command, timeout: 7 }] }));
+    fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({ hooks: { Stop: userEntries } }, null, 2));
+
+    await configure();
+    await configure();
+
+    expect(read(claudeSettingsFile()).hooks.Stop).toEqual([
+      ...userEntries,
+      { hooks: [{ type: 'command', command: runnerCmd('on-stop'), timeout: 30 }] },
+    ]);
   });
 
   it('points an entry of a moved checkout at this one', async () => {
@@ -214,7 +262,8 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
   });
 
   it('cleans the copies the old probe appended at every start (A11), and the UserPromptSubmit entry', async () => {
-    const sh = (f: string) => `C:\\old\\Tars\\hooks\\gemini\\${f}`;
+    const old = oldCheckout();
+    const sh = (f: string) => (f === 'on-stop.sh' ? path.join(PACKAGED, 'gemini', f) : path.join(old, 'gemini', f));
     const entry = (f: string, matcher?: string) => ({ hooks: [{ type: 'command', command: sh(f), timeout: 10000 }], ...(matcher ? { matcher } : {}) });
     fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
     fs.writeFileSync(geminiSettingsFile(), JSON.stringify({
@@ -225,6 +274,7 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
         AfterAgent: [entry('on-stop.sh'), entry('on-stop.sh')],
         UserPromptSubmit: [entry('user-prompt-submit.sh'), entry('user-prompt-submit.sh')],
         BeforeTool: [{ matcher: 'x', hooks: [{ type: 'command', command: 'mine.ps1' }] }],
+        SessionEnd: [{ hooks: [{ type: 'command', command: path.join(home, '.gemini', 'hooks', 'gemini', 'session-end.sh') }] }],
       },
     }, null, 2));
 
@@ -236,7 +286,12 @@ describe('on win32, Gemini runs the Node runner on its own events, with the toke
     expect(s.security).toEqual({ environmentVariableRedaction: { enabled: true, allowed: ['MY_KEY', 'CLAUDE_MGR_API_TOKEN'] }, folderTrust: { enabled: true } });
     expect(s.hooks.BeforeTool).toEqual([{ matcher: 'x', hooks: [{ type: 'command', command: 'mine.ps1' }] }]);
     expect(s.hooks.UserPromptSubmit).toBeUndefined();
-    for (const [type, event, matcher] of G_EVENTS) {
+    // A user's own script under ~/.gemini stays, and the runner is added beside it.
+    expect(s.hooks.SessionEnd).toEqual([
+      { hooks: [{ type: 'command', command: path.join(home, '.gemini', 'hooks', 'gemini', 'session-end.sh') }] },
+      { hooks: [{ type: 'command', command: runnerCmd('gemini/session-end'), timeout: 10000 }], matcher: '*' },
+    ]);
+    for (const [type, event, matcher] of G_EVENTS.filter(e => e[0] !== 'SessionEnd')) {
       expect(s.hooks[type], type).toEqual([{ hooks: [{ type: 'command', command: runnerCmd(event), timeout: 10000 }], ...(matcher ? { matcher } : {}) }]);
     }
   });
@@ -272,7 +327,7 @@ describe('the command survives the shells that run it', () => {
     return script;
   }
 
-  const DIRS = ['Claude Project', 'with $HOME and `tick`', "O'Brien space"];
+  const DIRS = ['Claude Project', 'with $HOME and `tick`', "O'Brien space", 'the \u201cbest\u201d \u201eone', 'it\u2019s \u2018mine\u2019 \u201b \u201a'];
 
   it.each(DIRS)('builds a command both shells read back to the same argv (%s)', async dirName => {
     const { nodeHookCommand } = await import('../../electron/utils/hook-command');
@@ -306,9 +361,29 @@ describe('the command survives the shells that run it', () => {
     expect(nodeHookCommand('\\\\server\\share\\hooks\\statusline.mjs')).toBe('node "//server/share/hooks/statusline.mjs"');
   });
 
-  it('refuses a path no quoting can carry through both shells', async () => {
+  it.each([
+    ['C:\\a b\\tars-hook.mjs', 'node "C:/a b/tars-hook.mjs" on-stop'],
+    ['C:\\a$b\\tars-hook.mjs', "node 'C:/a$b/tars-hook.mjs' on-stop"],
+    ['C:\\a`b\\tars-hook.mjs', "node 'C:/a`b/tars-hook.mjs' on-stop"],
+    ["C:\\O'B\\tars-hook.mjs", 'node "C:/O\'B/tars-hook.mjs" on-stop'],
+    ['C:\\\u201cx\u201d\\tars-hook.mjs', "node 'C:/\u201cx\u201d/tars-hook.mjs' on-stop"],
+    ['C:\\\u201ex\\tars-hook.mjs', "node 'C:/\u201ex/tars-hook.mjs' on-stop"],
+    ['C:\\it\u2019s\\tars-hook.mjs', 'node "C:/it\u2019s/tars-hook.mjs" on-stop'],
+    ['C:\\\u2018\u201a\u201b\\tars-hook.mjs', 'node "C:/\u2018\u201a\u201b/tars-hook.mjs" on-stop'],
+  ])('quotes %s as %s', async (script, command) => {
     const { nodeHookCommand } = await import('../../electron/utils/hook-command');
-    expect(() => nodeHookCommand("C:\\a$b'c\\tars-hook.mjs", 'on-stop')).toThrow(/cannot be quoted/);
+    expect(nodeHookCommand(script, 'on-stop')).toBe(command);
+  });
+
+  it.each([
+    "C:\\a$b'c\\tars-hook.mjs",
+    'C:\\a`b\u2019c\\tars-hook.mjs',
+    'C:\\a\u201cb\u2018c\\tars-hook.mjs',
+    'C:\\a\u201db\u201bc\\tars-hook.mjs',
+    "C:\\a\u201eb'c\\tars-hook.mjs",
+  ])('refuses %s, which no quoting carries through both shells', async script => {
+    const { nodeHookCommand } = await import('../../electron/utils/hook-command');
+    expect(() => nodeHookCommand(script, 'on-stop')).toThrow(/cannot be quoted/);
   });
 });
 

@@ -54,6 +54,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 
 import type { AgentStatus } from '../../electron/types';
+import { moveTestHome } from '../setup/test-home';
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
 const GIT_BASH = 'C:\\Program Files\\Git\\bin\\bash.exe';
@@ -83,9 +84,7 @@ let geminiHooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> = 
 beforeAll(async () => {
   port = await freePort();
   fs.mkdirSync(home, { recursive: true });
-  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
-  process.env.HOME = home;
-  process.env.USERPROFILE = home;
+  const restoreHome = moveTestHome(home);
   try {
     const { ClaudeProvider } = await import('../../electron/providers/claude-provider');
     const { GeminiProvider } = await import('../../electron/providers/gemini-provider');
@@ -95,8 +94,7 @@ beforeAll(async () => {
     await (c.configureHooks as (d: string, p?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, 'win32');
     await (g.configureHooks as (d: string, p?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, 'win32');
   } finally {
-    process.env.HOME = saved.HOME;
-    process.env.USERPROFILE = saved.USERPROFILE;
+    restoreHome();
   }
   claudeHooks = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf-8')).hooks;
   geminiHooks = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf-8')).hooks;
