@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+import { pinPlatform } from '../providers/win-fake-disk';
+
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
 let handlers: Map<string, (...args: unknown[]) => Promise<unknown>>;
@@ -16,10 +18,11 @@ vi.mock('electron', () => ({
   },
 }));
 
-// Mock child_process.exec (used via promisify → execAsync)
+// Mock child_process.execFile (used via promisify: `which`, and `gws auth
+// status` as an argv). No shell line is left to mock.
 const mockExec = vi.fn();
 vi.mock('child_process', () => ({
-  exec: (...args: unknown[]) => mockExec(...args),
+  execFile: (...args: unknown[]) => mockExec(...args),
 }));
 
 // Mock os.homedir to use temp directory
@@ -78,8 +81,13 @@ function invokeHandler(channel: string, ...args: unknown[]): Promise<unknown> {
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 
+let unpin: () => void;
+
 beforeEach(() => {
   vi.resetModules();
+  // The darwin/linux lookup: extensionless binaries, `which`. Windows has its
+  // own, in gws-platforms.test.ts.
+  unpin = pinPlatform('darwin');
   handlers = new Map();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gws-test-'));
   existsSyncFilter = null;
@@ -91,6 +99,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  unpin();
   vi.restoreAllMocks();
   if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -110,26 +119,16 @@ async function registerHandlers() {
   registerGwsHandlers(mockDefaultSettings() as never);
 }
 
-/** Simulate exec callback: exec(cmd, opts, callback) via promisify */
+/** Simulate the execFile callback, execFile(file, args, opts, callback), via promisify: the callback is last. */
 function mockExecSuccess(stdout: string) {
-  mockExec.mockImplementation((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
-    if (typeof _opts === 'function') {
-      // exec(cmd, callback)
-      (_opts as (err: Error | null, result: { stdout: string; stderr: string }) => void)(null, { stdout, stderr: '' });
-    } else {
-      // exec(cmd, opts, callback)
-      cb(null, { stdout, stderr: '' });
-    }
+  mockExec.mockImplementation((...args: unknown[]) => {
+    (args[args.length - 1] as (err: Error | null, result: { stdout: string; stderr: string }) => void)(null, { stdout, stderr: '' });
   });
 }
 
 function mockExecError(error: Error) {
-  mockExec.mockImplementation((_cmd: string, _opts: unknown, cb: (err: Error | null, result?: unknown) => void) => {
-    if (typeof _opts === 'function') {
-      (_opts as (err: Error | null) => void)(error);
-    } else {
-      cb(error);
-    }
+  mockExec.mockImplementation((...args: unknown[]) => {
+    (args[args.length - 1] as (err: Error | null) => void)(error);
   });
 }
 
