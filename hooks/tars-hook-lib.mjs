@@ -1,0 +1,291 @@
+// What the .sh hooks get from bash, curl and jq, in Node built-ins only.
+//
+// The Node runner (tars-hook.mjs, decision D1 of the Windows port) has to post
+// exactly what the .sh hooks post, and those bodies carry the exact quirks of
+// the tools that build them: `$(...)` drops every trailing newline, `echo`
+// adds one, `head -c` cuts bytes where jq's `.[0:n]` cuts code points, `//`
+// treats false like null. Each helper below is one of those, named after it,
+// so a reader can hold the runner against the script line by line.
+
+import * as fs from 'node:fs';
+import * as http from 'node:http';
+import * as https from 'node:https';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+/** The default the .sh hooks fall back to when Tars gave the CLI no URL. */
+export const DEFAULT_API_URL = 'http://127.0.0.1:31415';
+
+/** `$(...)`: command substitution removes every trailing newline. */
+export function subst(text) {
+  return String(text).replace(/\n+$/, '');
+}
+
+/** `head -c n`: the first n bytes, an incomplete last character becoming U+FFFD as jq reads it. */
+export function headBytes(text, n) {
+  return Buffer.from(String(text), 'utf8').subarray(0, n).toString('utf8');
+}
+
+/** `echo "$X" | head -c n`: echo ends the text with a newline first. */
+export function echoHead(text, n) {
+  return headBytes(`${text}\n`, n);
+}
+
+/** jq `.[0:n]` on a string: code points, not UTF-16 units. */
+export function codePoints(text, n) {
+  return Array.from(text).slice(0, n).join('');
+}
+
+/** jq `tostring`: a string as it is, anything else as compact JSON. */
+export function jqToString(value) {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/** The stdin of the hook, parsed the way `echo "$INPUT" | jq` would read it; undefined when jq would fail. */
+export function parseInput(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+const JQ_ERROR = Symbol('jq error');
+
+/** jq `.a.b.c`: null through null, an error on anything that is not an object. */
+function jqPath(input, keys) {
+  let current = input;
+  for (const key of keys) {
+    if (current === null || current === undefined) return null;
+    if (typeof current !== 'object' || Array.isArray(current)) return JQ_ERROR;
+    current = Object.prototype.hasOwnProperty.call(current, key) ? current[key] : null;
+  }
+  return current === undefined ? null : current;
+}
+
+/**
+ * `$(echo "$INPUT" | jq -r '.a.b // <fallback>')`: the raw value, or the
+ * fallback when it is null or false, or "" when jq fails (bad input, a path
+ * through something that is not an object). Non-strings print as jq -r does.
+ */
+export function jqRaw(input, keys, fallback = '') {
+  if (input === undefined) return '';
+  const value = jqPath(input, keys);
+  if (value === JQ_ERROR) return '';
+  if (value === null || value === false) return fallback;
+  return subst(typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+}
+
+/** `[ -f "$f" ]`: a regular file (a symlink to one counts, as with test -f). */
+export function isFile(file) {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** `$(cat "$f" 2>/dev/null)` */
+export function catFile(file) {
+  try {
+    return subst(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return '';
+  }
+}
+
+/** `$HOME`, as Tars computes its data folder (os.homedir: HOME on POSIX, USERPROFILE on Windows). */
+export function home() {
+  return os.homedir();
+}
+
+/** tars-hook.sh: where every hook logs, readable by its user only (umask 077). */
+export function logPaths() {
+  const dir = path.join(home(), '.dorothy', 'logs');
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch {
+    // mkdir -p ... 2>/dev/null
+  }
+  return { dir, hookLog: path.join(dir, 'hooks.log'), debugLog: path.join(dir, 'hooks-debug.log') };
+}
+
+/** `echo "..." >> "$LOG"`: appended with a newline, created 0600. A log that cannot be written stops nothing. */
+export function appendLog(file, line) {
+  try {
+    fs.appendFileSync(file, `${line}\n`, { mode: 0o600 });
+  } catch {
+    // The .sh redirection fails the same way and the script goes on.
+  }
+}
+
+/** `[$(date)]`. The text of `date` differs by platform anyway; this is only a log line. */
+export function stamp() {
+  return new Date().toString();
+}
+
+/** The API base: `${CLAUDE_MGR_API_URL:-http://127.0.0.1:31415}`. */
+export function apiUrl(env = process.env) {
+  return env.CLAUDE_MGR_API_URL || DEFAULT_API_URL;
+}
+
+/** tars_auth: the CLI's own token, `Bearer ` and nothing when there is none, as the .sh sends it. */
+export function bearer(token) {
+  return `Bearer ${token ?? ''}`;
+}
+
+/**
+ * The token for the calls that fall back to the shared file (bootstrap,
+ * memory): the CLI's own, else ~/.dorothy/api-token when Tars did not start
+ * this CLI. Hook posts never read the file (tars_auth).
+ */
+export function tokenWithFileFallback(env = process.env) {
+  const own = env.CLAUDE_MGR_API_TOKEN || '';
+  if (own) return own;
+  const file = path.join(home(), '.dorothy', 'api-token');
+  return isFile(file) ? catFile(file) : '';
+}
+
+/**
+ * One curl: `curl -s --max-time <s> [-X POST] -H ... [-d body] URL`.
+ *
+ * Resolves with what curl -s prints on stdout: the response body, whatever
+ * the status, or "" when the call fails or runs out of time (what the hooks
+ * test with `[ -z "$RESULT" ]`). Never rejects: a hook must not stop the CLI
+ * because Tars is not there. `maxTimeMs` bounds the whole call, like
+ * --max-time; the connect timeouts of the .sh are inside that bound.
+ */
+export function curl({ method = 'GET', url, headers = {}, body, maxTimeMs = 3000 }) {
+  return new Promise(resolve => {
+    let settled = false;
+    let text = '';
+    const done = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      resolve('');
+      return;
+    }
+    const payload = body === undefined ? undefined : Buffer.from(body, 'utf8');
+    const lib = target.protocol === 'https:' ? https : http;
+    let req;
+    const timer = setTimeout(() => {
+      // curl --max-time prints what it had received so far.
+      done(text);
+      try { req?.destroy(); } catch { /* already gone */ }
+    }, maxTimeMs);
+    try {
+      req = lib.request(target, {
+        method,
+        agent: false,
+        headers: {
+          Accept: '*/*',
+          ...headers,
+          ...(payload ? { 'Content-Length': String(payload.length) } : {}),
+        },
+      }, res => {
+        res.setEncoding('utf8');
+        res.on('data', chunk => { text += chunk; });
+        res.on('end', () => done(text));
+        res.on('error', () => done(text));
+      });
+    } catch {
+      done('');
+      return;
+    }
+    req.on('error', () => done(text));
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+/** `curl -s --max-time 3 -X POST "$URL" -H <auth> -H "Content-Type: application/json" -d "$BODY"` */
+export function postJson(url, token, body, maxTimeMs = 3000) {
+  return curl({
+    method: 'POST',
+    url,
+    headers: { Authorization: bearer(token), 'Content-Type': 'application/json' },
+    body,
+    maxTimeMs,
+  });
+}
+
+/** `sleep n` */
+export function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * The retried posts (SessionStart, UserPromptSubmit, StopFailure): once more
+ * after a second when the first printed nothing, as `[ -z "$RESULT" ]` does.
+ */
+export async function postWithRetry(url, token, body) {
+  let result = subst(await postJson(url, token, body));
+  if (result === '') {
+    await sleep(1000);
+    result = subst(await postJson(url, token, body));
+  }
+  return result;
+}
+
+/**
+ * The last assistant text of a transcript, as on-stop.sh, session-end.sh and
+ * task-completed.sh read it with
+ *
+ *   jq -rRn '[ inputs | fromjson? | select(.type=="assistant")
+ *     | (.message.content // [])
+ *     | if type=="array" then map(select(type=="object" and .type=="text") | .text) | join("\n")
+ *       else tostring end
+ *     | select(length>0) ] | last // empty' | head -c 4000
+ *
+ * Line by line, a line that does not parse skipped (Claude Code may still be
+ * flushing the last one); a record that parses to something jq cannot index
+ * voids the whole run, as the jq error does.
+ */
+export function lastAssistantMessage(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+  const found = [];
+  for (const line of text.split('\n')) {
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const type = jqPath(record, ['type']);
+    if (type === JQ_ERROR) return '';
+    if (type !== 'assistant') continue;
+    let content = jqPath(record, ['message', 'content']);
+    if (content === JQ_ERROR) return '';
+    if (content === null || content === false) content = [];
+    let joined;
+    if (Array.isArray(content)) {
+      joined = content
+        .filter(block => block !== null && typeof block === 'object' && !Array.isArray(block) && block.type === 'text')
+        .map(block => (block.text === undefined || block.text === null ? '' : typeof block.text === 'string' ? block.text : JSON.stringify(block.text)))
+        .join('\n');
+    } else {
+      joined = jqToString(content);
+    }
+    if (Array.from(joined).length > 0) found.push(joined);
+  }
+  if (found.length === 0) return '';
+  return subst(headBytes(`${found[found.length - 1]}\n`, 4000));
+}
+
+/** Print what the hook answers the CLI, and leave once it is written (a pipe on Windows is asynchronous). */
+export function finish(stdout, code = 0) {
+  if (stdout === '') process.exit(code);
+  process.stdout.write(stdout, () => process.exit(code));
+}
