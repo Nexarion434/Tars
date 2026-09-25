@@ -18,7 +18,12 @@ export default defineConfig({
   outputDir: process.env.E2E_RUN_DIR,
   retries: 0,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e/report' }]],
-  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
+  // The references beside it are macOS's, read where they have always been.
+  // Any other platform draws its own fonts and title bar, so it compares
+  // against, and records into, a folder of its own: __screenshots__/win32/.
+  snapshotPathTemplate: process.platform === 'darwin'
+    ? '{testDir}/__screenshots__/{arg}{ext}'
+    : '{testDir}/__screenshots__/{platform}/{arg}{ext}',
   // Makes the directory each run's surfaces record their page errors in.
   globalSetup: './e2e/global-setup.mjs',
   use: {
