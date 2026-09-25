@@ -129,6 +129,11 @@ supprime le jeton des hooks, `UserPromptSubmit` n'existe pas chez Gemini), A29 (
 scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture hors dépôt d'un fichier
 « untracked »), `/api/local-file` suit un lien planté dans `vault/attachments`.
 
+### Limites Windows connues (assumées, documentées)
+
+- Un CLI lancé **à la main** dans le PowerShell d'attente d'un agent n'est pas vu comme « CLI en cours » : ConPTY ne donne pas le processus au premier plan (`pty.process` renvoie le nom du terminal). Tars ne tue pas ce terminal s'il porte une session active (lot `win/agent-launch`).
+- Transcript Claude : si la dernière réponse de l'assistant est à plus de 8 Mo de la fin du fichier, le hook Stop/SessionEnd ne la poste pas (lecture bornée ; idle et agent-stopped restent postés).
+
 ## 4. Checklist manuelle (ce que l'E2E ne couvre pas)
 
 - [ ] Bot Telegram : `/start_agent` lance l'agent, la réponse revient
@@ -150,6 +155,24 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 | D2 | Lancement des providers | Lancement direct sans shell : une fonction plateforme retokenise la commande POSIX du provider (grammaire fermée, déjà verrouillée par `exec-into-cli.test.ts`), résout le binaire (`.exe`, shim npm `.cmd` vers `node <script>`), construit la ligne de commande Windows et lance le CLI dans ConPTY avec `cwd`. 0 provider modifié. Le changement de contrat (`buildInteractiveArgs`) sera proposé upstream plus tard | 2026-09-25 | Nicolas |
 | D3 | Shell par défaut (terminaux humains) | `pwsh.exe` si présent, sinon `powershell.exe`, sinon `%ComSpec%` ; surchargeable par un réglage (Git Bash sélectionnable). `-l` seulement pour bash/zsh. L'interface du réglage attend un dessin de Nicolas | 2026-09-25 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
+
+## 5bis. Reprise (état au 2026-09-25 soir)
+
+Phase 3 en cours. Branches de lot locales (worktrees sous `.claude/worktrees/`, non poussées) :
+
+| Branche | Contenu | État |
+|---|---|---|
+| `win/hooks-node` | hooks Node D1 (tars-hook.mjs, statusline.mjs, câblage win32 Claude/Gemini) | APPROVE, prête à intégrer (df7923f4) |
+| `win/cli-invocation` | appels CLI hors PTY (MCP add/remove, codex TOML, kanban argv, détection CLI, gws), `--` claude/gemini, `mcpEntryRuns` | 2e relecture |
+| `win/paths-memory-security` | encodage dossiers projets Claude, samePath/isUnder, noms de périphériques, son de notification (sécu), garde credential stores, rename avec retry, open-terminal win32 | 1re relecture |
+| `win/agent-launch` | D2/D3 : lancement direct via toLaunch, terminaux humains, installeurs, sécu A4 | corrections de relecture en cours (4 points + extractions) |
+| `win/acp-delegation` | ACP (resolveAgentLaunch, killTree), cli-updater Windows, `pty-kill.ts` (non branché) | corrections de relecture en cours (5 points) |
+
+Ordre d'intégration prévu : une branche `win/integration-p3` depuis `windows`, merge des lots approuvés, gate win-qa (tsc x2, npm test comparé test par test, lint, lint:design, e2e:guard, e2e), puis fast-forward de `windows` et push. Conflits attendus : `claude-provider.ts` / `gemini-provider.ts` (imports, hooks-node vs cli-invocation), `ipc-handlers.ts` (agent-launch vs 2 lignes de cli-invocation).
+
+Suivis déjà décidés (voir aussi `tasks/todo.md`, local) : brancher `killPty` aux call sites ; remplacer la regex worktrees `ipc-handlers.ts` par `isInsideWorktreesDir` ; exporter depuis `electron/platform` les copies de `cli-exec.ts` ; fixture E2E : fake CLI via shim npm `.cmd` ; `api-token`/`app-settings.json` restreints par icacls (avec preuve) ; `check:dashes` probablement muet sous Windows ; déplacer `hook-command.ts` dans `electron/platform/`.
+
+Restent ensuite : phase 4 (références visuelles win32, CI `windows-latest`), phase 5 (NSIS, `.ico`, auto-update depuis le fork, voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
 
 ## 6. Journal des lots
 

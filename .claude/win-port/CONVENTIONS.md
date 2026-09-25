@@ -28,6 +28,9 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
   (`TEMP`/`TMP` outside the real profile only until `win/test-harness` is merged: the old guard
   refuses `%TEMP%` because it lives under `C:\Users\nicol`. Delete `C:\Users\Public\tars-tmp` after.)
   Tests that spawn `gh` must hit the fake, never `gh.exe` (release/prune-releases tests).
+- **Never start `electron.exe` without `--user-data-dir=<sandbox>`** and the safe env: a bare run
+  creates `%APPDATA%\Electron` (or `%APPDATA%\tars`) in the real profile. Canaries that must stay
+  absent: `C:\Users\nicol\.dorothy`, `%APPDATA%\tars`, `%APPDATA%\Electron`, `%APPDATA%\Dorothy`.
 - **Grep from Git Bash**: `export MSYS_NO_PATHCONV=1` first, or use the Grep tool (MSYS rewrites
   `/tmp`-like patterns and a search returns a false zero).
 - **Encoding**: Windows PowerShell 5.1 `Get-Content`/`Set-Content` default to ANSI and mangle
