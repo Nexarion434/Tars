@@ -46,6 +46,10 @@ import { promisify } from 'node:util';
  * 10. win32: a start from a window or a bot kills the shell an agent waits in
  *    although a CLI typed there by hand registered its session from it; or,
  *    refused, still marks the agent running.
+ * 11. win32: the CLI's terminal cannot be opened (ConPTY refuses the spawn,
+ *    or another terminal was being opened for the agent) and the agent, from
+ *    a window or a bot, is left `running` with the task saved, no terminal
+ *    and no watch; or the error is swallowed instead of reaching the caller.
  */
 
 const { tmpHome } = await vi.hoisted(async () => {
@@ -236,13 +240,14 @@ function pin(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { ...platformBefore, value: platform });
 }
 
-function deps(): IpcHandlerDependencies {
+function deps(overrides: Record<string, unknown> = {}): IpcHandlerDependencies {
   const fixed: Record<string, unknown> = {
     agents,
     ptyProcesses,
     saveAgents: vi.fn(),
     getAppSettings: () => settings,
     initAgentPty: (agent: AgentStatus) => initAgentPty(agent, null, vi.fn(), vi.fn()),
+    ...overrides,
     isSuperAgent: () => false,
     getSuperAgentTelegramTask: () => false,
     getSuperAgentOutputBuffer: () => [],
@@ -490,6 +495,46 @@ describe('2-6. on win32', () => {
     expect(spawned).toHaveLength(1);
     expect(agent.status).toBe('idle');
     expect(typed(shell)).toBe('');
+  });
+
+  it('11. a CLI whose terminal cannot be opened leaves the agent as it was, from a window', async () => {
+    const agent = await createAgent();
+    agent.status = 'completed';
+    agent.currentTask = 'the task it finished';
+    agent.savedPrompt = 'the prompt it had';
+    handlers.clear();
+    registerIpcHandlers(deps({ initAgentPty: async () => { throw new Error('ConPTY refused the spawn'); } }));
+
+    await expect(handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK })).rejects.toThrow(/ConPTY refused the spawn/);
+
+    expect(agent.status).toBe('completed');
+    expect(agent.currentTask).toBe('the task it finished');
+    expect(agent.savedPrompt).toBe('the prompt it had');
+    expect(agent.pendingDelivery, 'a watch was armed for a CLI that never started').toBeUndefined();
+    const last = vi.mocked(broadcastToAllWindows).mock.calls.filter(([channel]) => channel === 'agent:status').at(-1);
+    expect(last?.[1], 'the windows were left showing it running').toMatchObject({ agentId: agent.id, status: 'completed' });
+  });
+
+  it('11. a CLI whose terminal cannot be opened leaves the agent as it was, from a bot', async () => {
+    const agent = { id: 'bot-agent', name: 'Bot', status: 'idle', provider: 'claude', projectPath: project, skills: [], output: [], lastActivity: '', permissionMode: 'normal', currentTask: 'what it did last' } as unknown as AgentStatus;
+    agents.set(agent.id, agent);
+    let opened = 0;
+    const fleet: BotFleet = {
+      agents, ptyProcesses, settings: () => settings, saveAgents: vi.fn(),
+      // The shell opens; the CLI's terminal then does not.
+      initAgentPty: async (a) => {
+        if (opened++ === 0) return initAgentPty(a, null, vi.fn(), vi.fn());
+        throw new Error('another terminal was being opened for this agent');
+      },
+    };
+    const reply = vi.fn();
+
+    await expect(startWithTask(fleet, agent, TASK, 'Telegram', { resume: false, reply })).rejects.toThrow(/another terminal/);
+
+    expect(reply).not.toHaveBeenCalledWith('started');
+    expect(agent.status).toBe('idle');
+    expect(agent.currentTask).toBe('what it did last');
+    expect(agent.pendingDelivery).toBeUndefined();
   });
 
   it('9. a CLI the API cannot start leaves the previous terminal and its session as they were', async () => {

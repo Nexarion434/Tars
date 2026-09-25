@@ -821,6 +821,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const start = toLaunch(command, agent.worktreePath || agent.projectPath, agentPtyEnv(ptyProcess) ?? process.env);
     const refused = cliStartRefusal(agent, start);
     if (refused) return { success: false, cliRunning: true, error: refused };
+    // What the agent was, should its CLI's terminal fail to open below.
+    const before = { status: agent.status, currentTask: agent.currentTask, waitingReason: agent.waitingReason, savedPrompt: agent.savedPrompt };
 
     // Persist the prompt for future re-launches and update status. Working
     // only with a task. A start without one, which is every start from the
@@ -854,7 +856,20 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // A freshly-spawned PTY needs time for bash to start up (~200ms).
     // Local provider always recreates the PTY, so it always needs the delay.
     const needsDelay = ptyJustCreated || provider === 'local';
-    const cliProcess = await launchIntoTerminal(agent, ptyProcess, start, { ptyProcesses, initAgentPty, delayMs: needsDelay ? 500 : 0 });
+    let cliProcess: pty.IPty;
+    try {
+      cliProcess = await launchIntoTerminal(agent, ptyProcess, start, { ptyProcesses, initAgentPty, delayMs: needsDelay ? 500 : 0 });
+    } catch (err) {
+      // win32 only, where the CLI's terminal is opened here: it never ran, so
+      // the agent is what it was before this start said it did, and the
+      // caller hears why. (Typing into a shell, on darwin and linux, throws not.)
+      Object.assign(agent, before);
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      broadcastToAllWindows('agent:status', { type: 'status', agentId: id, status: agent.status, timestamp: agent.lastActivity });
+      scheduleTick();
+      throw err;
+    }
     noteLaunch(cliProcess, launched);
     // Started from the Agents page, which never touches the API and so was
     // the one path with no check on whether the task actually landed. Armed

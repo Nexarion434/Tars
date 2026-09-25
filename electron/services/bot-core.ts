@@ -228,10 +228,19 @@ async function claimLaunch(agent: AgentStatus): Promise<object | null> {
  * typed before the prompt, a long launch is cut (shellReady).
  */
 async function typeLaunch(
-  fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string,
+  fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string, before: StatusBefore,
 ): Promise<void> {
   // win32: nothing is typed, the CLI replaces the shell (decision D2).
-  const cli = await launchIntoTerminal(agent, ptyProcess, launch, { ...fleet, ready: shellReady });
+  let cli: pty.IPty;
+  try {
+    cli = await launchIntoTerminal(agent, ptyProcess, launch, { ...fleet, ready: shellReady });
+  } catch (err) {
+    // win32 only, where the CLI's terminal is opened here: it never ran, so
+    // the agent is what it was before markRunning, and the bot says why.
+    Object.assign(agent, before);
+    fleet.saveAgents();
+    throw err;
+  }
   noteLaunch(cli, launchSettings(agent));
   fleet.saveAgents();
   // Started from a chat, and just as able to come up with no task.
@@ -256,10 +265,15 @@ function workingDirOf(agent: AgentStatus): string {
   return agent.worktreePath || agent.projectPath;
 }
 
-function markRunning(agent: AgentStatus, task: string): void {
+/** What markRunning changes, as it was: put back when the CLI never started. */
+type StatusBefore = Pick<AgentStatus, 'status' | 'currentTask' | 'lastActivity'>;
+
+function markRunning(agent: AgentStatus, task: string): StatusBefore {
+  const before = { status: agent.status, currentTask: agent.currentTask, lastActivity: agent.lastActivity };
   agent.status = 'running';
   agent.currentTask = task.slice(0, 100);
   agent.lastActivity = new Date().toISOString();
+  return before;
 }
 
 export type StartOutcome = 'no-terminal' | 'refused' | 'held' | 'written' | 'started';
@@ -336,8 +350,8 @@ export async function startWithTask(
       orchestratorMode: isSuperAgent(agent),
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
-    markRunning(agent, task);
-    await typeLaunch(fleet, agent, ptyProcess, start, task);
+    const before = markRunning(agent, task);
+    await typeLaunch(fleet, agent, ptyProcess, start, task, before);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
@@ -423,8 +437,8 @@ export async function forwardToOrchestrator(
       orchestratorMode: true,
     });
     const start = launchIn(orchestrator, ptyProcess, workingDir, command);
-    markRunning(orchestrator, opts.message);
-    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt);
+    const before = markRunning(orchestrator, opts.message);
+    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(orchestrator.id, launch);
