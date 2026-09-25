@@ -270,6 +270,26 @@ describe('on win32, Claude runs the Node runner', () => {
     expect(s.hooks.SessionStart).toEqual([...theirs.SessionStart, { matcher: '*', hooks: [{ type: 'command', command: runnerCmd('session-start'), timeout: 30 }] }]);
   });
 
+  it('recognises its own old .sh entries when it runs from a dev worktree under .claude/worktrees', async () => {
+    // The Windows port's own setup: <repo>/.claude/worktrees/<lot>/hooks. The
+    // app's own hooks folder is never the CLI's config folder, whatever its path.
+    const own = path.join(tmp, 'repo', '.claude', 'worktrees', 'win-x', 'hooks');
+    fs.mkdirSync(path.join(own, 'gemini'), { recursive: true });
+    fs.copyFileSync(path.join(HOOKS_DIR, 'tars-hook.mjs'), path.join(own, 'tars-hook.mjs'));
+    for (const f of ['on-stop.sh', 'session-start.sh']) fs.writeFileSync(path.join(own, f), '');
+    fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+    fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: path.join(own, 'on-stop.sh'), timeout: 30 }] }] },
+    }, null, 2));
+
+    const p = await claude();
+    await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(own, 'win32');
+
+    expect(read(claudeSettingsFile()).hooks.Stop).toEqual([
+      { hooks: [{ type: 'command', command: `node "${fwd(path.join(own, 'tars-hook.mjs'))}" on-stop`, timeout: 30 }] },
+    ]);
+  });
+
   it('points an entry of a moved checkout at this one', async () => {
     fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
     fs.writeFileSync(claudeSettingsFile(), JSON.stringify({

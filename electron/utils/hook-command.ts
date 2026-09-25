@@ -87,10 +87,12 @@ export function legacyShCommand(rel: string, cliConfigDir: string, hooksDir: str
     if (!path.win32.isAbsolute(raw) && !path.posix.isAbsolute(raw)) return false;
     const file = norm(raw);
     if (!file.toLowerCase().endsWith(tail.toLowerCase())) return false;
+    const hooksRoot = file.slice(0, file.length - rel.length - 1);
+    // First: this app's own hooks folder is never the CLI's config folder,
+    // even when a dev worktree puts it under <repo>/.claude/worktrees/.
+    if (hooksRoot.toLowerCase() === ownRoot) return true;
     const lower = file.toLowerCase();
     if (lower.startsWith(`${configRoot}/`) || /\/\.(claude|gemini)\//.test(lower)) return false;
-    const hooksRoot = file.slice(0, file.length - rel.length - 1);
-    if (hooksRoot.toLowerCase() === ownRoot) return true;
     return ['tars-hook.sh', 'tars-hook.mjs'].some(name => fs.existsSync(path.join(hooksRoot, name)));
   };
 }
