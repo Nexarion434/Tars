@@ -238,19 +238,42 @@ describe('the next build it runs by default', () => {
     expect(fs.existsSync(args[0])).toBe(true);
   });
 
-  it('runs from the command line, and there stops before building a checkout with no src/app/api', async () => {
+  /** The command, run as `node <script>` in a checkout with no src/app/api, where it has to stop with 1. */
+  async function fromTheCommandLine(script: (root: string) => string) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-build-renderer-cli-'));
     made.push(root);
     fs.mkdirSync(path.join(root, 'src/app'), { recursive: true });
-
-    const result = await new Promise<{ status: number | null; stderr: string }>(resolve => {
-      execFile(process.execPath, [SCRIPT], { cwd: root, encoding: 'utf8' }, (error, _stdout, stderr) => {
+    return new Promise<{ status: number | null; stderr: string }>(resolve => {
+      execFile(process.execPath, [script(root)], { cwd: root, encoding: 'utf8' }, (error, _stdout, stderr) => {
         resolve({ status: error ? (typeof error.code === 'number' ? error.code : null) : 0, stderr });
       });
     });
+  }
+
+  it('runs from the command line, and there stops before building a checkout with no src/app/api', async () => {
+    const result = await fromTheCommandLine(() => SCRIPT);
 
     expect(result.stderr).toContain('src/app/api');
     expect(result.status).toBe(1);
+  });
+
+  it('runs from the command line through a link to scripts/, as it does from a subst drive or a junctioned checkout', async () => {
+    // Node runs the module from its real path: a check against the path as typed
+    // never matched, and the command exited 0 having done nothing.
+    let link = '';
+    try {
+      const result = await fromTheCommandLine(root => {
+        link = path.join(root, 'linked-scripts');
+        fs.symlinkSync(path.dirname(SCRIPT), link, 'junction'); // a junction on Windows, a directory symlink elsewhere
+        return path.join(link, 'build-renderer.mjs');
+      });
+
+      expect(result.stderr).toContain('src/app/api');
+      expect(result.status).toBe(1);
+    } finally {
+      // The link alone: rmdir removes a junction without following it, unlink a symlink.
+      if (link) (process.platform === 'win32' ? fs.rmdirSync : fs.unlinkSync)(link);
+    }
   });
 });
 

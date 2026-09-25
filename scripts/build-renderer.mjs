@@ -133,7 +133,16 @@ export async function main(options) {
   process.exitCode = code;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+/** Run as a command, and not imported: Node runs a module from its real path, so argv[1] is compared resolved, as in release.mjs. */
+function invokedDirectly() {
+  try {
+    return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   main().catch(err => {
     log(err.stack ?? String(err));
     process.exitCode = 1;

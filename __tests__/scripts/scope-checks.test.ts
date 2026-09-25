@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { decide } from '../../scripts/scope-checks.mjs';
 
 /**
@@ -235,7 +236,7 @@ async function commitAll(dir: string, message: string) {
 const made: string[] = [];
 
 /** `npm run e2e:auto` in `cwd`. `suite` is how npx was called, or null if the suite was never started. */
-async function e2eAuto(cwd: string, env: Record<string, string> = {}) {
+async function e2eAuto(cwd: string, env: Record<string, string> = {}, script = SCRIPT) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-scope-npx-'));
   made.push(bin);
   const calls = path.join(bin, 'calls');
@@ -248,7 +249,7 @@ async function e2eAuto(cwd: string, env: Record<string, string> = {}) {
   // Every spelling: a worker can hold NPM_EXECPATH, and Windows would hand the child that one, the real npm.
   for (const key of Object.keys(childEnv)) if (key.toLowerCase() === 'npm_execpath') delete childEnv[key];
   childEnv.npm_execpath = path.join(bin, 'npm-cli.js');
-  const { stdout, stderr } = await run(process.execPath, [SCRIPT], { cwd, env: { ...childEnv, ...env } });
+  const { stdout, stderr } = await run(process.execPath, [script], { cwd, env: { ...childEnv, ...env } });
   return {
     output: `${stdout}${stderr}`,
     suite: fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim() : null,
@@ -374,6 +375,40 @@ describe.concurrent('the base a branch is compared against', () => {
     // test was all that got classified, and the renderer change was skipped.
     expect(run.output).toContain('SCOPE_BASE=mian is not a commit git can find');
     expect(run.suite).toBe('playwright test');
+  });
+
+  it('runs when started through a link to scripts/, as from a subst drive or a junctioned checkout', async ({ expect }) => {
+    // Node runs the module from its real path: a check against the path as typed
+    // never matched, and e2e:auto exited 0 with nothing decided and nothing run.
+    const repo = await cloneBehindOrigin('main');
+    write(repo.dir, 'src/components/Card.tsx', 'export const width = 3;\n');
+    await commitAll(repo.dir, 'a renderer change');
+    const link = path.join(repo.root, 'linked-scripts');
+    fs.symlinkSync(path.dirname(SCRIPT), link, 'junction'); // a junction on Windows, a directory symlink elsewhere
+    try {
+      const run = await e2eAuto(repo.dir, { SCOPE_BASE: 'mian' }, path.join(link, 'scope-checks.mjs'));
+
+      expect(run.output).toContain('SCOPE_BASE=mian is not a commit git can find');
+      expect(run.suite).toBe('playwright test');
+    } finally {
+      // The link alone: rmdir removes a junction without following it, unlink a symlink.
+      (process.platform === 'win32' ? fs.rmdirSync : fs.unlinkSync)(link);
+    }
+  });
+
+  it('decides nothing and runs nothing when it is only imported', async ({ expect }) => {
+    // The other side of the same check: this file imports decide(), and a
+    // check that always matched would start the suite from every importer.
+    const repo = await cloneBehindOrigin('main');
+    write(repo.dir, 'src/components/Card.tsx', 'export const width = 3;\n');
+    await commitAll(repo.dir, 'a renderer change');
+    const importer = path.join(repo.root, 'importer.mjs');
+    fs.writeFileSync(importer, `await import(${JSON.stringify(pathToFileURL(SCRIPT).href)});\n`);
+
+    const run = await e2eAuto(repo.dir, { SCOPE_BASE: 'mian' }, importer);
+
+    expect(run.output).toBe('');
+    expect(run.suite).toBeNull();
   });
 
   it('runs the whole suite when git cannot compare the branch with its base', async ({ expect }) => {
