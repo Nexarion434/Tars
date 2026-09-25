@@ -72,7 +72,8 @@ describe('app:// path containment', () => {
     // resolve to a file outside the bundle either.
     expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').allowed).toBe(true);
     // ...and it stays inside, which is the property that matters.
-    expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').filePath.startsWith(BASE)).toBe(true);
+    // BASE in the platform's own spelling, as path.join writes the file path.
+    expect(resolveRequest(BASE, 'app://-/a/..%252f..%252fsecret').filePath.startsWith(path.normalize(BASE))).toBe(true);
   });
 
   it('refuses a sibling directory that merely shares the prefix', () => {

@@ -25,7 +25,7 @@ import * as path from 'node:path';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-d1-contract-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-d1-contract-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {
@@ -138,8 +138,11 @@ afterAll(() => { Object.defineProperty(process, 'platform', hostPlatform); });
 
 // ── The fleet and the settings every scenario starts from ─────────────────
 
-const P1 = path.join(tmpHome, 'projects', 'atlas');
-const P2 = path.join(tmpHome, 'projects', 'orion');
+// Joined the way the linux this file pins spells a path. On a Windows host
+// path.join writes a backslash, which a linux reader of the path keeps as part
+// of a folder name; darwin and linux get the same string either way.
+const P1 = path.posix.join(tmpHome, 'projects', 'atlas');
+const P2 = path.posix.join(tmpHome, 'projects', 'orion');
 
 function baseSettings(): AppSettings {
   return {
@@ -235,8 +238,21 @@ async function slackMessage(user: string, text: string, channelType: 'im' | 'cha
 function normalize(value: unknown): unknown {
   const repo = process.cwd();
   return JSON.parse(JSON.stringify(value, (_k, v) => typeof v === 'string'
-    ? v.split(tmpHome).join('<HOME>').split(repo).join('<REPO>')
+    ? posixUnder(posixUnder(v.split(tmpHome).join('<HOME>').split(repo).join('<REPO>'), '<HOME>'), '<REPO>')
     : v));
+}
+
+/**
+ * A path under `root` spelled with `/`, as the snapshot was recorded on macOS.
+ * The fixture's paths are joined that way already (see P1), but what the
+ * product joins itself, ~/.dorothy for one, comes out of Node's own path
+ * module, which on a Windows host writes `\` whatever platform the file pins.
+ * Only the run of path characters right after the root, so a shell quote's
+ * own `\` stays as it is.
+ */
+function posixUnder(text: string, root: string): string {
+  if (path.sep === '/') return text;
+  return text.replace(new RegExp(`${root}(?:[\\\\/][^\\\\/\\s\`'"*|]+)+`, 'g'), found => found.split('\\').join('/'));
 }
 
 function outcome() {
@@ -535,7 +551,7 @@ function resumable(agentId: string, sessionId: string): void {
 /** A worker with a conversation to resume, a permission mode of its own, in a worktree whose path has a quote. */
 function workerWithHistory(): void {
   const rest = agents.get('agent-rest')!;
-  rest.worktreePath = path.join(tmpHome, 'projects', "o'rion-wt");
+  rest.worktreePath = path.posix.join(tmpHome, 'projects', "o'rion-wt");
   fs.mkdirSync(rest.worktreePath, { recursive: true });
   rest.permissionMode = 'auto';
   resumable('agent-rest', WORKER_SESSION);
