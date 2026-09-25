@@ -7,13 +7,13 @@ import * as path from 'node:path';
  *
  * The references in e2e/__screenshots__ are macOS's. A Windows run compared
  * against them fails on every surface for the fonts and the title bar alone
- * (audit B/E-03), and re-recording there would overwrite them. So a platform
- * other than macOS reads and writes its own folder beside them, and macOS reads
- * the same files it always has.
+ * (audit B/E-03), and re-recording there would overwrite them. So Windows
+ * reads and writes its own folder beside them, and macOS and Linux read the
+ * same files they always have (the port changes nothing upstream runs).
  *
  * How it can fail:
- *  1. macOS reads another folder than the one its references are in, and every
- *     surface is "missing" on the platform the design is checked on;
+ *  1. macOS or Linux reads another folder than the one the references are in,
+ *     and every surface is "missing" there;
  *  2. Windows reads the macOS references, and fails, or overwrites them;
  *  3. the folder depends on anything but the platform, and two runs of one
  *     machine disagree.
@@ -57,8 +57,12 @@ describe('the visual references an e2e run compares against', () => {
     expect(await referenceFor('win32', 'agents.png')).toBe(path.join(SHOTS, 'win32', 'agents.png'));
   });
 
+  it('are the ones already recorded on Linux too, as upstream reads them (1)', async () => {
+    expect(await referenceFor('linux', 'agents.png')).toBe(path.join(SHOTS, 'agents.png'));
+  });
+
   it('follow the platform and nothing else (3)', async () => {
-    expect(await referenceFor('linux', 'agents.png')).toBe(path.join(SHOTS, 'linux', 'agents.png'));
     expect(await referenceFor('darwin', 'agents.png')).toBe(await referenceFor('darwin', 'agents.png'));
+    expect(await referenceFor('win32', 'agents.png')).toBe(await referenceFor('win32', 'agents.png'));
   });
 });
