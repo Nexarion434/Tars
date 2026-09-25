@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { samePath, isUnder, isInsideWorktreesDir } from '../../../electron/platform';
+import { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot } from '../../../electron/platform';
 import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
 
@@ -96,5 +96,27 @@ describe('win32', () => {
     for (const p of ['C:\\p\\not.worktrees\\x', 'C:\\p\\.worktrees', 'C:\\worktreesx\\y']) {
       expect(isInsideWorktreesDir(p, w), p).toBe(false);
     }
+  });
+});
+
+/**
+ * isFilesystemRoot (the reviewer's gate): the project listings skipped `/` by
+ * string, so on Windows the folder `C--` (C:\) was a project.
+ * 11. darwin/linux answer anything but `p === '/'`;
+ * 12. win32 misses a drive root, a share root or `\` in any spelling, or takes
+ *     a folder, `C:` (the drive's current directory) or '' for one.
+ */
+describe('isFilesystemRoot', () => {
+  it('11. darwin and linux: exactly "/"', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      for (const p of [...POSIX_CORPUS.paths, '//', 'C:\\']) expect(isFilesystemRoot(p, platform), p).toBe(p === '/');
+    }
+  });
+
+  it('12. win32: every spelling of a root, and nothing else', () => {
+    for (const p of ['C:\\', 'c:/', 'C:\\\\', '\\\\?\\C:\\', '\\\\srv\\share', '\\\\srv\\share\\', '\\\\?\\UNC\\srv\\share', '\\', '/']) {
+      expect(isFilesystemRoot(p, 'win32'), p).toBe(true);
+    }
+    for (const p of ['C:\\x', 'C:', '', 'C:\\x\\..\\y', '\\\\srv\\share\\p']) expect(isFilesystemRoot(p, 'win32'), p).toBe(false);
   });
 });

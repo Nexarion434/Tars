@@ -58,6 +58,22 @@ describe('1. the encoder is Claude Code\'s', () => {
     expect(encodeClaudeProjectDir('C:\\Users\\Nicolás\\projet')).toBe('C--Users-Nicol-s-projet');
   });
 
+  // Claude Code 2.1.220 (claude.exe, read 2026-09-25): a name longer than 200
+  // characters is cut to 200 and followed by `-` and a base-36 hash of the whole
+  // path. The suffixes below were computed by running Claude Code's own encoder,
+  // extracted from that binary, on these inputs; they are not this code's output.
+  it('shortens a name over 200 characters exactly as Claude Code does', () => {
+    const vectors: Array<[string, string]> = [
+      ['C:\\Users\\nicol\\' + 'Documents\\Claude Project\\'.repeat(8) + 'Tars', '-475b7m'],
+      ['/Users/noah/' + 'a'.repeat(188), ''],
+      ['/Users/noah/' + 'a'.repeat(189), '-fo84kw'],
+      ['/' + 'x/'.repeat(100) + 'R\u00e9union (2) \u00e9', '-u8lp63'],
+    ];
+    for (const [input, suffix] of vectors) {
+      expect(encodeClaudeProjectDir(input), input.slice(0, 40)).toBe(input.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 200) + suffix);
+    }
+  });
+
   it('agrees with the old one wherever the old one was right: letters, digits, "/", "." and "-"', () => {
     for (const [p, old] of Object.entries(golden.encode)) {
       if (/^[A-Za-z0-9/.-]*$/.test(p)) expect(encodeClaudeProjectDir(p), p).toBe(old);

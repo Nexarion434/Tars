@@ -15,7 +15,23 @@ import * as path from 'path';
  * was looked for under a name Claude never gives.
  */
 export function encodeClaudeProjectDir(projectPath: string): string {
-  return projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+  const name = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+  if (name.length <= MAX_NAME) return name;
+  return `${name.slice(0, MAX_NAME)}-${Math.abs(claudeHash(projectPath)).toString(36)}`;
+}
+
+/**
+ * A name longer than 200 characters is cut to 200 and followed by `-` and a
+ * base-36 hash of the whole path: Claude Code 2.1.220's own `x0()`, read in
+ * its claude.exe on 2026-09-25 (`ixt=200`, the hash a 32-bit `(h<<5)-h+c`
+ * over UTF-16 units). The test holds it to values computed by that code.
+ */
+const MAX_NAME = 200;
+
+function claudeHash(text: string): number {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+  return h;
 }
 
 /**

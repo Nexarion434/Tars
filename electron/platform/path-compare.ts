@@ -64,6 +64,19 @@ export function isUnder(child: string, root: string, platform: NodeJS.Platform =
 }
 
 /**
+ * Whether a path is the root of a file system, which is never a project.
+ * darwin/linux: `/`, exactly as the listings compared it. win32: a drive's
+ * root, a share's root or `\`, in any spelling (not `C:` alone, which is the
+ * drive's current directory).
+ */
+export function isFilesystemRoot(p: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (!isWin(platform)) return p === '/';
+  if (!p) return false;
+  // normalize keeps a share root's trailing `\` (`\\srv\share\`).
+  return /^([A-Z]:\\|\\\\[^\\]+\\[^\\]+\\?|\\)$/.test(windowsKey(p));
+}
+
+/**
  * Whether a path lies inside a `worktrees` or `.worktrees` folder, a view of a
  * repository rather than a project of its own. darwin/linux: the
  * `/\/\.?worktrees\//` both listings used; win32: either separator, any case.

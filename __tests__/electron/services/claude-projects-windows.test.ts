@@ -23,7 +23,8 @@ import { writeProjectMemory } from '../../../electron/services/memory-hub';
  *    read (`C:\...` pasted into ~/.claude/projects), and creating its
  *    MEMORY.md fails;
  * 5. a memory file named with a backslash creates a subdirectory;
- * 6. the Brain's writer puts a note where Claude does not look.
+ * 6. the Brain's writer puts a note where Claude does not look;
+ * 7. a drive root is listed as a project.
  */
 describe.runIf(process.platform === 'win32')('Claude\'s project folders on Windows', () => {
   let work: string;
@@ -55,6 +56,16 @@ describe.runIf(process.platform === 'win32')('Claude\'s project folders on Windo
     const listed = (await getClaudeProjects()).map(p => p.path);
     expect(listed).toContain(project);
     expect(listed.filter(p => p.includes('.worktrees'))).toEqual([]);
+  });
+
+  // The reviewer's gate: '/' was skipped by string, and Claude's folder for a
+  // session run at a drive's root (C--) listed C:\ as a project.
+  it('7. does not list a drive root as a project', async () => {
+    fs.mkdirSync(path.join(projectsDir, 'C--'), { recursive: true });
+    resetProjectIndex();
+    const listed = (await getClaudeProjects()).map(p => p.path);
+    expect(listed.filter(p => /^[A-Za-z]:\\?$/.test(p))).toEqual([]);
+    expect(listed).toContain(project);
   });
 
   it('3. Memory shows its MEMORY.md under the project\'s path', async () => {

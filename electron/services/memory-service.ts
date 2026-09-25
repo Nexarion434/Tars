@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
-import { encodeClaudeProjectDir } from '../platform/claude-project-dir';
+import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
 
 export interface MemoryFile {
   name: string;
@@ -95,12 +95,19 @@ function encodeProjectPath(projectPath: string): string {
 export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
+  // A folder a known project's own name points at is that project: decoding is
+  // lossy (a space comes back as a separator on macOS), and a Tars project was
+  // listed once under the guess, with its memory, and again empty.
+  const knownByFolder = new Map<string, string>();
+  for (const known of extraProjectPaths) {
+    for (const name of known ? claudeProjectDirNames(known) : []) if (!knownByFolder.has(name)) knownByFolder.set(name, known);
+  }
 
   for (const { provider, dir: projectsDir } of PROVIDER_MEMORY_DIRS) {
     // Read without blocking, each folder's path decoded once (project-index.ts).
     for (const folder of await projectFolders(projectsDir)) {
       const memoryDir = path.join(folder.dir, 'memory');
-      const decodedPath = folder.projectPath;
+      const decodedPath = knownByFolder.get(folder.name) ?? folder.projectPath;
       const projectName = getProjectName(decodedPath);
 
       const project: ProjectMemory = {
