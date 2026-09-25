@@ -74,11 +74,11 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 
 | # | Fonctionnalité | Statut | Constats | Agent | Preuve attendue |
 |---|---|---|---|---|---|
-| 1 | Installation (`npm ci`, modules natifs, 7 MCP) | voir §1 | B/B-02 | win-build | `npm ci` exit 0, node-pty + better-sqlite3 chargés dans Electron 44 |
-| 2 | Compilation (`tsc` x2) | voir §1 | | win-build | les deux `tsc` exit 0 |
-| 3 | `npm test` | voir §1 | B/T-01..T-03 | win-qa | vert, isolé du vrai profil |
-| 4 | `lint`, `lint:design`, `e2e:guard` | voir §1 | B/P-05 | win-build | exit 0 depuis PowerShell |
-| 5 | Démarrage dev (`electron:dev`) | KO | B/B-01 | win-build | la fenêtre s'ouvre depuis PowerShell |
+| 1 | Installation (`npm ci`, modules natifs, 7 MCP) | **OK** (`npm ci` exit 0 avec VS Build Tools, gate 2026-09-25) | B/B-02 | win-build | `npm ci` exit 0, node-pty + better-sqlite3 chargés dans Electron 44 |
+| 2 | Compilation (`tsc` x2) | **OK** | | win-build | les deux `tsc` exit 0 |
+| 3 | `npm test` | KO (307 / 3733, était 573 / 2605) | B/T-01..T-03 | win-qa | vert, isolé du vrai profil |
+| 4 | `lint`, `lint:design`, `e2e:guard` | **OK** (lint:design en Node) | B/P-05 | win-build | exit 0 depuis PowerShell |
+| 5 | Démarrage dev (`electron:dev`) | **OK** depuis PowerShell (fenêtre + `/api/health` 200) ; fonctions dégradées | B/B-01 | win-build | la fenêtre s'ouvre depuis PowerShell |
 | 6 | Créer un agent (UI) | KO | B/A-01, A1 | win-process + win-platform | E2E : PTY créé, carte au repos |
 | 7 | Lancer un agent (UI, API, bots, restauration) | KO | A1, A3, A4, B/A-02, B/A-04 | win-providers + win-platform | E2E : le faux CLI reçoit l'argv exact |
 | 8 | Trouver les CLIs (npm `.cmd`, `claude.exe` natif, PATHEXT) | KO | A5, A16, A17, B/C-01..C-03 | win-platform | unit : résolution `.exe` / shim `.cmd` vers `node <script>` |
@@ -109,7 +109,7 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 33 | Packaging NSIS + `.ico` | KO | B/P-01..P-03 | win-build | install / désinstall / mise à jour sur cette machine |
 | 34 | Auto-update depuis le fork | KO | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
 | 35 | Bac à sable (`npm run sandbox`) | KO | B/P-04 | win-build | lance `win-unpacked` sur 31499, USERPROFILE isolé |
-| 36 | E2E (38 surfaces, références Windows dédiées) | KO | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
+| 36 | E2E (38 surfaces, références Windows dédiées) | KO (44 OK / 10 KO / 44 non lancés ; bloqué au lancement des agents) | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
 | 37 | CI `windows-latest` | KO | B/P-11 | win-build | job vert sur PR vers `windows` |
 | 38 | Zéro régression macOS / Linux | ? | | win-reviewer | CI ubuntu verte, diffs darwin/linux prouvés identiques |
 
@@ -155,4 +155,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 | Date | Lot | Branche | QA | Review | Merge |
 |---|---|---|---|---|---|
-| 2026-09-25 | Phase 0 + 1 : baseline, audit, roster | `windows` | n/a | n/a | commit local |
+| 2026-09-25 | Phase 0 + 1 : baseline, audit, roster | `windows` | n/a | n/a | c8d904ae |
+| 2026-09-25 | Harnais de test Windows (isolation du profil, garde, faux gh, jonctions, références win32) | `win/test-harness` | gate win-qa | APPROVE (3 tours) | 8a6945e1 |
+| 2026-09-25 | Primitives plateforme (shell, PATH, résolution des CLIs, tokenizer, ligne de commande Windows, toLaunch, killTree) | `win/platform-launch` | PASS (intégration) | APPROVE (2 tours) | 8bddb6c8 |
+| 2026-09-25 | Scripts npm cross-platform (electron-dev, design-lint.mjs, build-renderer, npm-command) | `win/npm-scripts` | PASS (intégration) | APPROVE (2 tours) | aac7547b |
