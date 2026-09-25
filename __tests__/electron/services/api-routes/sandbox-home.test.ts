@@ -53,6 +53,7 @@ import { performDispatch } from '../../../../electron/services/api-routes/agent-
 import { agents } from '../../../../electron/core/agent-manager';
 import type { RouteContext } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
+import { useTestHome } from '../../../setup/test-home';
 
 dirs.electronHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-electron-home-'));
 dirs.sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sandbox-home-'));
@@ -65,7 +66,7 @@ function mcpConfigIn(home: string): string {
   return file;
 }
 
-let savedHome: string | undefined;
+let restoreHome: () => void;
 let ctx: RouteContext;
 
 beforeEach(() => {
@@ -73,8 +74,7 @@ beforeEach(() => {
   agents.clear();
   // spawnAgentSession pre-accepts workspace trust by writing ~/.claude.json,
   // so HOME is moved before anything runs, and checked rather than assumed.
-  savedHome = process.env.HOME;
-  process.env.HOME = dirs.sandboxHome;
+  restoreHome = useTestHome(dirs.sandboxHome);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(dirs.sandboxHome);
   ctx = {
     mainWindow: { isDestroyed: () => false, webContents: { send: vi.fn() } } as never,
@@ -92,7 +92,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.HOME = savedHome;
+  restoreHome();
 });
 
 describe('an agent spawned by a Tars whose HOME is a sandbox', () => {

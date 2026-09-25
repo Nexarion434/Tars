@@ -24,20 +24,20 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/core/agent-manager', () => ({ agents }));
 
 import { registerTranscriptHandlers } from '../../../electron/handlers/transcript-handlers';
+import { useTestHome } from '../../setup/test-home';
 
 const PROJECT = '/Users/someone/work/demo.app';
 const PROJECT_DIR = '-Users-someone-work-demo-app';
 
 let home: string;
-let realHome: string | undefined;
+let restoreHome: () => void;
 
 beforeEach(() => {
-  realHome = process.env.HOME;
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-transcript-ipc-'));
   // The handler finds ~ through os.homedir(), which follows HOME. Asserted
   // rather than assumed: if it ever stopped, these reads would head for a real
   // ~/.claude, and this line fails first.
-  process.env.HOME = home;
+  restoreHome = useTestHome(home);
   expect(os.homedir()).toBe(home);
 
   agents.clear();
@@ -46,8 +46,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (realHome === undefined) delete process.env.HOME;
-  else process.env.HOME = realHome;
+  restoreHome();
   fs.rmSync(home, { recursive: true, force: true });
 });
 

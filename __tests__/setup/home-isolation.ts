@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { homeVariables } from './test-home';
 
 /**
  * The suite runs in a HOME of its own, and cannot write into the one it started in.
@@ -152,19 +153,10 @@ guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-')
 guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome)];
 const temp = canonical(os.tmpdir());
 if (guard.protectedRoots.some(root => temp !== root && inside(temp, root))) guard.allowedRoots.push(temp);
-process.env.HOME = guard.throwawayHome;
-if (onWindows) {
-  const roaming = path.join(guard.throwawayHome, 'AppData', 'Roaming');
-  const local = path.join(guard.throwawayHome, 'AppData', 'Local');
-  fs.mkdirSync(roaming, { recursive: true });
-  fs.mkdirSync(local, { recursive: true });
-  const { root } = path.parse(guard.throwawayHome);
-  process.env.USERPROFILE = guard.throwawayHome;
-  process.env.HOMEDRIVE = root.replace(/[\\/]+$/, '');
-  process.env.HOMEPATH = guard.throwawayHome.slice(process.env.HOMEDRIVE.length);
-  process.env.APPDATA = roaming;
-  process.env.LOCALAPPDATA = local;
-}
+// HOME, and on Windows the variables that name the profile: test-home.ts's list.
+const moved = homeVariables(guard.throwawayHome);
+for (const dir of [moved.APPDATA, moved.LOCALAPPDATA]) if (dir) fs.mkdirSync(dir, { recursive: true });
+Object.assign(process.env, moved);
 
 /**
  * Refused when some protected root holds the target and no allowed root inside

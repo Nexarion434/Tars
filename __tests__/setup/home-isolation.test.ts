@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { writeFileSync as namedWriteFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { withTestHome } from './test-home';
 
 /**
  * The witness for __tests__/setup/home-isolation.ts.
@@ -191,8 +192,6 @@ describe('the suite runs in a HOME of its own', () => {
 describe('a write into a protected home', () => {
   let protectedHome: string;
   let outside: string;
-  let homeBefore: string | undefined;
-  let profileBefore: string | undefined;
 
   beforeEach(() => {
     protectedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-protected-'));
@@ -200,24 +199,16 @@ describe('a write into a protected home', () => {
     outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-home-isolation-outside-'));
     fs.writeFileSync(path.join(outside, 'source'), 'source');
     guard.protect(protectedHome);
-    homeBefore = process.env.HOME;
-    profileBefore = process.env.USERPROFILE;
   });
 
   afterEach(() => {
-    process.env.HOME = homeBefore;
-    // USERPROFILE is os.homedir() on Windows; elsewhere it was never set.
-    if (profileBefore === undefined) delete process.env.USERPROFILE;
-    else process.env.USERPROFILE = profileBefore;
     guard.unprotect(protectedHome);
     fs.rmSync(protectedHome, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
   it('is refused on the product path that leaked, and recorded although the product swallows it', () => {
-    process.env.HOME = protectedHome;
-    if (process.platform === 'win32') process.env.USERPROFILE = protectedHome;
-    ensureProjectTrusted(project());
+    withTestHome(protectedHome, () => ensureProjectTrusted(project()));
 
     expect(fs.existsSync(path.join(protectedHome, '.claude.json'))).toBe(false);
     // Consumed here, because the setup file fails the whole file on any record
