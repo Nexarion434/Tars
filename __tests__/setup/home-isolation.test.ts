@@ -262,6 +262,29 @@ describe('a write into a protected home', () => {
     expect(fs.readdirSync(protectedHome)).toEqual(['existing']);
   });
 
+  it.runIf(process.platform === 'win32')('is refused through a pipe prefix that climbs back out of the pipe namespace', () => {
+    // The guard lets genuine named pipes through (node-pty's ConPTY input), and
+    // Windows collapses `..` in them: each of these opens an ordinary file in
+    // the protected home. Found by win-reviewer on 2026-09-25.
+    const escapes = ['\\\\.\\pipe\\..\\', '//./pipe/../', '\\\\?\\pipe\\..\\'];
+    let refused: string[] = [];
+    try {
+      escapes.forEach((prefix, i) => {
+        let thrown: unknown;
+        try {
+          fs.writeFileSync(`${prefix}${path.join(protectedHome, `escape-${i}`)}`, 'x');
+        } catch (error) {
+          thrown = error;
+        }
+        expect((thrown as NodeJS.ErrnoException | undefined)?.code, prefix).toBe('E_TARS_HOME_GUARD');
+      });
+    } finally {
+      refused = guard.violations.splice(0).map(v => v.path);
+    }
+    expect(refused).toHaveLength(escapes.length);
+    expect(fs.readdirSync(protectedHome)).toEqual(['existing']);
+  });
+
   it('is refused through every way node:fs writes, while reading stays allowed', async () => {
     const at = (name: string) => path.join(protectedHome, name);
     const source = path.join(outside, 'source');

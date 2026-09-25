@@ -32,7 +32,11 @@ import { fileURLToPath } from 'node:url';
  * swallows the error, as ensureProjectTrusted does. The repository is the one
  * place under that home a test may write. What it cannot see: a native module
  * writing on its own (better-sqlite3), and a child given the real HOME
- * explicitly.
+ * explicitly. On Windows, two more: a child spawned with an environment that
+ * lacks USERPROFILE (libuv then asks Windows for the account's real profile,
+ * so its os.homedir() is the real one), and any program that asks Windows for
+ * the profile folder directly instead of reading the environment, as
+ * Electron's getPath('home') does.
  *
  * Windows, measured on 2026-09-25: `os.homedir()` reads USERPROFILE, not HOME,
  * so HOME alone left DATA_DIR on the real %USERPROFILE%\.dorothy. There the
@@ -52,6 +56,15 @@ const PROFILE_VARIABLES = ['USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'L
 const onWindows = process.platform === 'win32';
 /** \\.\pipe\name or \\?\pipe\name, either slash: the Windows pipe namespace. */
 const NAMED_PIPE = /^[\\/]{2}[.?][\\/]pipe[\\/]/i;
+/** A `.` or `..` segment: Windows collapses it, and `\\.\pipe\..\C:\...` is a file. */
+const DOT_SEGMENT = /(^|[\\/])\.{1,2}([\\/]|$)/;
+
+/** A genuine named pipe: in the pipe namespace, and nothing in its name that climbs out of it. */
+function isNamedPipe(target: string): boolean {
+  const prefix = NAMED_PIPE.exec(target);
+  return prefix !== null && !DOT_SEGMENT.test(target.slice(prefix[0].length));
+}
+
 type HomeGuard = {
   /** HOME as the run found it, before this file replaced it. */
   originalHome: string | undefined;
@@ -164,8 +177,9 @@ function violationAt(value: unknown): string | undefined {
   if (target === undefined) return undefined;
   // A Windows named pipe (\\.\pipe\..., as node-pty's ConPTY input) is not a
   // file under any home, and resolving one opens it: realpath took the pipe's
-  // only connection, and node-pty's own open then failed with EBUSY.
-  if (NAMED_PIPE.test(target)) return undefined;
+  // only connection, and node-pty's own open then failed with EBUSY. One that
+  // climbs out with `..` is a file, and is checked as one.
+  if (isNamedPipe(target)) return undefined;
   const resolved = canonical(target);
   const protectedBy = guard.protectedRoots.filter(root => inside(resolved, root));
   if (protectedBy.length === 0) return undefined;
