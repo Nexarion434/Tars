@@ -49,7 +49,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey } from '../platform';
+import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, withoutHomeCover } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -2385,15 +2385,20 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * shell:exec: a path containing $(...) or a backtick executed arbitrary
    * code as soon as the page opened.
    */
-  /** Roots a free-form file path is allowed to live under. */
-  const textFileRoots = () => [
+  /**
+   * Roots a free-form file path is allowed to live under. None is the home or
+   * above it: a project added as `~`, `/Users` or the drive's Users folder
+   * made every file of the home readable and writable here
+   * (platform/home-root.ts).
+   */
+  const textFileRoots = () => withoutHomeCover([
     path.join(os.homedir(), '.claude'),
     path.join(os.homedir(), '.codex'),
     path.join(os.homedir(), '.gemini'),
     path.join(os.homedir(), '.grok'),
     DATA_DIR,
     ...readCustomProjects(),
-  ];
+  ]);
 
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
@@ -2481,10 +2486,11 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       }
     } catch { /* skills unreadable, skip */ }
 
-    return roots
+    // Not the home nor above it, in any spelling or through a link (platform/home-root.ts).
+    return withoutHomeCover(roots
       .filter(r => typeof r === 'string' && r && path.isAbsolute(r))
       .map(r => path.resolve(r))
-      .filter(r => r !== path.parse(r).root && !samePath(r, os.homedir()));
+      .filter(r => r !== path.parse(r).root));
   };
 
   ipcMain.handle('fs:read-project-files', async (_event, params: { paths: string[]; relative: string[] }) => {

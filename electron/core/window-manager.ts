@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
+import { withoutHomeCover } from '../platform/home-root';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -249,13 +250,17 @@ function isUnderAllowedRoot(filePath: string): boolean {
   return roots.some(root => isUnder(root, filePath));
 }
 
-/** Project folders the user added, read fresh so a new project works at once. */
+/**
+ * Project folders the user added, read fresh so a new project works at once.
+ * None that is the home or above it: one such made every file of the home a
+ * local-file:// URL (platform/home-root.ts).
+ */
 function listKnownProjectRoots(): string[] {
   try {
     const file = dataPath('projects.json');
     if (!fs.existsSync(file)) return [];
     const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+    return Array.isArray(parsed) ? withoutHomeCover(parsed.filter((p): p is string => typeof p === 'string')) : [];
   } catch {
     return [];
   }
