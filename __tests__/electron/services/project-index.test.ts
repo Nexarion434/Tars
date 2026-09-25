@@ -20,6 +20,7 @@ vi.mock('../../../electron/utils/decode-project-path', async (importOriginal) =>
 });
 
 import { projectFolders, decodedProjectPath, resetProjectIndex, REDECODE_MS } from '../../../electron/services/project-index';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 let tmp: string;
 let root: string;
@@ -80,7 +81,7 @@ describe('the project index', () => {
     expect(decodes.count).toBe(2);
   });
 
-  it('lists folders and links to folders, not files, and nothing for a missing root', async () => {
+  it.skipIf(cannotSymlink())('lists folders and links to folders, not files, and nothing for a missing root', async () => {
     fs.mkdirSync(path.join(root, '-a'));
     fs.mkdirSync(path.join(tmp, 'elsewhere'));
     fs.symlinkSync(path.join(tmp, 'elsewhere'), path.join(root, '-b'));

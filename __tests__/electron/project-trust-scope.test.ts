@@ -43,6 +43,7 @@ vi.mock('electron', () => ({
 }));
 
 import { ensureProjectTrusted } from '../../electron/core/agent-manager';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 const home = () => os.homedir();
 const claudeJson = () => path.join(home(), '.claude.json');
@@ -82,7 +83,7 @@ describe('ensureProjectTrusted refuses a directory that would trust too much', (
     expect(trusted()).toEqual([]);
   });
 
-  it('5. a link to the home directory', () => {
+  it.skipIf(cannotSymlink())('5. a link to the home directory', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-trust-link-'));
     try {
       const link = path.join(dir, 'looks-like-a-project');

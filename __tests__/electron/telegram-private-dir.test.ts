@@ -79,6 +79,7 @@ vi.mock('https', () => {
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 const home = os.homedir();
 const PRIVATE_FILES = [
@@ -101,7 +102,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
     expect(isSafeTelegramPath(ORDINARY)).toBe(true);
   });
 
-  it('refuses them under the other names the file system gives them (case, Data volume, symlink)', () => {
+  it.skipIf(cannotSymlink())('refuses them under the other names the file system gives them (case, Data volume, symlink)', () => {
     // The audit's lead #21 on the vault, the same prefix test here: an existing
     // key or secret, named another way, passed. Files that exist, since only
     // an existing file has another name.
@@ -136,7 +137,7 @@ describe('the guard of the app\'s own Telegram routes', () => {
    * 3. a copy, which is another file with the same bytes, is refused;
    * 4. the search leaves a protected directory through a symlink inside it.
    */
-  it('refuses a hard link to a file in the private directory or in ~/.ssh, and nothing else with two names', () => {
+  it.skipIf(cannotSymlink())('refuses a hard link to a file in the private directory or in ~/.ssh, and nothing else with two names', () => {
     const docs = path.join(home, 'Documents');
     fs.mkdirSync(docs, { recursive: true });
     fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
@@ -268,7 +269,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       expect(ordinary.content[0].text).toContain('File not found');
     });
 
-    it(`${tool} refuses the private directory under its other names (case, symlink)`, async () => {
+    it.skipIf(cannotSymlink())(`${tool} refuses the private directory under its other names (case, symlink)`, async () => {
       // The audit's lead #21, on this guard: a segment compared by its exact
       // spelling, and the path as named rather than the file it opens.
       const secret = path.join(tmpHome, '.tars-private', 'hermes-webhook-secret');

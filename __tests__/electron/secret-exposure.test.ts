@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { writeSecretFileSync, ensureSecretFileMode } from '../../electron/utils/secret-file';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 /** The module object itself, so a patch reaches the product's `fs` import. */
 const nodeFs = createRequire(import.meta.url)('node:fs') as typeof fs;
@@ -77,7 +78,7 @@ describe('writeSecretFileSync', () => {
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 
-  it('writes nothing through a link planted at its temp name', () => {
+  it.skipIf(cannotSymlink())('writes nothing through a link planted at its temp name', () => {
     // The temp name is fixed and predictable, and the old write opened it
     // following a link: the secret went into the file the link named, which
     // then took the secret's name and was chmodded 0600 on the way.

@@ -8,6 +8,7 @@ import {
   consumeResumeSessionId,
   resetResumeTracking,
 } from '../../electron/utils/resume-session';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 /**
  * Resuming an agent's conversation after a restart.
@@ -198,7 +199,7 @@ describe('the wiring holds', () => {
  * 3. a saved path that no longer exists throws while it is resolved, and fails the start instead of starting fresh;
  * 4. a worktree reached through a symlink, which is where such an agent ran, is not resolved either.
  */
-describe('a project reached through a symlink', () => {
+describe.skipIf(cannotSymlink())('a project reached through a symlink', () => {
   let real = '';
   let link = '';
 

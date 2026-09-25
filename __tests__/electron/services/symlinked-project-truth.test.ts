@@ -7,6 +7,7 @@ import {
   clearAgentTruthCache, lastInterruptAt, lastLocalCommandAt, pendingBackgroundWork, sessionModel,
 } from '../../../electron/services/agent-truth';
 import { readAgentTranscript } from '../../../electron/services/agent-transcript';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * A project reached through a symlink (QA's re-check of #138).
@@ -33,7 +34,8 @@ const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sym
 const REAL = path.join(realBase, 'checkout');
 const LINK = path.join(realBase, 'linked');
 fs.mkdirSync(REAL, { recursive: true });
-fs.symlinkSync(REAL, LINK);
+// Made at load, so it is the skip condition too: both suites below need it.
+if (!cannotSymlink()) fs.symlinkSync(REAL, LINK);
 const SESSION = '4ab31f00-ce51-4676-ab80-4023cf6e3f4e';
 const SINCE = Date.parse('2026-09-24T03:00:00.000Z');
 const at = (s: number) => new Date(SINCE + s * 1000).toISOString();
@@ -57,7 +59,7 @@ beforeEach(() => {
   clearAgentTruthCache();
 });
 
-describe('a project reached through a symlink, its transcript under the real path', () => {
+describe.skipIf(cannotSymlink())('a project reached through a symlink, its transcript under the real path', () => {
   const agent = { currentSessionId: SESSION, resumableSessionId: SESSION, projectPath: LINK };
 
   it('1. finds the background work its session left running', () => {
@@ -88,7 +90,7 @@ describe('a project reached through a symlink, its transcript under the real pat
   });
 });
 
-describe('QA #184: the interrupt of a turn, on a project reached through a symlink', () => {
+describe.skipIf(cannotSymlink())('QA #184: the interrupt of a turn, on a project reached through a symlink', () => {
   // Written by the QA at the gate of #184. lastInterruptAt read both spellings
   // before #184 (#179) and reads transcriptRoots since, but nothing held it on a
   // linked project: reading the saved spelling only left every test green.
