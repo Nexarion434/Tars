@@ -48,6 +48,16 @@ function upper(s: string): string {
 
 const posixKey = (p: string) => p.replace(/\/+$/, '');
 
+/**
+ * One key per place, as samePath sees it: two spellings samePath takes as one
+ * give one key, for a Set or a Map. darwin/linux: the path less its trailing
+ * `/`. win32: separators, case, `.`/`..`, trailing dots and spaces folded.
+ */
+export function pathKey(p: string, platform: NodeJS.Platform = process.platform): string {
+  if (!isWin(platform)) return posixKey(p);
+  return p ? windowsKey(p) : p;
+}
+
 export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
   if (!isWin(platform)) return posixKey(a) === posixKey(b);
   if (!a || !b) return a === b;

@@ -28,6 +28,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { killPty } from '../core/pty-kill';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -48,7 +49,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary } from '../platform';
+import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -232,7 +233,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('pty:kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = ptyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       ptyProcesses.delete(id);
       return { success: true };
     }
@@ -599,7 +600,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // guarantees they're in the process environment from the start.
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
-        oldPty.kill();
+        killPty(oldPty);
         ptyProcesses.delete(agent.ptyId!);
       }
 
@@ -1049,7 +1050,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // the next start/dispatch respawns with the new provider's env.
         const staleProviderPty = ptyProcesses.get(agent.ptyId);
         if (staleProviderPty) {
-          staleProviderPty.kill();
+          killPty(staleProviderPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1075,7 +1076,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         // with the old binary.
         const staleCliPty = ptyProcesses.get(agent.ptyId);
         if (staleCliPty) {
-          staleCliPty.kill();
+          killPty(staleCliPty);
           ptyProcesses.delete(agent.ptyId);
         }
         agent.ptyId = undefined;
@@ -1154,7 +1155,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
       agent.ptyId = undefined;
@@ -1210,7 +1211,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
       // Nullify so pending onExit callbacks won't mutate state
@@ -1408,7 +1409,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('skill:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = skillPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       skillPtyProcesses.delete(id);
       return { success: true };
     }
@@ -1602,7 +1603,7 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('plugin:install-kill', async (_event, { id }: { id: string }) => {
     const ptyProcess = pluginPtyProcesses.get(id);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       pluginPtyProcesses.delete(id);
       return { success: true };
     }
@@ -2356,9 +2357,9 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const seen = new Set<string>();
 
       const push = async (p: string, id: string, custom = false) => {
-        if (!p || p === '/' || p === os.homedir()) return;
-        if (seen.has(p) || /\/\.?worktrees\//.test(p)) return;
-        seen.add(p);
+        if (!p || isFilesystemRoot(p) || samePath(p, os.homedir())) return;
+        if (seen.has(pathKey(p)) || isInsideWorktreesDir(p)) return;
+        seen.add(pathKey(p));
         if (!await fs.promises.access(p).then(() => true, () => false)) return;
         projects.push({ id, path: p, name: path.basename(p), ...(custom ? { custom: true } : {}) });
       };
@@ -2394,9 +2395,15 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     ...readCustomProjects(),
   ];
 
+  /**
+   * Under a root that is not the home nor above it: a project added as `~`,
+   * `/Users` or the drive's Users folder made every file of the home readable
+   * and writable here (platform/home-root.ts). Only the roots the path is
+   * under are judged, so a project on an offline share costs nothing.
+   */
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return textFileRoots().some(root => resolved === root || resolved.startsWith(root + path.sep));
+    return isUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep));
   };
 
   /**
@@ -2483,7 +2490,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     return roots
       .filter(r => typeof r === 'string' && r && path.isAbsolute(r))
       .map(r => path.resolve(r))
-      .filter(r => r !== path.parse(r).root && r !== os.homedir());
+      .filter(r => r !== path.parse(r).root);
   };
 
   ipcMain.handle('fs:read-project-files', async (_event, params: { paths: string[]; relative: string[] }) => {
@@ -2494,7 +2501,9 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     for (const base of paths) {
       if (typeof base !== 'string' || !path.isAbsolute(base)) continue;
       const resolvedBase = path.resolve(base);
-      const allowed = roots.some(root => resolvedBase === root || resolvedBase.startsWith(root + path.sep));
+      // Not under the home nor above it, in any spelling or through a link;
+      // only the roots the base is under are judged (platform/home-root.ts).
+      const allowed = isUnderSafeRoot(resolvedBase, roots, (root, b) => b === root || b.startsWith(root + path.sep));
       if (!allowed) continue;
       for (const rel of relative) {
         if (typeof rel !== 'string' || rel.includes('..')) continue;
@@ -3004,7 +3013,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:killPty', async (_event, { ptyId }: { ptyId: string }) => {
     const ptyProcess = quickPtyProcesses.get(ptyId);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       quickPtyProcesses.delete(ptyId);
       return { success: true };
     }

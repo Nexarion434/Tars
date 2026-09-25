@@ -5,6 +5,7 @@ import { execFile } from 'child_process';
 import { AgentStatus } from '../types';
 import { TG_CHARACTER_FACES, SLACK_CHARACTER_FACES, DATA_DIR, OLD_DATA_DIR } from '../constants';
 import { windowsSoundCommand } from '../platform/sound';
+import { projectName } from '../platform/project-name';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -251,7 +252,7 @@ export function formatAgentStatus(agent: AgentStatus): string {
     text += `   Task: ${agent.currentTask.slice(0, 50)}${agent.currentTask.length > 50 ? '...' : ''}\n`;
   }
   if (!isSuper) {
-    text += `   Project: \`${agent.projectPath.split('/').pop()}\``;
+    text += `   Project: \`${projectName(agent.projectPath)}\``;
   }
   return text;
 }
@@ -265,7 +266,7 @@ export function formatSlackAgentStatus(a: AgentStatus): string {
 
   let text = `${emoji} *${a.name}* ${statusEmoji}\n`;
   if (!isSuper) {
-    const project = a.projectPath.split('/').pop() || 'Unknown';
+    const project = projectName(a.projectPath) || 'Unknown';
     text += `    :file_folder: \`${project}\`\n`;
   }
   if (a.skills.length > 0) {

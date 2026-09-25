@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
+import { isUnderSafeRoot } from '../platform/home-root';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -239,14 +240,19 @@ function isUnder(root: string, candidate: string): boolean {
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }
 
-/** Roots local-file:// may read from: the user's own project and app data. */
+/**
+ * Roots local-file:// may read from: the user's own project and app data, and
+ * none that is the home or above it: one such made every file of the home a
+ * local-file:// URL. Only the roots the file is under are judged
+ * (platform/home-root.ts).
+ */
 function isUnderAllowedRoot(filePath: string): boolean {
   const roots = [
     DATA_DIR,
     path.join(os.homedir(), '.claude'),
     ...listKnownProjectRoots(),
   ];
-  return roots.some(root => isUnder(root, filePath));
+  return isUnderSafeRoot(filePath, roots, isUnder);
 }
 
 /** Project folders the user added, read fresh so a new project works at once. */

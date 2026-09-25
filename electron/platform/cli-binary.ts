@@ -48,7 +48,7 @@ export type CliBinaryFailure = {
   detail: string;
 };
 
-const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
+export const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
 const NODE_SCRIPT = /\.(c|m)?js$/i;
 const w = path.win32;
 
@@ -75,13 +75,13 @@ function fail(reason: CliBinaryFailureReason, name: string, detail: string, file
  * directory or drive (`bin`, `.`, `\dir`, `C:dir`), which is a planting hole,
  * or read as an NTFS alternate data stream (`claude.exe:evil`).
  */
-function isPlainAbsolute(p: string): boolean {
+export function isPlainAbsolute(p: string): boolean {
   if (/^[a-z]:[\\/]/i.test(p)) return !p.slice(2).includes(':');
   return /^[\\/]{2}[^\\/]/.test(p) && !p.includes(':');
 }
 
 /** PATHEXT as lowercase extensions, in order. */
-function pathExts(env: Env): string[] {
+export function pathExts(env: Env): string[] {
   const raw = envValue(env, 'PATHEXT', 'win32') || DEFAULT_PATHEXT;
   const exts = raw.split(';').map((e) => e.trim().toLowerCase()).filter((e) => /^\.[^.\\/]+$/.test(e));
   return exts.length ? exts : DEFAULT_PATHEXT.toLowerCase().split(';');

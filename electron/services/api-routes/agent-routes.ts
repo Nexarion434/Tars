@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { killPty } from '../../core/pty-kill';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
@@ -286,7 +287,7 @@ async function spawnAgentSession(
   if (agent.ptyId) {
     const existingPty = ptyProcesses.get(agent.ptyId);
     if (existingPty) {
-      existingPty.kill();
+      killPty(existingPty);
       ptyProcesses.delete(agent.ptyId);
     }
   }
@@ -1186,7 +1187,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
     }
@@ -1299,7 +1300,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
-        ptyProcess.kill();
+        killPty(ptyProcess);
         ptyProcesses.delete(agent.ptyId);
       }
     }
