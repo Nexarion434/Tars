@@ -94,19 +94,22 @@ function windowsEntryKey(entry: string): string {
 }
 
 /**
- * buildFullPath's win32 branch: the user's CLI dirs, then
+ * buildFullPath's win32 branch: the user's CLI dirs first (their explicit
+ * choice, as on macOS), then the existing Path, then
  * %USERPROFILE%\.local\bin (the native claude.exe) and %APPDATA%\npm (npm's
- * global shims), then the existing Path, each directory once, compared
- * without case, first spelling kept. None of the macOS entries.
+ * global shims). Those two go last so that nothing dropped in them shadows a
+ * System32 tool (the orchestrator's decision at win-reviewer's gate,
+ * 2026-09-25). Each directory once, compared without case, first spelling
+ * kept. None of the macOS entries.
  */
 export function buildWindowsFullPath(extraPaths: string[], env: Env): string {
   const home = envValue(env, 'USERPROFILE', 'win32') || os.homedir();
   const appData = envValue(env, 'APPDATA', 'win32') || path.win32.join(home, 'AppData', 'Roaming');
   const candidates = [
     ...extraPaths,
+    ...pathEntries(getPath(env, 'win32'), 'win32'),
     path.win32.join(home, '.local', 'bin'),
     path.win32.join(appData, 'npm'),
-    ...pathEntries(getPath(env, 'win32'), 'win32'),
   ];
   const seen = new Set<string>();
   const out: string[] = [];

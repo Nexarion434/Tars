@@ -21,6 +21,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * 7. win32: the macOS-only entries (/usr/local/bin, /opt/homebrew/bin, nvm's
  *    bin dirs) are added to a Windows PATH.
  * 8. A directory listing that throws takes the whole PATH down with it.
+ * 9. win32 (orchestrator's decision at win-reviewer's gate, 2026-09-25): the
+ *    default Windows CLI dirs are put before the existing entries, so a
+ *    where.exe, curl.exe or tar.exe dropped in %APPDATA%\npm or .local\bin
+ *    shadows System32's. They go after; the user's own cliPathDirs stay first,
+ *    an explicit choice, as on macOS.
  */
 
 const fsState: { nvmExists: boolean; versions: string[] | Error } = { nvmExists: false, versions: [] };
@@ -128,19 +133,25 @@ describe('win32', () => {
     Path: 'C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\Program Files\\nodejs\\;C:\\Program Files (x86)\\Tool',
   };
 
-  it('2, 3, 4. keeps every Path entry, adds the CLI dirs and the two Windows dirs, joined with ;', () => {
+  it('2, 3, 4, 9. the user\'s CLI dirs first, then every Path entry, then the two Windows CLI dirs, joined with ;', () => {
     const out = buildFullPath(['D:\\cli\\claude', 'C:\\Program Files (x86)\\Codex'], { env, platform: 'win32' });
     expect(out.split(';')).toEqual([
       'D:\\cli\\claude',
       'C:\\Program Files (x86)\\Codex',
-      'C:\\Users\\Nico Las\\.local\\bin',
-      'C:\\Users\\Nico Las\\AppData\\Roaming\\npm',
       'C:\\WINDOWS\\system32',
       'C:\\WINDOWS',
       'C:\\Program Files\\nodejs\\',
       'C:\\Program Files (x86)\\Tool',
+      'C:\\Users\\Nico Las\\.local\\bin',
+      'C:\\Users\\Nico Las\\AppData\\Roaming\\npm',
     ]);
     expect(out).not.toContain(':\\WINDOWS:');
+  });
+
+  it('9. System32 comes before the default CLI dirs, so a tool dropped there never shadows it', () => {
+    const out = buildFullPath([], { env, platform: 'win32' }).split(';');
+    expect(out.indexOf('C:\\WINDOWS\\system32')).toBeLessThan(out.indexOf('C:\\Users\\Nico Las\\AppData\\Roaming\\npm'));
+    expect(out.indexOf('C:\\WINDOWS\\system32')).toBeLessThan(out.indexOf('C:\\Users\\Nico Las\\.local\\bin'));
   });
 
   it('5. dedupes case-insensitively and across a trailing backslash, keeping the first spelling', () => {
@@ -179,6 +190,6 @@ describe('win32', () => {
 
   it('drops the empty entries a Windows Path accumulates (;;), which name nothing there', () => {
     const out = buildFullPath([], { env: { USERPROFILE: 'C:\\U', APPDATA: 'C:\\A', Path: 'C:\\a;;C:\\b;' }, platform: 'win32' });
-    expect(out).toBe('C:\\U\\.local\\bin;C:\\A\\npm;C:\\a;C:\\b');
+    expect(out).toBe('C:\\a;C:\\b;C:\\U\\.local\\bin;C:\\A\\npm');
   });
 });
