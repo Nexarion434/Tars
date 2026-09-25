@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { pinPlatform } from './providers/win-fake-disk';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -42,7 +43,10 @@ vi.mock('electron', () => ({
 
 // The claude binary never runs here. `claude mcp add` and `claude mcp remove`
 // fail, as they do when the CLI is missing, so the provider takes its mcp.json
-// path, which is the one under test.
+// path, which is the one under test. The mock knows the CLI by the bare name
+// it is started with, which is what darwin/linux pass; on win32 the name is
+// resolved to a real file first (a claude.exe the PATH may well hold), so the
+// suites that reach the CLI run as linux: see cliAsGiven below.
 const { claudeRuns, claudeOptions } = vi.hoisted(() => ({ claudeRuns: [] as string[][], claudeOptions: [] as unknown[] }));
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
@@ -189,6 +193,19 @@ const mcpJson = () => path.join(home(), '.claude', 'mcp.json');
 function writeMcpJson(contents: unknown = mcpServersNow): void {
   fs.mkdirSync(path.dirname(mcpJson()), { recursive: true });
   fs.writeFileSync(mcpJson(), typeof contents === 'string' ? contents : JSON.stringify(contents, null, 2));
+}
+
+/**
+ * For a suite that makes the product start `claude`: process.platform reads
+ * linux, so the name reaches the mock above as given and nothing is resolved
+ * on the disk. On a Windows host the resolver would otherwise find the
+ * machine's own claude.exe and run it. How win32 starts the CLI is proven
+ * against a recording npm shim in providers/mcp-registration-cli.test.ts.
+ */
+function cliAsGiven() {
+  let unpin: () => void = () => {};
+  beforeEach(() => { unpin = pinPlatform('linux'); });
+  afterEach(() => unpin());
 }
 
 beforeEach(() => {
@@ -439,6 +456,7 @@ describe("Claude's settings.json, through the hooks Tars installs at every launc
 });
 
 describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has failed', () => {
+  cliAsGiven();
   const mcpJson = () => path.join(home(), '.claude', 'mcp.json');
   /** A server someone added by hand, with its token, beside one of Tars's. */
   const servers = {
@@ -460,7 +478,8 @@ describe('~/.claude/mcp.json, when `claude mcp add` or `claude mcp remove` has f
   it('registers beside the servers already there', async () => {
     await register();
 
-    expect(claudeRuns).toEqual([['mcp', 'add', '-s', 'user', 'google-workspace', gws.command, ...gws.args]]);
+    // `--` before the command: gws's own `-s` is otherwise claude's scope.
+    expect(claudeRuns).toEqual([['mcp', 'add', '-s', 'user', 'google-workspace', '--', gws.command, ...gws.args]]);
     expect(readAsJson(mcpJson())).toEqual({ mcpServers: { ...servers.mcpServers, 'google-workspace': gws } });
   });
 
@@ -718,6 +737,7 @@ describe('~/.claude.json, through the memory backends Tars registers at launch',
 });
 
 describe('~/.claude/mcp.json, from every provider whose configDir is ~/.claude', () => {
+  cliAsGiven();
   // Found by the directory they write into, not listed: Claude and the
   // providers that run its binary.
   const family = getAllProviders().filter(p => p.configDir === path.join(os.homedir(), '.claude'));
@@ -837,6 +857,7 @@ describe('~/.claude/mcp.json, from the MCP settings page', () => {
 });
 
 describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` fails', () => {
+  cliAsGiven();
   const resources = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resources-'));
   const bundle = path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js');
   const processWithResources = process as NodeJS.Process & { resourcesPath?: string };
@@ -865,7 +886,7 @@ describe('~/.claude/mcp.json, from the orchestrator setup when `claude mcp add` 
     expect(await setup()).toMatchObject({ success: true, method: 'mcp-json-fallback' });
 
     // An argv: the path is an argument of its own, never inside a shell string.
-    expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', 'node', bundle]);
+    expect(claudeRuns).toContainEqual(['mcp', 'add', '-s', 'user', 'claude-mgr-orchestrator', '--', 'node', bundle]);
     // Bounded for good: the default SIGTERM leaves a child that ignores it
     // running, and the setup waiting on it (the gate of #128).
     expect(claudeOptions.at(-1)).toMatchObject({ timeout: 15_000, killSignal: 'SIGKILL' });

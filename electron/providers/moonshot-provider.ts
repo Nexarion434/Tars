@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
@@ -131,7 +132,7 @@ export class MoonshotProvider implements CLIProvider {
       const c = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
       const e = c?.mcpServers?.[name];
       if (!e?.args) return false;
-      return e.args[e.args.length - 1] === expectedServerPath;
+      return mcpEntryRuns(e, expectedServerPath);
     } catch { return false; }
   }
 

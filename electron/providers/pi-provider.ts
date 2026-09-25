@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
@@ -170,7 +171,7 @@ export class PiProvider implements CLIProvider {
     try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (!config.mcpServers?.[name]) return false;
-      return JSON.stringify(config.mcpServers[name]).includes(expectedServerPath);
+      return mcpEntryRuns(config.mcpServers[name], expectedServerPath);
     } catch {
       return false;
     }

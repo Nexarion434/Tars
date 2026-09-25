@@ -1,6 +1,8 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { buildFullPath } from './path-builder';
 import { getProvider } from '../providers';
+import { cliInvocation } from '../providers/cli-exec';
+import { posixWords, withPath } from '../platform';
 
 interface GeneratedTask {
   title: string;
@@ -51,9 +53,18 @@ IMPORTANT: Respond with ONLY the JSON object, no markdown, no explanation, just 
   });
 
   try {
+    // No shell, on any platform: the provider's command line is read back into
+    // argv (the closed grammar of platform/posix-words.ts) and the binary
+    // resolved (an npm claude.cmd on Windows), then started with execFile. The
+    // request and the project names are user text; through `exec` they went
+    // to /bin/sh, and on Windows to cmd.exe, which split them at a newline and
+    // ran what followed an `&`. On darwin/linux the env is the one exec had.
+    const env = withPath(process.env, fullPath, process.platform) as NodeJS.ProcessEnv;
+    const words = posixWords(command);
+    const { file, args } = cliInvocation(words[0], words.slice(1), env);
     const claudeResult = await new Promise<string>((resolve, reject) => {
-      exec(command, {
-        env: { ...process.env, PATH: fullPath },
+      execFile(file, args, {
+        env,
         timeout: 30000, // 30 second timeout
         maxBuffer: 1024 * 1024,
       }, (error, stdout, stderr) => {

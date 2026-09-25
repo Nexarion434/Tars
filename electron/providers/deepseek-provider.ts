@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
@@ -166,7 +167,7 @@ export class DeepSeekProvider implements CLIProvider {
       const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
       const existing = mcpConfig?.mcpServers?.[name];
       if (!existing?.args) return false;
-      return existing.args[existing.args.length - 1] === expectedServerPath;
+      return mcpEntryRuns(existing, expectedServerPath);
     } catch { return false; }
   }
 

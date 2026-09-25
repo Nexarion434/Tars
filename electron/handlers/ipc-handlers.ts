@@ -2693,8 +2693,8 @@ function registerTasmaniaHandlers(deps: IpcHandlerDependencies): void {
         return { success: false, error: `MCP server not found at ${serverPath}` };
       }
 
-      const command = serverPath.endsWith('.ts') ? 'npx' : 'node';
-      const args = serverPath.endsWith('.ts') ? ['tsx', serverPath] : [serverPath];
+      // As each CLI will start it, the orchestrator's rule: on Windows `npx` is a .cmd no CLI can spawn.
+      const { command, args } = (await import('../providers/cli-exec')).nodeServerCommand(serverPath, 'tasmania');
 
       const { getAllProviders } = await import('../providers');
       const providers = getAllProviders();

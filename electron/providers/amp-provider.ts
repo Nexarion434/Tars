@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { mcpEntryRuns } from './mcp-entry';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
@@ -260,7 +261,7 @@ export class AmpProvider implements CLIProvider {
       if (!servers || typeof servers !== 'object') return false;
       const server = servers[name];
       if (!server) return false;
-      return JSON.stringify(server).includes(expectedServerPath);
+      return mcpEntryRuns(server, expectedServerPath);
     } catch {
       return false;
     }
