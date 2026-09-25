@@ -6,9 +6,14 @@
  * before this layer existed, byte for byte.
  */
 export { realFs, type FsProbe, type Env } from './fs-probe';
-export { envValue, getPath, withPath, pathEntries, joinPathEntries } from './path-env';
-export { resolveShell, shellArgs } from './shell';
-export { resolveCliBinary, findOnPath, type CliBinary, type CliBinaryFailure, type CliBinaryFailureReason } from './cli-binary';
+export { envValue, getPath, withPath, pathEntries, joinPathEntries, unquoteEntry } from './path-env';
+export { resolveShell, shellArgs, agentShell } from './shell';
+export {
+  resolveCliBinary, findOnPath, isPlainAbsolute, pathExts, DEFAULT_PATHEXT,
+  type CliBinary, type CliBinaryFailure, type CliBinaryFailureReason,
+} from './cli-binary';
+export { windowsCliFile, findWindowsCli, windowsCliDirs, windowsGcloudDirs, type CliLookup } from './windows-cli';
+export { cliEnv, stdioServerCommand, nodeServerCommand } from './cli-env';
 export { posixWords, PosixWordsError, type PosixWordsErrorCode } from './posix-words';
 export {
   buildWindowsCommandLine, quoteWindowsArg, quoteWindowsProgram, WindowsCommandLineError, WINDOWS_COMMAND_LINE_MAX,
