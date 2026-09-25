@@ -222,9 +222,14 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.
   // Windows: node-pty answers the terminal's name there, never what runs in it
   // (TERMINAL_NAME above), so nothing is read from it. A terminal runs a CLI
   // when its process is the CLI, for as long as it lives (its record goes on
-  // exit). The shell an agent waits in there is never typed into, a start
-  // replaces it (startCliInTerminal), so it holds no CLI: read as one, a bot
-  // typed its task into PowerShell as a message and agent:get reported a CLI.
+  // exit). Tars never types into the shell an agent waits in there, a start
+  // replaces it (startCliInTerminal), so that shell reads as holding no CLI:
+  // read as one, a bot typed its task into PowerShell as a message and
+  // agent:get reported a CLI. A person can still type a CLI into it by hand,
+  // and that CLI reads as not running: a known Windows limit. A start then
+  // refuses when the CLI registered its session from that shell
+  // (cliStartRefusal, agent-manager.ts); one that registers none is killed
+  // with the shell.
   if (platform === 'win32') return spawned.runsCommand;
   let foreground: string | undefined;
   try {
@@ -255,7 +260,7 @@ export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
  * The shell an agent's terminal waits in until its CLI starts.
  *
  * darwin/linux: `/bin/bash -l`, as always, since the launch line typed into it
- * is bash. win32: nothing is typed into it (decision D2: a start replaces it
+ * is bash. win32: Tars types nothing into it (decision D2: a start replaces it
  * with the CLI), so it is the shell a person gets there (decision D3), the
  * user's terminalShell setting first, with that shell's own arguments.
  */

@@ -34,6 +34,18 @@ import { promisify } from 'node:util';
  *    find (A-10: a .cmd refused with EINVAL), or refuse a path under
  *    `Program Files (x86)` for its parentheses.
  * 6. win32: the child's env carries PATH twice, Path and PATH (A17).
+ * 7. win32: the CLI started from a window runs without the agent's identity
+ *    (CLAUDE_AGENT_ID, CLAUDE_PROJECT_PATH, a token of its own that names it,
+ *    the app's own address).
+ * 8. The local switch's terminal, once replaced (a restart, or on win32 the
+ *    CLI started in its place), announces `agent:complete` or sets a status:
+ *    the Kanban board reads that as the task done.
+ * 9. win32: a CLI the API cannot start (LaunchError) is found after the
+ *    agent's previous terminal was killed and its session tombstoned: the
+ *    caller hears 400 and the agent has lost a working session.
+ * 10. win32: a start from a window or a bot kills the shell an agent waits in
+ *    although a CLI typed there by hand registered its session from it; or,
+ *    refused, still marks the agent running.
  */
 
 const { tmpHome } = await vi.hoisted(async () => {
@@ -202,6 +214,9 @@ const { WIN_PATH, POSIX_PATH, WIN_DISK, CLAUDE_EXE, NODE_EXE, NPX_CLI, WIN_POWER
 });
 
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../../electron/handlers/ipc-handlers';
+import { broadcastToAllWindows } from '../../../electron/utils/broadcast';
+import { agentForToken } from '../../../electron/core/agent-tokens';
+import { API_PORT } from '../../../electron/constants';
 import { agents, initAgentPty } from '../../../electron/core/agent-manager';
 import { ptyProcesses, createQuickPty } from '../../../electron/core/pty-manager';
 import { resetLaunches } from '../../../electron/core/agent-launch';
@@ -243,6 +258,9 @@ function deps(): IpcHandlerDependencies {
 }
 
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+/** The `agent:complete` events broadcast for a terminal. */
+const completesOf = (ptyId: string) => vi.mocked(broadcastToAllWindows).mock.calls
+  .filter(([channel, payload]) => channel === 'agent:complete' && (payload as { ptyId?: string }).ptyId === ptyId);
 const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
 /** The value of PATH the child gets, under any spelling, and how many spellings it has. */
@@ -267,6 +285,7 @@ beforeEach(() => {
   agents.clear();
   ptyProcesses.clear();
   spawned.length = 0;
+  vi.mocked(broadcastToAllWindows).mockClear();
   children.calls.length = 0;
   children.out.clear();
   settings = {} as AppSettings;
@@ -309,6 +328,24 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     expect([spawned[1].file, spawned[1].args]).toEqual(['/bin/bash', ['-l']]);
     expect(spawned[1].opts.env.PATH).toBe(POSIX_PATH);
     expect(typed(spawned[1])).toBe(`cd ${q(project)} && 'claude' --permission-mode default --add-dir ${q(DATA_DIR)} -- ${q(TASK)}\r`);
+  });
+
+  it('8. the local switch\'s terminal, once replaced, exits without a completion; while named, with one', async () => {
+    const agent = await createAgent();
+    agent.provider = 'local';
+    await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK });
+    await pause(650);
+    const localId = agent.ptyId!;
+    agent.status = 'running';
+    agent.ptyId = 'the-terminal-a-restart-opened';
+    spawned[1].exit(1);
+    expect(completesOf(localId), 'a replaced terminal announced a completion').toEqual([]);
+    expect(agent.status).toBe('running');
+
+    agent.ptyId = localId;
+    spawned[1].exit(0);
+    expect(completesOf(localId)).toHaveLength(1);
+    expect(agent.status).toBe('completed');
   });
 
   it('initAgentPty opens /bin/bash -l', async () => {
@@ -408,6 +445,67 @@ describe('2-6. on win32', () => {
       .toEqual([CLAUDE_EXE, cliLine('--permission-mode', 'default', '--add-dir', DATA_DIR, '--', TASK), project]);
     expect(ptyProcesses.get(agent.ptyId!)).toBe(spawned[1]);
     expect(pathOf(spawned[1].opts.env)).toEqual({ value: WIN_PATH, keys: 1 });
+  });
+
+  it('7. the CLI started from a window carries the agent\'s identity', async () => {
+    const agent = await createAgent();
+    await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK });
+    const env = spawned[1].opts.env;
+    expect(env.CLAUDE_AGENT_ID).toBe(agent.id);
+    expect(env.CLAUDE_PROJECT_PATH).toBe(project);
+    expect(env.CLAUDE_PROVIDER).toBe('claude');
+    expect(env.CLAUDE_MGR_API_URL).toBe(`http://127.0.0.1:${API_PORT}`);
+    expect(agentForToken(env.CLAUDE_MGR_API_TOKEN), 'the token does not name the agent').toBe(agent.id);
+  });
+
+  it('8. the local switch\'s terminal, killed for the CLI, exits without a completion', async () => {
+    const agent = await createAgent();
+    agent.provider = 'local';
+    await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK });
+    await pause(650);
+    const localShell = spawned[1];
+    expect(localShell.kill).toHaveBeenCalled();
+    expect(agent.status).toBe('running');
+    localShell.exit(1);
+    const others = vi.mocked(broadcastToAllWindows).mock.calls
+      .filter(([channel, payload]) => channel === 'agent:complete' && (payload as { ptyId?: string }).ptyId !== agent.ptyId);
+    expect(others, 'the killed local shell announced a completion').toEqual([]);
+    expect(agent.status).toBe('running');
+  });
+
+  it('10. a start from a window or a bot refuses a shell a hand-typed session registered from', async () => {
+    const agent = await createAgent();
+    const shell = spawned[0];
+    agent.currentSessionId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    agent.sessionPtyId = agent.ptyId;
+
+    const result = await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK }) as { success: boolean; cliRunning?: boolean; error?: string };
+    expect(result).toMatchObject({ success: false, cliRunning: true });
+    expect(result.error).toMatch(/typed into its terminal by hand/);
+
+    const fleet: BotFleet = { agents, ptyProcesses, settings: () => settings, saveAgents: vi.fn(), initAgentPty: (a) => initAgentPty(a, null, vi.fn(), vi.fn()) };
+    await expect(startWithTask(fleet, agent, TASK, 'Telegram', { resume: false, reply: vi.fn() })).rejects.toThrow(/typed into its terminal by hand/);
+
+    expect(shell.kill).not.toHaveBeenCalled();
+    expect(spawned).toHaveLength(1);
+    expect(agent.status).toBe('idle');
+    expect(typed(shell)).toBe('');
+  });
+
+  it('9. a CLI the API cannot start leaves the previous terminal and its session as they were', async () => {
+    const run = await apiCall({ ptyId: 'pty-previous', currentSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', cliPath: 'C:\\nowhere\\claude.exe' }, () => {
+      const terminal = { kill: vi.fn(), write: vi.fn() };
+      ptyProcesses.set('pty-previous', terminal as never);
+      return terminal;
+    });
+    expect(run.answers[0].status).toBe(400);
+    expect(JSON.stringify(run.answers[0].body)).toMatch(/Cannot start/);
+    expect(run.extra.kill).not.toHaveBeenCalled();
+    expect(ptyProcesses.has('pty-previous')).toBe(true);
+    expect(run.agent.ptyId).toBe('pty-previous');
+    expect(run.agent.currentSessionId).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+    expect(run.agent.lastKilledSessionId).toBeUndefined();
+    expect(run.agent.status).toBe('idle');
   });
 
   it('2. the local switch ends on the CLI too, with its Tasmania env', async () => {
@@ -516,10 +614,22 @@ function apiCommand(): string {
 }
 
 async function apiStart(): Promise<{ file: string; args: string[] | string; env: Record<string, string>; cwd: string }> {
-  agents.set(API_AGENT.id, {
+  const { answers } = await apiCall({}, () => undefined);
+  expect(answers[0]?.status ?? 200, JSON.stringify(answers[0]?.body)).toBe(200);
+  const terminal = spawned.at(-1)!;
+  return { file: terminal.file, args: terminal.args, env: terminal.opts.env, cwd: terminal.opts.cwd };
+}
+
+/** POST /api/agents/api-agent/start from itself, the agent given `fields`; `before` runs once it exists. */
+async function apiCall<T>(fields: Partial<AgentStatus>, before: (agent: AgentStatus) => T): Promise<{
+  answers: Array<{ body: unknown; status?: number }>; agent: AgentStatus; extra: T;
+}> {
+  const agent = {
     ...API_AGENT, status: 'idle', projectPath: project, skills: [], output: [], role: 'worker',
-    lastActivity: new Date().toISOString(), provider: 'claude', permissionMode: 'normal',
-  } as AgentStatus);
+    lastActivity: new Date().toISOString(), provider: 'claude', permissionMode: 'normal', ...fields,
+  } as AgentStatus;
+  agents.set(API_AGENT.id, agent);
+  const extra = before(agent);
   const app: RouteApp = {
     routes: [],
     add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
@@ -537,7 +647,5 @@ async function apiStart(): Promise<{ file: string; args: string[] | string; env:
   } as unknown as RouteRequest;
   const answers: Array<{ body: unknown; status?: number }> = [];
   await route.handler(req, (body, status) => { answers.push({ body, status }); });
-  expect(answers[0]?.status ?? 200, JSON.stringify(answers[0]?.body)).toBe(200);
-  const terminal = spawned.at(-1)!;
-  return { file: terminal.file, args: terminal.args, env: terminal.opts.env, cwd: terminal.opts.cwd };
+  return { answers, agent, extra };
 }

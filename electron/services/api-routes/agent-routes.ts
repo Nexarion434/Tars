@@ -10,7 +10,7 @@ import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { buildFullPath } from '../../utils/path-builder';
-import { toLaunch, withPath, LaunchError } from '../../platform';
+import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
@@ -240,6 +240,45 @@ async function spawnAgentSession(
   // Include user-configured CLI dirs so non-claude binaries resolve too.
   const fullPath = buildFullPath(cliPathDirs(appSettings.cliPaths as unknown as Record<string, unknown> | undefined));
 
+  // Assemble the environment. Identity vars are re-asserted explicitly
+  // (MCP project scoping and the hooks depend on them), and provider-specified
+  // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
+  const spawnEnv: Record<string, string | undefined> = {
+    ...withPath(process.env, fullPath, process.platform),
+    TERM: 'xterm-256color',
+    ...providerEnvVars,
+    ...tasmaniaEnv,
+    CLAUDE_SKILLS: agent.skills?.join(',') || '',
+    CLAUDE_AGENT_ID: agent.id,
+    CLAUDE_PROJECT_PATH: agent.projectPath,
+    // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
+    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+  };
+  for (const key of cliProvider.getEnvVarsToDelete()) {
+    delete spawnEnv[key];
+  }
+
+  // darwin/linux: `/bin/bash -l -c "cd '<dir>' && exec <cmd>"`. `exec`: the
+  // shell hands its terminal to the CLI instead of waiting on it. Without it
+  // the CLI ran inside the shell's process group and the terminal named
+  // `bash` for the CLI's whole life, so everything that reads what runs
+  // there (cliRunningIn, in core/agent-pty.ts) took a live session for a bare
+  // shell. The provider builds one simple command, the quoted binary and its
+  // arguments, which is what exec needs; a test holds every provider to it.
+  // win32: that command read back into argv and the CLI started as the
+  // terminal's process, with no shell (platform/launch.ts, decision D2).
+  // Worked out before anything is killed: a CLI Windows cannot start as it
+  // is configured is said to the caller, as a provider that refuses its
+  // configuration is above, and the agent keeps its terminal and session.
+  let start: Launch;
+  try {
+    start = toLaunch(cliCommand, rawWorkingDir, spawnEnv);
+  } catch (err) {
+    if (!(err instanceof LaunchError)) throw err;
+    sendJson({ error: err.message }, 400);
+    return false;
+  }
+
   // Kill any existing PTY for this agent before spawning a new one.
   // Agents started via the API use one-shot PTYs that stay alive (the claude
   // process waits at a prompt after each task). Without this, every dispatch
@@ -264,24 +303,6 @@ async function spawnAgentSession(
   // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd.
   ensureProjectTrusted(rawWorkingDir);
 
-  // Assemble the environment. Identity vars are re-asserted explicitly
-  // (MCP project scoping and the hooks depend on them), and provider-specified
-  // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
-  const spawnEnv: Record<string, string | undefined> = {
-    ...withPath(process.env, fullPath, process.platform),
-    TERM: 'xterm-256color',
-    ...providerEnvVars,
-    ...tasmaniaEnv,
-    CLAUDE_SKILLS: agent.skills?.join(',') || '',
-    CLAUDE_AGENT_ID: agent.id,
-    CLAUDE_PROJECT_PATH: agent.projectPath,
-    // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
-    CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-  };
-  for (const key of cliProvider.getEnvVarsToDelete()) {
-    delete spawnEnv[key];
-  }
-
   // A session that never starts a turn must stop claiming to work. See
   // TASK_START_GRACE_MS below for what this catches and why it is checked
   // rather than assumed.
@@ -294,16 +315,6 @@ async function spawnAgentSession(
   const launch = launchBegins(agent.id, { withTask: !!prompt.trim() });
   let ptyProcess: ReturnType<typeof spawnAgentPty>;
   try {
-    // darwin/linux: `/bin/bash -l -c "cd '<dir>' && exec <cmd>"`. `exec`: the
-    // shell hands its terminal to the CLI instead of waiting on it. Without it
-    // the CLI ran inside the shell's process group and the terminal named
-    // `bash` for the CLI's whole life, so everything that reads what runs
-    // there (cliRunningIn, in core/agent-pty.ts) took a live session for a bare
-    // shell. The provider builds one simple command, the quoted binary and its
-    // arguments, which is what exec needs; a test holds every provider to it.
-    // win32: that command read back into argv and the CLI started as the
-    // terminal's process, with no shell (platform/launch.ts, decision D2).
-    const start = toLaunch(cliCommand, rawWorkingDir, spawnEnv);
     ptyProcess = spawnAgentPty({
       binaryName: cliProvider.binaryName,
       ...(start.platform === 'win32'
@@ -317,12 +328,6 @@ async function spawnAgentSession(
     });
   } catch (err) {
     launchAbandoned(agent.id, launch);
-    // A CLI Windows cannot start as it is configured: said to the caller, as
-    // a provider that refuses its configuration is above.
-    if (err instanceof LaunchError) {
-      sendJson({ error: err.message }, 400);
-      return false;
-    }
     throw err;
   }
 

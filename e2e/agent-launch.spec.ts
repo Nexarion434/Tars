@@ -196,12 +196,6 @@ test('an agent is created, started from a window, over the API and from a bot, r
     await expect.poll(async () => (await call(page, (api, id) => api.agent.get(id as string), worker.id))?.cliRunning, { timeout: 15_000 }).toBe(true);
     values.fromWindow = { argv: fromWindow.argv, cwd: fromWindow.cwd, agentId: fromWindow.agentId, token: fromWindow.token, pathKeys: fromWindow.pathKeys };
 
-    // Nothing of the prompt ran as a command: no `x` anywhere it could land, no calculator.
-    const strays = [project, home, dataDir].map(dir => path.join(dir, 'x')).filter(file => fs.existsSync(file));
-    expect(strays, 'a line of the prompt ran as a command (New-Item x)').toEqual([]);
-    const calculatorsAfter = calculators().filter(pid => !calculatorsBefore.includes(pid));
-    expect(calculatorsAfter, 'a line of the prompt ran as a command (& calc)').toEqual([]);
-    values.security = { strays, newCalculators: calculatorsAfter };
     await stepShot(page, '02-started-from-window');
 
     // ── Started over the API (spawnAgentSession), by the worker's own token ─
@@ -262,9 +256,17 @@ test('an agent is created, started from a window, over the API and from a bot, r
     recordValues(values);
     await app.close();
     await new Promise(resolve => setTimeout(resolve, 1500));
+    // Nothing of the prompt ran as a command: no `x` anywhere it could land,
+    // no calculator. Read here, whatever failed above, so a start that typed
+    // the prompt into a shell and never reached the recorder is still judged
+    // on what that shell did.
+    const strays = [project, home, dataDir].map(dir => path.join(dir, 'x')).filter(file => fs.existsSync(file));
+    const newCalculators = calculators().filter(pid => !calculatorsBefore.includes(pid));
     const orphans = leftBehind(home);
-    recordValues({ leftBehind: orphans });
+    recordValues({ security: { strays, newCalculators }, leftBehind: orphans });
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    expect.soft(strays, 'a line of the prompt ran as a command (New-Item x)').toEqual([]);
+    expect.soft(newCalculators, 'a line of the prompt ran as a command (& calc)').toEqual([]);
     expect(orphans, 'processes of the sandbox outlived the app').toEqual([]);
   }
 });

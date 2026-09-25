@@ -88,7 +88,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe, boardAgentExited } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
 import { forgetRestart } from './core/agent-restart';
 import {
@@ -631,38 +631,7 @@ app.whenReady().then(async () => {
         scheduleTick();
       });
 
-      ptyProcess.onExit(({ exitCode }) => {
-        const agent = agents.get(id);
-        // Only for the terminal the agent still names: a start that replaces
-        // it (the CLI started in its place on Windows, a restart, the local
-        // switch) is not the agent completing its board task.
-        if (agent && agent.ptyId !== ptyId) {
-          ptyProcesses.delete(ptyId);
-          return;
-        }
-        if (agent) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
-          agent.status = newStatus;
-          agent.lastActivity = new Date().toISOString();
-          handleStatusChangeNotificationWrapper(agent, newStatus);
-        }
-        ptyProcesses.delete(ptyId);
-        // Emit status event so kanban sync can detect completion
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId: id,
-          status: exitCode === 0 ? 'completed' : 'error',
-          timestamp: new Date().toISOString(),
-        });
-        broadcastToAllWindows('agent:complete', {
-          type: 'complete',
-          agentId: id,
-          ptyId,
-          exitCode,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
+      ptyProcess.onExit(({ exitCode }) => boardAgentExited(id, ptyId, exitCode, handleStatusChangeNotificationWrapper));
 
       return status;
     },

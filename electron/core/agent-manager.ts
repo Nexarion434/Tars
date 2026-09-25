@@ -12,7 +12,7 @@ import { ptyProcesses, setDialogProbe, writeProgrammaticInput } from './pty-mana
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { spawnAgentPty, agentShell } from './agent-pty';
-import { withPath, type DirectLaunch } from '../platform';
+import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { getProvider } from '../providers';
@@ -924,12 +924,80 @@ export async function initAgentPty(
 }
 
 /**
+ * The exit of the terminal of an agent the Kanban automation created
+ * (main.ts): its status, and the two events kanban sync reads, `agent:status`
+ * and `agent:complete`. Only for the terminal the agent still names, or an
+ * agent already deleted, as before: a terminal a start replaced (on Windows
+ * every start kills the shell the agent waited in) is not the agent finishing
+ * its board task, and announced as one it moved the task to Done.
+ */
+export function boardAgentExited(
+  agentId: string,
+  ptyId: string,
+  exitCode: number,
+  notify: (agent: AgentStatus, newStatus: string) => void,
+): void {
+  const agent = agents.get(agentId);
+  if (agent && agent.ptyId !== ptyId) {
+    ptyProcesses.delete(ptyId);
+    return;
+  }
+  if (agent) {
+    const newStatus = exitCode === 0 ? 'completed' : 'error';
+    agent.status = newStatus;
+    agent.lastActivity = new Date().toISOString();
+    notify(agent, newStatus);
+  }
+  ptyProcesses.delete(ptyId);
+  // Emit status event so kanban sync can detect completion
+  broadcastToAllWindows('agent:status', {
+    type: 'status',
+    agentId,
+    status: exitCode === 0 ? 'completed' : 'error',
+    timestamp: new Date().toISOString(),
+  });
+  broadcastToAllWindows('agent:complete', {
+    type: 'complete',
+    agentId,
+    ptyId,
+    exitCode,
+    timestamp: new Date().toISOString(),
+  });
+  scheduleTick();
+}
+
+/**
  * The CLI initAgentPty starts in place of a shell, handed over by
  * startCliInTerminal and taken once. Keyed by the agent record because every
  * caller reaches initAgentPty through a wrapper that passes the agent alone
  * (main.ts, the bots, the IPC handlers).
  */
 const cliToStart = new WeakMap<AgentStatus, DirectLaunch>();
+
+/** What startCliInTerminal needs from its caller: the live map and the one way a terminal is opened. */
+export interface AgentTerminals {
+  ptyProcesses: Map<string, pty.IPty>;
+  initAgentPty: (agent: AgentStatus) => Promise<string>;
+}
+
+/**
+ * Why a start may not replace the shell an agent waits in on Windows, or
+ * undefined when it may.
+ *
+ * Nothing Tars starts runs in that shell there (a start replaces it, see
+ * startCliInTerminal), and node-pty cannot say what does (cliRunningIn), but a
+ * person can type a CLI into it by hand. When that CLI registered its session
+ * from this very terminal, killing the shell ends a live session without the
+ * tombstone spawnAgentSession lays, and its hooks go on posting into the next
+ * one. Refused, as a start is on macOS when a CLI runs in the terminal. A CLI
+ * typed by hand that registers no session (codex, gemini) cannot be seen, and
+ * is killed with the shell: a known Windows limit.
+ */
+export function cliStartRefusal(agent: AgentStatus, start: Launch): string | undefined {
+  if (start.platform !== 'win32') return undefined;
+  if (!agent.ptyId || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return undefined;
+  return `${agent.name || agent.id} has a CLI session typed into its terminal by hand. Nothing was started: stop the agent first, or give it the task in its terminal.`;
+}
 
 /**
  * Start an agent's CLI as its terminal's own process, where darwin and linux
@@ -940,6 +1008,7 @@ const cliToStart = new WeakMap<AgentStatus, DirectLaunch>();
  * no `&&`. So the waiting shell is killed and the terminal opened again
  * through initAgentPty, the one function that spawns an agent's terminal,
  * with the CLI as its process, in the launch's folder and environment.
+ * Refused, with the shell left alone, when cliStartRefusal says so.
  *
  * The agent names no terminal while its shell is killed: every onExit of an
  * agent terminal acts only for the terminal its agent names, and the shell
@@ -948,8 +1017,10 @@ const cliToStart = new WeakMap<AgentStatus, DirectLaunch>();
 export async function startCliInTerminal(
   agent: AgentStatus,
   launch: DirectLaunch,
-  deps: { ptyProcesses: Map<string, pty.IPty>; initAgentPty: (agent: AgentStatus) => Promise<string> },
+  deps: AgentTerminals,
 ): Promise<pty.IPty> {
+  const refused = cliStartRefusal(agent, launch);
+  if (refused) throw new Error(refused);
   const shellId = agent.ptyId;
   const shell = shellId ? deps.ptyProcesses.get(shellId) : undefined;
   if (shellId) deps.ptyProcesses.delete(shellId);
@@ -975,6 +1046,33 @@ export async function startCliInTerminal(
   const cli = deps.ptyProcesses.get(agent.ptyId);
   if (!cli) throw new Error(`${agent.name || agent.id}: the terminal of its CLI is gone as soon as it was opened.`);
   return cli;
+}
+
+/**
+ * Start the command a launch describes in the agent's terminal, and return the
+ * terminal it runs in. darwin/linux: typed into the shell waiting there, once
+ * `ready` resolves or `delayMs` has passed, as each caller always waited.
+ * win32: the CLI replaces that shell (startCliInTerminal), nothing typed.
+ */
+export async function launchIntoTerminal(
+  agent: AgentStatus,
+  ptyProcess: pty.IPty,
+  start: Launch,
+  opts: AgentTerminals & { delayMs?: number; ready?: (ptyProcess: pty.IPty) => Promise<void> },
+): Promise<pty.IPty> {
+  if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
+  if (opts.ready) await opts.ready(ptyProcess);
+  if (opts.delayMs) {
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        writeProgrammaticInput(ptyProcess, start.typedLine);
+        resolve();
+      }, opts.delayMs);
+    });
+  } else {
+    writeProgrammaticInput(ptyProcess, start.typedLine);
+  }
+  return ptyProcess;
 }
 
 async function initAgentPtyLocked(
@@ -1142,13 +1240,19 @@ function attachAgentTerminal(
       saveAgentsCallback();
     }
     ptyProcesses.delete(ptyId);
-    broadcastToAllWindows('agent:complete', {
-      type: 'complete',
-      agentId: agent.id,
-      ptyId,
-      exitCode,
-      timestamp: new Date().toISOString(),
-    });
+    // Only for the terminal the agent still names. A replaced one (a restart,
+    // the local switch, and on Windows every start, which kills the shell the
+    // agent waited in) is not the agent finishing, and the Kanban board moves
+    // the task to Done on this event.
+    if (agentData && agentData.ptyId === ptyId) {
+      broadcastToAllWindows('agent:complete', {
+        type: 'complete',
+        agentId: agent.id,
+        ptyId,
+        exitCode,
+        timestamp: new Date().toISOString(),
+      });
+    }
     scheduleTick();
   });
 }

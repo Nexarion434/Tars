@@ -19,7 +19,7 @@ import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn, shellReady, agentPtyEnv } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
-import { killStalePty, armTaskStartWatch, startCliInTerminal } from '../core/agent-manager';
+import { killStalePty, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { toLaunch, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
@@ -231,13 +231,7 @@ async function typeLaunch(
   fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string,
 ): Promise<void> {
   // win32: nothing is typed, the CLI replaces the shell (decision D2).
-  let cli = ptyProcess;
-  if (launch.platform === 'win32') {
-    cli = await startCliInTerminal(agent, launch, fleet);
-  } else {
-    await shellReady(ptyProcess);
-    writeProgrammaticInput(ptyProcess, launch.typedLine);
-  }
+  const cli = await launchIntoTerminal(agent, ptyProcess, launch, { ...fleet, ready: shellReady });
   noteLaunch(cli, launchSettings(agent));
   fleet.saveAgents();
   // Started from a chat, and just as able to come up with no task.
@@ -248,10 +242,13 @@ async function typeLaunch(
  * How the command starts in the agent's terminal (platform/launch.ts): typed
  * into its shell on darwin and linux, as the terminal's process on win32.
  * Worked out before the agent is marked running, so a CLI that cannot be
- * started there leaves it as it was.
+ * started there, or a shell it may not replace, leaves it as it was.
  */
-function launchIn(ptyProcess: pty.IPty, workingDir: string, command: string): Launch {
-  return toLaunch(command, workingDir, agentPtyEnv(ptyProcess) ?? process.env);
+function launchIn(agent: AgentStatus, ptyProcess: pty.IPty, workingDir: string, command: string): Launch {
+  const launch = toLaunch(command, workingDir, agentPtyEnv(ptyProcess) ?? process.env);
+  const refused = cliStartRefusal(agent, launch);
+  if (refused) throw new Error(refused);
+  return launch;
 }
 
 /** Where the launch runs. Read where each flow always read it. */
@@ -338,7 +335,7 @@ export async function startWithTask(
       isSuperAgent: isSuperAgent(agent),
       orchestratorMode: isSuperAgent(agent),
     });
-    const start = launchIn(ptyProcess, workingDir, command);
+    const start = launchIn(agent, ptyProcess, workingDir, command);
     markRunning(agent, task);
     await typeLaunch(fleet, agent, ptyProcess, start, task);
     await opts.reply('started');
@@ -425,7 +422,7 @@ export async function forwardToOrchestrator(
       isSuperAgent: true,
       orchestratorMode: true,
     });
-    const start = launchIn(ptyProcess, workingDir, command);
+    const start = launchIn(orchestrator, ptyProcess, workingDir, command);
     markRunning(orchestrator, opts.message);
     await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt);
     await opts.reply('started');
