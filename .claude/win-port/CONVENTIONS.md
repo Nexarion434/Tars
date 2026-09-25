@@ -23,7 +23,10 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
   $sb = Join-Path $env:TEMP ("tars-sb-" + [guid]::NewGuid().ToString('N').Substring(0,8))
   New-Item -ItemType Directory -Force "$sb\AppData\Roaming","$sb\AppData\Local" | Out-Null
   $env:HOME=$sb; $env:USERPROFILE=$sb; $env:APPDATA="$sb\AppData\Roaming"; $env:LOCALAPPDATA="$sb\AppData\Local"
+  $env:TEMP="C:\Users\Public\tars-tmp"; $env:TMP=$env:TEMP; New-Item -ItemType Directory -Force $env:TEMP | Out-Null
   ```
+  (`TEMP`/`TMP` outside the real profile only until `win/test-harness` is merged: the old guard
+  refuses `%TEMP%` because it lives under `C:\Users\nicol`. Delete `C:\Users\Public\tars-tmp` after.)
   Tests that spawn `gh` must hit the fake, never `gh.exe` (release/prune-releases tests).
 - **Grep from Git Bash**: `export MSYS_NO_PATHCONV=1` first, or use the Grep tool (MSYS rewrites
   `/tmp`-like patterns and a search returns a false zero).
@@ -39,12 +42,13 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
 - One lot = one branch `win/<topic>` from `windows`, in your own worktree:
   `git worktree add .claude/worktrees/<agent>-<topic> -b win/<topic> windows`.
   Work only inside that worktree. Never edit a file inside another agent's worktree.
-- **node_modules in a worktree**: link the main checkout's install instead of reinstalling:
-  `cmd /c mklink /J node_modules "..\..\..\node_modules"` from the worktree root (a junction, no
-  admin needed). Same for each `mcp-*/node_modules` you need. **Before removing a worktree, delete
-  the junctions first** with `cmd /c rmdir node_modules` (never `Remove-Item -Recurse`, never
-  `git worktree remove --force` with a junction inside: both can follow it and wipe the main install).
-  If your lot changes `package.json` dependencies, run `npm install` in the worktree instead and say so.
+- **node_modules in a worktree**: run a real `npm ci` in the worktree (about 50 s; VS Build Tools
+  are installed). Do NOT junction the main checkout's `node_modules`: Turbopack (`next dev`) refuses
+  a junction that points outside the worktree. `npm ci` does not fetch the Electron binary: run
+  `npx install-electron` (or copy `node_modules\electron\dist` from the main checkout). If an older
+  worktree still holds a junction, remove it with `cmd /c rmdir node_modules` before anything else
+  (never `Remove-Item -Recurse` or `git worktree remove --force` on a junction: they can follow it
+  and wipe the main install).
 - Stay inside the file scope your agent file declares. Need a change outside it: say so in
   your report, do not make it.
 - Commit subjects: lowercase, `feat:` / `fix:` / `chore:` / `test:` / `perf:` / `security:`.
@@ -72,6 +76,8 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
 - E2E first. A unit tested in isolation starts with a header listing every way it can fail,
   then the tests, then the code. No test written after the code it tests.
 - Every test you add is shown to bite: run it against the old code or a mutant, see it red.
+  A mutant of a script that acts on its working directory (build-renderer, release, sandbox...)
+  runs only in a throwaway copy of the tree, never in your worktree or the main checkout.
 - Before reporting done, from your worktree:
   `npx tsc --noEmit`, `npx tsc -p electron/tsconfig.json`, `npm test`, `npm run lint`,
   plus whatever the lot touches (`npm run e2e` for anything under `electron/` or `src/`).
