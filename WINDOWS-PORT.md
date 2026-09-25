@@ -1,24 +1,4 @@
-# Tars pour Windows : état du portage
-
-Source de vérité du portage Windows natif (pas WSL) sur la branche `windows` du fork
-`Nexarion434/Tars`. Base upstream : `JeanBrasse/Tars` `ca2bef37` (1.9.0).
-Mission et règles : `CLAUDE.local.md` (local), `.claude/win-port/CONVENTIONS.md`, `.claude/agents/win-*.md`.
-
-Détail des constats (fichier:ligne, preuves, sources) : `.claude/win-port/audit-a.md` (lancement des
-agents, hooks, PTY, ACP) et `.claude/win-port/audit-b.md` (tout le reste). Dans ce document, `A12`
-renvoie au constat 12 de l'audit A, `B/N-03` au constat N-03 de l'audit B.
-
-Statuts : **KO** cassé (vérifié), **?** non testé, **OK** vérifié avec la preuve indiquée.
-
----
-
-## 1. Phase 0 : baseline (2026-09-25, Windows 11 26200 x64, Node 22.23.3)
-
-Lancé par `win-build` avec `HOME`, `USERPROFILE`, `APPDATA` et `LOCALAPPDATA` redirigés vers un dossier
-jetable. Le vrai profil a été vérifié intact après coup (8 fichiers de `~/.dorothy` identiques à
-l'empreinte, hash de `~/.claude/settings.json` inchangé).
-
-| Vérification | Statut | Chiffres / cause |
+KO (47 OK / 11 KO / 44 non lancés ; faux CLI .cjs de la fixture : `win/test-portability`) | Vérification | Statut | Chiffres / cause |
 |---|---|---|
 | `npm ci` | **KO** | exit 1 : npm force `node-gyp rebuild` sur better-sqlite3 (présence de `binding.gyp`) et node-gyp exige Visual Studio. `npm ci --ignore-scripts` + `npm rebuild node-pty unrs-resolver electron-winstaller` : 875 paquets, exit 0 |
 | Binaire Electron | OK | `npx install-electron` : 44.4.4 |
@@ -131,7 +111,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 ### Limites Windows connues (assumées, documentées)
 
-- Un CLI lancé **à la main** dans le PowerShell d'attente d'un agent n'est pas vu comme « CLI en cours » : ConPTY ne donne pas le processus au premier plan (`pty.process` renvoie le nom du terminal). Tars ne tue pas ce terminal s'il porte une session active (lot `win/agent-launch`).
+- Un CLI lancé **à la main** dans le PowerShell d'attente d'un agent n'est pas vu comme « CLI en cours » : ConPTY ne donne pas le processus au premier plan (`pty.process` renvoie le nom du terminal). Tars refuse de remplacer ce terminal si une session s'y est enregistrée (Claude, via le hook SessionStart) ; un CLI qui n'enregistre pas de session (codex, gemini) lancé à la main n'est pas détectable et meurt avec le shell si l'agent est démarré depuis Tars (lot `win/agent-launch`).
 - Transcript Claude : si la dernière réponse de l'assistant est à plus de 8 Mo de la fin du fichier, le hook Stop/SessionEnd ne la poste pas (lecture bornée ; idle et agent-stopped restent postés).
 
 ## 4. Checklist manuelle (ce que l'E2E ne couvre pas)
@@ -158,21 +138,14 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
 
-Phase 3 en cours. Branches de lot locales (worktrees sous `.claude/worktrees/`, non poussées) :
+Phase 3 mergée dans `windows` (33ca3429). En cours, créés depuis `win/integration-p3` :
 
-| Branche | Contenu | État |
-|---|---|---|
-| `win/hooks-node` | hooks Node D1 (tars-hook.mjs, statusline.mjs, câblage win32 Claude/Gemini) | APPROVE, prête à intégrer (df7923f4) |
-| `win/cli-invocation` | appels CLI hors PTY (MCP add/remove, codex TOML, kanban argv, détection CLI, gws), `--` claude/gemini, `mcpEntryRuns` | 2e relecture |
-| `win/paths-memory-security` | encodage dossiers projets Claude, samePath/isUnder, noms de périphériques, son de notification (sécu), garde credential stores, rename avec retry, open-terminal win32 | 1re relecture |
-| `win/agent-launch` | D2/D3 : lancement direct via toLaunch, terminaux humains, installeurs, sécu A4 | corrections de relecture en cours (4 points + extractions) |
-| `win/acp-delegation` | ACP (resolveAgentLaunch, killTree), cli-updater Windows, `pty-kill.ts` (non branché) | corrections de relecture en cours (5 points) |
+| Branche | Contenu |
+|---|---|
+| `win/test-portability` | faux CLI E2E en shim .cmd, `/tmp` en dur, binaires POSIX des tests, tests .sh et modes POSIX sautés sous win32 avec raison, flakes |
+| `win/p3-followups` | `killPty` branché (A22), `isInsideWorktreesDir`/`isFilesystemRoot`, dédoublonnage `cli-exec.ts` vers `electron/platform`, noms de projets des bots (J-01), `check:dashes` sous Windows, enquête ACL `api-token` |
 
-Ordre d'intégration prévu : une branche `win/integration-p3` depuis `windows`, merge des lots approuvés, gate win-qa (tsc x2, npm test comparé test par test, lint, lint:design, e2e:guard, e2e), puis fast-forward de `windows` et push. Conflits attendus : `claude-provider.ts` / `gemini-provider.ts` (imports, hooks-node vs cli-invocation), `ipc-handlers.ts` (agent-launch vs 2 lignes de cli-invocation).
-
-Suivis déjà décidés (voir aussi `tasks/todo.md`, local) : brancher `killPty` aux call sites ; remplacer la regex worktrees `ipc-handlers.ts` par `isInsideWorktreesDir` ; exporter depuis `electron/platform` les copies de `cli-exec.ts` ; fixture E2E : fake CLI via shim npm `.cmd` ; `api-token`/`app-settings.json` restreints par icacls (avec preuve) ; `check:dashes` probablement muet sous Windows ; déplacer `hook-command.ts` dans `electron/platform/`.
-
-Restent ensuite : phase 4 (références visuelles win32, CI `windows-latest`), phase 5 (NSIS, `.ico`, auto-update depuis le fork, voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
+Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/`, CI `windows-latest`), renderer (noms de projets U-02, chemins U-01..U-08, raccourcis N-07/N-08), phase 5 (NSIS, `.ico`, auto-update depuis le fork : voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
 
 ## 6. Journal des lots
 
@@ -182,3 +155,4 @@ Restent ensuite : phase 4 (références visuelles win32, CI `windows-latest`), p
 | 2026-09-25 | Harnais de test Windows (isolation du profil, garde, faux gh, jonctions, références win32) | `win/test-harness` | gate win-qa | APPROVE (3 tours) | 8a6945e1 |
 | 2026-09-25 | Primitives plateforme (shell, PATH, résolution des CLIs, tokenizer, ligne de commande Windows, toLaunch, killTree) | `win/platform-launch` | PASS (intégration) | APPROVE (2 tours) | 8bddb6c8 |
 | 2026-09-25 | Scripts npm cross-platform (electron-dev, design-lint.mjs, build-renderer, npm-command) | `win/npm-scripts` | PASS (intégration) | APPROVE (2 tours) | aac7547b |
+| 2026-09-25 | Phase 3 : hooks Node (D1), appels CLI, ACP + cli-updater, lancement direct (D2/D3), chemins/mémoire/sécurité | `win/integration-p3` (5 lots) | PASS (2e gate, 0 régression, 66 tests réparés) | APPROVE (2 à 3 tours chacun) | 33ca3429 |

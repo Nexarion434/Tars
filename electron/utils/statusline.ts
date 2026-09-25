@@ -4,6 +4,7 @@ import * as os from 'os';
 import { DATA_DIR_SHELL, dataPath } from '../constants';
 import { updateSharedJsonSync } from './shared-file';
 import { usesNodeHooks, nodeHookCommand, parseNodeHookCommand } from './hook-command';
+import { getHooksPath } from './hooks-path';
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env bash
 # Dev Bar statusline for Claude Code
@@ -300,14 +301,6 @@ function updateClaudeSettings(change: (settings: Record<string, unknown>) => Rec
 /** Where the platform decision and the hooks folder come from; the app passes neither. */
 type StatusLineOptions = { platform?: NodeJS.Platform; hooksDir?: string };
 
-/** The bundled hooks folder, asked of the app only when needed: this file is loaded outside Electron too. */
-function defaultHooksDir(): string {
-  // Required here rather than imported: hooks-manager needs Electron's `app`.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getHooksPath } = require('../services/hooks-manager') as typeof import('../services/hooks-manager');
-  return getHooksPath();
-}
-
 /**
  * On win32 the status line is hooks/statusline.mjs run by Node (decision D1),
  * not a bash script: nothing is installed in ~/.dorothy, the command names
@@ -328,7 +321,7 @@ function isTarsNodeStatusLine(command: unknown): boolean {
  */
 export function enableStatusLine({ platform = process.platform, hooksDir }: StatusLineOptions = {}): void {
   const nodeForm = usesNodeHooks(platform);
-  const command = nodeForm ? nodeStatusLineCommand(hooksDir ?? defaultHooksDir()) : SCRIPT_PATH;
+  const command = nodeForm ? nodeStatusLineCommand(hooksDir ?? getHooksPath()) : SCRIPT_PATH;
   if (!nodeForm) installScript();
 
   updateClaudeSettings(settings => ({
