@@ -28,7 +28,10 @@ export { projectName } from './project-name';
 export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';
 export { windowsSoundCommand, type SoundCommand } from './sound';
 export { credentialStoreDirs } from './credential-stores';
-export { renameReplacingSync, RENAME_RETRY_BUDGET_MS, type RenameDeps } from './rename-replacing';
+export {
+  renameReplacingSync, rmRetryingSync, unlinkRetryingSync, RENAME_RETRY_BUDGET_MS, REMOVE_RETRY_BUDGET_MS,
+  type RenameDeps, type RemoveDeps,
+} from './rename-replacing';
 export { detectShells, type DetectedShells, type ShellChoice, type ShellChoiceId } from './shell-choices';
 export {
   TITLE_BAR_OVERLAY_HEIGHT, WINDOWS_APP_USER_MODEL_ID, TRAY_PANEL_MARGIN,
