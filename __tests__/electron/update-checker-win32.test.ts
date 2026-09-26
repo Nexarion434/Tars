@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 
 /**
  * The GitHub fallback of the update check on Windows (audit B, answer 4).
@@ -13,12 +11,13 @@ import * as path from 'node:path';
  *
  * How it can fail, each case below:
  *  - the fallback asks the upstream on win32, or the fork anywhere else;
- *  - the fork named in the code and the one package.json feeds from drift apart;
  *  - a .dmg or a .zip is offered on win32, or the wrong architecture's installer;
  *  - `1.9.0-win.10` is read as older than `1.9.0-win.9`, or a Windows build of
  *    the next version as not newer, or an older one as newer;
  *  - macOS and Linux change: the upstream, the .dmg first, then the .zip.
- * The macOS cases of update-checker.test.ts run with the platform held at darwin.
+ * The decisions themselves are tested one by one in platform/update-feed.test.ts;
+ * this file drives them through checkForUpdates, as the app calls it. The macOS
+ * cases of update-checker.test.ts run with the platform held at darwin.
  */
 
 const { mockAutoUpdater, mockFetch, current } = vi.hoisted(() => ({
@@ -40,9 +39,7 @@ vi.mock('electron', () => ({ BrowserWindow: vi.fn(), app: { getVersion: () => cu
 vi.mock('../../electron/constants', () => ({ GITHUB_REPO: 'JeanBrasse/Tars' }));
 vi.stubGlobal('fetch', mockFetch);
 
-import {
-  checkForUpdates, installerAssetFor, setMainWindowGetter, updateRepoFor, WINDOWS_UPDATE_REPO,
-} from '../../electron/services/update-checker';
+import { checkForUpdates, setMainWindowGetter } from '../../electron/services/update-checker';
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 beforeAll(() => Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }));
@@ -69,46 +66,6 @@ async function fallback(release: { tag_name: string; assets?: { name: string; br
 beforeEach(() => {
   vi.clearAllMocks();
   current.version = '1.9.0-win.1';
-});
-
-describe('which repository feeds which platform', () => {
-  it('Windows: the fork; macOS and Linux: GITHUB_REPO, as before', () => {
-    expect(updateRepoFor('win32')).toBe('Nexarion434/Tars');
-    expect(updateRepoFor('darwin')).toBe('JeanBrasse/Tars');
-    expect(updateRepoFor('linux')).toBe('JeanBrasse/Tars');
-  });
-
-  it('is the fork package.json build.win.publish feeds electron-updater from, and never the macOS feed', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
-    expect(`${pkg.build.win.publish.owner}/${pkg.build.win.publish.repo}`).toBe(WINDOWS_UPDATE_REPO);
-    expect(`${pkg.build.publish.owner}/${pkg.build.publish.repo}`).not.toBe(WINDOWS_UPDATE_REPO);
-  });
-});
-
-describe('which asset is offered', () => {
-  const release = [asset('Tars-1.9.0-arm64.dmg'), asset('Tars-1.9.0-arm64-mac.zip'), asset('latest-mac.yml'),
-    asset('Tars-Setup-1.9.0-win.2.exe.blockmap'), asset('Tars-Setup-1.9.0-win.2.exe'), asset('Tars-Windows-1.9.0-win.2-x64.zip'), asset('latest.yml')];
-
-  it('Windows: the setup .exe, never the .dmg, the .zip or the blockmap', () => {
-    expect(installerAssetFor(release, 'win32', 'x64')?.name).toBe('Tars-Setup-1.9.0-win.2.exe');
-  });
-
-  it('Windows: nothing when the release has no setup .exe, rather than a macOS file', () => {
-    expect(installerAssetFor(release.filter(a => !a.name.includes('Setup')), 'win32', 'x64')).toBeUndefined();
-  });
-
-  it('Windows: this architecture\'s setup first, then any setup', () => {
-    const both = [asset('Tars-Setup-2.0.0-win.1-arm64.exe'), asset('Tars-Setup-2.0.0-win.1-x64.exe')];
-    expect(installerAssetFor(both, 'win32', 'x64')?.name).toBe('Tars-Setup-2.0.0-win.1-x64.exe');
-    expect(installerAssetFor(both, 'win32', 'arm64')?.name).toBe('Tars-Setup-2.0.0-win.1-arm64.exe');
-    expect(installerAssetFor([asset('tars-setup-2.0.0.EXE')], 'win32', 'x64')?.name).toBe('tars-setup-2.0.0.EXE');
-  });
-
-  it('macOS and Linux: unchanged, the .dmg, then the .zip', () => {
-    expect(installerAssetFor(release, 'darwin', 'arm64')?.name).toBe('Tars-1.9.0-arm64.dmg');
-    expect(installerAssetFor([asset('Tars-1.9.0-arm64-mac.zip')], 'darwin', 'arm64')?.name).toBe('Tars-1.9.0-arm64-mac.zip');
-    expect(installerAssetFor(release, 'linux', 'x64')?.name).toBe('Tars-1.9.0-arm64.dmg');
-  });
 });
 
 describe('the fallback on Windows', () => {
@@ -140,6 +97,9 @@ describe('the fallback on Windows', () => {
     ['1.9.0-win.2', 'v1.9.0-win.2', false],
     ['1.9.0-win.3', 'v1.9.0-win.2', false],
     ['1.9.0-win.1', 'v1.8.9-win.20', false],
+    ['1.9.0-win.3', 'v1.9.0', true],
+    ['1.9.0', 'v1.9.0-win.1', false],
+    ['1.9.0-win.10', 'v1.10.0-win.1', true],
     ['1.9.0-win.1', 'not-a-version', false],
   ])('%s against %s: an update is %s', async (installed, tag, newer) => {
     current.version = installed;

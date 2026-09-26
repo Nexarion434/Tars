@@ -29,3 +29,4 @@ export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProje
 export { windowsSoundCommand, type SoundCommand } from './sound';
 export { credentialStoreDirs } from './credential-stores';
 export { renameReplacingSync, RENAME_RETRY_BUDGET_MS, type RenameDeps } from './rename-replacing';
+export { WINDOWS_UPDATE_REPO, updateRepoFor, installerAssetFor, compareSemver, isNewerRelease } from './update-feed';
