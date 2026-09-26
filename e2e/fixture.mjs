@@ -570,6 +570,49 @@ function windowsHome(sandboxHome) {
 }
 
 /**
+ * The PATH a Windows run hands the app: the system's own folders, Git, and
+ * the node running the suite (the fake CLIs' shims call `node` by name), and
+ * nothing of the user's: no npm, nvm, .local\bin or WinGet folder.
+ *
+ * What the app finds on its PATH is in the pictures: Settings > Providers and
+ * the New agent dialog read `codex ready` or `not installed` from it. Measured
+ * on 2026-09-26: recorded with the caller's PATH, the references showed the
+ * Codex and Claude Code of the machine recording, which a clean runner such as
+ * CI's windows-latest does not have. With this PATH no agent CLI is found, on
+ * any machine, and every spec that runs one names it (cliPath, cliPaths).
+ * The app's own additions stay sandboxed: %USERPROFILE%\.local\bin and
+ * %APPDATA%\npm are under the sandbox home (windowsHome above).
+ *
+ * darwin and linux keep the caller's PATH: their references were recorded so.
+ */
+function windowsSystemPath() {
+  const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  return [
+    path.join(root, 'System32'),
+    root,
+    path.join(root, 'System32', 'Wbem'),
+    path.join(root, 'System32', 'WindowsPowerShell', 'v1.0'),
+    path.join(programFiles, 'Git', 'cmd'),
+    path.dirname(process.execPath),
+  ].filter(dir => fs.existsSync(dir)).join(';');
+}
+
+/**
+ * On win32, the environment with one PATH under one spelling (Windows reads
+ * whichever of `Path` and `PATH` it finds first, electron/platform/path-env.ts):
+ * the spec's own when it sets one, else windowsSystemPath().
+ */
+function withSandboxPath(full, specEnv) {
+  if (!onWindows) return full;
+  const isPath = name => name.toUpperCase() === 'PATH';
+  const own = Object.keys(specEnv).find(isPath);
+  const out = Object.fromEntries(Object.entries(full).filter(([name]) => !isPath(name)));
+  out.Path = own ? specEnv[own] : windowsSystemPath();
+  return out;
+}
+
+/**
  * The one way a spec starts the app: inside its sandbox, Chromium profile
  * included, or not at all.
  *
@@ -592,7 +635,7 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, ...opti
   const app = await electron.launch({
     ...options,
     args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
-    env: { ...inheritable(process.env), ...env, ...windowsHome(sandboxHome), HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+    env: withSandboxPath({ ...inheritable(process.env), ...env, ...windowsHome(sandboxHome), HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome }, env),
   });
   // What the app inherited, checked the way its folders are below: a run
   // started by an agent inside Tars carries that agent's CLAUDE_MGR_API_URL
