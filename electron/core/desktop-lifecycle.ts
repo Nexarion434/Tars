@@ -15,6 +15,11 @@ function markQuitting(): void {
   quitting = true;
 }
 
+/** The app's before-quit listeners, run now, as a quit runs them. */
+function emitBeforeQuit(): void {
+  app.emit('before-quit', { preventDefault() {} });
+}
+
 /**
  * One Tars per user data directory. A second launch hands over to the first
  * (`onSecondLaunch`, which shows its window) and must end at once: it has read
@@ -103,11 +108,21 @@ export function keepRunningOnClose(
  *   DevTools and Ctrl+minus to zoom, over every page including the terminals
  *   (measured, PROPOSALS.md section 2). Text fields keep cut, copy, paste and
  *   select all without it: Chromium handles them;
- * - a quit that is a quit (before-quit), and a close that hides to the tray.
+ * - a quit that is a quit (before-quit), a close that hides to the tray, and
+ *   the quit's steps at the end of the Windows session.
  */
 export function installDesktopShell(opts: {
   getMainWindow: () => BrowserWindow | null;
   explanation: CloseExplanationStore;
+  /**
+   * What the end of the Windows session runs. Logoff, shutdown and restart
+   * emit no before-quit, only the window's session-end, and Windows ends the
+   * process as soon as that handler returns. Default: the app's own
+   * before-quit listeners, emitted there, synchronously, once, so the quit's
+   * steps (save the fleet, end the ACP runs, kill every terminal) are the one
+   * list main.ts keeps.
+   */
+  onSessionEnd?: () => void;
   platform?: NodeJS.Platform;
 }): void {
   const platform = opts.platform ?? process.platform;
@@ -117,5 +132,13 @@ export function installDesktopShell(opts: {
   Menu.setApplicationMenu(null);
   app.on('before-quit', markQuitting);
   const win = opts.getMainWindow();
-  if (win) keepRunningOnClose(win, opts.explanation, platform);
+  if (!win) return;
+  keepRunningOnClose(win, opts.explanation, platform);
+  let ended = false;
+  win.on('session-end', () => {
+    if (ended) return;
+    ended = true;
+    markQuitting();
+    (opts.onSessionEnd ?? emitBeforeQuit)();
+  });
 }
