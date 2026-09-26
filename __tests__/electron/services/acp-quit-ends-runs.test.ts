@@ -144,6 +144,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { delegateOverAcp, endAcpRunsOnQuit } from '../../../electron/services/acp/delegate';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 const agent = (id: string) => ({
   id, name: id, status: 'running', projectPath: tmp, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString(),
@@ -168,13 +169,14 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
   while (!test()) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
 };
 
-const leftovers: number[] = [];
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
 afterEach(() => {
   psBroken.value = false;
   psHung.value = false;
   psRuns.counting = false;
-  for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-});
+  leftovers.end();
+}, 60_000);
 
 /** Starts a delegated run of `tag`, and never awaits it: the app quits under it. */
 async function runStarted(tag: string, stubborn: boolean) {

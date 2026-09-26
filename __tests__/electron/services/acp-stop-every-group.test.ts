@@ -135,6 +135,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { delegateOverAcp, stopAcpRuns } from '../../../electron/services/acp/delegate';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers } from '../../setup/leftover-processes';
 
 const agent = (id: string) => ({
   id, name: id, status: 'running', projectPath: tmp, provider: 'claude', skills: [], output: [], lastActivity: new Date().toISOString(),
@@ -154,11 +155,12 @@ function parentsOf(pids: number[]): Map<number, number> {
   return new Map(out.split(/\r?\n/).filter(Boolean).map(line => line.trim().split(' ').map(Number) as [number, number]));
 }
 
-const leftovers: number[] = [];
+// Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
+const leftovers = new Leftovers();
 afterEach(() => {
   psBroken.value = false;
-  for (const pid of leftovers.splice(0)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-});
+  leftovers.end();
+}, 60_000);
 
 /** Starts a delegated run of `tag` and waits until its agent and both commands are up. */
 async function runStarted(tag: string, stubborn: boolean) {
