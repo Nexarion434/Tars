@@ -224,7 +224,11 @@ export const VOLATILE = {
   },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
-    selector: 'text=/^[a-z][a-z-]* · \\d+\\.\\d+/',
+    // A CLI may name itself before its number: `codex --version` prints
+    // `codex-cli 0.120.0`, so its row reads `codex · codex-cli 0.120.0`, which
+    // the bare `name · 1.2` form let through into the Windows reference
+    // recorded on 2026-09-26 (Codex is installed on that machine).
+    selector: 'text=/^[a-z][a-z-]* · (?:[a-z][a-z-]* )?\\d+\\.\\d+/',
     why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly',
   },
   'log-chunk-counts': {
