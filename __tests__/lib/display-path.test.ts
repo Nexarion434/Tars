@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { isAbsolutePath, joinPath, pathName, pathTail, splitPath, tildePath, toSlashes } from '../../src/lib/display-path';
+import { comparablePath, isAbsolutePath, joinPath, pathName, pathsNest, pathTail, splitPath, tildePath, toSlashes } from '../../src/lib/display-path';
 
 /**
  * How the renderer names and shortens a path it shows (audit B U-01, U-02,
@@ -30,6 +30,12 @@ import { isAbsolutePath, joinPath, pathName, pathTail, splitPath, tildePath, toS
  *    Code panel, which is what it copies to the clipboard.
  * 7. A Windows absolute path is refused as a template folder on Windows, or
  *    accepted on macOS and Linux, where it names nothing.
+ * 8. Comparing two paths (the Projects page's agents of a project, its
+ *    duplicate check): a Windows path is not matched to its own spelling
+ *    with the other separator, case or a trailing separator; or a drive
+ *    root, once its trailing separator is stripped, reads `c:` and claims
+ *    every path on the drive (`c:/work`.startsWith(`c:` + `/`)), the phantom
+ *    card the page's comment describes for `/`.
  */
 
 // The expressions the call sites used, kept here as the oracle for 1.
@@ -41,6 +47,18 @@ const old = {
   tail2: (p: string) => p.split('/').slice(-2).join('/'),
   join: (base: string, rel: string) => `${base}/${rel}`,
   absolute: (p: string) => p.startsWith('/'),
+  // The Projects page's normalizePath and pathsMatch, and its duplicate check.
+  comparable: (p: string) => {
+    const trimmed = p.replace(/\/+$/, '').toLowerCase();
+    return trimmed === '' ? '/' : trimmed;
+  },
+  nest: (x: string, y: string) => {
+    const a = old.comparable(x);
+    const b = old.comparable(y);
+    if (a === b) return true;
+    return a.startsWith(b + '/') || b.startsWith(a + '/');
+  },
+  duplicate: (x: string, y: string) => x.replace(/\/+$/, '').toLowerCase() === y.replace(/\/+$/, '').toLowerCase(),
 };
 
 const POSIX = [
@@ -85,6 +103,15 @@ describe('display-path on darwin and linux paths (1, 2)', () => {
       expect(pathTail(p, 2), p).toBe(old.tail2(p));
       expect(joinPath(p, 'src/app/x.ts'), p).toBe(old.join(p, 'src/app/x.ts'));
       expect(toSlashes(p), p).toBe(p);
+    }
+  });
+
+  it('compares two paths as the Projects page did, for every pair (8)', () => {
+    for (const x of POSIX) {
+      for (const y of POSIX) {
+        expect(pathsNest(x, y), `${x} ~ ${y}`).toBe(old.nest(x, y));
+        expect(comparablePath(x) === comparablePath(y), `${x} = ${y}`).toBe(old.duplicate(x, y));
+      }
     }
   });
 
@@ -146,6 +173,22 @@ describe('display-path on Windows paths', () => {
   it('turns a Windows path\'s backslashes into slashes, and nothing else', () => {
     expect(toSlashes('C:\\p\\.claude\\CLAUDE.md')).toBe('C:/p/.claude/CLAUDE.md');
     expect(toSlashes('\\\\srv\\share\\x')).toBe('//srv/share/x');
+  });
+
+  it('8. matches a path to itself however its separators, case and trailing separator are written', () => {
+    expect(comparablePath('C:\\Work\\Tars\\')).toBe(comparablePath('c:/work/tars'));
+    expect(pathsNest('C:\\work\\tars', 'c:/work/tars/')).toBe(true);
+    expect(pathsNest('C:\\work\\tars\\.worktrees\\feat', 'C:\\work\\tars')).toBe(true);
+    expect(pathsNest('C:\\work\\tars2', 'C:\\work\\tars')).toBe(false);
+  });
+
+  it('8. keeps a drive root a root: it claims no path on the drive', () => {
+    for (const root of ['C:\\', 'C:/', 'c:\\\\']) {
+      expect(comparablePath(root), root).toBe('c:/');
+      expect(pathsNest(root, 'C:\\work\\tars'), root).toBe(false);
+      expect(pathsNest('C:\\work\\tars', root), root).toBe(false);
+      expect(pathsNest(root, 'c:/'), root).toBe(true);
+    }
   });
 
   it('7. calls absolute on win32 what Windows does: a drive, a share, a rooted path', () => {

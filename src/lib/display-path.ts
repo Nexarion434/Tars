@@ -73,6 +73,29 @@ export function toSlashes(p: string): string {
 }
 
 /**
+ * A path as two are compared: `/` for its separators, no trailing one, in
+ * lower case, and a root still a root (`/`, `c:/`). Stripped to `c:`, a
+ * drive root would claim every path on the drive.
+ */
+export function comparablePath(p: string): string {
+  const trimmed = toSlashes(p).replace(/\/+$/, '').toLowerCase();
+  if (trimmed === '') return '/';
+  if (/^[a-z]:$/.test(trimmed)) return `${trimmed}/`;
+  return trimmed;
+}
+
+/**
+ * The same folder, or one inside the other, at a folder boundary: the old
+ * endsWith() let one phantom project claim every agent on the machine.
+ */
+export function pathsNest(x: string, y: string): boolean {
+  const a = comparablePath(x);
+  const b = comparablePath(y);
+  if (a === b) return true;
+  return a.startsWith(b + '/') || b.startsWith(a + '/');
+}
+
+/**
  * The home folder shown as `~`: `/Users/<name>` or `/home/<name>`, and on
  * Windows a drive's `Users\<name>`, keeping the separator written after it.
  * The home itself stays as it is unless `bareHome` (the chat head's `~`).

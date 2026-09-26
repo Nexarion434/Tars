@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { pathName, splitPath, toSlashes } from '@/lib/display-path';
+import { comparablePath, pathName, pathsNest, splitPath } from '@/lib/display-path';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
@@ -169,7 +169,7 @@ export default function ProjectsPage() {
       const selectedPath = await openFolderDialog();
       if (selectedPath) {
         const normalizedPath = selectedPath.replace(/\/+$/, '');
-        const existsInCustom = customProjects.some(p => p.path.replace(/\/+$/, '').toLowerCase() === normalizedPath.toLowerCase());
+        const existsInCustom = customProjects.some(p => comparablePath(p.path) === comparablePath(normalizedPath));
         if (!existsInCustom) {
           const name = pathName(selectedPath) || 'Unknown Project';
           await window.electronAPI?.fs?.addCustomProject(normalizedPath);
@@ -268,21 +268,11 @@ export default function ProjectsPage() {
 
   const isDefaultProject = (projectPath: string) => defaultProjectPath === projectPath;
 
-  // Normalize path for comparison
-  const normalizePath = (p: string) => {
-    const trimmed = toSlashes(p).replace(/\/+$/, '').toLowerCase();
-    return trimmed === '' ? '/' : trimmed;
-  };
-
   // Segment-boundary matching. The old version used endsWith(), and since
   // normalizing '/' produced an empty string, endsWith('') was true for every
-  // path - one phantom card claimed every agent on the machine.
-  const pathsMatch = (path1: string, path2: string) => {
-    const a = normalizePath(path1);
-    const b = normalizePath(path2);
-    if (a === b) return true;
-    return a.startsWith(b + '/') || b.startsWith(a + '/');
-  };
+  // path - one phantom card claimed every agent on the machine. A drive root
+  // stays a root the same way (lib/display-path.ts).
+  const pathsMatch = pathsNest;
 
   // Get agents for the selected project
   const projectAgents = selectedProject
