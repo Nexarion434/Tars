@@ -122,8 +122,82 @@ async function call<T>(page: Page, fn: (api: Api['electronAPI'], arg: unknown) =
   }, [fn.toString(), arg] as const) as Promise<T>;
 }
 
+/**
+ * How long a PowerShell whose terminal is alive may take to reach its prompt.
+ * Not a speed expectation: the wait below ends at once when the terminal is
+ * gone, which is the defect it is there for (a shell ConPTY cannot start, A1).
+ * Windows PowerShell's start is CPU bound. Measured on 2026-09-26 through
+ * node-pty with a fresh sandbox profile, as the fixture gives: 0.4 s idle on
+ * an 8-thread machine, 9.5 s beside 32 busy threads, 11 to 17 s beside 64.
+ * CI run 36264478005 (windows-latest) saw no prompt in the 30 s this used to
+ * allow, and its rerun of the same commit passed the whole test in 16.7 s;
+ * what that run printed could not say whether its terminal was alive (below).
+ */
+const PROMPT_WAIT_MS = 90_000;
+
+/** One look at a terminal: what it shows, whether it has ended, and what else says so. */
+type TerminalLook = { screen: string; gone: boolean; state: Record<string, unknown> };
+
+/**
+ * Waits until `prompt` is on a terminal's screen and returns how long it took.
+ * Fails at once when the terminal has gone, and after PROMPT_WAIT_MS when it is
+ * alive and silent, both times with what the terminal held, raw: the report
+ * stripped the escapes of an empty screen down to "", which said neither
+ * whether the shell had died nor what it printed.
+ */
+async function promptOn(what: string, prompt: RegExp, look: () => Promise<TerminalLook>): Promise<number> {
+  const since = Date.now();
+  for (;;) {
+    const { screen, gone, state } = await look();
+    if (prompt.test(screen)) return Date.now() - since;
+    if (gone || Date.now() - since > PROMPT_WAIT_MS) {
+      const seen = JSON.stringify({ afterMs: Date.now() - since, ...state, screen });
+      throw new Error(`${gone ? `${what} ended before its prompt` : `${what} never showed its prompt`}: ${seen}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
+/** PowerShell's prompt in an agent's terminal, read from agent:get. */
+async function powerShellPrompt(page: Page, id: string): Promise<number> {
+  return promptOn('the agent terminal', /PS [A-Z]:\\/, async () => {
+    const view = await call(page, (api, agentId) => api.agent.get(agentId as string), id);
+    return {
+      screen: (view?.output ?? []).join(''),
+      gone: !view?.ptyId || view.status !== 'idle',
+      state: { status: view?.status ?? null, ptyId: view?.ptyId ?? null },
+    };
+  });
+}
+
+/**
+ * Counts the quick terminals that end from now on. A quick terminal has no id
+ * the page shows, and one whose shell exits takes its dialog with it (the
+ * projects page listens to pty:exit), so the exit itself is what says it is
+ * gone. No other pty:create terminal runs in this test.
+ */
+async function watchQuickTerminalExits(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __qaPtyExits: unknown[]; electronAPI: { pty: { onExit(cb: (e: unknown) => void): () => void } } };
+    w.__qaPtyExits = [];
+    w.electronAPI.pty.onExit(event => { w.__qaPtyExits.push(event); });
+  });
+}
+
+/** The prompt of the quick terminal on screen, read from its xterm rows. */
+async function quickTerminalPrompt(page: Page, prompt: RegExp): Promise<number> {
+  return promptOn('the project terminal', prompt, async () => {
+    const { rows, exits } = await page.evaluate(() => {
+      const all = document.querySelectorAll('.xterm .xterm-rows');
+      const last = all[all.length - 1] as HTMLElement | undefined;
+      return { rows: last ? last.innerText : null, exits: (window as unknown as { __qaPtyExits: unknown[] }).__qaPtyExits };
+    });
+    return { screen: rows ?? '', gone: exits.length > 0, state: { onScreen: rows !== null, exits } };
+  });
+}
+
 test('an agent is created, started from a window, over the API and from a bot, running its CLI with the exact argv and never through a shell', async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-launch-'));
   const dataDir = path.join(home, '.dorothy');
   const project = path.join(home, 'projects', PROJECT_NAME);
@@ -169,13 +243,9 @@ test('an agent is created, started from a window, over the API and from a bot, r
     expect(worker.ptyId, 'agent:create opened no terminal').toBeTruthy();
     const idle = await call(page, (api, id) => api.agent.get(id as string), worker.id);
     expect(idle).toMatchObject({ status: 'idle', cliRunning: false });
-    if (onWindows) {
-      // The terminal an agent waits in is PowerShell's, at its prompt.
-      await expect.poll(async () => ((await call(page, (api, id) => api.agent.get(id as string), worker.id))?.output ?? []).join(''), {
-        timeout: 30_000, message: 'the agent terminal never showed a PowerShell prompt',
-      }).toMatch(/PS [A-Z]:\\/);
-    }
-    values.created = { id: worker.id, status: idle?.status, cliRunning: idle?.cliRunning };
+    // The terminal an agent waits in is PowerShell's, at its prompt.
+    const promptMs = onWindows ? await powerShellPrompt(page, worker.id) : undefined;
+    values.created = { id: worker.id, status: idle?.status, cliRunning: idle?.cliRunning, promptMs };
     await stepShot(page, '01-created');
 
     // ── Started from a window (A-02), with a prompt hostile to a shell ────
@@ -244,11 +314,12 @@ test('an agent is created, started from a window, over the API and from a bot, r
     await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
     const row = page.locator('div').filter({ hasText: PROJECT_NAME }).filter({ has: page.getByRole('button', { name: 'open', exact: true }) }).last();
     await row.getByRole('button', { name: 'open', exact: true }).click();
+    await watchQuickTerminalExits(page);
     await page.getByRole('button', { name: 'Terminal', exact: true }).click();
     const terminal = page.locator('.xterm .xterm-rows').last();
-    const prompt = onWindows ? /PS [A-Z]:\\.*>/ : /\S/;
-    await expect(terminal).toContainText(prompt, { timeout: 30_000 });
+    const quickPromptMs = await quickTerminalPrompt(page, onWindows ? /PS [A-Z]:\\.*>/ : /\S/);
     values.quickTerminal = (await terminal.innerText()).trim().split('\n').filter(Boolean).slice(-1)[0];
+    values.quickPromptMs = quickPromptMs;
     await stepShot(page, '03-project-terminal');
 
     expect(errors, 'the page reported errors').toEqual([]);
