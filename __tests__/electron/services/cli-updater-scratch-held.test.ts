@@ -37,8 +37,11 @@ const SYSTEM32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 /**
  * npm's cli, faked: answers `view` with FAKE_LATEST, and on the global install
  * rewrites the manifest, then leaves a child behind holding the scratch folder
- * (the parent of --cache) as its working directory for FAKE_HOLD_MS. The
- * child writes when it let go to FAKE_RELEASED.
+ * (the parent of --cache) as its working directory for FAKE_HOLD_MS. npm
+ * exits only once the child says it is running: a child still starting has
+ * not opened its working directory yet, and under load the delete once ran in
+ * that gap, got the folder, and the child died at start. The child writes
+ * when it let go to FAKE_RELEASED.
  */
 const FAKE_NPM = `
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
@@ -52,8 +55,10 @@ if (args[0] === 'install' && args.includes('--global')) {
   m.version = spec.slice(at + 1);
   fs.writeFileSync(manifest, JSON.stringify(m));
   const scratch = path.dirname(args[args.indexOf('--cache') + 1]);
-  const held = "setTimeout(() => { require('fs').writeFileSync(process.env.FAKE_RELEASED, String(Date.now())); process.exit(0); }, Number(process.env.FAKE_HOLD_MS))";
+  const running = process.env.FAKE_RELEASED + '.running';
+  const held = "const fs = require('fs'); fs.writeFileSync(process.env.FAKE_RELEASED + '.running', ''); setTimeout(() => { fs.writeFileSync(process.env.FAKE_RELEASED, String(Date.now())); process.exit(0); }, Number(process.env.FAKE_HOLD_MS))";
   spawn(process.execPath, ['-e', held], { cwd: scratch, detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' } }).unref();
+  for (const until = Date.now() + 20000; !fs.existsSync(running) && Date.now() < until;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
 }
 process.exit(0);
 `;
@@ -95,7 +100,7 @@ describe.skipIf(process.platform !== 'win32')('the npm scratch folder, still hel
     npmPackage(prefix);
     const before = scratchFolders();
 
-    const [result] = await runCliUpdatePass([{ cli: 'amp', command: 'amp' }], ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_HOLD_MS: '600', FAKE_RELEASED: released }));
+    const [result] = await runCliUpdatePass([{ cli: 'amp', command: 'amp' }], ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_HOLD_MS: '400', FAKE_RELEASED: released }));
     const returnedAt = Date.now();
 
     expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });

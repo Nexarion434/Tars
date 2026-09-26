@@ -28,7 +28,10 @@ import { dataPath } from '../../../electron/constants';
  *    (each delete starts only once the holder says it holds the file, and a
  *    witness shows the plain delete refused under the same hold).
  *
- * The hold is a real handle, opened by PowerShell with FileShare.None.
+ * The hold is a real handle, opened by PowerShell with FileShare.None, and
+ * let go 150 ms after the delete may start: well inside the 1 s budget even
+ * when the full suite loads the machine and PowerShell wakes late (500 ms
+ * overran it once, the file still held at the end).
  */
 
 const holders: ChildProcess[] = [];
@@ -70,7 +73,7 @@ describe.runIf(process.platform === 'win32')('a delete the user asked for, while
     await hold(witness, 300);
     expect(plainUnlink(witness)).toBe('EBUSY');
 
-    await hold(file, 500);
+    await hold(file, 150);
     expect(deleteMemoryFile(file)).toEqual({ success: true });
     expect(fs.existsSync(file)).toBe(false);
   }, 30_000);
@@ -85,7 +88,7 @@ describe.runIf(process.platform === 'win32')('a delete the user asked for, while
     await hold(witness, 300);
     expect(plainUnlink(witness)).toBe('EBUSY');
 
-    await hold(rateLimits, 500);
+    await hold(rateLimits, 150);
     expect(() => disableStatusLine()).not.toThrow();
     expect(fs.existsSync(rateLimits)).toBe(false);
   }, 30_000);
