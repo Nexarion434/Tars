@@ -206,10 +206,10 @@ export async function runSteps(steps, { env, log = console.log }) {
 }
 
 /**
- * What the packaged app never loads, and build.win.files leaves out of a
- * Windows build: the renderer is the static export in out/, so next and its
- * SWC compiler (about 280 MB) and sharp (next's optional image optimizer) are
- * build tools; of the native modules only the win32 prebuilds load, and
+ * What the packaged app never loads, and a Windows build leaves out
+ * (WINDOWS_EXCLUDED_FILES, in the generated build/electron-builder-win.json):
+ * the renderer is the static export in out/, so next and its SWC compiler
+ * (about 280 MB) and sharp (next's optional image optimizer) are build tools; of the native modules only the win32 prebuilds load, and
  * better-sqlite3's deps/ is sqlite's C source. electron/dist, the hooks and
  * the MCP bundles require none of them. A path under node_modules/ matching
  * one of these fails the release.
@@ -322,9 +322,9 @@ export async function verifyWindowsArtifacts(releaseDir, version, { repo, pkg })
   ];
   for (const pattern of NEVER_LOADED) {
     const hit = shipped.find(f => pattern.test(f));
-    if (hit) throw new Refusal(`the app ships ${hit}, which it never loads: build.win.files should leave it out`);
+    if (hit) throw new Refusal(`the app ships ${hit}, which it never loads: WINDOWS_EXCLUDED_FILES (build/electron-builder-win.json) should leave it out`);
   }
-  const pty =filesUnder(join(unpacked, 'node_modules', 'node-pty'));
+  const pty = filesUnder(join(unpacked, 'node_modules', 'node-pty'));
   const withConpty = pty.filter(f => basename(f) === 'conpty.node').map(dirname)
     .some(dir => ['conpty.dll', 'OpenConsole.exe'].every(n => pty.includes(join(dir, 'conpty', n))));
   if (!withConpty) throw new Refusal('node-pty in app.asar.unpacked has no conpty.node beside conpty\\conpty.dll and conpty\\OpenConsole.exe');

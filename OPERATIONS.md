@@ -493,7 +493,7 @@ xcrun notarytool store-credentials Tars \
 
 ### The two update paths
 
-Two independent code paths check for updates. **Both point at `JeanBrasse/Tars`**, and each
+Two independent code paths check for updates. On macOS and Linux, **both point at `JeanBrasse/Tars`**, and each
 reads its own setting, so they agree only as long as both are kept in step:
 
 | path | target | source |
