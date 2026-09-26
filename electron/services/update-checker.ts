@@ -45,12 +45,79 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null) {
 }
 
 /**
+ * The fork the Windows builds are released on (decisions D11, D13). It is also
+ * package.json build.win.publish, the feed electron-builder bakes into a
+ * Windows build for electron-updater; update-checker-win32.test.ts holds the
+ * two together. macOS and Linux keep GITHUB_REPO.
+ */
+export const WINDOWS_UPDATE_REPO = 'Nexarion434/Tars';
+
+/** The repository whose releases the fallback reads on this platform. */
+export function updateRepoFor(platform: NodeJS.Platform): string {
+  return platform === 'win32' ? WINDOWS_UPDATE_REPO : GITHUB_REPO;
+}
+
+type ReleaseAsset = { name: string; browser_download_url?: string };
+
+/**
+ * The asset of a release this platform installs. Windows: the NSIS setup
+ * .exe, this architecture's first, and nothing rather than another platform's
+ * file. macOS and Linux: the .dmg, then the .zip, as always.
+ */
+export function installerAssetFor<T extends ReleaseAsset>(assets: T[], platform: NodeJS.Platform, arch: string): T | undefined {
+  if (platform === 'win32') {
+    const setups = assets.filter(a => /setup/i.test(a.name) && /\.exe$/i.test(a.name));
+    return setups.find(a => a.name.toLowerCase().includes(arch.toLowerCase())) ?? setups[0];
+  }
+  const dmgAsset = assets.find(a => a.name.endsWith('.dmg'));
+  const zipAsset = assets.find(a => a.name.endsWith('.zip'));
+  return dmgAsset || zipAsset;
+}
+
+/** Semantic version order, prerelease included: 1.9.0-win.10 is after 1.9.0-win.9. Null for what is not a version. */
+function compareSemver(a: string, b: string): number | null {
+  const parse = (v: string) => /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(v);
+  const pa = parse(a);
+  const pb = parse(b);
+  if (!pa || !pb) return null;
+  for (let i = 1; i <= 3; i++) {
+    if (Number(pa[i]) !== Number(pb[i])) return Number(pa[i]) - Number(pb[i]);
+  }
+  if (!pa[4] || !pb[4]) return (pa[4] ? -1 : 0) - (pb[4] ? -1 : 0);
+  const ia = pa[4].split('.');
+  const ib = pb[4].split('.');
+  for (let i = 0; i < Math.min(ia.length, ib.length); i++) {
+    const na = /^\d+$/.test(ia[i]);
+    const nb = /^\d+$/.test(ib[i]);
+    if (na && nb && Number(ia[i]) !== Number(ib[i])) return Number(ia[i]) - Number(ib[i]);
+    if (na !== nb) return na ? -1 : 1;
+    if (!na && ia[i] !== ib[i]) return ia[i] < ib[i] ? -1 : 1;
+  }
+  return ia.length - ib.length;
+}
+
+/** Whether `latest` is newer than `current`. Windows builds are `<version>-win.<n>`; elsewhere x.y.z, compared as before. */
+function isNewer(currentVersion: string, latestVersion: string, platform: NodeJS.Platform): boolean {
+  if (platform === 'win32') return (compareSemver(latestVersion, currentVersion) ?? 0) > 0;
+  const pa = currentVersion.split('.').map(Number);
+  const pb = latestVersion.split('.').map(Number);
+  let hasUpdate = false;
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (nb > na) { hasUpdate = true; break; }
+    if (na > nb) break;
+  }
+  return hasUpdate;
+}
+
+/**
  * Fallback: check GitHub releases API directly (same as pre-electron-updater).
  * Used when autoUpdater fails (e.g. missing latest-mac.yml on older releases).
  */
 async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
   const currentVersion = app.getVersion();
-  const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+  const url = `https://api.github.com/repos/${updateRepoFor(process.platform)}/releases/latest`;
   const response = await fetch(url, {
     headers: {
       'Accept': 'application/vnd.github.v3+json',
@@ -64,22 +131,12 @@ async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
   const tagName: string = data.tag_name || '';
   const latestVersion = tagName.replace(/^v/, '');
 
-  const pa = currentVersion.split('.').map(Number);
-  const pb = latestVersion.split('.').map(Number);
-  let hasUpdate = false;
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (nb > na) { hasUpdate = true; break; }
-    if (na > nb) break;
-  }
+  const hasUpdate = isNewer(currentVersion, latestVersion, process.platform);
 
   // Find download asset
   let downloadUrl = '';
   if (data.assets && Array.isArray(data.assets)) {
-    const dmgAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.dmg'));
-    const zipAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.zip'));
-    downloadUrl = (dmgAsset || zipAsset)?.browser_download_url || '';
+    downloadUrl = installerAssetFor<ReleaseAsset>(data.assets, process.platform, process.arch)?.browser_download_url || '';
   }
 
   const info = {
