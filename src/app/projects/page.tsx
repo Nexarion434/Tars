@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { pathName, splitPath, toSlashes } from '@/lib/display-path';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
@@ -170,7 +171,7 @@ export default function ProjectsPage() {
         const normalizedPath = selectedPath.replace(/\/+$/, '');
         const existsInCustom = customProjects.some(p => p.path.replace(/\/+$/, '').toLowerCase() === normalizedPath.toLowerCase());
         if (!existsInCustom) {
-          const name = selectedPath.split('/').pop() || 'Unknown Project';
+          const name = pathName(selectedPath) || 'Unknown Project';
           await window.electronAPI?.fs?.addCustomProject(normalizedPath);
           setCustomProjects([...customProjects, { path: normalizedPath, name, addedAt: new Date().toISOString() }]);
         }
@@ -269,7 +270,7 @@ export default function ProjectsPage() {
 
   // Normalize path for comparison
   const normalizePath = (p: string) => {
-    const trimmed = p.replace(/\/+$/, '').toLowerCase();
+    const trimmed = toSlashes(p).replace(/\/+$/, '').toLowerCase();
     return trimmed === '' ? '/' : trimmed;
   };
 
@@ -414,9 +415,9 @@ export default function ProjectsPage() {
 
   // Get short path for display
   const getShortPath = (path: string) => {
-    const parts = path.split('/');
+    const { parts, sep } = splitPath(path);
     if (parts.length <= 3) return path;
-    return '~/' + parts.slice(-2).join('/');
+    return '~' + sep + parts.slice(-2).join(sep);
   };
 
   if (loading && !data) {
@@ -829,8 +830,8 @@ export default function ProjectsPage() {
           }
         >
           <p className="text-sm text-muted-foreground">
-            <span className="text-foreground font-mono">{defaultProjectPath.split('/').pop()}</span> is currently the default project. Replace it with{' '}
-            <span className="text-foreground font-mono">{pendingDefaultPath.split('/').pop()}</span>?
+            <span className="text-foreground font-mono">{pathName(defaultProjectPath)}</span> is currently the default project. Replace it with{' '}
+            <span className="text-foreground font-mono">{pathName(pendingDefaultPath)}</span>?
           </p>
         </DialogShell>
       )}

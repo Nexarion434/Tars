@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { pathName, pathTail } from '@/lib/display-path';
 import { Users, Folder, Crown, AlertTriangle, Circle } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
 import { AgentMark } from '@/components/ui';
@@ -61,7 +62,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{agent.name}</p>
                       <p className="text-[10px] text-text-muted truncate">
-                        {agent.currentTask?.slice(0, 40) || agent.projectPath.split('/').pop()}
+                        {agent.currentTask?.slice(0, 40) || pathName(agent.projectPath)}
                       </p>
                     </div>
                   </div>
@@ -82,7 +83,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                     <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{agent.name}</p>
-                      <p className="text-[10px] text-text-muted truncate">{agent.projectPath.split('/').pop()}</p>
+                      <p className="text-[10px] text-text-muted truncate">{pathName(agent.projectPath)}</p>
                     </div>
                   </div>
                 ))}
@@ -101,7 +102,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                     <AgentMark name={agent.name || agent.id} orchestrator={isSuperAgent(agent)} className="opacity-60" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-text-secondary truncate">{agent.name}</p>
-                      <p className="text-[10px] text-text-muted truncate">{agent.projectPath.split('/').pop()}</p>
+                      <p className="text-[10px] text-text-muted truncate">{pathName(agent.projectPath)}</p>
                     </div>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${STATUS_BG_COLOR[agent.status] || 'bg-text-muted/20'} ${STATUS_COLOR[agent.status] || 'text-text-muted'}`}>
                       {agent.status}
@@ -141,7 +142,7 @@ export const AgentDialogSuperAgentSidebar = memo(function AgentDialogSuperAgentS
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{project.name}</p>
                       <p className="text-[10px] text-text-muted font-mono truncate">
-                        {project.path.split('/').slice(-2).join('/')}
+                        {pathTail(project.path, 2)}
                       </p>
                     </div>
                     {projectAgents.length > 0 && (
