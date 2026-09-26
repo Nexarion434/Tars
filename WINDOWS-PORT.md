@@ -140,6 +140,10 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 | D8 | Tray | `.ico` multi-taille (16 à 48 px) de la grille orange (la marque, jamais `>_`), panneau ouvert au-dessus de la barre des tâches, clic droit : Afficher Tars / Quitter Tars | 2026-09-25 | Nicolas |
 | D9 | UI du réglage de shell | Premier réglage de Settings > General > Terminal, **sous Windows seulement** : liste des shells détectés (chemin en aide) + « Chemin personnalisé » ; composants `src/components/ui` uniquement | 2026-09-25 | Nicolas |
 | D10 | Textes propres à mac | **En attente** : Nicolas relit les formulations de `PROPOSALS.md` ; aucun texte modifié d'ici là | | |
+| D11 | Version des builds Windows | `<version de Jean>-win.<n>` (ex. `1.9.0-win.1`), n incrémenté à chaque release du fork | 2026-09-26 | Nicolas |
+| D12 | Signature de l'installeur | Aucune (SmartScreen au premier lancement ; auto-update fonctionnel) | 2026-09-26 | Nicolas |
+| D13 | Synchro avec Jean | GitHub Action quotidienne : merge de `upstream/main` dans une branche `win/sync-<date>`, PR vers `windows`, CI Windows + ubuntu ; **merge automatique si tout est vert**, puis release Windows (auto-update) | 2026-09-26 | Nicolas |
+| D14 | Textes du lot desktop-shell | Validés tels quels : dialogue de première fermeture (« Keep your agents running? », « Keep running in the tray » / « Quit and stop agents »), menu du tray « Show Tars » / « Quit Tars », lignes « Shell » / « Shell path » et libellés des shells ; badge d'alerte du tray : point rouge actuel conservé | 2026-09-26 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
