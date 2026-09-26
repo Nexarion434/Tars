@@ -59,7 +59,10 @@ export function makeUnwritable(dir: string, restoreMode = 0o700): () => void {
  * list goes on after a failed open, so it said 'held' holding nothing, which
  * it does here too when another process has the file open. It now fails with
  * the reason when it cannot hold the file within 15 s, and the file is read
- * once from this process before the test relies on it being unreadable.
+ * once from this process before the test relies on it being unreadable. That
+ * check caught the next run (36248702474): the file read while the holder had
+ * said 'held'. The holder now also locks the file's whole length, and no longer
+ * waits on its stdin, which it had no need of; it is ended by its handle.
  * macOS and Linux: mode 0000, as makeUnreadable.
  */
 export async function holdUnreadable(file: string, restoreMode = 0o644): Promise<() => Promise<void>> {
@@ -75,9 +78,14 @@ export async function holdUnreadable(file: string, restoreMode = 0o644): Promise
   const script = "$ErrorActionPreference = 'Stop'; $until = (Get-Date).AddSeconds(15); "
     + "while ($true) { try { $f = [IO.File]::Open($env:TARS_HOLD_FILE, 'Open', 'Read', 'None'); break } "
     + "catch { if ((Get-Date) -gt $until) { [Console]::Error.WriteLine($_.Exception.Message); exit 3 }; Start-Sleep -Milliseconds 100 } }; "
-    + "[Console]::Out.WriteLine('held'); [Console]::Out.Flush(); [void][Console]::In.ReadLine(); $f.Close()";
+    // Its whole length locked as well, a second barrier in case an open gets
+    // past the sharing mode (run 36248702474: the file read while 'held').
+    // Then it sleeps until it is ended: nothing waits on stdin, which a host
+    // may hand to a child already closed.
+    + "$f.Lock(0, [Math]::Max([long]1, $f.Length)); "
+    + "[Console]::Out.WriteLine('held ' + $PID); [Console]::Out.Flush(); Start-Sleep -Seconds 3600";
   const holder = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-    env: { ...process.env, TARS_HOLD_FILE: file }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    env: { ...process.env, TARS_HOLD_FILE: file }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   let said = '';
   await new Promise<void>((resolve, reject) => {
@@ -86,17 +94,21 @@ export async function holdUnreadable(file: string, restoreMode = 0o644): Promise
     holder.once('error', reject);
     holder.once('exit', code => reject(new Error(`the process holding ${file} exited (${code}) before it held it: ${said.trim()}`)));
   });
+  // Ended through its own handle, which closes the file and its lock.
   const release = () => new Promise<void>(resolve => {
+    if (holder.exitCode !== null || holder.signalCode !== null) return resolve();
     holder.once('exit', () => resolve());
-    holder.stdin!.end('\n');
+    holder.kill();
   });
   // The premise, checked here before a test relies on it: a file this very
   // process can still read is not one the app will fail to.
   let stillReadable = true;
   try { fs.readFileSync(file); } catch { stillReadable = false; }
   if (stillReadable) {
+    const running = holder.exitCode === null && holder.signalCode === null;
     await release();
-    throw new Error(`${file} could still be read while another process held it open with no sharing`);
+    throw new Error(`${file} could still be read while another process held it with no sharing and a lock `
+      + `(holder ${running ? 'still running' : `exited ${holder.exitCode ?? holder.signalCode}`}, it said: ${said.trim()})`);
   }
   return release;
 }
