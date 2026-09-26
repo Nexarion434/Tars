@@ -378,7 +378,12 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
     }
     return { cli, outcome: 'failed', from, detail: `npm install -g ${install.pkg}@${latest}: ${failure(run)}, ${took}` };
   } finally {
-    rmRetryingSync(scratch, { recursive: true, force: true });
+    // A folder left behind is said, never reported in place of the update's outcome.
+    try {
+      rmRetryingSync(scratch, { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[cli-updates] could not remove ${scratch}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 

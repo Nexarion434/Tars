@@ -27,7 +27,11 @@ import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/servi
  * 2. the result is right but the scratch folder, and the npm cache in it, is
  *    left behind once the hold ends;
  * 3. the cleanup does not wait for the hold at all (the result comes back
- *    before the holder let go, so the test would prove nothing).
+ *    before the holder let go, so the test would prove nothing);
+ * 4. a hold longer than the budget turns "updated" into "failed" all the
+ *    same: a cleanup that fails must never replace the update's outcome;
+ * 5. that failed cleanup goes unsaid: no [cli-updates] line names the
+ *    folder left behind.
  */
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -41,7 +45,9 @@ const SYSTEM32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
  * exits only once the child says it is running: a child still starting has
  * not opened its working directory yet, and under load the delete once ran in
  * that gap, got the folder, and the child died at start. The child writes
- * when it let go to FAKE_RELEASED.
+ * when it let go to FAKE_RELEASED, and npm the scratch folder's path to
+ * FAKE_RELEASED.scratch: other test files run beside this one in the same
+ * temp folder, so a listing of it would count their folders too.
  */
 const FAKE_NPM = `
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
@@ -55,6 +61,7 @@ if (args[0] === 'install' && args.includes('--global')) {
   m.version = spec.slice(at + 1);
   fs.writeFileSync(manifest, JSON.stringify(m));
   const scratch = path.dirname(args[args.indexOf('--cache') + 1]);
+  fs.writeFileSync(process.env.FAKE_RELEASED + '.scratch', scratch);
   const running = process.env.FAKE_RELEASED + '.running';
   const held = "const fs = require('fs'); fs.writeFileSync(process.env.FAKE_RELEASED + '.running', ''); setTimeout(() => { fs.writeFileSync(process.env.FAKE_RELEASED, String(Date.now())); process.exit(0); }, Number(process.env.FAKE_HOLD_MS))";
   spawn(process.execPath, ['-e', held], { cwd: scratch, detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' } }).unref();
@@ -73,6 +80,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const until = Date.now() + 10_000; !fs.existsSync(released) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
   await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }, 60_000);
@@ -91,23 +99,44 @@ function ctxFor(home: string, env: Record<string, string>): CliUpdateContext {
   };
 }
 
-const scratchFolders = () => new Set(fs.readdirSync(os.tmpdir()).filter(n => n.startsWith('tars-cli-update-')));
+/** The scratch folder this test's update used, as the fake npm recorded it. */
+const scratchOfThisRun = () => fs.readFileSync(`${released}.scratch`, 'utf8');
 
 describe.skipIf(process.platform !== 'win32')('the npm scratch folder, still held when the update is done (win32)', () => {
   it('1, 2, 3. reports the update, and the folder goes once the hold ends', async () => {
     const home = path.join(root, 'home');
     const prefix = npmPrefixWith(home, FAKE_NPM);
     npmPackage(prefix);
-    const before = scratchFolders();
 
     const [result] = await runCliUpdatePass([{ cli: 'amp', command: 'amp' }], ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_HOLD_MS: '400', FAKE_RELEASED: released }));
     const returnedAt = Date.now();
 
     expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });
     expect(result.detail).not.toMatch(/EBUSY|EPERM|rmdir/);
-    expect([...scratchFolders()].filter(n => !before.has(n))).toEqual([]);
+    expect(fs.existsSync(scratchOfThisRun())).toBe(false);
     // The holder let go before the update came back: the cleanup met the hold and waited it out.
     expect(fs.existsSync(released)).toBe(true);
     expect(Number(fs.readFileSync(released, 'utf8'))).toBeLessThanOrEqual(returnedAt);
+  });
+
+  it('4, 5. a hold past the budget: the update is still reported, and the folder left behind is named', async () => {
+    const home = path.join(root, 'home');
+    const prefix = npmPrefixWith(home, FAKE_NPM);
+    npmPackage(prefix);
+    const warned: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warned.push(args.map(String).join(' ')); });
+
+    const [result] = await runCliUpdatePass([{ cli: 'amp', command: 'amp' }], ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_HOLD_MS: '2500', FAKE_RELEASED: released }));
+
+    const scratch = scratchOfThisRun();
+    try {
+      expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });
+      expect(result.detail).not.toMatch(/EBUSY|EPERM|rmdir/);
+      expect(fs.existsSync(scratch)).toBe(true);
+      expect(warned.filter(w => w.startsWith('[cli-updates]') && w.includes(scratch))).toHaveLength(1);
+    } finally {
+      for (const until = Date.now() + 10_000; !fs.existsSync(released) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
+      await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
   });
 });
