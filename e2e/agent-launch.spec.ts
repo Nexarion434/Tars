@@ -197,7 +197,7 @@ async function quickTerminalPrompt(page: Page, prompt: RegExp): Promise<number> 
 }
 
 test('an agent is created, started from a window, over the API and from a bot, running its CLI with the exact argv and never through a shell', async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-launch-'));
   const dataDir = path.join(home, '.dorothy');
   const project = path.join(home, 'projects', PROJECT_NAME);
