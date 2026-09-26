@@ -89,6 +89,52 @@ async function liveTerminalMasks(): Promise<Locator[]> {
 }
 
 /**
+ * Waits for what the surfaces photograph around the panel on `history`: every
+ * panel still on `live` showing its terminal, laid out and holding still.
+ *
+ * Their screens are masked, so the mask needs them there. On CI's
+ * windows-latest the second surface was photographed with no terminal mounted
+ * in any live panel yet (run 36252553940: `.xterm-screen` matched nothing,
+ * no mask was drawn, 535,819 pixels differed), 3.8 s after its load; the first,
+ * 6.1 s after its own, had all three. Bounded: a live panel that never shows its
+ * terminal fails here, with what it found.
+ */
+async function liveTerminalsShown(): Promise<void> {
+  const read = () => page.evaluate(() => {
+    const groups = [...document.querySelectorAll('[role="radiogroup"][aria-label="Panel view"]')];
+    const isLive = (group: Element) => group.querySelector('[role="radio"][aria-checked="true"]')?.textContent === 'live';
+    // Each terminal screen, by the panel it sits in: the nearest block that
+    // holds a view switch, as liveTerminalMasks reads it.
+    const shownIn = new Set<Element>();
+    const boxes: number[][] = [];
+    for (const element of document.querySelectorAll('.xterm-screen')) {
+      let panel = element.parentElement;
+      while (panel && !panel.querySelector('[role="radiogroup"][aria-label="Panel view"]')) panel = panel.parentElement;
+      const group = panel?.querySelector('[role="radiogroup"][aria-label="Panel view"]');
+      if (!group || !isLive(group)) continue;
+      const box = element.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) shownIn.add(group);
+      boxes.push([Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)]);
+    }
+    const live = groups.filter(isLive);
+    return { live: live.length, withoutTerminal: live.filter(group => !shownIn.has(group)).length, boxes };
+  });
+  const until = Date.now() + 30_000;
+  let last = '';
+  let held = 0;
+  for (;;) {
+    const now = await read();
+    const shown = now.live > 0 && now.withoutTerminal === 0;
+    const key = JSON.stringify(now);
+    held = shown && key === last ? held + 1 : 0;
+    last = key;
+    if (held >= 2) return;
+    if (Date.now() > until) throw new Error(`the panels on live never all showed their terminal: ${key}`);
+    await page.waitForTimeout(300);
+  }
+}
+
+/**
  * The emulator's own numbers.
  *
  * xterm 5.3's DOM renderer sizes the screen to cols times the cell width by
@@ -147,6 +193,7 @@ for (const surface of PANEL_HISTORY as PanelSurface[]) {
     // The view reads the transcript over IPC: photograph what it read, not the
     // skeleton in front of it.
     await expect(header.locator('xpath=..').getByText(surface.shows, { exact: true })).toBeVisible();
+    await liveTerminalsShown();
     await page.waitForTimeout(900);
 
     // The same rule as the sweep, and the same list: these two surfaces
