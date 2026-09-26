@@ -136,6 +136,23 @@ describe('make-app-ico: the command', () => {
     expect(check.status).toBe(0);
   });
 
+  it('runs through a link to scripts/, as from a subst drive or a junctioned checkout, and writes the icon', () => {
+    // Node runs the module from its real path: a guard comparing it with the
+    // path as typed never matched, and the command exited 0 having written
+    // nothing, so release:win packed whatever build/icon.ico already held.
+    const link = path.join(dir, 'linked-scripts');
+    fs.symlinkSync(path.dirname(SCRIPT), link, 'junction'); // a junction on Windows, a directory symlink elsewhere
+    try {
+      const out = path.join(dir, 'via-link.ico');
+      const r = spawnSync(process.execPath, [path.join(link, 'make-app-ico.mjs'), '--out', out], { encoding: 'utf8' });
+      expect(r.status).toBe(0);
+      expect(fs.existsSync(out) && fs.readFileSync(out).equals(appIcon(SVG))).toBe(true);
+    } finally {
+      // The link alone: rmdir removes a junction without following it, unlink a symlink.
+      (process.platform === 'win32' ? fs.rmdirSync : fs.unlinkSync)(link);
+    }
+  });
+
   it('--check exits 1 on a stale icon, and leaves it as it was', () => {
     const out = path.join(dir, 'icon.ico');
     fs.writeFileSync(out, 'stale');

@@ -237,6 +237,15 @@ function main(argv) {
   return 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** Node runs a module from its real path, so argv[1] is compared by real path: a subst drive or a junctioned checkout would never match as typed. */
+function invokedDirectly() {
+  try {
+    return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   process.exitCode = main(process.argv.slice(2));
 }
