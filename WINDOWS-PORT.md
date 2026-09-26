@@ -90,7 +90,7 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 34 | Auto-update depuis le fork | **OK** en local (1.9.0-win.1 vers 1.9.0-win.2 via flux local, agents conservés) ; flux GitHub réel : à la première release | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
 | 35 | Bac à sable (`npm run sandbox`) | **OK** (`npm run sandbox` : `win-unpacked`, profil isolé, port 31499) | B/P-04 | win-build | lance `win-unpacked` sur 31499, USERPROFILE isolé |
 | 36 | E2E (38 surfaces, références Windows dédiées) | **OK** (46/46 surfaces sur références `win32/`, stables quel que soit `%TEMP%` ; 7 tests à entrée OS réelle à relancer sur bureau libre) | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
-| 37 | CI `windows-latest` | workflows poussés ; premier run en cours (`CI - Windows` + `CI - Tests`) ; synchro quotidienne : attend branche par défaut `windows` + Issues | B/P-11 | win-build | job vert sur PR vers `windows` |
+| 37 | CI `windows-latest` | **OK** (`CI - Windows` vert sur windows-latest : unit + E2E 46/46, run 36250753440 ; `CI - Tests` ubuntu vert ; synchro quotidienne 04:17 UTC opérationnelle, premier run : rien à synchroniser) | B/P-11 | win-build | job vert sur PR vers `windows` |
 | 38 | Zéro régression macOS / Linux | ? | | win-reviewer | CI ubuntu verte, diffs darwin/linux prouvés identiques |
 
 ## 3. Sécurité (priorité dans chaque lot)
@@ -149,7 +149,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
 
-Phases 0 à 5 mergées dans `windows` (742f2077). Reste : réglages GitHub du fork (branche par défaut `windows`, Issues, `SYNC_TOKEN`), première release `1.9.0-win.1` (accord de Nicolas), checklist manuelle §4, textes D10, suivis de `tasks/todo.md`, phase 6 (upstream, sur go de Nicolas).
+Phases 0 à 5 mergées, CI Windows verte sur GitHub (2414b187). Fork configuré (branche par défaut `windows`, Issues, `SYNC_TOKEN`). Reste : première release `1.9.0-win.1` (accord de Nicolas), checklist manuelle §4, textes D10, suivis de `tasks/todo.md`, phase 6 (upstream, sur go de Nicolas).
 
 Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/`, CI `windows-latest`), renderer (noms de projets U-02, chemins U-01..U-08, raccourcis N-07/N-08), phase 5 (NSIS, `.ico`, auto-update depuis le fork : voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
 
@@ -165,3 +165,4 @@ Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/
 | 2026-09-26 | Suivis phase 3 (killPty, garde home et ancêtres toutes plateformes, dédoublonnage platform, projectName bots, check:dashes) + portabilité des tests (npm test 0 échec sous Windows, E2E 46 surfaces atteintes) | `win/integration-p3b` | PASS | APPROVE | e1c759c0 |
 | 2026-09-26 | Bureau Windows D5 à D9, D14, D15 (barre de titre, tray, fermeture, raccourcis, sélecteur de shell) + affichage des chemins dans le renderer | `win/integration-p4` (`win/desktop-shell`, `win/renderer-paths`) | PASS (sous charge) | APPROVE | e00b7ba9 |
 | 2026-09-26 | Phase 5 : packaging NSIS + auto-update depuis le fork, références visuelles win32 (46), CI windows-latest + synchro quotidienne avec Jean + release automatique | `win/integration-p5` (`win/packaging`, `win/win32-visual-refs`, `win/ci-windows`) | PASS (2e gate) | APPROVE | 742f2077 |
+| 2026-09-26 | CI Windows réelle au vert : temp 8.3 canonique, tests de layout POSIX sautés sous win32 + scénarios portés, nettoyage sûr vis-à-vis des PID réattribués, E2E en fr-FR et texte en niveaux de gris, écran 1920x1080 sur le runner, références win32 réenregistrées (runner = machine locale), préchauffage des pages | `win/ci-short-temp` | CI verte | APPROVE | 2414b187 |
