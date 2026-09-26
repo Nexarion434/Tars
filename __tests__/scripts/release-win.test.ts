@@ -4,10 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fakeGh, sha256, type FakeGh } from './fake-gh';
 import {
-  artifactNames, buildEnv, builderArgs, buildSteps, main, nextBuildNumber, parseArgs, readAsarFile,
-  verifyWindowsArtifacts, windowsPublishRepo, windowsVersion,
+  artifactNames, buildEnv, builderArgs, buildSteps, main, NEVER_LOADED, nextBuildNumber, parseArgs, readAsarFile,
+  verifyWindowsArtifacts, windowsBuilderConfig, windowsPublishRepo, windowsVersion,
 } from '../../scripts/release-win.mjs';
 import { Refusal } from '../../scripts/release.mjs';
 
@@ -28,7 +29,9 @@ import { Refusal } from '../../scripts/release.mjs';
  *  - the artifacts: a latest.yml for another version, or whose size or sha512
  *    is not the installer's, no blockmap, a feed that is not the fork, a node-pty
  *    without its ConPTY binaries, a hook or an MCP bundle missing, an app that
- *    says another version;
+ *    says another version, an app that ships what it never loads (next, the
+ *    @next/swc compiler, sharp, another platform's native prebuilds, sqlite's
+ *    sources), packed in the asar or beside it;
  *  - publishing: anything written to GitHub in a dry run, a publish from a
  *    commit that is not origin/windows, over an existing release or a tag left
  *    without one, below a newer one, or with other files than the installer, its blockmap, the zip and
@@ -70,12 +73,56 @@ describe('the version it stamps', () => {
     expect(() => parseArgs(['--dry'])).toThrow(Refusal);
   });
 
-  it('hands electron-builder the stamp, for Windows, never publishing by itself', () => {
-    const args = builderArgs('1.9.0-win.3');
+  it('hands electron-builder the stamp and the Windows config, for Windows, never publishing by itself', () => {
+    const args = builderArgs('1.9.0-win.3', 'C:\\repo\\build\\electron-builder-win.json');
     expect(args).toContain('--win');
     expect(args).not.toContain('--mac');
     expect(args.join(' ')).toContain('--publish never');
     expect(args).toContain('-c.extraMetadata.version=1.9.0-win.3');
+    expect(args.join(' ')).toContain('--config C:\\repo\\build\\electron-builder-win.json');
+  });
+});
+
+describe('the Windows build config', () => {
+  // electron-builder's own matcher, the one it filters the app's files with.
+  const { Minimatch } = createRequire(require.resolve('app-builder-lib'))('minimatch') as {
+    Minimatch: new (pattern: string, options: object) => { match(path: string): boolean };
+  };
+  const excluded = (file: string, patterns: string[]) => patterns.filter(p => p.startsWith('!'))
+    .some(p => new Minimatch(p.slice(1), { dot: true }).match(file));
+
+  it('is package.json build as it is, files included, with only what the app never loads left out', () => {
+    const before = JSON.stringify(REAL_PKG);
+    const config = windowsBuilderConfig(REAL_PKG);
+    expect(JSON.stringify(REAL_PKG)).toBe(before);
+    const { files, ...rest } = config;
+    const { files: ownFiles, ...ownRest } = REAL_PKG.build;
+    expect(rest).toEqual(ownRest);
+    expect(files.slice(0, ownFiles.length)).toEqual(ownFiles);
+    expect(files.slice(ownFiles.length).every((p: string) => p.startsWith('!'))).toBe(true);
+  });
+
+  it('leaves out every path the artifact check refuses, and none the app loads', () => {
+    const { files } = windowsBuilderConfig(REAL_PKG);
+    for (const never of [
+      'node_modules/next/dist/server/next.js', 'node_modules/@next/swc-win32-x64-msvc/next-swc.win32-x64-msvc.node',
+      'node_modules/@next/env/dist/index.js', 'node_modules/sharp/lib/index.js', 'node_modules/@img/sharp-win32-x64/lib/libvips-42.dll',
+      'node_modules/better-sqlite3/deps/sqlite3/sqlite3.c', 'node_modules/better-sqlite3/prebuilds/darwin-arm64.node',
+      'node_modules/better-sqlite3/prebuilds/linux-x64.node', 'node_modules/better-sqlite3/prebuilds/linuxmusl-arm64.node',
+      'node_modules/node-pty/prebuilds/darwin-arm64/pty.node', 'node_modules/node-pty/prebuilds/darwin-x64/pty.node',
+    ]) {
+      expect(NEVER_LOADED.some(p => p.test(never)), `${never} is not what the artifact check refuses`).toBe(true);
+      expect(excluded(never, files), `${never} is packed`).toBe(true);
+    }
+    for (const kept of [
+      'node_modules/better-sqlite3/prebuilds/win32-x64.node', 'node_modules/better-sqlite3/lib/index.js',
+      'node_modules/node-pty/prebuilds/win32-x64/conpty.node', 'node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll',
+      'node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe', 'node_modules/node-pty/lib/index.js',
+      'node_modules/xterm-headless/package.json', 'node_modules/electron-updater/out/main.js', 'node_modules/nextjs-like/index.js',
+    ]) {
+      expect(excluded(kept, files), `${kept} is left out`).toBe(false);
+      expect(NEVER_LOADED.some(p => p.test(kept)), `${kept} would be refused`).toBe(false);
+    }
   });
 });
 
@@ -93,7 +140,7 @@ describe('the build it runs', () => {
       const own = steps.filter(s => s.cwd === path.join(ROOT, mcp));
       expect(own.map(s => s.label)).toEqual([`${mcp}: npm install`, `${mcp}: npm run build`]);
     }
-    expect(steps.at(-1)!.args).toEqual(expect.arrayContaining(builderArgs('1.9.0-win.1')));
+    expect(steps.at(-1)!.args).toEqual(expect.arrayContaining(builderArgs('1.9.0-win.1', path.join(ROOT, 'build', 'electron-builder-win.json'))));
     // No step is a shell string: every one is a command and its argv.
     for (const s of steps) expect(Array.isArray(s.args)).toBe(true);
   });
@@ -123,12 +170,16 @@ const sha512 = (b: Buffer | string) => createHash('sha512').update(b).digest('ba
 
 /** An asar with these files, in the format @electron/asar writes. */
 function writeAsar(file: string, files: Record<string, string>) {
-  const header: { files: Record<string, { size: number; offset: string }> } = { files: {} };
+  type Node = { files?: Record<string, Node>; size?: number; offset?: string };
+  const header: Node = { files: {} };
   const bodies: Buffer[] = [];
   let offset = 0;
   for (const [name, content] of Object.entries(files)) {
     const body = Buffer.from(content);
-    header.files[name] = { size: body.length, offset: String(offset) };
+    const parts = name.split('/');
+    let dir = header;
+    for (const part of parts.slice(0, -1)) dir = (dir.files![part] ??= { files: {} });
+    dir.files![parts.at(-1)!] = { size: body.length, offset: String(offset) };
     bodies.push(body);
     offset += body.length;
   }
@@ -147,6 +198,8 @@ function writeAsar(file: string, files: Record<string, string>) {
 type Breakage = {
   ymlVersion?: string; wrongSha?: boolean; noBlockmap?: boolean; feedOwner?: string; noConpty?: boolean;
   noHook?: boolean; noMcp?: string; appVersion?: string;
+  /** A file the app never loads, packed in the asar or unpacked beside it. */
+  packed?: string; unpacked?: string;
 };
 
 function winBuild(releaseDir: string, version: string, broken: Breakage = {}) {
@@ -176,7 +229,11 @@ function winBuild(releaseDir: string, version: string, broken: Breakage = {}) {
   fs.writeFileSync(path.join(app, 'Tars.exe'), 'exe');
   fs.writeFileSync(path.join(res, 'app-update.yml'),
     `owner: ${broken.feedOwner ?? 'Nexarion434'}\nrepo: Tars\nprovider: github\nupdaterCacheDirName: tars-updater\n`);
-  writeAsar(path.join(res, 'app.asar'), { 'package.json': JSON.stringify({ name: 'tars', version: broken.appVersion ?? version }) });
+  writeAsar(path.join(res, 'app.asar'), {
+    'package.json': JSON.stringify({ name: 'tars', version: broken.appVersion ?? version }),
+    'node_modules/xterm/package.json': '{}',
+    ...(broken.packed ? { [broken.packed]: 'x' } : {}),
+  });
   const put = (rel: string) => {
     fs.mkdirSync(path.dirname(path.join(unpacked, rel)), { recursive: true });
     fs.writeFileSync(path.join(unpacked, rel), 'x');
@@ -188,6 +245,7 @@ function winBuild(releaseDir: string, version: string, broken: Breakage = {}) {
     put('node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe');
   }
   put('node_modules/better-sqlite3/prebuilds/win32-x64.node');
+  if (broken.unpacked) put(broken.unpacked);
   for (const hook of ['tars-hook.mjs', 'tars-hook-lib.mjs', 'statusline.mjs']) {
     if (!(broken.noHook && hook === 'tars-hook.mjs')) put(`hooks/${hook}`);
   }
@@ -226,6 +284,14 @@ describe('the artifacts it checks', () => {
     ['a hook missing', { noHook: true }, /tars-hook\.mjs/],
     ['an MCP bundle missing', { noMcp: 'mcp-kanban' }, /mcp-kanban/],
     ['an app that says another version', { appVersion: '1.9.0' }, /says 1\.9\.0/],
+    ['next packed in the asar', { packed: 'node_modules/next/dist/server/next.js' }, /node_modules\/next\//],
+    ['the @next/swc compiler unpacked', { unpacked: 'node_modules/@next/swc-win32-x64-msvc/next-swc.win32-x64-msvc.node' }, /node_modules\/@next\//],
+    ['sharp\'s libvips unpacked', { unpacked: 'node_modules/@img/sharp-win32-x64/lib/libvips-42.dll' }, /node_modules\/@img\//],
+    ['sharp itself packed', { packed: 'node_modules/sharp/lib/index.js' }, /node_modules\/sharp\//],
+    ['a macOS better-sqlite3 prebuild', { unpacked: 'node_modules/better-sqlite3/prebuilds/darwin-arm64.node' }, /darwin-arm64/],
+    ['a Linux better-sqlite3 prebuild', { unpacked: 'node_modules/better-sqlite3/prebuilds/linuxmusl-x64.node' }, /linuxmusl-x64/],
+    ['sqlite\'s sources', { unpacked: 'node_modules/better-sqlite3/deps/sqlite3/sqlite3.c' }, /better-sqlite3\/deps/],
+    ['a macOS node-pty prebuild', { unpacked: 'node_modules/node-pty/prebuilds/darwin-arm64/pty.node' }, /darwin-arm64/],
   ])('refuses %s', async (_what, broken, message) => {
     winBuild(dir, V, broken);
     await expect(verify()).rejects.toThrow(message);
@@ -326,6 +392,8 @@ describe('npm run release:win', { timeout: 60_000 }, () => {
     // Only a read of the fork's releases.
     expect(gh.calls()).toEqual([['release', 'list', '--repo', FORK, '--limit', '1000', '--json', 'tagName']]);
     expect(fs.readFileSync(path.join(dir, 'package.json')).equals(before)).toBe(true);
+    // The config electron-builder was pointed at, written beside the icon in the ignored build/.
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'build', 'electron-builder-win.json'), 'utf8'))).toEqual(windowsBuilderConfig(JSON.parse(before.toString())));
   });
 
   it('dry run: takes the next n from the fork', async () => {

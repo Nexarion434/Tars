@@ -26,13 +26,16 @@
  *   2. the build, what `npm run electron:build` does for macOS, for Windows:
  *      the app icon (scripts/make-app-ico.mjs), `npm run build:renderer`, the
  *      main process, the MCP bundles package.json ships (npm install and npm run
- *      build in each), then electron-builder --win --x64 with the stamp, never
- *      publishing by itself (no CI, GH_TOKEN, GITHUB_TOKEN; --publish never);
+ *      build in each), then electron-builder --win --x64 with the stamp and
+ *      build/electron-builder-win.json (package.json build, leaving out of
+ *      node_modules what the app never loads), never publishing by itself (no
+ *      CI, GH_TOKEN, GITHUB_TOKEN; --publish never);
  *   3. the artifacts: latest.yml names this version and the installer with its
  *      size and sha512, the blockmap and the zip exist, the app says this
  *      version, its app-update.yml feeds from the fork, and what the packaged
  *      app runs from disk is unpacked (node-pty with ConPTY, better-sqlite3,
- *      the Node hooks runner, every MCP bundle);
+ *      the Node hooks runner, every MCP bundle), and nothing it never loads is
+ *      shipped (next, @next/swc, sharp, other platforms' prebuilds);
  *   4. the notes, from the changelog entry of the version;
  *   5. with --publish: gh release create v<version> on the fork, on the commit
  *      built, with the installer, its blockmap, the zip and latest.yml, as the
@@ -42,11 +45,11 @@
  * Tested in __tests__/scripts/release-win.test.ts.
  */
 import { spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { npmCommand } from './npm-command.mjs';
 import { run, sha256Of } from './prune-releases.mjs';
@@ -122,8 +125,39 @@ export function artifactNames(pkg, version) {
  * for win32-x64 that Electron loads as they are, so nothing is compiled and
  * node_modules is left as npm ci made it.
  */
-export function builderArgs(version) {
-  return ['--win', '--x64', '--publish', 'never', `-c.extraMetadata.version=${version}`, '-c.npmRebuild=false'];
+export function builderArgs(version, configFile) {
+  return ['--config', configFile, '--win', '--x64', '--publish', 'never', `-c.extraMetadata.version=${version}`, '-c.npmRebuild=false'];
+}
+
+/**
+ * What a Windows build leaves out of node_modules, as electron-builder file
+ * patterns: what NEVER_LOADED refuses. The `/**` matters: electron-builder 26
+ * filters the files of a module, not its folder, so `!node_modules/@next/swc*`
+ * (package.json build.files) leaves every file of @next/swc-* in.
+ */
+export const WINDOWS_EXCLUDED_FILES = [
+  '!node_modules/next/**',
+  '!node_modules/@next/**',
+  '!node_modules/sharp/**',
+  '!node_modules/@img/**',
+  '!node_modules/better-sqlite3/deps/**',
+  '!node_modules/better-sqlite3/prebuilds/{darwin,linux,linuxmusl}-*',
+  '!node_modules/node-pty/prebuilds/darwin-*/**',
+];
+
+/** Where the Windows config is written, beside the icon in the ignored build/. */
+export const WINDOWS_CONFIG_FILE = join('build', 'electron-builder-win.json');
+
+/**
+ * package.json build, as it is, with WINDOWS_EXCLUDED_FILES added to its
+ * files. Not build.win.files: electron-builder turns a platform's own files
+ * into a matcher of its own, and one holding only exclusions matches
+ * everything (measured: .next/cache, design/ and slide-deck/ were packed).
+ * Added to build.files here, they join the same matcher. macOS never reads
+ * this file: its build and package.json are untouched.
+ */
+export function windowsBuilderConfig(pkg) {
+  return { ...pkg.build, files: [...(pkg.build.files ?? []), ...WINDOWS_EXCLUDED_FILES] };
 }
 
 /** The MCP folders package.json ships, from build.extraResources. */
@@ -150,7 +184,7 @@ export function buildSteps(root, version) {
       npm(['install'], join(root, mcp), `${mcp}: npm install`),
       npm(['run', 'build'], join(root, mcp), `${mcp}: npm run build`),
     ]),
-    { label: `electron-builder ${builderArgs(version).join(' ')}`, cwd: root, command: process.execPath, args: [resolve('electron-builder/cli.js'), ...builderArgs(version)] },
+    { label: `electron-builder ${builderArgs(version, WINDOWS_CONFIG_FILE).join(' ')}`, cwd: root, command: process.execPath, args: [resolve('electron-builder/cli.js'), ...builderArgs(version, join(root, WINDOWS_CONFIG_FILE))] },
   ];
 }
 
@@ -171,22 +205,62 @@ export async function runSteps(steps, { env, log = console.log }) {
   }
 }
 
+/**
+ * What the packaged app never loads, and build.win.files leaves out of a
+ * Windows build: the renderer is the static export in out/, so next and its
+ * SWC compiler (about 280 MB) and sharp (next's optional image optimizer) are
+ * build tools; of the native modules only the win32 prebuilds load, and
+ * better-sqlite3's deps/ is sqlite's C source. electron/dist, the hooks and
+ * the MCP bundles require none of them. A path under node_modules/ matching
+ * one of these fails the release.
+ */
+export const NEVER_LOADED = [
+  /^node_modules\/next\//,
+  /^node_modules\/@next\//,
+  /^node_modules\/sharp\//,
+  /^node_modules\/@img\//,
+  /^node_modules\/better-sqlite3\/deps\//,
+  /^node_modules\/better-sqlite3\/prebuilds\/(?!win32-)/,
+  /^node_modules\/node-pty\/prebuilds\/darwin-/,
+];
+
+function asarHeader(fd, asar) {
+  const read = (length, position) => {
+    const buf = Buffer.alloc(length);
+    if (readSync(fd, buf, 0, length, position) !== length) throw new Refusal(`${asar} is shorter than its header says`);
+    return buf;
+  };
+  const sizes = read(16, 0);
+  return { read, headerSize: sizes.readUInt32LE(4), header: JSON.parse(read(sizes.readUInt32LE(12), 16).toString('utf8')) };
+}
+
 /** One file out of an asar archive, read from its header without the rest. */
 export function readAsarFile(asar, name) {
   const fd = openSync(asar, 'r');
   try {
-    const read = (length, position) => {
-      const buf = Buffer.alloc(length);
-      if (readSync(fd, buf, 0, length, position) !== length) throw new Refusal(`${asar} is shorter than its header says`);
-      return buf;
-    };
-    const sizes = read(16, 0);
-    const headerSize = sizes.readUInt32LE(4);
-    const header = JSON.parse(read(sizes.readUInt32LE(12), 16).toString('utf8'));
+    const { read, headerSize, header } = asarHeader(fd, asar);
     let node = header;
     for (const part of name.split('/')) node = node?.files?.[part];
     if (!node || node.offset === undefined) throw new Refusal(`${asar} holds no ${name}`);
     return read(node.size, 8 + headerSize + Number(node.offset));
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Every file an asar archive lists, as `a/b/c` paths (the unpacked ones included). */
+export function listAsar(asar) {
+  const fd = openSync(asar, 'r');
+  try {
+    const found = [];
+    const walk = (node, prefix) => {
+      for (const [name, child] of Object.entries(node.files ?? {})) {
+        if (child.files) walk(child, `${prefix}${name}/`);
+        else found.push(`${prefix}${name}`);
+      }
+    };
+    walk(asarHeader(fd, asar).header, '');
+    return found;
   } finally {
     closeSync(fd);
   }
@@ -242,7 +316,15 @@ export async function verifyWindowsArtifacts(releaseDir, version, { repo, pkg })
   if (shown !== version) throw new Refusal(`the built app says ${shown}, not ${version}`);
 
   const unpacked = join(resources, 'app.asar.unpacked');
-  const pty = filesUnder(join(unpacked, 'node_modules', 'node-pty'));
+  const shipped = [
+    ...listAsar(join(resources, 'app.asar')),
+    ...filesUnder(unpacked).map(f => relative(unpacked, f).split(sep).join('/')),
+  ];
+  for (const pattern of NEVER_LOADED) {
+    const hit = shipped.find(f => pattern.test(f));
+    if (hit) throw new Refusal(`the app ships ${hit}, which it never loads: build.win.files should leave it out`);
+  }
+  const pty =filesUnder(join(unpacked, 'node_modules', 'node-pty'));
   const withConpty = pty.filter(f => basename(f) === 'conpty.node').map(dirname)
     .some(dir => ['conpty.dll', 'OpenConsole.exe'].every(n => pty.includes(join(dir, 'conpty', n))));
   if (!withConpty) throw new Refusal('node-pty in app.asar.unpacked has no conpty.node beside conpty\\conpty.dll and conpty\\OpenConsole.exe');
@@ -377,6 +459,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     log(`1. version ${version}${options.n === undefined ? `: build ${n} of ${base} on ${repo}` : ''}${options.publish ? `, not yet on ${repo}, nothing newer there` : ''}`);
 
     log(`2. build ${version}, without CI, GH_TOKEN or GITHUB_TOKEN:`);
+    mkdirSync(join(root, 'build'), { recursive: true });
+    writeFileSync(join(root, WINDOWS_CONFIG_FILE), `${JSON.stringify(windowsBuilderConfig(pkg), null, 2)}\n`);
     await build(buildSteps(root, version), { root, env: buildEnv(process.env), log });
 
     const releaseDir = join(root, 'release');
