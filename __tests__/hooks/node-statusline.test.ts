@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * hooks/statusline.mjs: the Claude Code status line on Windows (audit A15),
@@ -25,6 +26,11 @@ import * as path from 'node:path';
  *     prints 2500 tokens as "2k", round-half-even, not "3k").
  *  7. A crash on missing fields, or a token-stats entry for no session.
  *  8. Anything written outside ~/.dorothy of the HOME it runs in.
+ *  9. Its lock released twice: once when its write is done, and again as it
+ *     exits, which removes the lock another render has taken in between. Two
+ *     renders then hold it at once, both read the same file, and the last to
+ *     rename drops the other's session (seen on Windows, 2026-09-26: test 4
+ *     red, and 5 sessions lost in 250 rounds of six renders).
  */
 
 const SCRIPT = path.join(__dirname, '../../hooks/statusline.mjs');
@@ -165,6 +171,22 @@ describe('statusline.mjs', () => {
     const stats = JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'));
     expect(Object.keys(stats).sort()).toEqual(ids);
   }, 30_000);
+
+  it('9. leaves alone, as it exits, a lock another render took after it released its own', async () => {
+    const home = freshHome();
+    const lock = path.join(home, '.dorothy', 'token-stats.lock');
+    // Loaded before the script, so this exit listener runs before any of the
+    // script's own: the moment another render takes the lock between this
+    // one's release and its exit, made certain instead of left to timing.
+    const takeLock = path.join(home, 'take-lock-at-exit.mjs');
+    fs.writeFileSync(takeLock,
+      `import { mkdirSync } from 'node:fs';\nprocess.on('exit', () => mkdirSync(${JSON.stringify(lock)}));\n`);
+    const { code, err } = await render(home, PAYLOAD, { NODE_OPTIONS: `--import ${pathToFileURL(takeLock).href}` });
+    expect(err).toBe('');
+    expect(code).toBe(0);
+    expect(JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'))).toHaveProperty(S);
+    expect(fs.existsSync(lock)).toBe(true);
+  });
 
   it('6. reads the branch in a git checkout, and caches it in ~/.dorothy', async () => {
     const home = freshHome();

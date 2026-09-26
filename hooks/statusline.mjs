@@ -10,7 +10,8 @@
 // under the same mkdir lock, written beside itself and renamed over.
 //
 // Where it differs on purpose: the git-branch cache file name replaces `\`
-// and `:` as well as `/`, which a Windows file name cannot hold.
+// and `:` as well as `/`, which a Windows file name cannot hold; and the lock
+// is released once, not a second time at exit (see writeTokenStats).
 
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -178,8 +179,10 @@ function writeTokenStats(f) {
   const extra = awkGreater100(f.PCT_5H) || awkGreater100(f.PCT_7D);
   const lockDir = path.join(DATA_DIR, 'token-stats.lock');
   if (!acquireLock(lockDir)) return;
+  // Released once, in the finally below, and not again at exit as the bash
+  // trap does: by then another render may hold the lock, and removing it
+  // lets a third one in beside it, which loses a session.
   const release = () => { try { fs.rmdirSync(lockDir); } catch { /* || true */ } };
-  process.once('exit', release);
   try {
     const file = path.join(DATA_DIR, 'token-stats.json');
     let existing = '';
