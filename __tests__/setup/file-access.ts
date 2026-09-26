@@ -54,15 +54,27 @@ export function makeUnwritable(dir: string, restoreMode = 0o700): () => void {
  * The access control entry of makeUnreadable was not enough there: on CI's
  * windows-latest, whose account is an administrator, the E2E app read a file
  * denied that way and priced its turn (run 36242089925), while the unit tests'
- * own reads of one were refused. macOS and Linux: mode 0000, as makeUnreadable.
+ * own reads of one were refused. The first version of this holder did no
+ * better there (run 36245102646, 22.5k tokens again): a PowerShell statement
+ * list goes on after a failed open, so it said 'held' holding nothing, which
+ * it does here too when another process has the file open. It now fails with
+ * the reason when it cannot hold the file within 15 s, and the file is read
+ * once from this process before the test relies on it being unreadable.
+ * macOS and Linux: mode 0000, as makeUnreadable.
  */
 export async function holdUnreadable(file: string, restoreMode = 0o644): Promise<() => Promise<void>> {
   if (process.platform !== 'win32') {
     const restore = makeUnreadable(file, restoreMode);
     return async () => restore();
   }
-  const powershell = path.join(process.env.SystemRoot || 'C:\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const script = "$f = [IO.File]::Open($env:TARS_HOLD_FILE, 'Open', 'Read', 'None'); "
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  // Held only once the open has succeeded: an open that throws ends the
+  // holder with its reason and never says it holds (a bare statement list
+  // went on to print 'held' after a failed open). Tried again for up to 15 s,
+  // since whatever scans a file just written may hold it for a moment.
+  const script = "$ErrorActionPreference = 'Stop'; $until = (Get-Date).AddSeconds(15); "
+    + "while ($true) { try { $f = [IO.File]::Open($env:TARS_HOLD_FILE, 'Open', 'Read', 'None'); break } "
+    + "catch { if ((Get-Date) -gt $until) { [Console]::Error.WriteLine($_.Exception.Message); exit 3 }; Start-Sleep -Milliseconds 100 } }; "
     + "[Console]::Out.WriteLine('held'); [Console]::Out.Flush(); [void][Console]::In.ReadLine(); $f.Close()";
   const holder = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, TARS_HOLD_FILE: file }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
@@ -74,8 +86,17 @@ export async function holdUnreadable(file: string, restoreMode = 0o644): Promise
     holder.once('error', reject);
     holder.once('exit', code => reject(new Error(`the process holding ${file} exited (${code}) before it held it: ${said.trim()}`)));
   });
-  return () => new Promise<void>(resolve => {
+  const release = () => new Promise<void>(resolve => {
     holder.once('exit', () => resolve());
     holder.stdin!.end('\n');
   });
+  // The premise, checked here before a test relies on it: a file this very
+  // process can still read is not one the app will fail to.
+  let stillReadable = true;
+  try { fs.readFileSync(file); } catch { stillReadable = false; }
+  if (stillReadable) {
+    await release();
+    throw new Error(`${file} could still be read while another process held it open with no sharing`);
+  }
+  return release;
 }
