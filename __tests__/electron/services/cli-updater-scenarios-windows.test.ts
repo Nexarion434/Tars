@@ -66,6 +66,18 @@ if (exe === 'claude.exe' && process.argv[1]) {
   const args = [path.basename(process.argv[1]), ...process.argv.slice(2)];
   const log = (x) => fs.appendFileSync(process.env.FAKE_CALLS, JSON.stringify(x) + '\\n');
   log(['claude-start', args.join(' '), Date.now()]);
+  // What the real installer has to live with: a scanner may hold a file just
+  // written, or the launcher just copied, for a moment (EBUSY on the runner's
+  // rename, CI run 36256354047). Each step is tried again for up to 10 s.
+  const settle = step => {
+    const until = Date.now() + 10000;
+    for (;;) {
+      try { return step(); } catch (e) {
+        if (!['EBUSY', 'EPERM', 'EACCES'].includes(e.code) || Date.now() > until) throw e;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      }
+    }
+  };
   const launcher = process.execPath;
   const versions = path.join(process.env.USERPROFILE, '.local', 'share', 'claude', 'versions');
   const current = fs.readdirSync(versions).find(v => fs.statSync(path.join(versions, v)).size === fs.statSync(launcher).size);
@@ -73,18 +85,18 @@ if (exe === 'claude.exe' && process.argv[1]) {
   const mode = process.env.FAKE_CLAUDE_MODE || 'update';
   if (args[0] === 'update' && mode === 'update') {
     const next = process.env.FAKE_NEXT || '1.0.1';
-    fs.copyFileSync(path.join(versions, current), path.join(versions, next));
-    fs.appendFileSync(path.join(versions, next), Buffer.alloc(16 + next.length));
+    settle(() => fs.copyFileSync(path.join(versions, current), path.join(versions, next)));
+    settle(() => fs.appendFileSync(path.join(versions, next), Buffer.alloc(16 + next.length)));
     const old = launcher + '.old.' + Date.now();
-    fs.renameSync(launcher, old);
-    fs.copyFileSync(path.join(versions, next), launcher);
+    settle(() => fs.renameSync(launcher, old));
+    settle(() => fs.copyFileSync(path.join(versions, next), launcher));
     try { fs.unlinkSync(old); } catch { /* running, as claude leaves it */ }
     console.log('Successfully updated from ' + current + ' to version ' + next);
   } else if (args[0] === 'update' && mode === 'current') {
     console.log('Claude Code is up to date (' + current + ')');
   } else if (args[0] === 'update' && mode === 'unlink') {
     // A running exe cannot be deleted on Windows: set aside, and nothing put back.
-    fs.renameSync(launcher, launcher + '.old.' + Date.now());
+    settle(() => fs.renameSync(launcher, launcher + '.old.' + Date.now()));
     console.log('Successfully updated');
   }
   log(['claude-end', Date.now()]);
