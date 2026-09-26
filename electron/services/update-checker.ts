@@ -1,6 +1,7 @@
 import { autoUpdater, UpdateInfo } from 'electron-updater';
 import { BrowserWindow, app } from 'electron';
 import { GITHUB_REPO } from '../constants';
+import { installerAssetFor, isNewerRelease, updateRepoFor } from '../platform/update-feed';
 
 // Don't download until user clicks "Download"
 autoUpdater.autoDownload = false;
@@ -50,7 +51,7 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null) {
  */
 async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
   const currentVersion = app.getVersion();
-  const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+  const url = `https://api.github.com/repos/${updateRepoFor(process.platform, GITHUB_REPO)}/releases/latest`;
   const response = await fetch(url, {
     headers: {
       'Accept': 'application/vnd.github.v3+json',
@@ -64,22 +65,12 @@ async function checkGitHubRelease(mainWindow: BrowserWindow | null) {
   const tagName: string = data.tag_name || '';
   const latestVersion = tagName.replace(/^v/, '');
 
-  const pa = currentVersion.split('.').map(Number);
-  const pb = latestVersion.split('.').map(Number);
-  let hasUpdate = false;
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (nb > na) { hasUpdate = true; break; }
-    if (na > nb) break;
-  }
+  const hasUpdate = isNewerRelease(currentVersion, latestVersion, process.platform);
 
   // Find download asset
   let downloadUrl = '';
   if (data.assets && Array.isArray(data.assets)) {
-    const dmgAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.dmg'));
-    const zipAsset = data.assets.find((a: { name: string }) => a.name.endsWith('.zip'));
-    downloadUrl = (dmgAsset || zipAsset)?.browser_download_url || '';
+    downloadUrl = installerAssetFor<{ name: string; browser_download_url?: string }>(data.assets, process.platform, process.arch)?.browser_download_url || '';
   }
 
   const info = {
