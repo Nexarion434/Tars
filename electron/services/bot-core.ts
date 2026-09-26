@@ -20,7 +20,7 @@ import { writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn, shellReady, agentPtyEnv } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
 import { killStalePty, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
-import { toLaunch, type Launch } from '../platform';
+import { toLaunch, projectName, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
 import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
@@ -93,7 +93,7 @@ export function projectsReport(
   const b = words.strong ?? '*';
   let text = words.title;
   byProject.forEach((projectAgents, projectPath) => {
-    text += `${words.folder} ${b}${projectPath.split('/').pop() || 'Unknown'}${b}\n`;
+    text += `${words.folder} ${b}${projectName(projectPath) || 'Unknown'}${b}\n`;
     text += `${words.indent}\`${projectPath}\`\n`;
     text += `${words.indent}${words.people} Agents: ${projectAgents.map(a => `${words.face(a)}${a.name}${statusDot(a, words.dot)}`).join(', ')}\n\n`;
   });

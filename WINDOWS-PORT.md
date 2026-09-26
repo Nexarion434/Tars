@@ -56,7 +56,7 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 |---|---|---|---|---|---|
 | 1 | Installation (`npm ci`, modules natifs, 7 MCP) | **OK** (`npm ci` exit 0 avec VS Build Tools, gate 2026-09-25) | B/B-02 | win-build | `npm ci` exit 0, node-pty + better-sqlite3 chargés dans Electron 44 |
 | 2 | Compilation (`tsc` x2) | **OK** | | win-build | les deux `tsc` exit 0 |
-| 3 | `npm test` | KO (307 / 3733, était 573 / 2605) | B/T-01..T-03 | win-qa | vert, isolé du vrai profil |
+| 3 | `npm test` | **OK** (0 échec sur 4169 hors 1 flake de charge `pty-kill` 8 ; 177 sautés sous win32 avec raison ; était 573 / 2605) | B/T-01..T-03 | win-qa | vert, isolé du vrai profil |
 | 4 | `lint`, `lint:design`, `e2e:guard` | **OK** (lint:design en Node) | B/P-05 | win-build | exit 0 depuis PowerShell |
 | 5 | Démarrage dev (`electron:dev`) | **OK** depuis PowerShell (fenêtre + `/api/health` 200) ; fonctions dégradées | B/B-01 | win-build | la fenêtre s'ouvre depuis PowerShell |
 | 6 | Créer un agent (UI) | KO | B/A-01, A1 | win-process + win-platform | E2E : PTY créé, carte au repos |
@@ -70,15 +70,15 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 14 | Terminal rapide, Projects > Terminal | KO | A2, B/A-05 | win-platform + win-process | E2E : invite de shell affichée |
 | 15 | Installation de skills / plugins | KO | A25, B/A-06, B/A-07 | win-process | E2E ou manuel en bac à sable |
 | 16 | Délégation ACP (retour de résultat) | KO | A20, A21 | win-process | E2E : délégation à un faux agent ACP, stop reason reçu, aucun process orphelin |
-| 17 | Fermeture d'un terminal sans dialogue d'erreur | KO | A22 | win-process | spec : 20 kills, aucune erreur non gérée |
+| 17 | Fermeture d'un terminal sans dialogue d'erreur | **OK** (`killPty` aux 18 sites, E2E `pty-kill.spec` : 0 AttachConsole) | A22 | win-process | spec : 20 kills, aucune erreur non gérée |
 | 18 | 7 serveurs MCP (build + enregistrement) | build OK, enregistrement ? | A18, A19, B/M-01, B/M-02 | win-platform + win-providers | 7 builds exit 0 ; `config.toml` Codex valide |
 | 19 | Mise à jour auto des CLIs | KO (silencieux) | A28 | win-process | décision : porter ou désactiver sous Windows |
-| 20 | Worktrees | ? (garde saine) | B/W-01..W-03 | win-platform | unit : noms de périphériques refusés, chemins `\` |
+| 20 | Worktrees | **OK** (garde, `isInsideWorktreesDir`) | B/W-01..W-03 | win-platform | unit : noms de périphériques refusés, chemins `\` |
 | 21 | Review git | ? (argv, a priori OK) | B/R-01, B/U-02 | win-shell-ui | E2E surface review |
 | 22 | Usage | ? (a priori OK) | B/G-01, A15 | win-qa | E2E surface usage |
 | 23 | Memory, Projects, reprise de session (`~/.claude/projects`) | KO | B/H-01..H-05 | win-platform | unit encodage `C--Users-...` ; E2E Projects |
 | 24 | Hermes, Tailscale, Tasmania | ? | B/I-01..I-03 | win-platform | unit emplacements par plateforme |
-| 25 | Bots Telegram / Slack / Discord | KO (lancement) | B/A-04, B/J-01 | win-providers | checklist manuelle §4 |
+| 25 | Bots Telegram / Slack / Discord | lancement **OK** ; noms de projets **OK** (bots) ; checklist manuelle : ? | B/A-04, B/J-01 | win-providers | checklist manuelle §4 |
 | 26 | Tray (icône, panneau, menu) | KO | B/K-01..K-04 | win-shell-ui (visuel) | capture validée par Nicolas |
 | 27 | Ouvrir dans un terminal | KO | B/L-01 | win-platform | unit win32 : `wt.exe -d`, puis PowerShell, puis cmd |
 | 28 | Fenêtre, barre de titre, déplacement | KO | B/N-01, B/N-02 | win-shell-ui (visuel) | capture validée par Nicolas |
@@ -89,7 +89,7 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 33 | Packaging NSIS + `.ico` | KO | B/P-01..P-03 | win-build | install / désinstall / mise à jour sur cette machine |
 | 34 | Auto-update depuis le fork | KO | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
 | 35 | Bac à sable (`npm run sandbox`) | KO | B/P-04 | win-build | lance `win-unpacked` sur 31499, USERPROFILE isolé |
-| 36 | E2E (38 surfaces, références Windows dédiées) | KO (44 OK / 10 KO / 44 non lancés ; bloqué au lancement des agents) | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
+| 36 | E2E (38 surfaces, références Windows dédiées) | 46/46 surfaces atteignent la capture, 0 erreur de page ; références win32 à enregistrer après la barre de titre | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
 | 37 | CI `windows-latest` | KO | B/P-11 | win-build | job vert sur PR vers `windows` |
 | 38 | Zéro régression macOS / Linux | ? | | win-reviewer | CI ubuntu verte, diffs darwin/linux prouvés identiques |
 
@@ -144,12 +144,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
 
-Phase 3 mergée dans `windows` (33ca3429). En cours, créés depuis `win/integration-p3` :
-
-| Branche | Contenu |
-|---|---|
-| `win/test-portability` | faux CLI E2E en shim .cmd, `/tmp` en dur, binaires POSIX des tests, tests .sh et modes POSIX sautés sous win32 avec raison, flakes |
-| `win/p3-followups` | `killPty` branché (A22), `isInsideWorktreesDir`/`isFilesystemRoot`, dédoublonnage `cli-exec.ts` vers `electron/platform`, noms de projets des bots (J-01), `check:dashes` sous Windows, enquête ACL `api-token` |
+Phase 3 et ses suivis mergés dans `windows` (e1c759c0). En cours : `win/desktop-shell` (D5 à D9), `win/renderer-paths` (U-01, U-02, U-04, U-05, U-07, U-08).
 
 Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/`, CI `windows-latest`), renderer (noms de projets U-02, chemins U-01..U-08, raccourcis N-07/N-08), phase 5 (NSIS, `.ico`, auto-update depuis le fork : voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
 
@@ -162,3 +157,4 @@ Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/
 | 2026-09-25 | Primitives plateforme (shell, PATH, résolution des CLIs, tokenizer, ligne de commande Windows, toLaunch, killTree) | `win/platform-launch` | PASS (intégration) | APPROVE (2 tours) | 8bddb6c8 |
 | 2026-09-25 | Scripts npm cross-platform (electron-dev, design-lint.mjs, build-renderer, npm-command) | `win/npm-scripts` | PASS (intégration) | APPROVE (2 tours) | aac7547b |
 | 2026-09-25 | Phase 3 : hooks Node (D1), appels CLI, ACP + cli-updater, lancement direct (D2/D3), chemins/mémoire/sécurité | `win/integration-p3` (5 lots) | PASS (2e gate, 0 régression, 66 tests réparés) | APPROVE (2 à 3 tours chacun) | 33ca3429 |
+| 2026-09-26 | Suivis phase 3 (killPty, garde home et ancêtres toutes plateformes, dédoublonnage platform, projectName bots, check:dashes) + portabilité des tests (npm test 0 échec sous Windows, E2E 46 surfaces atteintes) | `win/integration-p3b` | PASS | APPROVE | e1c759c0 |

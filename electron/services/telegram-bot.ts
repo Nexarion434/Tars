@@ -7,6 +7,7 @@ import * as pty from 'node-pty';
 import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES, TELEGRAM_DOWNLOADS_DIR, dataPath } from '../constants';
 import { redactSecrets } from '../utils/redact-secrets';
+import { projectName } from '../platform';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import {
   findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
@@ -461,7 +462,7 @@ function statusLine(a: AgentStatus): string {
   let line = `  ${faceOrCrown(a)} *${a.name}*\n`;
   // Don't show project for Super Agent
   if (!isSuper) {
-    const project = a.projectPath.split('/').pop() || 'Unknown';
+    const project = projectName(a.projectPath) || 'Unknown';
     line += `      📁 \`${project}\``;
     if (skills) line += ` | 🛠 ${skills}`;
   } else if (skills) {

@@ -24,7 +24,7 @@ import { EventEmitter } from 'node:events';
  */
 
 const { tmpHome } = vi.hoisted(() => ({
-  tmpHome: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/tars-launch-settings-${process.pid}-${Date.now()}`,
+  tmpHome: process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), `tars-launch-settings-${process.pid}-${Date.now()}`),
 }));
 
 type FakePty = {

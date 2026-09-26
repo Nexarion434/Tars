@@ -5,7 +5,10 @@ import { mintAgentToken, revokeTerminalToken } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
-import { resolveShell, shellArgs, type Env, type FsProbe } from '../platform';
+import type { Env } from '../platform';
+
+/** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
+export { agentShell } from '../platform';
 
 /**
  * How each agent PTY was started: the shell, as it was given to node-pty,
@@ -254,26 +257,6 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.
  */
 export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
   return ptyProcess ? spawnedAs.get(ptyProcess)?.env : undefined;
-}
-
-/**
- * The shell an agent's terminal waits in until its CLI starts.
- *
- * darwin/linux: `/bin/bash -l`, as always, since the launch line typed into it
- * is bash. win32: Tars types nothing into it (decision D2: a start replaces it
- * with the CLI), so it is the shell a person gets there (decision D3), the
- * user's terminalShell setting first, with that shell's own arguments.
- */
-export function agentShell(opts: {
-  setting?: string;
-  platform?: NodeJS.Platform;
-  env?: Env;
-  fs?: FsProbe;
-} = {}): { shell: string; args: string[] } {
-  const platform = opts.platform ?? process.platform;
-  if (platform !== 'win32') return { shell: '/bin/bash', args: ['-l'] };
-  const shell = resolveShell({ ...opts, platform });
-  return { shell, args: shellArgs(shell, platform) };
 }
 
 /**

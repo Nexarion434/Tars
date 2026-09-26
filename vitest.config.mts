@@ -18,6 +18,9 @@ export default defineConfig({
     // built-in modules, it fails every file with the reason before any fails
     // without one.
     setupFiles: ['./__tests__/setup/worktree-name.ts', './__tests__/setup/env-isolation.ts', './__tests__/setup/home-isolation.ts'],
+    // The run's own temp dir, which every file's os.tmpdir() names and which is
+    // removed once the run ends, skipped files and their HOMEs included: see the file.
+    globalSetup: ['./__tests__/setup/run-dir.ts'],
     // .tsx too: the overseer's text renderer is asserted through the markup
     // it produces, which needs the component itself.
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.test.tsx'],
