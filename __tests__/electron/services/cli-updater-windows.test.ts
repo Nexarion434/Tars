@@ -3,27 +3,18 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-/** The process listing, as the product runs it, unless a case takes it away (as the ACP tests take ps away). */
-const listingBroken = { value: false };
-/** What the updater asked of every process it started: the file and whether its console window is hidden. */
-const started: { file: string; windowsHide: unknown }[] = [];
+// The busy check's PowerShell query is answered from a process table (see the
+// fakes' header): one real query took up to 25 s on CI's runner. Test 10b asks
+// the real one.
 vi.mock('child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('child_process')>();
-  return {
-    ...actual,
-    execFile: ((file: string, ...rest: unknown[]) => {
-      const options = rest.find(r => r && typeof r === 'object' && !Array.isArray(r)) as { windowsHide?: unknown } | undefined;
-      started.push({ file, windowsHide: options?.windowsHide });
-      if (listingBroken.value && /[\\/]powershell\.exe$/i.test(file)) {
-        const done = rest.find(r => typeof r === 'function') as ((err: Error, out: string, errOut: string) => void) | undefined;
-        setImmediate(() => done?.(Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' }), '', ''));
-        return {} as never;
-      }
-      return (actual.execFile as (...a: unknown[]) => unknown)(file, ...rest);
-    }) as typeof actual.execFile,
-  };
+  const { childProcessForTests } = await import('./cli-updater-windows-fakes');
+  return childProcessForTests(await importOriginal<typeof import('child_process')>());
 });
 
+import {
+  CMD_SHIM_EXE, endSessions, launcherVersion, nativeClaudeExe, nodeAs, npmPackage, npmPrefixWith, processTable,
+  requirePreload as preloadOption, started,
+} from './cli-updater-windows-fakes';
 import { runCliUpdatePass, updateCli, startCliUpdates, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
 
@@ -89,6 +80,20 @@ import type { AppSettings } from '../../../electron/types';
  * 16. A process the updater starts (the busy check, npm view and install,
  *    claude.exe update) opens a console window: in the packaged app, a window
  *    flashing up every thirty minutes.
+ *
+ * Added after CI run 36232894943 (2026-09-26), where these ran on
+ * windows-latest for the first time:
+ * 17. The tests wait on the machine's real process table: a Get-CimInstance
+ *    query took up to 25 s there and test 10 ran past its 60 s. The busy
+ *    check's query is answered from a table (cli-updater-windows-fakes.ts);
+ *    10b alone asks the real PowerShell, and must still find the session.
+ * 18. What cli-updater.test.ts pins beyond the macOS and Linux layout, which
+ *    skips on Windows, goes unchecked here: a check that changes nothing is
+ *    logged more than once; claude is updated although the user turned its
+ *    updates off, or left alone for the autoUpdates the installer itself
+ *    wrote; Amp is reinstalled or downgraded for a version that is not newer;
+ *    npm's cache lands in the home or stays; Amp is updated although its
+ *    settings say not to; a CLI with no measured update path is not named.
  */
 
 const onWindows = process.platform === 'win32';
@@ -144,22 +149,9 @@ if (args[0] === 'install' && args.includes('--global')) {
 process.exit(0);
 `;
 
-/** npm's cmd-shim over a node script, as npm 10 writes it (copied from %APPDATA%\npm\codex.cmd here). */
-const CMD_SHIM_NODE = (script: string) => [
-  '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
-  'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (', '  SET "_prog=node"', '  SET PATHEXT=%PATHEXT:;.JS;=;%', ')', '',
-  `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${script}" %*`, '',
-].join('\r\n');
-/** The same over a native exe (%APPDATA%\npm\claude.cmd here). */
-const CMD_SHIM_EXE = (exe: string) => [
-  '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0',
-  `"%dp0%\\${exe}"   %*`, '',
-].join('\r\n');
-
 let root: string;
 let calls: string;
 let preload: string;
-const children: ChildProcess[] = [];
 
 beforeEach(() => {
   // A space and a quote in every path: an argv handed to a shell as one string would come apart on them.
@@ -170,19 +162,17 @@ beforeEach(() => {
   fs.writeFileSync(preload, FAKE_CLAUDE);
 });
 
+// The sessions are ended and waited for first, so nothing holds the folder
+// when it goes; the retries cover what Windows still holds a moment after an
+// exit (21 s at most, inside this hook's 60 s).
 afterEach(async () => {
-  for (const child of children.splice(0)) child.kill();
+  processTable.mode = 'fake';
+  await endSessions();
   await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-});
+}, 60_000);
 
-/** NODE_OPTIONS for the preload: its parser reads a backslash inside quotes as an escape, so the path goes with forward slashes. */
-const requirePreload = () => `--require "${preload.replace(/\\/g, '/')}"`;
-
-/** node.exe under another name: a hard link, which needs no privilege, else a copy. */
-function nodeAs(file: string): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  try { fs.linkSync(process.execPath, file); } catch { fs.copyFileSync(process.execPath, file); }
-}
+/** NODE_OPTIONS for the preload. */
+const requirePreload = () => preloadOption(preload);
 
 function recorded(): string[][] {
   return fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -210,47 +200,19 @@ function ctxFor(home: string, env: Record<string, string> = {}, extraPath: strin
   };
 }
 
-/** %USERPROFILE%\.local\bin\claude.exe, a copy of versions\<version>, as the native installer leaves it. */
-function nativeClaude(home: string, version = '1.0.0'): string {
-  const launcher = path.join(home, '.local', 'bin', 'claude.exe');
-  nodeAs(path.join(home, '.local', 'share', 'claude', 'versions', version));
-  nodeAs(launcher);
-  return launcher;
-}
+const nativeClaude = nativeClaudeExe;
+/** %APPDATA%\npm with npm's own shim over the fake npm cli above. */
+const npmPrefix = (home: string) => npmPrefixWith(home, FAKE_NPM);
+/** amp.cmd over @sourcegraph/amp's script, as `npm install -g @sourcegraph/amp` leaves it. */
+const npmAmp = npmPackage;
 
-function launcherVersion(home: string): string | undefined {
-  const versions = path.join(home, '.local', 'share', 'claude', 'versions');
-  const size = fs.statSync(path.join(home, '.local', 'bin', 'claude.exe')).size;
-  return fs.readdirSync(versions).find(v => fs.statSync(path.join(versions, v)).size === size);
-}
-
-/** %APPDATA%\npm with npm's own shim and a fake npm cli, and node.exe beside them as the shims prefer. */
-function npmPrefix(home: string): string {
-  const prefix = path.join(home, 'AppData', 'Roaming', 'npm');
-  fs.mkdirSync(path.join(prefix, 'node_modules', 'npm', 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js'), FAKE_NPM);
-  fs.writeFileSync(path.join(prefix, 'node_modules', 'npm', 'package.json'), JSON.stringify({ name: 'npm', version: '10.9.9' }));
-  fs.writeFileSync(path.join(prefix, 'npm.cmd'), CMD_SHIM_NODE('node_modules\\npm\\bin\\npm-cli.js'));
-  nodeAs(path.join(prefix, 'node.exe'));
-  return prefix;
-}
-
-/** amp.cmd over @sourcegraph/amp's script, in the prefix, as `npm install -g @sourcegraph/amp` leaves it. */
-function npmAmp(prefix: string, version = '0.0.1', owner = '@sourcegraph/amp', shim = 'amp'): string {
-  const pkgDir = path.join(prefix, 'node_modules', ...owner.split('/'));
-  fs.mkdirSync(path.join(pkgDir, 'bin'), { recursive: true });
-  fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: owner, version }));
-  const script = path.join(pkgDir, 'bin', `${shim}.js`);
-  fs.writeFileSync(script, "console.log('ready'); setTimeout(() => {}, 60000);\n");
-  fs.writeFileSync(path.join(prefix, `${shim}.cmd`), CMD_SHIM_NODE(path.relative(prefix, script)));
-  return script;
-}
-
+/** A session kept running, listed in the process table, returned once it says it is ready. */
 async function startSession(file: string, args: string[], env: NodeJS.ProcessEnv): Promise<ChildProcess> {
   const child = spawn(file, args, { env, stdio: ['ignore', 'pipe', 'ignore'] });
-  children.push(child);
+  processTable.sessions.push(child);
   await new Promise<void>((resolve, reject) => {
     child.stdout!.on('data', chunk => { if (String(chunk).includes('ready')) resolve(); });
+    child.once('error', reject);
     child.once('exit', code => reject(new Error(`the session exited (${code}) before it was ready`)));
   });
   return child;
@@ -414,18 +376,30 @@ describe.skipIf(!onWindows)('amp as a global npm package, on Windows', () => {
     expect(done).toMatchObject({ outcome: 'updated', from: '0.0.1', to: '0.0.2' });
   });
 
+  // The one case that reads the machine's real process table through
+  // PowerShell (17): up to 25 s a query on CI's runner, hence its timeout.
+  it('10b. finds a process running the package in the real process table, and waits for it', async () => {
+    processTable.mode = 'real';
+    const home = path.join(root, 'home');
+    const prefix = npmPrefix(home);
+    const script = npmAmp(prefix);
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2' });
+    const session = await startSession(process.execPath, [script], ctx.env);
+
+    const held = await updateCli('amp', 'amp', ctx);
+
+    expect(held.outcome, JSON.stringify(held)).toBe('deferred');
+    expect(held.detail).toContain(`pid ${session.pid}`);
+    expect(recorded().map(c => c[1])).toEqual(['view']);
+  }, 180_000);
+
   it('11. holds an update back when it cannot tell whether Amp is running', async () => {
     const home = path.join(root, 'home');
     const prefix = npmPrefix(home);
     npmAmp(prefix);
     // PowerShell cannot be started: nothing can list the processes.
-    listingBroken.value = true;
-    let result;
-    try {
-      result = await updateCli('amp', 'amp', ctxFor(home, { FAKE_LATEST: '0.0.2' }));
-    } finally {
-      listingBroken.value = false;
-    }
+    processTable.mode = 'broken';
+    const result = await updateCli('amp', 'amp', ctxFor(home, { FAKE_LATEST: '0.0.2' }));
 
     expect(result, JSON.stringify(result)).toMatchObject({ outcome: 'deferred' });
     expect(result.detail).toContain('could not be checked');
@@ -475,6 +449,107 @@ describe.skipIf(!onWindows)('amp as a global npm package, on Windows', () => {
 
     expect(result.outcome).toBe('skipped');
     expect(result.detail).toContain('is outside');
+    expect(recorded()).toEqual([]);
+  });
+});
+
+/** 18: cli-updater.test.ts's cases whose subject is not the layout, with its assertions, on the Windows layout. */
+describe.skipIf(!onWindows)('what cli-updater.test.ts pins beyond the layout, on Windows', () => {
+  it('writes a check that changes nothing once, and the next change again', async () => {
+    const home = path.join(root, 'home');
+    nativeClaude(home);
+    const current = ctxFor(home, { FAKE_CLAUDE_MODE: 'current' });
+
+    await runCliUpdatePass([{ cli: 'claude', command: 'claude' }], current);
+    await runCliUpdatePass([{ cli: 'claude', command: 'claude' }], current);
+    expect(logLines(current)).toHaveLength(1);
+    expect(logLines(current)[0]).toContain('claude unchanged 1.0.0: Claude Code is up to date (1.0.0)');
+
+    await runCliUpdatePass([{ cli: 'claude', command: 'claude' }], ctxFor(home));
+    expect(logLines(current)).toHaveLength(2);
+    expect(logLines(current)[1]).toContain('claude updated 1.0.0 to 1.0.1');
+    expect(recorded()).toHaveLength(3);
+  });
+
+  it.each([
+    ['DISABLE_AUTOUPDATER in ~/.claude/settings.json', { settings: { env: { DISABLE_AUTOUPDATER: '1' } } }, 'DISABLE_AUTOUPDATER is set in ~/.claude/settings.json'],
+    ['DISABLE_UPDATES in the environment', { env: { DISABLE_UPDATES: 'true' } }, 'DISABLE_UPDATES is set in the environment Tars was started with'],
+    ['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC in settings', { settings: { env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 'yes-please' } } }, 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is set in ~/.claude/settings.json'],
+    ['autoUpdates false, not set by the native installer', { config: { autoUpdates: false, installMethod: 'npm' } }, 'autoUpdates is false in ~/.claude.json'],
+  ])('leaves claude alone when the user turned updates off: %s', async (_name, setup, why) => {
+    const home = path.join(root, 'home');
+    nativeClaude(home);
+    const s = setup as { settings?: object; config?: object; env?: Record<string, string> };
+    if (s.settings) {
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify(s.settings));
+    }
+    if (s.config) fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify(s.config));
+
+    const result = await updateCli('claude', 'claude', ctxFor(home, s.env));
+
+    expect(result).toMatchObject({ outcome: 'skipped', from: '1.0.0', detail: why });
+    expect(recorded()).toEqual([]);
+  });
+
+  it('reads autoUpdates: false written by the native installer itself as no opinion, as claude does', async () => {
+    const home = path.join(root, 'home');
+    nativeClaude(home);
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ autoUpdates: false, installMethod: 'native', autoUpdatesProtectedForNative: true }));
+
+    expect((await updateCli('claude', 'claude', ctxFor(home))).outcome).toBe('updated');
+  });
+
+  it.each([
+    ['the same version', '0.0.1'],
+    ['an older one', '0.0.0'],
+    ['the same release with another build hash', '0.0.1-gdeadbe'],
+  ])('neither reinstalls nor downgrades when npm offers %s', async (_name, latest) => {
+    const home = path.join(root, 'home');
+    npmAmp(npmPrefix(home), '0.0.1-gce258b');
+
+    const result = await updateCli('amp', 'amp', ctxFor(home, { FAKE_LATEST: latest }));
+
+    expect(result.outcome).toBe('unchanged');
+    expect(recorded().map(c => c[1])).toEqual(['view']);
+  });
+
+  it.each([
+    ['nothing newer', { FAKE_LATEST: '0.0.1' }],
+    ['a view that fails', { FAKE_LATEST: '' }],
+  ])('keeps npm\'s cache out of the home, and removes it, when there is %s', async (_name, env) => {
+    const home = path.join(root, 'home');
+    npmAmp(npmPrefix(home), '0.0.1');
+
+    await updateCli('amp', 'amp', ctxFor(home, env));
+
+    const caches = recorded().map(c => c[c.indexOf('--cache') + 1]);
+    expect(caches).toHaveLength(1);
+    expect(recorded()[0]).toContain('--cache');
+    expect(path.relative(home, caches[0]).startsWith('..')).toBe(true);
+    expect(fs.existsSync(path.dirname(caches[0]))).toBe(false);
+  });
+
+  it('leaves amp alone when the user turned its updates off in their own settings', async () => {
+    const home = path.join(root, 'home');
+    npmAmp(npmPrefix(home));
+    fs.mkdirSync(path.join(home, '.config', 'amp'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.config', 'amp', 'settings.json'), JSON.stringify({ 'amp.updates.mode': 'disabled' }));
+
+    const result = await updateCli('amp', 'amp', ctxFor(home, { FAKE_LATEST: '0.0.2' }));
+
+    expect(result).toMatchObject({ outcome: 'skipped', detail: 'amp.updates.mode is "disabled" in ~/.config/amp/settings.json' });
+    expect(recorded()).toEqual([]);
+  });
+
+  it('names one it has no measured path for, and runs nothing', async () => {
+    const home = path.join(root, 'home');
+    npmAmp(npmPrefix(home), '1.0.0', '@openai/codex', 'codex');
+
+    const result = await updateCli('codex', 'codex', ctxFor(home, { FAKE_LATEST: '9.9.9' }));
+
+    expect(result.outcome).toBe('skipped');
+    expect(result.detail).toBe('installed through npm (@openai/codex); no update path for it has been measured. Update it yourself');
     expect(recorded()).toEqual([]);
   });
 });
