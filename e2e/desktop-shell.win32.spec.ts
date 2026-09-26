@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 
@@ -147,6 +147,22 @@ async function takePtyWrites(app: ElectronApplication): Promise<{ id: string; d:
   });
 }
 
+/**
+ * The QA agent (a4) runs a fake CLI that asks for bracketed paste, as Claude
+ * Code and every readline program do: its multi-line paste is the proof that
+ * Ctrl+V goes through xterm's own paste and not around it.
+ */
+function seedBracketedPasteCli(home: string): void {
+  const cli = writeNodeCli(path.join(home, 'bin', 'bracketed-cli.cjs'), [
+    "process.stdout.write('\\x1b[2J\\x1b[Ha bracketed paste CLI of the E2E sandbox\\r\\n> \\x1b[?2004h');",
+    'process.stdin.resume();',
+    '',
+  ].join('\n'));
+  const file = path.join(home, '.dorothy', 'agents.json');
+  const agents = JSON.parse(fs.readFileSync(file, 'utf-8')).map((a: { id: string }) => (a.id === 'a4' ? { ...a, cliPath: cli } : a));
+  fs.writeFileSync(file, JSON.stringify(agents, null, 2));
+}
+
 const SETTINGS_FILE = (home: string) => path.join(home, '.dorothy', 'app-settings.json');
 const readSettings = (home: string) => JSON.parse(fs.readFileSync(SETTINGS_FILE(home), 'utf-8'));
 
@@ -160,6 +176,7 @@ test.describe('the Windows desktop shell', () => {
     test.setTimeout(240_000);
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-desktop-shell-'));
     seedSandbox(home);
+    seedBracketedPasteCli(home);
     ({ app, page, errors } = await launch(home, 31461));
     await settleFleet(app);
   });
@@ -343,6 +360,7 @@ test.describe('the Windows desktop shell', () => {
     const saved = await app.evaluate(({ clipboard }) => clipboard.readText());
     let copied = '';
     let pasted = '';
+    let bracketed = '';
     try {
       // Panel 3: panel 1 has had its keys, and the ^C below ends the fake CLI of panel 4.
       const pty = await focusTerminal(2);
@@ -385,6 +403,20 @@ test.describe('the Windows desktop shell', () => {
       pasted = pasteLog.filter(l => l.id === pty).map(l => l.d).join('');
       page.off('console', onConsole);
       results.push({ combo: 'ctrl+v', focus: 'terminal', ptyReceived: pasteLog.map(l => JSON.stringify(l.d)).join(' ') || '(nothing)', console: consoleLines });
+
+      // Two lines into the program that asked for bracketed paste: one paste,
+      // wrapped, the newline as the Enter xterm sends for it.
+      const a4Pty = await app.evaluate((_e, dist) =>
+        process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get('a4')?.ptyId ?? null, DIST);
+      let found = -1;
+      for (let i = 0; i < 4 && found < 0; i++) if (await focusTerminal(i) === a4Pty) found = i;
+      expect(found, 'the bracketed paste CLI has a panel').toBeGreaterThanOrEqual(0);
+      await app.evaluate(({ clipboard }) => clipboard.writeText('a\nb'));
+      await osKeys(app, 'ctrl+v');
+      await page.waitForTimeout(1000);
+      const multiLog = await takePtyWrites(app);
+      bracketed = multiLog.filter(l => l.id === a4Pty).map(l => l.d).join('');
+      results.push({ combo: 'ctrl+v', focus: 'terminal in bracketed paste mode, a two-line clipboard', ptyReceived: JSON.stringify(bracketed) });
     } finally {
       await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), saved);
     }
@@ -428,6 +460,7 @@ test.describe('the Windows desktop shell', () => {
     // xterm's double-click word: its separators leave the colon on.
     expect(copied).toMatch(/^sandbox:?$/);
     expect(pasted).toContain('tars-paste-check');
+    expect(bracketed).toBe('\x1b[200~a\rb\x1b[201~');
     for (const o of outside) expect(o.visible && !o.reloaded && !o.devtoolsOpened, String(o.combo)).toBe(true);
     expect(outsideDigit).toMatch(/^\/kanban\/?$/);
   });
@@ -687,5 +720,54 @@ test.describe('the first close and Quit Tars, in a fresh profile', () => {
       fs.rmSync(home, { recursive: true, force: true });
     }
     void page;
+  });
+});
+
+test.describe('the end of the Windows session', () => {
+  test('logoff, shutdown or restart: the fleet is saved and no terminal survives', async () => {
+    test.setTimeout(240_000);
+    // Closing hides the window now, so a session end is how Tars usually ends
+    // on Windows, and Electron emits no before-quit then: only the window's
+    // session-end (WM_ENDSESSION), after which Windows ends the process.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-desktop-session-end-'));
+    seedSandbox(home);
+    const { app, errors } = await launch(home, 31463);
+    try {
+      await settleFleet(app);
+      const agentsFile = path.join(home, '.dorothy', 'agents.json');
+      const marker = `session-end-${Date.now()}`;
+      const ptyPids: number[] = await app.evaluate((_e, { dist, marker }) => {
+        const req = process.mainModule!.require;
+        const { agents, stopAgentAutosave } = req(`${dist}/core/agent-manager.js`);
+        // A change only memory holds, with the autosave timer stopped: it
+        // reaches agents.json by the shutdown's save, or not at all.
+        stopAgentAutosave();
+        agents.get('a1').currentTask = marker;
+        const { ptyProcesses } = req(`${dist}/core/pty-manager.js`);
+        return [...ptyProcesses.values()].map((p: { pid: number }) => p.pid);
+      }, { dist: DIST, marker });
+      const before = fs.readFileSync(agentsFile, 'utf-8').includes(marker);
+
+      const ended = await inMain<{ closePrevented: boolean }>(app, `
+        w.emit('session-end', { preventDefault() {} });
+        // What Windows does next: the window closes, and it must close.
+        let prevented = false;
+        w.emit('close', { preventDefault() { prevented = true; } });
+        return { closePrevented: prevented };`);
+      await sleep(3000);
+      const saved = fs.readFileSync(agentsFile, 'utf-8').includes(marker);
+      const survivors = ptyPids.filter(p => { try { process.kill(p, 0); return true; } catch { return false; } });
+
+      recordValues({ command: COMMAND, sessionEnd: { markerBefore: before, markerSaved: saved, ptyPids, survivors, ...ended, pageErrors: errors } });
+      expect(before).toBe(false);
+      expect(ptyPids.length).toBeGreaterThanOrEqual(4);
+      expect(saved).toBe(true);
+      expect(survivors).toEqual([]);
+      expect(ended.closePrevented).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await app.close().catch(() => {});
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
