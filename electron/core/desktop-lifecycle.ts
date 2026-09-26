@@ -1,0 +1,106 @@
+import { app, dialog, Menu, type BrowserWindow } from 'electron';
+import { closeAction, isWindowsShell, WINDOWS_APP_USER_MODEL_ID } from '../platform/desktop-shell';
+
+/**
+ * The Windows app lifecycle (decisions D6 and D7). Every function is a no-op on
+ * darwin and linux, which keep Electron's defaults: the application menu, one
+ * process per launch managed by the OS, and a close that closes.
+ */
+
+/** Set by before-quit: from then on a close is a close, never a hide. */
+let quitting = false;
+
+export function markQuitting(): void {
+  quitting = true;
+}
+
+/**
+ * One Tars per user data directory. A second launch hands over to the first
+ * (`onSecondLaunch`, which shows its window) and must end at once: it has read
+ * nothing yet, and anything it went on to do (bind the API port, save an empty
+ * fleet over agents.json on quit) would be done by a second writer. False
+ * means this process is the second one.
+ */
+export function claimSingleInstance(onSecondLaunch: () => void, platform: NodeJS.Platform = process.platform): boolean {
+  if (!isWindowsShell(platform)) return true;
+  if (!app.requestSingleInstanceLock()) return false;
+  app.on('second-instance', onSecondLaunch);
+  return true;
+}
+
+/**
+ * Before the first window: the AppUserModelId Windows attributes toasts to
+ * (B/N-05), and no application menu. Electron's default menu bound Ctrl+W to
+ * closing the window, Ctrl+R and Ctrl+Shift+R to reloading the renderer,
+ * Ctrl+Shift+I to DevTools and Ctrl+minus to zoom, over every page including
+ * the terminals (measured, PROPOSALS.md section 2). Text fields keep cut,
+ * copy, paste and select all without it: Chromium handles them.
+ */
+export function prepareDesktopShell(platform: NodeJS.Platform = process.platform): void {
+  if (!isWindowsShell(platform)) return;
+  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  Menu.setApplicationMenu(null);
+}
+
+/** Where the one-time explanation is remembered: app-settings.json. */
+export interface CloseExplanationStore {
+  explained(): boolean;
+  markExplained(): void;
+}
+
+/**
+ * The first close, once. The wording is Nicolas's to approve (D10 is open):
+ * it is the first-close dialog of PROPOSALS.md, section 4, without the agent
+ * count and the checkbox, since the answer is always remembered.
+ */
+async function explainCloseToTray(win: BrowserWindow): Promise<'keep' | 'quit'> {
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: 'Tars',
+    message: 'Keep your agents running?',
+    detail: 'Tars can keep them working in the background: open it again from the tray icon, or right click it to quit.',
+    buttons: ['Keep running in the tray', 'Quit and stop agents'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return response === 1 ? 'quit' : 'keep';
+}
+
+/**
+ * Closing the main window on Windows hides it to the tray: the agents keep
+ * running, the tray icon or a second launch brings it back, and Quit Tars in
+ * the tray menu ends it (before-quit kills the terminals, as ever). The first
+ * close explains that once.
+ */
+export function keepRunningOnClose(
+  win: BrowserWindow,
+  store: CloseExplanationStore,
+  platform: NodeJS.Platform = process.platform,
+): void {
+  if (!isWindowsShell(platform)) return;
+  let explaining = false;
+  win.on('close', (event) => {
+    const action = closeAction({ platform, quitting, explained: store.explained() });
+    if (action === 'close') return;
+    event.preventDefault();
+    if (action === 'hide') {
+      win.hide();
+      return;
+    }
+    // A second close while the question is up is the same close.
+    if (explaining) return;
+    explaining = true;
+    explainCloseToTray(win).then((choice) => {
+      store.markExplained();
+      if (choice === 'quit') app.quit();
+      else if (!win.isDestroyed()) win.hide();
+    }, (err) => {
+      // No dialog: hide all the same, and ask again next time.
+      console.error('close to tray: the explanation could not be shown', err);
+      if (!win.isDestroyed()) win.hide();
+    }).finally(() => {
+      explaining = false;
+    });
+  });
+}

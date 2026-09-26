@@ -29,3 +29,9 @@ export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProje
 export { windowsSoundCommand, type SoundCommand } from './sound';
 export { credentialStoreDirs } from './credential-stores';
 export { renameReplacingSync, RENAME_RETRY_BUDGET_MS, type RenameDeps } from './rename-replacing';
+export { detectShells, type DetectedShells, type ShellChoice, type ShellChoiceId } from './shell-choices';
+export {
+  TITLE_BAR_OVERLAY_HEIGHT, WINDOWS_APP_USER_MODEL_ID, TRAY_PANEL_MARGIN,
+  isWindowsShell, titleBarOptions, parseTitleBarOverlay, closeAction, isClickThatClosedPanel, taskbarEdge, trayPanelPosition,
+  type Rect, type DisplayArea, type TaskbarEdge,
+} from './desktop-shell';

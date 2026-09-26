@@ -1865,6 +1865,16 @@ export interface ElectronAPI {
   // Get home path helper
   getHomePath?: () => string;
 
+  // The Windows desktop shell (decisions D5 and D9). detectShells is null on
+  // darwin and linux; setTitleBarOverlay only acts on Windows.
+  desktopShell?: {
+    detectShells: () => Promise<{
+      defaultPath: string;
+      choices: { id: 'pwsh' | 'powershell' | 'cmd' | 'git-bash'; path: string | null }[];
+    } | null>;
+    setTitleBarOverlay: (colours: { color: string; symbolColor: string }) => Promise<{ success: boolean; error?: string }>;
+  };
+
   // Platform info
   platform: string;
 }

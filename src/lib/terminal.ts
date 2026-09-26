@@ -234,9 +234,115 @@ export function passWheelToProgram(term: Terminal, send: (data: string) => void)
   }, { capture: true, passive: false });
 }
 
+/** The parts of a KeyboardEvent the key routing reads. */
+export interface KeyLike {
+  key: string;
+  code?: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}
+
+/** The platform the app runs on, from the preload bridge; '' outside Electron. */
+export function rendererPlatform(): string {
+  return typeof window === 'undefined' ? '' : window.electronAPI?.platform ?? '';
+}
+
+/**
+ * The digit row key, read from its position (`Digit2`) rather than from the
+ * character it types: on AZERTY the unshifted row types & é " ' and a
+ * shortcut read from `key` never fires. Numpad digits are not the row.
+ */
+function digitRowKey(e: KeyLike): string | null {
+  const m = /^Digit([0-9])$/.exec(e.code ?? '');
+  return m ? m[1] : null;
+}
+
+/**
+ * Who owns a key pressed in a terminal (decision D7, B/N-08, B/N-09):
+ *
+ * - `newline`: Shift+Enter, a literal newline instead of a submit.
+ * - `copy`: the selection goes to the clipboard.
+ * - `paste`: the clipboard goes to the program (win32).
+ * - `page` / `panel`: a page or panel shortcut (win32); xterm must not see it,
+ *   the window's own listeners act on it.
+ * - `program`: everything else, xterm's to encode for the program.
+ *
+ * darwin/linux: exactly the rules this handler always had (Cmd+C, or
+ * Ctrl+Shift+C, with a selection copies). win32, as in Windows Terminal:
+ * Ctrl+C copies when there is a selection and interrupts when there is none,
+ * Ctrl+V and Ctrl+Shift+V paste, Ctrl+digit is a page and Alt+1..9 a panel.
+ * Ctrl+Alt is AltGr there and always stays the program's.
+ */
+export type TerminalKeyAction = 'newline' | 'copy' | 'paste' | 'page' | 'panel' | 'program';
+
+export function terminalKeyAction(e: KeyLike, platform: string, hasSelection: boolean): TerminalKeyAction {
+  if (e.key === 'Enter' && e.shiftKey) return 'newline';
+  const isC = e.key === 'c' || e.key === 'C';
+  if (platform !== 'win32') {
+    const copyChord = e.metaKey || (e.ctrlKey && e.shiftKey);
+    return copyChord && isC && hasSelection ? 'copy' : 'program';
+  }
+  const ctrlOnly = e.ctrlKey && !e.altKey && !e.metaKey;
+  if (ctrlOnly && isC) return hasSelection ? 'copy' : 'program';
+  if (ctrlOnly && (e.key === 'v' || e.key === 'V')) return 'paste';
+  if (pageShortcutDigit(e, platform, null) !== null) return 'page';
+  if (panelShortcutIndex(e, platform) !== null) return 'panel';
+  return 'program';
+}
+
+/** What a keydown was aimed at, as far as the page shortcuts care. */
+type ShortcutTarget = { tagName: string; isContentEditable?: boolean; className?: string } | null;
+
+function isTextField(target: ShortcutTarget): boolean {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+}
+
+function isTerminalInput(target: ShortcutTarget): boolean {
+  return !!target && target.tagName === 'TEXTAREA'
+    && typeof target.className === 'string' && target.className.split(/\s+/).includes('xterm-helper-textarea');
+}
+
+/**
+ * The page a Sidebar shortcut opens: the digit, or null when the key is not
+ * one. darwin/linux: Cmd or Ctrl plus a digit, no Alt or Shift, never while a
+ * field (a terminal included) has the focus, as always. win32: Ctrl plus a
+ * digit row key, from anywhere but a real text field: a terminal's input is
+ * not one, since Alt+digit now picks its panel.
+ */
+export function pageShortcutDigit(e: KeyLike, platform: string, target: ShortcutTarget): string | null {
+  if (platform !== 'win32') {
+    if (!e.metaKey && !e.ctrlKey) return null;
+    if (e.altKey || e.shiftKey) return null;
+    if (isTextField(target)) return null;
+    return /^[0-9]$/.test(e.key) ? e.key : null;
+  }
+  if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return null;
+  if (isTextField(target) && !isTerminalInput(target)) return null;
+  return digitRowKey(e);
+}
+
+/**
+ * The Dashboard panel a shortcut focuses, as an index, or null. darwin/linux:
+ * Ctrl plus 1..9 without Shift, as always. win32: Alt plus 1..9 alone, since
+ * Ctrl plus a digit is the page there.
+ */
+export function panelShortcutIndex(e: KeyLike, platform: string): number | null {
+  if (platform !== 'win32') {
+    if (!e.ctrlKey || e.shiftKey) return null;
+    return e.key >= '1' && e.key <= '9' && e.key.length === 1 ? parseInt(e.key, 10) - 1 : null;
+  }
+  if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return null;
+  const digit = digitRowKey(e);
+  return digit && digit !== '0' ? parseInt(digit, 10) - 1 : null;
+}
+
 /**
  * Install the terminal's custom key handler. xterm keeps exactly one, so every
- * key this app claims has to live here:
+ * key this app claims has to live here (terminalKeyAction says which):
  *
  * - Shift+Enter inserts a literal newline (bracketed paste) instead of
  *   submitting the current line.
@@ -244,6 +350,9 @@ export function passWheelToProgram(term: Terminal, send: (data: string) => void)
  *   paints its selection itself rather than making a DOM Selection, so the
  *   native copy had nothing to take and Cmd+C left the clipboard untouched.
  *   With no selection it falls through, which keeps Ctrl+C as interrupt.
+ * - On Windows, Ctrl+V pastes through xterm's own paste (bracketed when the
+ *   program asked for it) instead of sending ^V, and the page and panel
+ *   shortcuts pass by xterm to the window's listeners.
  *
  * @param term     - The xterm Terminal instance
  * @param sendFn   - Callback that forwards the escape sequence to the PTY/agent
@@ -252,22 +361,32 @@ export function attachShiftEnterHandler(
   term: Terminal,
   sendFn: (data: string) => void,
 ): void {
+  const platform = rendererPlatform();
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== 'keydown') return true;
 
-    if (event.key === 'Enter' && event.shiftKey) {
-      // Use bracket paste mode to insert a literal newline without submitting
-      sendFn('\x1b[200~\n\x1b[201~');
-      return false;
+    switch (terminalKeyAction(event, platform, term.hasSelection())) {
+      case 'newline':
+        // Use bracket paste mode to insert a literal newline without submitting
+        sendFn('\x1b[200~\n\x1b[201~');
+        return false;
+      case 'copy':
+        navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+        // Windows Terminal's rule: the copy consumes the selection, so the
+        // next Ctrl+C interrupts.
+        if (platform === 'win32') term.clearSelection();
+        return false;
+      case 'paste':
+        // Left to the browser: Chromium pastes into xterm's textarea, and
+        // xterm's own paste listener sends it, bracketed when the program
+        // asked for it. xterm only must not turn the key into ^V first.
+        return false;
+      case 'page':
+      case 'panel':
+        return false;
+      default:
+        return true;
     }
-
-    const copyChord = event.metaKey || (event.ctrlKey && event.shiftKey);
-    if (copyChord && (event.key === 'c' || event.key === 'C') && term.hasSelection()) {
-      navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
-      return false;
-    }
-
-    return true;
   });
 }
 

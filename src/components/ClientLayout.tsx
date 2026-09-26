@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Splash } from '@/components/Splash';
 import { Button, BrandSpinner } from '@/components/ui';
+import { rendererPlatform } from '@/lib/terminal';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -21,6 +22,26 @@ function useIsMobile() {
   }, []);
 
   return isMobile;
+}
+
+/**
+ * Windows draws no frame (decision D5): its caption buttons sit over the top
+ * 32 px of the window, and the window moves by a strip across the top plus the
+ * page header, as the macOS traffic lights' column does there. Every control
+ * in the header, and every overlay drawn over it, stays clickable: Chromium
+ * adds and removes these regions in document order, so a later no-drag wins.
+ */
+const WINDOWS_DRAG_CSS = `
+.app-shell main header { -webkit-app-region: drag; }
+.app-shell main header :is(button, a, input, select, textarea, label, [role="button"], [role="combobox"], [tabindex]),
+[role="dialog"], [aria-modal="true"], .fixed.inset-0 { -webkit-app-region: no-drag; }
+`;
+
+/** Read after hydration: the server render has no bridge, so both sides start at false. */
+function useIsWindowsShell() {
+  const [isWindows, setIsWindows] = useState(false);
+  useEffect(() => setIsWindows(rendererPlatform() === 'win32'), []);
+  return isWindows;
 }
 
 /** Strip HTML tags and collapse whitespace so release notes render as plain text. */
@@ -83,6 +104,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     setPendingUpdateVersion,
   } = useStore();
   const isMobile = useIsMobile();
+  const isWindows = useIsWindowsShell();
 
   // The splash belongs to the first paint, so it renders on both sides of
   // hydration. It used to be gated on a sessionStorage flag read inside this
@@ -199,6 +221,17 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
     localStorage.setItem(THEME_KEY, darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
+  // Windows: the caption buttons take the theme's background and text colours,
+  // read from the tokens the class above just switched.
+  useEffect(() => {
+    if (!isWindows) return;
+    const tokens = getComputedStyle(document.documentElement);
+    void window.electronAPI?.desktopShell?.setTitleBarOverlay({
+      color: tokens.getPropertyValue('--bg-primary').trim(),
+      symbolColor: tokens.getPropertyValue('--text-primary').trim(),
+    });
+  }, [darkMode, isWindows]);
+
   // Global vault unread badge: listen for new documents even when VaultView is not mounted
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI?.vault) return;
@@ -245,7 +278,15 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
       {/* Window drag strip, sidebar-wide only (desktop). Full width it sat on
           z-[60] across every page header and swallowed the clicks on the
           actions that live there; the traffic lights only need this column. */}
-      <div className="window-drag hidden lg:block fixed top-0 left-0 h-7 z-[60]" style={{ width: 'var(--sidebar-w)' }} />
+      {isWindows ? (
+        // Windows: the whole caption band, up to the native buttons.
+        <>
+          <style>{WINDOWS_DRAG_CSS}</style>
+          <div className="window-drag hidden lg:block fixed top-0 left-0 h-8 z-[60]" style={{ width: 'env(titlebar-area-width, 100%)' }} />
+        </>
+      ) : (
+        <div className="window-drag hidden lg:block fixed top-0 left-0 h-7 z-[60]" style={{ width: 'var(--sidebar-w)' }} />
+      )}
 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-secondary border-b border-border-primary z-40 flex items-center px-4">

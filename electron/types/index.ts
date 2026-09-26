@@ -313,9 +313,11 @@ export interface AppSettings {
    * The shell a terminal runs on Windows (decision D3): a path (Git Bash is
    * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
    * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
-   * else cmd.exe. Read on Windows only; no interface sets it yet.
+   * else cmd.exe. Read on Windows only; set from Settings > Terminal (D9).
    */
   terminalShell?: string;
+  /** Windows: the first close has explained that Tars keeps running in the tray (decision D6). */
+  closeToTrayExplained?: boolean;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   ampEnabled?: boolean;
