@@ -6,7 +6,7 @@ import type { AgentProvider, AppSettings } from '../types';
 import { dataPath } from '../constants';
 import { getAllProviders, getProvider } from '../providers';
 import { buildFullPath } from '../utils/path-builder';
-import { getPath, withPath } from '../platform';
+import { getPath, rmRetryingSync, withPath } from '../platform';
 import {
   classifyWindowsInstall, locateOnWindows, npmOnWindows, processesInPackage, unstartableOnWindows,
   windowsGlobalManifest, windowsNativeVersion,
@@ -378,7 +378,7 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
     }
     return { cli, outcome: 'failed', from, detail: `npm install -g ${install.pkg}@${latest}: ${failure(run)}, ${took}` };
   } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    rmRetryingSync(scratch, { recursive: true, force: true });
   }
 }
 
