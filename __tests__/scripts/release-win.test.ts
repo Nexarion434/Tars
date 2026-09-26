@@ -30,8 +30,8 @@ import { Refusal } from '../../scripts/release.mjs';
  *    without its ConPTY binaries, a hook or an MCP bundle missing, an app that
  *    says another version;
  *  - publishing: anything written to GitHub in a dry run, a publish from a
- *    commit that is not origin/windows, over an existing release, below a newer
- *    one, or with other files than the installer, its blockmap, the zip and
+ *    commit that is not origin/windows, over an existing release or a tag left
+ *    without one, below a newer one, or with other files than the installer, its blockmap, the zip and
  *    latest.yml.
  * No test runs electron-builder or reaches GitHub: the build is a function that
  * lays files out, and gh is the fake.
@@ -273,7 +273,8 @@ function checkout() {
   return { root, dir };
 }
 
-describe('npm run release:win', () => {
+// Real git checkouts and a fake gh per case: well past vitest's 5 s default on a loaded machine.
+describe('npm run release:win', { timeout: 60_000 }, () => {
   let gh: FakeGh;
   let roots: string[];
   let built: { version: string; env: Record<string, string | undefined> }[];
@@ -392,6 +393,16 @@ describe('npm run release:win', () => {
     const { code, out } = await releaseWin(dir, '--publish');
     expect(code).toBe(1);
     expect(out).toMatch(/tracked files differ/);
+  });
+
+  it('--publish: refuses a tag that exists with no release, before building', async () => {
+    gh.setState({ tags: ['v1.9.0-win.1'] });
+    gh.allowPublishing();
+    const { code, out } = await releaseWin(co(), '--publish');
+    expect(code).toBe(1);
+    expect(out).toContain('the tag v1.9.0-win.1 already exists on Nexarion434/Tars, without a release');
+    expect(built).toEqual([]);
+    expect(writes()).toEqual([]);
   });
 
   it('--publish --n: refuses a version already released, and one below a newer release', async () => {
