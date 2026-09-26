@@ -2,8 +2,8 @@
 /**
  * The Windows tray icon, made from the mark (decision D8).
  *
- *   node build/make-tray-ico.mjs          writes electron/resources/tray.ico and tray-attention.ico
- *   node build/make-tray-ico.mjs --check  exits 1 when the committed files differ from what it makes
+ *   node scripts/make-tray-ico.mjs          writes electron/resources/tray.ico and tray-attention.ico
+ *   node scripts/make-tray-ico.mjs --check  exits 1 when the committed files differ from what it makes
  *
  * Reads the 4x4 grid of public/icon.svg (which cells are lit, which dim, the
  * accent colour) and draws it pixel-snapped at every size Windows picks from a
@@ -148,7 +148,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       return !fs.existsSync(file) || Buffer.compare(fs.readFileSync(file), data) !== 0;
     }).map(([name]) => name);
     if (stale.length) {
-      console.error(`out of date: ${stale.join(', ')}; run node build/make-tray-ico.mjs`);
+      console.error(`out of date: ${stale.join(', ')}; run node scripts/make-tray-ico.mjs`);
       process.exit(1);
     }
     console.log('tray icons up to date');

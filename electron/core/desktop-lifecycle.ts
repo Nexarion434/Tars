@@ -1,5 +1,6 @@
 import { app, dialog, Menu, type BrowserWindow } from 'electron';
 import { closeAction, isWindowsShell, WINDOWS_APP_USER_MODEL_ID } from '../platform/desktop-shell';
+import { registerDesktopShellHandlers } from '../handlers/desktop-shell-handlers';
 
 /**
  * The Windows app lifecycle (decisions D6 and D7). Every function is a no-op on
@@ -10,7 +11,7 @@ import { closeAction, isWindowsShell, WINDOWS_APP_USER_MODEL_ID } from '../platf
 /** Set by before-quit: from then on a close is a close, never a hide. */
 let quitting = false;
 
-export function markQuitting(): void {
+function markQuitting(): void {
   quitting = true;
 }
 
@@ -26,20 +27,6 @@ export function claimSingleInstance(onSecondLaunch: () => void, platform: NodeJS
   if (!app.requestSingleInstanceLock()) return false;
   app.on('second-instance', onSecondLaunch);
   return true;
-}
-
-/**
- * Before the first window: the AppUserModelId Windows attributes toasts to
- * (B/N-05), and no application menu. Electron's default menu bound Ctrl+W to
- * closing the window, Ctrl+R and Ctrl+Shift+R to reloading the renderer,
- * Ctrl+Shift+I to DevTools and Ctrl+minus to zoom, over every page including
- * the terminals (measured, PROPOSALS.md section 2). Text fields keep cut,
- * copy, paste and select all without it: Chromium handles them.
- */
-export function prepareDesktopShell(platform: NodeJS.Platform = process.platform): void {
-  if (!isWindowsShell(platform)) return;
-  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
-  Menu.setApplicationMenu(null);
 }
 
 /** Where the one-time explanation is remembered: app-settings.json. */
@@ -103,4 +90,32 @@ export function keepRunningOnClose(
       explaining = false;
     });
   });
+}
+
+/**
+ * Everything the Windows desktop shell adds, installed once the main window
+ * exists: the renderer's two calls (desktop-shell-handlers.ts, answered on
+ * every platform, acting on Windows only), then on Windows alone:
+ *
+ * - the AppUserModelId Windows attributes toasts to (B/N-05);
+ * - no application menu. Electron's default menu bound Ctrl+W to closing the
+ *   window, Ctrl+R and Ctrl+Shift+R to reloading the renderer, Ctrl+Shift+I to
+ *   DevTools and Ctrl+minus to zoom, over every page including the terminals
+ *   (measured, PROPOSALS.md section 2). Text fields keep cut, copy, paste and
+ *   select all without it: Chromium handles them;
+ * - a quit that is a quit (before-quit), and a close that hides to the tray.
+ */
+export function installDesktopShell(opts: {
+  getMainWindow: () => BrowserWindow | null;
+  explanation: CloseExplanationStore;
+  platform?: NodeJS.Platform;
+}): void {
+  const platform = opts.platform ?? process.platform;
+  registerDesktopShellHandlers({ getMainWindow: opts.getMainWindow });
+  if (!isWindowsShell(platform)) return;
+  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  Menu.setApplicationMenu(null);
+  app.on('before-quit', markQuitting);
+  const win = opts.getMainWindow();
+  if (win) keepRunningOnClose(win, opts.explanation, platform);
 }

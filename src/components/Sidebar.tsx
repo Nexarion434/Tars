@@ -28,7 +28,7 @@ import Link from 'next/link';
 import { Brand } from '@/components/Brand';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppPathname, normalisePathname } from '@/hooks/useAppPathname';
-import { pageShortcutDigit, rendererPlatform } from '@/lib/terminal';
+import { pageShortcutDigit, rendererPlatform } from '@/lib/terminal-keys';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { panelShortcutIndex, rendererPlatform } from '@/lib/terminal';
+import { panelShortcutIndex, rendererPlatform } from '@/lib/terminal-keys';
 
 interface UseTerminalKeyboardOptions {
   panelAgentIds: string[];

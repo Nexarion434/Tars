@@ -53,9 +53,11 @@ export function detectShells(opts: {
     ?? firstFile([w.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')]);
   const cmd = firstFile([read('ComSpec'), w.join(systemRoot, 'System32', 'cmd.exe')]);
 
-  // Git Bash is bin\bash.exe of a Git for Windows install. Never System32's
-  // bash.exe, which is the WSL launcher: git.exe is looked for in a Git
-  // layout (cmd\, bin\ or mingw64\bin\), and its bin\bash.exe must exist.
+  // Git Bash is bin\bash.exe of a Git for Windows install, found from where
+  // Git lives: Program Files, the per-user folder, or the root of the Git
+  // layout (cmd\, bin\ or mingw64\bin\) around a git.exe on the PATH. bash.exe
+  // itself is never looked up on the PATH: the first one there is System32's,
+  // the WSL launcher, which is not Git Bash.
   const gitOnPath = findOnPath('git.exe', env, fs);
   const gitRoots = [
     ...programDirs.map((d) => w.join(d, 'Git')),
@@ -67,9 +69,7 @@ export function detectShells(opts: {
     if (leaf === 'cmd' || leaf === 'bin') gitRoots.push(w.dirname(dir));
     if (leaf === 'bin' && w.basename(w.dirname(dir)).toLowerCase() === 'mingw64') gitRoots.push(w.dirname(w.dirname(dir)));
   }
-  const systemDir = w.join(systemRoot, 'System32').toLowerCase();
-  const gitBash = firstFile(gitRoots.map((r) => w.join(r, 'bin', 'bash.exe'))
-    .filter((p) => w.dirname(p).toLowerCase() !== systemDir));
+  const gitBash = firstFile(gitRoots.map((r) => w.join(r, 'bin', 'bash.exe')));
 
   const choices: ShellChoice[] = [
     { id: 'pwsh', path: pwsh },

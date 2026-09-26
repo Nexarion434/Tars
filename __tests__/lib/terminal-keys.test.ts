@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { terminalKeyAction, pageShortcutDigit, panelShortcutIndex, type KeyLike } from '@/lib/terminal';
+import { terminalKeyAction, pageShortcutDigit, panelShortcutIndex, type KeyLike } from '@/lib/terminal-keys';
 
 /**
  * Who a key belongs to: the page, the terminal panels, the terminal's own

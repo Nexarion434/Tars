@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // @ts-expect-error: a plain .mjs build script, no declaration file.
-import { trayIcons, TRAY_ICON_SIZES } from '../../build/make-tray-ico.mjs';
+import { trayIcons, TRAY_ICON_SIZES } from '../../scripts/make-tray-ico.mjs';
 
 /**
  * The Windows tray icon (decision D8): the orange 4x4 grid of public/icon.svg,

@@ -74,7 +74,7 @@ export function trayContextMenu(): Menu {
 
 /**
  * Windows: the mark as a multi-size .ico (16 to 48 px, pixel-snapped, made by
- * build/make-tray-ico.mjs from public/icon.svg), so each DPI gets its own
+ * scripts/make-tray-ico.mjs from public/icon.svg), so each DPI gets its own
  * pixels instead of a resampled PNG of the old prompt; the attention badge is
  * the same grid with today's dot, drawn ahead of time into its own .ico.
  */

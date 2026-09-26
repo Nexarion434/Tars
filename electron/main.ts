@@ -33,8 +33,7 @@ import {
   isDevBuild,
   revealMainWindow,
 } from './core/window-manager';
-import { claimSingleInstance, prepareDesktopShell, keepRunningOnClose, markQuitting } from './core/desktop-lifecycle';
-import { registerDesktopShellHandlers } from './handlers/desktop-shell-handlers';
+import { claimSingleInstance, installDesktopShell } from './core/desktop-lifecycle';
 
 import {
   agents,
@@ -400,8 +399,9 @@ function moveLocalKanbanToHermes() {
 
 // ============== App Initialization ==============
 
-// Windows: one Tars per profile; a second launch shows the first one's window
-// and ends here, before it reads or writes anything. Always true elsewhere.
+// Windows: one Tars per profile. A second launch shows the first one's window
+// and ends here: it has read app-settings.json and nothing else, and it writes
+// nothing and starts nothing. Always true elsewhere.
 const isPrimaryInstance = claimSingleInstance(revealMainWindow);
 if (!isPrimaryInstance) app.exit(0);
 
@@ -469,17 +469,17 @@ app.whenReady().then(async () => {
   // Setup protocol handler for production
   setupProtocolHandler();
 
-  // Windows: toasts' AppUserModelId, and no application menu (decision D7).
-  prepareDesktopShell();
-
   // Create the main window
   createWindow();
-  // Windows: closing it hides it to the tray, the agents keep running (D6).
-  keepRunningOnClose(getMainWindow()!, {
-    explained: () => appSettings.closeToTrayExplained === true,
-    markExplained: () => {
-      appSettings = { ...appSettings, closeToTrayExplained: true };
-      saveAppSettingsToFile(appSettings);
+  // Windows: no menu, toasts, close to the tray (decisions D5 to D9).
+  installDesktopShell({
+    getMainWindow,
+    explanation: {
+      explained: () => appSettings.closeToTrayExplained === true,
+      markExplained: () => {
+        appSettings = { ...appSettings, closeToTrayExplained: true };
+        saveAppSettingsToFile(appSettings);
+      },
     },
   });
 
@@ -493,7 +493,6 @@ app.whenReady().then(async () => {
   const deps = createIpcDependencies();
   registerIpcHandlers(deps);
   registerMcpOrchestratorHandlers();
-  registerDesktopShellHandlers({ getMainWindow });
   registerCLIPathsHandlers({
     getAppSettings: () => appSettings,
     setAppSettings: (settings) => { appSettings = settings; },
@@ -747,8 +746,6 @@ app.on('activate', () => {
 
 // Save agents and kill all PTY processes before quitting
 app.on('before-quit', () => {
-  // From here a window close is a close: Windows hides on close otherwise.
-  markQuitting();
   console.log('App quitting, saving agents and killing all PTY processes...');
   // Each step guarded, and the two that write to disk first: see shutdown.ts.
   // The bus journal writes once per turn of the event loop rather than once
