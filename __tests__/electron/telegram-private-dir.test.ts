@@ -79,7 +79,7 @@ vi.mock('https', () => {
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';
-import { moveTestHome } from '../setup/test-home';
+import { moveTestHome, withTestHome } from '../setup/test-home';
 
 const home = os.homedir();
 const PRIVATE_FILES = [
@@ -91,6 +91,53 @@ const DATA_FILES = [
   path.join(home, '.dorothy', 'app-settings.json'),
 ];
 const ORDINARY = path.join(home, 'Documents', 'not-there-report.pdf');
+
+/**
+ * Two entries made under `dir` whose file ids differ and read as the same
+ * Number, or undefined on a volume that keeps its ids below 2^53 (macOS and
+ * Linux as they ship), where a Number holds them exactly.
+ *
+ * Node's plain stat gives the inode as a Number, and an NTFS file id is 64
+ * bits: a 48-bit record number under a 16-bit sequence number that grows each
+ * time the record is reused. Once it reaches 32, ids a record apart round to
+ * one number. A suite that makes and removes files gets there by itself, which
+ * is how CI run 36260463284 refused an ordinary file. Making and removing
+ * sixteen entries at a time gets there here, most often in the first round;
+ * four at a time took up to 2603 rounds (measured on Windows 11, NTFS).
+ */
+function twoIdsOneNumber(dir: string, kind: 'file' | 'dir'): [string, string] | undefined {
+  // APFS, ext4 and the others the suite runs on hand out small ids: nothing to find.
+  if (process.platform !== 'win32') return undefined;
+  fs.mkdirSync(dir, { recursive: true });
+  const until = Date.now() + ID_SEARCH_MS;
+  for (let round = 0; Date.now() < until; round++) {
+    const byNumber = new Map<number, { at: string; id: bigint }>();
+    const made: string[] = [];
+    for (let i = 0; i < 16; i++) {
+      const at = path.join(dir, `${kind}-${round}-${i}`);
+      if (kind === 'dir') fs.mkdirSync(at);
+      else fs.writeFileSync(at, '');
+      made.push(at);
+      const id = fs.statSync(at, { bigint: true }).ino;
+      const twin = byNumber.get(Number(id));
+      if (twin && twin.id !== id) return [twin.at, at];
+      byNumber.set(Number(id), { at, id });
+    }
+    for (const at of made) fs.rmSync(at, { recursive: true, force: true });
+  }
+  return undefined;
+}
+
+/** The ids of `a` and `b` are two, and one Number: what the test that calls it is about. */
+function expectTwoIdsOneNumber(a: string, b: string) {
+  const [ia, ib] = [a, b].map(p => fs.statSync(p, { bigint: true }).ino);
+  expect(ia, `${a} and ${b} are one file, so this proves nothing`).not.toBe(ib);
+  expect(Number(ia), `${a} and ${b} no longer read as one number, so this proves nothing`).toBe(Number(ib));
+}
+
+const LOW_IDS = 'no two file ids read as one Number here: the volume keeps them below 2^53, where a Number holds them exactly';
+const ID_SEARCH_MS = 10_000;
+const ID_TEST_MS = ID_SEARCH_MS + 10_000;
 
 describe('the guard of the app\'s own Telegram routes', () => {
   it('refuses the private directory as it refuses the data directory', () => {
@@ -171,6 +218,76 @@ describe('the guard of the app\'s own Telegram routes', () => {
       fs.rmSync(exit, { force: true });
     }
   });
+
+  /**
+   * A file is told from another by its whole 64-bit id (CI run 36260463284:
+   * an ordinary file with two names, refused). How the guard can fail:
+   * 1. an ordinary file with two names is refused because a file in the
+   *    private directory reads as the same Number;
+   * 2. an ordinary file is refused because the folder it is in reads as the
+   *    same Number as ~/.ssh;
+   * 3. a file outside the home is let through because the folder it is in
+   *    reads as the same Number as the home;
+   * 4. once ids are compared whole, a real second name for the secret, or a
+   *    key in ~/.ssh, is let through.
+   */
+  it('does not take a file for one in the private directory because their 64-bit ids round to one Number', (ctx) => {
+    const fresh = fs.mkdtempSync(path.join(home, 'ids-'));
+    const pair = twoIdsOneNumber(path.join(fresh, 'made'), 'file');
+    if (!pair) ctx.skip(LOW_IDS);
+    withTestHome(fresh, () => {
+      const secret = path.join(fresh, '.tars-private', 'hermes-webhook-secret');
+      fs.mkdirSync(path.dirname(secret), { mode: 0o700 });
+      fs.renameSync(pair![1], secret);
+      const docs = path.join(fresh, 'Documents');
+      fs.mkdirSync(docs);
+      const first = path.join(docs, 'store-first.pdf');
+      fs.renameSync(pair![0], first);
+      const second = path.join(docs, 'store-second.pdf');
+      fs.linkSync(first, second);
+      expectTwoIdsOneNumber(second, secret);
+
+      expect(isSafeTelegramPath(second), 'an ordinary file with two names').toBe(true);
+      const notes = path.join(docs, 'notes.txt');
+      fs.linkSync(secret, notes);
+      expect(isSafeTelegramPath(notes), 'a second name for the secret').toBe(false);
+    });
+  }, ID_TEST_MS);
+
+  it('does not take a folder for ~/.ssh because their 64-bit ids round to one Number', (ctx) => {
+    const fresh = fs.mkdtempSync(path.join(home, 'ids-'));
+    const pair = twoIdsOneNumber(path.join(fresh, 'made'), 'dir');
+    if (!pair) ctx.skip(LOW_IDS);
+    withTestHome(fresh, () => {
+      const ssh = path.join(fresh, '.ssh');
+      fs.renameSync(pair![1], ssh);
+      const report = path.join(pair![0], 'report.pdf');
+      fs.writeFileSync(report, 'a report');
+      expectTwoIdsOneNumber(pair![0], ssh);
+
+      expect(isSafeTelegramPath(report), 'a file in an ordinary folder').toBe(true);
+      const key = path.join(ssh, 'id_ed25519');
+      fs.writeFileSync(key, 'a private key');
+      expect(isSafeTelegramPath(key), 'a key in ~/.ssh').toBe(false);
+    });
+  }, ID_TEST_MS);
+
+  it('does not take a folder outside the home for the home because their 64-bit ids round to one Number', (ctx) => {
+    const fresh = fs.mkdtempSync(path.join(home, 'ids-'));
+    const pair = twoIdsOneNumber(path.join(fresh, 'made'), 'dir');
+    if (!pair) ctx.skip(LOW_IDS);
+    const [outside, theHome] = pair!;
+    const report = path.join(outside, 'report.pdf');
+    fs.writeFileSync(report, 'a file outside the home');
+    expectTwoIdsOneNumber(outside, theHome);
+    withTestHome(theHome, () => {
+      expect(isSafeTelegramPath(report), 'a file outside the home').toBe(false);
+      // The witness: a file in the home still goes.
+      const inside = path.join(theHome, 'report.pdf');
+      fs.writeFileSync(inside, 'a file in the home');
+      expect(isSafeTelegramPath(inside)).toBe(true);
+    });
+  }, ID_TEST_MS);
 
   it('refuses the files the app itself puts there, wherever the constants say they are', () => {
     // Held to the constants rather than to a spelling, so a renamed directory
@@ -291,4 +408,33 @@ describe('the Telegram MCP server, which every agent is given', () => {
       }
     });
   }
+
+  it('does not take a file for one in the private directory because their 64-bit ids round to one Number', async (ctx) => {
+    // The server's own copy of the hard link search, held to the case the
+    // app's guard is held to above (CI run 36260463284).
+    const pair = twoIdsOneNumber(fs.mkdtempSync(path.join(tmpHome, 'ids-')), 'file');
+    if (!pair) ctx.skip(LOW_IDS);
+    const secret = path.join(tmpHome, '.tars-private', 'ids-webhook-secret');
+    fs.mkdirSync(path.dirname(secret), { recursive: true, mode: 0o700 });
+    fs.rmSync(secret, { force: true });
+    fs.renameSync(pair![1], secret);
+    const docs = path.join(tmpHome, 'Documents');
+    fs.mkdirSync(docs, { recursive: true });
+    const first = path.join(docs, 'ids-store-first.pdf');
+    const second = path.join(docs, 'ids-store-second.pdf');
+    for (const at of [first, second]) fs.rmSync(at, { force: true });
+    fs.renameSync(pair![0], first);
+    fs.linkSync(first, second);
+    expectTwoIdsOneNumber(second, secret);
+
+    const send = tools.get('send_telegram_document')!;
+    const ordinary = await send({ document_path: second });
+    expect(ordinary.content[0].text, 'an ordinary file with two names').not.toContain('Refused');
+    expect(ordinary.content[0].text).toContain('a test reached the network');
+    const notes = path.join(docs, 'ids-notes.txt');
+    fs.rmSync(notes, { force: true });
+    fs.linkSync(secret, notes);
+    const linked = await send({ document_path: notes });
+    expect(linked.content[0].text, 'a second name for the secret').toContain('Refused');
+  }, ID_TEST_MS);
 });

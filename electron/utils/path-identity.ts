@@ -18,20 +18,26 @@ import * as path from 'path';
  * first. A candidate that does not exist is inside nothing, and nothing is
  * inside a `dir` that does not exist; callers keep their lexical test for
  * those.
+ *
+ * Identities are read as BigInt. A plain stat gives the inode as a Number,
+ * exact only below 2^53, and an NTFS file id is 64 bits whose top 16 grow
+ * each time a record is reused: two files a record apart then read as one
+ * number, and this took an ordinary folder for a blocked one (CI run
+ * 36260463284) or a folder outside the home for the home.
  */
 export function isWithinDir(candidate: string, dir: string): boolean {
-  let target: fs.Stats;
+  let target: fs.BigIntStats;
   let current: string;
   try {
-    target = fs.statSync(dir);
+    target = fs.statSync(dir, { bigint: true });
     current = fs.realpathSync.native(candidate);
   } catch {
     return false;
   }
   for (;;) {
-    let here: fs.Stats;
+    let here: fs.BigIntStats;
     try {
-      here = fs.statSync(current);
+      here = fs.statSync(current, { bigint: true });
     } catch {
       return false;
     }
@@ -52,16 +58,17 @@ export function isWithinDir(candidate: string, dir: string): boolean {
  * file with more than one name can be one, so only those are looked for, by
  * device and inode, among the regular files under `dir`, whose symlinks are
  * not followed. `dir` is walked, so this is for small directories whose files
- * are secrets whole: the private directory and ~/.ssh.
+ * are secrets whole: the private directory and ~/.ssh. Read as BigInt, as
+ * isWithinDir says why.
  */
 export function isHardLinkInto(candidate: string, dir: string): boolean {
-  let file: fs.Stats;
+  let file: fs.BigIntStats;
   try {
-    file = fs.statSync(candidate);
+    file = fs.statSync(candidate, { bigint: true });
   } catch {
     return false;
   }
-  if (!file.isFile() || file.nlink < 2) return false;
+  if (!file.isFile() || file.nlink < BigInt(2)) return false;
   const pending = [dir];
   while (pending.length > 0) {
     const current = pending.pop()!;
@@ -77,7 +84,7 @@ export function isHardLinkInto(candidate: string, dir: string): boolean {
         pending.push(full);
       } else if (entry.isFile()) {
         try {
-          const here = fs.lstatSync(full);
+          const here = fs.lstatSync(full, { bigint: true });
           if (here.dev === file.dev && here.ino === file.ino) return true;
         } catch {
           // Gone since it was listed.
