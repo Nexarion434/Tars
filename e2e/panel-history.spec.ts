@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PANEL_HISTORY, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, splashGone } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -137,6 +137,8 @@ for (const surface of PANEL_HISTORY as PanelSurface[]) {
     const errorsBefore = pageErrors.length;
 
     await page.goto(DEV_URL + surface.route, { waitUntil: 'domcontentloaded' });
+    // Photographed once the launch splash, shown again by every load, has gone.
+    await splashGone(page);
     const header = panelHeader(surface.within);
     const control = header.getByRole('radio', { name: surface.clickText, exact: true });
     await control.waitFor({ state: 'visible', timeout: 15_000 });

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet, writeNodeCli } from './fixture.mjs';
+import { assertWindowOnScreen, launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 
@@ -70,6 +70,7 @@ async function shotWindow(app: ElectronApplication, name: string): Promise<strin
   const hwnd = await hwndOf(app);
   await inMain(app, "w.setAlwaysOnTop(true, 'screen-saver'); w.moveTop();");
   await sleep(500);
+  await assertWindowOnScreen(app);
   const frame = JSON.parse(desktop(['-Mode', 'frame', '-Hwnd', hwnd]));
   const out = test.info().outputPath(`${name}.png`);
   desktop(['-Mode', 'capture', '-X', String(frame.x), '-Y', String(frame.y), '-W', String(frame.width), '-H', String(frame.height), '-Out', out]);
@@ -82,6 +83,7 @@ async function screenColour(app: ElectronApplication, x: number, y: number, name
   const out = test.info().outputPath(`${name}.png`);
   await inMain(app, "w.setAlwaysOnTop(true, 'screen-saver'); w.moveTop();");
   await sleep(500);
+  await assertWindowOnScreen(app);
   desktop(['-Mode', 'capture', '-X', String(x), '-Y', String(y), '-W', '4', '-H', '4', '-Out', out]);
   await inMain(app, 'w.setAlwaysOnTop(false);');
   return app.evaluate(({ nativeImage }, file) => {
@@ -118,6 +120,7 @@ async function launch(home: string, port: number): Promise<{ app: ElectronApplic
   await page.waitForLoadState('domcontentloaded');
   // Shown and in front: real input and native captures need the window on screen.
   await inMain(app, 'w.show(); w.focus();');
+  await assertWindowOnScreen(app);
   return { app, page, errors };
 }
 

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -44,4 +44,38 @@ export function makeUnwritable(dir: string, restoreMode = 0o700): () => void {
     return () => fs.chmodSync(dir, restoreMode);
   }
   return deny(dir, 'WD');
+}
+
+/**
+ * `file` unreadable to every process, whatever its privileges, until the
+ * returned function is called: on Windows another process holds it open with
+ * no sharing (FileShare.None), so each open for its data fails with a sharing
+ * violation (EBUSY in Node), and sharing is enforced whatever the privileges.
+ * The access control entry of makeUnreadable was not enough there: on CI's
+ * windows-latest, whose account is an administrator, the E2E app read a file
+ * denied that way and priced its turn (run 36242089925), while the unit tests'
+ * own reads of one were refused. macOS and Linux: mode 0000, as makeUnreadable.
+ */
+export async function holdUnreadable(file: string, restoreMode = 0o644): Promise<() => Promise<void>> {
+  if (process.platform !== 'win32') {
+    const restore = makeUnreadable(file, restoreMode);
+    return async () => restore();
+  }
+  const powershell = path.join(process.env.SystemRoot || 'C:\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const script = "$f = [IO.File]::Open($env:TARS_HOLD_FILE, 'Open', 'Read', 'None'); "
+    + "[Console]::Out.WriteLine('held'); [Console]::Out.Flush(); [void][Console]::In.ReadLine(); $f.Close()";
+  const holder = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    env: { ...process.env, TARS_HOLD_FILE: file }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+  });
+  let said = '';
+  await new Promise<void>((resolve, reject) => {
+    holder.stdout!.on('data', chunk => { said += String(chunk); if (said.includes('held')) resolve(); });
+    holder.stderr!.on('data', chunk => { said += String(chunk); });
+    holder.once('error', reject);
+    holder.once('exit', code => reject(new Error(`the process holding ${file} exited (${code}) before it held it: ${said.trim()}`)));
+  });
+  return () => new Promise<void>(resolve => {
+    holder.once('exit', () => resolve());
+    holder.stdin!.end('\n');
+  });
 }

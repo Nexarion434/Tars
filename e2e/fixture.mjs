@@ -653,6 +653,30 @@ function withSandboxPath(full, specEnv) {
 }
 
 /**
+ * How every run renders, whichever machine it runs on.
+ *
+ * `--lang=fr-FR`, on every platform. The Chat dates its rooms and its day
+ * separators in the renderer's own locale (toLocaleDateString([], ...)), and
+ * both sets of references were recorded on French systems: "20 août", "jeudi
+ * 20 août", on macOS and on Windows alike. CI's windows-latest is en-US and
+ * drew "Aug 20", "Thursday, August 20": six surfaces failed on the dates alone
+ * (CI run 36242089925). Measured with a bare Electron 44 on 2026-09-26: the
+ * renderer's navigator.language and its Intl default follow --lang (fr-FR:
+ * "jeudi 20 août"; en-US: "Thursday, August 20"), the main process keeps the
+ * system's. Nothing else is pinned: LANG or LC_ALL would reach every program
+ * the app starts (git, ps, the fake CLIs), whose output the specs read.
+ *
+ * `--disable-lcd-text`, on Windows. Chromium draws text with ClearType's
+ * coloured subpixels where a layer allows it, and chooses per composited layer,
+ * which depends on the GPU: the Brain graph's labels were greyscale on the
+ * machine that recorded the references and ClearType on the runner, which has
+ * none (375 pixels). Greyscale everywhere draws the same on both. The pictures
+ * then show the design, not the display's subpixel order. macOS has no
+ * subpixel text since 10.14, and its references stay as they are.
+ */
+const RENDERING_ARGS = ['--lang=fr-FR', ...(onWindows ? ['--disable-lcd-text'] : [])];
+
+/**
  * The one way a spec starts the app: inside its sandbox, Chromium profile
  * included, or not at all.
  *
@@ -674,7 +698,7 @@ function withSandboxPath(full, specEnv) {
 export async function launchSandboxed(electron, sandboxHome, { env = {}, ...options } = {}) {
   const app = await electron.launch({
     ...options,
-    args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`],
+    args: ['.', `--user-data-dir=${path.join(sandboxHome, 'electron-profile')}`, ...RENDERING_ARGS],
     env: withSandboxPath({ ...inheritable(process.env), ...env, ...windowsHome(sandboxHome), HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome }, env),
   });
   // What the app inherited, checked the way its folders are below: a run
@@ -861,4 +885,48 @@ async function traceApp(app) {
     }
     return close();
   };
+}
+
+/**
+ * The launch splash's words, read from the component that shows them, so a
+ * wording change there cannot leave splashGone() waiting for nothing.
+ */
+const SPLASH_STEPS = [...fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Splash.tsx'), 'utf8')
+  .matchAll(/\{ label: '([^']+)', ready:/g)].map(m => m[1]);
+if (SPLASH_STEPS.length === 0) throw new Error('fixture: no step of the launch splash found in src/components/Splash.tsx');
+
+/**
+ * Waits for the launch splash to be gone. Every document load shows it again
+ * (page.goto included), until the calls it names have answered or four
+ * seconds have passed. On CI's windows-latest the Usage page was photographed
+ * behind it, "reading your projects", 1.5 s after its load (run 36242089925).
+ * A splash still up after 15 s fails the spec.
+ */
+const escapeRegExp = text => text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+
+export async function splashGone(page) {
+  const words = new RegExp(`^(${SPLASH_STEPS.map(escapeRegExp).join('|')})$`);
+  await page.locator('div.fixed.inset-0').filter({ has: page.getByText(words) }).waitFor({ state: 'detached', timeout: 15_000 });
+}
+
+/**
+ * Fails the spec, saying why, when the window's content is not wholly on the
+ * screen's work area. A capture of the screen reads black and a real click
+ * lands nowhere outside it: CI's windows-latest has a 1024x768 display, and
+ * the 1200x800 window's caption buttons were off it, read as #000000
+ * (run 36242089925). For the specs that capture or click the real screen.
+ */
+export async function assertWindowOnScreen(app) {
+  const where = await app.evaluate(({ BrowserWindow, screen }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const content = w.getContentBounds();
+    return { content, workArea: screen.getDisplayMatching(content).workArea };
+  });
+  const { content: c, workArea: a } = where;
+  const inside = c.x >= a.x && c.y >= a.y && c.x + c.width <= a.x + a.width && c.y + c.height <= a.y + a.height;
+  if (!inside) {
+    throw new Error(`the window's content (${c.width}x${c.height} at ${c.x},${c.y}) is not wholly on the screen's work area `
+      + `(${a.width}x${a.height} at ${a.x},${a.y}): a capture reads black and a click lands nowhere outside it. `
+      + 'Give the machine a larger display (CI sets 1920x1080 before the E2E step).');
+  }
 }

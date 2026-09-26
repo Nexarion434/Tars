@@ -101,8 +101,17 @@ test('a panel remounted after a long turn, and the agent window, still send the 
     const sent = async (phase: string, gesture: () => Promise<void>) => {
       const before = fs.statSync(log).size;
       await gesture();
-      // Long enough for a byte to cross IPC and the pty.
-      await page.waitForTimeout(800);
+      // Until the bytes have crossed IPC and the pty, and then nothing more for
+      // 400 ms: a fixed 800 ms read an empty paste on CI's windows-latest, whose
+      // wheel before it had landed (run 36242089925). Bounded: 15 s with none
+      // is what the assertion then reports.
+      const size = () => fs.statSync(log).size;
+      const until = Date.now() + 15_000;
+      while (size() === before && Date.now() < until) await page.waitForTimeout(50);
+      for (let last = -1; size() !== last && Date.now() < until;) {
+        last = size();
+        await page.waitForTimeout(400);
+      }
       const bytes = fs.readFileSync(log).subarray(before).toString('latin1');
       console.log(`REPLAY ${phase}: ${Buffer.byteLength(bytes, 'latin1')} bytes ${JSON.stringify(bytes.slice(0, 60))}`);
       return bytes;

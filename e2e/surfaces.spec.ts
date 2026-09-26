@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as os from 'os';
 import { ALL, recordPageErrors, SCREENSHOT_TOLERANCE, USAGE_DAY, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, makeShotSandbox, markWhatsNewSeen, pinDayOn, removeShotSandbox, seedSandbox, stubSkillsSh, settleFleet } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, makeShotSandbox, markWhatsNewSeen, pinDayOn, removeShotSandbox, seedSandbox, splashGone, stubSkillsSh, settleFleet } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -65,6 +65,8 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     const errorsBefore = pageErrors.length;
 
     await page.goto(DEV_URL + surface.route, { waitUntil: 'domcontentloaded' });
+    // Photographed once the launch splash, shown again by every load, has gone.
+    await splashGone(page);
     await page.waitForTimeout(600);
 
     // Settings labels collide with the main navigation ('Extensions' is both a
