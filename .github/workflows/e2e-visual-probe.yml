@@ -1,0 +1,81 @@
+name: E2E visual probe (Windows)
+
+# Photographs every surface on windows-latest as the fixture renders it now
+# (e2e/fixture.mjs: --lang=fr-FR, and --disable-lcd-text on Windows) and
+# uploads the pictures, which nothing commits. They are compared pixel for
+# pixel with the same surfaces recorded on the port machine: only if the two
+# agree within the suite's tolerance are the win32 references recorded again,
+# once, there. Run by hand; a fork-only file, like ci-windows.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The commit to photograph (default, the branch it is run on)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Photograph the surfaces (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Keep line endings and long paths as committed
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global core.longpaths true
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install the Electron binary
+        run: npx install-electron
+
+      - name: Build the main process
+        run: npx tsc -p electron/tsconfig.json
+
+      - name: A 1920x1080 display
+        shell: pwsh
+        run: ./.github/scripts/display-resolution.ps1 -Width 1920 -Height 1080
+
+      # Every picture written anew, whether or not it matches the committed one:
+      # the probe is the runner's own rendering, not a diff against the port
+      # machine's. A failure other than a picture still fails the job.
+      - name: Photograph the surfaces
+        shell: bash
+        run: |
+          npx playwright test --grep "surface: " --update-snapshots=all
+
+      - name: Upload the pictures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win32-surfaces-probe
+          path: e2e/__screenshots__/win32/
+          retention-days: 14
+
+      - name: Upload the run artefacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-visual-probe-runs
+          path: test-results/runs/**
+          retention-days: 14
