@@ -1,10 +1,7 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, makeShotSandbox, markWhatsNewSeen, removeShotSandbox, seedSandbox } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -36,8 +33,9 @@ test.beforeAll(async () => {
   // between /tmp and macOS's /var/folders, measured for 1.9.0) and, once long,
   // cuts the room's name to its first letter. Spelled /tmp, not /private/tmp:
   // the fixture compares the app's folders with it. Windows has no /tmp (the
-  // literal made C:\tmp): there the temp dir, and references of its own.
-  sandboxHome = fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'dorothy-e2e-chat-'));
+  // literal made C:\tmp) and its temp dir follows the user: there a root of
+  // fixed length, and references of its own (makeShotSandbox in the fixture).
+  sandboxHome = makeShotSandbox('dorothy-e2e-chat-', '/tmp');
   seedSandbox(sandboxHome, { chatRooms: true });
   app = await launchSandboxed(electron, sandboxHome, {
     timezoneId: 'UTC',
@@ -61,7 +59,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(sandboxHome, { recursive: true, force: true });
+  removeShotSandbox(sandboxHome);
 });
 
 for (const surface of CHAT_ROOMS as ChatSurface[]) {

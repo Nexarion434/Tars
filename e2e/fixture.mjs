@@ -570,6 +570,46 @@ function windowsHome(sandboxHome) {
 }
 
 /**
+ * Where a spec that photographs the app makes its sandbox: a folder whose path
+ * is the same length on every machine.
+ *
+ * The pages print the seeded projects' paths, which start with the sandbox, and
+ * even masked their width moves the picture: the mask is the text's box. On
+ * Windows os.tmpdir() is %TEMP%, which follows the user name and whatever the
+ * shell set. Measured on 2026-09-26: references recorded under
+ * C:\Users\nicol\AppData\Local\Temp (33 characters) differed from a run under
+ * C:\Users\Public\tars-tmp (24) on nine surfaces, 1,080 to 2,211 pixels each,
+ * all of them in the masks of the Agents group headings and the chat room head.
+ * So on Windows the sandbox is <SystemDrive>\tars-e2e\<prefix><6 characters>:
+ * the drive is two characters, mkdtemp's suffix is six. Any signed-in user may
+ * create a folder at the root of the system drive (Authenticated Users hold
+ * "create folders" on C:\ by default; checked on this machine from a
+ * non-elevated shell), and CI's runner is an administrator.
+ *
+ * darwin and linux keep the parent the spec always used (`elsewhere`): their
+ * references were recorded so.
+ */
+const WINDOWS_E2E_ROOT = onWindows ? path.win32.join(`${process.env.SystemDrive || 'C:'}\\`, 'tars-e2e') : null;
+
+export function makeShotSandbox(prefix, elsewhere) {
+  if (!onWindows) return fs.mkdtempSync(path.join(elsewhere, prefix));
+  fs.mkdirSync(WINDOWS_E2E_ROOT, { recursive: true });
+  return fs.mkdtempSync(path.join(WINDOWS_E2E_ROOT, prefix));
+}
+
+/** Removes a sandbox made by makeShotSandbox, and on Windows the root once nothing else is in it. */
+export function removeShotSandbox(dir) {
+  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (!onWindows) return;
+  try {
+    fs.rmdirSync(WINDOWS_E2E_ROOT);
+  } catch (error) {
+    // Another run's sandbox is still in it, or it is already gone.
+    if (error.code !== 'ENOTEMPTY' && error.code !== 'ENOENT' && error.code !== 'EBUSY') throw error;
+  }
+}
+
+/**
  * The PATH a Windows run hands the app: the system's own folders, Git, and
  * the node running the suite (the fake CLIs' shims call `node` by name), and
  * nothing of the user's: no npm, nvm, .local\bin or WinGet folder.
