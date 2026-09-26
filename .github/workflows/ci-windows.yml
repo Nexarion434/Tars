@@ -9,17 +9,40 @@ on:
   push:
     branches: [windows]
   workflow_dispatch:
+  # The upstream sync (upstream-sync.yml) runs this gate on its merge before
+  # windows moves. It passes the merge as `ref`: a called workflow's github
+  # context is the caller's, so a bare checkout would test windows as it was.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test (default, the triggering ref)
+        type: string
+        default: ''
+      e2e_only:
+        description: Skip the unit job, for the sync's one retry of a failed e2e job
+        type: boolean
+        default: false
+    outputs:
+      unit:
+        description: Result of the unit job (success, failure, cancelled, skipped)
+        value: ${{ jobs.unit.result }}
+      e2e:
+        description: Result of the e2e job
+        value: ${{ jobs.e2e.result }}
 
 permissions:
   contents: read
 
+# Keyed on the commit a sync passes, so a sync's gate and a push to windows
+# never cancel each other.
 concurrency:
-  group: ci-windows-${{ github.ref }}
+  group: ci-windows-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   unit:
     name: Checks and unit tests (windows-latest)
+    if: ${{ !inputs.e2e_only }}
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -36,6 +59,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -75,6 +100,8 @@ jobs:
   e2e:
     name: E2E (windows-latest)
     needs: unit
+    # After a green unit job, or alone when the sync retries a failed e2e job.
+    if: ${{ !cancelled() && (needs.unit.result == 'success' || (inputs.e2e_only && needs.unit.result == 'skipped')) }}
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -88,6 +115,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4

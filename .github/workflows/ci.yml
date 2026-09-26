@@ -5,6 +5,11 @@ on:
     branches: [main, windows]
   push:
     branches: [main, windows]
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
 
 jobs:
   test:
@@ -18,6 +23,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4

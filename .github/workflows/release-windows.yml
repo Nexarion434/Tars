@@ -1,0 +1,96 @@
+name: Release - Windows
+
+# A Windows release of the fork (decisions D11, D12, D13): `npm run release:win
+# -- --publish` on windows-latest, from what `windows` holds. Installed builds
+# update from the release it creates (build.win.publish of package.json).
+#
+# Called by upstream-sync.yml once a sync has merged upstream, passed every
+# gate and moved windows: every sync that merges is a new <version>-win.<n>,
+# and n restarts at 1 when upstream's version changes (release-win.mjs numbers
+# it from the fork's releases). A sync that finds nothing to merge never gets
+# here. By hand: Actions > Release - Windows > Run workflow.
+#
+# release-win.mjs refuses to publish unless HEAD is origin/windows after a
+# fetch, the tracked tree is clean, and the version is neither released nor
+# tagged and nothing newer is: a `sha` that windows moved past is refused.
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: The commit windows was moved to (default, windows as it is)
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The commit to release; must be the head of windows (empty, windows as it is)
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, check and publish (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      # As in ci-windows.yml: the packaged hooks must ship as committed (LF).
+      - name: Keep line endings and long paths as committed
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global core.longpaths true
+
+      # Full history: release-win.mjs fetches origin and compares HEAD with
+      # origin/windows.
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || 'windows' }}
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # release-win.mjs checks the installed electron is the one locked.
+      - name: Install the Electron binary
+        run: npx install-electron
+
+      # bash, not pwsh: pwsh resolves npm to npm.ps1 and would take the `--`
+      # for its own end-of-parameters marker, so --publish would never reach
+      # the script. gh reads GH_TOKEN; release-win.mjs removes it (and CI) from
+      # electron-builder's environment, so only gh publishes.
+      - name: Build, check and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:win -- --publish
+
+      - name: Upload the build artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ github.run_id }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.zip
+            release/*.yml
+            build/electron-builder-win.json
+          if-no-files-found: ignore
+          retention-days: 14

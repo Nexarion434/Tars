@@ -1,0 +1,182 @@
+name: Upstream sync
+
+# Decision D13: every day, merge JeanBrasse/Tars main into windows, gate the
+# merge with the whole CI (ubuntu and windows-latest), and when every job is
+# green fast-forward windows to it and cut a Windows release, so installed
+# builds update. sync-upstream.ps1 is the manual equivalent.
+#
+# Why one workflow and no pull request: a push or a PR made with the default
+# GITHUB_TOKEN starts no other workflow (docs.github.com/en/actions/concepts/
+# security/github_token), and auto-merge needs a protected branch with required
+# checks. So the gate is called here, as reusable workflows, on the merge
+# itself, and windows only moves once they pass.
+#
+# The git steps live in .github/scripts/upstream-sync.sh. Nothing is ever
+# force-pushed, the upstream is fetched only, and main is only ever
+# fast-forwarded to upstream/main (the mirror).
+#
+# Pushes use the SYNC_TOKEN secret when there is one, else GITHUB_TOKEN. The
+# GITHUB_TOKEN has no `workflows` permission: a sync whose upstream commits
+# change a file under .github/workflows/ is refused at the push, and needs
+# SYNC_TOKEN (a fine-grained token on this repository with Contents and
+# Workflows read and write) or a manual sync-upstream.ps1.
+on:
+  schedule:
+    # 04:17 UTC: off the top of the hour, when GitHub delays scheduled runs.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# One sync at a time, and a sync is never cancelled half way.
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  mirror-main:
+    name: Mirror main to upstream/main (fast-forward only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Fast-forward main
+        run: bash .github/scripts/upstream-sync.sh mirror-main
+
+  prepare:
+    name: Merge upstream/main into a sync branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      state: ${{ steps.sync.outputs.state }}
+      sha: ${{ steps.sync.outputs.sha }}
+      branch: ${{ steps.sync.outputs.branch }}
+      base: ${{ steps.sync.outputs.base }}
+      upstream: ${{ steps.sync.outputs.upstream }}
+      conflicts: ${{ steps.sync.outputs.conflicts }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Merge
+        id: sync
+        env:
+          BASE_BRANCH: windows
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: bash .github/scripts/upstream-sync.sh prepare
+
+  conflict:
+    name: Report the conflict
+    needs: prepare
+    if: needs.prepare.outputs.state == 'conflict'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Upstream file names reach the issue through the environment, never
+      # through the script text.
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: windows
+          SYNC_CONFLICTS: ${{ needs.prepare.outputs.conflicts }}
+          SYNC_BRANCH: ${{ needs.prepare.outputs.branch }}
+          SYNC_BASE_SHA: ${{ needs.prepare.outputs.base }}
+          SYNC_UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream }}
+        run: bash .github/scripts/upstream-sync.sh report-conflict
+
+  gate-ubuntu:
+    name: Gate (ubuntu)
+    needs: prepare
+    if: needs.prepare.outputs.state == 'merged'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  gate-windows:
+    name: Gate (windows)
+    needs: prepare
+    if: needs.prepare.outputs.state == 'merged'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  # One automatic retry of the e2e job alone, on a fresh runner, when the unit
+  # job passed and e2e failed (the known acp-delegation ECONNRESET flake). No
+  # spec is ignored: the whole suite runs again, and a second failure stops
+  # the sync.
+  gate-windows-e2e-retry:
+    name: Gate (windows e2e, retry)
+    needs: [prepare, gate-windows]
+    if: >-
+      ${{ !cancelled() && needs.prepare.outputs.state == 'merged'
+      && needs.gate-windows.outputs.unit == 'success'
+      && needs.gate-windows.outputs.e2e == 'failure' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      e2e_only: true
+
+  promote:
+    name: Fast-forward windows to the merge
+    needs: [prepare, gate-ubuntu, gate-windows, gate-windows-e2e-retry]
+    if: >-
+      ${{ !cancelled() && needs.prepare.outputs.state == 'merged'
+      && needs.gate-ubuntu.result == 'success'
+      && (needs.gate-windows.result == 'success' || needs.gate-windows-e2e-retry.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.promote.outputs.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Push the merge to windows
+        id: promote
+        env:
+          BASE_BRANCH: windows
+          SYNC_SHA: ${{ needs.prepare.outputs.sha }}
+          SYNC_BRANCH: ${{ needs.prepare.outputs.branch }}
+        run: bash .github/scripts/upstream-sync.sh promote
+
+  release:
+    name: Windows release
+    needs: promote
+    if: needs.promote.result == 'success' && needs.promote.outputs.sha != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      sha: ${{ needs.promote.outputs.sha }}
