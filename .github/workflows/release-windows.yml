@@ -1,0 +1,117 @@
+name: Release - Windows
+
+# A Windows release of the fork (decisions D11, D12, D13): `npm run release:win
+# -- --publish` on windows-latest, from what `windows` holds. Installed builds
+# update from the release it creates (build.win.publish of package.json).
+#
+# Called by upstream-sync.yml once a sync has merged upstream, passed every
+# gate and moved windows: every sync that merges is a new <version>-win.<n>,
+# and n restarts at 1 when upstream's version changes (release-win.mjs numbers
+# it from the fork's releases). A sync that finds nothing to merge never gets
+# here. By hand: Actions > Release - Windows > Run workflow.
+#
+# The Run workflow button, like the sync's schedule, only exists once this
+# file is on the fork's default branch: that default must be `windows`
+# (Settings > General > Default branch). Nothing is added to main for it.
+#
+# Actions are pinned by commit SHA, the tag in a comment: this job holds a
+# token that can write releases.
+#
+# release-win.mjs refuses to publish unless HEAD is origin/windows after a
+# fetch, the tracked tree is clean, and the version is neither released nor
+# tagged and nothing newer is: a `sha` that windows moved past is refused.
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: The commit windows was moved to (default, windows as it is)
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The commit to release; must be the head of windows (empty, windows as it is)
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, check and publish (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      # As in ci-windows.yml: the packaged hooks must ship as committed (LF).
+      - name: Keep line endings and long paths as committed
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git config --global core.longpaths true
+
+      # Full history: release-win.mjs fetches origin and compares HEAD with
+      # origin/windows. No credentials left in .git/config: npm ci runs the
+      # dependencies' install scripts and the build runs more code, and none of
+      # it needs the token. The repo is public, so git fetch origin works
+      # without one, and gh reads GH_TOKEN from the publishing step only.
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.sha || 'windows' }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The release script comes with the packaging lot (win/packaging): until
+      # it is on windows, stop here rather than half way through a build.
+      - name: Check that release:win exists
+        shell: bash
+        run: |
+          if [ ! -f scripts/release-win.mjs ]; then
+            echo "::error::scripts/release-win.mjs is not on this commit: merge the packaging lot (win/packaging) into windows before any Windows release"
+            exit 1
+          fi
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # release-win.mjs checks the installed electron is the one locked.
+      - name: Install the Electron binary
+        run: npx install-electron
+
+      # bash, not pwsh: pwsh resolves npm to npm.ps1 and would take the `--`
+      # for its own end-of-parameters marker, so --publish would never reach
+      # the script. gh reads GH_TOKEN; release-win.mjs removes it (and CI) from
+      # electron-builder's environment, so only gh publishes.
+      - name: Build, check and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:win -- --publish
+
+      - name: Upload the build artefacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-windows-${{ github.run_id }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.zip
+            release/*.yml
+            build/electron-builder-win.json
+          if-no-files-found: ignore
+          retention-days: 14
