@@ -1,6 +1,7 @@
 'use client';
 
 import { useSortable } from '@dnd-kit/sortable';
+import { pathName } from '@/lib/display-path';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import type { KanbanTask, KanbanColumn } from '@/types/kanban';
@@ -42,7 +43,7 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
   });
 
   // Get project name from path
-  const projectName = task.projectPath.split('/').pop() || task.projectId;
+  const projectName = pathName(task.projectPath) || task.projectId;
 
   const style = {
     transform: CSS.Transform.toString(transform),

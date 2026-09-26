@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { pathName } from '@/lib/display-path';
 import { FileDiff } from 'lucide-react';
 import { Button, LoadingState, PageHeader, Panel, PanelCaption } from '@/components/ui';
 import type { AgentStatus, ChangedFile, ReviewDiff } from '@/types/electron';
@@ -76,10 +77,10 @@ export default function ReviewPage() {
         const projectPath = agent.projectPath || repoPath;
         byPath.set(repoPath, {
           key: repoPath,
-          label: agent.branchName || repoPath.split('/').pop() || repoPath,
+          label: agent.branchName || pathName(repoPath) || repoPath,
           repoPath,
           projectPath,
-          projectName: projectPath.split('/').filter(Boolean).pop() || projectPath,
+          projectName: pathName(projectPath) || projectPath,
           agents: [agent.name || agent.id],
         });
       }

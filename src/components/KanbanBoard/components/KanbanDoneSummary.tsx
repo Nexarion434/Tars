@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, DialogShell, PanelCaption } from '@/components/ui';
+import { pathName } from '@/lib/display-path';
 import type { KanbanTask } from '@/types/kanban';
 
 interface KanbanDoneSummaryProps {
@@ -10,7 +11,7 @@ interface KanbanDoneSummaryProps {
 }
 
 export function KanbanDoneSummary({ task, onClose, onDelete }: KanbanDoneSummaryProps) {
-  const projectName = task.projectPath.split('/').pop() || task.projectId;
+  const projectName = pathName(task.projectPath) || task.projectId;
 
   // Everything the old header and the old meta footer carried, as one muted
   // line: the green banner, the CheckCircle2 and the Clock icon were three
