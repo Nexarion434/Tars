@@ -79,12 +79,12 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 23 | Memory, Projects, reprise de session (`~/.claude/projects`) | KO | B/H-01..H-05 | win-platform | unit encodage `C--Users-...` ; E2E Projects |
 | 24 | Hermes, Tailscale, Tasmania | ? | B/I-01..I-03 | win-platform | unit emplacements par plateforme |
 | 25 | Bots Telegram / Slack / Discord | lancement **OK** ; noms de projets **OK** (bots) ; checklist manuelle : ? | B/A-04, B/J-01 | win-providers | checklist manuelle §4 |
-| 26 | Tray (icône, panneau, menu) | KO | B/K-01..K-04 | win-shell-ui (visuel) | capture validée par Nicolas |
+| 26 | Tray (icône, panneau, menu) | **OK** (`.ico` grille orange, panneau au-dessus de la barre des tâches, clic droit Show/Quit, K-02 ; E2E `desktop-shell.win32.spec`) ; netteté 125-150 % : checklist manuelle | B/K-01..K-04 | win-shell-ui (visuel) | capture validée par Nicolas |
 | 27 | Ouvrir dans un terminal | KO | B/L-01 | win-platform | unit win32 : `wt.exe -d`, puis PowerShell, puis cmd |
-| 28 | Fenêtre, barre de titre, déplacement | KO | B/N-01, B/N-02 | win-shell-ui (visuel) | capture validée par Nicolas |
-| 29 | Cycle de vie (fermer, instance unique, notifications) | KO | B/N-03..N-05 | win-shell-ui | manuel : fermer la fenêtre ne tue pas les agents |
-| 30 | Raccourcis clavier (Ctrl+W/R/chiffres) | ? | B/N-07..N-09 | win-shell-ui | E2E touche Ctrl+chiffre : une seule action |
-| 31 | Textes et chemins affichés (noms de projets, `~`, copies Mac) | KO | B/U-01..U-08 | win-shell-ui | E2E surfaces avec chemins Windows |
+| 28 | Fenêtre, barre de titre, déplacement | **OK** (D5 : titleBarOverlay 32 px, suit le thème, zones de déplacement ; D15 panneaux sous la bande) | B/N-01, B/N-02 | win-shell-ui (visuel) | capture validée par Nicolas |
+| 29 | Cycle de vie (fermer, instance unique, notifications) | **OK** (D6 : fermer masque dans le tray, instance unique, fin de session Windows sauvegarde et arrête, AUMID) ; toast packagé : checklist manuelle | B/N-03..N-05 | win-shell-ui | manuel : fermer la fenêtre ne tue pas les agents |
+| 30 | Raccourcis clavier (Ctrl+W/R/chiffres) | **OK** (D7 : pas de menu, Ctrl+chiffre pages, Alt+chiffre panneaux, Ctrl+C/V terminal, collage multi-ligne entre crochets) | B/N-07..N-09 | win-shell-ui | E2E touche Ctrl+chiffre : une seule action |
+| 31 | Textes et chemins affichés (noms de projets, `~`, copies Mac) | **OK** noms de projets, arborescence Code, `~` (`src/lib/display-path.ts`) ; textes mac : D10 en attente | B/U-01..U-08 | win-shell-ui | E2E surfaces avec chemins Windows |
 | 32 | Secrets (modes POSIX sans effet, écritures atomiques) | KO | B/S-01, B/S-02 | win-platform | stress test rename ; SECURITY.md documenté |
 | 33 | Packaging NSIS + `.ico` | KO | B/P-01..P-03 | win-build | install / désinstall / mise à jour sur cette machine |
 | 34 | Auto-update depuis le fork | KO | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
@@ -149,7 +149,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
 
-Phase 3 et ses suivis mergés dans `windows` (e1c759c0). En cours : `win/desktop-shell` (D5 à D9), `win/renderer-paths` (U-01, U-02, U-04, U-05, U-07, U-08).
+Phases 3 et bureau Windows mergées dans `windows` (e00b7ba9). En cours : `win/packaging` (NSIS, auto-update depuis le fork, release:win), `win/ci-windows` (prêt, push bloqué : jeton gh sans scope `workflow`).
 
 Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/`, CI `windows-latest`), renderer (noms de projets U-02, chemins U-01..U-08, raccourcis N-07/N-08), phase 5 (NSIS, `.ico`, auto-update depuis le fork : voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
 
@@ -163,3 +163,4 @@ Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/
 | 2026-09-25 | Scripts npm cross-platform (electron-dev, design-lint.mjs, build-renderer, npm-command) | `win/npm-scripts` | PASS (intégration) | APPROVE (2 tours) | aac7547b |
 | 2026-09-25 | Phase 3 : hooks Node (D1), appels CLI, ACP + cli-updater, lancement direct (D2/D3), chemins/mémoire/sécurité | `win/integration-p3` (5 lots) | PASS (2e gate, 0 régression, 66 tests réparés) | APPROVE (2 à 3 tours chacun) | 33ca3429 |
 | 2026-09-26 | Suivis phase 3 (killPty, garde home et ancêtres toutes plateformes, dédoublonnage platform, projectName bots, check:dashes) + portabilité des tests (npm test 0 échec sous Windows, E2E 46 surfaces atteintes) | `win/integration-p3b` | PASS | APPROVE | e1c759c0 |
+| 2026-09-26 | Bureau Windows D5 à D9, D14, D15 (barre de titre, tray, fermeture, raccourcis, sélecteur de shell) + affichage des chemins dans le renderer | `win/integration-p4` (`win/desktop-shell`, `win/renderer-paths`) | PASS (sous charge) | APPROVE | e00b7ba9 |
