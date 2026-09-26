@@ -140,13 +140,23 @@ jobs:
       - name: Build the main process
         run: npx tsc -p electron/tsconfig.json
 
+      # The runner's display is 1024x768; the specs that capture and click the
+      # real screen need their window on it (.github/scripts/display-resolution.ps1).
+      - name: A 1920x1080 display
+        shell: pwsh
+        run: ./.github/scripts/display-resolution.ps1 -Width 1920 -Height 1080
+
       # The screenshot specs (every test titled `surface: <name>`) compare
       # against e2e/__screenshots__/win32/. Until those references are recorded
       # they would all fail on a missing file, so they are left out, and the
       # rest of the suite runs. Once the folder is committed, the whole suite
       # runs with no edit here.
+      # E2E_TRACE=on: each spec keeps the app's own trace (app-trace.zip, its
+      # pages, DOM and screenshots) beside its artefacts, uploaded on failure.
       - name: Run E2E
         shell: bash
+        env:
+          E2E_TRACE: 'on'
         run: |
           if [ -d e2e/__screenshots__/win32 ]; then
             echo "win32 references present: full suite"
