@@ -342,9 +342,21 @@ test.describe('the Windows desktop shell', () => {
     await page.keyboard.press('Control+Shift+B');
     await page.waitForTimeout(600);
 
-    recordValues({ topAnchoredOverlays: found, bannerTop });
+    // The board's own fullscreen (TerminalsView/index.tsx) has no control that
+    // opens it today; its container, with its classes, gets the same rule.
+    const boardFullscreenPadding = await page.evaluate(() => {
+      const el = document.createElement('div');
+      el.className = 'flex flex-col overflow-hidden fixed inset-0 z-[100] bg-background window-no-drag pt-7';
+      document.body.appendChild(el);
+      const padding = parseFloat(getComputedStyle(el).paddingTop);
+      el.remove();
+      return padding;
+    });
+
+    recordValues({ topAnchoredOverlays: found, bannerTop, boardFullscreenPadding });
     expect(found).toEqual({ projectsDrawer: [], panelFullscreen: [] });
     expect(bannerTop).toBeGreaterThanOrEqual(32);
+    expect(boardFullscreenPadding).toBeGreaterThanOrEqual(32);
   });
 
   test('D7: what a focused terminal receives, and what no key does any more', async () => {
@@ -648,29 +660,38 @@ test.describe('the Windows desktop shell', () => {
   test('D6: a second launch shows the first window and exits', async () => {
     test.setTimeout(120_000);
     await inMain(app, 'w.hide();');
-    const agentsBefore = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
-    const electronPath = (await import('electron')).default as unknown as string;
-    const env: Record<string, string> = Object.fromEntries(Object.entries(process.env)
-      .filter(([k, v]) => v !== undefined && !/^(CLAUDE|DOROTHY|ANTHROPIC)|^CLAUDECODE$/.test(k))) as Record<string, string>;
-    const roaming = path.join(home, 'AppData', 'Roaming');
-    const local = path.join(home, 'AppData', 'Local');
-    Object.assign(env, {
-      HOME: home, USERPROFILE: home, APPDATA: roaming, LOCALAPPDATA: local, CFFIXED_USER_HOME: home,
-      NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31461), DOROTHY_E2E: '1',
-    });
-    const started = Date.now();
-    const second = spawn(electronPath, ['.', `--user-data-dir=${path.join(home, 'electron-profile')}`], { env, stdio: 'ignore' });
-    const code = await new Promise<number | null>((resolve) => {
-      const timer = setTimeout(() => { second.kill(); resolve(null); }, 30_000);
-      second.on('exit', (c) => { clearTimeout(timer); resolve(c); });
-    });
-    await sleep(1000);
-    const shown = await inMain<{ visible: boolean; focused: boolean }>(app, 'return { visible: w.isVisible(), focused: w.isFocused() };');
-    const agentsAfter = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
-    recordValues({ singleInstance: { exitCode: code, ms: Date.now() - started, firstWindow: shown, agentsUntouched: agentsBefore === agentsAfter } });
-    expect(code).toBe(0);
-    expect(shown.visible).toBe(true);
-    expect(agentsAfter).toBe(agentsBefore);
+    // The first instance's own 30 s autosave would rewrite agents.json inside
+    // the window this compares (about one run in fourteen): held off for it.
+    const autosave = (call: 'stopAgentAutosave' | 'startAgentAutosave') => app.evaluate((_e, { dist, call }) =>
+      process.mainModule!.require(`${dist}/core/agent-manager.js`)[call](), { dist: DIST, call });
+    await autosave('stopAgentAutosave');
+    try {
+      const agentsBefore = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
+      const electronPath = (await import('electron')).default as unknown as string;
+      const env: Record<string, string> = Object.fromEntries(Object.entries(process.env)
+        .filter(([k, v]) => v !== undefined && !/^(CLAUDE|DOROTHY|ANTHROPIC)|^CLAUDECODE$/.test(k))) as Record<string, string>;
+      const roaming = path.join(home, 'AppData', 'Roaming');
+      const local = path.join(home, 'AppData', 'Local');
+      Object.assign(env, {
+        HOME: home, USERPROFILE: home, APPDATA: roaming, LOCALAPPDATA: local, CFFIXED_USER_HOME: home,
+        NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31461), DOROTHY_E2E: '1',
+      });
+      const started = Date.now();
+      const second = spawn(electronPath, ['.', `--user-data-dir=${path.join(home, 'electron-profile')}`], { env, stdio: 'ignore' });
+      const code = await new Promise<number | null>((resolve) => {
+        const timer = setTimeout(() => { second.kill(); resolve(null); }, 30_000);
+        second.on('exit', (c) => { clearTimeout(timer); resolve(c); });
+      });
+      await sleep(1000);
+      const shown = await inMain<{ visible: boolean; focused: boolean }>(app, 'return { visible: w.isVisible(), focused: w.isFocused() };');
+      const agentsAfter = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
+      recordValues({ singleInstance: { exitCode: code, ms: Date.now() - started, firstWindow: shown, agentsUntouched: agentsBefore === agentsAfter } });
+      expect(code).toBe(0);
+      expect(shown.visible).toBe(true);
+      expect(agentsAfter).toBe(agentsBefore);
+    } finally {
+      await autosave('startAgentAutosave');
+    }
   });
 
   test('D6: closing hides to the tray and the agents keep running; Alt+F4 too; Show Tars brings it back', async () => {
