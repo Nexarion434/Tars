@@ -14,7 +14,16 @@ import { rendererPlatform } from '@/lib/terminal-keys';
 const WINDOWS_DRAG_CSS = `
 .app-shell main header { -webkit-app-region: drag; }
 .app-shell main header :is(button, a, input, select, textarea, label, [role="button"], [role="combobox"], [tabindex]),
-[role="dialog"], [aria-modal="true"], .fixed.inset-0 { -webkit-app-region: no-drag; }
+[role="dialog"], [aria-modal="true"], .fixed.inset-0, .fixed.top-0.right-0.bottom-0 { -webkit-app-region: no-drag; }
+
+/* What is drawn from the very top of the window keeps its controls below the
+   caption band: a fullscreen terminal (board or panel), whose top padding was
+   the macOS traffic lights' 28 px, the Projects drawer, whose header now
+   runs under the band and starts its content below it, and the broadcast
+   banner, 16 px below the band instead of 16 px below the window's edge. */
+.fixed.inset-0.window-no-drag { padding-top: max(1.75rem, env(titlebar-area-height, 0px)); }
+.fixed.top-0.right-0.bottom-0 > .sticky.top-0:first-child { padding-top: env(titlebar-area-height, 0px); }
+.fixed.top-4.left-1\\/2 { top: calc(env(titlebar-area-height, 0px) + 1rem); }
 `;
 
 /** Read after hydration: the server render has no bridge, so both sides start at false. */

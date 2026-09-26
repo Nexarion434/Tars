@@ -293,6 +293,60 @@ test.describe('the Windows desktop shell', () => {
     expect(closed).toBe(true);
   });
 
+  test('D5: overlays anchored to the top keep their controls out from under the caption band', async () => {
+    test.setTimeout(180_000);
+    // Every visible control above the band's bottom edge: under the native
+    // caption buttons (right of the title bar area), or under the drag strip.
+    const underBand = () => page.evaluate(() => {
+      const bar = (navigator as unknown as { windowControlsOverlay: { getTitlebarAreaRect(): DOMRect } }).windowControlsOverlay.getTitlebarAreaRect();
+      return [...document.querySelectorAll('button, a, input, select, textarea, [role="button"]')]
+        .map(el => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ el, r }) => r.width > 0 && r.height > 0 && r.top < bar.height && getComputedStyle(el).visibility !== 'hidden')
+        .map(({ el, r }) => `${(el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 24)}@${Math.round(r.left)},${Math.round(r.top)}-${Math.round(r.bottom)}${r.right > bar.width ? ' under the caption buttons' : ''}`);
+    });
+    const found: Record<string, string[]> = {};
+
+    await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: 'open', exact: true }).first().click();
+    await page.waitForTimeout(1200);
+    found.projectsDrawer = await underBand();
+    await shotWindow(app, 'overlay-projects-drawer');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'close', exact: true }).first().click().catch(() => {});
+    await page.waitForTimeout(600);
+
+    await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3500);
+    await page.getByRole('button', { name: 'Panel actions' }).first().click();
+    await page.getByRole('button', { name: 'fullscreen', exact: true }).click();
+    await page.waitForTimeout(1200);
+    found.panelFullscreen = await underBand();
+    await shotWindow(app, 'overlay-panel-fullscreen');
+    await page.getByRole('button', { name: 'Panel actions' }).first().click();
+    await page.getByRole('button', { name: 'exit fullscreen', exact: true }).click();
+    await page.waitForTimeout(600);
+
+    // The broadcast banner (Ctrl+Shift+B on the board), which holds no control:
+    // where its top edge sits against the band.
+    await page.locator('main h1').first().click();
+    await page.keyboard.press('Control+Shift+B');
+    const banner = page.getByText('Broadcast Mode Active', { exact: false });
+    await banner.waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForTimeout(600);
+    const bannerTop = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('div.fixed')].find(d => d.textContent?.includes('Broadcast Mode Active'));
+      return el ? Math.round(el.getBoundingClientRect().top) : null;
+    });
+    await shotWindow(app, 'overlay-broadcast-banner');
+    await page.keyboard.press('Control+Shift+B');
+    await page.waitForTimeout(600);
+
+    recordValues({ topAnchoredOverlays: found, bannerTop });
+    expect(found).toEqual({ projectsDrawer: [], panelFullscreen: [] });
+    expect(bannerTop).toBeGreaterThanOrEqual(32);
+  });
+
   test('D7: what a focused terminal receives, and what no key does any more', async () => {
     test.setTimeout(240_000);
     let loads = 0;
