@@ -18,11 +18,30 @@ import * as path from 'node:path';
  *
  * TMPDIR is what os.tmpdir() reads on macOS and Linux, TEMP then TMP on
  * Windows. Each is put back as it was before the folder is removed.
+ *
+ * On Windows the folder is made under the canonical spelling of the temp dir.
+ * CI's windows-latest runs as runneradmin, whose %TEMP% is the 8.3 short
+ * C:\Users\RUNNER~1\AppData\Local\Temp; git, and every program that
+ * canonicalises, report C:\Users\runneradmin\..., and Claude's folder name for
+ * a project under RUNNER~1 (RUNNER-1) cannot be read back to that folder. Seen
+ * on 2026-09-26 in CI run 36232894943: 15 tests (release, release:win, the
+ * purge, the Claude project decoder and its readers) compared the short
+ * spelling with the long one. A %TEMP% spelled in another case, or reached
+ * through a junction, differs from its canonical spelling the same way.
+ * fs.realpathSync.native expands a short name, the case and a junction;
+ * fs.realpathSync does not expand a short name or the case. darwin and linux
+ * keep their temp dir as it is spelled (/var/folders on macOS, which is behind
+ * the /private link): their tests were written and measured against it.
  */
 const TEMP_VARIABLES = ['TMPDIR', 'TEMP', 'TMP'] as const;
 
+/** Where the run's folder is made: the machine's temp dir, canonical on Windows. */
+export function runDirParent(tmp: string = os.tmpdir(), platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? fs.realpathSync.native(tmp) : tmp;
+}
+
 export default function setup(): () => void {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-run-'));
+  const dir = fs.mkdtempSync(path.join(runDirParent(), 'tars-vitest-run-'));
   const saved = Object.fromEntries(TEMP_VARIABLES.map(key => [key, process.env[key]]));
   for (const key of TEMP_VARIABLES) process.env[key] = dir;
   return () => {

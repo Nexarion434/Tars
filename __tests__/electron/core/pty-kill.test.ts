@@ -276,7 +276,10 @@ describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals'
         "@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*conpty_console_list_agent*' }).Count"], { encoding: 'utf8' }).trim();
       expect(helpers, 'a list helper was left running').toBe('0');
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      // The killed shells ran in this folder, and Windows may hold it a moment
+      // after they end: EBUSY on CI's windows-latest (run 36232894943). Node
+      // retries with a linear backoff, 200 ms longer each time, 11 s at most.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   });
 });
