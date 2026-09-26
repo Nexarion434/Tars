@@ -255,8 +255,10 @@ export function fakeGh(state: FakeGhState = {}): FakeGh {
         else process.env[key] = value;
       }
       // The fake's folder with it (on Windows, a hard link or a copy of node):
-      // nothing a test made is left in the temp dir.
-      fs.rmSync(dir, { recursive: true, force: true });
+      // nothing a test made is left in the temp dir. Windows may still hold
+      // gh.exe a moment after the last run of it has exited: EBUSY on CI's
+      // windows-latest (run 36247263165). Linear backoff, 11 s at most.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     },
     setState(next) {
       fs.writeFileSync(stateFile, JSON.stringify(next));

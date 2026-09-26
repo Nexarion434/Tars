@@ -54,6 +54,12 @@ import type { IPty } from 'node-pty';
  *    then (on the runner, an administrator: anything). The harness records
  *    those kills and sends none, and asserts them: node-pty's plain kill()
  *    does send one per exited shell, killPty() sends none.
+ * 11. (run 36247263165) Three of the ten running shells answered their id at
+ *    the one reading, 7 s after the kill: still running, or ids Windows had
+ *    already handed to other processes. The harness reads each shell's
+ *    creation time before the kill, and waits up to 20 s more for every
+ *    shell that is still that process to go; an id held by a process created
+ *    since is not the shell, and is reported, not counted.
  */
 
 type Agent = {
@@ -238,7 +244,8 @@ const running = Array.from({ length: 10 }, () => spawn(['/d', '/q', '/k']));
 // is). A kill of one is recorded and never sent, in both modes: node-pty's
 // plain kill() sends one per exited shell five seconds on, and on CI's
 // windows-latest that ended a vitest worker (run 36240513885).
-const exitedIds = new Set(exited.map(t => t.pid));
+// Not a running shell's: Windows may already have given it one of these ids.
+const exitedIds = new Set(exited.map(t => t.pid).filter(pid => !running.some(t => t.pid === pid)));
 const staleKills = [];
 const sendKill = process.kill.bind(process);
 process.kill = (pid, signal) => {
@@ -246,19 +253,50 @@ process.kill = (pid, signal) => {
   return sendKill(pid, signal);
 };
 const kill = mode === 'plain' ? t => t.kill() : t => killPty(t, { listAgent: process.env.LIST_AGENT });
-Promise.all(exited.map(t => new Promise(resolve => t.onExit(resolve)))).then(() => new Promise(r => setTimeout(r, 1500))).then(() => {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// When the process holding each of these ids now was created, from
+// Win32_Process: a shell that outlived its kill is still the process it was,
+// an id that answers after its shell has gone may be another's.
+const powershell = (process.env.SystemRoot || 'C:\\Windows') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+const created = pids => {
+  if (pids.length === 0) return new Map();
+  const filter = pids.map(pid => 'ProcessId=' + Math.trunc(pid)).join(' OR ');
+  const out = require('child_process').execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    "Get-CimInstance Win32_Process -Filter '" + filter + "' | ForEach-Object { \"$($_.ProcessId) $(([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds())\" }"],
+  { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+  return new Map(out.split(/\r?\n/).filter(Boolean).map(line => line.trim().split(' ').map(Number)));
+};
+const holding = pids => pids.filter(pid => { try { process.kill(pid, 0); return true; } catch { return false; } });
+Promise.all(exited.map(t => new Promise(resolve => t.onExit(resolve)))).then(() => sleep(1500)).then(async () => {
+  const runningIds = running.map(t => t.pid);
+  const born = created(runningIds);
   for (const t of [...exited, ...running]) kill(t);
   // Past node-pty's own five seconds, and the helper's.
-  setTimeout(() => {
-    const alive = running.map(t => t.pid).filter(pid => { try { process.kill(pid, 0); return true; } catch { return false; } });
-    process.stdout.write(JSON.stringify({ uncaught, alive, running: running.map(t => t.pid), exited: [...exitedIds], staleKills }) + '\n');
-    process.exit(0);
-  }, 7000);
+  await sleep(7000);
+  // Then until every running shell has gone, 20 s at most: on CI's
+  // windows-latest three were still answering at 7 s (run 36247263165).
+  const until = Date.now() + 20000;
+  let alive = [];
+  let reused = [];
+  for (;;) {
+    const held = holding(runningIds);
+    const now = created(held);
+    alive = held.filter(pid => now.has(pid) && now.get(pid) === born.get(pid));
+    reused = held.filter(pid => now.has(pid) && now.get(pid) !== born.get(pid));
+    if (alive.length === 0 || Date.now() > until) break;
+    await sleep(500);
+  }
+  process.stdout.write(JSON.stringify({ uncaught, alive, reused, born: born.size, running: runningIds, exited: [...exitedIds], staleKills }) + '\n');
+  process.exit(0);
+}).catch(err => {
+  // Said and ended, rather than left running until the test's own timeout.
+  process.stdout.write(JSON.stringify({ harnessError: String((err && err.stack) || err) }) + '\n');
+  process.exit(2);
 });
 `;
 
 describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals', () => {
-  it('8. raises no AttachConsole failure and leaves nothing running, where a plain kill() does fail', { timeout: 60_000 }, () => {
+  it('8. raises no AttachConsole failure and leaves nothing running, where a plain kill() does fail', { timeout: 200_000 }, () => {
     const repo = process.cwd();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-pty-kill-'));
     // The killed shells ran in this folder, and Windows may hold it a moment
@@ -283,8 +321,10 @@ describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals'
     };
     // Both streams kept: the forked helpers print on stderr, the harness reports on stdout.
     const runCapturing = (mode: 'plain' | 'killPty') => {
-      const r = spawnSync(process.execPath, [path.join(dir, 'harness.js'), mode], { env, cwd: dir, encoding: 'utf8', timeout: 40_000 });
-      const report = JSON.parse(r.stdout.trim().split('\n').pop() || '{}') as { uncaught: string[]; alive: number[]; running: number[]; exited: number[]; staleKills: number[] };
+      const r = spawnSync(process.execPath, [path.join(dir, 'harness.js'), mode], { env, cwd: dir, encoding: 'utf8', timeout: 90_000 });
+      const report = JSON.parse(r.stdout.trim().split('\n').pop() || '{}') as { uncaught: string[]; alive: number[]; reused: number[]; born: number; running: number[]; exited: number[]; staleKills: number[] };
+      const failed = (report as { harnessError?: string }).harnessError;
+      if (failed) throw new Error(`the ${mode} harness failed: ${failed}`);
       return { stderr: r.stderr, report };
     };
     const plain = runCapturing('plain');
@@ -296,6 +336,8 @@ describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals'
     expect(safe.report.uncaught).toEqual([]);
     expect(safe.report.staleKills, 'the id of an exited shell was killed, which may be another process by now').toEqual([]);
     expect(safe.report.running).toHaveLength(10);
+    expect(safe.report.born, 'every running shell was there to be killed').toBe(10);
+    if (safe.report.reused.length > 0) console.log('pty-kill 8: ids of killed shells already held by other processes:', safe.report.reused);
     expect(safe.report.alive, 'a running terminal outlived its kill').toEqual([]);
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const helpers = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
