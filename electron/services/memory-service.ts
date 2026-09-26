@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
 import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
+import { unlinkRetryingSync } from '../platform/rename-replacing';
 
 export interface MemoryFile {
   name: string;
@@ -233,7 +234,7 @@ export function deleteMemoryFile(filePath: string): { success: boolean; error?: 
     if (path.basename(filePath) === 'MEMORY.md') {
       return { success: false, error: 'Cannot delete the main MEMORY.md entrypoint' };
     }
-    fs.unlinkSync(filePath);
+    unlinkRetryingSync(filePath);
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Failed to delete file' };

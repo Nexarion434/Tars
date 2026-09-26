@@ -5,6 +5,7 @@ import { DATA_DIR_SHELL, dataPath } from '../constants';
 import { updateSharedJsonSync } from './shared-file';
 import { usesNodeHooks, nodeHookCommand, parseNodeHookCommand } from './hook-command';
 import { getHooksPath } from './hooks-path';
+import { unlinkRetryingSync } from '../platform/rename-replacing';
 
 const STATUSLINE_SCRIPT = `#!/usr/bin/env bash
 # Dev Bar statusline for Claude Code
@@ -360,7 +361,7 @@ export function disableStatusLine({ platform = process.platform }: StatusLineOpt
   // Remove cached rate-limits data so Usage page no longer shows stale quota
   const rateLimitsFile = dataPath('rate-limits.json');
   if (fs.existsSync(rateLimitsFile)) {
-    fs.unlinkSync(rateLimitsFile);
+    unlinkRetryingSync(rateLimitsFile);
   }
 }
 
