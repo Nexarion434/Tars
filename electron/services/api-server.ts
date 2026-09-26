@@ -17,6 +17,19 @@ import { isWebhookSecret } from './hermes-webhook-secret';
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+/**
+ * How long an idle kept-alive connection stays open past the `Keep-Alive:
+ * timeout=5` the server advertises, which is unchanged. Node's default is one
+ * second: a client whose event loop was held for longer than that (a
+ * synchronous call, a starved machine) did not get to run its own keep-alive
+ * timer, found the connection still in its pool after the server had closed
+ * it, and its next request was reset: ECONNRESET for a request the server
+ * never saw (e2e/acp-delegation.spec.ts on Windows, 8 resets in 30 held
+ * POSTs). A minute in all now. Clients still close their end on the five
+ * seconds they are told, and the quit still ends idle connections at once.
+ */
+const KEEP_ALIVE_GRACE_MS = 55_000;
+
 // The event bus lives in its own module: the overseer listens to it and must
 // not have to import the HTTP server, the Telegram bot and the Slack app to do
 // so. Re-exported here because callers reach it through this file.
@@ -422,6 +435,10 @@ export function startApiServer(
       sendJson({ error: 'Internal server error' }, 500);
     }
   });
+
+  // In the Node 22 the tests run and the Node 24 of Electron 44 (both
+  // measured), not yet in the @types/node this repo pins.
+  (apiServer as http.Server & { keepAliveTimeoutBuffer: number }).keepAliveTimeoutBuffer = KEEP_ALIVE_GRACE_MS;
 
   const server = apiServer;
   const resolveSettings = getAppSettings || (() => appSettings);
