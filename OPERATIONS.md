@@ -134,7 +134,9 @@ npm run sandbox
 # or: bash scripts/sandbox.sh /path/to/Tars.app
 ```
 
-`scripts/sandbox.sh` launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox`,
+On Windows `npm run sandbox` starts `release\win-unpacked\Tars.exe` instead (see
+*Windows: `npm run release:win`*). On macOS and Linux it runs `scripts/sandbox.sh`, which
+launches `release/mac-arm64/Tars.app` with `HOME=$HOME/Tars-sandbox`,
 `CFFIXED_USER_HOME` set to the same directory, and `DOROTHY_API_PORT=31499`. That redirects
 `~/.dorothy`, `~/.claude` and `~/Library/Application Support/Tars` into the sandbox, so agents,
 settings, the API token and window state are all throwaway copies. Your production install
@@ -510,6 +512,25 @@ path, so a change to either setting changes the other with it. The comment on `G
 not the upstream: pointing it at `Charlie85270/Dorothy` offered upstream builds as updates to
 fork installs, which overwrote them. Nothing is ever pushed upstream.
 
+**Windows builds of the fork read the fork instead.** The same two paths, pointed elsewhere
+by the platform, never by editing the macOS settings:
+
+| path (Windows) | target | source |
+|---|---|---|
+| `electron-updater` (`latest.yml`) | `Nexarion434/Tars` | `package.json` → `build.win.publish`, baked into `resources\app-update.yml` |
+| GitHub-API fallback | `Nexarion434/Tars` | `electron/platform/update-feed.ts` → `WINDOWS_UPDATE_REPO` |
+
+`__tests__/electron/platform/update-feed.test.ts` fails when those two name different
+repositories. On win32 the fallback compares versions as semver (a Windows build is
+`<version>-win.<n>`, so `1.9.0-win.10` is after `1.9.0-win.9`, and `1.9.0` after every
+`1.9.0-win.<n>`), and offers the release's `*Setup*.exe`, this architecture's first, or the
+release page: never a `.dmg` or a `.zip`. macOS and Linux keep `GITHUB_REPO`, the numeric
+comparison and the dmg, then the zip.
+
+One 404 per check is expected on Windows: because the installed version has a prerelease part,
+`electron-updater` (6.8, `GitHubProvider`) asks the release for `win.yml` (the channel it reads from `-win.<n>`) before
+it falls back to `latest.yml`, which is the file the build writes.
+
 Auto-check fires 5 s after `whenReady()` and every 30 minutes, and each tick reads `appSettings.autoCheckUpdates`:
 with it `false` the tick does nothing, so turning the switch off or on needs no restart. The same switch
 governs the CLI updates below.
@@ -571,6 +592,68 @@ a build of the version being released.
 
 `latest-mac.yml` must be in the release assets or `electron-updater` throws and every client
 silently drops to the GitHub-API fallback.
+
+#### Windows: `npm run release:win`
+
+The Windows build of the fork has its own script, `scripts/release-win.mjs`, and touches
+nothing of the above: `package.json`'s version (upstream's) is never edited, and macOS keeps
+`build.publish`, `npm run electron:build` and `npm run release`.
+
+```powershell
+npm run release:win                    # dry run: builds and checks, prints the gh command, publishes nothing
+npm run release:win -- --n 2           # the same, as <version>-win.2
+npm run release:win -- --publish       # from origin/windows, clean tree: releases on Nexarion434/Tars
+```
+
+- **Version** (decision D11): `<package.json version>-win.<n>`, stamped through
+  electron-builder's `extraMetadata.version`. `n` is `--n`, or one past the highest
+  `v<version>-win.<n>` released on the fork (read with `gh release list`), so it starts again at
+  1 for each upstream version. With neither, the script stops rather than guess.
+- **Build**: the app icon (`scripts/make-app-ico.mjs` writes `build/icon.ico` from
+  `public/icon.svg`), `npm run build:renderer`, the main process, the seven MCP bundles, then
+  `electron-builder --win --x64 --config build/electron-builder-win.json`. That file is
+  `package.json` `build` plus exclusions of what the packaged app never loads (`next`,
+  `@next/*`, `sharp`, `@img/*`, better-sqlite3's `deps/` and non-win32 prebuilds, node-pty's
+  darwin prebuilds). It is written at every run, never committed, and never read by macOS.
+  Not `build.win.files`: electron-builder makes a platform's own `files` a matcher of its own,
+  and one holding only exclusions packs the whole checkout (`.next/cache`, `design/`).
+- **Output**, in `release/` of the checkout: `Tars-Setup-<v>.exe` (per-user NSIS, no elevation,
+  `%LOCALAPPDATA%\Programs\Tars`, Start menu and desktop shortcuts, user data kept on
+  uninstall), its `.blockmap`, `Tars-Windows-<v>-x64.zip`, `latest.yml`, `win-unpacked\`.
+- **Checks** before anything is published: `latest.yml` names this version and the installer
+  with its size and sha512, the blockmap and the zip exist, `app.asar` says this version,
+  `resources\app-update.yml` feeds from the fork, node-pty (with `conpty.dll` and
+  `OpenConsole.exe`), better-sqlite3, `hooks\tars-hook.mjs` and every MCP bundle are on disk,
+  and nothing the app never loads is shipped.
+- **`--publish`** refuses unless `HEAD` is `origin/windows` after a fetch, the tracked tree is
+  clean, the Electron installed is the one locked, `v<v>` is on the fork neither as a release
+  nor as a tag, and nothing newer is released there. It then runs `gh release create` on the
+  fork with the installer, its blockmap, the zip and `latest.yml`, on the commit built, as the
+  latest release, and reads back the tag, every asset's digest, `latest.yml` byte for byte and
+  `/releases/latest`.
+
+**The Windows builds are not signed** (decision D12): SmartScreen warns on the first run, and
+`electron-updater` installs an update without checking a publisher. So whoever can write to
+the fork's releases can ship code to every Windows install. Keep the accounts and tokens with
+write access to `Nexarion434/Tars` few, with 2FA, and never give a CI token more than that
+repository's `contents: write`.
+
+To try a build without touching your own profile, point every profile variable at a
+throwaway folder first, then:
+
+```powershell
+npm run sandbox                                    # release\win-unpacked\Tars.exe, %USERPROFILE%\Tars-sandbox, API 31499, log in Tars-sandbox\tars.log
+npm run sandbox -- C:\path\to\Tars.exe             # another build
+Tars-Setup-<v>.exe /S /D=C:\throwaway\Tars         # silent per-user install; /D last, unquoted
+"C:\throwaway\Tars\Uninstall Tars.exe" /S /currentuser
+```
+
+The uninstall entry is written to `HKCU` even with the profile variables moved, and removed by
+the uninstall. To test an update without GitHub, replace the installed
+`resources\app-update.yml` with `provider: generic`, `url: http://127.0.0.1:<port>/` and
+`updaterCacheDirName: tars-updater`, serve the newer build's `latest.yml`, `.exe` and
+`.blockmap` from that port, check and download from the app, then quit it: the update installs
+on quit, silently, and puts the fork's `app-update.yml` back.
 
 ### Which builds are kept
 
