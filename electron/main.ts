@@ -31,7 +31,9 @@ import {
   setupProtocolHandler,
   getMainWindow,
   isDevBuild,
+  revealMainWindow,
 } from './core/window-manager';
+import { claimSingleInstance, installDesktopShell } from './core/desktop-lifecycle';
 
 import {
   agents,
@@ -397,6 +399,12 @@ function moveLocalKanbanToHermes() {
 
 // ============== App Initialization ==============
 
+// Windows: one Tars per profile. A second launch shows the first one's window
+// and ends here: it has read app-settings.json and nothing else, and it writes
+// nothing and starts nothing. Always true elsewhere.
+const isPrimaryInstance = claimSingleInstance(revealMainWindow);
+if (!isPrimaryInstance) app.exit(0);
+
 // Register protocol schemes before app is ready
 registerProtocolSchemes();
 
@@ -404,6 +412,7 @@ registerProtocolSchemes();
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
   console.log('App ready, initializing...');
 
   // Ensure data directory exists
@@ -462,6 +471,17 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Windows: no menu, toasts, close to the tray (decisions D5 to D9).
+  installDesktopShell({
+    getMainWindow,
+    explanation: {
+      explained: () => appSettings.closeToTrayExplained === true,
+      markExplained: () => {
+        appSettings = { ...appSettings, closeToTrayExplained: true };
+        saveAppSettingsToFile(appSettings);
+      },
+    },
+  });
 
   // Set the main window reference in utils
   setUtilsMainWindow(getMainWindow());
