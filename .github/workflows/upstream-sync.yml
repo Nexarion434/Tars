@@ -5,6 +5,11 @@ name: Upstream sync
 # green fast-forward windows to it and cut a Windows release, so installed
 # builds update. sync-upstream.ps1 is the manual equivalent.
 #
+# REQUIRED: the fork's default branch must be `windows` (Settings > General >
+# Default branch). GitHub fires a schedule, and shows the Run workflow button,
+# only for a workflow file on the default branch; main mirrors upstream and
+# never carries this file, not even as a stub.
+#
 # Why one workflow and no pull request: a push or a PR made with the default
 # GITHUB_TOKEN starts no other workflow (docs.github.com/en/actions/concepts/
 # security/github_token), and auto-merge needs a protected branch with required
@@ -20,6 +25,11 @@ name: Upstream sync
 # change a file under .github/workflows/ is refused at the push, and needs
 # SYNC_TOKEN (a fine-grained token on this repository with Contents and
 # Workflows read and write) or a manual sync-upstream.ps1.
+#
+# Actions are pinned by commit SHA, the tag in a comment: three jobs here hold
+# a token that can push (mirror-main, prepare, promote) and one calls a release.
+# Only those three keep credentials in .git/config; every other checkout sets
+# persist-credentials: false.
 on:
   schedule:
     # 04:17 UTC: off the top of the hour, when GitHub delays scheduled runs.
@@ -42,7 +52,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN || github.token }}
@@ -65,7 +75,7 @@ jobs:
       conflicts: ${{ steps.sync.outputs.conflicts }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN || github.token }}
@@ -91,7 +101,9 @@ jobs:
       issues: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # Upstream file names reach the issue through the environment, never
       # through the script text.
@@ -105,6 +117,10 @@ jobs:
           SYNC_UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream }}
         run: bash .github/scripts/upstream-sync.sh report-conflict
 
+  # The gate runs the ci.yml and ci-windows.yml of the commit this run started
+  # from (windows before the merge), not the ones the merge brings: `uses:`
+  # takes no expression. An upstream change to those files is enforced from
+  # the next sync on.
   gate-ubuntu:
     name: Gate (ubuntu)
     needs: prepare
@@ -125,31 +141,35 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.sha }}
 
-  # One automatic retry of the e2e job alone, on a fresh runner, when the unit
-  # job passed and e2e failed (the known acp-delegation ECONNRESET flake). No
-  # spec is ignored: the whole suite runs again, and a second failure stops
-  # the sync.
-  gate-windows-e2e-retry:
-    name: Gate (windows e2e, retry)
+  # One automatic retry when the windows gate failed (the known acp-delegation
+  # ECONNRESET flake), on fresh runners. No spec is ignored.
+  #   unit passed, e2e failed      rerun e2e alone (e2e_only)
+  #   unit failed                  no retry: the sync stops
+  #   no outputs (a failed called  rerun the whole windows gate, unit then e2e,
+  #   workflow may leave them       since nothing says the unit job passed
+  #   empty)
+  # promote needs this retry to succeed; a rerun whose unit job fails fails.
+  gate-windows-retry:
+    name: Gate (windows, retry)
     needs: [prepare, gate-windows]
     if: >-
       ${{ !cancelled() && needs.prepare.outputs.state == 'merged'
-      && needs.gate-windows.outputs.unit == 'success'
-      && needs.gate-windows.outputs.e2e == 'failure' }}
+      && needs.gate-windows.result == 'failure'
+      && needs.gate-windows.outputs.unit != 'failure' }}
     permissions:
       contents: read
     uses: ./.github/workflows/ci-windows.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
-      e2e_only: true
+      e2e_only: ${{ needs.gate-windows.outputs.unit == 'success' }}
 
   promote:
     name: Fast-forward windows to the merge
-    needs: [prepare, gate-ubuntu, gate-windows, gate-windows-e2e-retry]
+    needs: [prepare, gate-ubuntu, gate-windows, gate-windows-retry]
     if: >-
       ${{ !cancelled() && needs.prepare.outputs.state == 'merged'
       && needs.gate-ubuntu.result == 'success'
-      && (needs.gate-windows.result == 'success' || needs.gate-windows-e2e-retry.result == 'success') }}
+      && (needs.gate-windows.result == 'success' || needs.gate-windows-retry.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -158,7 +178,7 @@ jobs:
       sha: ${{ steps.promote.outputs.sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           token: ${{ secrets.SYNC_TOKEN || github.token }}
