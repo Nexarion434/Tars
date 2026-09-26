@@ -144,6 +144,7 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 | D12 | Signature de l'installeur | Aucune (SmartScreen au premier lancement ; auto-update fonctionnel) | 2026-09-26 | Nicolas |
 | D13 | Synchro avec Jean | GitHub Action quotidienne : merge de `upstream/main` dans une branche `win/sync-<date>`, PR vers `windows`, CI Windows + ubuntu ; **merge automatique si tout est vert**, puis release Windows (auto-update) | 2026-09-26 | Nicolas |
 | D14 | Textes du lot desktop-shell | Validés tels quels : dialogue de première fermeture (« Keep your agents running? », « Keep running in the tray » / « Quit and stop agents »), menu du tray « Show Tars » / « Quit Tars », lignes « Shell » / « Shell path » et libellés des shells ; badge d'alerte du tray : point rouge actuel conservé | 2026-09-26 | Nicolas |
+| D15 | Panneaux fixés en haut sous Windows | Tiroirs, terminal plein écran et tout panneau `fixed top-0` démarrent sous la bande de 32 px des boutons natifs (Windows seulement) | 2026-09-26 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
 ## 5bis. Reprise (état au 2026-09-25 soir)
