@@ -122,6 +122,41 @@ async function call<T>(page: Page, fn: (api: Api['electronAPI'], arg: unknown) =
   }, [fn.toString(), arg] as const) as Promise<T>;
 }
 
+/**
+ * How long a PowerShell whose terminal is alive may take to reach its prompt.
+ * Not a speed expectation: the wait below ends at once when the terminal is
+ * gone, which is the defect it is there for (a shell ConPTY cannot start, A1).
+ * Windows PowerShell's start is CPU bound. Measured on 2026-09-26 through
+ * node-pty with a fresh sandbox profile, as the fixture gives: 0.4 s idle on
+ * an 8-thread machine, 9.5 s beside 32 busy threads, 11 to 17 s beside 64.
+ * CI run 36264478005 (windows-latest) saw no prompt in the 30 s this used to
+ * allow, and its rerun of the same commit passed the whole test in 16.7 s;
+ * what that run printed could not say whether its terminal was alive (below).
+ */
+const PROMPT_WAIT_MS = 90_000;
+
+/**
+ * Waits for PowerShell's prompt in an agent's terminal and returns how long it
+ * took. Fails at once when the terminal has gone, and after PROMPT_WAIT_MS when
+ * it is alive and silent, both times with what the terminal held, raw: the
+ * report stripped the escapes of an empty screen down to "", which said
+ * neither whether the shell had died nor what it printed.
+ */
+async function powerShellPrompt(page: Page, id: string): Promise<number> {
+  const since = Date.now();
+  for (;;) {
+    const view = await call(page, (api, agentId) => api.agent.get(agentId as string), id);
+    const screen = (view?.output ?? []).join('');
+    if (/PS [A-Z]:\\/.test(screen)) return Date.now() - since;
+    const gone = !view?.ptyId || view.status !== 'idle';
+    if (gone || Date.now() - since > PROMPT_WAIT_MS) {
+      const state = JSON.stringify({ afterMs: Date.now() - since, status: view?.status ?? null, ptyId: view?.ptyId ?? null, screen });
+      throw new Error(`${gone ? 'the agent terminal ended before its PowerShell prompt' : 'the agent terminal never showed a PowerShell prompt'}: ${state}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
 test('an agent is created, started from a window, over the API and from a bot, running its CLI with the exact argv and never through a shell', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-launch-'));
@@ -169,13 +204,9 @@ test('an agent is created, started from a window, over the API and from a bot, r
     expect(worker.ptyId, 'agent:create opened no terminal').toBeTruthy();
     const idle = await call(page, (api, id) => api.agent.get(id as string), worker.id);
     expect(idle).toMatchObject({ status: 'idle', cliRunning: false });
-    if (onWindows) {
-      // The terminal an agent waits in is PowerShell's, at its prompt.
-      await expect.poll(async () => ((await call(page, (api, id) => api.agent.get(id as string), worker.id))?.output ?? []).join(''), {
-        timeout: 30_000, message: 'the agent terminal never showed a PowerShell prompt',
-      }).toMatch(/PS [A-Z]:\\/);
-    }
-    values.created = { id: worker.id, status: idle?.status, cliRunning: idle?.cliRunning };
+    // The terminal an agent waits in is PowerShell's, at its prompt.
+    const promptMs = onWindows ? await powerShellPrompt(page, worker.id) : undefined;
+    values.created = { id: worker.id, status: idle?.status, cliRunning: idle?.cliRunning, promptMs };
     await stepShot(page, '01-created');
 
     // ── Started from a window (A-02), with a prompt hostile to a shell ────
