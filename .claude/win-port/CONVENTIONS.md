@@ -52,6 +52,10 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
   worktree still holds a junction, remove it with `cmd /c rmdir node_modules` before anything else
   (never `Remove-Item -Recurse` or `git worktree remove --force` on a junction: they can follow it
   and wipe the main install).
+- **E2E in a fresh worktree under the safe env**: `next dev` fails on `next/font/google` (Turbopack:
+  "queries have exactly one entry") until the fonts are cached in that worktree's `.next`. Start
+  `next dev` once in the normal environment (the dev server only, never Electron), stop it, then run
+  the E2E under the safe env.
 - Stay inside the file scope your agent file declares. Need a change outside it: say so in
   your report, do not make it.
 - Commit subjects: lowercase, `feat:` / `fix:` / `chore:` / `test:` / `perf:` / `security:`.
