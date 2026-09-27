@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import ts from 'typescript';
 
-import { killPty, type PtyKillDeps } from '../../../electron/core/pty-kill';
+import { holdExitUntilTerminalsExit, killPty, type PtyKillDeps, type QuitHold } from '../../../electron/core/pty-kill';
 import type { IPty } from 'node-pty';
 
 /**
@@ -60,6 +60,26 @@ import type { IPty } from 'node-pty';
  *    creation time before the kill, and waits up to 20 s more for every
  *    shell that is still that process to go; an id held by a process created
  *    since is not the shell, and is reported, not counted.
+ *
+ * Added for the quit that hangs (win-qa, 2026-09-27), written before the code.
+ * Measured with Electron 44 and node-pty 1.1.0, electron.exe started directly
+ * with 6 ConPTY terminals, idle: ended at before-quit the way the app ends them,
+ * the main process outlived its `exit` event until it was killed 15 s later in
+ * 7 quits of 8 (1 clean); not ended at all, 7 of 8 exited in 60 ms and 1
+ * crashed (0xC0000005); ended, then quit only once every shell's exit had
+ * reached the app, 8 of 8 exited in under 200 ms, nothing left running. In the
+ * app itself, 8 of 16 idle quits ended in 0xC0000409 and Windows Error Reporting.
+ * The shell exits a moment after its pseudo console is closed, and node-pty's
+ * exit thread then calls into a Node that Electron is tearing down.
+ * holdExitUntilTerminalsExit is what the quit calls after ending the terminals:
+ * 12. darwin/linux: anything is held or registered, or node-pty is read.
+ * 13. win32, no terminal left to wait for (none ended, or each already
+ *     exited, or not node-pty 1.1's inbox ConPTY): the quit is held.
+ * 14. win32: the app exits (will-quit goes through, or app.exit is called)
+ *     before every terminal it waits for has reported its exit.
+ * 15. win32: once they have, the app does not exit, or exits more than once.
+ * 16. win32: a terminal that never reports holds the quit for ever; past
+ *     the bound the app exits all the same, and says so.
  */
 
 type Agent = {
@@ -220,6 +240,101 @@ describe('killPty', () => {
 
     expect(pty.killCalls).toBe(1);
     expect(ended).toEqual([]);
+  });
+});
+
+/** Electron's app as far as the quit goes: will-quit listeners, and exit(). */
+function fakeApp() {
+  const listeners: ((event: { preventDefault(): void }) => void)[] = [];
+  const app = {
+    exits: [] as number[],
+    once(event: 'will-quit', listener: (event: { preventDefault(): void }) => void) {
+      expect(event).toBe('will-quit');
+      listeners.push(listener);
+      return app;
+    },
+    exit(code = 0) { app.exits.push(code); },
+    /** Emits will-quit as Electron does, and says whether a listener prevented the quit. */
+    willQuit(): boolean {
+      let prevented = false;
+      for (const listener of listeners.splice(0)) listener({ preventDefault() { prevented = true; } });
+      return prevented;
+    },
+    listenerCount: () => listeners.length,
+  };
+  return app;
+}
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const terminalOf = (agent: Agent | undefined) => ({ _agent: agent, kill() {} }) as unknown as IPty;
+
+describe('holdExitUntilTerminalsExit', () => {
+  it('12. holds nothing and reads nothing of node-pty on darwin and linux', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const app = fakeApp();
+      const pty = { kill() {} };
+      Object.defineProperty(pty, '_agent', { get() { throw new Error('node-pty internals were read'); } });
+
+      holdExitUntilTerminalsExit([pty as unknown as IPty], app as QuitHold, { platform });
+
+      expect(app.listenerCount()).toBe(0);
+      expect(app.willQuit()).toBe(false);
+      expect(app.exits).toEqual([]);
+    }
+  });
+
+  it('13. holds nothing when no terminal is left to wait for', () => {
+    const cases: [string, IPty[], string | null][] = [
+      ['none ended', [], '1.1.0'],
+      ['already exited', [terminalOf(conpty({ exitCode: 0 }))], '1.1.0'],
+      ['winpty', [terminalOf(conpty({ _useConpty: false }))], '1.1.0'],
+      ['useConptyDll', [terminalOf(conpty({ _useConptyDll: true }))], '1.1.0'],
+      ['another shape', [terminalOf(undefined), terminalOf({ _useConpty: true } as Agent)], '1.1.0'],
+      ['another node-pty', [terminalOf(conpty())], '1.2.0'],
+      ['no known node-pty', [terminalOf(conpty())], null],
+    ];
+    for (const [name, ended, nodePtyVersion] of cases) {
+      const app = fakeApp();
+      holdExitUntilTerminalsExit(ended, app as QuitHold, { platform: 'win32', nodePtyVersion });
+      expect(app.willQuit(), name).toBe(false);
+      expect(app.exits, name).toEqual([]);
+    }
+  });
+
+  it('14 and 15. holds the quit until every terminal has reported its exit, then exits once', async () => {
+    const agents = [conpty(), conpty({ _innerPid: 5151 }), conpty({ _innerPid: 6161 })];
+    const app = fakeApp();
+
+    holdExitUntilTerminalsExit(agents.map(terminalOf), app as QuitHold, { platform: 'win32', nodePtyVersion: '1.1.0', pollMs: 5, timeoutMs: 5_000 });
+
+    expect(app.exits, 'exited before will-quit').toEqual([]);
+    expect(app.willQuit(), 'will-quit went through with three terminals still running').toBe(true);
+    agents[0].exitCode = 0;
+    agents[2].exitCode = 1;
+    await wait(40);
+    expect(app.exits, 'exited with one terminal still running').toEqual([]);
+    agents[1].exitCode = 0xC000013A;
+    await wait(40);
+    expect(app.exits).toEqual([0]);
+    await wait(40);
+    expect(app.exits, 'exited more than once').toEqual([0]);
+  });
+
+  it('16. exits past the bound when a terminal never reports, and says so', async () => {
+    const app = fakeApp();
+    const warned: unknown[][] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => { warned.push(args); };
+    onTestFinished(() => { console.warn = warn; });
+
+    holdExitUntilTerminalsExit([terminalOf(conpty())], app as QuitHold, { platform: 'win32', nodePtyVersion: '1.1.0', pollMs: 5, timeoutMs: 60 });
+    expect(app.willQuit()).toBe(true);
+    await wait(20);
+    expect(app.exits).toEqual([]);
+    await wait(120);
+
+    expect(app.exits).toEqual([0]);
+    expect(warned.map(args => String(args[0])).join('\n')).toMatch(/not exited/);
   });
 });
 

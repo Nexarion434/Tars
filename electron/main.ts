@@ -91,7 +91,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe, boardAgentExited } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe, boardAgentExited, stopStatusNotifications } from './core/agent-manager';
 import { assignRole } from './core/agent-role';
 import { forgetRestart } from './core/agent-restart';
 import {
@@ -759,6 +759,8 @@ app.on('before-quit', () => {
     ['destroyTray', destroyTray],
     ['stopAgentAutosave', stopAgentAutosave],
     ['stopOverseerWatch', stopOverseerWatch],
+    // Before the terminals are ended: their exits must announce nothing.
+    ['stopStatusNotifications', stopStatusNotifications],
     ['killAllPty', killAllPty],
     ['closeVaultDb', closeVaultDb],
     ['stopOpenAIBridgeServer', stopOpenAIBridgeServer],

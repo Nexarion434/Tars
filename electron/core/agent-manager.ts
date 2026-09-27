@@ -227,6 +227,15 @@ const pendingStatusChanges: Map<string, {
   timeoutId: NodeJS.Timeout;
 }> = new Map();
 
+/** Set by the quit: the terminals it ends must announce nothing while it runs. */
+let statusNotificationsStopped = false;
+
+export function stopStatusNotifications(): void {
+  statusNotificationsStopped = true;
+  for (const pending of pendingStatusChanges.values()) clearTimeout(pending.timeoutId);
+  pendingStatusChanges.clear();
+}
+
 export function handleStatusChangeNotification(
   agent: AgentStatus,
   newStatus: string,
@@ -235,6 +244,7 @@ export function handleStatusChangeNotification(
   sendTelegramMessage?: (text: string) => void,
   sendSuperAgentResponseToTelegram?: (agent: AgentStatus) => void
 ) {
+  if (statusNotificationsStopped) return;
   const prevStatus = previousAgentStatus.get(agent.id);
 
   if (!prevStatus) {

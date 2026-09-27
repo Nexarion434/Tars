@@ -90,6 +90,15 @@ describe("the app's own before-quit handler", () => {
     expect(steps).not.toContain('<not a literal>');
   });
 
+  it('silences status notifications before it ends the terminals', () => {
+    // The terminals' exits set their agents to `error`: announced, they would
+    // notify (or reach Telegram) while the user is quitting. See
+    // quit-status-notifications.test.ts.
+    const steps = shutdownStepNames();
+    expect(steps).toContain('stopStatusNotifications');
+    expect(steps.indexOf('stopStatusNotifications')).toBeLessThan(steps.indexOf('killAllPty'));
+  });
+
   it('does its work through the guarded runner and not as bare statements', () => {
     const source = fs.readFileSync(MAIN, 'utf-8');
     const handler = source.slice(source.indexOf("app.on('before-quit'"));

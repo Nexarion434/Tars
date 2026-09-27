@@ -1,9 +1,9 @@
 import * as pty from 'node-pty';
 import { resolveShell, shellArgs } from '../platform';
-import { killPty as endTerminal } from './pty-kill';
+import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
@@ -25,22 +25,26 @@ export function killPty(ptyId: string, isQuick = false): boolean {
   return false;
 }
 
-/** Kill all PTY processes across all maps. Called on app quit. */
+/**
+ * Kill all PTY processes across all maps. Called on app quit, which then waits
+ * for them to have exited before it ends (win32, see holdExitUntilTerminalsExit).
+ */
 export function killAllPty(): void {
   const allMaps = [ptyProcesses, quickPtyProcesses, skillPtyProcesses, pluginPtyProcesses];
-  let killed = 0;
+  const ended: pty.IPty[] = [];
   for (const map of allMaps) {
     for (const [id, proc] of map) {
       try {
         endTerminal(proc);
-        killed++;
+        ended.push(proc);
       } catch (err) {
         console.warn(`Failed to kill PTY ${id}:`, err);
       }
     }
     map.clear();
   }
-  console.log(`Killed ${killed} PTY process(es) on shutdown`);
+  console.log(`Killed ${ended.length} PTY process(es) on shutdown`);
+  holdExitUntilTerminalsExit(ended, app);
 }
 
 /**
