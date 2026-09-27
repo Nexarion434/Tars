@@ -35,11 +35,11 @@ import { isUnder, samePath } from './path-compare';
  * at on the disk, as isUnderSafeRoot does (a stat on an offline share was
  * measured at 21 s).
  *
- * One exception, asked for by name (`linkedMarkdown`), and only by
- * fs:read-text-file and fs:write-text-file, the Brain page's instruction
- * files. /api/local-file (no token), local-file:// and fs:read-project-files
- * stay strict: there it would serve any note in the home through a link
- * planted under ~/.dorothy. The exception is for the file that is a link to a
+ * One exception, asked for by name (`linkedMarkdown`), and only by the
+ * renderer's IPC reads and writes (fs:read-text-file, fs:write-text-file,
+ * fs:read-project-files), the Brain page's instruction files.
+ * /api/local-file (no token) and local-file:// stay strict: there it would
+ * serve any note in the home through a link planted under ~/.dorothy. The exception is for the file that is a link to a
  * dotfiles repository:
  * `~/.claude/CLAUDE.md`, or a project's CLAUDE.md or AGENTS.md, linked to a
  * shared file outside every root (common among Claude Code users; refusing it

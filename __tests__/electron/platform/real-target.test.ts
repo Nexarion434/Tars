@@ -65,11 +65,11 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  *     into ~/.ssh is judged by the final file.
  *
  * Added at review (2026-09-27), written before the fix:
- * 16. The exception applies where it was not asked for. It is for
- *     fs:read-text-file and fs:write-text-file (the Brain page's instruction
- *     files); /api/local-file (no token), local-file:// and
- *     fs:read-project-files stay strict, or a link planted under ~/.dorothy
- *     serves any note in the home.
+ * 16. The exception applies where it was not asked for. It is for the
+ *     renderer's IPC reads and writes (fs:read-text-file, fs:write-text-file,
+ *     fs:read-project-files: the Brain page's instruction files);
+ *     /api/local-file (no token) and local-file:// stay strict, or a link
+ *     planted under ~/.dorothy serves any note in the home.
  */
 
 const onWindows = process.platform === 'win32';

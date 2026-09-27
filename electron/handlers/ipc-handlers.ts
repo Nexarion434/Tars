@@ -2516,9 +2516,10 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
         if (target !== resolvedBase && !target.startsWith(resolvedBase + path.sep)) continue;
         try {
           // Where the read lands, links followed: a link in `rel` or the base
-          // may lead out of every root (platform/real-target.ts).
+          // may lead out of every root, except one file link to a markdown
+          // file, a CLAUDE.md kept in a dotfiles repository (platform/real-target.ts).
           if (fs.existsSync(target) && fs.statSync(target).isFile()
-            && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep))) {
+            && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true })) {
             out[target] = fs.readFileSync(target, 'utf-8');
           }
         } catch { /* unreadable, skip */ }

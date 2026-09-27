@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
 
 import { cannotSymlink } from '../../setup/symlink-privilege';
 
@@ -35,8 +36,11 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * 7. ~/.claude/CLAUDE.md symlinked to a dotfiles repository can no longer be
  *    read or saved from the Brain page (a macOS regression).
  * 8. The exception lets a file link to ~/.ssh or ~/.tars-private through.
- * 9. (review) The exception reaches fs:read-project-files or local-file://,
- *    which ask for no instruction file by name: both stay strict.
+ * 9. (review) The exception reaches local-file://, which stays strict.
+ * 10. (review) fs:read-project-files, renderer IPC like fs:read-text-file and
+ *    what the Brain graph finds CLAUDE.md files with, refuses the
+ *    dotfiles-linked markdown file (a macOS regression), or accepts a linked
+ *    file that is not markdown or lies in a blocked place.
  *
  * File links need SeCreateSymbolicLinkPrivilege on Windows (Developer Mode,
  * off here: decision D4), and Windows has no file link without it (a hard link
@@ -244,12 +248,18 @@ describe.skipIf(cannotSymlink())('7, 8. a file link out of every root', () => {
     expect((await readText(path.join(project, 'AGENTS.shared.md'))).content).toBe('shared agents');
   });
 
-  it('9. fs:read-project-files stays strict: the dotfiles file link is not read there', async () => {
+  it('10. fs:read-project-files reads the dotfiles markdown link, not a linked non-markdown or blocked file', async () => {
     fs.mkdirSync(dotfiles, { recursive: true });
     fs.mkdirSync(path.dirname(globalMd), { recursive: true });
-    if (!fs.existsSync(path.join(dotfiles, 'CLAUDE.md'))) fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+    fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+    fs.writeFileSync(path.join(dotfiles, 'mcp.json'), '{"mcpServers":{}}');
+    fs.writeFileSync(path.join(PRIVATE_DIR, 'talk.md'), 'the talk');
     link(path.join(dotfiles, 'CLAUDE.md'), globalMd);
-    expect((await readProject(path.join(home, '.claude'), 'CLAUDE.md')).files).toEqual({});
+    link(path.join(dotfiles, 'mcp.json'), path.join(project, '.mcp.json'));
+    link(path.join(PRIVATE_DIR, 'talk.md'), path.join(project, 'TALK.md'));
+    expect(Object.values((await readProject(path.join(home, '.claude'), 'CLAUDE.md')).files)).toEqual(['global instructions']);
+    expect((await readProject(project, '.mcp.json')).files).toEqual({});
+    expect((await readProject(project, 'TALK.md')).files).toEqual({});
   });
 
   it('8. a file link to ~/.ssh or ~/.tars-private is still refused, to read and to write', async () => {
@@ -282,5 +292,39 @@ describe.skipIf(onWindows || cannotSymlink())('9. local-file:// stays strict', (
     const url = new URL('local-file://');
     url.pathname = at;
     expect((await protocols.get('local-file')!({ url: url.href })).status).toBe(403);
+  });
+});
+
+// Where no file link can be made (D4; a junction to a file cannot be opened,
+// measured), a link is stood in for by realpathSync.native reporting a name
+// elsewhere, as it does for a link. The file at the name is a real one, so
+// what the handler returns is its text: the assertion is only whether the
+// read is let through. The real links above run wherever they can be made.
+describe('10. fs:read-project-files, simulated file links', () => {
+  it('lets the markdown one through, refuses the non-markdown and the blocked one', async () => {
+    const dotfiles = path.join(home, 'dotfiles');
+    fs.mkdirSync(dotfiles, { recursive: true });
+    fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+    fs.writeFileSync(path.join(dotfiles, 'mcp.json'), '{}');
+    fs.writeFileSync(path.join(PRIVATE_DIR, 'talk.md'), 'the talk');
+    const links: Record<string, string> = {
+      'SIM-CLAUDE.md': path.join(dotfiles, 'CLAUDE.md'),
+      'SIM-mcp.json': path.join(dotfiles, 'mcp.json'),
+      'SIM-TALK.md': path.join(PRIVATE_DIR, 'talk.md'),
+    };
+    for (const name of Object.keys(links)) fs.writeFileSync(path.join(project, name), 'the name itself');
+    const nodeFs = createRequire(import.meta.url)('node:fs') as { realpathSync: { native: (p: string, ...rest: unknown[]) => string } };
+    const native = nodeFs.realpathSync.native;
+    nodeFs.realpathSync.native = (p: string, ...rest: unknown[]) => {
+      const name = Object.keys(links).find(n => p.toLowerCase() === path.join(project, n).toLowerCase());
+      return name ? links[name] : native(p, ...rest);
+    };
+    try {
+      expect(Object.keys((await readProject(project, 'SIM-CLAUDE.md')).files)).toHaveLength(1);
+      expect((await readProject(project, 'SIM-mcp.json')).files).toEqual({});
+      expect((await readProject(project, 'SIM-TALK.md')).files).toEqual({});
+    } finally {
+      nodeFs.realpathSync.native = native;
+    }
   });
 });
