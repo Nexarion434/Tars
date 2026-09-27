@@ -49,7 +49,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot } from '../platform';
+import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot, landsUnderSafeRoot } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -2399,11 +2399,14 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * Under a root that is not the home nor above it: a project added as `~`,
    * `/Users` or the drive's Users folder made every file of the home readable
    * and writable here (platform/home-root.ts). Only the roots the path is
-   * under are judged, so a project on an offline share costs nothing.
+   * under are judged, so a project on an offline share costs nothing. Where
+   * the path lands, links followed, must be under one too, or be one file
+   * link to a markdown file, a CLAUDE.md kept in a dotfiles repository
+   * (platform/real-target.ts).
    */
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return isUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep));
+    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true });
   };
 
   /**
@@ -2512,7 +2515,11 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
         const target = path.resolve(resolvedBase, rel);
         if (target !== resolvedBase && !target.startsWith(resolvedBase + path.sep)) continue;
         try {
-          if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+          // Where the read lands, links followed: a link in `rel` or the base
+          // may lead out of every root, except one file link to a markdown
+          // file, a CLAUDE.md kept in a dotfiles repository (platform/real-target.ts).
+          if (fs.existsSync(target) && fs.statSync(target).isFile()
+            && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true })) {
             out[target] = fs.readFileSync(target, 'utf-8');
           }
         } catch { /* unreadable, skip */ }
