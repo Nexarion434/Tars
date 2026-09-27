@@ -81,13 +81,79 @@ export function killPty(pty: IPty, deps: PtyKillDeps = {}): void {
   pty.kill();
 }
 
-function listConsoleSafely(pty: IPty, deps: PtyKillDeps): void {
-  const version = deps.nodePtyVersion !== undefined ? deps.nodePtyVersion : installedNodePtyVersion();
-  if (!version || !HANDLED_NODE_PTY.test(version)) return;
+/** The agent of a node-pty 1.1 terminal on the inbox ConPTY, or null for anything else. */
+function inboxConptyAgent(pty: IPty, nodePtyVersion: string | null | undefined): ConptyAgent | null {
+  const version = nodePtyVersion !== undefined ? nodePtyVersion : installedNodePtyVersion();
+  if (!version || !HANDLED_NODE_PTY.test(version)) return null;
   const agent = (pty as unknown as { _agent?: ConptyAgent })._agent;
-  if (!agent || agent._useConpty !== true || agent._useConptyDll === true) return;
-  if (typeof agent._getConsoleProcessList !== 'function' || typeof agent._innerPid !== 'number') return;
+  if (!agent || agent._useConpty !== true || agent._useConptyDll === true) return null;
+  if (typeof agent._getConsoleProcessList !== 'function' || typeof agent._innerPid !== 'number') return null;
+  return agent;
+}
+
+function listConsoleSafely(pty: IPty, deps: PtyKillDeps): void {
+  const agent = inboxConptyAgent(pty, deps.nodePtyVersion);
+  if (!agent) return;
   agent._getConsoleProcessList = () => consoleProcesses(agent, agent._innerPid as number, deps);
+}
+
+/**
+ * The end of a quit that ended terminals (win-qa, 2026-09-27).
+ *
+ * Killing a ConPTY terminal closes its pseudo console, and its shell exits a
+ * moment later: 125 ms idle, seconds on a busy machine. node-pty waits for that
+ * exit on a thread of its own, which then calls back into Node, and at quit
+ * Node is being torn down by then. Measured with Electron 44 and node-pty 1.1.0,
+ * 6 terminals ended at before-quit, electron.exe started directly and idle: the
+ * main process outlived its `exit` event until it was killed 15 s later in 7
+ * quits of 10, and the 3 others ended in 0xC0000409. In the app, 8 idle quits
+ * of 16 ended in 0xC0000409 and Windows Error Reporting, which holds the dying
+ * process for as long as it takes to write its report, the profile still open.
+ *
+ * So once the terminals are ended, the quit is held at will-quit, after the
+ * windows are gone and before Node is torn down, until every terminal ended
+ * here has reported its exit to the app (node-pty's `exitCode`, set by that
+ * very callback), then the app exits. EXIT_WAIT_MS at most: a shell that
+ * never reports costs the quit that long, and then the old race, said in the
+ * log. Only node-pty 1.1's inbox ConPTY is waited for, the one read here.
+ * darwin/linux: nothing is held and nothing of node-pty is read.
+ */
+export interface QuitHold {
+  once(event: 'will-quit', listener: (event: { preventDefault(): void }) => void): unknown;
+  exit(code?: number): void;
+}
+
+export interface ExitWaitDeps {
+  platform?: NodeJS.Platform;
+  /** As PtyKillDeps.nodePtyVersion. */
+  nodePtyVersion?: string | null;
+  timeoutMs?: number;
+  pollMs?: number;
+}
+
+const EXIT_WAIT_MS = 5_000;
+const EXIT_POLL_MS = 25;
+
+export function holdExitUntilTerminalsExit(ended: IPty[], app: QuitHold, deps: ExitWaitDeps = {}): void {
+  if ((deps.platform ?? process.platform) !== 'win32') return;
+  const running = ended
+    .map(pty => inboxConptyAgent(pty, deps.nodePtyVersion))
+    .filter((agent): agent is ConptyAgent => agent !== null && agent.exitCode === undefined);
+  if (running.length === 0) return;
+  const timeoutMs = deps.timeoutMs ?? EXIT_WAIT_MS;
+  app.once('will-quit', (event) => {
+    event.preventDefault();
+    const since = Date.now();
+    const timer = setInterval(() => {
+      const left = running.filter(agent => agent.exitCode === undefined);
+      if (left.length > 0 && Date.now() - since < timeoutMs) return;
+      clearInterval(timer);
+      if (left.length > 0) {
+        console.warn(`[pty] ${left.length} terminal(s) ended by the quit had not exited after ${timeoutMs} ms, exiting all the same`);
+      }
+      app.exit(0);
+    }, deps.pollMs ?? EXIT_POLL_MS);
+  });
 }
 
 function consoleProcesses(agent: ConptyAgent, shellPid: number, deps: PtyKillDeps): Promise<number[]> {
