@@ -30,6 +30,17 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * 5. local-file:// serves a file outside through a link.
  * 6. A link that stays inside the project is refused, or a new file in the
  *    project can no longer be created: the Brain page breaks.
+ *
+ * Added with the dotfiles exception (2026-09-27), written before its code:
+ * 7. ~/.claude/CLAUDE.md symlinked to a dotfiles repository can no longer be
+ *    read or saved from the Brain page (a macOS regression).
+ * 8. The exception lets a file link to ~/.ssh or ~/.tars-private through.
+ *
+ * File links need SeCreateSymbolicLinkPrivilege on Windows (Developer Mode,
+ * off here: decision D4), and Windows has no file link without it (a hard link
+ * is not one: SECURITY.md §5). Those cases skip here, saying so, and run on
+ * macOS, Linux and CI windows-latest; platform/real-target.test.ts judges the
+ * same files without a link, and runs everywhere.
  */
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
@@ -210,5 +221,39 @@ describe.skipIf(onWindows)('5. local-file://', () => {
     expect(await serve(path.join(DATA_DIR, 'p', 'hermes-webhook-secret'))).toBe(403);
     expect(await serve(path.join(project, 'escape', 'id_rsa'))).toBe(403);
     expect(await serve(path.join(project, 'docs-link', 'a.md'))).toBe(200);
+  });
+});
+
+describe.skipIf(cannotSymlink())('7, 8. a file link out of every root', () => {
+  const dotfiles = path.join(home, 'dotfiles');
+  const globalMd = path.join(home, '.claude', 'CLAUDE.md');
+  const link = (to: string, at: string) => { if (!fs.existsSync(at)) fs.symlinkSync(to, at, 'file'); };
+
+  it('7. ~/.claude/CLAUDE.md linked to a dotfiles repository is read, saved and listed', async () => {
+    fs.mkdirSync(dotfiles, { recursive: true });
+    fs.mkdirSync(path.dirname(globalMd), { recursive: true });
+    fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+    link(path.join(dotfiles, 'CLAUDE.md'), globalMd);
+    expect((await readText(globalMd)).content).toBe('global instructions');
+    expect((await writeText(globalMd, 'edited in the Brain page')).success).toBe(true);
+    expect(fs.readFileSync(path.join(dotfiles, 'CLAUDE.md'), 'utf8')).toBe('edited in the Brain page');
+    expect(Object.values((await readProject(path.join(home, '.claude'), 'CLAUDE.md')).files)).toEqual(['edited in the Brain page']);
+    fs.writeFileSync(path.join(dotfiles, 'AGENTS.md'), 'shared agents');
+    link(path.join(dotfiles, 'AGENTS.md'), path.join(project, 'AGENTS.shared.md'));
+    expect((await readText(path.join(project, 'AGENTS.shared.md'))).content).toBe('shared agents');
+  });
+
+  it('8. a file link to ~/.ssh or ~/.tars-private is still refused, to read and to write', async () => {
+    fs.writeFileSync(path.join(ssh, 'id_ed25519'), 'the other key');
+    fs.writeFileSync(path.join(PRIVATE_DIR, 'talk.md'), 'the talk');
+    link(path.join(ssh, 'id_ed25519'), path.join(DATA_DIR, 'k.md'));
+    link(path.join(PRIVATE_DIR, 'talk.md'), path.join(project, 'NOTES.md'));
+    for (const file of [path.join(DATA_DIR, 'k.md'), path.join(project, 'NOTES.md')]) {
+      expect((await readText(file)).content, file).toBe('');
+      expect((await writeText(file, 'overwritten')).success, file).toBe(false);
+    }
+    expect((await readProject(project, 'NOTES.md')).files).toEqual({});
+    expect(fs.readFileSync(path.join(ssh, 'id_ed25519'), 'utf8')).toBe('the other key');
+    expect(fs.readFileSync(path.join(PRIVATE_DIR, 'talk.md'), 'utf8')).toBe('the talk');
   });
 });

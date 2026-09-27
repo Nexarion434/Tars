@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 
-import { realTarget, landsUnderSafeRoot, isUnderSafeRoot, isUnder, samePath } from '../../../electron/platform';
+import { realTarget, landsUnderSafeRoot, linkedFileAllowed, isUnderSafeRoot, isUnder, samePath } from '../../../electron/platform';
 import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
@@ -46,6 +46,23 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  *    being refused.
  * 10. A root that neither the target nor its real path is under, by spelling,
  *    is looked at on the disk (a stat on an offline share was measured at 21 s).
+ *
+ * Added with the dotfiles exception (2026-09-27), written before its code.
+ * ~/.claude/CLAUDE.md, or a project's CLAUDE.md or AGENTS.md, is often a
+ * symlink to a file in a dotfiles repository, outside every root; refusing it
+ * broke the Brain page on macOS. The exception is one FILE link, as the last
+ * name, to a markdown file that is in no blocked place.
+ * 11. The exception refuses the dotfiles file: a markdown file outside every
+ *     root, in no blocked place, in any case of its extension.
+ * 12. It lets through a file in a blocked place (~/.ssh, ~/.tars-private,
+ *     ~/.gnupg, ~/.aws, ~/.config/gh, the Telegram guard's list, and on win32
+ *     the credential stores under AppData), however the place is spelled.
+ * 13. It lets through a file that is not markdown (~/.npmrc, a key, a name
+ *     that only ends in `md`, like `run.cmd`), or a folder named like one.
+ * 14. It lets through a FOLDER link on the way: the file's parent really lies
+ *     outside every root (DATA_DIR linked to the home is the escape itself).
+ * 15. It follows a chain of links only to the first one: a file link to a link
+ *     into ~/.ssh is judged by the final file.
  */
 
 const onWindows = process.platform === 'win32';
@@ -279,5 +296,80 @@ describe('10. a root neither the target nor its real path is under', () => {
       syncBuiltinESMExports();
     }
     expect(touched).toEqual([]);
+  });
+});
+
+describe('11-15. the dotfiles exception: one file link out of every root', () => {
+  const dotfiles = path.join(home, 'dotfiles');
+  fs.mkdirSync(path.join(dotfiles, 'folder.md'), { recursive: true });
+  fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+  fs.writeFileSync(path.join(dotfiles, 'notes.MD'), 'n');
+  fs.writeFileSync(path.join(dotfiles, 'run.cmd'), 'n');
+  fs.writeFileSync(path.join(home, '.npmrc'), '//registry.npmjs.org/:_authToken=x');
+  fs.writeFileSync(path.join(ssh, 'id_ed25519'), 'key');
+  fs.writeFileSync(path.join(ssh, 'notes.md'), 'n');
+  fs.writeFileSync(path.join(priv, 'talk.md'), 'n');
+  const blocked = [
+    path.join(ssh, 'notes.md'), path.join(priv, 'talk.md'),
+    path.join(home, '.gnupg', 'x.md'), path.join(home, '.aws', 'x.md'), path.join(home, '.config', 'gh', 'hosts.md'),
+    path.join(home, '.kube', 'x.md'), path.join(home, '.docker', 'x.md'), path.join(home, '.env', 'x.md'),
+  ];
+  if (onWindows) blocked.push(path.join(home, 'AppData', 'Roaming', 'GitHub CLI', 'x.md'), path.join(home, 'AppData', 'Local', 'Microsoft', 'Credentials', 'x.md'));
+  for (const file of blocked) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (!fs.existsSync(file)) fs.writeFileSync(file, 'n');
+  }
+
+  it('11. allows a markdown file outside every root, any case of .md', () => {
+    expect(linkedFileAllowed(path.join(dotfiles, 'CLAUDE.md'), deps)).toBe(true);
+    expect(linkedFileAllowed(path.join(dotfiles, 'notes.MD'), deps)).toBe(true);
+  });
+
+  it('12. refuses a markdown file in a blocked place', () => {
+    for (const file of blocked) expect(linkedFileAllowed(file, deps), file).toBe(false);
+  });
+
+  it.skipIf(!onWindows)('12. win32: a blocked place in another case', () => {
+    expect(linkedFileAllowed(path.join(home, '.SSH', 'NOTES.md'), deps)).toBe(false);
+  });
+
+  it('13. refuses what is not markdown, and a folder named like it', () => {
+    expect(linkedFileAllowed(path.join(home, '.npmrc'), deps)).toBe(false);
+    expect(linkedFileAllowed(path.join(ssh, 'id_ed25519'), deps)).toBe(false);
+    expect(linkedFileAllowed(path.join(dotfiles, 'run.cmd'), deps)).toBe(false);
+    expect(linkedFileAllowed(path.join(dotfiles, 'folder.md'), deps)).toBe(false);
+    expect(linkedFileAllowed(path.join(dotfiles, 'missing.md'), deps)).toBe(false);
+  });
+
+  it('14. a folder link on the way is still refused, to the dotfiles file itself', () => {
+    expect(lands(path.join(data, 'h', 'dotfiles', 'CLAUDE.md'))).toBe(false);
+    expect(lands(path.join(data, 'h', 'dotfiles', 'new.md'))).toBe(false);
+  });
+
+  describe.skipIf(cannotSymlink())('through a real file link', () => {
+    const link = (to: string, at: string) => { if (!fs.existsSync(at)) fs.symlinkSync(to, at, 'file'); };
+
+    it('11. a file link from a root to the dotfiles file is allowed', () => {
+      link(path.join(dotfiles, 'CLAUDE.md'), path.join(atlas, 'SHARED.md'));
+      expect(lands(path.join(atlas, 'SHARED.md'))).toBe(true);
+    });
+
+    it('12, 13. a file link to a key, a private file or ~/.npmrc is refused', () => {
+      link(path.join(ssh, 'id_ed25519'), path.join(atlas, 'key.md'));
+      link(path.join(priv, 'talk.md'), path.join(atlas, 'talk.md'));
+      link(path.join(home, '.npmrc'), path.join(atlas, 'npmrc.md'));
+      for (const name of ['key.md', 'talk.md', 'npmrc.md']) expect(lands(path.join(atlas, name)), name).toBe(false);
+    });
+
+    it('14. a file link reached through a folder link is refused', () => {
+      link(path.join(dotfiles, 'CLAUDE.md'), path.join(dotfiles, 'via.md'));
+      expect(lands(path.join(data, 'h', 'dotfiles', 'via.md'))).toBe(false);
+    });
+
+    it('15. a file link to a link into ~/.ssh is judged by the final file', () => {
+      link(path.join(ssh, 'notes.md'), path.join(dotfiles, 'fwd.md'));
+      link(path.join(dotfiles, 'fwd.md'), path.join(atlas, 'fwd.md'));
+      expect(lands(path.join(atlas, 'fwd.md'))).toBe(false);
+    });
   });
 });
