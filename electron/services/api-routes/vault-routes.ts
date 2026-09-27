@@ -312,6 +312,14 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
         sendJson({ error: 'File not found' }, 404);
         return;
       }
+      // A hard link has no path back to the file it names, so no path check
+      // sees one (SECURITY.md §5). An attachment is a copy the vault made,
+      // its file's only name: a file here with another name is refused,
+      // whatever the other name is.
+      if (stat.nlink > 1) {
+        sendJson({ error: 'Access denied: path outside allowed directory' }, 403);
+        return;
+      }
       const stream = fs.createReadStream(resolved);
       // A read stream reports a file it cannot open or read with 'error', and
       // an 'error' nobody listens to is thrown: in the main process, the

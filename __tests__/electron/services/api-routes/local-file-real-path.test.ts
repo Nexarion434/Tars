@@ -20,6 +20,17 @@ import type { AddressInfo } from 'node:net';
  * 1. A link in the attachments folder to the home serves a file of the home.
  * 2. A link there to ~/.ssh or to ~/.tars-private serves a key or a secret.
  * 3. A real attachment is no longer served: the vault's image previews break.
+ *
+ * Added at review (2026-09-27), written before the fix:
+ * 4. The dotfiles exception of the file handlers (one file link to a markdown
+ *    file) applies here too: a link planted in the attachments serves any
+ *    note or Obsidian vault in the home, with no token. It must not: this
+ *    route asks for nothing but a copy the vault made.
+ * 5. A hard link in the attachments to a file outside is served: a hard link
+ *    has no path back to the file it names, so no path check sees it
+ *    (SECURITY.md §5). Attachments are copies (vault_attach_file), each the
+ *    file's only name, so a file there with another name is refused. Hard
+ *    links need no privilege on NTFS: this one runs on Windows too.
  */
 
 vi.mock('../../../../electron/services/vault-db', () => ({
@@ -30,6 +41,7 @@ vi.mock('../../../../electron/services/vault-db', () => ({
 import { registerVaultRoutes } from '../../../../electron/services/api-routes/vault-routes';
 import { VAULT_DIR, PRIVATE_DIR } from '../../../../electron/constants';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
+import { cannotSymlink } from '../../../setup/symlink-privilege';
 
 const onWindows = process.platform === 'win32';
 const home = os.homedir();
@@ -110,5 +122,39 @@ describe('/api/local-file and links in the attachments folder', () => {
 
   it('3. still serves a real attachment', async () => {
     expect(await get(path.join(attachments, 'photo.png'))).toEqual({ status: 200, body: 'a real attachment' });
+  });
+});
+
+describe('/api/local-file and other names for a file outside', () => {
+  const notes = path.join(home, 'notes');
+  const aws = path.join(home, '.aws');
+  const hardLink = (to: string, at: string) => { if (!fs.existsSync(at)) fs.linkSync(to, at); };
+
+  it.skipIf(cannotSymlink())('4. refuses a file link to a markdown file outside: no dotfiles exception here', async () => {
+    fs.mkdirSync(notes, { recursive: true });
+    fs.writeFileSync(path.join(notes, 'journal.md'), 'the journal');
+    const at = path.join(attachments, 'journal.md');
+    if (!fs.existsSync(at)) fs.symlinkSync(path.join(notes, 'journal.md'), at, 'file');
+    const out = await get(at);
+    expect(out.status).toBe(403);
+    expect(out.body).not.toContain('the journal');
+  });
+
+  it('5. refuses a hard link to a file outside, whatever it is', async () => {
+    fs.mkdirSync(notes, { recursive: true });
+    fs.mkdirSync(aws, { recursive: true });
+    fs.writeFileSync(path.join(notes, 'journal.md'), 'the journal');
+    fs.writeFileSync(path.join(aws, 'credentials'), 'the aws key');
+    hardLink(path.join(ssh, 'id_ed25519'), path.join(attachments, 'key.png'));
+    hardLink(path.join(aws, 'credentials'), path.join(attachments, 'aws.png'));
+    hardLink(path.join(notes, 'journal.md'), path.join(attachments, 'journal-hard.md'));
+    for (const name of ['key.png', 'aws.png', 'journal-hard.md']) {
+      const out = await get(path.join(attachments, name));
+      expect(out.status, name).toBe(403);
+      expect(out.body, name).not.toMatch(/the key|the aws key|the journal/);
+    }
+    // A copy, as vault_attach_file makes, is still served.
+    fs.copyFileSync(path.join(notes, 'journal.md'), path.join(attachments, 'copied.md'));
+    expect(await get(path.join(attachments, 'copied.md'))).toEqual({ status: 200, body: 'the journal' });
   });
 });
