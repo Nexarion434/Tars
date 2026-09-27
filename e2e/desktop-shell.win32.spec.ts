@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { assertWindowOnScreen, launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet, writeNodeCli } from './fixture.mjs';
+import { assertWindowOnScreen, launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, settleFleet, splashGone, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
 
@@ -122,6 +122,21 @@ async function launch(home: string, port: number): Promise<{ app: ElectronApplic
   await inMain(app, 'w.show(); w.focus();');
   await assertWindowOnScreen(app);
   return { app, page, errors };
+}
+
+/**
+ * Waits for the Windows drag rules to be in force on the page just loaded:
+ * its header drawn and computing `-webkit-app-region: drag`. WindowsCaption
+ * renders those rules only after hydration, once the bridge says win32, so a
+ * fixed wait measured the page before them on a slow runner: every header
+ * action read `none`, not `no-drag` (CI run 36305745195, /skills and /crons).
+ * Rules that never come fail here, naming the route.
+ */
+async function captionRulesInForce(page: Page, route: string): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const headers = [...document.querySelectorAll('main header')];
+    return headers.length > 0 && headers.every(h => getComputedStyle(h).getPropertyValue('-webkit-app-region') === 'drag');
+  }), { message: `${route}: the page header is drawn under the Windows drag rules`, timeout: 30_000 }).toBe(true);
 }
 
 /** Every write into every terminal, recorded in the main process. */
@@ -250,7 +265,8 @@ test.describe('the Windows desktop shell', () => {
     const offenders: string[] = [];
     for (const route of routes) {
       await page.goto(`${DEV_URL}${route}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(route === '/chat' || route === '/logs' ? 3000 : 1500);
+      await splashGone(page);
+      await captionRulesInForce(page, route);
       const found = await page.evaluate(() => {
         const o = (navigator as unknown as { windowControlsOverlay: { getTitlebarAreaRect(): DOMRect } }).windowControlsOverlay;
         const bar = o.getTitlebarAreaRect();
