@@ -891,22 +891,52 @@ async function traceApp(app) {
  * The launch splash's words, read from the component that shows them, so a
  * wording change there cannot leave splashGone() waiting for nothing.
  */
-const SPLASH_STEPS = [...fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Splash.tsx'), 'utf8')
-  .matchAll(/\{ label: '([^']+)', ready:/g)].map(m => m[1]);
+const SPLASH_SOURCE = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Splash.tsx'), 'utf8');
+const SPLASH_STEPS = [...SPLASH_SOURCE.matchAll(/\{ label: '([^']+)', ready:/g)].map(m => m[1]);
 if (SPLASH_STEPS.length === 0) throw new Error('fixture: no step of the launch splash found in src/components/Splash.tsx');
 
 /**
+ * The longest the splash may stand once React holds it, read from the
+ * component: its cap on the calls it waits for (MAX_WAIT_MS) and its fade
+ * (EXIT_MS). SPLASH_SLACK_MS is for timers and polling on a loaded machine:
+ * measured on 2026-09-27 with one call made never to answer and all eight
+ * cores of the machine kept busy, the splash left 4299 to 4344 ms after
+ * hydration over 16 loads, 84 ms at most past its 4260.
+ */
+const splashConstant = name => {
+  const found = new RegExp(`const ${name} = (\\d+);`).exec(SPLASH_SOURCE);
+  if (!found) throw new Error(`fixture: no ${name} found in src/components/Splash.tsx`);
+  return Number(found[1]);
+};
+const SPLASH_SLACK_MS = 2_000;
+const SPLASH_BOUND_MS = splashConstant('MAX_WAIT_MS') + splashConstant('EXIT_MS') + SPLASH_SLACK_MS;
+
+/**
  * Waits for the launch splash to be gone. Every document load shows it again
- * (page.goto included), until the calls it names have answered or four
- * seconds have passed. On CI's windows-latest the Usage page was photographed
- * behind it, "reading your projects", 1.5 s after its load (run 36242089925).
- * A splash still up after 15 s fails the spec.
+ * (page.goto included), until the calls it names have answered or its cap has
+ * passed. On CI's windows-latest the Usage page was photographed behind it,
+ * "reading your projects", 1.5 s after its load (run 36242089925).
+ *
+ * Two waits, because the splash is in the server's HTML and its cap starts only
+ * when React hydrates the page. Until then the wait is on next dev and the
+ * renderer, and lasts what the spec allows: a flat 15 s from the load had them
+ * share one guessed bound, and a runner slow to hydrate /chat failed there
+ * (run 36305745195, attempt 2). Once React holds the splash, it is gone within
+ * its own cap and fade, or the spec fails.
  */
 const escapeRegExp = text => text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
 
 export async function splashGone(page) {
   const words = new RegExp(`^(${SPLASH_STEPS.map(escapeRegExp).join('|')})$`);
-  await page.locator('div.fixed.inset-0').filter({ has: page.getByText(words) }).waitFor({ state: 'detached', timeout: 15_000 });
+  // Hydrated: React has set its fiber on the splash's node, and the splash's
+  // effect, which starts the cap, runs right after that commit. Or it is gone.
+  await page.waitForFunction(pattern => {
+    const re = new RegExp(pattern);
+    const splash = [...document.querySelectorAll('div.fixed.inset-0')]
+      .find(el => [...el.querySelectorAll('span')].some(span => re.test((span.textContent || '').trim())));
+    return !splash || Object.keys(splash).some(key => key.startsWith('__reactFiber$'));
+  }, words.source, { polling: 100, timeout: 0 });
+  await page.locator('div.fixed.inset-0').filter({ has: page.getByText(words) }).waitFor({ state: 'detached', timeout: SPLASH_BOUND_MS });
 }
 
 /**
