@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
-import { isUnderSafeRoot } from '../platform/home-root';
+import { landsUnderSafeRoot } from '../platform/real-target';
 import { titleBarOptions } from '../platform/desktop-shell';
 
 // Global reference to the main window
@@ -267,7 +267,7 @@ function isUnderAllowedRoot(filePath: string): boolean {
     path.join(os.homedir(), '.claude'),
     ...listKnownProjectRoots(),
   ];
-  return isUnderSafeRoot(filePath, roots, isUnder);
+  return landsUnderSafeRoot(filePath, roots, isUnder);
 }
 
 /** Project folders the user added, read fresh so a new project works at once. */
