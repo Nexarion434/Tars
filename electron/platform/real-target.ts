@@ -1,7 +1,11 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../constants';
+import { isWithinDir } from '../utils/path-identity';
+import { credentialStoreDirs } from './credential-stores';
 import { isUnderSafeRoot, withoutHomeCover, type HomeCoverDeps } from './home-root';
-import { samePath } from './path-compare';
+import { isUnder, samePath } from './path-compare';
 
 /**
  * Where a read or a write of a path really lands, and whether that is under a
@@ -30,6 +34,14 @@ import { samePath } from './path-compare';
  * Only the roots the target or its real path is under by spelling are looked
  * at on the disk, as isUnderSafeRoot does (a stat on an offline share was
  * measured at 21 s).
+ *
+ * One exception, for the file that is a link to a dotfiles repository:
+ * `~/.claude/CLAUDE.md`, or a project's CLAUDE.md or AGENTS.md, linked to a
+ * shared file outside every root (common among Claude Code users; refusing it
+ * broke the Brain page). The target's last name may be a FILE link out of
+ * every root when everything above it really lies in a root (a folder link
+ * on the way is the escape itself: DATA_DIR linked to the home) and the file
+ * it finally leads to passes linkedFileAllowed.
  *
  * What remains: the check and the read or write that follows are two calls,
  * so a link swapped in between is followed. Whoever can swap it runs as the
@@ -91,18 +103,11 @@ function realPath(p: string): string | undefined {
   }
 }
 
-/**
- * isUnderSafeRoot, and the target's real location under the real location of
- * one of `roots` that is not the home nor above it. `isInside(root, target)`
- * is the caller's own test, by spelling.
- */
-export function landsUnderSafeRoot(
-  target: string, roots: string[], isInside: (root: string, target: string) => boolean, deps: HomeCoverDeps = {},
-): boolean {
-  if (!isUnderSafeRoot(target, roots, isInside, deps)) return false;
-  const real = realTarget(target);
-  if (!real) return false;
-  const candidates = withoutHomeCover(roots.filter(root => isInside(root, target) || isInside(root, real)), deps)
+type Inside = (root: string, target: string) => boolean;
+
+/** `real` (a real path) is a safe root, or inside one, among those `spelled` or `real` is under by spelling. */
+function inRealRoot(spelled: string, real: string, roots: string[], isInside: Inside, deps: HomeCoverDeps): boolean {
+  const candidates = withoutHomeCover(roots.filter(root => isInside(root, spelled) || isInside(root, real)), deps)
     .map(root => ({ real: realPath(root), id: fileId(root) }))
     .filter(root => root.real || root.id);
   for (let dir = real; ; dir = path.dirname(dir)) {
@@ -111,4 +116,61 @@ export function landsUnderSafeRoot(
       || (id && root.id && id.dev === root.id.dev && id.ino === root.id.ino))) return true;
     if (path.dirname(dir) === dir) return false;
   }
+}
+
+/**
+ * Places a linked file may never lead into: the Telegram guard's list
+ * (services/api-routes/utils.ts isSafeTelegramPath), `~/.config/gh` inside
+ * it, and on win32 the credential stores under AppData.
+ */
+function blockedPlaces(home: string): string[] {
+  return [
+    '.ssh', '.gnupg', '.aws', '.claude', '.env', DATA_DIR_NAME, PRIVATE_DIR_NAME,
+    '.config', '.kube', '.docker', '.netrc', '.git-credentials',
+  ].map(name => path.join(home, name)).concat(credentialStoreDirs({ home }));
+}
+
+const MARKDOWN = /\.(md|markdown|mdx)$/i;
+
+/**
+ * Whether a file a link leads to (`realFile`, its real path) may be read and
+ * written through that link from outside every root: a regular file, named as
+ * markdown, in no blocked place (by spelling, and by identity for a place
+ * reached under another name).
+ *
+ * Markdown only: the Brain page reads and saves CLAUDE.md, AGENTS.md, SKILL.md
+ * and README.md, and a credential is not kept in one. The link's own name is
+ * whatever the link's maker chose and says nothing; the name of the file it
+ * leads to is the file's. So a link to ~/.npmrc, a shell history or a key is
+ * refused wherever it lives, not only in the places listed.
+ */
+export function linkedFileAllowed(realFile: string, deps: { home?: string } = {}): boolean {
+  const home = deps.home ?? os.homedir();
+  if (!MARKDOWN.test(path.basename(realFile))) return false;
+  try {
+    if (!fs.statSync(realFile).isFile()) return false;
+  } catch {
+    return false;
+  }
+  return !blockedPlaces(home).some(place =>
+    samePath(realFile, place) || isUnder(realFile, place) || isWithinDir(realFile, place));
+}
+
+/**
+ * isUnderSafeRoot, and the target's real location under the real location of
+ * one of `roots` that is not the home nor above it, or the one exception
+ * above. `isInside(root, target)` is the caller's own test, by spelling.
+ */
+export function landsUnderSafeRoot(target: string, roots: string[], isInside: Inside, deps: HomeCoverDeps = {}): boolean {
+  if (!isUnderSafeRoot(target, roots, isInside, deps)) return false;
+  const real = realTarget(target);
+  if (!real) return false;
+  if (inRealRoot(target, real, roots, isInside, deps)) return true;
+  // The exception. The folder the target sits in really lies in a root, so
+  // only its last name can lead out: a file link (a folder link on the way
+  // makes the parent's real path leave every root, and is refused here).
+  const parent = path.dirname(target);
+  const realParent = realTarget(parent);
+  return !!realParent && inRealRoot(parent, realParent, roots, isInside, deps)
+    && linkedFileAllowed(real, { home: deps.home });
 }
