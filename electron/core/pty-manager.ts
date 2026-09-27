@@ -214,7 +214,14 @@ const MAX_WAITING_MESSAGES = 20;
 export type MessageSender =
   | { kind: 'agent'; id: string; name?: string }
   | { kind: 'tars' }
-  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' };
+  | { kind: 'channel'; channel: 'Telegram' | 'Slack' | 'Discord' | 'Hermes' }
+  /**
+   * JeanBrasse himself: his reply on Telegram to a question an agent asked him
+   * (services/jeanbrasse-questions.ts), taken only from his own private chat. Made
+   * there and nowhere else, so no message an agent sends is ever typed after
+   * this line.
+   */
+  | { kind: 'jeanbrasse'; via: 'Telegram' };
 
 /** The line typed before a pasted message: who sent it, and nothing else. */
 export function senderLine(sender: MessageSender): string {
@@ -222,6 +229,7 @@ export function senderLine(sender: MessageSender): string {
     return `Message from agent ${envelopeValue(sender.name || sender.id)} (${envelopeValue(sender.id)}): `;
   }
   if (sender.kind === 'channel') return `Message from ${sender.channel}: `;
+  if (sender.kind === 'jeanbrasse') return `Message from JeanBrasse via ${sender.via}: `;
   return 'Message from Tars: ';
 }
 
