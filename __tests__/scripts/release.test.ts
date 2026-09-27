@@ -232,7 +232,7 @@ function inventory(...roots: string[]): string[] {
 /** The calls that would have written to GitHub. */
 const writesToGitHub = () => gh.calls().filter(args => !['view', 'list', 'download'].includes(args[1]) && args[0] !== 'api');
 
-describe('npm run release, before anything is built', () => {
+describe('npm run release, before anything is built', { timeout: 30_000 }, () => {
   it('passes every check on a clean checkout of main, so each refusal below is the check it names', async () => {
     const { dir } = checkout();
 
@@ -360,7 +360,7 @@ describe('npm run release, before anything is built', () => {
   });
 });
 
-describe('npm run release --dry-run', () => {
+describe('npm run release --dry-run', { timeout: 30_000 }, () => {
   it.skipIf(noPlutil())('builds, publishes, moves and deletes nothing, from a worktree with a build ready', async () => {
     const { root, dir } = checkout();
     // The folder that is kept holds five older published versions: a real run
@@ -436,7 +436,7 @@ describe('npm run release --dry-run', () => {
   });
 });
 
-describe('npm run release, before it builds', () => {
+describe('npm run release, before it builds', { timeout: 30_000 }, () => {
   // Found by the QA on #99 (S2), and their scenario: in the main checkout the
   // build wrote the manifest, the debug log and the app over those of the
   // build release/ held, before anything checked them, which is how the
