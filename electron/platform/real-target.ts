@@ -35,7 +35,12 @@ import { isUnder, samePath } from './path-compare';
  * at on the disk, as isUnderSafeRoot does (a stat on an offline share was
  * measured at 21 s).
  *
- * One exception, for the file that is a link to a dotfiles repository:
+ * One exception, asked for by name (`linkedMarkdown`), and only by
+ * fs:read-text-file and fs:write-text-file, the Brain page's instruction
+ * files. /api/local-file (no token), local-file:// and fs:read-project-files
+ * stay strict: there it would serve any note in the home through a link
+ * planted under ~/.dorothy. The exception is for the file that is a link to a
+ * dotfiles repository:
  * `~/.claude/CLAUDE.md`, or a project's CLAUDE.md or AGENTS.md, linked to a
  * shared file outside every root (common among Claude Code users; refusing it
  * broke the Brain page). The target's last name may be a FILE link out of
@@ -156,16 +161,23 @@ export function linkedFileAllowed(realFile: string, deps: { home?: string } = {}
     samePath(realFile, place) || isUnder(realFile, place) || isWithinDir(realFile, place));
 }
 
+export interface LandsOptions extends HomeCoverDeps {
+  /** The dotfiles exception: one file link to a markdown file. Off unless asked for. */
+  linkedMarkdown?: boolean;
+}
+
 /**
  * isUnderSafeRoot, and the target's real location under the real location of
- * one of `roots` that is not the home nor above it, or the one exception
- * above. `isInside(root, target)` is the caller's own test, by spelling.
+ * one of `roots` that is not the home nor above it, or, when asked for, the
+ * one exception above. `isInside(root, target)` is the caller's own test, by
+ * spelling.
  */
-export function landsUnderSafeRoot(target: string, roots: string[], isInside: Inside, deps: HomeCoverDeps = {}): boolean {
+export function landsUnderSafeRoot(target: string, roots: string[], isInside: Inside, deps: LandsOptions = {}): boolean {
   if (!isUnderSafeRoot(target, roots, isInside, deps)) return false;
   const real = realTarget(target);
   if (!real) return false;
   if (inRealRoot(target, real, roots, isInside, deps)) return true;
+  if (deps.linkedMarkdown !== true) return false;
   // The exception. The folder the target sits in really lies in a root, so
   // only its last name can lead out: a file link (a folder link on the way
   // makes the parent's real path leave every root, and is refused here).

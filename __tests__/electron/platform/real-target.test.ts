@@ -63,6 +63,13 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  *     outside every root (DATA_DIR linked to the home is the escape itself).
  * 15. It follows a chain of links only to the first one: a file link to a link
  *     into ~/.ssh is judged by the final file.
+ *
+ * Added at review (2026-09-27), written before the fix:
+ * 16. The exception applies where it was not asked for. It is for
+ *     fs:read-text-file and fs:write-text-file (the Brain page's instruction
+ *     files); /api/local-file (no token), local-file:// and
+ *     fs:read-project-files stay strict, or a link planted under ~/.dorothy
+ *     serves any note in the home.
  */
 
 const onWindows = process.platform === 'win32';
@@ -101,6 +108,8 @@ linkDir(docs, path.join(atlas, 'docs-link'));
 linkDir(data, path.join(atlas, 'to-data'));
 
 const lands = (target: string, r: string[] = roots) => landsUnderSafeRoot(target, r, inside, deps);
+/** With the dotfiles exception, as fs:read-text-file and fs:write-text-file ask for it. */
+const landsMd = (target: string, r: string[] = roots) => landsUnderSafeRoot(target, r, inside, { ...deps, linkedMarkdown: true });
 
 describe('1. a link inside a root that leads out of every root', () => {
   const escapes = [
@@ -342,8 +351,29 @@ describe('11-15. the dotfiles exception: one file link out of every root', () =>
   });
 
   it('14. a folder link on the way is still refused, to the dotfiles file itself', () => {
-    expect(lands(path.join(data, 'h', 'dotfiles', 'CLAUDE.md'))).toBe(false);
-    expect(lands(path.join(data, 'h', 'dotfiles', 'new.md'))).toBe(false);
+    expect(landsMd(path.join(data, 'h', 'dotfiles', 'CLAUDE.md'))).toBe(false);
+    expect(landsMd(path.join(data, 'h', 'dotfiles', 'new.md'))).toBe(false);
+  });
+
+  // Where no file link can be made (Windows without the privilege, D4, and no
+  // Windows file link without it: a junction to a file cannot be opened,
+  // measured), the link is stood in for by realpathSync.native reporting one
+  // name elsewhere, as it does for a link. The real links below run wherever
+  // they can be made; this one keeps 16 witnessed here too.
+  it('16. simulated file link: the exception only where it is asked for', () => {
+    const at = path.join(atlas, 'SIMULATED.md');
+    fs.writeFileSync(at, 'the link itself, never read');
+    const to = path.join(dotfiles, 'CLAUDE.md');
+    const nodeFs = createRequire(import.meta.url)('node:fs') as { realpathSync: { native: (p: string, ...rest: unknown[]) => string } };
+    const native = nodeFs.realpathSync.native;
+    nodeFs.realpathSync.native = (p: string, ...rest: unknown[]) => (samePath(p, at) ? to : native(p, ...rest));
+    try {
+      expect(realTarget(at)).toBe(to);
+      expect(landsMd(at)).toBe(true);
+      expect(lands(at)).toBe(false);
+    } finally {
+      nodeFs.realpathSync.native = native;
+    }
   });
 
   describe.skipIf(cannotSymlink())('through a real file link', () => {
@@ -351,25 +381,31 @@ describe('11-15. the dotfiles exception: one file link out of every root', () =>
 
     it('11. a file link from a root to the dotfiles file is allowed', () => {
       link(path.join(dotfiles, 'CLAUDE.md'), path.join(atlas, 'SHARED.md'));
-      expect(lands(path.join(atlas, 'SHARED.md'))).toBe(true);
+      expect(landsMd(path.join(atlas, 'SHARED.md'))).toBe(true);
+    });
+
+    it('16. the same link is refused where the exception was not asked for', () => {
+      link(path.join(dotfiles, 'CLAUDE.md'), path.join(atlas, 'SHARED.md'));
+      expect(lands(path.join(atlas, 'SHARED.md'))).toBe(false);
+      expect(landsUnderSafeRoot(path.join(atlas, 'SHARED.md'), roots, inside, { ...deps, linkedMarkdown: false })).toBe(false);
     });
 
     it('12, 13. a file link to a key, a private file or ~/.npmrc is refused', () => {
       link(path.join(ssh, 'id_ed25519'), path.join(atlas, 'key.md'));
       link(path.join(priv, 'talk.md'), path.join(atlas, 'talk.md'));
       link(path.join(home, '.npmrc'), path.join(atlas, 'npmrc.md'));
-      for (const name of ['key.md', 'talk.md', 'npmrc.md']) expect(lands(path.join(atlas, name)), name).toBe(false);
+      for (const name of ['key.md', 'talk.md', 'npmrc.md']) expect(landsMd(path.join(atlas, name)), name).toBe(false);
     });
 
     it('14. a file link reached through a folder link is refused', () => {
       link(path.join(dotfiles, 'CLAUDE.md'), path.join(dotfiles, 'via.md'));
-      expect(lands(path.join(data, 'h', 'dotfiles', 'via.md'))).toBe(false);
+      expect(landsMd(path.join(data, 'h', 'dotfiles', 'via.md'))).toBe(false);
     });
 
     it('15. a file link to a link into ~/.ssh is judged by the final file', () => {
       link(path.join(ssh, 'notes.md'), path.join(dotfiles, 'fwd.md'));
       link(path.join(dotfiles, 'fwd.md'), path.join(atlas, 'fwd.md'));
-      expect(lands(path.join(atlas, 'fwd.md'))).toBe(false);
+      expect(landsMd(path.join(atlas, 'fwd.md'))).toBe(false);
     });
   });
 });

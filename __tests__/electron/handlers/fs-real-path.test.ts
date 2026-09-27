@@ -35,6 +35,8 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * 7. ~/.claude/CLAUDE.md symlinked to a dotfiles repository can no longer be
  *    read or saved from the Brain page (a macOS regression).
  * 8. The exception lets a file link to ~/.ssh or ~/.tars-private through.
+ * 9. (review) The exception reaches fs:read-project-files or local-file://,
+ *    which ask for no instruction file by name: both stay strict.
  *
  * File links need SeCreateSymbolicLinkPrivilege on Windows (Developer Mode,
  * off here: decision D4), and Windows has no file link without it (a hard link
@@ -237,10 +239,17 @@ describe.skipIf(cannotSymlink())('7, 8. a file link out of every root', () => {
     expect((await readText(globalMd)).content).toBe('global instructions');
     expect((await writeText(globalMd, 'edited in the Brain page')).success).toBe(true);
     expect(fs.readFileSync(path.join(dotfiles, 'CLAUDE.md'), 'utf8')).toBe('edited in the Brain page');
-    expect(Object.values((await readProject(path.join(home, '.claude'), 'CLAUDE.md')).files)).toEqual(['edited in the Brain page']);
     fs.writeFileSync(path.join(dotfiles, 'AGENTS.md'), 'shared agents');
     link(path.join(dotfiles, 'AGENTS.md'), path.join(project, 'AGENTS.shared.md'));
     expect((await readText(path.join(project, 'AGENTS.shared.md'))).content).toBe('shared agents');
+  });
+
+  it('9. fs:read-project-files stays strict: the dotfiles file link is not read there', async () => {
+    fs.mkdirSync(dotfiles, { recursive: true });
+    fs.mkdirSync(path.dirname(globalMd), { recursive: true });
+    if (!fs.existsSync(path.join(dotfiles, 'CLAUDE.md'))) fs.writeFileSync(path.join(dotfiles, 'CLAUDE.md'), 'global instructions');
+    link(path.join(dotfiles, 'CLAUDE.md'), globalMd);
+    expect((await readProject(path.join(home, '.claude'), 'CLAUDE.md')).files).toEqual({});
   });
 
   it('8. a file link to ~/.ssh or ~/.tars-private is still refused, to read and to write', async () => {
@@ -255,5 +264,23 @@ describe.skipIf(cannotSymlink())('7, 8. a file link out of every root', () => {
     expect((await readProject(project, 'NOTES.md')).files).toEqual({});
     expect(fs.readFileSync(path.join(ssh, 'id_ed25519'), 'utf8')).toBe('the other key');
     expect(fs.readFileSync(path.join(PRIVATE_DIR, 'talk.md'), 'utf8')).toBe('the talk');
+  });
+});
+
+describe.skipIf(onWindows || cannotSymlink())('9. local-file:// stays strict', () => {
+  beforeEach(() => {
+    protocols.clear();
+    setupProtocolHandler();
+  });
+
+  it('refuses a file link to a markdown file outside', async () => {
+    const notes = path.join(home, 'notes');
+    fs.mkdirSync(notes, { recursive: true });
+    fs.writeFileSync(path.join(notes, 'journal.md'), 'the journal');
+    const at = path.join(project, 'journal.md');
+    if (!fs.existsSync(at)) fs.symlinkSync(path.join(notes, 'journal.md'), at, 'file');
+    const url = new URL('local-file://');
+    url.pathname = at;
+    expect((await protocols.get('local-file')!({ url: url.href })).status).toBe(403);
   });
 });

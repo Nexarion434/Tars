@@ -2400,11 +2400,13 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * `/Users` or the drive's Users folder made every file of the home readable
    * and writable here (platform/home-root.ts). Only the roots the path is
    * under are judged, so a project on an offline share costs nothing. Where
-   * the path lands, links followed, must be under one too (platform/real-target.ts).
+   * the path lands, links followed, must be under one too, or be one file
+   * link to a markdown file, a CLAUDE.md kept in a dotfiles repository
+   * (platform/real-target.ts).
    */
   const isAllowedTextFile = (target: string) => {
     const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep));
+    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true });
   };
 
   /**
