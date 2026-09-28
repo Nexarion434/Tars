@@ -29,7 +29,8 @@ vi.mock('child_process', async (importOriginal) => {
  *     new secret in it, is open to whoever the folder lets in. Shown by a
  *     rename that cannot happen: the temp file it leaves must already be
  *     closed. (Where the temp is born, and that it is closed from its first
- *     byte, is secret-file-staging.test.ts.)
+ *     byte, is secret-file-staging.test.ts.) And a temp holding the secret
+ *     outlives the failed write, beside the target or in the staging directory.
  *  3. A file that was too open before is still too open after the next save.
  *  4. api-token stays open.
  *  5. At start, the files that exist are not tightened, the private directory
@@ -107,7 +108,7 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(fs.readFileSync(file, 'utf8')).toBe('{"slackBotToken":"x"}');
   });
 
-  it('2: the temp file is closed before the rename is tried', async () => {
+  it('2: a write whose rename fails leaves no temp behind', async () => {
     const dir = openDir();
     const target = path.join(dir, 'app-settings.json');
     await closeSecretsToOtherAccounts([target], path.join(dir, '.tars-private'));
@@ -115,9 +116,8 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     fs.mkdirSync(target);
     expect(() => writeSecretFileSync(target, '{"slackBotToken":"x"}')).toThrow();
     const staging = path.join(dir, '.tars-private', '.staging');
-    const left = fs.readdirSync(staging).filter(n => n.endsWith('.tmp'));
-    expect(left).toHaveLength(1);
-    expect(dacl(path.join(staging, left[0]))).toEqual(ownerOnly());
+    expect(fs.readdirSync(staging).filter(n => n.endsWith('.tmp'))).toEqual([]);
+    expect(fs.readdirSync(dir).filter(n => n.endsWith('.tmp'))).toEqual([]);
   });
 
   it('3: a file that was too open is closed by the next save', async () => {
