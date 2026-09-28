@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { renameReplacingSync } from '../platform/rename-replacing';
-import { restrictToOwnerSync, restrictDirToOwnerSync } from '../platform/owner-only';
+import { restrictToOwnerSync, restrictToOwner, restrictDirToOwner } from '../platform/owner-only';
 
 /**
  * Writing a file that holds credentials.
@@ -109,12 +109,16 @@ export function writeSecretFileInPlaceSync(filePath: string, contents: string): 
  *
  * Once, at startup, and not on each read as ensureSecretFileMode is: it starts
  * two icacls per file, and readHermesConnection runs on every gateway call.
+ * Asynchronous, so the main process goes on while it runs (2 to 4.6 s on a
+ * machine at 100% CPU). A save that lands meanwhile is closed by its own
+ * write, and the pass only ever narrows, so the two cannot leave a file open.
+ * Never rejects: each failure is logged where it happens.
  */
-export function closeSecretsToOtherAccounts(files: string[], privateDir: string): void {
+export async function closeSecretsToOtherAccounts(files: string[], privateDir: string): Promise<void> {
   for (const file of files) {
-    if (fs.existsSync(file)) restrictToOwnerSync(file, { replaceExplicit: true });
+    if (fs.existsSync(file)) await restrictToOwner(file, { replaceExplicit: true });
   }
-  restrictDirToOwnerSync(privateDir);
+  await restrictDirToOwner(privateDir);
 }
 
 /**

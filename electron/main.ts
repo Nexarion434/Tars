@@ -436,8 +436,9 @@ app.whenReady().then(async () => {
   // And the Hermes webhook secret, for the same reason: through the webhook it
   // gives any agent of any project work, and ~/.dorothy is one `cat` away.
   migrateWebhookSecretOutOfAgentReach();
-  // Windows: the modes above do nothing there; an access list does the same.
-  closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
+  // Windows: the modes above do nothing there; an access list does the same,
+  // set in the background (it never rejects, each failure is logged).
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();

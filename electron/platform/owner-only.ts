@@ -1,4 +1,4 @@
-import { execFileSync as nodeExecFileSync } from 'child_process';
+import { execFile as nodeExecFile, execFileSync as nodeExecFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Env } from './fs-probe';
@@ -26,8 +26,15 @@ import { envValue } from './path-env';
  * have to resolve, and SYSTEM by its well-known SID, so nothing depends on the
  * language of the machine. The SID is asked of `whoami /user` once per process.
  *
- * Never throws: a failure is logged with the path and reported, and the caller
- * keeps what it wrote. darwin/linux: nothing runs, the answer is `skipped`.
+ * Two forms. The synchronous one is for a write, which must close its temp
+ * file before the rename. The asynchronous one is for the pass at startup,
+ * which starts two icacls per file: measured on a machine at 100% CPU, 2 to
+ * 4.6 s for three files and a directory of three, time the main process would
+ * otherwise spend frozen before its window shows.
+ *
+ * Never throws, never rejects: a failure is logged with the path and reported,
+ * and the caller keeps what it wrote. darwin/linux: nothing runs, the answer
+ * is `skipped`.
  */
 
 export const SYSTEM_SID = 'S-1-5-18';
@@ -40,6 +47,8 @@ export interface OwnerOnlyDeps {
   env?: Env;
   /** Runs a program, returns its stdout; throws as child_process.execFileSync does. */
   execFileSync?: (file: string, args: readonly string[]) => string;
+  /** The same, asynchronously; rejects as child_process.execFile does. */
+  execFile?: (file: string, args: readonly string[]) => Promise<string>;
   warn?: (message: string) => void;
 }
 
@@ -53,13 +62,22 @@ export interface OwnerOnlyOptions {
 }
 
 const SID_SHAPE = /^S-1-\d+(-\d+)+$/;
+const WHOAMI_ARGS = ['/user', '/fo', 'csv', '/nh'];
 
 /** A hung icacls must not hold the main process for ever. */
 const TIMEOUT_MS = 10_000;
+const RUN_OPTIONS = { encoding: 'utf8', windowsHide: true, timeout: TIMEOUT_MS } as const;
 
-const runReal = (file: string, args: readonly string[]): string =>
-  nodeExecFileSync(file, args as string[], {
-    encoding: 'utf8', windowsHide: true, timeout: TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+const runSync = (file: string, args: readonly string[]): string =>
+  nodeExecFileSync(file, args as string[], { ...RUN_OPTIONS, stdio: ['ignore', 'pipe', 'pipe'] });
+
+const runAsync = (file: string, args: readonly string[]): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = nodeExecFile(file, args as string[], RUN_OPTIONS, (err, stdout, stderr) => {
+      if (err) reject(Object.assign(err, { stdout, stderr }));
+      else resolve(stdout);
+    });
+    child.stdin?.end();
   });
 
 /**
@@ -74,19 +92,28 @@ export function parseWhoamiUserSid(stdout: string): string | null {
 
 let cachedSid: string | undefined;
 
+/** Cached only for the real runners: an injected one is a test's own world. */
+function rememberSid(out: unknown, injected: boolean): string {
+  const sid = parseWhoamiUserSid(String(out ?? ''));
+  if (!sid) throw new Error('whoami /user gave no SID');
+  if (!injected) cachedSid = sid;
+  return sid;
+}
+
 function system32(deps: OwnerOnlyDeps, exe: string): string {
   const systemRoot = envValue(deps.env ?? process.env, 'SystemRoot', 'win32') || 'C:\\Windows';
   return path.win32.join(systemRoot, 'System32', exe);
 }
 
-function userSid(deps: OwnerOnlyDeps, run: NonNullable<OwnerOnlyDeps['execFileSync']>): string {
-  // Cached only for the real runner: an injected one is a test's own world.
-  if (!deps.execFileSync && cachedSid) return cachedSid;
-  const out = run(system32(deps, 'whoami.exe'), ['/user', '/fo', 'csv', '/nh']);
-  const sid = parseWhoamiUserSid(String(out ?? ''));
-  if (!sid) throw new Error('whoami /user gave no SID');
-  if (!deps.execFileSync) cachedSid = sid;
-  return sid;
+const notWindows = (deps: OwnerOnlyDeps) => (deps.platform ?? process.platform) !== 'win32';
+
+/** The icacls argv lists that leave `target` with the user and SYSTEM only. */
+function icaclsSteps(target: string, kind: 'file' | 'directory', options: OwnerOnlyOptions, sid: string): string[][] {
+  const inherit = kind === 'directory' ? '(OI)(CI)' : '';
+  return [
+    ...(options.replaceExplicit ? [[target, '/reset']] : []),
+    [target, '/inheritance:r', '/grant:r', `*${sid}:${inherit}(F)`, `*${SYSTEM_SID}:${inherit}(F)`],
+  ];
 }
 
 function why(err: unknown): string {
@@ -94,32 +121,49 @@ function why(err: unknown): string {
   const e = err as Error & { code?: unknown; status?: unknown; stdout?: unknown; stderr?: unknown };
   const said = `${String(e.stderr ?? '')} ${String(e.stdout ?? '')}`.replace(/\s+/g, ' ').trim();
   const code = e.status ?? e.code;
-  return [code === undefined ? e.message : `exit ${String(code)}`, said].filter(Boolean).join(': ');
+  return [code === undefined || code === null ? e.message : `exit ${String(code)}`, said].filter(Boolean).join(': ');
 }
 
-function grant(target: string, kind: 'file' | 'directory', options: OwnerOnlyOptions, deps: OwnerOnlyDeps): OwnerOnlyResult {
-  const run = deps.execFileSync ?? runReal;
-  const warn = deps.warn ?? ((m: string) => console.warn(m));
+function failed(target: string, err: unknown, deps: OwnerOnlyDeps, what = 'keeps the access list its folder hands down'): 'failed' {
+  (deps.warn ?? ((m: string) => console.warn(m)))(`[secret-acl] ${target} ${what}: ${why(err)}`);
+  return 'failed';
+}
+
+function grantSync(target: string, kind: 'file' | 'directory', options: OwnerOnlyOptions, deps: OwnerOnlyDeps): OwnerOnlyResult {
+  const run = deps.execFileSync ?? runSync;
   try {
-    const sid = userSid(deps, run);
-    const icacls = system32(deps, 'icacls.exe');
-    const inherit = kind === 'directory' ? '(OI)(CI)' : '';
-    if (options.replaceExplicit) run(icacls, [target, '/reset']);
-    run(icacls, [target, '/inheritance:r', '/grant:r', `*${sid}:${inherit}(F)`, `*${SYSTEM_SID}:${inherit}(F)`]);
+    const sid = (!deps.execFileSync && cachedSid) || rememberSid(run(system32(deps, 'whoami.exe'), WHOAMI_ARGS), !!deps.execFileSync);
+    for (const args of icaclsSteps(target, kind, options, sid)) run(system32(deps, 'icacls.exe'), args);
     return 'restricted';
   } catch (err) {
-    warn(`[secret-acl] ${target} keeps the access list its folder hands down: ${why(err)}`);
-    return 'failed';
+    return failed(target, err, deps);
+  }
+}
+
+async function grantAsync(target: string, kind: 'file' | 'directory', options: OwnerOnlyOptions, deps: OwnerOnlyDeps): Promise<OwnerOnlyResult> {
+  const run = deps.execFile ?? runAsync;
+  try {
+    const sid = (!deps.execFile && cachedSid) || rememberSid(await run(system32(deps, 'whoami.exe'), WHOAMI_ARGS), !!deps.execFile);
+    for (const args of icaclsSteps(target, kind, options, sid)) await run(system32(deps, 'icacls.exe'), args);
+    return 'restricted';
+  } catch (err) {
+    return failed(target, err, deps);
   }
 }
 
 /**
  * Leave `target` (a file) with the user and SYSTEM only, full control,
- * inheritance removed.
+ * inheritance removed. Synchronous: for a write, before its rename.
  */
 export function restrictToOwnerSync(target: string, options: OwnerOnlyOptions = {}, deps: OwnerOnlyDeps = {}): OwnerOnlyResult {
-  if ((deps.platform ?? process.platform) !== 'win32') return 'skipped';
-  return grant(target, 'file', options, deps);
+  if (notWindows(deps)) return 'skipped';
+  return grantSync(target, 'file', options, deps);
+}
+
+/** The same, without holding the caller: for the pass at startup. */
+export async function restrictToOwner(target: string, options: OwnerOnlyOptions = {}, deps: OwnerOnlyDeps = {}): Promise<OwnerOnlyResult> {
+  if (notWindows(deps)) return 'skipped';
+  return grantAsync(target, 'file', options, deps);
 }
 
 /**
@@ -128,10 +172,11 @@ export function restrictToOwnerSync(target: string, options: OwnerOnlyOptions = 
  * loses its own list (`/reset`) and takes the directory's. One level, as
  * narrowDataDir: the private directory has no subdirectories. A link or a
  * junction is never followed or reset, since what it points at may be any
- * file the account owns (~/.ssh). A missing directory is skipped quietly.
+ * file the account owns (~/.ssh); nor is the directory itself when it is one.
+ * A missing directory is skipped quietly.
  */
-export function restrictDirToOwnerSync(dir: string, deps: OwnerOnlyDeps = {}): OwnerOnlyResult {
-  if ((deps.platform ?? process.platform) !== 'win32') return 'skipped';
+export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}): Promise<OwnerOnlyResult> {
+  if (notWindows(deps)) return 'skipped';
   let names: string[];
   try {
     if (!fs.lstatSync(dir).isDirectory()) return 'skipped';
@@ -139,19 +184,17 @@ export function restrictDirToOwnerSync(dir: string, deps: OwnerOnlyDeps = {}): O
   } catch {
     return 'skipped';
   }
-  const own = grant(dir, 'directory', { replaceExplicit: true }, deps);
+  const own = await grantAsync(dir, 'directory', { replaceExplicit: true }, deps);
   if (own !== 'restricted') return own;
-  const run = deps.execFileSync ?? runReal;
-  const warn = deps.warn ?? ((m: string) => console.warn(m));
+  const run = deps.execFile ?? runAsync;
   let result: OwnerOnlyResult = 'restricted';
   for (const name of names) {
     const entry = path.join(dir, name);
     try {
       if (fs.lstatSync(entry).isSymbolicLink()) continue;
-      run(system32(deps, 'icacls.exe'), [entry, '/reset']);
+      await run(system32(deps, 'icacls.exe'), [entry, '/reset']);
     } catch (err) {
-      warn(`[secret-acl] ${entry} keeps its own access list: ${why(err)}`);
-      result = 'failed';
+      result = failed(entry, err, deps, 'keeps its own access list');
     }
   }
   return result;
