@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hermesDesktopConfigPath } from '../../../electron/platform';
 
 /**
  * The Chat goes back to the live conversation once the Hermes connection
@@ -69,8 +70,8 @@ beforeAll(async () => {
   // A gateway is configured. With no connection file the Chat says Hermes is not
   // configured and asks nothing; it used to take the default port, 127.0.0.1:9119.
   (await import('../../../electron/services/hermes-config')).writeHermesConnection(CONNECTION);
-  // Hermes Desktop's own file, which the import reads.
-  const desktop = path.join(os.homedir(), 'Library', 'Application Support', 'Hermes', 'connection.json');
+  // Hermes Desktop's own file, which the import reads, where this platform keeps it.
+  const desktop = hermesDesktopConfigPath({ home: os.homedir() });
   fs.mkdirSync(path.dirname(desktop), { recursive: true });
   fs.writeFileSync(desktop, JSON.stringify({ mode: 'remote', remote: { url: 'http://127.0.0.1:1' } }));
 });
