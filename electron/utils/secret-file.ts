@@ -2,6 +2,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { renameReplacingSync } from '../platform/rename-replacing';
 import { restrictToOwnerSync, restrictToOwner, restrictDirToOwner } from '../platform/owner-only';
+import { pathKey } from '../platform/path-compare';
+
+/** What the startup pass named, and which private directory it has closed. */
+const ownListFiles = new Set<string>();
+const privateDirs = new Set<string>();
+const closedDirs = new Set<string>();
+
+function needsItsOwnList(filePath: string): boolean {
+  const dir = pathKey(path.dirname(filePath));
+  if (closedDirs.has(dir)) return false;
+  return ownListFiles.has(pathKey(filePath)) || privateDirs.has(dir);
+}
 
 /**
  * Writing a file that holds credentials.
@@ -31,15 +43,21 @@ import { restrictToOwnerSync, restrictToOwner, restrictDirToOwner } from '../pla
  * left as it is: `~/.dorothy` is the agents' directory, and not this
  * function's to narrow.
  *
- * On Windows the modes do nothing, so the temp file is closed to every account
- * but the user and SYSTEM before it is renamed over the live one
- * (platform/owner-only.ts): the file is never in place with the secret in it
- * and its folder's access list. A failure there is logged and the write goes
- * on. darwin/linux: nothing runs.
+ * On Windows the modes do nothing. A file the startup pass names
+ * (closeSecretsToOtherAccounts) has its temp file closed to every account but
+ * the user and SYSTEM before it is renamed over the live one
+ * (platform/owner-only.ts), so it is never in place with the secret in it and
+ * its folder's access list; a file in the private directory is closed by the
+ * directory's own list, once that pass has closed it, and starts nothing. Any
+ * other file (hermes-session.json, rewritten on every gateway reply that sets
+ * a cookie) keeps what its folder hands down: one icacls is a process start
+ * on the main process, 25 ms on an idle machine and 400 ms on a busy one. A
+ * failure is logged and the write goes on. darwin/linux: nothing runs.
  */
 export function writeSecretFileSync(filePath: string, contents: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  writeAtomicSync(filePath, contents, 0o600, (tmp) => { restrictToOwnerSync(tmp); });
+  const closeFirst = needsItsOwnList(filePath);
+  writeAtomicSync(filePath, contents, 0o600, closeFirst ? (tmp) => { restrictToOwnerSync(tmp); } : undefined);
 
   // renameSync preserves the temp file's mode, but be explicit: if the target
   // already existed at 0644 on some platform, this is what narrows it.
@@ -104,8 +122,10 @@ export function writeSecretFileInPlaceSync(filePath: string, contents: string): 
  * left open, a conversation file renamed out of ~/.dorothy with that folder's
  * list: all of them end as a fresh write would leave them. The files' own
  * explicit entries go too. A file or directory that does not exist is
- * skipped quietly. darwin/linux: nothing runs, the modes do this there
- * (ensureSecretFileMode, narrowDataDir).
+ * skipped quietly, except the private directory, which is made so that what
+ * the Chat writes there later is closed by its list. darwin/linux: nothing
+ * runs and nothing is made, the modes do this there (ensureSecretFileMode,
+ * narrowDataDir).
  *
  * Once, at startup, and not on each read as ensureSecretFileMode is: it starts
  * two icacls per file, and readHermesConnection runs on every gateway call.
@@ -115,10 +135,13 @@ export function writeSecretFileInPlaceSync(filePath: string, contents: string): 
  * Never rejects: each failure is logged where it happens.
  */
 export async function closeSecretsToOtherAccounts(files: string[], privateDir: string): Promise<void> {
+  // Named before the first await: a save made while the pass runs is closed too.
+  for (const file of files) ownListFiles.add(pathKey(file));
+  privateDirs.add(pathKey(privateDir));
   for (const file of files) {
     if (fs.existsSync(file)) await restrictToOwner(file, { replaceExplicit: true });
   }
-  await restrictDirToOwner(privateDir);
+  if (await restrictDirToOwner(privateDir, {}, { create: true }) === 'restricted') closedDirs.add(pathKey(privateDir));
 }
 
 /**

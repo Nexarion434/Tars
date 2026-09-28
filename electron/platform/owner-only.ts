@@ -173,12 +173,14 @@ export async function restrictToOwner(target: string, options: OwnerOnlyOptions 
  * narrowDataDir: the private directory has no subdirectories. A link or a
  * junction is never followed or reset, since what it points at may be any
  * file the account owns (~/.ssh); nor is the directory itself when it is one.
- * A missing directory is skipped quietly.
+ * A missing directory is skipped quietly, or made first with `create`, so
+ * that what is written into it later is closed from the start.
  */
-export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}): Promise<OwnerOnlyResult> {
+export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, options: { create?: boolean } = {}): Promise<OwnerOnlyResult> {
   if (notWindows(deps)) return 'skipped';
   let names: string[];
   try {
+    if (options.create) fs.mkdirSync(dir, { recursive: true });
     if (!fs.lstatSync(dir).isDirectory()) return 'skipped';
     names = fs.readdirSync(dir);
   } catch {
