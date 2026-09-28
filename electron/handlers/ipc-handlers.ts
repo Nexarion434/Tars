@@ -50,7 +50,7 @@ import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
 import { enforcesOrchestratorMode } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
-import { resolveShell, shellArgs, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot, landsUnderSafeRoot } from '../platform';
+import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot, landsUnderSafeRoot } from '../platform';
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
@@ -191,7 +191,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
       cols: cols || 80,
       rows: rows || 24,
       cwd: cwd || os.homedir(),
-      env: process.env as { [key: string]: string },
+      env: childEnv(shell, process.env) as { [key: string]: string },
     });
 
     ptyProcesses.set(id, ptyProcess);
@@ -2988,7 +2988,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
       cols: cols || 80,
       rows: rows || 24,
       cwd: cwd || os.homedir(),
-      env: process.env as { [key: string]: string },
+      env: childEnv(shell, process.env) as { [key: string]: string },
     });
 
     quickPtyProcesses.set(id, ptyProcess);

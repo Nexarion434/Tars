@@ -39,6 +39,10 @@ import { openTerminal, LINUX_TERMINALS, type OpenTerminalDeps } from '../../../e
  *     console window, which a detached console program does not get: it is
  *     started by System32's conhost.exe, the directory its cwd and nothing else.
  * 13. Nothing starts, and the answer does not say what was tried.
+ * 14. The console fallback starts Windows PowerShell 5.1 with the PSModulePath
+ *     of a Tars started from PowerShell 7: it finds pwsh 7's modules first and
+ *     loses core cmdlets (platform/child-env.ts). pwsh keeps it, and so does
+ *     wt.exe, which is started as it was.
  */
 
 type Spawned = { file: string; args: string[]; options: Record<string, unknown> };
@@ -183,7 +187,7 @@ describe('opening a terminal on Windows', () => {
     const deps = winDeps([WT, CONHOST]);
     const r = await openTerminal(semiDir, deps);
     expect(r).toEqual({ success: true, terminal: 'powershell.exe' });
-    expect(deps.spawned).toEqual([{ file: CONHOST, args: [POWERSHELL, '-NoLogo'], options: { cwd: semiDir, detached: true, stdio: 'ignore' } }]);
+    expect(deps.spawned).toEqual([{ file: CONHOST, args: [POWERSHELL, '-NoLogo'], options: { cwd: semiDir, detached: true, stdio: 'ignore', env: deps.env } }]);
     for (const d of [...deps.spawned, ...deps.executed]) {
       expect(d.file).not.toMatch(/cmd\.exe$/i);
       expect(d.args.join('\n')).not.toContain('calc');
@@ -193,7 +197,7 @@ describe('opening a terminal on Windows', () => {
   it('12. no wt.exe: the user\'s shell in a new console at the directory, pwsh first when it is there', async () => {
     const plain = winDeps([CONHOST], [POWERSHELL, CONHOST]);
     expect(await openTerminal(winDir, plain)).toEqual({ success: true, terminal: 'powershell.exe' });
-    expect(plain.spawned).toEqual([{ file: CONHOST, args: [POWERSHELL, '-NoLogo'], options: { cwd: winDir, detached: true, stdio: 'ignore' } }]);
+    expect(plain.spawned).toEqual([{ file: CONHOST, args: [POWERSHELL, '-NoLogo'], options: { cwd: winDir, detached: true, stdio: 'ignore', env: plain.env } }]);
 
     const seven = winDeps([CONHOST], [PWSH, POWERSHELL, CONHOST], `C:\\Program Files\\PowerShell\\7;${WIN_PATH}`);
     expect(await openTerminal(winDir, seven)).toEqual({ success: true, terminal: 'pwsh.exe' });
@@ -213,6 +217,25 @@ describe('opening a terminal on Windows', () => {
     expect(r.success).toBe(false);
     expect(r.error).toContain('wt.exe');
     expect(r.error).toContain('conhost.exe');
+  });
+
+  it('14. the console gives Windows PowerShell no PSModulePath, and pwsh and wt the parent\'s', async () => {
+    const modules = 'C:\\Users\\n\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7\\Modules';
+    const plain = winDeps([CONHOST], [POWERSHELL, CONHOST]);
+    plain.env = { ...plain.env, PSModulePath: modules } as typeof plain.env;
+    await openTerminal(winDir, plain);
+    expect(plain.spawned[0].options.env).toEqual({ SystemRoot: 'C:\\Windows', Path: WIN_PATH });
+
+    const seven = winDeps([CONHOST], [PWSH, POWERSHELL, CONHOST], `C:\\Program Files\\PowerShell\\7;${WIN_PATH}`);
+    seven.env = { ...seven.env, PSModulePath: modules } as typeof seven.env;
+    await openTerminal(winDir, seven);
+    expect(seven.spawned[0].args[0]).toBe(PWSH);
+    expect(seven.spawned[0].options.env).toBe(seven.env);
+
+    const wt = winDeps([WT]);
+    wt.env = { ...wt.env, PSModulePath: modules } as typeof wt.env;
+    await openTerminal(winDir, wt);
+    expect(wt.spawned[0].options).toEqual({ cwd: winDir, detached: true, stdio: 'ignore' });
   });
 
   it('6. refuses a directory that does not exist, and starts nothing', async () => {

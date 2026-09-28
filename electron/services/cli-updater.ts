@@ -6,7 +6,7 @@ import type { AgentProvider, AppSettings } from '../types';
 import { dataPath } from '../constants';
 import { getAllProviders, getProvider } from '../providers';
 import { buildFullPath } from '../utils/path-builder';
-import { getPath, rmRetryingSync, withPath } from '../platform';
+import { childEnv, getPath, rmRetryingSync, withPath } from '../platform';
 import {
   classifyWindowsInstall, locateOnWindows, npmOnWindows, processesInPackage, unstartableOnWindows,
   windowsGlobalManifest, windowsNativeVersion,
@@ -152,7 +152,7 @@ interface Run {
 function runFile(file: string, args: string[], env: NodeJS.ProcessEnv, timeout: number, cwd: string): Promise<Run> {
   const started = Date.now();
   return new Promise(resolve => {
-    execFile(file, args, { env, timeout, cwd, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', windowsHide: true }, (err, stdout, stderr) => {
+    execFile(file, args, { env: childEnv(file, env), timeout, cwd, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', windowsHide: true }, (err, stdout, stderr) => {
       let code: number | string = 0;
       if (err) {
         const e = err as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };

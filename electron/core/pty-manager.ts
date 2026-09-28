@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
 import * as pty from 'node-pty';
-import { resolveShell, shellArgs } from '../platform';
+import { resolveShell, shellArgs, childEnv } from '../platform';
 import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
@@ -928,7 +928,7 @@ export function createQuickPty(
     cols: cols || 80,
     rows: rows || 24,
     cwd: cwd || os.homedir(),
-    env: process.env as { [key: string]: string },
+    env: childEnv(shell, process.env) as { [key: string]: string },
   });
 
   const id = uuidv4();

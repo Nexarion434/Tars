@@ -5,7 +5,7 @@ import { mintAgentToken, revokeTerminalToken, tarsInstanceId } from './agent-tok
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
-import type { Env } from '../platform';
+import { childEnv, type Env } from '../platform';
 
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
 export { agentShell } from '../platform';
@@ -115,7 +115,9 @@ export function spawnAgentPty(opts: {
     cols: size.cols,
     rows: size.rows,
     cwd: opts.cwd,
-    env: {
+    // Windows PowerShell, which an agent's terminal waits in there, gets no
+    // PSModulePath (platform/child-env.ts); any other program all of it.
+    env: childEnv(opts.shell, {
       ...opts.env,
       // Which Tars this CLI answers to: its hooks, its bundled MCP servers and
       // anything else that calls back. It is set here, after the caller's env,
@@ -142,7 +144,7 @@ export function spawnAgentPty(opts: {
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
       ...managedCliEnv(opts.binaryName),
-    } as { [key: string]: string },
+    }) as { [key: string]: string },
   });
   spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: opts.env });
   // Whose terminal this is, so a message that has to wait for a draft in it

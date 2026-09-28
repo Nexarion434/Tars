@@ -50,7 +50,18 @@ import { promisify } from 'node:util';
  *    or another terminal was being opened for the agent) and the agent, from
  *    a window or a bot, is left `running` with the task saved, no terminal
  *    and no watch; or the error is swallowed instead of reaching the caller.
+ * 12. win32: a terminal in Windows PowerShell 5.1 (an agent's, pty:create,
+ *    shell:startPty, the quick terminal) inherits the PSModulePath of a Tars
+ *    started from PowerShell 7, finds pwsh 7's modules first and loses core
+ *    cmdlets (platform/child-env.ts; real spawns in
+ *    platform/psmodulepath-spawn.test.ts); or a pwsh, Git Bash or CLI
+ *    terminal loses the parent's value.
+ * 13. darwin/linux: a terminal gets another environment than the parent's
+ *    (a PSModulePath removed on the way).
  */
+
+/** PSModulePath as a process started from PowerShell 7 has it: pwsh 7's modules first. */
+const PWSH7_MODULES = 'C:\\Users\\n\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules';
 
 const { tmpHome } = await vi.hoisted(async () => {
   const nodeOs = await import('node:os');
@@ -274,6 +285,9 @@ function pathOf(env: Record<string, string | undefined>): { value: string | unde
   return { value: keys.length ? env[keys[keys.length - 1]] : undefined, keys: keys.length };
 }
 
+/** PSModulePath in a terminal's env, under every spelling it has (a spread of process.env may upper-case it). */
+const modulePathOf = (t: FakePty) => Object.entries(t.opts.env).filter(([k]) => k.toLowerCase() === 'psmodulepath').map(([, v]) => v);
+
 async function createAgent(): Promise<AgentStatus> {
   const created = await handlers.get('agent:create')!({}, { projectPath: project, skills: [], name: 'Sites' }) as AgentStatus;
   return agents.get(created.id)!;
@@ -381,6 +395,20 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     await handlers.get('shell:startPty')!({}, { cwd: project });
     createQuickPty(project, 80, 24, null);
     expect(spawned.map(t => [t.file, t.args])).toEqual([[loginShell, ['-l']], [loginShell, ['-l']], [loginShell, ['-l']]]);
+  });
+
+  it('13. every terminal gets the parent\'s PSModulePath as it was', async () => {
+    const before = process.env.PSModulePath;
+    process.env.PSModulePath = PWSH7_MODULES;
+    try {
+      await createAgent();
+      await handlers.get('pty:create')!({}, { cwd: project });
+      await handlers.get('shell:startPty')!({}, { cwd: project });
+      createQuickPty(project, 80, 24, null);
+      expect(spawned.map(modulePathOf)).toEqual([[PWSH7_MODULES], [PWSH7_MODULES], [PWSH7_MODULES], [PWSH7_MODULES]]);
+    } finally {
+      if (before === undefined) delete process.env.PSModulePath; else process.env.PSModulePath = before;
+    }
   });
 
   it('a skill install spawns npx with its argv, on the full PATH', async () => {
@@ -595,6 +623,28 @@ describe('2-6. on win32', () => {
       [WIN_POWERSHELL, ['-NoLogo']],
       ['C:\\Program Files\\Git\\bin\\bash.exe', ['-l']],
       [WIN_POWERSHELL, ['-NoLogo']],
+    ]);
+  });
+
+  it('12. a terminal in Windows PowerShell gets no PSModulePath; pwsh, Git Bash and a CLI keep the parent\'s', async () => {
+    for (const key of Object.keys(process.env)) if (key.toLowerCase() === 'psmodulepath') delete process.env[key];
+    process.env.PSModulePath = PWSH7_MODULES;
+    const agent = await createAgent();
+    await handlers.get('pty:create')!({}, { cwd: project });
+    createQuickPty(project, 80, 24, null);
+    settings = { terminalShell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' } as AppSettings;
+    await handlers.get('shell:startPty')!({}, { cwd: project });
+    settings = { terminalShell: 'C:\\Program Files\\Git\\bin\\bash.exe' } as AppSettings;
+    await handlers.get('pty:create')!({}, { cwd: project });
+    await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK });
+    await pause(50);
+    expect(spawned.map(t => [path.win32.basename(t.file), modulePathOf(t)])).toEqual([
+      ['powershell.exe', []],
+      ['powershell.exe', []],
+      ['powershell.exe', []],
+      ['pwsh.exe', [PWSH7_MODULES]],
+      ['bash.exe', [PWSH7_MODULES]],
+      ['claude.exe', [PWSH7_MODULES]],
     ]);
   });
 
