@@ -39,9 +39,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    was killed; the bound is well past the slowest clean quit measured on a
  *    loaded machine (11.3 s from quit to main exit, the `exit` mark at 0.8 s,
  *    2026-09-28, about 74 electron and node processes of other runs beside it).
- *    The main process's own time to exit is recorded (mainExitMs), not held
- *    against the app: past `exit` it is Chromium's shutdown, starved on a busy
- *    machine (below).
+ *    The main process itself, where the hang lived, is held tighter:
+ *    MAIN_AFTER_EXIT_BUDGET_MS past `exit`. Its time from the quit is
+ *    recorded (mainExitMs), not held against the app: past `exit` it is
+ *    Chromium's shutdown, starved on a busy machine (below).
  * 3. Something the app started (a terminal's shell or CLI, a console list
  *    helper, a Chromium child) is still alive AFTER_EXIT_BUDGET_MS past the
  *    app's `exit` (2b). How long each ran on after the main process exited
@@ -66,6 +67,8 @@ const QUITS = Number(process.env.E2E_QUITS ?? 6);
 const MAIN_EXIT_BUDGET_MS = 5_000;
 const LEFTOVER_BUDGET_MS = 3_000;
 const AFTER_EXIT_BUDGET_MS = 60_000;
+// Worst benign main linger measured: ~10.5 s past `exit` (loaded, 2026-09-28); the hang this spec is for lives in main.
+const MAIN_AFTER_EXIT_BUDGET_MS = 20_000;
 const COMMAND = 'E2E_PORT_OFFSET=40 npx playwright test e2e/quit-time.win32.spec.ts';
 const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 
@@ -153,6 +156,8 @@ async function launchAndQuit(round: number) {
       for (let i = 0; i < 2; i++) await create({}, { cwd, cols: 80, rows: 24 });
     }, home);
     await page.waitForTimeout(4_000);
+    // The launched electron.exe (the cmd.exe root's child), for 2b's tighter bound.
+    const mainPid = await app.evaluate(() => process.pid);
     const shellPids = await app.evaluate((_e, dist) => {
       const pm = process.mainModule!.require(`${dist}/core/pty-manager.js`);
       return [...pm.ptyProcesses.values(), ...pm.quickPtyProcesses.values()].map((p: { pid: number }) => p.pid);
@@ -210,6 +215,10 @@ async function launchAndQuit(round: number) {
     const aliveAfterExit = appExitMs === null ? [] : started
       .map(p => ({ pid: p.pid, name: p.name, cmd: p.cmd.slice(0, 160), aliveMsAfterAppExit: since(p.lastMs) - appExitMs }))
       .filter(p => p.aliveMsAfterAppExit > AFTER_EXIT_BUDGET_MS);
+    // The main process by pid and creation time: the entry the watcher saw first
+    // with its pid, before the quit, not a later process that reused it.
+    const mainEntry = started.filter(p => p.pid === mainPid).sort((a, b) => a.firstMs - b.firstMs)[0];
+    const mainAliveMsAfterAppExit = mainEntry && appExitMs !== null ? since(mainEntry.lastMs) - appExitMs : null;
     let profileRemoved = 'yes';
     try {
       fs.rmSync(path.join(home, 'electron-profile'), { recursive: true, force: true });
@@ -222,7 +231,7 @@ async function launchAndQuit(round: number) {
     return {
       round, shellPids, exitCode: child.exitCode, appExitMs, mainExitMs, stdioCloseMs: closeAt - quitAt,
       treeGoneMs: since(tree.processes.reduce((m, p) => Math.max(m, p.lastMs), 0)),
-      appMarksMs: marksRead, crashReports, aliveAfterExit, leftovers, shellsAlive, profileRemoved,
+      appMarksMs: marksRead, crashReports, mainPid, mainSeen: !!mainEntry, mainAliveMsAfterAppExit, aliveAfterExit, leftovers, shellsAlive, profileRemoved,
       printedOnQuit: printed.slice(-20),
       processes: started.map(p => ({ pid: p.pid, name: p.name, cmd: p.cmd.slice(0, 300), firstMs: since(p.firstMs), lastMs: since(p.lastMs) })),
     };
@@ -241,14 +250,16 @@ test('quitting with six terminals running exits cleanly and at once, and leaves 
     quits.push(await launchAndQuit(round));
     recordValues({ command: COMMAND, load: LOAD, quits });
   }
-  const summary = quits.map(q => ({ round: q.round, exitCode: q.exitCode, appExitMs: q.appExitMs, mainExitMs: q.mainExitMs, crashReports: q.crashReports.length, aliveAfterExit: q.aliveAfterExit.length, leftovers: q.leftovers.length, shellsAlive: q.shellsAlive.length, profileRemoved: q.profileRemoved }));
+  const summary = quits.map(q => ({ round: q.round, exitCode: q.exitCode, appExitMs: q.appExitMs, mainExitMs: q.mainExitMs, crashReports: q.crashReports.length, mainAliveMsAfterAppExit: q.mainAliveMsAfterAppExit, aliveAfterExit: q.aliveAfterExit.length, leftovers: q.leftovers.length, shellsAlive: q.shellsAlive.length, profileRemoved: q.profileRemoved }));
   recordValues({ summary });
   for (const q of quits) {
     expect(q.exitCode, `quit ${q.round}: the app did not exit cleanly`).toBe(0);
     expect(q.appExitMs, `quit ${q.round}: the app never reached its exit`).not.toBeNull();
     if (LOAD === 0) {
       expect(q.appExitMs!, `quit ${q.round}: the app's exit came late after the quit`).toBeLessThan(MAIN_EXIT_BUDGET_MS);
-      expect(q.aliveAfterExit, `quit ${q.round}: the main process or a process it started hung past its exit`).toEqual([]);
+      expect(q.mainSeen, `quit ${q.round}: the main process ${q.mainPid} was not in the watched tree`).toBe(true);
+      expect(q.mainAliveMsAfterAppExit!, `quit ${q.round}: the main process hung past its exit`).toBeLessThanOrEqual(MAIN_AFTER_EXIT_BUDGET_MS);
+      expect(q.aliveAfterExit, `quit ${q.round}: a process the app started hung past its exit`).toEqual([]);
     }
     expect(q.crashReports, `quit ${q.round}: Windows Error Reporting ran for a crash on the way out`).toEqual([]);
     expect(q.shellsAlive, `quit ${q.round}: a terminal outlived the quit`).toEqual([]);
