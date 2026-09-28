@@ -442,8 +442,16 @@ temp file of a save of one of the three files is created in
 own, so the temp holds the user and SYSTEM before its first byte; it is then
 renamed into place, which on the same volume keeps that list. `api-token` is
 written the same way, atomically, so a handle opened on an older token never
-reads a newer one (while such a handle is held, the rename is refused and the
-new token goes nowhere). At startup, in the background (seconds on a busy
+reads a newer one. And it is minted anew once: Tars reuses any token of 32
+characters or more, so on Windows the first start of this build replaces the
+one it finds, whoever read it before the file was closed, and records that in
+`~\.tars-private\api-token-rotated`; every start after keeps the token, as
+upstream does. darwin and linux never rotate. The shared token is read at
+startup by the app and from the file, on each call, by its other readers (the
+hooks, the MCP servers without an agent token of their own, the Hermes
+handlers), so they follow; what can hold the old one is a process that read
+it before the restart and is still running, such as a scheduled task of an
+API-key provider that exported it at its start. At startup, in the background (seconds on a busy
 machine), each of the three files that exists is born again the same way, a new
 file object with the same contents, rather than having its list changed in
 place; the private directory is made if it is missing and closed, its entries
@@ -455,9 +463,11 @@ file or a link at its name, no `icacls`), a save falls back to the old order,
 the temp beside the target under its folder's list and closed before the
 rename, and says so in the log; the first save of a run closes the staging
 directory itself if the startup pass has not yet. A handle opened on a file
-before this build first ran keeps reading that file object: the startup pass
-gives `api-token` a new object but the same token, so a token read then stays
-valid until the file is removed. When the startup pass closes the private
+before this build first ran keeps reading that file object, but the token it
+holds is the old one, which the one-time rotation has made worthless. When
+another program holds `api-token` open as a new token is minted, the rename is
+refused; rather than stop the app, the token is written in place, closed, and
+that is logged, and that holder reads the new token. When the startup pass closes the private
 directory its list is reset and set again, and for that moment what inherits
 from it (the conversation files, not the staging directory, which keeps its
 own) has the home's list. A failure (no `icacls`, a file held) is logged with
