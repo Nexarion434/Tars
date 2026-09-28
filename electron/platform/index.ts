@@ -25,6 +25,7 @@ export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot, pathKey } fr
 export { coversHome, withoutHomeCover, isUnderSafeRoot, type HomeCoverDeps } from './home-root';
 export { realTarget, landsUnderSafeRoot, linkedFileAllowed, type LandsOptions } from './real-target';
 export { isUnsafePathSegment } from './windows-names';
+export { errorReportsAvailable } from './error-reports';
 export { projectName } from './project-name';
 export { encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, type DecodeDeps } from './claude-project-dir';
 export { windowsSoundCommand, type SoundCommand } from './sound';
