@@ -1,0 +1,264 @@
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import {
+  restrictToOwnerSync, restrictDirToOwnerSync, parseWhoamiUserSid, SYSTEM_SID,
+  type OwnerOnlyDeps,
+} from '../../../electron/platform/owner-only';
+
+/**
+ * Closing a secret to every account but its owner, on Windows (audit B S-01,
+ * the decision in tasks/todo.md). `0o600` and `0o700` do nothing there: Node
+ * maps chmod to the read-only bit. So `api-token`, `app-settings.json` and
+ * everything under `~/.tars-private` get an access list instead: the current
+ * user and SYSTEM, full control, nothing inherited. `icacls` by its System32
+ * path, with an argv; the user's SID from `whoami /user`.
+ *
+ * How it can fail, written before the code:
+ *  1. Nothing is applied: the file keeps what its folder hands down, here a
+ *     folder that lets every member of Users read (as C:\Users\Public does,
+ *     and as Codex's sandbox setup does with CodexSandboxUsers on a read root).
+ *  2. Inheritance is left on: a grant added to the folder later, with (OI)(CI)
+ *     as Codex's setup adds it, flows into the file again.
+ *  3. A principal is left over: an explicit entry on a file that already
+ *     existed (Everyone:R), or the Administrators group the profile hands down.
+ *  4. The owner is locked out, or SYSTEM is: the app, its hooks and the MCP
+ *     servers (all run as the user) can no longer read the file, or backups
+ *     and services break.
+ *  5. The user's SID is wrong or garbage: whoami's output is not parsed from
+ *     the right field, a name with a comma or quotes shifts it, or an
+ *     unparseable answer is passed to icacls anyway.
+ *  6. A failure (icacls missing, a file gone, a hung call) throws into the
+ *     caller, or is silent.
+ *  7. The private directory is closed but what is in it is not, or a file
+ *     made in it later by any code path is open again: the directory must
+ *     hand down owner and SYSTEM only.
+ *  8. Closing the directory follows a link in it (a junction an agent could
+ *     plant, to ~/.ssh say) and resets the access list of what it points at.
+ *  9. darwin/linux: anything at all runs. icacls and whoami do not exist
+ *     there, and the modes already do the job.
+ *
+ * Cases 1 to 4, 7 and 8 run on real NTFS files with the real icacls, on
+ * win32 only; the rest run everywhere, with the process runner injected.
+ */
+
+const onWindows = process.platform === 'win32';
+const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+const POWERSHELL = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+const ICACLS = path.join(systemRoot, 'System32', 'icacls.exe');
+const USERS_SID = 'S-1-5-32-545';
+const EVERYONE_SID = 'S-1-1-0';
+
+type Dacl = { protectedFromParent: boolean; aces: string[] };
+
+/** The access lists as SDDL, read by one PowerShell: SIDs, whatever the language of the machine. */
+function dacls(...paths: string[]): Dacl[] {
+  const out = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
+    '$env:TARS_ACL_PROBE -split [char]10 | ForEach-Object { (Get-Acl -LiteralPath $_).Sddl }'], {
+    env: { ...process.env, TARS_ACL_PROBE: paths.join('\n') }, encoding: 'utf8', windowsHide: true,
+  }).trim().split(/\r?\n/);
+  return out.map((sddl) => {
+    const d = /D:([A-Z]*)((?:\([^)]*\))*)/.exec(sddl);
+    if (!d) throw new Error(`no DACL in ${sddl}`);
+    return { protectedFromParent: d[1].includes('P'), aces: (d[2].match(/\([^)]*\)/g) ?? []).sort() };
+  });
+}
+const dacl = (p: string): Dacl => dacls(p)[0];
+
+function icacls(...args: string[]): void {
+  execFileSync(ICACLS, args, { stdio: 'ignore', windowsHide: true });
+}
+
+let userSid = '';
+const made: string[] = [];
+
+function openDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-owner-only-'));
+  made.push(dir);
+  if (onWindows) icacls(dir, '/grant', `*${USERS_SID}:(OI)(CI)(RX)`);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+const ownerOnlyFile = () => [`(A;;FA;;;${userSid})`, '(A;;FA;;;SY)'].sort();
+
+// A PowerShell start reads the access lists: one to three seconds, far more on a machine
+// running other suites (100% CPU, measured).
+describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', { timeout: 180_000 }, () => {
+  beforeAll(() => {
+    userSid = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
+      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8', windowsHide: true }).trim();
+    expect(userSid).toMatch(/^S-1-5-21-/);
+  }, 180_000);
+
+  it('1, 4: leaves exactly the user and SYSTEM, full control, inheritance removed', () => {
+    const file = path.join(openDir(), 'api-token');
+    fs.writeFileSync(file, 'secret');
+    // The fixture is open to begin with, or the case proves nothing.
+    expect(dacl(file).aces.some(a => a.includes(USERS_SID) || a.includes(';BU)'))).toBe(true);
+
+    expect(restrictToOwnerSync(file)).toBe('restricted');
+
+    expect(dacl(file)).toEqual({ protectedFromParent: true, aces: ownerOnlyFile() });
+  });
+
+  it('4: a process of the same user (a hook, an MCP server) still reads the file', () => {
+    const file = path.join(openDir(), 'app-settings.json');
+    fs.writeFileSync(file, '{"telegramBotToken":"x"}');
+    restrictToOwnerSync(file);
+    const read = spawnSync(process.execPath, ['-e', 'process.stdout.write(require("fs").readFileSync(process.argv[1], "utf8"))', file], { encoding: 'utf8' });
+    expect(read.status).toBe(0);
+    expect(read.stdout).toBe('{"telegramBotToken":"x"}');
+  });
+
+  it('2: a grant added to the folder afterwards, as Codex adds a read root, does not reach the file', () => {
+    const dir = openDir();
+    const file = path.join(dir, 'app-settings.json');
+    fs.writeFileSync(file, '{}');
+    restrictToOwnerSync(file);
+    icacls(dir, '/grant', `*${EVERYONE_SID}:(OI)(CI)(RX)`);
+    expect(dacl(file)).toEqual({ protectedFromParent: true, aces: ownerOnlyFile() });
+  });
+
+  it('3: an existing file with an explicit extra entry is tightened when asked to replace explicit entries', () => {
+    const file = path.join(openDir(), 'hermes-connection.json');
+    fs.writeFileSync(file, '{}');
+    icacls(file, '/grant', `*${EVERYONE_SID}:(R)`);
+    expect(dacl(file).aces.some(a => a.endsWith(';WD)'))).toBe(true);
+
+    expect(restrictToOwnerSync(file, { replaceExplicit: true })).toBe('restricted');
+
+    expect(dacl(file)).toEqual({ protectedFromParent: true, aces: ownerOnlyFile() });
+  });
+
+  it('6: a file that is not there is logged and reported, never thrown', () => {
+    const warned: string[] = [];
+    const missing = path.join(openDir(), 'gone');
+    expect(restrictToOwnerSync(missing, {}, { warn: m => warned.push(m) })).toBe('failed');
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain(missing);
+  });
+
+  it('6: an icacls that cannot be found is logged and reported, never thrown', () => {
+    const warned: string[] = [];
+    const file = path.join(openDir(), 'api-token');
+    fs.writeFileSync(file, 'secret');
+    const result = restrictToOwnerSync(file, {}, { env: { ...process.env, SystemRoot: path.join(os.tmpdir(), 'no-windows-here') }, warn: m => warned.push(m) });
+    expect(result).toBe('failed');
+    expect(warned.join('\n')).toContain(file);
+    expect(fs.readFileSync(file, 'utf8')).toBe('secret');
+  });
+
+  it('7: the private directory hands down owner and SYSTEM only, to what is in it and to what is made in it later', () => {
+    const dir = path.join(openDir(), '.tars-private');
+    fs.mkdirSync(dir);
+    const before = path.join(dir, 'overseer.superseded-1.json');
+    fs.writeFileSync(before, '{}');
+    icacls(before, '/grant', `*${EVERYONE_SID}:(R)`);
+
+    restrictDirToOwnerSync(dir);
+    const after = path.join(dir, 'made-later.json');
+    fs.writeFileSync(after, '{}');
+
+    const [ofDir, ofBefore, ofAfter] = dacls(dir, before, after);
+    expect(ofDir).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;SY)'].sort() });
+    const inherited = [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort();
+    expect(ofBefore.aces).toEqual(inherited);
+    expect(ofAfter.aces).toEqual(inherited);
+  });
+
+  it('8: a junction in the private directory is not followed', () => {
+    const outside = path.join(openDir(), 'victim');
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'id_rsa'), 'key');
+    icacls(outside, '/grant', `*${EVERYONE_SID}:(R)`);
+    const before = dacls(outside, path.join(outside, 'id_rsa'));
+
+    const dir = path.join(openDir(), '.tars-private');
+    fs.mkdirSync(dir);
+    fs.symlinkSync(outside, path.join(dir, 'link'), 'junction');
+    restrictDirToOwnerSync(dir);
+
+    expect(dacls(outside, path.join(outside, 'id_rsa'))).toEqual(before);
+    expect(before[0].aces.some(a => a.endsWith(';WD)')), 'the fixture carries its own entry').toBe(true);
+  });
+
+  it('7: a missing private directory is left alone and reported as such', () => {
+    const warned: string[] = [];
+    expect(restrictDirToOwnerSync(path.join(openDir(), 'never-made'), { warn: m => warned.push(m) })).toBe('skipped');
+    expect(warned).toEqual([]);
+  });
+});
+
+describe('parseWhoamiUserSid (case 5)', () => {
+  it('reads the SID from the last field of `whoami /user /fo csv /nh`', () => {
+    expect(parseWhoamiUserSid('"warmachine\\nicol","S-1-5-21-1252805805-404670591-934153705-1001"\r\n'))
+      .toBe('S-1-5-21-1252805805-404670591-934153705-1001');
+  });
+
+  it('is not shifted by a user name holding a comma or a quote', () => {
+    expect(parseWhoamiUserSid('"corp\\o""brien, jean","S-1-5-21-1-2-3-500"')).toBe('S-1-5-21-1-2-3-500');
+  });
+
+  it('refuses anything that is not a SID', () => {
+    for (const out of ['', 'ERROR: access denied', '"a\\b","nicol"', '"a\\b","S-1-5-21-1-2;rm"', '"a\\b","S-1-"']) {
+      expect(parseWhoamiUserSid(out), out).toBeNull();
+    }
+  });
+});
+
+describe('restrictToOwnerSync with an injected runner', () => {
+  function runner(answers: Record<string, string | Error>) {
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const deps: OwnerOnlyDeps = {
+      platform: 'win32',
+      env: { SystemRoot: 'C:\\Windows' },
+      execFileSync: (file, args) => {
+        calls.push({ file, args: [...args] });
+        const answer = answers[path.win32.basename(file).toLowerCase()];
+        if (answer instanceof Error) throw answer;
+        return answer ?? '';
+      },
+      warn: () => {},
+    };
+    return { calls, deps };
+  }
+
+  it('9: darwin and linux run nothing and report it', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const { calls, deps } = runner({});
+      expect(restrictToOwnerSync('/home/u/.dorothy/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(restrictDirToOwnerSync('/home/u/.tars-private', { ...deps, platform })).toBe('skipped');
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('5: an unparseable whoami answer never reaches icacls', () => {
+    const warned: string[] = [];
+    const { calls, deps } = runner({ 'whoami.exe': 'ERROR: something' });
+    expect(restrictToOwnerSync('C:\\u\\.dorothy\\api-token', {}, { ...deps, warn: m => warned.push(m) })).toBe('failed');
+    expect(calls.map(c => path.win32.basename(c.file))).toEqual(['whoami.exe']);
+    expect(warned).toHaveLength(1);
+  });
+
+  it('runs icacls and whoami from System32, never a name looked up on the PATH, with the path as one argument', () => {
+    const { calls, deps } = runner({ 'whoami.exe': '"a\\b","S-1-5-21-1-2-3-1001"' });
+    const target = 'C:\\Users\\a b\\.dorothy\\app-settings.json" /grant *S-1-1-0:(F)';
+    expect(restrictToOwnerSync(target, {}, deps)).toBe('restricted');
+    expect(calls.map(c => c.file)).toEqual(['C:\\Windows\\System32\\whoami.exe', 'C:\\Windows\\System32\\icacls.exe']);
+    expect(calls[1].args).toEqual([target, '/inheritance:r', '/grant:r', '*S-1-5-21-1-2-3-1001:(F)', `*${SYSTEM_SID}:(F)`]);
+  });
+
+  it('6: a failing icacls is logged once, with the file, and reported', () => {
+    const warned: string[] = [];
+    const { deps } = runner({ 'whoami.exe': '"a\\b","S-1-5-21-1-2-3-1001"', 'icacls.exe': Object.assign(new Error('Command failed'), { status: 5 }) });
+    expect(restrictToOwnerSync('C:\\u\\f', {}, { ...deps, warn: m => warned.push(m) })).toBe('failed');
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('C:\\u\\f');
+  });
+});
