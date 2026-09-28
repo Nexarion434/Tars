@@ -403,34 +403,107 @@ list Noah keeps in Settings, and nobody when the list is empty.
 ## 7. Windows
 
 Measured on Nicolas's machine, Windows 11 Pro 26200, on the fork's `windows`
-branch at `4b26873f`, on the 25th of September 2026. §1 holds there
+branch at `4b26873f`, on the 25th of September 2026 (the secrets' access
+lists on `win/secret-acl`, on the 28th). §1 holds there
 unchanged: one account, every agent runs as it. What differs is what stands
 in for the POSIX modes, and where the credentials of other programs live.
 
 **No file mode is a boundary on Windows.** Every `0o600`, `0o700` and `chmod`
 in this file's §5 and in `electron/utils/secret-file.ts` does nothing there:
 Node maps `chmod` to the read-only attribute and nothing else, so
-`app-settings.json`, `api-token`, `~/.tars-private` and its files come out
-with whatever the folder above them hands down. What protects them is the
-profile's access list. `C:\Users\<name>` grants SYSTEM, the Administrators
-group and the account itself, nobody else, and a file under it inherits that:
-another standard account on the machine cannot open it. A file Tars writes
-outside the profile (a project on another drive, `C:\tmp`) has whatever that
-place grants, often every authenticated user.
+every file comes out with whatever the folder above it hands down. For most of
+`~\.dorothy` that is the profile's list: `C:\Users\<name>` grants SYSTEM, the
+Administrators group and the account itself, nobody else, and a file under it
+inherits that. A file Tars writes outside the profile (a project on another
+drive, `C:\tmp`) has whatever that place grants, often every authenticated
+user.
 
 The profile's list is not always the one that applies. On this machine
-`~\.dorothy` carries an entry of its own, not inherited, that grants read to
+`~\.dorothy` carried an entry of its own, not inherited, that granted read to
 `CodexSandboxUsers` on the folder and everything created in it (`icacls`,
-2026-09-25: `CodexSandboxUsers:(OI)(CI)(RX)`), put there by something other
-than Tars. So `api-token` and `app-settings.json`, which would be `0600` on a
-Mac, are readable by that group's accounts here. Tars neither made that entry
-nor checks for one. The entries on `~\.dorothy` are `icacls
-"%USERPROFILE%\.dorothy"` away, and `icacls <file> /inheritance:r /grant:r
-"%USERNAME%:F"` would narrow one file to its owner. Tars does not run that
-today: nothing yet shows that every reader of those files (the app, the hooks,
-the seven MCP servers, a CLI in a sandbox of its own) still opens them
-afterwards, and a Codex sandbox that reads `~\.dorothy` may be exactly the
-reader that entry is for.
+2026-09-25: `CodexSandboxUsers:(OI)(CI)(RX)`). Codex's Windows sandbox setup
+makes that group (its accounts `CodexSandboxOffline` and `CodexSandboxOnline`
+run the commands its model runs) and grants it read on the folders the sandbox
+may read. Through that entry, `api-token` and `app-settings.json` were
+readable by those accounts.
+
+**So the secrets get an access list of their own.** `api-token`,
+`app-settings.json`, `hermes-connection.json` and `~\.tars-private` with
+everything in it end with two entries: the account and SYSTEM, full control,
+inheritance removed (`electron/platform/owner-only.ts`, `icacls` and `whoami`
+by their System32 path, with an argv, the account by its SID).
+
+When it is set matters as much as what it says. Windows checks access when a
+handle is opened, Node opens files with full sharing, and a handle keeps what
+it was granted: changing a file's list afterwards revokes nothing from a
+handle already open. So a secret is born closed rather than closed after. The
+temp file of a save of one of the three files is created in
+`~\.tars-private\.staging`, a directory of the account alone, closed on its
+own, so the temp holds the user and SYSTEM before its first byte; it is then
+renamed into place, which on the same volume keeps that list. `api-token` is
+written the same way, atomically, so a handle opened on an older token never
+reads a newer one. And it is minted anew once: Tars reuses any token of 32
+characters or more, so on Windows the first start of this build replaces the
+one it finds, whoever read it before the file was closed, and records that in
+`~\.tars-private\api-token-rotated`; every start after keeps the token, as
+upstream does. darwin and linux never rotate. The shared token is read at
+startup by the app and from the file, on each call, by its other readers (the
+hooks, the MCP servers without an agent token of their own, the Hermes
+handlers), so they follow; what can hold the old one is a process that read
+it before the restart and is still running, such as a scheduled task of an
+API-key provider that exported it at its start. At startup, in the background (seconds on a busy
+machine), each of the three files that exists is born again the same way, a new
+file object with the same contents, rather than having its list changed in
+place; the private directory is made if it is missing and closed, its entries
+taking its list, a link or junction in it not followed. A file written into
+the private directory takes the directory's list and starts nothing.
+
+What remains. Until the staging directory is closed, or when it cannot be (a
+file or a link at its name, no `icacls`), a save falls back to the old order,
+the temp beside the target under its folder's list and closed before the
+rename, and says so in the log; the first save of a run closes the staging
+directory itself if the startup pass has not yet. Closing it removes any grant
+of its own it carried; a staging directory removed later is made and closed
+again by the next save. A handle opened on a file
+before this build first ran keeps reading that file object, but the token it
+holds is the old one, which the one-time rotation has made worthless. When
+another program holds `api-token` open as a new token is minted, the rename is
+refused; rather than stop the app, the token is written in place, closed, and
+that is logged, and that holder reads the new token. When the startup pass closes the private
+directory its list is reset and set again, and for that moment what inherits
+from it (the conversation files, not the staging directory, which keeps its
+own) has the home's list. A failure (no `icacls`, a file held) is logged with
+the path and the write is kept. `hermes-session.json`, the gateway's cookies,
+is left out on purpose: it is rewritten on every reply that sets a cookie, and
+one `icacls` is a process start on the main process (25 ms idle, about 400 ms
+on a busy machine, which took one test file from 0.6 s to 13 s); it keeps
+`~\.dorothy`'s list as before. `~\.dorothy` itself and its other files keep
+the profile's list: it is the agents' directory, and a Codex sandbox reads it.
+
+What that list keeps out: every other account on the machine. Another
+standard user, a guest, a service account, the Codex sandbox accounts, and
+any grant added to `~\.dorothy` later, since nothing is inherited any more.
+The Administrators group loses its standing entry, but an administrator can
+take ownership, so that is no boundary. It also closes these files when the
+home is outside the profile (a `USERPROFILE` on another drive).
+
+What it does not keep out: anything that runs as the account. **It is not a
+boundary against the agents**: every CLI Tars starts, its hooks, its MCP
+servers and whatever an agent runs are the same user with full control, and
+read these files as before (§1). Nor SYSTEM, which backup and antivirus
+software run as, nor a copy: a backup, a sync client or an agent that copies
+the file elsewhere hands the copy that place's list.
+
+Who has to keep reading them, checked on this branch: the app, the Node hook
+runner (`api-token`, as a fallback to the agent's own token) and the MCP
+servers (`app-settings.json` for Telegram, X and SocialData, `api-token` as a
+fallback) all run as the account; a Node process of the account reads a
+closed file in `__tests__/electron/platform/owner-only.test.ts`. Codex gets no
+Tars hooks (`codex-provider.ts`), and starts its MCP servers itself, as the
+account; only the commands its sandbox runs lose these two files, and nothing
+Tars ships asks them to read one: an agent holds its own token in
+`CLAUDE_MGR_API_TOKEN`. Not measured with a live Codex session: a sandboxed
+Codex command that `cat`s `api-token` is now refused, by design.
 
 **Credentials that are not dotfiles.** Both ways an agent has of sending a file
 to Telegram (the app's `/api/telegram/send-*` routes and the Telegram MCP
