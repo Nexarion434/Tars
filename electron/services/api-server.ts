@@ -13,6 +13,7 @@ import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
 import { agentForToken, isInternalToken, isTerminalToken } from '../core/agent-tokens';
 import { isWebhookSecret } from './hermes-webhook-secret';
+import { writeSecretFileInPlaceSync } from '../utils/secret-file';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -120,7 +121,7 @@ function initApiToken(): string {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(API_TOKEN_FILE, token, { mode: 0o600 });
+  writeSecretFileInPlaceSync(API_TOKEN_FILE, token);
   apiToken = token;
   return token;
 }

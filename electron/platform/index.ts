@@ -33,6 +33,10 @@ export {
   renameReplacingSync, rmRetryingSync, unlinkRetryingSync, RENAME_RETRY_BUDGET_MS, REMOVE_RETRY_BUDGET_MS,
   type RenameDeps, type RemoveDeps,
 } from './rename-replacing';
+export {
+  restrictToOwnerSync, restrictDirToOwnerSync, parseWhoamiUserSid, SYSTEM_SID,
+  type OwnerOnlyResult, type OwnerOnlyDeps, type OwnerOnlyOptions,
+} from './owner-only';
 export { detectShells, type DetectedShells, type ShellChoice, type ShellChoiceId } from './shell-choices';
 export {
   TITLE_BAR_OVERLAY_HEIGHT, WINDOWS_APP_USER_MODEL_ID, TRAY_PANEL_MARGIN,
