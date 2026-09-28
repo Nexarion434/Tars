@@ -212,8 +212,10 @@ export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, 
 
 /**
  * A directory of the account's alone, made if it is missing: the user and
- * SYSTEM, handed down to what is created in it, inheritance removed. Nothing
- * in it is touched and nothing is reset, so it is never open on the way.
+ * SYSTEM, handed down to what is created in it, inheritance removed, and any
+ * entry of its own it carried (a grant planted on it beforehand) removed too.
+ * Nothing in it is touched. Its own list is reset first, so for that moment it
+ * has its parent's; the caller creates nothing in it until this has returned.
  * Where a secret is born before it takes its place (utils/secret-file.ts): a
  * file created in it has that list from its first byte. A link, a junction or
  * a file at that name is refused, and so reported.
@@ -227,18 +229,6 @@ export function ownerOnlyDirSync(dir: string, deps: OwnerOnlyDeps = {}): OwnerOn
   } catch (err) {
     return failed(dir, err, deps, 'cannot be a directory of the account alone');
   }
-  return grantSync(dir, 'directory', {}, deps);
+  return grantSync(dir, 'directory', { replaceExplicit: true }, deps);
 }
 
-/** The same, without holding the caller: for the pass at startup. */
-export async function ownerOnlyDir(dir: string, deps: OwnerOnlyDeps = {}): Promise<OwnerOnlyResult> {
-  if (notWindows(deps)) return 'skipped';
-  try {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const stat = fs.lstatSync(dir);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('not a directory of its own');
-  } catch (err) {
-    return failed(dir, err, deps, 'cannot be a directory of the account alone');
-  }
-  return grantAsync(dir, 'directory', {}, deps);
-}

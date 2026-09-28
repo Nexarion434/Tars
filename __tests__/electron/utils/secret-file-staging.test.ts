@@ -162,8 +162,9 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     sf.writeSecretFileSync(file, '{"slackBotToken":"x"}');
     await pass;
 
-    // The save's temp, then the pass's own copy of the file the save left.
-    expect(born.map(b => path.basename(b.at).replace(/-[0-9a-f]{12}/, ''))).toEqual(['app-settings.json.tmp', 'app-settings.json.pass.tmp']);
+    // The save's temp. The pass looked for the file before the save made it,
+    // so it has no copy of its own to make.
+    expect(born.map(b => path.basename(b.at).replace(/-[0-9a-f]{12}/, ''))).toEqual(['app-settings.json.tmp']);
     for (const b of born) {
       expect(path.dirname(b.at).toLowerCase()).toBe(path.join(privateDir, '.staging').toLowerCase());
       expect(b.list.aces, b.at).toEqual(inheritedOwnerOnly());

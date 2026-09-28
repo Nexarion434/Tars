@@ -3,8 +3,7 @@ import * as path from 'path';
 import { renameReplacingSync } from '../platform/rename-replacing';
 import * as crypto from 'crypto';
 import {
-  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, ownerOnlyDirSync, ownerOnlyDir, closesByAccessList,
-  type OwnerOnlyResult,
+  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, ownerOnlyDirSync, closesByAccessList,
 } from '../platform/owner-only';
 import { pathKey } from '../platform/path-compare';
 
@@ -46,16 +45,6 @@ function stagingReadySync(stagingDir: string): boolean {
   return staging.get(key) === 'ready';
 }
 
-async function stagingReady(stagingDir: string): Promise<boolean> {
-  const key = pathKey(stagingDir);
-  if (!staging.has(key)) {
-    const result: OwnerOnlyResult = await ownerOnlyDir(stagingDir);
-    // A save may have settled it meanwhile, synchronously; its answer stands.
-    if (!staging.has(key)) staging.set(key, result === 'restricted' ? 'ready' : 'failed');
-  }
-  return staging.get(key) === 'ready';
-}
-
 /** Said once per file and reason: the write goes on, born under its folder's list and closed before the rename. */
 function fallBack(filePath: string, why: string): void {
   const once = `${filePath}\0${why}`;
@@ -80,6 +69,30 @@ function stagedTemp(filePath: string, stagingDir: string, suffix: string): strin
 function stageSync(filePath: string, contents: string | Buffer, stagingDir: string, suffix: string): string {
   const tmp = stagedTemp(filePath, stagingDir, suffix);
   return stageAtSync(tmp, contents);
+}
+
+/**
+ * stageSync for a save, which must not fail because the staging directory went
+ * away after it was closed (removed by the user, by an agent): its readiness
+ * is remembered, and the temp then cannot be created (ENOENT). The directory
+ * is made and closed again, and the temp tried once more; null when that
+ * fails too, for the caller to fall back.
+ */
+function stageRecoveringSync(filePath: string, contents: string | Buffer, stagingDir: string): string | null {
+  const missing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+  try {
+    return stageSync(filePath, contents, stagingDir, '.tmp');
+  } catch (err) {
+    if (!missing(err)) throw err;
+  }
+  staging.delete(pathKey(stagingDir));
+  if (!stagingReadySync(stagingDir)) return null;
+  try {
+    return stageSync(filePath, contents, stagingDir, '.tmp');
+  } catch (err) {
+    if (missing(err)) return null;
+    throw err;
+  }
 }
 
 function stageAtSync(tmp: string, contents: string | Buffer): string {
@@ -139,15 +152,22 @@ function stageAtSync(tmp: string, contents: string | Buffer): string {
  */
 export function writeSecretFileSync(filePath: string, contents: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const plan = secretWrite(filePath);
-  const tmp = plan.how === 'staged' ? stagedTemp(filePath, plan.stagingDir, '.tmp') : `${filePath}.tmp`;
+  let plan = secretWrite(filePath);
+  let tmp = `${filePath}.tmp`;
   try {
     if (plan.how === 'staged') {
-      stageAtSync(tmp, contents);
-      // Born closed already; this makes it protected. A failure names the target.
-      restrictToOwnerSync(tmp, {}, { warn: (m) => console.warn(`${m} (the save of ${filePath})`) });
-      renameReplacingSync(tmp, filePath);
-    } else {
+      const staged = stageRecoveringSync(filePath, contents, plan.stagingDir);
+      if (staged) {
+        tmp = staged;
+        // Born closed already; this makes it protected. A failure names the target.
+        restrictToOwnerSync(tmp, {}, { warn: (m) => console.warn(`${m} (the save of ${filePath})`) });
+        renameReplacingSync(tmp, filePath);
+      } else {
+        fallBack(filePath, `its staging directory ${plan.stagingDir} was removed and could not be made again`);
+        plan = { how: 'close-first' };
+      }
+    }
+    if (plan.how !== 'staged') {
       writeAtomicSync(filePath, contents, 0o600, plan.how === 'close-first' ? (t) => { restrictToOwnerSync(t); } : undefined);
     }
   } catch (err) {
@@ -273,7 +293,9 @@ export async function closeSecretsToOtherAccounts(files: string[], privateDir: s
   // Named before the first await: a save made while the pass runs is staged too.
   for (const file of files) namedFiles.set(pathKey(file), stagingDir);
   privateDirs.add(pathKey(privateDir));
-  const staged = await stagingReady(stagingDir);
+  // Synchronously, like the first save would: closing it resets its own list
+  // for a moment, and no temp may be born in it then. Two icacls, once.
+  const staged = stagingReadySync(stagingDir);
   for (const file of files) {
     if (!fs.existsSync(file)) continue;
     if (staged) await rebornClosed(file, stagingDir);
