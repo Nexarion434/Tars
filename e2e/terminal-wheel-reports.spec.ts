@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type CDPSession, type Locator, typ
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox, writeNodeCli } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, splashGone, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -84,6 +84,11 @@ test('a panel sends the wheel a full-screen CLI asked for as wheel reports, and 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForLoadState('domcontentloaded');
     await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+    // Hydrated first: until React holds the page, nothing the checks below wait
+    // for can render, and on a runner slow to hydrate their bounds ran out on an
+    // empty page (run 36461229599, attempt 2). splashGone waits as long as the
+    // spec allows for that, then holds the splash to its own cap.
+    await splashGone(page);
 
     const asked = await screenOf(page, 'Reader that asked');
     const plain = await screenOf(page, 'Reader that did not');

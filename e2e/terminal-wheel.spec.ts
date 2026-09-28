@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type CDPSession } from '@playwrigh
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, splashGone } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -129,6 +129,11 @@ test('the wheel types nothing into a full-screen program, and the keys still do'
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForLoadState('domcontentloaded');
     await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
+    // Hydrated first: until React holds the page, nothing the checks below wait
+    // for can render, and on a runner slow to hydrate their bounds ran out on an
+    // empty page (run 36461229599, attempt 2). splashGone waits as long as the
+    // spec allows for that, then holds the splash to its own cap.
+    await splashGone(page);
 
     // Escaped for the CSS string: a Windows path's `\` would read as escapes.
     await page.locator(`p[title="${project.replace(/["\\]/g, '\\$&')}"]`)
