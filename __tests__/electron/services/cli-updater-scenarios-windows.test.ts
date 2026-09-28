@@ -153,6 +153,7 @@ function ctxFor(home: string, env: Record<string, string> = {}, dirs?: string[])
   return {
     home,
     logFile: path.join(root, 'cli-updates.log'),
+    tmpDir: root,
     env: {
       USERPROFILE: home,
       HOME: home,

@@ -30,8 +30,9 @@ import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/servi
  *    before the holder let go, so the test would prove nothing);
  * 4. a hold longer than the budget turns "updated" into "failed" all the
  *    same: a cleanup that fails must never replace the update's outcome;
- * 5. that failed cleanup goes unsaid: no [cli-updates] line names the
- *    folder left behind.
+ * 5. that failed cleanup goes unsaid: no line of the update log names the
+ *    folder left behind (a console.warn until upstream #230 moved it into
+ *    the log, which is what a user reads).
  */
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -89,6 +90,7 @@ function ctxFor(home: string, env: Record<string, string>): CliUpdateContext {
   return {
     home,
     logFile: path.join(root, 'cli-updates.log'),
+    tmpDir: root,
     env: {
       USERPROFILE: home,
       HOME: home,
@@ -123,8 +125,6 @@ describe.skipIf(process.platform !== 'win32')('the npm scratch folder, still hel
     const home = path.join(root, 'home');
     const prefix = npmPrefixWith(home, FAKE_NPM);
     npmPackage(prefix);
-    const warned: string[] = [];
-    vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warned.push(args.map(String).join(' ')); });
 
     const [result] = await runCliUpdatePass([{ cli: 'amp', command: 'amp' }], ctxFor(home, { FAKE_LATEST: '0.0.2', FAKE_HOLD_MS: '2500', FAKE_RELEASED: released }));
 
@@ -133,7 +133,8 @@ describe.skipIf(process.platform !== 'win32')('the npm scratch folder, still hel
       expect(result).toMatchObject({ cli: 'amp', outcome: 'updated', from: '0.0.1', to: '0.0.2' });
       expect(result.detail).not.toMatch(/EBUSY|EPERM|rmdir/);
       expect(fs.existsSync(scratch)).toBe(true);
-      expect(warned.filter(w => w.startsWith('[cli-updates]') && w.includes(scratch))).toHaveLength(1);
+      const log = fs.readFileSync(path.join(root, 'cli-updates.log'), 'utf8').split('\n');
+      expect(log.filter(line => line.includes(`could not remove ${scratch}`))).toHaveLength(1);
     } finally {
       for (const until = Date.now() + 10_000; !fs.existsSync(released) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
       await fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

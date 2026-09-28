@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { hasPosixModes, skipOnWindows } from '../setup/platform-limits';
+import { cannotSymlink } from '../setup/symlink-privilege';
 
 /**
  * Tars's own MCP servers run on the Node inside the app, not on whatever
@@ -61,6 +63,10 @@ import { execFileSync } from 'node:child_process';
  *     recorded as moved, and only the failing one tried again.
  * 17. A start that did not write the launcher moves registrations over to
  *     whatever it would name: an unpackaged run must move nothing.
+ *
+ * On Windows (the port's D1): the launcher is a sh script, which Windows
+ * cannot run, so the cases that run it skip there, and the program the
+ * servers are registered on is `node` (6), the move-over included.
  */
 
 const home = () => os.homedir();
@@ -120,6 +126,10 @@ import { delegateOverAcp } from '../../electron/services/acp/delegate';
 import { setupMcpOrchestrator } from '../../electron/services/mcp-orchestrator';
 
 const launcher = () => path.join(home(), '.dorothy', 'bin', 'tars-mcp-node');
+/** What the servers are registered on from this host: the launcher, or `node` on Windows (6). */
+const program = () => (process.platform === 'win32' ? 'node' : launcher());
+/** Windows runs no sh script: the launcher itself cannot be run there. */
+const LAUNCHER_NOT_RUNNABLE = 'the launcher is a #!/bin/sh script, which Windows cannot run; the servers run on `node` there (case 6)';
 
 /** A program that prints what it was run with, standing in for the app binary. */
 function fakeApp(dir: string): string {
@@ -132,10 +142,13 @@ const run = (command: string, args: string[]) =>
   JSON.parse(execFileSync(command, args, { env: { PATH: '/nonexistent' } }).toString());
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mcp-node-'));
-afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
+// Retried, and without blocking: on Windows the delegated run's agent, whose
+// working folder this is, holds it until the taskkill its stop() started has
+// run, which a synchronous retry would keep from running.
+afterAll(() => fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 describe('the program Tars runs its MCP servers on', () => {
-  it('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('1, 2. is an absolute launcher that runs the app binary as Node, with no PATH at all', () => {
     const app = fakeApp(path.join(scratch, 'one'));
 
     const command = mcpNodeCommand(app, 'darwin', true);
@@ -145,7 +158,7 @@ describe('the program Tars runs its MCP servers on', () => {
     expect(run(command, ['/some/bundle.js', '--flag'])).toEqual({ runAsNode: '1', args: ['/some/bundle.js', '--flag'] });
   });
 
-  it('3. survives an app path with a space, a quote and $(...), and runs none of it', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('3. survives an app path with a space, a quote and $(...), and runs none of it', () => {
     const app = fakeApp(path.join(scratch, "My Apps", "it's $(touch pwned)"));
 
     const command = mcpNodeCommand(app, 'linux', true);
@@ -156,7 +169,7 @@ describe('the program Tars runs its MCP servers on', () => {
 
   it('4. is readable, writable and runnable by its owner alone', () => {
     mcpNodeCommand(fakeApp(path.join(scratch, 'four')), 'darwin', true);
-    expect(fs.statSync(launcher()).mode & 0o777).toBe(0o700);
+    if (hasPosixModes()) expect(fs.statSync(launcher()).mode & 0o777).toBe(0o700);
   });
 
   it('5. follows the app when it moves, and is not rewritten when it did not', () => {
@@ -215,7 +228,7 @@ describe('registering the servers', () => {
     await setupMcpOrchestrator({} as never);
 
     for (const name of ['claude-mgr-orchestrator', 'tars-memory', 'claude-mgr-kanban']) {
-      expect(registry.get(name)?.command, name).toBe(launcher());
+      expect(registry.get(name)?.command, name).toBe(program());
     }
     expect(calls).toContain('remove claude-mgr-orchestrator');
   });
@@ -234,7 +247,7 @@ describe('registering the servers', () => {
     }
 
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
 
     // A start that finds no bundle records nothing either.
     fs.rmSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'), { force: true });
@@ -245,7 +258,7 @@ describe('registering the servers', () => {
 
   it('9. registers nothing again at the next start', async () => {
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
     calls.length = 0;
 
     await setupMcpOrchestrator({} as never);
@@ -290,7 +303,7 @@ describe('the gate of #201', () => {
     expect(fs.existsSync(launcher())).toBe(false);
   });
 
-  it('13. falls back to the node on the PATH once the app it names is gone', () => {
+  it.skipIf(skipOnWindows(LAUNCHER_NOT_RUNNABLE))('13. falls back to the node on the PATH once the app it names is gone', () => {
     const app = fakeApp(path.join(scratch, 'gone'));
     mcpNodeCommand(app, 'darwin', true);
     fs.rmSync(app);
@@ -315,7 +328,7 @@ describe('the gate of #201', () => {
     expect(fs.readFileSync(launcher(), 'utf-8')).toContain(appImage);
   });
 
-  it('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
+  it.skipIf(cannotSymlink())('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
     const elsewhere = path.join(scratch, 'elsewhere');
     fs.mkdirSync(elsewhere, { recursive: true });
     fs.symlinkSync(elsewhere, path.join(home(), '.dorothy', 'bin'));
@@ -335,7 +348,7 @@ describe('the gate of #201', () => {
     }
     otherState.failing = true;
     await setupMcpOrchestrator({} as never);
-    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
 
     calls.length = 0;
     await setupMcpOrchestrator({} as never);
@@ -344,7 +357,7 @@ describe('the gate of #201', () => {
 
     otherState.failing = false;
     await setupMcpOrchestrator({} as never);
-    expect(otherRegistry.get('claude-mgr-orchestrator')?.command).toBe(launcher());
+    expect(otherRegistry.get('claude-mgr-orchestrator')?.command).toBe(program());
     calls.length = 0;
     await setupMcpOrchestrator({} as never);
     expect(calls).toEqual([]);
@@ -399,6 +412,6 @@ function handle(msg) {
 
     const servers = JSON.parse(fs.readFileSync(report, 'utf-8')) as { name: string; command: string }[];
     expect(servers.length).toBeGreaterThan(0);
-    for (const server of servers) expect(server.command, server.name).toBe(launcher());
+    for (const server of servers) expect(server.command, server.name).toBe(program());
   });
 });

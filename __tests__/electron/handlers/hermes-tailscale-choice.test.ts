@@ -66,7 +66,8 @@ afterEach(() => {
   else process.env.DOROTHY_TAILSCALE_BIN = saved;
 });
 
-const status = () => ran.filter(r => r.endsWith(' status --json')).map(r => r.split(' ')[0]);
+// The program, whole: on Windows it is C:\Program Files\Tailscale\tailscale.exe, spaces and all.
+const status = () => ran.filter(r => r.endsWith(' status --json')).map(r => r.slice(0, -' status --json'.length));
 
 describe('the tailscale the Hermes page asks', () => {
   it('1. is the one DOROTHY_TAILSCALE_BIN names, and no other', async () => {
