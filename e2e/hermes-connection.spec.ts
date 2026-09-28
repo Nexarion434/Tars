@@ -24,12 +24,19 @@ import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
  *
  * So the field now says it: read-only reads as read-only (frame XFApe, rows
  * kjeqD and B85KKr, validated by Nicolas). The panel's `surface` fill instead
- * of a field's `surface-raised`, the value in `text-secondary`, no focus ring,
+ * of a field's `surface-raised`, the value in `text-secondary`,
  * the default cursor, the text still selectable; and the hint says the whole
  * sentence, "Derived from the port below. Switch to Remote to type a URL.",
  * never cut. The Local step asserts the look and the hint, the Remote step
  * that an editable field differs, and the webhook step the webhook field's
  * look. All three fail on the build before this change.
+ *
+ * Focused, a read-only field shows the accent focus border an editable field
+ * has, from a click and from Tab alike (decision A1). A keyboard-only border
+ * (frame RKPfa, option A) cannot be told apart in CSS: Electron 44's Chromium
+ * matches :focus-visible on a mouse click into any text field, readonly
+ * included, which fieldLook records as focusVisible. The Local and webhook
+ * steps check both ways in.
  *
  * What does differ on Windows is the way out that macOS has: the `import`
  * button, which copies Hermes Desktop's connection (a URL, in Remote mode) and
@@ -270,10 +277,9 @@ async function fieldReport(field: ReturnType<typeof gatewayField>) {
 
 /**
  * How a field reads, and the tokens it should read as. A read-only field
- * (frame XFApe, rows kjeqD and B85KKr) has the panel's `surface` fill, keeps
- * its `border` on focus (no focus ring), prints its value in `text-secondary`
- * and shows the default cursor, where an editable one has `surface-raised` and
- * turns its border to the accent on focus. Colours are compared as the browser
+ * (frame XFApe, rows kjeqD and B85KKr) has the panel's `surface` fill, prints
+ * its value in `text-secondary` and shows the default cursor, where an editable
+ * one has `surface-raised`; both turn their border to the accent on focus. Colours are compared as the browser
  * resolves them, so a token's value can change without touching this spec.
  */
 async function fieldLook(field: ReturnType<typeof gatewayField>) {
@@ -294,6 +300,7 @@ async function fieldLook(field: ReturnType<typeof gatewayField>) {
       background: s.backgroundColor, color: s.color, border: s.borderTopColor,
       outline: s.outlineStyle, boxShadow: s.boxShadow, cursor: s.cursor, userSelect: s.userSelect,
       focused: el === document.activeElement,
+      focusVisible: el.matches(':focus-visible'),
       tokens: { surface: token('--card'), surfaceRaised: token('--secondary'), border: token('--border'), textSecondary: token('--text-secondary') },
     };
   });
@@ -310,6 +317,22 @@ async function hintReport(hint: ReturnType<Page['locator']>) {
 }
 
 let localLook: Awaited<ReturnType<typeof fieldLook>> | null = null;
+/** A focused editable field's border: the accent focus border (`$accent-focus`). */
+let accentFocusBorder: string | null = null;
+
+/**
+ * A read-only field focused from the keyboard (Shift+Tab from the control after
+ * it), then, after focus has left it, from a click.
+ */
+async function keyboardThenPointer(field: ReturnType<typeof gatewayField>, after: ReturnType<Page['locator']>) {
+  await after.focus();
+  await page.keyboard.press('Shift+Tab');
+  const keyboard = await fieldLook(field);
+  await page.locator('main h1').first().click();
+  await field.click();
+  const pointer = await fieldLook(field);
+  return { keyboard, pointer };
+}
 
 // ─── Windows: real OS input, which is what a drag region would swallow ──────
 
@@ -388,10 +411,10 @@ test('Gateway URL: read-only in Local, where a fresh install lands; nothing cove
   expect(idle.border).toBe(idle.tokens.border);
   expect(idle.cursor).toBe('default');
   expect(idle.userSelect).not.toBe('none');
-  // No focus ring: focused, it looks exactly as it did.
+  // Focused by a click, only the border moves: no outline, no shadow, same fill.
   expect(focused.focused).toBe(true);
-  expect({ border: focused.border, outline: focused.outline, boxShadow: focused.boxShadow, background: focused.background })
-    .toEqual({ border: idle.border, outline: idle.outline, boxShadow: idle.boxShadow, background: idle.background });
+  expect({ outline: focused.outline, boxShadow: focused.boxShadow, background: focused.background })
+    .toEqual({ outline: idle.outline, boxShadow: idle.boxShadow, background: idle.background });
   expect(selection).toEqual({ start: 0, end: selection.length, length: 'http://127.0.0.1:9'.length });
   // The whole hint, never cut: it may wrap, it has no ellipsis, and it fits its box.
   expect(hint.text).toBe('Derived from the port below. Switch to Remote to type a URL.');
@@ -399,6 +422,22 @@ test('Gateway URL: read-only in Local, where a fresh install lands; nothing cove
   expect(hint.textOverflow, 'the hint is never ellipsed').not.toBe('ellipsis');
   expect(hint.scrollWidth, 'the hint is not cut on its width').toBeLessThanOrEqual(hint.clientWidth);
   expect(hint.scrollHeight, 'the hint is not cut on its height').toBeLessThanOrEqual(hint.clientHeight);
+
+  // The accent focus border, as an editable field shows it: the port field below.
+  const portField = row('Gateway port').locator('input');
+  await portField.click();
+  const editableFocused = await fieldLook(portField);
+  accentFocusBorder = editableFocused.border;
+  const focus = await keyboardThenPointer(gatewayField(), portField);
+  journey.localMode = { ...journey.localMode as object, focus: { editable: editableFocused.border, ...focus } };
+
+  expect(editableFocused.border, 'a focused editable field turns its border').not.toBe(editableFocused.tokens.border);
+  expect(focused.border, 'a click shows the accent focus border').toBe(accentFocusBorder);
+  expect(focus.keyboard.focused, 'Shift+Tab lands on the Gateway URL field').toBe(true);
+  expect(focus.keyboard.border, 'Tab shows the accent focus border').toBe(accentFocusBorder);
+  expect(focus.keyboard.background, 'and the field stays read-only in look').toBe(idle.background);
+  expect(focus.pointer.focused).toBe(true);
+  expect(focus.pointer.border, 'a click after Tab shows it too').toBe(accentFocusBorder);
 });
 
 test('Gateway URL: Remote takes typing, from Playwright and from real OS input, and reads it back', async () => {
@@ -448,6 +487,7 @@ test('Gateway URL: Remote takes typing, from Playwright and from real OS input, 
   // And it does take a focus ring, so the Local assertion is not vacuous.
   expect(remoteFocused.focused).toBe(true);
   expect(remoteFocused.border).not.toBe(remoteIdle.border);
+  expect(remoteFocused.border, 'one accent focus border for every editable field').toBe(accentFocusBorder);
   if (os) {
     expect(os.focused, 'a real click lands in the field').toBe(true);
     expect(String(os.value)).toMatch(/x/);
@@ -558,6 +598,7 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
   await webhookRow.locator('input').click();
   const webhookFocused = await fieldLook(webhookRow.locator('input'));
   const webhookSelected = await webhookRow.locator('input').evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart! === el.value.length);
+  const webhookFocus = await keyboardThenPointer(webhookRow.locator('input'), webhookRow.getByRole('button', { name: 'copy secret' }));
   // What the main process found, read through the same bridge the page uses.
   // On a machine with Tailscale installed it is that machine's tailnet (the
   // CLI is only asked `status` and `serve status`): the line and the URL must
@@ -611,7 +652,7 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
     copiedIsSecret: copied === onDisk, secretLength: onDisk.length,
     inDataDir: fs.existsSync(path.join(home, '.dorothy', 'hermes-webhook-secret')),
     dryRun, byName: byName.status, noMessage, wrong, shared: { status: shared.status },
-    look: { idle: webhookIdle, focused: webhookFocused, selectedOnFocus: webhookSelected },
+    look: { idle: webhookIdle, focused: webhookFocused, selectedOnFocus: webhookSelected, focus: webhookFocus },
   };
 
   expect(webhookIdle.background, 'the webhook field has the read-only fill').toBe(webhookIdle.tokens.surface);
@@ -619,8 +660,14 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
   expect(webhookIdle.border).toBe(webhookIdle.tokens.border);
   expect(webhookIdle.cursor).toBe('default');
   expect(webhookFocused.focused).toBe(true);
-  expect(webhookFocused.border, 'no focus ring on the webhook field').toBe(webhookIdle.border);
+  expect(webhookFocused.border, 'the webhook field clicked turns its border').not.toBe(webhookIdle.border);
   expect(webhookSelected).toBe(true);
+  expect(accentFocusBorder, 'the Local step measured the accent focus border').not.toBeNull();
+  expect(webhookFocus.keyboard.focused, 'Shift+Tab lands on the webhook field').toBe(true);
+  expect(webhookFocused.border, 'a click shows the accent focus border').toBe(accentFocusBorder);
+  expect(webhookFocus.keyboard.border, 'Tab shows the accent focus border').toBe(accentFocusBorder);
+  expect(webhookFocus.pointer.focused).toBe(true);
+  expect(webhookFocus.pointer.border, 'a click after Tab shows it too').toBe(accentFocusBorder);
   expect(shownUrl).toBe(expectedUrl);
   expect(tailscaleLine).toBe(expectedLine);
   expect(copied).toBe(onDisk);
