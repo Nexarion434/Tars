@@ -431,22 +431,42 @@ readable by those accounts.
 `app-settings.json`, `hermes-connection.json` and `~\.tars-private` with
 everything in it end with two entries: the account and SYSTEM, full control,
 inheritance removed (`electron/platform/owner-only.ts`, `icacls` and `whoami`
-by their System32 path, with an argv, the account by its SID). At startup, in
-the background (two `icacls` per file, seconds on a busy machine), the files
-that exist are brought to it, their own extra entries removed, and the private
-directory is made if it is missing and closed, its entries taking its list; a
-link or junction in it is not followed. From then on a save of one of the
-three files sets the list on its temp file before the rename, so the live file
-never holds a new secret under the folder's list; `api-token`, which is
-written in place, gets it just after; a file written into the private
-directory takes the directory's list and starts nothing. A failure (no
-`icacls`, a file held) is logged with the path and the write is kept.
-`hermes-session.json`, the gateway's cookies, is left out on purpose: it is
-rewritten on every reply that sets a cookie, and one `icacls` is a process
-start on the main process (25 ms idle, about 400 ms on a busy machine, which
-took one test file from 0.6 s to 13 s); it keeps `~\.dorothy`'s list as
-before. `~\.dorothy` itself and its other files keep the profile's list: it is
-the agents' directory, and a Codex sandbox reads it.
+by their System32 path, with an argv, the account by its SID).
+
+When it is set matters as much as what it says. Windows checks access when a
+handle is opened, Node opens files with full sharing, and a handle keeps what
+it was granted: changing a file's list afterwards revokes nothing from a
+handle already open. So a secret is born closed rather than closed after. The
+temp file of a save of one of the three files is created in
+`~\.tars-private\.staging`, a directory of the account alone, closed on its
+own, so the temp holds the user and SYSTEM before its first byte; it is then
+renamed into place, which on the same volume keeps that list. `api-token` is
+written the same way, atomically, so a handle opened on an older token never
+reads a newer one (while such a handle is held, the rename is refused and the
+new token goes nowhere). At startup, in the background (seconds on a busy
+machine), each of the three files that exists is born again the same way, a new
+file object with the same contents, rather than having its list changed in
+place; the private directory is made if it is missing and closed, its entries
+taking its list, a link or junction in it not followed. A file written into
+the private directory takes the directory's list and starts nothing.
+
+What remains. Until the staging directory is closed, or when it cannot be (a
+file or a link at its name, no `icacls`), a save falls back to the old order,
+the temp beside the target under its folder's list and closed before the
+rename, and says so in the log; the first save of a run closes the staging
+directory itself if the startup pass has not yet. A handle opened on a file
+before this build first ran keeps reading that file object: the startup pass
+gives `api-token` a new object but the same token, so a token read then stays
+valid until the file is removed. When the startup pass closes the private
+directory its list is reset and set again, and for that moment what inherits
+from it (the conversation files, not the staging directory, which keeps its
+own) has the home's list. A failure (no `icacls`, a file held) is logged with
+the path and the write is kept. `hermes-session.json`, the gateway's cookies,
+is left out on purpose: it is rewritten on every reply that sets a cookie, and
+one `icacls` is a process start on the main process (25 ms idle, about 400 ms
+on a busy machine, which took one test file from 0.6 s to 13 s); it keeps
+`~\.dorothy`'s list as before. `~\.dorothy` itself and its other files keep
+the profile's list: it is the agents' directory, and a Codex sandbox reads it.
 
 What that list keeps out: every other account on the machine. Another
 standard user, a guest, a service account, the Codex sandbox accounts, and
