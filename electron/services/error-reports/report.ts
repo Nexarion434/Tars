@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { redactSecrets } from '../../utils/redact-secrets';
+import { homeUserName, windowsHomeSpellings } from '../../platform/home-spellings';
 
 /**
  * What an error report carries, and nothing else (Sentry, step 1; the
@@ -87,12 +88,12 @@ function scrub(value: string, home: string): string {
   // The home folder first: it may itself be under a temp folder. /var is
   // /private/var on macOS, so a folder there reaches an error by either name.
   if (home && home !== '/') {
-    const homes = new Set([home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`]);
+    const homes = new Set([home, home.startsWith('/private/') ? home.slice('/private'.length) : `/private${home}`, ...windowsHomeSpellings(home)]);
     for (const h of homes) {
       out = out.replace(new RegExp(`${escape(h)}${NAME_END}`, 'gi'), '~');
       out = out.replace(new RegExp(`${escape(h.replace(/\//g, '%2F'))}${NAME_END}`, 'gi'), '~');
     }
-    const user = home.split('/').filter(Boolean).pop() ?? '';
+    const user = homeUserName(home);
     if (user.length >= 3) out = out.replace(new RegExp(`${NAME_START}${escape(user)}${NAME_END}`, 'gi'), '<user>');
   }
   out = out.replace(/(?:\/private)?\/var\/folders\/(?:[^/\s]+\/){1,2}T(?=\/)/g, '<tmp>');
