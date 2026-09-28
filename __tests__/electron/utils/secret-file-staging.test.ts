@@ -57,6 +57,13 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
  *  7. A holder that keeps api-token open makes the rename fail (EPERM, measured)
  *     and the app does not start: minting the token must never throw. It falls
  *     back to writing the file in place, closed, and says so.
+ *  8. The staging directory is removed after it was closed (by the user, by an
+ *     agent): its readiness is remembered, the temp cannot be created (ENOENT),
+ *     and the save of the settings throws. It must make the directory again,
+ *     closed, and try once more, or fall back and say so; never fail.
+ *  9. A staging directory made beforehand with a grant of its own (an explicit
+ *     entry: Everyone, CodexSandboxUsers) keeps it when closed, and every temp
+ *     born in it inherits that grant.
  *
  * Real NTFS files, the real icacls; win32 only (darwin and linux: see
  * secret-file-acl.test.ts, case 7).
@@ -239,6 +246,72 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     const second = (await import('../../../electron/services/api-server')).getApiToken();
     expect(second).toBe(first);
     expect(fs.statSync(tokenFile, { bigint: true }).ino).toBe(rotatedObject);
+  });
+
+  it('8: the staging directory removed between two saves: the second save lands, born closed', async () => {
+    vi.resetModules();
+    const sf = await import('../../../electron/utils/secret-file');
+    const home = openHome();
+    const file = path.join(home, 'app-settings.json');
+    const privateDir = path.join(home, '.tars-private');
+    const stagingDir = path.join(privateDir, '.staging');
+    await sf.closeSecretsToOtherAccounts([file], privateDir);
+    sf.writeSecretFileSync(file, '{"a":1}');
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+
+    const born: Array<{ at: string; list: Dacl }> = [];
+    vi.mocked(fs.openSync).mockImplementation(((p: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode) => {
+      const fd = realOpen(p, flags, mode);
+      if (String(p).endsWith('.tmp')) born.push({ at: String(p), list: dacls(String(p))[0] });
+      return fd;
+    }) as typeof fs.openSync);
+
+    sf.writeSecretFileSync(file, '{"a":2}');
+
+    expect(fs.readFileSync(file, 'utf8')).toBe('{"a":2}');
+    expect(born).toHaveLength(1);
+    expect(path.dirname(born[0].at).toLowerCase()).toBe(stagingDir.toLowerCase());
+    expect(born[0].list.aces).toEqual(inheritedOwnerOnly());
+    expect(dacls(file)[0]).toEqual(ownerOnly());
+  });
+
+  it('9: a staging directory made beforehand loses the explicit grant it carried, at startup', async () => {
+    vi.resetModules();
+    const sf = await import('../../../electron/utils/secret-file');
+    const home = openHome();
+    const privateDir = path.join(home, '.tars-private');
+    const stagingDir = path.join(privateDir, '.staging');
+    fs.mkdirSync(stagingDir, { recursive: true });
+    realExec(ICACLS, [stagingDir, '/grant', '*S-1-1-0:(OI)(CI)(R)'], { stdio: 'ignore', windowsHide: true });
+    expect(dacls(stagingDir)[0].aces.some(a => a.endsWith(';WD)')), 'the grant is there to begin with').toBe(true);
+
+    await sf.closeSecretsToOtherAccounts([path.join(home, 'app-settings.json')], privateDir);
+
+    expect(dacls(stagingDir)[0]).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;SY)'].sort() });
+  });
+
+  it('9: and so does one closed by a save that comes before the startup pass is done', async () => {
+    vi.resetModules();
+    const sf = await import('../../../electron/utils/secret-file');
+    const home = openHome();
+    const file = path.join(home, 'app-settings.json');
+    const privateDir = path.join(home, '.tars-private');
+    const stagingDir = path.join(privateDir, '.staging');
+    fs.mkdirSync(stagingDir, { recursive: true });
+    realExec(ICACLS, [stagingDir, '/grant', '*S-1-1-0:(OI)(CI)(R)'], { stdio: 'ignore', windowsHide: true });
+
+    const born: Array<{ at: string; list: Dacl }> = [];
+    vi.mocked(fs.openSync).mockImplementation(((p: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode) => {
+      const fd = realOpen(p, flags, mode);
+      if (String(p).endsWith('.tmp')) born.push({ at: String(p), list: dacls(String(p))[0] });
+      return fd;
+    }) as typeof fs.openSync);
+    const pass = sf.closeSecretsToOtherAccounts([file], privateDir);
+    sf.writeSecretFileSync(file, '{"a":1}');
+    await pass;
+
+    expect(born.length).toBeGreaterThan(0);
+    expect(born[0].list.aces, 'the save, the first temp born').toEqual(inheritedOwnerOnly());
   });
 
   it('5: at startup an existing api-token becomes a new file object, same token, closed', async () => {
