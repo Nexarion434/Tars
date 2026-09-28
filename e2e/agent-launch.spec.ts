@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { launchSandboxed, listenForErrors, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, recordValues, splashGone, stepShot } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -231,6 +231,11 @@ test('an agent is created, started from a window, over the API and from a bot, r
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForLoadState('domcontentloaded');
     await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+    // Hydrated first: until React holds the page, what follows acts on the
+    // server's HTML, and on a slow runner its bounds ran out there (run
+    // 36461229599, attempt 2). splashGone waits for that as long as the spec
+    // allows, then holds the splash to its own cap.
+    await splashGone(page);
     await expect.poll(() => page.evaluate(() => !!(window as unknown as Api).electronAPI?.agent), { timeout: 60_000 }).toBe(true);
 
     // ── Created (A-01): its terminal is a shell waiting, not a CLI ─────────
@@ -312,6 +317,11 @@ test('an agent is created, started from a window, over the API and from a bot, r
 
     // ── The terminal a person opens: Projects > Terminal ──────────────────
     await page.goto(`${DEV_URL}/projects`, { waitUntil: 'domcontentloaded' });
+    // Hydrated first: until React holds the page, what follows acts on the
+    // server's HTML, and on a slow runner its bounds ran out there (run
+    // 36461229599, attempt 2). splashGone waits for that as long as the spec
+    // allows, then holds the splash to its own cap.
+    await splashGone(page);
     const row = page.locator('div').filter({ hasText: PROJECT_NAME }).filter({ has: page.getByRole('button', { name: 'open', exact: true }) }).last();
     await row.getByRole('button', { name: 'open', exact: true }).click();
     await watchQuickTerminalExits(page);
