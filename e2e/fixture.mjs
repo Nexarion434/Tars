@@ -979,23 +979,31 @@ export async function splashGone(page) {
  * Waits for the Chat page's room list to be read, and fails with the page's
  * own words if the read failed. `rooms` are the rows the caller needs listed.
  *
- * The list is read once, by bus:listRooms, which the page gives 10 s
- * (BUS_READ_MS in src/hooks/useBus.ts) before it puts the bus-error note where
- * the rows would be. On a slow runner that read ran out, and the specs failed
- * on a row or a count that was "not found", which named neither the read nor
- * its failure: chat-rooms.spec.ts in run 36320171886, chat-rooms-behaviour
- * .spec.ts in run 36461229599. So this waits for the read to settle, as rooms
- * or as the note, and a note is the failure, in its words (`bus:listRooms, no
- * answer in 10 s`).
+ * The list is read by bus:listRooms, which the page gives 10 s (BUS_READ_MS in
+ * src/lib/bus-read.ts) before it puts the bus-error note where the rows would
+ * be. On a slow runner that read ran out, and the specs failed on a row or a
+ * count that was "not found", which named neither the read nor its failure:
+ * chat-rooms.spec.ts in run 36320171886, chat-rooms-behaviour.spec.ts in run
+ * 36461229599. The page no longer stops there: an answer after the 10 s still
+ * lists the rooms, and a refused read is sent again 3, 12 and 30 s after the
+ * first failure, the note standing meanwhile. So a note is not the end: this
+ * waits for the rows through the page's own tries, and fails in the note's
+ * words (`bus:listRooms, no answer in 10 s`) only if they never came.
  */
+const ROOM_LIST_MS = 60_000;
+
 export async function roomListSettled(page, rooms) {
   const sidebar = page.locator('[data-chat-sidebar]');
   const busNote = sidebar.getByText('The bus did not answer', { exact: false });
   const row = name => sidebar.getByRole('button', { name, exact: false }).filter({ hasText: name }).first();
-  // Page load, then at most the page's own 10 s for the read, on a slow runner.
-  await expect(busNote.or(row(rooms[0])).first(), 'the room list is read: its rooms, or the bus-error note')
-    .toBeVisible({ timeout: 30_000 });
-  if (await busNote.isVisible()) {
+  // Page load, then the page's tries: the last is sent 30 s after the first
+  // failure and given its 10 s. This can outlast what is left of the test's own
+  // time, and the page's words are the point of the wait.
+  test.info().setTimeout(test.info().timeout + ROOM_LIST_MS);
+  try {
+    await expect(row(rooms[0]), `room ${rooms[0]} is listed`).toBeVisible({ timeout: ROOM_LIST_MS });
+  } catch (err) {
+    if (!(await busNote.isVisible())) throw err;
     // The note's sentence and the failure's own words under it, not its retry button.
     const said = (await busNote.locator('xpath=ancestor::div[1]').locator('p').allInnerTexts()).join(' ').replace(/\s+/g, ' ').trim();
     throw new Error(`the room list could not be read, the page says: "${said}"`);
