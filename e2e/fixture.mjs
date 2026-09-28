@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 /**
  * What the sandboxed app has in it when we photograph it.
@@ -973,6 +973,34 @@ export async function splashGone(page) {
     return !splash || Object.keys(splash).some(key => key.startsWith('__reactFiber$'));
   }, words.source, { polling: 100, timeout: 0 });
   await page.locator('div.fixed.inset-0').filter({ has: page.getByText(words) }).waitFor({ state: 'detached', timeout: SPLASH_BOUND_MS });
+}
+
+/**
+ * Waits for the Chat page's room list to be read, and fails with the page's
+ * own words if the read failed. `rooms` are the rows the caller needs listed.
+ *
+ * The list is read once, by bus:listRooms, which the page gives 10 s
+ * (BUS_READ_MS in src/hooks/useBus.ts) before it puts the bus-error note where
+ * the rows would be. On a slow runner that read ran out, and the specs failed
+ * on a row or a count that was "not found", which named neither the read nor
+ * its failure: chat-rooms.spec.ts in run 36320171886, chat-rooms-behaviour
+ * .spec.ts in run 36461229599. So this waits for the read to settle, as rooms
+ * or as the note, and a note is the failure, in its words (`bus:listRooms, no
+ * answer in 10 s`).
+ */
+export async function roomListSettled(page, rooms) {
+  const sidebar = page.locator('[data-chat-sidebar]');
+  const busNote = sidebar.getByText('The bus did not answer', { exact: false });
+  const row = name => sidebar.getByRole('button', { name, exact: false }).filter({ hasText: name }).first();
+  // Page load, then at most the page's own 10 s for the read, on a slow runner.
+  await expect(busNote.or(row(rooms[0])).first(), 'the room list is read: its rooms, or the bus-error note')
+    .toBeVisible({ timeout: 30_000 });
+  if (await busNote.isVisible()) {
+    // The note's sentence and the failure's own words under it, not its retry button.
+    const said = (await busNote.locator('xpath=ancestor::div[1]').locator('p').allInnerTexts()).join(' ').replace(/\s+/g, ' ').trim();
+    throw new Error(`the room list could not be read, the page says: "${said}"`);
+  }
+  for (const name of rooms) await expect(row(name), `room ${name} is listed`).toBeVisible();
 }
 
 /**
