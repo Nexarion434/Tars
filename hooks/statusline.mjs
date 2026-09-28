@@ -10,10 +10,10 @@
 // under the same mkdir lock, written beside itself and renamed over.
 //
 // Where it differs on purpose: the git-branch cache file name replaces `\`
-// and `:` as well as `/`, which a Windows file name cannot hold; and the lock
-// is released once, not a second time at exit (see writeTokenStats).
+// and `:` as well as `/`, which a Windows file name cannot hold.
 
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -138,26 +138,74 @@ function localDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** The mkdir lock of the bash script: 20 tries 50ms apart, a lock older than 5s cleared once. */
-function acquireLock(lockDir) {
-  for (let i = 0; i < 20; i++) {
+/** Past this many seconds a lock is taken for its holder's, dead (LOCK_STALE_AFTER). */
+const LOCK_STALE_AFTER = 5;
+
+/**
+ * The token-stats lock of the bash script (upstream #216, #232): a folder
+ * holding its owner's token, which a render removes only when it is its own.
+ * Taken with mkdir, 20 tries 50 ms apart. A lock over 5 s old was left by a
+ * render that died holding it, and is taken over by one render at a time
+ * (the takeover folder), and only while it is still the lock that was judged
+ * dead: removed and made again by whoever passed, it let two renders that had
+ * both judged it dead remove the one the first had just taken.
+ */
+function tokenStatsLock(lockDir) {
+  const ownerFile = path.join(lockDir, 'owner');
+  const token = `${process.pid}.${randomBytes(4).toString('hex')}`;
+  // mkdir "$LOCK_DIR" && printf '%s' "$LOCK_TOKEN" > "$LOCK_OWNER"
+  const take = () => {
     try {
       fs.mkdirSync(lockDir);
+      fs.writeFileSync(ownerFile, token);
       return true;
     } catch {
+      return false;
+    }
+  };
+  const owner = () => { try { return fs.readFileSync(ownerFile, 'utf8'); } catch { return ''; } };
+  // $(date +%s) - $(stat ... || echo 0), in whole seconds: one gone reads as very old.
+  const age = dir => { try { return Math.floor(Date.now() / 1000) - Math.floor(fs.statSync(dir).mtimeMs / 1000); } catch { return Infinity; } };
+  const rmdir = dir => { try { fs.rmdirSync(dir); } catch { /* 2>/dev/null || true */ } };
+
+  const acquire = () => {
+    for (let i = 0; i < 20; i++) {
+      if (take()) return true;
       sleepSync(50);
     }
-  }
-  try {
-    const st = fs.statSync(lockDir);
-    if (st.isDirectory() && (Date.now() - st.mtimeMs) / 1000 > 5) {
-      try { fs.rmdirSync(lockDir); } catch { /* || true */ }
-      try { fs.mkdirSync(lockDir); return true; } catch { return false; }
+    // [ -d "$LOCK_DIR" ]: no lock at all is no takeover either.
+    if (!fs.existsSync(lockDir)) return false;
+    const staleOwner = owner();
+    if (!(age(lockDir) > LOCK_STALE_AFTER)) return false;
+    const takeover = `${lockDir}.takeover`;
+    // One left by a render killed while taking a lock over would stop every takeover after it.
+    if (fs.existsSync(takeover) && age(takeover) > LOCK_STALE_AFTER) rmdir(takeover);
+    try {
+      fs.mkdirSync(takeover);
+    } catch {
+      return false;
     }
-  } catch {
-    // no lock dir at all: the bash `[ -d ]` is false too
-  }
-  return false;
+    try {
+      if (owner() === staleOwner && age(lockDir) > LOCK_STALE_AFTER) {
+        fs.rmSync(ownerFile, { force: true });
+        rmdir(lockDir);
+      }
+      return take();
+    } finally {
+      rmdir(takeover);
+    }
+  };
+
+  // Its own only: a render slow past 5 s, whose lock had been taken over,
+  // removed the new holder's as it released. Called once, when the write is
+  // done, and not again at exit: by then another render may hold the lock.
+  const release = () => {
+    if (owner() !== token) return;
+    try { fs.rmSync(ownerFile, { force: true }); } catch { /* rm -f */ }
+    rmdir(lockDir);
+  };
+
+  return { acquire, release };
 }
 
 /** mv over the file; on Windows a reader holding it open can make that fail for a moment. */
@@ -177,12 +225,8 @@ function renameOver(from, to) {
 function writeTokenStats(f) {
   if (!f.SESSION_ID) return;
   const extra = awkGreater100(f.PCT_5H) || awkGreater100(f.PCT_7D);
-  const lockDir = path.join(DATA_DIR, 'token-stats.lock');
-  if (!acquireLock(lockDir)) return;
-  // Released once, in the finally below, and not again at exit as the bash
-  // trap does: by then another render may hold the lock, and removing it
-  // lets a third one in beside it, which loses a session.
-  const release = () => { try { fs.rmdirSync(lockDir); } catch { /* || true */ } };
+  const lock = tokenStatsLock(path.join(DATA_DIR, 'token-stats.lock'));
+  if (!lock.acquire()) return;
   try {
     const file = path.join(DATA_DIR, 'token-stats.json');
     let existing = '';
@@ -208,7 +252,7 @@ function writeTokenStats(f) {
       try { fs.rmSync(tmp, { force: true }); } catch { /* rm -f */ }
     }
   } finally {
-    release();
+    lock.release();
   }
 }
 

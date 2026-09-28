@@ -1,5 +1,5 @@
-import { describe, it, expect, afterAll } from 'vitest';
-import { spawn, spawnSync } from 'node:child_process';
+import { describe, it, expect, afterAll, afterEach } from 'vitest';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -209,4 +209,269 @@ describe('statusline.mjs', () => {
     expect(cache[0].startsWith('git')).toBe(true);
     expect(cache[0]).not.toMatch(/[\\/:]/);
   });
+});
+
+/**
+ * Taking over the token-stats lock a dead render left, and releasing one's
+ * own, with several renders at once: what the bash status line does since
+ * upstream #232 (statusline-lock-takeover.test.ts holds the bash, which does
+ * not ship on Windows). The lock is a folder holding its owner's token; a
+ * render removes only its own; a lock over 5 s old is taken over by one
+ * render at a time, through a takeover folder, and only while it is still the
+ * lock that was judged dead.
+ *
+ * How it fails, the bash test's list held against statusline.mjs, written
+ * before statusline.mjs had the takeover (2026-09-28):
+ * 10. a render that judged a dead lock stale removes it after another render
+ *     has taken it over, and writes beside that render;
+ * 11. a render's release removes a lock that is no longer its own;
+ * 12. a lock 5 s old is taken for dead;
+ * 13. a lock 6 s old, left by a render killed while it held it, is never
+ *     taken over, and every render after it skips its write;
+ * 14. a render killed while taking a dead lock over leaves something behind
+ *     that stops every later takeover;
+ * 15. two renders are inside the takeover of the same dead lock at once, so
+ *     the one that comes second removes the lock the first has just taken.
+ *
+ * The bash test puts stand-ins for `date` and `stat` on the PATH. Here the
+ * same moments are reached through a module loaded before the script
+ * (NODE_OPTIONS --import), which patches fs and Date.now in that render only:
+ * - HOLD_AS: the read of token-stats.json, made with the lock held, says so
+ *   (<HOLD_AS>.holds) and waits there until told to go (<HOLD_AS>.go or
+ *   all.go); the render says when it ends (<HOLD_AS>.ended);
+ * - FREEZE_NOW: the time it reads, in seconds, so an age is exact however
+ *   loaded the machine is;
+ * - INTERLEAVE / KILL_AT: at that read of the lock's age (fs.statSync of the
+ *   lock folder, counted in lock-stats), render A comes in (a.json, HOLD_AS=A,
+ *   its clock frozen at that moment) and takes the lock over or ends; or this
+ *   render is killed there.
+ */
+const PRELOAD = `
+import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { spawn } from 'node:child_process';
+const require = createRequire(import.meta.url);
+const fs = require('node:fs');
+const path = require('node:path');
+const env = process.env;
+const home = env.HOME;
+const at = name => path.join(home, name);
+const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const waitFor = (names, ms = 30000) => { for (let n = 0; n < ms / 50 && !names.some(x => fs.existsSync(at(x))); n++) sleep(50); };
+const realNow = Date.now.bind(Date);
+if (env.FREEZE_NOW) Date.now = () => Number(env.FREEZE_NOW) * 1000;
+const lock = path.join(home, '.dorothy', 'token-stats.lock');
+const statSync = fs.statSync;
+fs.statSync = function (p, ...rest) {
+  if (String(p) !== lock) return statSync.call(fs, p, ...rest);
+  const before = statSync.call(fs, p, ...rest);
+  const count = Number(fs.existsSync(at('lock-stats')) ? fs.readFileSync(at('lock-stats'), 'utf8') : 0) + 1;
+  fs.writeFileSync(at('lock-stats'), String(count));
+  if (env.KILL_AT === String(count)) process.kill(process.pid, 'SIGKILL');
+  if (env.INTERLEAVE === String(count)) {
+    const now = env.FREEZE_NOW || String(Math.floor(realNow() / 1000));
+    spawn(process.execPath, [env.SCRIPT], {
+      cwd: home, detached: true, windowsHide: true,
+      stdio: [fs.openSync(at('a.json'), 'r'), 'ignore', 'ignore'],
+      env: { ...env, INTERLEAVE: '', KILL_AT: '', HOLD_AS: 'A', FREEZE_NOW: now },
+    }).unref();
+    waitFor(['A.holds', 'A.ended']);
+  }
+  return before;
+};
+const readFileSync = fs.readFileSync;
+fs.readFileSync = function (p, ...rest) {
+  if (env.HOLD_AS && String(p).endsWith('token-stats.json')) {
+    fs.writeFileSync(at(env.HOLD_AS + '.holds'), '');
+    waitFor([env.HOLD_AS + '.go', 'all.go']);
+  }
+  return readFileSync.call(fs, p, ...rest);
+};
+syncBuiltinESMExports();
+if (env.HOLD_AS) process.on('exit', () => { try { fs.writeFileSync(at(env.HOLD_AS + '.ended'), ''); } catch { /* its HOME is gone */ } });
+`;
+
+describe('statusline.mjs: taking over the token-stats lock, and releasing it', () => {
+  const children: ChildProcess[] = [];
+  const homes: string[] = [];
+  afterEach(async () => {
+    for (const home of homes) fs.writeFileSync(path.join(home, 'all.go'), '');
+    for (const child of children.splice(0)) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    // A render let go by all.go ends within moments: give it those.
+    await new Promise(resolve => setTimeout(resolve, 300));
+    homes.length = 0;
+  });
+
+  const sessionInput = (session: string) => JSON.stringify({ ...PAYLOAD, session_id: session });
+
+  async function until(condition: () => boolean, what: string, ms = 20_000): Promise<void> {
+    const end = Date.now() + ms;
+    while (!condition()) {
+      if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+
+  function bench() {
+    const home = freshHome();
+    homes.push(home);
+    const dorothy = path.join(home, '.dorothy');
+    const preload = path.join(home, 'preload.mjs');
+    fs.writeFileSync(preload, PRELOAD);
+    const lock = path.join(dorothy, 'token-stats.lock');
+    const stats = path.join(dorothy, 'token-stats.json');
+    const at = (name: string) => path.join(home, name);
+    const env = (extra: Record<string, string>) => ({ SCRIPT, NODE_OPTIONS: `--import ${pathToFileURL(preload).href}`, ...extra });
+
+    /** A render run to its end. */
+    const renderTo = (session: string, extra: Record<string, string> = {}) => render(home, sessionInput(session), env(extra));
+
+    /** A render left running. */
+    const start = (session: string, extra: Record<string, string> = {}) => {
+      const cleanEnv: NodeJS.ProcessEnv = {};
+      for (const [k, v] of Object.entries(process.env)) if (!/^(CLAUDE_|DOROTHY_)/.test(k)) cleanEnv[k] = v;
+      const child = spawn(process.execPath, [SCRIPT], {
+        cwd: home, env: { ...cleanEnv, HOME: home, USERPROFILE: home, ...env(extra) }, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true,
+      });
+      children.push(child);
+      child.stdin!.end(sessionInput(session));
+      return child;
+    };
+    const ended = (child: ChildProcess) => until(() => child.exitCode !== null || child.signalCode !== null, 'a render to end');
+
+    /** Every file and folder the lock is made of, backdated to a whole second. Returns that second. */
+    const backdate = (seconds: number): number => {
+      const second = Math.floor(Date.now() / 1000) - seconds;
+      const when = new Date(second * 1000);
+      const walk = (entry: string): void => {
+        if (fs.statSync(entry).isDirectory()) for (const name of fs.readdirSync(entry)) walk(path.join(entry, name));
+        fs.utimesSync(entry, when, when);
+      };
+      for (const name of fs.readdirSync(dorothy)) if (name.startsWith('token-stats.lock')) walk(path.join(dorothy, name));
+      return second;
+    };
+
+    /** A render killed while it holds the lock, `seconds` ago. Returns the lock's time, in seconds. */
+    const deadHolder = async (seconds: number): Promise<number> => {
+      const child = start('sK', { HOLD_AS: 'K' });
+      await until(() => fs.existsSync(at('K.holds')), 'render K to hold the lock');
+      child.kill('SIGKILL');
+      await ended(child);
+      return backdate(seconds);
+    };
+
+    const sessions = (): string[] => (fs.existsSync(stats) ? Object.keys(JSON.parse(fs.readFileSync(stats, 'utf-8'))) : []);
+    const ageReads = (): number => Number(fs.existsSync(at('lock-stats')) ? fs.readFileSync(at('lock-stats'), 'utf8') : 0);
+
+    return { home, lock, at, renderTo, start, ended, backdate, deadHolder, sessions, ageReads };
+  }
+
+  it('10. a render that judged a dead lock stale leaves it to the render that took it over first', async () => {
+    const b = bench();
+    await b.deadHolder(60);
+    fs.writeFileSync(b.at('a.json'), sessionInput('sA'));
+
+    const run = await b.renderTo('sB', { INTERLEAVE: '1' });
+
+    expect(run.code, run.err).toBe(0);
+    expect(fs.existsSync(b.at('A.holds')), 'render A never took the lock over').toBe(true);
+    expect(fs.existsSync(b.lock), "render A's lock was removed while A held it").toBe(true);
+    expect(b.sessions(), 'render B wrote beside render A').not.toContain('sB');
+
+    fs.writeFileSync(b.at('A.go'), '');
+    await until(() => !fs.existsSync(b.lock) && b.sessions().includes('sA'), 'render A to write and release');
+  }, 60_000);
+
+  it('10b. and so when the lock taken over is itself over 5 s old by the time it looks again: it is not the one judged dead', async () => {
+    // Render B's clock a minute ahead: the lock render A takes over reads as
+    // old as the dead one did, and only its owner tells them apart.
+    const b = bench();
+    await b.deadHolder(60);
+    fs.writeFileSync(b.at('a.json'), sessionInput('sA'));
+
+    const run = await b.renderTo('sB', { INTERLEAVE: '1', FREEZE_NOW: String(Math.floor(Date.now() / 1000) + 60) });
+
+    expect(run.code, run.err).toBe(0);
+    expect(fs.existsSync(b.at('A.holds')), 'render A never took the lock over').toBe(true);
+    expect(fs.existsSync(b.lock), "render A's lock was removed while A held it").toBe(true);
+    expect(b.sessions(), 'render B wrote beside render A').not.toContain('sB');
+
+    fs.writeFileSync(b.at('A.go'), '');
+    await until(() => !fs.existsSync(b.lock) && b.sessions().includes('sA'), 'render A to write and release');
+  }, 60_000);
+
+  it('11. a render slow past 5 s leaves, as it releases, the lock another render took over from it', async () => {
+    const b = bench();
+    const slow = b.start('sS', { HOLD_AS: 'S' });
+    await until(() => fs.existsSync(b.at('S.holds')), 'render S to hold the lock');
+    b.backdate(60);
+    const taker = b.start('sT', { HOLD_AS: 'T' });
+    await until(() => fs.existsSync(b.at('T.holds')), 'render T to take the lock over');
+
+    fs.writeFileSync(b.at('S.go'), '');
+    await b.ended(slow);
+
+    expect(fs.existsSync(b.lock), "render S's release removed render T's lock").toBe(true);
+    fs.writeFileSync(b.at('T.go'), '');
+    await b.ended(taker);
+    expect(fs.existsSync(b.lock)).toBe(false);
+    // T read the file before S wrote, so T's write replaces S's: what a lock
+    // taken from a render still alive costs. The release is what is tested.
+    expect(b.sessions()).toContain('sT');
+  }, 60_000);
+
+  it('12. a lock 5 s old is not taken for dead', async () => {
+    const b = bench();
+    const since = await b.deadHolder(60);
+
+    const run = await b.renderTo('sB', { FREEZE_NOW: String(since + 5) });
+
+    expect(run.code, run.err).toBe(0);
+    expect(b.sessions()).not.toContain('sB');
+    expect(fs.existsSync(b.lock)).toBe(true);
+  }, 60_000);
+
+  it('13. a lock 6 s old, its holder dead, is taken over', async () => {
+    const b = bench();
+    const since = await b.deadHolder(60);
+
+    const run = await b.renderTo('sB', { FREEZE_NOW: String(since + 6) });
+
+    expect(run.code, run.err).toBe(0);
+    expect(b.sessions()).toContain('sB');
+    expect(fs.existsSync(b.lock)).toBe(false);
+  }, 60_000);
+
+  it('14. a render killed while taking a dead lock over does not stop the next takeover', async () => {
+    const b = bench();
+    await b.deadHolder(60);
+    // Killed at its second read of the lock's age: when there is one, it is
+    // taken in the middle of the takeover.
+    const killed = b.start('sR', { KILL_AT: '2' });
+    await b.ended(killed);
+    expect(b.ageReads(), 'the render never read the age a second time').toBe(2);
+    fs.rmSync(b.at('lock-stats'), { force: true });
+    b.backdate(60);
+
+    const run = await b.renderTo('sN');
+
+    expect(run.code, run.err).toBe(0);
+    expect(b.sessions()).toContain('sN');
+    expect(fs.readdirSync(path.dirname(b.lock)).filter(name => name.startsWith('token-stats.lock')), 'left behind').toEqual([]);
+  }, 60_000);
+
+  it('15. a render that comes in while another is taking the dead lock over leaves the takeover to it', async () => {
+    const b = bench();
+    await b.deadHolder(60);
+    fs.writeFileSync(b.at('a.json'), sessionInput('sA'));
+
+    // Render A comes in at render B's second read of the lock's age: when
+    // there is one, B is in the middle of its takeover.
+    const run = await b.renderTo('sB', { INTERLEAVE: '2' });
+
+    expect(run.code, run.err).toBe(0);
+    expect(b.ageReads(), 'render B never read the age a second time').toBeGreaterThanOrEqual(2);
+    expect(fs.existsSync(b.at('A.holds')), 'render A took the lock over while render B was taking it over').toBe(false);
+    expect(b.sessions()).toContain('sB');
+    await until(() => !fs.existsSync(b.lock), 'the lock to be released');
+  }, 60_000);
 });
