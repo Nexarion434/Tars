@@ -305,7 +305,10 @@ async function cloneBehindOrigin(from: 'main' | 'fresh') {
   return { ...upstream, root, dir };
 }
 
-describe.concurrent('the base a branch is compared against', () => {
+// Each test copies a clone and runs git and the script several times, all at
+// once: measured on Windows 11, 8 cores, 1.3 to 4.9 s idle and up to 6.4 s with
+// every core busy, over the 5 s default; windows-latest timed two of them out.
+describe.concurrent('the base a branch is compared against', { timeout: 30_000 }, () => {
   it('fetches origin/main before comparing, and names the commit it compared against', async ({ expect }) => {
     const repo = await cloneBehindOrigin('fresh');
     write(repo.dir, '__tests__/feature.test.ts', '// a test, and nothing else\n');
