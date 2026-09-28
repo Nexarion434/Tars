@@ -1,8 +1,9 @@
 import { test, expect, _electron as electron } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { promisify } from 'node:util';
 import { launchSandboxed, recordValues } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
@@ -83,24 +84,32 @@ function fakeNpx(dir: string): string {
   return script;
 }
 
-/** Every process whose command line names the marker: the fake agent's commands, whatever their parent now. */
-function processesNaming(marker: string): { pid: number; cmd: string }[] {
+const run = promisify(execFile);
+
+/**
+ * Every process whose command line names the marker: the fake agent's commands, whatever their parent now.
+ *
+ * Asynchronous: Get-CimInstance takes seconds on a loaded machine, and a
+ * synchronous call held the test's event loop for all of them, inside until()'s
+ * polls, while the hanging run-task request it had in flight waited to be read.
+ */
+async function processesNaming(marker: string): Promise<{ pid: number; cmd: string }[]> {
   if (onWindows) {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    const { stdout: out } = await run(powershell, ['-NoProfile', '-NonInteractive', '-Command',
       'Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     const rows = JSON.parse(out) as { ProcessId: number; CommandLine: string }[];
     return rows.filter(r => r.CommandLine.includes(marker)).map(r => ({ pid: r.ProcessId, cmd: r.CommandLine }));
   }
-  const out = execFileSync('ps', ['-A', '-o', 'pid=,command='], { encoding: 'utf8' });
+  const { stdout: out } = await run('ps', ['-A', '-o', 'pid=,command='], { encoding: 'utf8' });
   return out.split('\n').filter(l => l.includes(marker)).map(l => ({ pid: Number(l.trim().split(/\s+/)[0]), cmd: l.trim() }));
 }
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-async function until(what: string, test: () => boolean, ms = 15_000): Promise<void> {
+async function until(what: string, test: () => boolean | Promise<boolean>, ms = 15_000): Promise<void> {
   const end = Date.now() + ms;
-  while (!test()) {
+  while (!(await test())) {
     if (Date.now() > end) throw new Error(`timed out: ${what}`);
     await new Promise(r => setTimeout(r, 100));
   }
@@ -158,35 +167,35 @@ test('a delegated task returns its stop reason, and a stopped run leaves no proc
     const args = JSON.parse(String(worked.data.text).replace(/^done: /, '')) as string[];
     expect(args[0]).toBe('-y');
     expect(args[1]).toMatch(/^@agentclientprotocol\/claude-agent-acp@/);
-    await until('the finished run\'s processes are gone', () => processesNaming(marker).length === 0 && !alive(workRoot));
+    await until('the finished run\'s processes are gone', async () => (await processesNaming(marker)).length === 0 && !alive(workRoot));
 
     // 2. A task that hangs, stopped with its agent: the caller is told, and nothing of the run is left.
     const hanging = api('run-task', { task: 'hang', timeoutSeconds: 60 });
     await until('the hanging run started its commands', () => fs.existsSync(`${marker}.hang.pid`));
     const [hangRoot, hangChild] = fs.readFileSync(`${marker}.hang.pid`, 'utf8').split(' ').map(Number);
     leftovers.push(hangRoot, hangChild);
-    await until('the command and the one it started are up', () => processesNaming(marker).length >= 2);
-    const running = processesNaming(marker).length;
+    await until('the command and the one it started are up', async () => (await processesNaming(marker)).length >= 2);
+    const running = (await processesNaming(marker)).length;
     const stopped = await api('stop', {});
     expect(stopped.status, JSON.stringify(stopped.data)).toBe(200);
     const answer = await hanging;
     expect(answer.status, JSON.stringify(answer.data)).toBe(200);
     expect(answer.data.started).toBe(true);
     expect(answer.data.error).toBe('the run was stopped: the agent was stopped');
-    await until('the stopped run\'s processes are gone', () => processesNaming(marker).length === 0 && !alive(hangRoot));
+    await until('the stopped run\'s processes are gone', async () => (await processesNaming(marker)).length === 0 && !alive(hangRoot));
 
     recordValues({
       platform: process.platform,
       npxScript: script,
       finished: { status: worked.status, ok: worked.data.ok, stopReason: worked.data.stopReason, argv: args },
       stopped: { status: answer.status, started: answer.data.started, error: answer.data.error, processesBeforeStop: running },
-      processesLeft: processesNaming(marker).length,
+      processesLeft: (await processesNaming(marker)).length,
       command: 'E2E_PORT_OFFSET=30 npx playwright test e2e/acp-delegation.spec.ts',
     });
   } finally {
     // Before the app closes, which a failed run may not live through: a red
     // run must not leave its commands behind either.
-    for (const pid of [...leftovers, ...processesNaming(marker).map(p => p.pid)]) { try { process.kill(pid); } catch { /* gone */ } }
+    for (const pid of [...leftovers, ...(await processesNaming(marker)).map(p => p.pid)]) { try { process.kill(pid); } catch { /* gone */ } }
     await app.close();
     await fs.promises.rm(home, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }

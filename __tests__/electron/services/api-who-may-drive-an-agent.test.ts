@@ -167,6 +167,11 @@ function call(
 }
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
+// The first import compiles the API server's whole module graph, as in
+// api-server-keep-alive.test.ts. The five imports below, measured on 2026-09-28
+// on 8 logical CPUs: 3.2 to 3.9 s idle, 3.4 and 5.8 s inside a full `npm test`,
+// 34 to 47 s beside 16 busy processes and 42 to 85 s beside 32. Beside 16, the
+// 10 s vitest gives a hook failed 3 runs out of 3; 120 s holds the worst here.
 beforeAll(async () => {
   port = await freePort();
   api = await import('../../../electron/services/api-server');
@@ -191,7 +196,7 @@ beforeAll(async () => {
     check();
   });
   sharedToken = api.getApiToken();
-});
+}, 120_000);
 
 afterAll(() => {
   api.stopApiServer();
