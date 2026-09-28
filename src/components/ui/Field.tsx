@@ -29,8 +29,19 @@ interface FieldProps {
   compact?: boolean;
 }
 
-// Four states, not two: default, focus, error, disabled. Disabled lives in BASE
-// because the browser owns it; the other three are all border colour.
+/**
+ * Read-only reads as read-only (frame XFApe, rows kjeqD and B85KKr): the
+ * panel's `surface` fill instead of a field's `surface-raised`, the value in
+ * `text-secondary`, the default cursor, and the `border` kept on focus, so no
+ * focus ring. The text stays selectable. `enabled:` leaves a disabled field
+ * alone, which `:read-only` matches too; and not on Select, which `:read-only`
+ * always matches.
+ */
+const READ_ONLY = 'read-only:enabled:bg-card read-only:enabled:text-text-secondary read-only:enabled:cursor-default read-only:enabled:focus:border-border';
+
+// Five states: default, focus, error, disabled, read-only. Disabled lives in
+// BASE because the browser owns it, read-only in READ_ONLY; the other three
+// are all border colour.
 const border = (error?: boolean) =>
   error ? 'border-danger focus:border-danger' : 'border-border focus:border-primary/40';
 
@@ -44,7 +55,7 @@ export function FieldError({ children }: { children: ReactNode }) {
 }
 
 export function Input({ className = '', mono, width = 'full', error, compact, ...rest }: InputHTMLAttributes<HTMLInputElement> & FieldProps & { mono?: boolean }) {
-  return <input className={`${BASE} ${compact ? CONTROL_HEIGHT_SM : CONTROL_HEIGHT} ${WIDTHS[width]} ${border(error)} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
+  return <input className={`${BASE} ${READ_ONLY} ${compact ? CONTROL_HEIGHT_SM : CONTROL_HEIGHT} ${WIDTHS[width]} ${border(error)} ${mono ? 'font-mono' : ''} ${className}`} {...rest} />;
 }
 
 /**
@@ -58,7 +69,7 @@ export function PasswordInput({ className = '', width = 'full', error, disabled,
       <input
         type={shown ? 'text' : 'password'}
         disabled={disabled}
-        className={`${BASE} ${CONTROL_HEIGHT} w-full ${border(error)} font-mono pr-11`}
+        className={`${BASE} ${READ_ONLY} ${CONTROL_HEIGHT} w-full ${border(error)} font-mono pr-11`}
         {...rest}
       />
       <button
@@ -88,5 +99,5 @@ export function Select({ className = '', children, width = 'full', error, ...res
 }
 
 export function Textarea({ className = '', width = 'full', error, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps) {
-  return <textarea className={`${BASE} ${WIDTHS[width]} ${border(error)} py-1.5 resize-y ${className}`} {...rest} />;
+  return <textarea className={`${BASE} ${READ_ONLY} ${WIDTHS[width]} ${border(error)} py-1.5 resize-y ${className}`} {...rest} />;
 }
