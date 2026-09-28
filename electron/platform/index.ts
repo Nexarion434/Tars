@@ -39,3 +39,6 @@ export {
   isWindowsShell, titleBarOptions, parseTitleBarOverlay, closeAction, isClickThatClosedPanel, taskbarEdge, trayPanelPosition,
   type Rect, type DisplayArea, type TaskbarEdge,
 } from './desktop-shell';
+export {
+  hermesDesktopConfigPath, tailscaleCandidates, tasmaniaTokenPath, type TasmaniaToken,
+} from './integration-paths';
