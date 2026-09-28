@@ -9,15 +9,15 @@ import * as path from 'path';
  *
  * Node's server says `Keep-Alive: timeout=5` and closes an idle connection a
  * second after that. A client closes its own end before, on a timer, but only
- * if its event loop gets to run that timer. One held by a synchronous call (the
- * ACP spec's execFileSync of PowerShell, seconds long on a loaded Windows
- * machine) or a starved process comes back after the server has closed, has
- * not read the close yet, and writes its next request onto the dead
- * connection: the server's system answers with a reset, and the caller gets
- * `fetch failed` / ECONNRESET for a request the server never saw. Measured on
- * 2026-09-26 (e2e/acp-delegation.spec.ts:142): 8 resets in 30 run-task POSTs
- * whose client was held 3.5 to 7 s, each on a connection the server had
- * destroyed in socketOnTimeout at 6.0 s of idleness.
+ * if its event loop gets to run that timer. A local client (an MCP server, a
+ * hook, a test) held by a synchronous call or a starved machine comes back
+ * after the server has closed, has not read the close yet, and writes its next
+ * request onto the dead connection: the server's system answers with a reset,
+ * and the caller gets `fetch failed` / ECONNRESET for a request the server
+ * never saw. Measured on 2026-09-26 while porting Tars to Windows, in an ACP
+ * delegation E2E spec whose client runs a synchronous child process: 8 resets
+ * in 30 run-task POSTs whose client was held 3.5 to 7 s, each on a connection
+ * the server had destroyed in socketOnTimeout at 6.0 s of idleness.
  *
  * Every way this can fail:
  *  1. The server closes an idle kept-alive connection within seconds, so a

@@ -10,6 +10,7 @@ import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
+import { skillsProblem } from '../../utils/skill-name';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -983,6 +984,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!mayActIn(req, driver, projectPath, `a new agent would belong to project ${projectPath}`, sendJson)) return;
     if (provider !== undefined && !isValidProvider(provider)) {
       sendJson({ error: `Unknown provider "${provider}"` }, 400);
+      return;
+    }
+    // Every task the agent is given opens with its skills (gate of #204).
+    const skillsWrong = skillsProblem(skills);
+    if (skillsWrong) {
+      sendJson({ error: `Not created: ${skillsWrong}` }, 400);
       return;
     }
     if (model !== undefined && !/^[a-zA-Z0-9._:\/\[\]-]+$/.test(model)) {

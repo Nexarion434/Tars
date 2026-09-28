@@ -54,6 +54,7 @@ import {
   killAllPty,
   setFieldProbe,
 } from './core/pty-manager';
+import { startErrorReports } from './services/error-reports';
 import { lastLocalCommandAt } from './services/agent-truth';
 import { killPty } from './core/pty-kill';
 
@@ -84,6 +85,8 @@ import { registerDiscordHandlers } from './handlers/discord-handlers';
 import {
   getClaudeSettings,
   getClaudeStats,
+  getClaudeStatsNow,
+  prewarmClaudeStats,
   getClaudeProjects,
   getClaudePlugins,
   getClaudeSkills,
@@ -150,6 +153,8 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 let appSettings: AppSettings = loadAppSettings();
+// Off unless the user turned them on; followed live (services/error-reports).
+const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
 function loadAppSettings(): AppSettings {
   const defaults: AppSettings = {
@@ -175,6 +180,7 @@ function loadAppSettings(): AppSettings {
     discordChannelId: '',
     discordAllowedUserIds: [],
     discordRequireMention: true,
+    errorReportsEnabled: false,
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -297,7 +303,7 @@ function createIpcDependencies(): IpcHandlerDependencies {
     // Functions
     getMainWindow,
     getAppSettings: () => appSettings,
-    setAppSettings: (settings: AppSettings) => { appSettings = settings; },
+    setAppSettings: (settings: AppSettings) => { appSettings = settings; void errorReports.sync(); },
     saveAppSettings: saveAppSettingsToFile,
     saveAgents,
     initAgentPty: (agent: AgentStatus) => initAgentPty(
@@ -330,9 +336,11 @@ function createIpcDependencies(): IpcHandlerDependencies {
       buffer.forEach(item => getSuperAgentOutputBuffer().push(item));
     },
 
-    // Claude data functions
+    // Claude data functions. The page's stats come at once, as last computed,
+    // and are computed again behind it once a minute old; the bots keep
+    // getClaudeStats, which waits for numbers no older than that.
     getClaudeSettings,
-    getClaudeStats,
+    getClaudeStats: getClaudeStatsNow,
     getClaudeProjects,
     getClaudePlugins,
     getClaudeSkills,
@@ -495,7 +503,7 @@ app.whenReady().then(async () => {
   registerMcpOrchestratorHandlers();
   registerCLIPathsHandlers({
     getAppSettings: () => appSettings,
-    setAppSettings: (settings) => { appSettings = settings; },
+    setAppSettings: (settings) => { appSettings = settings; void errorReports.sync(); },
     saveAppSettings: saveAppSettingsToFile,
   });
 
@@ -686,6 +694,12 @@ app.whenReady().then(async () => {
   // Warm the model/price catalogue without blocking the window: a stale disk
   // copy answers immediately, the network refresh lands whenever it lands.
   loadCatalog().catch(() => { /* cached or floor prices carry the app */ });
+  // The transcript scan, started now rather than by the first page to ask for
+  // it: 2.4 to 3 s on Noah's 1826 transcripts, which that page used to wait for.
+  // After loadCatalog, which installs a fresh disk copy as it is called: a scan
+  // started before it priced with another object, and the first minute past it
+  // scanned everything again for the swap.
+  prewarmClaudeStats();
 
   // Registration only has to finish before an agent starts, not before the
   // window paints. It used to hold the main thread through the first render.
