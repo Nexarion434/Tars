@@ -49,4 +49,18 @@ describe('redactSecrets and Windows paths', () => {
       expect(redactSecrets(`API_KEY=${secret}`), secret).not.toContain(secret);
     }
   });
+
+  // The review's narrowing: a location has a folder in it and no space.
+  it('5: still masks a value that only starts like a path, with one separator or a space in it', () => {
+    const secrets = [
+      j('C:\\', 'Kq8ZmR2vX7bTnL4p'),
+      j('\\\\', 'Kq8ZmR2vX7bTnL4p'),
+      j('~\\', 'Kq8ZmR2vX7bTnL4p'),
+    ];
+    for (const secret of secrets) {
+      expect(redactSecrets(`API_KEY=${secret}`), secret).not.toContain(secret);
+    }
+    const spaced = '{"tokenPath":"C:\\\\Kq8Zm R2vX7\\\\bTnL4pWy"}';
+    expect(redactSecrets(spaced)).not.toContain('Kq8Zm R2vX7');
+  });
 });
