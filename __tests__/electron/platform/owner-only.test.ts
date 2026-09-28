@@ -81,7 +81,7 @@ afterEach(() => {
   for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const ownerOnlyFile = () => [`(A;;FA;;;${userSid})`, '(A;;FA;;;SY)'].sort();
+const ownerOnlyFile = () => [`(A;;FA;;;${userSid})`, '(A;;FA;;;S-1-5-18)'].sort();
 
 // A PowerShell start reads the access lists: one to three seconds, far more on a machine
 // running other suites (100% CPU, measured).
@@ -95,7 +95,7 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     const file = path.join(openDir(), 'api-token');
     fs.writeFileSync(file, 'secret');
     // The fixture is open to begin with, or the case proves nothing.
-    expect(dacl(file).aces.some(a => a.includes(USERS_SID) || a.includes(';BU)'))).toBe(true);
+    expect(dacl(file).aces.some(a => a.includes(USERS_SID))).toBe(true);
 
     expect(restrictToOwnerSync(file)).toBe('restricted');
 
@@ -124,7 +124,7 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     const file = path.join(openDir(), 'hermes-connection.json');
     fs.writeFileSync(file, '{}');
     icacls(file, '/grant', `*${EVERYONE_SID}:(R)`);
-    expect(dacl(file).aces.some(a => a.endsWith(';WD)'))).toBe(true);
+    expect(dacl(file).aces.some(a => a.endsWith(';S-1-1-0)'))).toBe(true);
 
     expect(restrictToOwnerSync(file, { replaceExplicit: true })).toBe('restricted');
 
@@ -161,8 +161,8 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     fs.writeFileSync(after, '{}');
 
     const [ofDir, ofBefore, ofAfter] = dacls(dir, before, after);
-    expect(ofDir).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;SY)'].sort() });
-    const inherited = [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort();
+    expect(ofDir).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;S-1-5-18)'].sort() });
+    const inherited = [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;S-1-5-18)'].sort();
     expect(ofBefore.aces).toEqual(inherited);
     expect(ofAfter.aces).toEqual(inherited);
   });
@@ -180,7 +180,7 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     await restrictDirToOwner(dir);
 
     expect(dacls(outside, path.join(outside, 'id_rsa'))).toEqual(before);
-    expect(before[0].aces.some(a => a.endsWith(';WD)')), 'the fixture carries its own entry').toBe(true);
+    expect(before[0].aces.some(a => a.endsWith(';S-1-1-0)')), 'the fixture carries its own entry').toBe(true);
   });
 
   it.skipIf(cannotSymlink())('8: a symbolic link in the private directory is not followed', async () => {

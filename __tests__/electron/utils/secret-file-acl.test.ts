@@ -77,7 +77,7 @@ afterEach(() => {
 });
 
 let userSid = '';
-const ownerOnly = () => ({ protectedFromParent: true, aces: [`(A;;FA;;;${userSid})`, '(A;;FA;;;SY)'].sort() });
+const ownerOnly = () => ({ protectedFromParent: true, aces: [`(A;;FA;;;${userSid})`, '(A;;FA;;;S-1-5-18)'].sort() });
 
 // A PowerShell start reads the access lists: one to three seconds, far more on a machine
 // running other suites (100% CPU, measured).
@@ -139,7 +139,7 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     const [ofSettings, ofDir, ofAside] = dacls(settings, privateDir, aside);
     expect(ofSettings).toEqual(ownerOnly());
     expect(ofDir.protectedFromParent).toBe(true);
-    expect(ofAside.aces).toEqual([`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort());
+    expect(ofAside.aces).toEqual([`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;S-1-5-18)'].sort());
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -180,7 +180,7 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(spy.mock.calls.filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
     const [ofDir, ofTurn] = dacls(privateDir, turn);
     expect(ofDir.protectedFromParent).toBe(true);
-    expect(ofTurn.aces).toEqual([`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort());
+    expect(ofTurn.aces).toEqual([`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;S-1-5-18)'].sort());
   });
 
   it('8: an ordinary state file is left as its folder hands it down', () => {

@@ -96,8 +96,8 @@ afterEach(() => {
 });
 
 let userSid = '';
-const ownerOnly = () => ({ protectedFromParent: true, aces: [`(A;;FA;;;${userSid})`, '(A;;FA;;;SY)'].sort() });
-const inheritedOwnerOnly = () => [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort();
+const ownerOnly = () => ({ protectedFromParent: true, aces: [`(A;;FA;;;${userSid})`, '(A;;FA;;;S-1-5-18)'].sort() });
+const inheritedOwnerOnly = () => [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;S-1-5-18)'].sort();
 
 describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () => {
   beforeAll(() => {
@@ -271,11 +271,11 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     const stagingDir = path.join(privateDir, '.staging');
     fs.mkdirSync(stagingDir, { recursive: true });
     realExec(ICACLS, [stagingDir, '/grant', '*S-1-1-0:(OI)(CI)(R)'], { stdio: 'ignore', windowsHide: true });
-    expect(dacls(stagingDir)[0].aces.some(a => a.endsWith(';WD)')), 'the grant is there to begin with').toBe(true);
+    expect(dacls(stagingDir)[0].aces.some(a => a.endsWith(';S-1-1-0)')), 'the grant is there to begin with').toBe(true);
 
     await sf.closeSecretsToOtherAccounts([path.join(home, 'app-settings.json')], privateDir);
 
-    expect(dacls(stagingDir)[0]).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;SY)'].sort() });
+    expect(dacls(stagingDir)[0]).toEqual({ protectedFromParent: true, aces: [`(A;OICI;FA;;;${userSid})`, '(A;OICI;FA;;;S-1-5-18)'].sort() });
   });
 
   it('9: and so does one closed by a save that comes before the startup pass is done', async () => {
