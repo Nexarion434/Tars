@@ -76,6 +76,8 @@ function looksLikePlaceholder(value: string): boolean {
   if (PLACEHOLDERS.has(lower)) return true;
   // A path or a URL under a secret-sounding name is a location, not a secret.
   if (lower.startsWith('/') || lower.startsWith('~/') || lower.startsWith('http')) return true;
+  // The Windows spellings: `C:\` or `C:/`, `~\`, and `\\` (a share, `\\?\C:\`).
+  if (/^[a-z]:[\\/]/.test(lower) || lower.startsWith('~\\') || lower.startsWith('\\\\')) return true;
   // All one repeated character, the shape of a hand-written stand-in.
   return /^(.)\1+$/.test(value);
 }
