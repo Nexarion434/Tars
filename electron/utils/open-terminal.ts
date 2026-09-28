@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile, spawn } from 'child_process';
-import { envValue, findOnPath, realFs, resolveShell, shellArgs, type Env, type FsProbe } from '../platform';
+import { childEnv, envValue, findOnPath, realFs, resolveShell, shellArgs, type Env, type FsProbe } from '../platform';
 
 /**
  * Open a terminal in a directory, on the platforms Tars runs on.
@@ -41,7 +41,7 @@ export const LINUX_TERMINALS: LinuxTerminal[] = [
   { file: 'xterm', args: () => [] },
 ];
 
-type Options = { cwd?: string; detached?: boolean; stdio?: 'ignore'; timeout?: number };
+type Options = { cwd?: string; detached?: boolean; stdio?: 'ignore'; timeout?: number; env?: NodeJS.ProcessEnv };
 
 export interface OpenTerminalDeps {
   platform: NodeJS.Platform;
@@ -129,7 +129,10 @@ async function openOnWindows(dir: string, deps: OpenTerminalDeps): Promise<OpenT
   const conhost = path.win32.join(envValue(env, 'SystemRoot', 'win32') || 'C:\\Windows', 'System32', 'conhost.exe');
   const shell = resolveShell({ env, platform: 'win32', fs: probe });
   try {
-    await deps.launch(conhost, [shell, ...shellArgs(shell, 'win32')], options);
+    // The shell's env: Windows PowerShell gets no PSModulePath (platform/child-env.ts).
+    // Through unknown: Env and Next's ProcessEnv (which requires NODE_ENV) do not overlap.
+    const shellEnv = childEnv(shell, env, 'win32') as unknown as NodeJS.ProcessEnv;
+    await deps.launch(conhost, [shell, ...shellArgs(shell, 'win32')], { ...options, env: shellEnv });
     return { success: true, terminal: path.win32.basename(shell) };
   } catch (err) {
     tried.push(`${conhost}: ${reason(err)}`);

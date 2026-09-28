@@ -17,6 +17,7 @@ import {
 } from './cli-updater-windows-fakes';
 import { runCliUpdatePass, updateCli, startCliUpdates, CLI_UPDATES_LOG, type CliUpdateContext } from '../../../electron/services/cli-updater';
 import type { AppSettings } from '../../../electron/types';
+import { pwsh7ModulePath } from '../platform/pwsh7-module-path';
 
 /**
  * Tars keeps claude and Amp up to date on Windows too (audit A28).
@@ -94,6 +95,12 @@ import type { AppSettings } from '../../../electron/types';
  *    wrote; Amp is reinstalled or downgraded for a version that is not newer;
  *    npm's cache lands in the home or stays; Amp is updated although its
  *    settings say not to; a CLI with no measured update path is not named.
+ *
+ * Added when Tars was found started from PowerShell 7 (2026-09-28):
+ * 19. The busy check runs Windows PowerShell 5.1 with the PSModulePath of a
+ *    Tars started from pwsh 7: it finds pwsh 7's Core-only modules first, has
+ *    no Select-Object or ConvertTo-Json, prints no table, and every update of
+ *    an npm CLI is held back as "could not be checked" (10c).
  */
 
 const onWindows = process.platform === 'win32';
@@ -405,6 +412,20 @@ describe.skipIf(!onWindows)('amp as a global npm package, on Windows', () => {
     expect(held.outcome, JSON.stringify(held)).toBe('deferred');
     expect(held.detail).toContain(`pid ${session.pid}`);
     expect(recorded().map(c => c[1])).toEqual(['view']);
+  }, 180_000);
+
+  it('10c. reads the real process table as well when Tars was started from PowerShell 7', async () => {
+    processTable.mode = 'real';
+    const home = path.join(root, 'home');
+    const prefix = npmPrefix(home);
+    const script = npmAmp(prefix);
+    const ctx = ctxFor(home, { FAKE_LATEST: '0.0.2', PSModulePath: pwsh7ModulePath(root) });
+    const session = await startSession(process.execPath, [script], ctx.env);
+
+    const held = await updateCli('amp', 'amp', ctx);
+
+    expect(held.outcome, JSON.stringify(held)).toBe('deferred');
+    expect(held.detail).toContain(`pid ${session.pid}`);
   }, 180_000);
 
   it('11. holds an update back when it cannot tell whether Amp is running', async () => {

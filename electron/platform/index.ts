@@ -14,6 +14,7 @@ export {
 } from './cli-binary';
 export { windowsCliFile, findWindowsCli, windowsCliDirs, windowsGcloudDirs, type CliLookup } from './windows-cli';
 export { cliEnv, stdioServerCommand, nodeServerCommand } from './cli-env';
+export { childEnv } from './child-env';
 export { posixWords, PosixWordsError, type PosixWordsErrorCode } from './posix-words';
 export {
   buildWindowsCommandLine, quoteWindowsArg, quoteWindowsProgram, WindowsCommandLineError, WINDOWS_COMMAND_LINE_MAX,

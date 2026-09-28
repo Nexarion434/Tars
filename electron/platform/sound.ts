@@ -2,6 +2,7 @@ import * as nodeFs from 'fs';
 import * as path from 'path';
 import { realFs, type Env, type FsProbe } from './fs-probe';
 import { envValue } from './path-env';
+import { childEnv } from './child-env';
 
 /**
  * How Windows plays a notification sound (audit B N-06), as a program and its
@@ -91,11 +92,13 @@ export function windowsSoundCommand(filePath: string, opts: { env?: Env; fs?: Fs
   if (!fs.isFile(filePath)) return { ok: false, error: 'the sound file is not there' };
 
   const systemRoot = envValue(env, 'SystemRoot', 'win32') || 'C:\\Windows';
+  const file = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   return {
     ok: true,
-    file: path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    file,
     args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(SCRIPT, 'utf16le').toString('base64')],
     // Through unknown: Env and Next's ProcessEnv (which requires NODE_ENV) do not overlap.
-    env: { ...env, TARS_SOUND_FILE: filePath } as unknown as NodeJS.ProcessEnv,
+    // No PSModulePath: New-Object is lost under a PowerShell 7 parent's (child-env.ts).
+    env: childEnv(file, { ...env, TARS_SOUND_FILE: filePath }, 'win32') as unknown as NodeJS.ProcessEnv,
   };
 }
