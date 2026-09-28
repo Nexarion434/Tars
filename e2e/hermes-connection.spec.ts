@@ -22,6 +22,15 @@ import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
  * and in Remote mode it takes typing from Playwright and from a real OS click
  * and keystroke alike (win32).
  *
+ * So the field now says it: read-only reads as read-only (frame XFApe, rows
+ * kjeqD and B85KKr, validated by Nicolas). The panel's `surface` fill instead
+ * of a field's `surface-raised`, the value in `text-secondary`, no focus ring,
+ * the default cursor, the text still selectable; and the hint says the whole
+ * sentence, "Derived from the port below. Switch to Remote to type a URL.",
+ * never cut. The Local step asserts the look and the hint, the Remote step
+ * that an editable field differs, and the webhook step the webhook field's
+ * look. All three fail on the build before this change.
+ *
  * What does differ on Windows is the way out that macOS has: the `import`
  * button, which copies Hermes Desktop's connection (a URL, in Remote mode) and
  * is offered only when that app's connection.json is found. Until 9caf31d8
@@ -259,6 +268,49 @@ async function fieldReport(field: ReturnType<typeof gatewayField>) {
   });
 }
 
+/**
+ * How a field reads, and the tokens it should read as. A read-only field
+ * (frame XFApe, rows kjeqD and B85KKr) has the panel's `surface` fill, keeps
+ * its `border` on focus (no focus ring), prints its value in `text-secondary`
+ * and shows the default cursor, where an editable one has `surface-raised` and
+ * turns its border to the accent on focus. Colours are compared as the browser
+ * resolves them, so a token's value can change without touching this spec.
+ */
+async function fieldLook(field: ReturnType<typeof gatewayField>) {
+  return field.evaluate(async (el: HTMLInputElement) => {
+    // Fields fade their colours (transition-colors): read them once settled,
+    // not halfway from one mode's look to the other's.
+    await Promise.all(el.getAnimations().map(a => a.finished.catch(() => {})));
+    const token = (name: string) => {
+      const probe = document.createElement('div');
+      probe.style.color = `var(${name})`;
+      el.parentElement!.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    };
+    const s = getComputedStyle(el);
+    return {
+      background: s.backgroundColor, color: s.color, border: s.borderTopColor,
+      outline: s.outlineStyle, boxShadow: s.boxShadow, cursor: s.cursor, userSelect: s.userSelect,
+      focused: el === document.activeElement,
+      tokens: { surface: token('--card'), surfaceRaised: token('--secondary'), border: token('--border'), textSecondary: token('--text-secondary') },
+    };
+  });
+}
+
+/** Whether a hint is shown whole: nothing cut on either axis, no ellipsis. */
+async function hintReport(hint: ReturnType<Page['locator']>) {
+  return hint.evaluate((el: HTMLElement) => ({
+    text: el.textContent?.trim(),
+    scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+    scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+    textOverflow: getComputedStyle(el).textOverflow, whiteSpace: getComputedStyle(el).whiteSpace,
+  }));
+}
+
+let localLook: Awaited<ReturnType<typeof fieldLook>> | null = null;
+
 // ─── Windows: real OS input, which is what a drag region would swallow ──────
 
 function desktop(args: string[]): string {
@@ -309,14 +361,19 @@ async function osClickAndKey(locator: ReturnType<Page['locator']>, key: string) 
 test('Gateway URL: read-only in Local, where a fresh install lands; nothing covers it', async () => {
   await openConnection();
   const local = await fieldReport(gatewayField());
+  const idle = await fieldLook(gatewayField());
   // What a user does: click in, select all, type. Local keeps its derived address.
   await gatewayField().click();
+  const focused = await fieldLook(gatewayField());
   await page.keyboard.press('Control+A');
+  // Read-only, not dead: the address can still be selected, so copied.
+  const selection = await gatewayField().evaluate((el: HTMLInputElement) => ({ start: el.selectionStart, end: el.selectionEnd, length: el.value.length }));
   await page.keyboard.type('http://100.64.0.7:9119');
   const afterTyping = await gatewayField().inputValue();
-  const hint = (await row('Gateway URL').locator('[data-settings-hint]').textContent())?.trim();
+  const hint = await hintReport(row('Gateway URL').locator('[data-settings-hint]'));
   await stepShot(page, '01-local-read-only');
-  journey.localMode = { ...local, afterTyping, hint };
+  localLook = idle;
+  journey.localMode = { ...local, afterTyping, hint, look: { idle, focused }, selection };
 
   expect(local.mode).toBe('Local');
   expect(local.readOnly).toBe(true);
@@ -324,14 +381,33 @@ test('Gateway URL: read-only in Local, where a fresh install lands; nothing cove
   expect(local.hitIsField).toBe(true);
   expect(local.nearestRegion).not.toBe('drag');
   expect(afterTyping).toBe('http://127.0.0.1:9');
-  expect(hint).toBe('Derived from the port below.');
+  // The read-only look (frame XFApe, row kjeqD): the panel's fill, not a field's.
+  expect(idle.background, 'a read-only field has the surface fill').toBe(idle.tokens.surface);
+  expect(idle.background).not.toBe(idle.tokens.surfaceRaised);
+  expect(idle.color, 'its value is secondary text').toBe(idle.tokens.textSecondary);
+  expect(idle.border).toBe(idle.tokens.border);
+  expect(idle.cursor).toBe('default');
+  expect(idle.userSelect).not.toBe('none');
+  // No focus ring: focused, it looks exactly as it did.
+  expect(focused.focused).toBe(true);
+  expect({ border: focused.border, outline: focused.outline, boxShadow: focused.boxShadow, background: focused.background })
+    .toEqual({ border: idle.border, outline: idle.outline, boxShadow: idle.boxShadow, background: idle.background });
+  expect(selection).toEqual({ start: 0, end: selection.length, length: 'http://127.0.0.1:9'.length });
+  // The whole hint, never cut: it may wrap, it has no ellipsis, and it fits its box.
+  expect(hint.text).toBe('Derived from the port below. Switch to Remote to type a URL.');
+  expect(hint.whiteSpace, 'the hint may wrap').not.toBe('nowrap');
+  expect(hint.textOverflow, 'the hint is never ellipsed').not.toBe('ellipsis');
+  expect(hint.scrollWidth, 'the hint is not cut on its width').toBeLessThanOrEqual(hint.clientWidth);
+  expect(hint.scrollHeight, 'the hint is not cut on its height').toBeLessThanOrEqual(hint.clientHeight);
 });
 
 test('Gateway URL: Remote takes typing, from Playwright and from real OS input, and reads it back', async () => {
   await openConnection();
   await pickMode('Remote');
   const remote = await fieldReport(gatewayField());
+  const remoteIdle = await fieldLook(gatewayField());
   await gatewayField().click();
+  const remoteFocused = await fieldLook(gatewayField());
   await page.keyboard.press('Control+A');
   await page.keyboard.type('http://100.64.0.7:9119');
   const typed = await gatewayField().inputValue();
@@ -359,11 +435,19 @@ test('Gateway URL: Remote takes typing, from Playwright and from real OS input, 
     };
   }
   await stepShot(page, '02-remote-typed');
-  journey.remoteMode = { ...remote, typed, os };
+  journey.remoteMode = { ...remote, typed, os, look: { idle: remoteIdle, focused: remoteFocused } };
 
   expect(remote.mode).toBe('Remote');
   expect(remote.readOnly).toBe(false);
   expect(typed).toBe('http://100.64.0.7:9119');
+  // The editable field is visibly another thing than the read-only one.
+  expect(remoteIdle.background, 'an editable field has the surface-raised fill').toBe(remoteIdle.tokens.surfaceRaised);
+  expect(localLook, 'the Local step ran first').not.toBeNull();
+  expect(remoteIdle.background, 'Remote and Local fields differ').not.toBe(localLook!.background);
+  expect(remoteIdle.cursor).not.toBe('default');
+  // And it does take a focus ring, so the Local assertion is not vacuous.
+  expect(remoteFocused.focused).toBe(true);
+  expect(remoteFocused.border).not.toBe(remoteIdle.border);
   if (os) {
     expect(os.focused, 'a real click lands in the field').toBe(true);
     expect(String(os.value)).toMatch(/x/);
@@ -468,6 +552,12 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
   await expect(webhookRow.locator('input')).toHaveValue(/\/api\/webhooks\/hermes$/, { timeout: 20_000 });
   const shownUrl = await webhookRow.locator('input').inputValue();
   const tailscaleLine = (await webhookRow.locator('[data-settings-hint]').textContent())?.trim();
+  // Read-only like the Local gateway URL (frame XFApe, row B85KKr), and still
+  // selected whole on focus, for copying.
+  const webhookIdle = await fieldLook(webhookRow.locator('input'));
+  await webhookRow.locator('input').click();
+  const webhookFocused = await fieldLook(webhookRow.locator('input'));
+  const webhookSelected = await webhookRow.locator('input').evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart! === el.value.length);
   // What the main process found, read through the same bridge the page uses.
   // On a machine with Tailscale installed it is that machine's tailnet (the
   // CLI is only asked `status` and `serve status`): the line and the URL must
@@ -521,8 +611,16 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
     copiedIsSecret: copied === onDisk, secretLength: onDisk.length,
     inDataDir: fs.existsSync(path.join(home, '.dorothy', 'hermes-webhook-secret')),
     dryRun, byName: byName.status, noMessage, wrong, shared: { status: shared.status },
+    look: { idle: webhookIdle, focused: webhookFocused, selectedOnFocus: webhookSelected },
   };
 
+  expect(webhookIdle.background, 'the webhook field has the read-only fill').toBe(webhookIdle.tokens.surface);
+  expect(webhookIdle.color).toBe(webhookIdle.tokens.textSecondary);
+  expect(webhookIdle.border).toBe(webhookIdle.tokens.border);
+  expect(webhookIdle.cursor).toBe('default');
+  expect(webhookFocused.focused).toBe(true);
+  expect(webhookFocused.border, 'no focus ring on the webhook field').toBe(webhookIdle.border);
+  expect(webhookSelected).toBe(true);
   expect(shownUrl).toBe(expectedUrl);
   expect(tailscaleLine).toBe(expectedLine);
   expect(copied).toBe(onDisk);
