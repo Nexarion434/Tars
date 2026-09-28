@@ -10,13 +10,13 @@ renvoie au constat 12 de l'audit A, `B/N-03` au constat N-03 de l'audit B.
 
 Statuts : **KO** cassé (vérifié), **?** non testé, **OK** vérifié avec la preuve indiquée.
 
-**État au 2026-09-28.** Le portage tourne : `windows` à 89e7bf38, `CI - Windows` verte sur windows-latest
-(unit + E2E, 119 surfaces, run 36320171886, tentative 2) et `CI - Tests` verte sur ubuntu au même commit.
-Deux releases publiées sur `Nexarion434/Tars` (`v1.9.0-win.1`, `v1.9.0-win.2`), et la checklist manuelle
-du §4 passée en entier par Nicolas le 2026-09-28 avec un vrai installeur et un vrai agent Claude
-(« tout à l'air de marcher »). Matrice (§2) : 33 lignes OK sur 38 ; restent partielles 9 (envoi
-programmatique), 12 (vrai Gemini), 15 (vraie installation de skill), 24 (Hermes Desktop, Tailscale,
-Tasmania) et 31 (textes mac, D10). Ce qui reste ouvert : §5bis.
+**État au 2026-09-29.** Le portage est livré. `windows` à a6621c6d, synchronisé avec l'upstream 1.9.1
+(6c104a73), `CI - Windows` verte sur windows-latest (unit + E2E, run 36486432151) et `CI - Tests` verte sur
+ubuntu au même commit. Releases publiées sur `Nexarion434/Tars` : `v1.9.0-win.1`, `v1.9.0-win.2`,
+`v1.9.1-win.1`, `v1.9.1-win.2`, `v1.9.1-win.3` (la dernière depuis a6621c6d). Checklist manuelle du §4
+passée en entier par Nicolas le 2026-09-28. Matrice (§2) : restent partielles 9 (envoi programmatique),
+12 (vrai Gemini), 15 (vraie installation de skill) et 31 (textes mac, D10) ; la 24 (Hermes Desktop,
+Tailscale, Tasmania) est faite (`win/integrations-paths`). Ce qui reste ouvert : §5bis.
 
 ---
 
@@ -186,25 +186,26 @@ Son verdict : « tout à l'air de marcher ».
 | D16 | Rapports d'erreur (Sentry, upstream 1.9.1) | Rapports d'erreur Sentry masqués et désactivés sous Windows tant que Noah n'a pas accepté de recevoir ceux du portage : le main ne charge jamais le SDK sous win32 quel que soit `errorReportsEnabled` (`electron/platform/error-reports.ts`), la fenêtre non plus, et la ligne « Send error reports » n'est pas affichée | 2026-09-28 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
-## 5bis. Reprise (état au 2026-09-28)
+## 5bis. Reprise (état au 2026-09-29)
 
-**Fait.** Phases 0 à 5 mergées dans `windows` (tête 89e7bf38), puis les lots de robustesse du journal (§6).
-`CI - Windows` verte sur windows-latest à 89e7bf38 (unit + E2E, 119 surfaces, run 36320171886, tentative 2),
-`CI - Tests` verte sur ubuntu au même commit. Releases publiées sur `Nexarion434/Tars` : `v1.9.0-win.1`
-(2026-09-26, depuis 389e9e04, run 36267386561) et `v1.9.0-win.2` (2026-09-27, depuis 89e7bf38, run 36328847825),
-`latest.yml` vérifié pour les deux. Checklist manuelle §4 passée en entier par Nicolas le 2026-09-28, mise à
-jour auto win.1 vers win.2 comprise. Fork configuré (branche par défaut `windows`, Issues, `SYNC_TOKEN`,
-synchro quotidienne D13).
+**Fait.** Portage complet dans `windows` (tête a6621c6d), synchronisé avec l'upstream 1.9.1 (6c104a73) le
+2026-09-28. CI Windows et Linux vertes à a6621c6d. Dernière release : `v1.9.1-win.3` (run 36489799374,
+`latest.yml` vérifié), publiée sur autorisation de Nicolas. Synchro quotidienne (D13) : sur conflit elle ouvre
+une issue « Upstream sync conflict » sur le fork et ne publie rien ; il faut alors une synchro à la main.
+
+**Upstream.** Mergées dans la 1.9.1 : JeanBrasse/Tars #216, #217, #218. Ouvertes, en attente de Noah :
+#256 (ids de fichier en bigint), #257 (test Discord), #258 (sécurité : racines du home et liens), #259
+(`--add-dir` échappé), #260 (badge Claude Code), #261 (jeton Hermes en OAuth), #262 (import Hermes Desktop et
+notice « token not imported »), #264 (champs en lecture seule, design de Nicolas ; à merger avant #262 et #265),
+#265 (statut Hermes « signed out »), #268 (relecture automatique de la liste des salons). Plusieurs portent la
+même entrée 1.9.2 / id 51 : à replier au fil des merges.
 
 **Ouvert.**
-- D10 : textes propres à mac, en attente de la relecture de Nicolas (`PROPOSALS.md`) ; aucun texte modifié d'ici là.
-- Upstream (phase 6) : PR JeanBrasse/Tars #216, #217 et #218 ouvertes, en attente de Noah. Deux autres
-  préparées en local, non ouvertes : `up/file-id-bigint` et `up/discord-bot-test-wait` (go de Nicolas requis).
-- Un brouillon d'avis de sécurité privé attend le go de Nicolas ; rien n'est publié sans lui.
-- Matrice (§2), lignes encore partielles : 9 (envoi programmatique de 5 Ko multi-ligne à un CLI vivant sous
-  ConPTY, sans spec), 12 (aucun vrai CLI Gemini lancé), 15 (aucune vraie installation de skill ou de plugin),
-  24 (I-01 Hermes Desktop, I-02 `tailscale.exe`, I-03 jeton Tasmania : non portés), 31 (textes mac, D10).
-  Ligne 38 : aucune machine macOS n'a rien lancé.
+- D10 : textes propres à mac, en attente de Nicolas.
+- Matrice §2, lignes partielles : 9, 12, 15, 31 (voir la matrice). Ligne 38 : aucune machine macOS n'a rien lancé.
+- Suivis notés dans `tasks/todo.md` (local) : PSModulePath des CLIs d'agents, runtime MCP (#201) sous Windows,
+  purge Sentry du home en nom court 8.3, `hermesGet` mort, `fs:add-custom-project` qui accepte encore le home
+  sans message (question de design), renommer le frame Pencil `RKPfa` « keyboard focus » en « focus ».
 
 ## 6. Journal des lots
 
@@ -242,3 +243,8 @@ synchro quotidienne D13).
 | 2026-09-28 | Release `v1.9.1-win.1` publiée depuis 3781f62c (run 36428061850, installeur 132 Mo, `latest.yml` vérifié) | release | CI verte | accord de Nicolas (« publie ») | 3781f62c |
 | 2026-09-28 | Windows PowerShell 5.1 lancé par Tars garde ses cmdlets quand Tars tourne sous pwsh 7 (`childEnv` retire PSModulePath pour powershell.exe : son, terminaux, vérification de mise à jour des CLIs, conhost) | `win/psmodulepath` | vrais spawns, 9 mutants | APPROVE | 137b8b1f |
 | 2026-09-28 | Design validé par Nicolas (frame Pencil `Settings · Connection` + capture de l'app) : un champ en lecture seule se lit comme tel (fond `surface`, texte secondaire, pas d'anneau de focus) sur les 7 champs en lecture seule des Settings ; aide Local complète de Gateway URL. Les références darwin de settings-hermes/permissions/telegram/slack/discord sont sciemment obsolètes jusqu'à une PR upstream | `win/gateway-url-readonly` | spec hermes 12/12, 3 mutants, 5 références win32 refaites (diff limité aux champs) | APPROVE | 6f31e896 |
+| 2026-09-28 | Release `v1.9.1-win.2` publiée depuis 928f0da5 (run 36449779715, `latest.yml` vérifié) : champs en lecture seule, correctif PowerShell 7 | release | CI verte | accord de Nicolas (« publie ») | 928f0da5 |
+| 2026-09-28 | Design validé par Nicolas (frame Pencil, 3 états) : un champ en lecture seule prend la bordure d'accent sur tout focus, clic ou clavier (Chromium 152 met `:focus-visible` sur un clic dans un champ texte, mesuré), comme un champ éditable (DESIGN.md de Jean) | `win/readonly-focus` | clic, Tab, Shift+Tab, re-clic testés ; 5 références inchangées | APPROVE (même classe que #264) | 639f8692 |
+| 2026-09-28 | E2E : attente de la liste des salons partagée dans `fixture.mjs` (`roomListSettled`), puis attente d'hydratation (`splashGone`) dans les 7 specs qui partaient sans elle | `win/rooms-behaviour-wait`, `win/late-suite` | mutant 35 s, suite complète 130/130 | APPROVE | 7600331b |
+| 2026-09-28 | La liste des salons du Chat se relit seule après une lecture lente ou refusée (3, 9, 18 s, une lecture à la fois, rien après démontage) ; aucune différence visuelle | `win/bus-read-retry` | 11 tests unitaires, 8 mutants, E2E lecture tenue 12 s : 12/12 ; npm test 4648/0 | APPROVE | a6621c6d |
+| 2026-09-29 | Release `v1.9.1-win.3` publiée depuis a6621c6d (run 36489799374, `latest.yml` vérifié), sur autorisation de Nicolas donnée avant son absence | release | CI Windows et Linux vertes | autorisation de Nicolas | a6621c6d |
