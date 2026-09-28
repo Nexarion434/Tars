@@ -123,6 +123,35 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     expect(fs.existsSync(`${file}.tmp`), 'nothing made beside the target').toBe(false);
   });
 
+  it('2: a save made while the startup pass is still running is born closed too', async () => {
+    vi.resetModules();
+    const sf = await import('../../../electron/utils/secret-file');
+    const home = openHome();
+    const file = path.join(home, 'app-settings.json');
+    const privateDir = path.join(home, '.tars-private');
+
+    const born: Array<{ at: string; list: Dacl }> = [];
+    vi.mocked(fs.openSync).mockImplementation(((p: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode) => {
+      const fd = realOpen(p, flags, mode);
+      if (String(p).endsWith('.tmp')) born.push({ at: String(p), list: dacls(String(p))[0] });
+      return fd;
+    }) as typeof fs.openSync);
+
+    // Not awaited: the pass has named the file and nothing is closed yet.
+    const pass = sf.closeSecretsToOtherAccounts([file], privateDir);
+    sf.writeSecretFileSync(file, '{"slackBotToken":"x"}');
+    await pass;
+
+    // The save's temp, then the pass's own copy of the file the save left.
+    expect(born.map(b => path.basename(b.at).replace(/-[0-9a-f]{12}/, ''))).toEqual(['app-settings.json.tmp', 'app-settings.json.pass.tmp']);
+    for (const b of born) {
+      expect(path.dirname(b.at).toLowerCase()).toBe(path.join(privateDir, '.staging').toLowerCase());
+      expect(b.list.aces, b.at).toEqual(inheritedOwnerOnly());
+    }
+    expect(dacls(file)[0]).toEqual(ownerOnly());
+    expect(fs.readFileSync(file, 'utf8')).toBe('{"slackBotToken":"x"}');
+  });
+
   it('3: a staging directory that cannot be made falls back to the old order, says so, and keeps the write', async () => {
     vi.resetModules();
     const sf = await import('../../../electron/utils/secret-file');
