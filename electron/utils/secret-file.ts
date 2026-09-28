@@ -1,18 +1,92 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { renameReplacingSync } from '../platform/rename-replacing';
-import { restrictToOwnerSync, restrictToOwner, restrictDirToOwner } from '../platform/owner-only';
+import * as crypto from 'crypto';
+import {
+  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, ownerOnlyDirSync, ownerOnlyDir, closesByAccessList,
+  type OwnerOnlyResult,
+} from '../platform/owner-only';
 import { pathKey } from '../platform/path-compare';
 
-/** What the startup pass named, and which private directory it has closed. */
-const ownListFiles = new Set<string>();
+/**
+ * Windows only: what the startup pass named (closeSecretsToOtherAccounts),
+ * the private directory once it is closed, and the staging directory each
+ * named file is born in, once that one is closed.
+ */
+const STAGING_NAME = '.staging';
+const namedFiles = new Map<string, string>(); // file key -> its staging directory
 const privateDirs = new Set<string>();
 const closedDirs = new Set<string>();
+const staging = new Map<string, 'ready' | 'failed'>();
+const warned = new Set<string>();
 
-function needsItsOwnList(filePath: string): boolean {
+type SecretWrite = { how: 'plain' } | { how: 'staged'; stagingDir: string } | { how: 'close-first' };
+
+/** darwin/linux: always plain, the modes do the job. */
+function secretWrite(filePath: string): SecretWrite {
+  if (!closesByAccessList()) return { how: 'plain' };
   const dir = pathKey(path.dirname(filePath));
-  if (closedDirs.has(dir)) return false;
-  return ownListFiles.has(pathKey(filePath)) || privateDirs.has(dir);
+  if (closedDirs.has(dir)) return { how: 'plain' };
+  const stagingDir = namedFiles.get(pathKey(filePath));
+  if (stagingDir !== undefined) {
+    if (stagingReadySync(stagingDir)) return { how: 'staged', stagingDir };
+    fallBack(filePath, `its staging directory ${stagingDir} could not be closed`);
+    return { how: 'close-first' };
+  }
+  if (privateDirs.has(dir)) {
+    fallBack(filePath, 'the private directory is not closed yet');
+    return { how: 'close-first' };
+  }
+  return { how: 'plain' };
+}
+
+function stagingReadySync(stagingDir: string): boolean {
+  const key = pathKey(stagingDir);
+  if (!staging.has(key)) staging.set(key, ownerOnlyDirSync(stagingDir) === 'restricted' ? 'ready' : 'failed');
+  return staging.get(key) === 'ready';
+}
+
+async function stagingReady(stagingDir: string): Promise<boolean> {
+  const key = pathKey(stagingDir);
+  if (!staging.has(key)) {
+    const result: OwnerOnlyResult = await ownerOnlyDir(stagingDir);
+    // A save may have settled it meanwhile, synchronously; its answer stands.
+    if (!staging.has(key)) staging.set(key, result === 'restricted' ? 'ready' : 'failed');
+  }
+  return staging.get(key) === 'ready';
+}
+
+/** Said once per file and reason: the write goes on, born under its folder's list and closed before the rename. */
+function fallBack(filePath: string, why: string): void {
+  const once = `${filePath}\0${why}`;
+  if (warned.has(once)) return;
+  warned.add(once);
+  console.warn(`[secret-acl] ${filePath} is written beside itself and closed before the rename, not born closed: ${why}`);
+}
+
+/** One temp name per target in the staging directory, whatever folder the target is in. */
+function stagedTemp(filePath: string, stagingDir: string, suffix: string): string {
+  const tag = crypto.createHash('sha256').update(pathKey(filePath)).digest('hex').slice(0, 12);
+  return path.join(stagingDir, `${path.basename(filePath)}-${tag}${suffix}`);
+}
+
+/**
+ * Write `contents` into a new file in the staging directory: created there,
+ * so it has the directory's list (the user and SYSTEM) before a byte is in it,
+ * made protected so that a grant later added to the target's folder cannot
+ * flow into it, and returned for the caller to rename. Same 'wx' creation as
+ * writeAtomicSync: whatever held the name is removed first, nothing is followed.
+ */
+function stageSync(filePath: string, contents: string | Buffer, stagingDir: string, suffix: string): string {
+  const tmp = stagedTemp(filePath, stagingDir, suffix);
+  fs.rmSync(tmp, { force: true });
+  const fd = fs.openSync(tmp, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, contents);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return tmp;
 }
 
 /**
@@ -43,21 +117,33 @@ function needsItsOwnList(filePath: string): boolean {
  * left as it is: `~/.dorothy` is the agents' directory, and not this
  * function's to narrow.
  *
- * On Windows the modes do nothing. A file the startup pass names
- * (closeSecretsToOtherAccounts) has its temp file closed to every account but
- * the user and SYSTEM before it is renamed over the live one
- * (platform/owner-only.ts), so it is never in place with the secret in it and
- * its folder's access list; a file in the private directory is closed by the
- * directory's own list, once that pass has closed it, and starts nothing. Any
- * other file (hermes-session.json, rewritten on every gateway reply that sets
- * a cookie) keeps what its folder hands down: one icacls is a process start
- * on the main process, 25 ms on an idle machine and 400 ms on a busy one. A
- * failure is logged and the write goes on. darwin/linux: nothing runs.
+ * On Windows the modes do nothing, and an access list only binds the handles
+ * opened after it is set: one opened before keeps what it was granted, and
+ * Node opens with full sharing. So a file the startup pass names
+ * (closeSecretsToOtherAccounts) is born closed: its temp is created in a
+ * staging directory of the account alone (~/.tars-private/.staging), holding
+ * that directory's list before its first byte, then renamed into place, which
+ * keeps the list (same volume). A file in the private directory is closed by
+ * the directory's own list once that pass has closed it, and starts nothing.
+ * Until a staging directory is closed (or when it cannot be), the temp is made
+ * beside the target and closed before the rename, as before, and that is
+ * logged. Any other file (hermes-session.json, rewritten on every gateway
+ * reply that sets a cookie) keeps what its folder hands down: one icacls is a
+ * process start on the main process, 25 ms on an idle machine and 400 ms on a
+ * busy one. A failure is logged and the write goes on. darwin/linux: nothing
+ * runs.
  */
 export function writeSecretFileSync(filePath: string, contents: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const closeFirst = needsItsOwnList(filePath);
-  writeAtomicSync(filePath, contents, 0o600, closeFirst ? (tmp) => { restrictToOwnerSync(tmp); } : undefined);
+  const plan = secretWrite(filePath);
+  if (plan.how === 'staged') {
+    const tmp = stageSync(filePath, contents, plan.stagingDir, '.tmp');
+    // Born closed already; this makes it protected. A failure names the target.
+    restrictToOwnerSync(tmp, {}, { warn: (m) => console.warn(`${m} (the save of ${filePath})`) });
+    renameReplacingSync(tmp, filePath);
+  } else {
+    writeAtomicSync(filePath, contents, 0o600, plan.how === 'close-first' ? (tmp) => { restrictToOwnerSync(tmp); } : undefined);
+  }
 
   // renameSync preserves the temp file's mode, but be explicit: if the target
   // already existed at 0644 on some platform, this is what narrows it.
@@ -103,19 +189,6 @@ export function writeAtomicSync(filePath: string, contents: string, mode?: numbe
 }
 
 /**
- * A secret written in place, as api-token is: `fs.writeFileSync` at 0600,
- * exactly as before on darwin/linux, then on Windows closed to every account
- * but the user and SYSTEM (platform/owner-only.ts). Not atomic, so the list
- * lands just after the contents: for that moment the file has what ~/.dorothy
- * hands down, which on a default profile is the user, SYSTEM and the
- * Administrators group.
- */
-export function writeSecretFileInPlaceSync(filePath: string, contents: string): void {
-  fs.writeFileSync(filePath, contents, { mode: 0o600 });
-  restrictToOwnerSync(filePath);
-}
-
-/**
  * At startup, on Windows: close the secret files that already exist, and the
  * private directory with everything in it, to every account but the user and
  * SYSTEM. An install made before this, a file an older build or another tool
@@ -130,18 +203,68 @@ export function writeSecretFileInPlaceSync(filePath: string, contents: string): 
  * Once, at startup, and not on each read as ensureSecretFileMode is: it starts
  * two icacls per file, and readHermesConnection runs on every gateway call.
  * Asynchronous, so the main process goes on while it runs (2 to 4.6 s on a
- * machine at 100% CPU). A save that lands meanwhile is closed by its own
+ * machine at 100% CPU). A save that lands meanwhile is staged by its own
  * write, and the pass only ever narrows, so the two cannot leave a file open.
  * Never rejects: each failure is logged where it happens.
+ *
+ * The files are not closed in place: each is born again, closed, in the
+ * staging directory and renamed over itself (rebornClosed). The private
+ * directory is: its list is reset and set, and for that moment what inherits
+ * from it (not the staging directory, which keeps its own) has the home's.
  */
 export async function closeSecretsToOtherAccounts(files: string[], privateDir: string): Promise<void> {
-  // Named before the first await: a save made while the pass runs is closed too.
-  for (const file of files) ownListFiles.add(pathKey(file));
+  if (!closesByAccessList()) return;
+  const stagingDir = path.join(privateDir, STAGING_NAME);
+  // Named before the first await: a save made while the pass runs is staged too.
+  for (const file of files) namedFiles.set(pathKey(file), stagingDir);
   privateDirs.add(pathKey(privateDir));
+  const staged = await stagingReady(stagingDir);
   for (const file of files) {
-    if (fs.existsSync(file)) await restrictToOwner(file, { replaceExplicit: true });
+    if (!fs.existsSync(file)) continue;
+    if (staged) await rebornClosed(file, stagingDir);
+    else {
+      fallBack(file, `its staging directory ${stagingDir} could not be closed`);
+      await restrictToOwner(file, { replaceExplicit: true });
+    }
   }
-  if (await restrictDirToOwner(privateDir, {}, { create: true }) === 'restricted') closedDirs.add(pathKey(privateDir));
+  const dir = await restrictDirToOwner(privateDir, {}, { create: true, keep: [STAGING_NAME] });
+  if (dir === 'restricted') closedDirs.add(pathKey(privateDir));
+}
+
+/**
+ * Give an existing secret a new file object with the same contents, born
+ * closed in the staging directory, rather than change the list of the one
+ * there: a handle already open on the old object keeps it, and sees nothing
+ * written from now on; and nothing is reset on the way, so the file is never
+ * under its folder's list, even for a moment. A save that lands while the
+ * temp is being closed wins: the contents are compared again, synchronously,
+ * just before the rename, and the temp is dropped when they differ. A rename
+ * refused (a reader holding the file past the retry) is logged, and the file
+ * is closed where it stands instead.
+ */
+async function rebornClosed(file: string, stagingDir: string): Promise<void> {
+  let before: Buffer;
+  let tmp: string;
+  try {
+    before = fs.readFileSync(file);
+    tmp = stageSync(file, before, stagingDir, '.pass.tmp');
+  } catch (err) {
+    console.warn(`[secret-acl] ${file} could not be copied into ${stagingDir}: ${describeSecretFileError(err)}`);
+    await restrictToOwner(file, { replaceExplicit: true });
+    return;
+  }
+  await restrictToOwner(tmp, {}, { warn: (m) => console.warn(`${m} (the startup pass over ${file})`) });
+  try {
+    if (!fs.readFileSync(file).equals(before)) {
+      fs.rmSync(tmp, { force: true });
+      return;
+    }
+    renameReplacingSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    console.warn(`[secret-acl] ${file} kept its file object, closed in place instead: ${describeSecretFileError(err)}`);
+    await restrictToOwner(file, { replaceExplicit: true });
+  }
 }
 
 /**

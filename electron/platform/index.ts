@@ -34,7 +34,7 @@ export {
   type RenameDeps, type RemoveDeps,
 } from './rename-replacing';
 export {
-  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, parseWhoamiUserSid, SYSTEM_SID,
+  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, ownerOnlyDirSync, ownerOnlyDir, closesByAccessList, parseWhoamiUserSid, SYSTEM_SID,
   type OwnerOnlyResult, type OwnerOnlyDeps, type OwnerOnlyOptions,
 } from './owner-only';
 export { detectShells, type DetectedShells, type ShellChoice, type ShellChoiceId } from './shell-choices';

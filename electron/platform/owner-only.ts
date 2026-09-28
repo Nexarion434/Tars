@@ -105,7 +105,12 @@ function system32(deps: OwnerOnlyDeps, exe: string): string {
   return path.win32.join(systemRoot, 'System32', exe);
 }
 
-const notWindows = (deps: OwnerOnlyDeps) => (deps.platform ?? process.platform) !== 'win32';
+const notWindows = (deps: OwnerOnlyDeps) => !closesByAccessList(deps.platform);
+
+/** Whether this platform closes a secret with an access list (win32), not with its mode. */
+export function closesByAccessList(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32';
+}
 
 /** The icacls argv lists that leave `target` with the user and SYSTEM only. */
 function icaclsSteps(target: string, kind: 'file' | 'directory', options: OwnerOnlyOptions, sid: string): string[][] {
@@ -174,9 +179,11 @@ export async function restrictToOwner(target: string, options: OwnerOnlyOptions 
  * junction is never followed or reset, since what it points at may be any
  * file the account owns (~/.ssh); nor is the directory itself when it is one.
  * A missing directory is skipped quietly, or made first with `create`, so
- * that what is written into it later is closed from the start.
+ * that what is written into it later is closed from the start. The names in
+ * `keep` are left with their own list (the staging directory, closed on its
+ * own and never to inherit).
  */
-export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, options: { create?: boolean } = {}): Promise<OwnerOnlyResult> {
+export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, options: { create?: boolean; keep?: string[] } = {}): Promise<OwnerOnlyResult> {
   if (notWindows(deps)) return 'skipped';
   let names: string[];
   try {
@@ -191,6 +198,7 @@ export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, 
   const run = deps.execFile ?? runAsync;
   let result: OwnerOnlyResult = 'restricted';
   for (const name of names) {
+    if (options.keep?.includes(name)) continue;
     const entry = path.join(dir, name);
     try {
       if (fs.lstatSync(entry).isSymbolicLink()) continue;
@@ -200,4 +208,37 @@ export async function restrictDirToOwner(dir: string, deps: OwnerOnlyDeps = {}, 
     }
   }
   return result;
+}
+
+/**
+ * A directory of the account's alone, made if it is missing: the user and
+ * SYSTEM, handed down to what is created in it, inheritance removed. Nothing
+ * in it is touched and nothing is reset, so it is never open on the way.
+ * Where a secret is born before it takes its place (utils/secret-file.ts): a
+ * file created in it has that list from its first byte. A link, a junction or
+ * a file at that name is refused, and so reported.
+ */
+export function ownerOnlyDirSync(dir: string, deps: OwnerOnlyDeps = {}): OwnerOnlyResult {
+  if (notWindows(deps)) return 'skipped';
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('not a directory of its own');
+  } catch (err) {
+    return failed(dir, err, deps, 'cannot be a directory of the account alone');
+  }
+  return grantSync(dir, 'directory', {}, deps);
+}
+
+/** The same, without holding the caller: for the pass at startup. */
+export async function ownerOnlyDir(dir: string, deps: OwnerOnlyDeps = {}): Promise<OwnerOnlyResult> {
+  if (notWindows(deps)) return 'skipped';
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('not a directory of its own');
+  } catch (err) {
+    return failed(dir, err, deps, 'cannot be a directory of the account alone');
+  }
+  return grantAsync(dir, 'directory', {}, deps);
 }
