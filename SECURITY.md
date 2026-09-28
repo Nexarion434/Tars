@@ -428,20 +428,25 @@ may read. Through that entry, `api-token` and `app-settings.json` were
 readable by those accounts.
 
 **So the secrets get an access list of their own.** `api-token`,
-`app-settings.json`, `hermes-connection.json`, `hermes-session.json` and
-`~\.tars-private` with everything in it end with two entries: the account and
-SYSTEM, full control, inheritance removed (`electron/platform/owner-only.ts`,
-`icacls` and `whoami` by their System32 path, with an argv, the account by its
-SID). Every secret write sets it on the temp file before the rename, so the
-live file never holds a new secret under the folder's list; `api-token`, which
-is written in place, gets it just after. At startup, in the background (two
-`icacls` per file, seconds on a busy machine), the files that exist and
-the private directory are brought to it, their own extra entries removed; the
-directory hands the two entries down to what is made in it later, and a link
-or junction in it is not followed. A failure (no `icacls`, a file held) is
-logged with the path and the write is kept. `~\.dorothy` itself and its other
-files keep the profile's list: it is the agents' directory, and a Codex
-sandbox reads it.
+`app-settings.json`, `hermes-connection.json` and `~\.tars-private` with
+everything in it end with two entries: the account and SYSTEM, full control,
+inheritance removed (`electron/platform/owner-only.ts`, `icacls` and `whoami`
+by their System32 path, with an argv, the account by its SID). At startup, in
+the background (two `icacls` per file, seconds on a busy machine), the files
+that exist are brought to it, their own extra entries removed, and the private
+directory is made if it is missing and closed, its entries taking its list; a
+link or junction in it is not followed. From then on a save of one of the
+three files sets the list on its temp file before the rename, so the live file
+never holds a new secret under the folder's list; `api-token`, which is
+written in place, gets it just after; a file written into the private
+directory takes the directory's list and starts nothing. A failure (no
+`icacls`, a file held) is logged with the path and the write is kept.
+`hermes-session.json`, the gateway's cookies, is left out on purpose: it is
+rewritten on every reply that sets a cookie, and one `icacls` is a process
+start on the main process (25 ms idle, about 400 ms on a busy machine, which
+took one test file from 0.6 s to 13 s); it keeps `~\.dorothy`'s list as
+before. `~\.dorothy` itself and its other files keep the profile's list: it is
+the agents' directory, and a Codex sandbox reads it.
 
 What that list keeps out: every other account on the machine. Another
 standard user, a guest, a service account, the Codex sandbox accounts, and
