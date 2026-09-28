@@ -17,9 +17,11 @@ vi.mock('child_process', async (importOriginal) => {
 
 /**
  * The secret files as the app writes them, on Windows: `app-settings.json`,
- * `api-token`, `hermes-*.json` in ~/.dorothy and everything in ~/.tars-private
- * end with the current user and SYSTEM on their access list and nobody else
- * (platform/owner-only.ts holds the primitive and its own failure list).
+ * `hermes-connection.json` and `api-token` in ~/.dorothy, the ones main.ts
+ * names at startup, and everything in ~/.tars-private end with the current
+ * user and SYSTEM on their access list and nobody else (platform/owner-only.ts
+ * holds the primitive and its own failure list). The startup pass is what
+ * names them, so each case below starts with it.
  *
  * How it can fail, written before the code:
  *  1. writeSecretFileSync leaves the file with what its folder hands down.
@@ -37,6 +39,15 @@ vi.mock('child_process', async (importOriginal) => {
  *  8. Over-reach: an ordinary state file (agents.json, written by
  *     writeAtomicSync) is closed too. ~/.dorothy is the agents' directory, and
  *     a Codex sandbox reads it through the access list its setup grants there.
+ *  9. A secret the startup pass does not name (hermes-session.json, written on
+ *     every gateway reply that sets a cookie) starts an icacls on every write,
+ *     on the main process: measured, hermes-cookie-jar.test.ts went from 0.6 s
+ *     to 13 s on a machine at 100% CPU, and timed out in the full suite. It
+ *     keeps what its folder hands down, as before this change.
+ * 10. A file written into the closed private directory starts an icacls when
+ *     the directory's list already closes it (the Chat writes there on every
+ *     turn); or a private directory that does not exist yet at startup is
+ *     made later with the home's list.
  */
 
 const onWindows = process.platform === 'win32';
@@ -87,24 +98,27 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
       '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8', windowsHide: true })).trim();
   }, 180_000);
 
-  it('1: writeSecretFileSync closes the file to everyone but the user and SYSTEM', () => {
+  it('1: writeSecretFileSync closes the file to everyone but the user and SYSTEM', async () => {
     const file = path.join(openDir(), 'app-settings.json');
+    await closeSecretsToOtherAccounts([file], path.join(path.dirname(file), '.tars-private'));
     writeSecretFileSync(file, '{"slackBotToken":"x"}');
     expect(dacl(file)).toEqual(ownerOnly());
     expect(fs.readFileSync(file, 'utf8')).toBe('{"slackBotToken":"x"}');
   });
 
-  it('2: the temp file is closed before the rename is tried', () => {
+  it('2: the temp file is closed before the rename is tried', async () => {
     const dir = openDir();
     const target = path.join(dir, 'app-settings.json');
+    await closeSecretsToOtherAccounts([target], path.join(dir, '.tars-private'));
     // A directory where the file should go: the rename can never land.
     fs.mkdirSync(target);
     expect(() => writeSecretFileSync(target, '{"slackBotToken":"x"}')).toThrow();
     expect(dacl(`${target}.tmp`)).toEqual(ownerOnly());
   });
 
-  it('3: a file that was too open is closed by the next save', () => {
+  it('3: a file that was too open is closed by the next save', async () => {
     const file = path.join(openDir(), 'app-settings.json');
+    await closeSecretsToOtherAccounts([file], path.join(path.dirname(file), '.tars-private'));
     fs.writeFileSync(file, '{}');
     realExec(ICACLS, [file, '/grant', '*S-1-1-0:(R)'], { stdio: 'ignore', windowsHide: true });
     writeSecretFileSync(file, '{"a":1}');
@@ -138,8 +152,9 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('6: an icacls that fails is logged, and the write lands all the same', () => {
+  it('6: an icacls that fails is logged, and the write lands all the same', async () => {
     const file = path.join(openDir(), 'app-settings.json');
+    await closeSecretsToOtherAccounts([file], path.join(path.dirname(file), '.tars-private'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const saved = process.env.SystemRoot;
     process.env.SystemRoot = path.join(os.tmpdir(), 'no-windows-here');
@@ -152,6 +167,31 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(fs.readFileSync(file, 'utf8')).toBe('{"a":1}');
     expect(fs.readFileSync(`${file}.token`, 'utf8')).toBe('tok');
     expect(warn.mock.calls.map(c => String(c[0])).join('\n')).toContain(file);
+  });
+
+  it('9: a secret the startup pass does not name is written without an icacls, as before', async () => {
+    const home = openDir();
+    await closeSecretsToOtherAccounts([path.join(home, 'app-settings.json')], path.join(home, '.tars-private'));
+    const spy = vi.mocked(childProcess.execFileSync);
+    spy.mockClear();
+    const jar = path.join(home, 'hermes-session.json');
+    writeSecretFileSync(jar, '{}');
+    expect(spy.mock.calls.filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
+    expect(dacl(jar).protectedFromParent).toBe(false);
+  });
+
+  it('10: the private directory is made and closed at start, and a write into it needs no icacls', async () => {
+    const home = openDir();
+    const privateDir = path.join(home, '.tars-private');
+    await closeSecretsToOtherAccounts([], privateDir);
+    const spy = vi.mocked(childProcess.execFileSync);
+    spy.mockClear();
+    const turn = path.join(privateDir, 'overseer.json');
+    writeSecretFileSync(turn, '{"messages":[]}');
+    expect(spy.mock.calls.filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
+    const [ofDir, ofTurn] = dacls(privateDir, turn);
+    expect(ofDir.protectedFromParent).toBe(true);
+    expect(ofTurn.aces).toEqual([`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].sort());
   });
 
   it('8: an ordinary state file is left as its folder hands it down', () => {
@@ -174,11 +214,14 @@ describe('darwin and linux (case 7)', () => {
     writeSecretFileSync(path.join(dir, 'app-settings.json'), '{"a":1}');
     writeSecretFileInPlaceSync(path.join(dir, 'api-token'), 'tok');
     await closeSecretsToOtherAccounts([path.join(dir, 'app-settings.json')], path.join(dir, '.tars-private'));
+    // Named by the startup pass now: still nothing started.
+    writeSecretFileSync(path.join(dir, 'app-settings.json'), '{"a":1}');
 
     Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
     expect([...spy.mock.calls, ...spyAsync.mock.calls].filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
     expect(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8')).toBe('{"a":1}');
     expect(fs.readFileSync(path.join(dir, 'api-token'), 'utf8')).toBe('tok');
+    expect(fs.existsSync(path.join(dir, '.tars-private')), 'no private directory made at start').toBe(false);
     if (hasPosixModes()) {
       expect(fs.statSync(path.join(dir, 'app-settings.json')).mode & 0o777).toBe(0o600);
       expect(fs.statSync(path.join(dir, 'api-token')).mode & 0o777).toBe(0o600);
