@@ -482,6 +482,7 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
   const expectedUrl = info.webhookTailnetUrl ?? `http://127.0.0.1:${API_PORT}/api/webhooks/hermes`;
   const hide = (s: string | undefined) => (ts.dnsName && s ? s.split(ts.dnsName).join('<tailnet>') : s);
 
+  // Restored after: text only, so an image or files on the clipboard are lost.
   const saved = await app.evaluate(({ clipboard }) => clipboard.readText());
   let copied = '';
   try {
@@ -508,7 +509,12 @@ test('webhook: the secret Settings hands out opens the route and nothing else do
   const noMessage = await post(copied, { agent_id: 'a4', message: ' ', dry_run: true });
   const wrong = await post('not-the-secret', { agent_id: 'a4', message: 'x', dry_run: true });
   const shared = await post(sharedToken, { agent_id: 'a4', message: 'x', dry_run: true });
-  await stepShot(page, '06-webhook');
+  // Masked as the win32 references mask them (tailscale-state, webhook-url):
+  // on a machine with Tailscale they name its tailnet, and artefacts are shared.
+  await page.screenshot({
+    path: test.info().outputPath('06-webhook.png'),
+    mask: [webhookRow.locator('input'), webhookRow.locator('[data-settings-hint]')],
+  });
   journey.webhook = {
     shownUrl: hide(shownUrl), tailscaleLine: hide(tailscaleLine),
     tailscale: { installed: ts.installed, running: ts.running, serveConfigured: ts.serveConfigured, dnsName: ts.dnsName ? '(found)' : null },
