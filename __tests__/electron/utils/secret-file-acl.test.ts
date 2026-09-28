@@ -12,7 +12,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
 // darwin and linux never start icacls or whoami.
 vi.mock('child_process', async (importOriginal) => {
   const real = await importOriginal<typeof import('child_process')>();
-  return { ...real, execFileSync: vi.fn(real.execFileSync) };
+  return { ...real, execFileSync: vi.fn(real.execFileSync), execFile: vi.fn(real.execFile) };
 });
 
 /**
@@ -118,7 +118,7 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(fs.readFileSync(file, 'utf8')).toBe('f'.repeat(64));
   });
 
-  it('5: at start, the existing files and the private directory are closed; a missing one is skipped quietly', () => {
+  it('5: at start, the existing files and the private directory are closed; a missing one is skipped quietly', async () => {
     const home = openDir();
     const settings = path.join(home, 'app-settings.json');
     fs.writeFileSync(settings, '{}');
@@ -129,7 +129,7 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     fs.writeFileSync(aside, '{}');
     const warn = vi.spyOn(console, 'warn');
 
-    closeSecretsToOtherAccounts([settings, path.join(home, 'api-token')], privateDir);
+    await closeSecretsToOtherAccounts([settings, path.join(home, 'api-token')], privateDir);
 
     const [ofSettings, ofDir, ofAside] = dacls(settings, privateDir, aside);
     expect(ofSettings).toEqual(ownerOnly());
@@ -162,19 +162,21 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
 });
 
 describe('darwin and linux (case 7)', () => {
-  it.each(['darwin', 'linux'] as const)('%s: no icacls, no whoami, the same bytes and mode', (platform) => {
+  it.each(['darwin', 'linux'] as const)('%s: no icacls, no whoami, the same bytes and mode', async (platform) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-secret-posix-'));
     made.push(dir);
     const spy = vi.mocked(childProcess.execFileSync);
+    const spyAsync = vi.mocked(childProcess.execFile);
+    spyAsync.mockClear();
     spy.mockClear();
     Object.defineProperty(process, 'platform', { value: platform, configurable: true });
 
     writeSecretFileSync(path.join(dir, 'app-settings.json'), '{"a":1}');
     writeSecretFileInPlaceSync(path.join(dir, 'api-token'), 'tok');
-    closeSecretsToOtherAccounts([path.join(dir, 'app-settings.json')], path.join(dir, '.tars-private'));
+    await closeSecretsToOtherAccounts([path.join(dir, 'app-settings.json')], path.join(dir, '.tars-private'));
 
     Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
-    expect(spy.mock.calls.filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
+    expect([...spy.mock.calls, ...spyAsync.mock.calls].filter(c => /icacls|whoami/i.test(String(c[0])))).toEqual([]);
     expect(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8')).toBe('{"a":1}');
     expect(fs.readFileSync(path.join(dir, 'api-token'), 'utf8')).toBe('tok');
     if (hasPosixModes()) {

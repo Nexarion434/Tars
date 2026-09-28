@@ -4,9 +4,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  restrictToOwnerSync, restrictDirToOwnerSync, parseWhoamiUserSid, SYSTEM_SID,
+  restrictToOwnerSync, restrictToOwner, restrictDirToOwner, parseWhoamiUserSid, SYSTEM_SID,
   type OwnerOnlyDeps,
 } from '../../../electron/platform/owner-only';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * Closing a secret to every account but its owner, on Windows (audit B S-01,
@@ -37,8 +38,16 @@ import {
  *     hand down owner and SYSTEM only.
  *  8. Closing the directory follows a link in it (a junction an agent could
  *     plant, to ~/.ssh say) and resets the access list of what it points at.
+ *     Measured: icacls /reset does not follow a junction, so the junction
+ *     case holds with or without the check; icacls does follow a symbolic
+ *     link (its /L says so), which is the case the check is for, and needs
+ *     the symlink privilege (CI windows-latest; skipped here, decision D4).
  *  9. darwin/linux: anything at all runs. icacls and whoami do not exist
  *     there, and the modes already do the job.
+ * 10. The pass at startup holds its caller until every icacls has run: two
+ *     per file, measured at 2 to 4.6 s for three files and a directory of
+ *     three on a machine at 100% CPU, with the main process frozen before its
+ *     window shows.
  *
  * Cases 1 to 4, 7 and 8 run on real NTFS files with the real icacls, on
  * win32 only; the rest run everywhere, with the process runner injected.
@@ -154,14 +163,14 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     expect(fs.readFileSync(file, 'utf8')).toBe('secret');
   });
 
-  it('7: the private directory hands down owner and SYSTEM only, to what is in it and to what is made in it later', () => {
+  it('7: the private directory hands down owner and SYSTEM only, to what is in it and to what is made in it later', async () => {
     const dir = path.join(openDir(), '.tars-private');
     fs.mkdirSync(dir);
     const before = path.join(dir, 'overseer.superseded-1.json');
     fs.writeFileSync(before, '{}');
     icacls(before, '/grant', `*${EVERYONE_SID}:(R)`);
 
-    restrictDirToOwnerSync(dir);
+    expect(await restrictDirToOwner(dir)).toBe('restricted');
     const after = path.join(dir, 'made-later.json');
     fs.writeFileSync(after, '{}');
 
@@ -172,7 +181,7 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     expect(ofAfter.aces).toEqual(inherited);
   });
 
-  it('8: a junction in the private directory is not followed', () => {
+  it('8: a junction in the private directory is not followed', async () => {
     const outside = path.join(openDir(), 'victim');
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(outside, 'id_rsa'), 'key');
@@ -182,15 +191,35 @@ describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', {
     const dir = path.join(openDir(), '.tars-private');
     fs.mkdirSync(dir);
     fs.symlinkSync(outside, path.join(dir, 'link'), 'junction');
-    restrictDirToOwnerSync(dir);
+    await restrictDirToOwner(dir);
 
     expect(dacls(outside, path.join(outside, 'id_rsa'))).toEqual(before);
     expect(before[0].aces.some(a => a.endsWith(';WD)')), 'the fixture carries its own entry').toBe(true);
   });
 
-  it('7: a missing private directory is left alone and reported as such', () => {
+  it.skipIf(cannotSymlink())('8: a symbolic link in the private directory is not followed', async () => {
+    const outside = path.join(openDir(), 'id_rsa');
+    fs.writeFileSync(outside, 'key');
+    icacls(outside, '/grant', `*${EVERYONE_SID}:(R)`);
+    const before = dacls(outside);
+    const dir = path.join(openDir(), '.tars-private');
+    fs.mkdirSync(dir);
+    fs.symlinkSync(outside, path.join(dir, 'link'), 'file');
+    await restrictDirToOwner(dir);
+    expect(dacls(outside)).toEqual(before);
+  });
+
+  it('3, 10: the startup form closes an existing file the same way', async () => {
+    const file = path.join(openDir(), 'app-settings.json');
+    fs.writeFileSync(file, '{}');
+    icacls(file, '/grant', `*${EVERYONE_SID}:(R)`);
+    expect(await restrictToOwner(file, { replaceExplicit: true })).toBe('restricted');
+    expect(dacl(file)).toEqual({ protectedFromParent: true, aces: ownerOnlyFile() });
+  });
+
+  it('7: a missing private directory is left alone and reported as such', async () => {
     const warned: string[] = [];
-    expect(restrictDirToOwnerSync(path.join(openDir(), 'never-made'), { warn: m => warned.push(m) })).toBe('skipped');
+    expect(await restrictDirToOwner(path.join(openDir(), 'never-made'), { warn: m => warned.push(m) })).toBe('skipped');
     expect(warned).toEqual([]);
   });
 });
@@ -224,16 +253,23 @@ describe('restrictToOwnerSync with an injected runner', () => {
         if (answer instanceof Error) throw answer;
         return answer ?? '';
       },
+      execFile: async (file, args) => {
+        calls.push({ file, args: [...args] });
+        const answer = answers[path.win32.basename(file).toLowerCase()];
+        if (answer instanceof Error) throw answer;
+        return answer ?? '';
+      },
       warn: () => {},
     };
     return { calls, deps };
   }
 
-  it('9: darwin and linux run nothing and report it', () => {
+  it('9: darwin and linux run nothing and report it', async () => {
     for (const platform of ['darwin', 'linux'] as const) {
       const { calls, deps } = runner({});
       expect(restrictToOwnerSync('/home/u/.dorothy/api-token', {}, { ...deps, platform })).toBe('skipped');
-      expect(restrictDirToOwnerSync('/home/u/.tars-private', { ...deps, platform })).toBe('skipped');
+      expect(await restrictToOwner('/home/u/.dorothy/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(await restrictDirToOwner('/home/u/.tars-private', { ...deps, platform })).toBe('skipped');
       expect(calls).toEqual([]);
     }
   });
@@ -260,5 +296,28 @@ describe('restrictToOwnerSync with an injected runner', () => {
     expect(restrictToOwnerSync('C:\\u\\f', {}, { ...deps, warn: m => warned.push(m) })).toBe('failed');
     expect(warned).toHaveLength(1);
     expect(warned[0]).toContain('C:\\u\\f');
+  });
+
+  it('10: the startup form hands its caller back before icacls has answered', async () => {
+    const waiting: Array<(out: string) => void> = [];
+    const started: string[] = [];
+    const deps: OwnerOnlyDeps = {
+      platform: 'win32', env: { SystemRoot: 'C:\\Windows' }, warn: () => {},
+      execFile: (file) => { started.push(path.win32.basename(file)); return new Promise<string>(r => { waiting.push(r); }); },
+    };
+    const tick = () => new Promise(r => setImmediate(r));
+    let settled = false;
+    const pending = restrictToOwner('C:\\u\\.dorothy\\app-settings.json', { replaceExplicit: true }, deps).then(r => { settled = true; return r; });
+    // Back in the caller's hands while whoami has not answered.
+    expect(started).toEqual(['whoami.exe']);
+    waiting.shift()!('"a\\b","S-1-5-21-1-2-3-1001"');
+    await tick();
+    expect(started).toEqual(['whoami.exe', 'icacls.exe']);
+    expect(settled).toBe(false);
+    waiting.shift()!('');
+    await tick();
+    waiting.shift()!('');
+    expect(await pending).toBe('restricted');
+    expect(started).toEqual(['whoami.exe', 'icacls.exe', 'icacls.exe']);
   });
 });
