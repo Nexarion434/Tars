@@ -16,10 +16,15 @@ vi.mock('child_process', async (importOriginal) => {
 });
 
 let tokenFile = '';
+let privateHome = '';
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
-  // Read by api-server at each call, after the case has picked its folder.
-  return { ...actual, get API_TOKEN_FILE() { return tokenFile; } };
+  // Read by api-server at each call, after the case has picked its folders.
+  return {
+    ...actual,
+    get API_TOKEN_FILE() { return tokenFile; },
+    get privatePath() { return (...segments: string[]) => path.join(privateHome, ...segments); },
+  };
 });
 
 /**
@@ -44,6 +49,14 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
  *  5. At startup, an api-token that already exists is closed in place: the same
  *     object, so a handle held from before keeps it, and `/reset` hands it the
  *     folder's list for a moment on the way.
+ *  6. The token itself never changes: Tars reuses any api-token of 32
+ *     characters or more, so one read before this build closed the file (by an
+ *     older build's reader, a sandbox account) stays valid for ever. It must be
+ *     minted anew once, the first time this build starts, and only once: every
+ *     start after keeps it, as upstream does. darwin/linux never rotate.
+ *  7. A holder that keeps api-token open makes the rename fail (EPERM, measured)
+ *     and the app does not start: minting the token must never throw. It falls
+ *     back to writing the file in place, closed, and says so.
  *
  * Real NTFS files, the real icacls; win32 only (darwin and linux: see
  * secret-file-acl.test.ts, case 7).
@@ -172,30 +185,60 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     expect(said).toMatch(/staging/);
   });
 
-  it('4: a handle held on api-token never reads the token written after it', async () => {
+  it('4: with no holder, a new api-token is a new file object: a handle on the old one never reads it', async () => {
     vi.resetModules();
-    const sf = await import('../../../electron/utils/secret-file');
     const home = openHome();
     tokenFile = path.join(home, 'api-token');
+    privateHome = path.join(home, '.tars-private');
     fs.writeFileSync(tokenFile, 'too-short-to-keep');
-    await sf.closeSecretsToOtherAccounts([tokenFile], path.join(home, '.tars-private'));
+    const oldObject = fs.statSync(tokenFile, { bigint: true }).ino;
+    const api = await import('../../../electron/services/api-server');
+    const minted = api.getApiToken();
+    expect(minted).toMatch(/^[0-9a-f]{64}$/);
+    expect(fs.statSync(tokenFile, { bigint: true }).ino).not.toBe(oldObject);
+    expect(fs.readFileSync(tokenFile, 'utf8')).toBe(minted);
+  });
+
+  it('7: a holder keeping api-token open does not stop the app: the token lands in place, closed, and it is said', async () => {
+    vi.resetModules();
+    const home = openHome();
+    tokenFile = path.join(home, 'api-token');
+    privateHome = path.join(home, '.tars-private');
+    fs.writeFileSync(tokenFile, 'too-short-to-keep');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const held = fs.openSync(tokenFile, 'r');
+    let minted = '';
     try {
       const api = await import('../../../electron/services/api-server');
-      let minted = '';
-      try {
-        minted = api.getApiToken();
-      } catch (err) {
-        // The rename is refused while the handle is held: the new token went nowhere.
-        expect((err as NodeJS.ErrnoException).code).toBe('EPERM');
-      }
-      const buf = Buffer.alloc(128);
-      const n = fs.readSync(held, buf, 0, buf.length, 0);
-      expect(buf.subarray(0, n).toString()).toBe('too-short-to-keep');
-      if (minted) expect(fs.readFileSync(tokenFile, 'utf8')).toBe(minted);
+      minted = api.getApiToken();
     } finally {
       fs.closeSync(held);
     }
+    expect(minted).toMatch(/^[0-9a-f]{64}$/);
+    expect(fs.readFileSync(tokenFile, 'utf8')).toBe(minted);
+    expect(dacls(tokenFile)[0]).toEqual(ownerOnly());
+    expect(warn.mock.calls.map(c => String(c[0])).join('\n')).toContain(tokenFile);
+  });
+
+  it('6: the first start of this build mints a new api-token and a new file object; the next start keeps it', async () => {
+    const home = openHome();
+    tokenFile = path.join(home, 'api-token');
+    privateHome = path.join(home, '.tars-private');
+    const older = 'c'.repeat(64);
+    fs.writeFileSync(tokenFile, older);
+    const oldObject = fs.statSync(tokenFile, { bigint: true }).ino;
+
+    vi.resetModules();
+    const first = (await import('../../../electron/services/api-server')).getApiToken();
+    expect(first).not.toBe(older);
+    expect(fs.readFileSync(tokenFile, 'utf8')).toBe(first);
+    const rotatedObject = fs.statSync(tokenFile, { bigint: true }).ino;
+    expect(rotatedObject).not.toBe(oldObject);
+
+    vi.resetModules();
+    const second = (await import('../../../electron/services/api-server')).getApiToken();
+    expect(second).toBe(first);
+    expect(fs.statSync(tokenFile, { bigint: true }).ino).toBe(rotatedObject);
   });
 
   it('5: at startup an existing api-token becomes a new file object, same token, closed', async () => {
@@ -211,5 +254,29 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
     expect(fs.statSync(file, { bigint: true }).ino).not.toBe(before);
     expect(fs.readFileSync(file, 'utf8')).toBe('b'.repeat(64));
     expect(dacls(file)[0]).toEqual(ownerOnly());
+  });
+});
+
+describe('darwin and linux never rotate api-token (case 6)', () => {
+  const HOST = process.platform;
+  afterEach(() => Object.defineProperty(process, 'platform', { value: HOST, configurable: true }));
+
+  it.each(['darwin', 'linux'] as const)('%s: a usable token is kept, the file untouched, no marker made', async (platform) => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-rotation-posix-'));
+    made.push(home);
+    tokenFile = path.join(home, 'api-token');
+    privateHome = path.join(home, '.tars-private');
+    const older = 'd'.repeat(64);
+    fs.writeFileSync(tokenFile, older);
+    const before = fs.statSync(tokenFile, { bigint: true });
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    vi.resetModules();
+    const token = (await import('../../../electron/services/api-server')).getApiToken();
+    Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
+    expect(token).toBe(older);
+    const after = fs.statSync(tokenFile, { bigint: true });
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeNs).toBe(before.mtimeNs);
+    expect(fs.existsSync(privateHome)).toBe(false);
   });
 });
