@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, splashGone } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 // Mode 0000 where there are modes; on Windows a process holding the file open
 // with no sharing, which no privilege gets past (see the file).
@@ -60,6 +60,11 @@ test('names how many transcripts it could not read, and prices the rest', async 
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.waitForLoadState('domcontentloaded');
       await page.goto(`${DEV_URL}/usage`, { waitUntil: 'domcontentloaded' });
+      // Hydrated first: until React holds the page, nothing the checks below wait
+      // for can render, and on a runner slow to hydrate their bounds ran out on an
+      // empty page (run 36461229599, attempt 2). splashGone waits as long as the
+      // spec allows for that, then holds the splash to its own cap.
+      await splashGone(page);
 
       const main = page.locator('main');
       await expect(main).toContainText('1 transcript could not be read', { timeout: 20_000 });

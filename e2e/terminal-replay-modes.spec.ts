@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, writeNodeCli } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, splashGone, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -97,6 +97,11 @@ test('a panel remounted after a long turn, and the agent window, still send the 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForLoadState('domcontentloaded');
     await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+    // Hydrated first: until React holds the page, nothing the checks below wait
+    // for can render, and on a runner slow to hydrate their bounds ran out on an
+    // empty page (run 36461229599, attempt 2). splashGone waits as long as the
+    // spec allows for that, then holds the splash to its own cap.
+    await splashGone(page);
 
     const sent = async (phase: string, gesture: () => Promise<void>) => {
       const before = fs.statSync(log).size;
