@@ -22,7 +22,7 @@ import { resolveShell, shellArgs } from './platform';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE } from './constants';
+import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR } from './constants';
 
 // Core modules
 import {
@@ -126,7 +126,7 @@ import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgent
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban } from './services/api-routes/kanban-routes';
 import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
-import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
+import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
@@ -444,6 +444,9 @@ app.whenReady().then(async () => {
   // And the Hermes webhook secret, for the same reason: through the webhook it
   // gives any agent of any project work, and ~/.dorothy is one `cat` away.
   migrateWebhookSecretOutOfAgentReach();
+  // Windows: the modes above do nothing there; an access list does the same,
+  // set in the background (it never rejects, each failure is logged).
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
