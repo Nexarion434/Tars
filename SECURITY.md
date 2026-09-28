@@ -462,7 +462,9 @@ What remains. Until the staging directory is closed, or when it cannot be (a
 file or a link at its name, no `icacls`), a save falls back to the old order,
 the temp beside the target under its folder's list and closed before the
 rename, and says so in the log; the first save of a run closes the staging
-directory itself if the startup pass has not yet. A handle opened on a file
+directory itself if the startup pass has not yet. Closing it removes any grant
+of its own it carried; a staging directory removed later is made and closed
+again by the next save. A handle opened on a file
 before this build first ran keeps reading that file object, but the token it
 holds is the old one, which the one-time rotation has made worthless. When
 another program holds `api-token` open as a new token is minted, the rename is
