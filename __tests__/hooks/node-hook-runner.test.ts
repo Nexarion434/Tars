@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -50,6 +51,11 @@ import * as path from 'node:path';
  *     being flushed. And when the last text is further from the end than
  *     the cap (8 MB), the output is not posted, idle and agent-stopped still
  *     are: documented here, since the .sh would have read the whole file.
+ * 16. The token sent where the .sh sends none (upstream #212): the hook
+ *     posts carry the CLI's token only once /api/health has proved to know
+ *     TARS_INSTANCE_ID, and no Authorization header at all otherwise. The
+ *     server here answers the check for INSTANCE, outside the recorded
+ *     requests; node-hook-checks-the-instance.test.ts holds the check itself.
  *
  * Every case below states the requests and stdout the .sh produces (read off
  * the script). Where bash, curl and jq exist (CI on Linux and macOS) the .sh
@@ -88,6 +94,8 @@ let port = 0;
 let recorded: Recorded[] = [];
 let responder: Responder = () => ({});
 let seen = 0;
+/** The instance id the server proves it knows, as the Tars that spawned the CLI would. */
+const INSTANCE = crypto.randomBytes(16).toString('hex');
 const hung: http.ServerResponse[] = [];
 
 function parseBody(raw: string): unknown {
@@ -102,6 +110,13 @@ beforeAll(async () => {
     req.on('data', c => { raw += c; });
     req.on('end', () => {
       const url = new URL(req.url ?? '/', 'http://x');
+      // The instance check (16), answered as Tars answers it and kept out of what is compared.
+      if (url.pathname === '/api/health' && url.searchParams.has('challenge')) {
+        const proof = crypto.createHash('sha256').update(`${INSTANCE}:${url.searchParams.get('challenge')}`).digest('hex');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, proof }));
+        return;
+      }
       recorded.push({
         method: req.method ?? '',
         path: url.pathname,
@@ -131,7 +146,7 @@ afterAll(async () => {
 function baseEnv(home: string, extra: Record<string, string | undefined>, apiPort = port): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (/^(CLAUDE_|DOROTHY_|GEMINI_)/.test(k)) continue;
+    if (/^(CLAUDE_|DOROTHY_|GEMINI_|TARS_)/.test(k)) continue;
     env[k] = v;
   }
   env.HOME = home;
@@ -184,7 +199,7 @@ function normalize(list: Recorded[]): Recorded[] {
   });
 }
 
-type Expect = { method: 'GET' | 'POST'; path: string; auth: string; body?: unknown; query?: Record<string, string> };
+type Expect = { method: 'GET' | 'POST'; path: string; auth: string | undefined; body?: unknown; query?: Record<string, string> };
 
 function expected(list: Expect[]): Recorded[] {
   return list.map(e => ({
@@ -212,8 +227,8 @@ type Case = {
   nodeOnly?: string;
 };
 
-const AGENT = { CLAUDE_AGENT_ID: 'agent-1', CLAUDE_MGR_API_TOKEN: 'tok-1' };
-const GEMINI_AGENT = { DOROTHY_AGENT_ID: 'gem-1', CLAUDE_AGENT_ID: 'gem-1', CLAUDE_MGR_API_TOKEN: 'tok-g' };
+const AGENT = { CLAUDE_AGENT_ID: 'agent-1', CLAUDE_MGR_API_TOKEN: 'tok-1', TARS_INSTANCE_ID: INSTANCE };
+const GEMINI_AGENT = { DOROTHY_AGENT_ID: 'gem-1', CLAUDE_AGENT_ID: 'gem-1', CLAUDE_MGR_API_TOKEN: 'tok-g', TARS_INSTANCE_ID: INSTANCE };
 const BEARER = 'Bearer tok-1';
 
 const TRANSCRIPT_LINES = [
@@ -257,13 +272,13 @@ const CASES: Case[] = [
     stdout: `${JSON.stringify({ continue: true, suppressOutput: false, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'You are agent-1.\n\nRemember the port.' } })}\n`,
   },
   {
-    name: 'SessionStart outside Tars: session id as agent, no bootstrap, empty memory, resume source',
+    name: 'SessionStart outside Tars: session id as agent, no bootstrap, empty memory, resume source, no instance id so no token on the post',
     event: 'session-start',
     payload: { session_id: S, cwd: PROJECT, source: 'resume' },
     env: { CLAUDE_MGR_API_TOKEN: 'tok-1' },
     respond: ({ path: p }) => (p === '/api/memory/context' ? { body: JSON.stringify({ context: 'No previous context found for this agent/project.' }) } : {}),
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume' } },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: S, project_path: PROJECT } },
     ],
     stdout: CONTINUE,
@@ -292,7 +307,7 @@ const CASES: Case[] = [
       fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok\n');
     },
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer', body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: 'Bearer shared-tok' },
       { method: 'GET', path: '/api/memory/context', auth: 'Bearer shared-tok', query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
@@ -354,7 +369,7 @@ const CASES: Case[] = [
       fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok');
     },
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer', body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
       { method: 'POST', path: '/api/memory/remember', auth: 'Bearer shared-tok', body: { agent_id: 'agent-1', project_path: PROJECT, content: 'Ran command: Run tests (npm test)', type: 'command' } },
     ],
     stdout: CONTINUE,

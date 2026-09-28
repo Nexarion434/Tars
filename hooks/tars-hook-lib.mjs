@@ -7,6 +7,7 @@
 // treats false like null. Each helper below is one of those, named after it,
 // so a reader can hold the runner against the script line by line.
 
+import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as https from 'node:https';
@@ -129,9 +130,32 @@ export function apiUrl(env = process.env) {
   return env.CLAUDE_MGR_API_URL || DEFAULT_API_URL;
 }
 
-/** tars_auth: the CLI's own token, `Bearer ` and nothing when there is none, as the .sh sends it. */
+/** `Bearer <token>`, `Bearer ` and nothing when the token is empty, as `printf "Authorization: Bearer %s"` sends it. */
 export function bearer(token) {
   return `Bearer ${token ?? ''}`;
+}
+
+/** The Authorization header of a post: none at all for a null token, as curl sends none when tars_auth prints nothing. */
+export function authHeader(token) {
+  return token === null ? {} : { Authorization: bearer(token) };
+}
+
+/**
+ * tars-hook.sh, TARS_TOKEN_OK (upstream #212): whether the port is the Tars
+ * that spawned this CLI, which alone gets the CLI's token. While Tars is down
+ * any process may hold its port. So a fresh random challenge goes to
+ * /api/health, and the answer must be sha256("<TARS_INSTANCE_ID>:<challenge>");
+ * the id itself never leaves. No token or no id: nothing is asked. No answer
+ * within 5 s, longer than any post waits, or a wrong one: false.
+ */
+export async function tarsProvesInstance(env = process.env) {
+  const id = env.TARS_INSTANCE_ID || '';
+  if (!env.CLAUDE_MGR_API_TOKEN || !id) return false;
+  const challenge = randomBytes(16).toString('hex');
+  const answer = await curl({ url: `${apiUrl(env)}/api/health?challenge=${challenge}`, maxTimeMs: 5000 });
+  const proof = jqRaw(parseInput(answer), ['proof']);
+  const expected = createHash('sha256').update(`${id}:${challenge}`).digest('hex');
+  return proof !== '' && proof === expected;
 }
 
 /**
@@ -205,12 +229,12 @@ export function curl({ method = 'GET', url, headers = {}, body, maxTimeMs = 3000
   });
 }
 
-/** `curl -s --max-time 3 -X POST "$URL" -H <auth> -H "Content-Type: application/json" -d "$BODY"` */
+/** `curl -s --max-time 3 -X POST "$URL" -H <auth> -H "Content-Type: application/json" -d "$BODY"`; a null token sends no <auth>. */
 export function postJson(url, token, body, maxTimeMs = 3000) {
   return curl({
     method: 'POST',
     url,
-    headers: { Authorization: bearer(token), 'Content-Type': 'application/json' },
+    headers: { ...authHeader(token), 'Content-Type': 'application/json' },
     body,
     maxTimeMs,
   });

@@ -64,6 +64,7 @@ const S2 = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 let api: typeof import('../../electron/services/api-server');
 let agents: typeof import('../../electron/core/agent-manager')['agents'];
 let mintAgentToken: typeof import('../../electron/core/agent-tokens')['mintAgentToken'];
+let tarsInstanceId: typeof import('../../electron/core/agent-tokens')['tarsInstanceId'];
 const home = path.join(tmp, 'home');
 
 function freePort(): Promise<number> {
@@ -101,7 +102,7 @@ beforeAll(async () => {
 
   api = await import('../../electron/services/api-server');
   ({ agents } = await import('../../electron/core/agent-manager'));
-  ({ mintAgentToken } = await import('../../electron/core/agent-tokens'));
+  ({ mintAgentToken, tarsInstanceId } = await import('../../electron/core/agent-tokens'));
   api.startApiServer(
     null, { notificationsEnabled: false } as never, () => null, () => null, null, null,
     () => {}, () => {}, async () => 'pty', () => ({ notificationsEnabled: false } as never),
@@ -169,6 +170,9 @@ function agentEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
     HOME: home,
     USERPROFILE: home,
     CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`,
+    // Beside the token, as spawnAgentPty hands it: a hook sends the token only
+    // to the Tars that proves it knows this id (upstream #212).
+    TARS_INSTANCE_ID: tarsInstanceId(),
     ...extra,
   };
 }

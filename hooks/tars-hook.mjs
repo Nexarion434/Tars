@@ -18,8 +18,8 @@
 // dates in the log lines are Node's.
 
 import {
-  apiUrl, appendLog, codePoints, curl, echoHead, finish, headBytes, isFile, jqRaw, jqToString,
-  lastAssistantMessage, logPaths, parseInput, postJson, postWithRetry, stamp, subst, tokenWithFileFallback,
+  apiUrl, appendLog, authHeader, codePoints, curl, echoHead, finish, headBytes, isFile, jqRaw, jqToString,
+  lastAssistantMessage, logPaths, parseInput, postJson, postWithRetry, stamp, subst, tarsProvesInstance, tokenWithFileFallback,
 } from './tars-hook-lib.mjs';
 
 const CONTINUE = '{"continue":true,"suppressOutput":true}\n';
@@ -38,7 +38,9 @@ function readStdin() {
 const claudeAgent = sessionId => env.CLAUDE_AGENT_ID || sessionId;
 /** `${DOROTHY_AGENT_ID:-$SESSION_ID}`, the Gemini scripts' name for it. */
 const geminiAgent = sessionId => env.DOROTHY_AGENT_ID || sessionId;
-const token = () => env.CLAUDE_MGR_API_TOKEN || '';
+/** tars_auth: the CLI's token once the port has proved to be its Tars (tarsProvesInstance), else null: no header. */
+let tokenOk = false;
+const token = () => (tokenOk ? env.CLAUDE_MGR_API_TOKEN : null);
 
 // session-start.sh
 async function sessionStart(input) {
@@ -120,7 +122,7 @@ async function postToolUse(input) {
   await curl({
     method: 'POST',
     url: `${base}/api/hooks/status`,
-    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+    headers: { ...authHeader(token()), 'Content-Type': 'application/json' },
     body: JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'running' }),
   });
 
@@ -431,6 +433,8 @@ if (!handler) {
 }
 
 try {
+  // Asked once, as tars-hook.sh does when a hook sources it.
+  tokenOk = await tarsProvesInstance(env);
   const input = parseInput(await readStdin());
   finish(await handler(input));
 } catch (error) {
