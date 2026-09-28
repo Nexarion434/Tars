@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  writeSecretFileSync, writeSecretFileInPlaceSync, writeAtomicSync, closeSecretsToOtherAccounts,
+  writeSecretFileSync, writeAtomicSync, closeSecretsToOtherAccounts,
 } from '../../../electron/utils/secret-file';
 import { hasPosixModes } from '../../setup/platform-limits';
 
@@ -28,9 +28,10 @@ vi.mock('child_process', async (importOriginal) => {
  *  2. The list is set after the rename: for a moment the live file, with the
  *     new secret in it, is open to whoever the folder lets in. Shown by a
  *     rename that cannot happen: the temp file it leaves must already be
- *     closed.
+ *     closed. (Where the temp is born, and that it is closed from its first
+ *     byte, is secret-file-staging.test.ts.)
  *  3. A file that was too open before is still too open after the next save.
- *  4. api-token, written in place, stays open.
+ *  4. api-token stays open.
  *  5. At start, the files that exist are not tightened, the private directory
  *     is not, or a file that does not exist makes it throw or log.
  *  6. An icacls that fails throws, loses the write, or says nothing.
@@ -113,7 +114,10 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     // A directory where the file should go: the rename can never land.
     fs.mkdirSync(target);
     expect(() => writeSecretFileSync(target, '{"slackBotToken":"x"}')).toThrow();
-    expect(dacl(`${target}.tmp`)).toEqual(ownerOnly());
+    const staging = path.join(dir, '.tars-private', '.staging');
+    const left = fs.readdirSync(staging).filter(n => n.endsWith('.tmp'));
+    expect(left).toHaveLength(1);
+    expect(dacl(path.join(staging, left[0]))).toEqual(ownerOnly());
   });
 
   it('3: a file that was too open is closed by the next save', async () => {
@@ -125,9 +129,10 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     expect(dacl(file)).toEqual(ownerOnly());
   });
 
-  it('4: api-token, written in place, is closed', () => {
+  it('4: api-token is closed', async () => {
     const file = path.join(openDir(), 'api-token');
-    writeSecretFileInPlaceSync(file, 'f'.repeat(64));
+    await closeSecretsToOtherAccounts([file], path.join(path.dirname(file), '.tars-private'));
+    writeSecretFileSync(file, 'f'.repeat(64));
     expect(dacl(file)).toEqual(ownerOnly());
     expect(fs.readFileSync(file, 'utf8')).toBe('f'.repeat(64));
   });
@@ -160,12 +165,10 @@ describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () =
     process.env.SystemRoot = path.join(os.tmpdir(), 'no-windows-here');
     try {
       writeSecretFileSync(file, '{"a":1}');
-      writeSecretFileInPlaceSync(`${file}.token`, 'tok');
     } finally {
       process.env.SystemRoot = saved;
     }
     expect(fs.readFileSync(file, 'utf8')).toBe('{"a":1}');
-    expect(fs.readFileSync(`${file}.token`, 'utf8')).toBe('tok');
     expect(warn.mock.calls.map(c => String(c[0])).join('\n')).toContain(file);
   });
 
@@ -212,7 +215,7 @@ describe('darwin and linux (case 7)', () => {
     Object.defineProperty(process, 'platform', { value: platform, configurable: true });
 
     writeSecretFileSync(path.join(dir, 'app-settings.json'), '{"a":1}');
-    writeSecretFileInPlaceSync(path.join(dir, 'api-token'), 'tok');
+    writeSecretFileSync(path.join(dir, 'api-token'), 'tok');
     await closeSecretsToOtherAccounts([path.join(dir, 'app-settings.json')], path.join(dir, '.tars-private'));
     // Named by the startup pass now: still nothing started.
     writeSecretFileSync(path.join(dir, 'app-settings.json'), '{"a":1}');
