@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
-import * as path from 'path';
+import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
@@ -39,10 +39,8 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-/** Where Hermes Desktop keeps its own connection config on macOS. */
-const HERMES_DESKTOP_CONFIG = path.join(
-  os.homedir(), 'Library', 'Application Support', 'Hermes', 'connection.json',
-);
+/** Where Hermes Desktop keeps its own connection config (per platform: see electron/platform). */
+const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath({ home: os.homedir() });
 
 const readConnection = readHermesConnection;
 const writeConnection = writeHermesConnection;
@@ -122,7 +120,7 @@ interface TailscaleInfo {
 }
 
 async function detectTailscale(): Promise<TailscaleInfo> {
-  const candidates = ['tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'];
+  const candidates = tailscaleCandidates();
   for (const bin of candidates) {
     try {
       const { stdout } = await execFileAsync(bin, ['status', '--json'], { timeout: 4000 });
