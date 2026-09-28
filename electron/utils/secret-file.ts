@@ -79,6 +79,10 @@ function stagedTemp(filePath: string, stagingDir: string, suffix: string): strin
  */
 function stageSync(filePath: string, contents: string | Buffer, stagingDir: string, suffix: string): string {
   const tmp = stagedTemp(filePath, stagingDir, suffix);
+  return stageAtSync(tmp, contents);
+}
+
+function stageAtSync(tmp: string, contents: string | Buffer): string {
   fs.rmSync(tmp, { force: true });
   const fd = fs.openSync(tmp, 'wx', 0o600);
   try {
@@ -136,13 +140,20 @@ function stageSync(filePath: string, contents: string | Buffer, stagingDir: stri
 export function writeSecretFileSync(filePath: string, contents: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const plan = secretWrite(filePath);
-  if (plan.how === 'staged') {
-    const tmp = stageSync(filePath, contents, plan.stagingDir, '.tmp');
-    // Born closed already; this makes it protected. A failure names the target.
-    restrictToOwnerSync(tmp, {}, { warn: (m) => console.warn(`${m} (the save of ${filePath})`) });
-    renameReplacingSync(tmp, filePath);
-  } else {
-    writeAtomicSync(filePath, contents, 0o600, plan.how === 'close-first' ? (tmp) => { restrictToOwnerSync(tmp); } : undefined);
+  const tmp = plan.how === 'staged' ? stagedTemp(filePath, plan.stagingDir, '.tmp') : `${filePath}.tmp`;
+  try {
+    if (plan.how === 'staged') {
+      stageAtSync(tmp, contents);
+      // Born closed already; this makes it protected. A failure names the target.
+      restrictToOwnerSync(tmp, {}, { warn: (m) => console.warn(`${m} (the save of ${filePath})`) });
+      renameReplacingSync(tmp, filePath);
+    } else {
+      writeAtomicSync(filePath, contents, 0o600, plan.how === 'close-first' ? (t) => { restrictToOwnerSync(t); } : undefined);
+    }
+  } catch (err) {
+    // A temp that holds the secret does not outlive a write that failed.
+    fs.rmSync(tmp, { force: true });
+    throw err;
   }
 
   // renameSync preserves the temp file's mode, but be explicit: if the target
@@ -151,6 +162,50 @@ export function writeSecretFileSync(filePath: string, contents: string): void {
     fs.chmodSync(filePath, 0o600);
   } catch {
     // A filesystem without POSIX modes (a network share) - nothing to do.
+  }
+}
+
+/**
+ * A secret that must be written whoever is reading it: api-token, minted at
+ * startup. Written as writeSecretFileSync writes, a new file object; but when
+ * the rename is refused because another program holds the file open (EPERM,
+ * EBUSY or EACCES after the retry, measured with a Node reader), it is written
+ * in place instead, 0600 and closed to other accounts, and that is logged: the
+ * app must start. In place, a handle already open on the file reads the new
+ * contents; that is the price of starting. Any other error is thrown as before.
+ */
+export function writeSecretFileEvenIfHeldSync(filePath: string, contents: string): void {
+  try {
+    writeSecretFileSync(filePath, contents);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (!code || !['EPERM', 'EBUSY', 'EACCES'].includes(code)) throw err;
+    console.warn(`[secret-acl] ${filePath} is held open by another program (${code}): written in place, so a handle already open on it reads the new contents`);
+    fs.writeFileSync(filePath, contents, { mode: 0o600 });
+    restrictToOwnerSync(filePath);
+  }
+}
+
+/**
+ * Windows only: whether api-token is to be minted anew although a usable one
+ * exists, because this build has never minted it. A token read before the
+ * file was closed (by an older build's reader, a sandbox account) stays valid
+ * as long as the token does, and Tars reuses any token of 32 characters or
+ * more; so it is replaced once, the first time, and `marker` records that it
+ * was. darwin/linux: never.
+ */
+export function oneTimeRotationDue(marker: string): boolean {
+  return closesByAccessList() && !fs.existsSync(marker);
+}
+
+/** Windows only: record that api-token has been minted by this build. Never throws. */
+export function oneTimeRotationDone(marker: string): void {
+  if (!closesByAccessList()) return;
+  try {
+    fs.mkdirSync(path.dirname(marker), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(marker, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    console.warn(`[secret-acl] ${marker} could not be written, so api-token will be minted again next start: ${describeSecretFileError(err)}`);
   }
 }
 
