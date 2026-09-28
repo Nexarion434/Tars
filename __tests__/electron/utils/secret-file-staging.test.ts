@@ -3,6 +3,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { readDacls, currentUserSid, type Dacl } from '../platform/read-dacl';
 
 // Every call still reaches the real function: the spies only let a case look at
 // a temp file the moment it is opened, before a byte is written to it.
@@ -71,24 +72,11 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 
 const onWindows = process.platform === 'win32';
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-const POWERSHELL = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const ICACLS = path.join(systemRoot, 'System32', 'icacls.exe');
 const realExec = (childProcess.execFileSync as unknown as { getMockImplementation(): typeof childProcess.execFileSync }).getMockImplementation()!;
 const realOpen = vi.mocked(fs.openSync).getMockImplementation()!;
 
-type Dacl = { protectedFromParent: boolean; aces: string[] };
-function dacls(...paths: string[]): Dacl[] {
-  const out = String(realExec(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-    '$env:TARS_ACL_PROBE -split [char]10 | ForEach-Object { (Get-Acl -LiteralPath $_).Sddl }'], {
-    env: { ...process.env, TARS_ACL_PROBE: paths.join('\n') }, encoding: 'utf8', windowsHide: true,
-  })).trim().split(/\r?\n/);
-  return out.map((sddl) => {
-    const d = /D:([A-Z]*)((?:\([^)]*\))*)/.exec(sddl);
-    if (!d) throw new Error(`no DACL in ${sddl}`);
-    return { protectedFromParent: d[1].includes('P'), aces: (d[2].match(/\([^)]*\)/g) ?? []).sort() };
-  });
-}
-
+const dacls = readDacls;
 const made: string[] = [];
 /** A folder that, like ~\.dorothy here, hands a group of other accounts read. */
 function openHome(): string {
@@ -113,8 +101,7 @@ const inheritedOwnerOnly = () => [`(A;ID;FA;;;${userSid})`, '(A;ID;FA;;;SY)'].so
 
 describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () => {
   beforeAll(() => {
-    userSid = String(realExec(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8', windowsHide: true })).trim();
+    userSid = currentUserSid();
   }, 180_000);
 
   it('1, 2: the temp is created in the closed staging directory, already closed, before a byte is written', async () => {

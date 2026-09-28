@@ -7,6 +7,7 @@ import {
   writeSecretFileSync, writeAtomicSync, closeSecretsToOtherAccounts,
 } from '../../../electron/utils/secret-file';
 import { hasPosixModes } from '../../setup/platform-limits';
+import { readDacls, currentUserSid, type Dacl } from '../platform/read-dacl';
 
 // Every call still runs the real program: the spy only lets case 7 say that
 // darwin and linux never start icacls or whoami.
@@ -54,25 +55,11 @@ vi.mock('child_process', async (importOriginal) => {
 
 const onWindows = process.platform === 'win32';
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-const POWERSHELL = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const ICACLS = path.join(systemRoot, 'System32', 'icacls.exe');
 const realExec = childProcess.execFileSync;
 
-type Dacl = { protectedFromParent: boolean; aces: string[] };
-
-/** The access lists as SDDL, read by one PowerShell: SIDs, whatever the language of the machine. */
-function dacls(...paths: string[]): Dacl[] {
-  const out = String(realExec(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-    '$env:TARS_ACL_PROBE -split [char]10 | ForEach-Object { (Get-Acl -LiteralPath $_).Sddl }'], {
-    env: { ...process.env, TARS_ACL_PROBE: paths.join('\n') }, encoding: 'utf8', windowsHide: true,
-  })).trim().split(/\r?\n/);
-  return out.map((sddl) => {
-    const d = /D:([A-Z]*)((?:\([^)]*\))*)/.exec(sddl);
-    if (!d) throw new Error(`no DACL in ${sddl}`);
-    return { protectedFromParent: d[1].includes('P'), aces: (d[2].match(/\([^)]*\)/g) ?? []).sort() };
-  });
-}
-const dacl = (p: string): Dacl => dacls(p)[0];
+const dacls = readDacls;
+const dacl = (p: string): Dacl => readDacls(p)[0];
 
 const made: string[] = [];
 function openDir(): string {
@@ -96,8 +83,7 @@ const ownerOnly = () => ({ protectedFromParent: true, aces: [`(A;;FA;;;${userSid
 // running other suites (100% CPU, measured).
 describe.runIf(onWindows)('the secret files on NTFS', { timeout: 180_000 }, () => {
   beforeAll(() => {
-    userSid = String(realExec(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8', windowsHide: true })).trim();
+    userSid = currentUserSid();
   }, 180_000);
 
   it('1: writeSecretFileSync closes the file to everyone but the user and SYSTEM', async () => {

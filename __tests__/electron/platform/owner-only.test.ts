@@ -8,6 +8,7 @@ import {
   type OwnerOnlyDeps,
 } from '../../../electron/platform/owner-only';
 import { cannotSymlink } from '../../setup/symlink-privilege';
+import { readDacls, currentUserSid, type Dacl } from './read-dacl';
 
 /**
  * Closing a secret to every account but its owner, on Windows (audit B S-01,
@@ -55,26 +56,12 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
 
 const onWindows = process.platform === 'win32';
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-const POWERSHELL = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const ICACLS = path.join(systemRoot, 'System32', 'icacls.exe');
 const USERS_SID = 'S-1-5-32-545';
 const EVERYONE_SID = 'S-1-1-0';
 
-type Dacl = { protectedFromParent: boolean; aces: string[] };
-
-/** The access lists as SDDL, read by one PowerShell: SIDs, whatever the language of the machine. */
-function dacls(...paths: string[]): Dacl[] {
-  const out = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-    '$env:TARS_ACL_PROBE -split [char]10 | ForEach-Object { (Get-Acl -LiteralPath $_).Sddl }'], {
-    env: { ...process.env, TARS_ACL_PROBE: paths.join('\n') }, encoding: 'utf8', windowsHide: true,
-  }).trim().split(/\r?\n/);
-  return out.map((sddl) => {
-    const d = /D:([A-Z]*)((?:\([^)]*\))*)/.exec(sddl);
-    if (!d) throw new Error(`no DACL in ${sddl}`);
-    return { protectedFromParent: d[1].includes('P'), aces: (d[2].match(/\([^)]*\)/g) ?? []).sort() };
-  });
-}
-const dacl = (p: string): Dacl => dacls(p)[0];
+const dacls = readDacls;
+const dacl = (p: string): Dacl => readDacls(p)[0];
 
 function icacls(...args: string[]): void {
   execFileSync(ICACLS, args, { stdio: 'ignore', windowsHide: true });
@@ -100,8 +87,7 @@ const ownerOnlyFile = () => [`(A;;FA;;;${userSid})`, '(A;;FA;;;SY)'].sort();
 // running other suites (100% CPU, measured).
 describe.runIf(onWindows)('restrictToOwnerSync on NTFS, with the real icacls', { timeout: 180_000 }, () => {
   beforeAll(() => {
-    userSid = execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command',
-      '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8', windowsHide: true }).trim();
+    userSid = currentUserSid();
     expect(userSid).toMatch(/^S-1-5-21-/);
   }, 180_000);
 
