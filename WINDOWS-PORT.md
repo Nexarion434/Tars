@@ -1,4 +1,32 @@
-KO (47 OK / 11 KO / 44 non lancés ; faux CLI .cjs de la fixture : `win/test-portability`) | Vérification | Statut | Chiffres / cause |
+# Tars pour Windows : état du portage
+
+Source de vérité du portage Windows natif (pas WSL) sur la branche `windows` du fork
+`Nexarion434/Tars`. Base upstream : `JeanBrasse/Tars` `ca2bef37` (1.9.0).
+Mission et règles : `CLAUDE.local.md` (local), `.claude/win-port/CONVENTIONS.md`, `.claude/agents/win-*.md`.
+
+Détail des constats (fichier:ligne, preuves, sources) : `.claude/win-port/audit-a.md` (lancement des
+agents, hooks, PTY, ACP) et `.claude/win-port/audit-b.md` (tout le reste). Dans ce document, `A12`
+renvoie au constat 12 de l'audit A, `B/N-03` au constat N-03 de l'audit B.
+
+Statuts : **KO** cassé (vérifié), **?** non testé, **OK** vérifié avec la preuve indiquée.
+
+**État au 2026-09-28.** Le portage tourne : `windows` à 89e7bf38, `CI - Windows` verte sur windows-latest
+(unit + E2E, 119 surfaces, run 36320171886, tentative 2) et `CI - Tests` verte sur ubuntu au même commit.
+Deux releases publiées sur `Nexarion434/Tars` (`v1.9.0-win.1`, `v1.9.0-win.2`), et la checklist manuelle
+du §4 passée en entier par Nicolas le 2026-09-28 avec un vrai installeur et un vrai agent Claude
+(« tout à l'air de marcher »). Matrice (§2) : 33 lignes OK sur 38 ; restent partielles 9 (envoi
+programmatique), 12 (vrai Gemini), 15 (vraie installation de skill), 24 (Hermes Desktop, Tailscale,
+Tasmania) et 31 (textes mac, D10). Ce qui reste ouvert : §5bis.
+
+---
+
+## 1. Phase 0 : baseline (2026-09-25, Windows 11 26200 x64, Node 22.23.3)
+
+Lancé par `win-build` avec `HOME`, `USERPROFILE`, `APPDATA` et `LOCALAPPDATA` redirigés vers un dossier
+jetable. Le vrai profil a été vérifié intact après coup (8 fichiers de `~/.dorothy` identiques à
+l'empreinte, hash de `~/.claude/settings.json` inchangé).
+
+| Vérification | Statut | Chiffres / cause |
 |---|---|---|
 | `npm ci` | **KO** | exit 1 : npm force `node-gyp rebuild` sur better-sqlite3 (présence de `binding.gyp`) et node-gyp exige Visual Studio. `npm ci --ignore-scripts` + `npm rebuild node-pty unrs-resolver electron-winstaller` : 875 paquets, exit 0 |
 | Binaire Electron | OK | `npx install-electron` : 44.4.4 |
@@ -59,39 +87,39 @@ Logs complets : dossier scratchpad de la session du 2026-09-25 (`phase0/`), non 
 | 3 | `npm test` | **OK** (0 échec sur 4169 hors 1 flake de charge `pty-kill` 8 ; 177 sautés sous win32 avec raison ; était 573 / 2605) | B/T-01..T-03 | win-qa | vert, isolé du vrai profil |
 | 4 | `lint`, `lint:design`, `e2e:guard` | **OK** (lint:design en Node) | B/P-05 | win-build | exit 0 depuis PowerShell |
 | 5 | Démarrage dev (`electron:dev`) | **OK** depuis PowerShell (fenêtre + `/api/health` 200) ; fonctions dégradées | B/B-01 | win-build | la fenêtre s'ouvre depuis PowerShell |
-| 6 | Créer un agent (UI) | KO | B/A-01, A1 | win-process + win-platform | E2E : PTY créé, carte au repos |
-| 7 | Lancer un agent (UI, API, bots, restauration) | KO | A1, A3, A4, B/A-02, B/A-04 | win-providers + win-platform | E2E : le faux CLI reçoit l'argv exact |
-| 8 | Trouver les CLIs (npm `.cmd`, `claude.exe` natif, PATHEXT) | KO | A5, A16, A17, B/C-01..C-03 | win-platform | unit : résolution `.exe` / shim `.cmd` vers `node <script>` |
-| 9 | Envoi de messages dans un CLI lancé (bracketed paste, ConPTY) | ? | A23, A6 | win-process | spec : 5 Ko multi-ligne arrive en un tour, 10/10 |
-| 10 | « Le CLI tourne-t-il ? » (bots, dispatch, agent:get) | KO | A6 | win-process | unit + E2E démarrage via le chemin Telegram |
-| 11 | Hooks Claude (statut, session, mémoire) | KO | A7, A8, A9, A14 | win-hooks | E2E : SessionStart enregistré, statuts reçus |
-| 12 | Hooks Gemini | KO | A10, A11, A13 ; A12 (bug upstream) | win-hooks | E2E : AfterAgent poste le statut avec le jeton |
-| 13 | Statusline et chiffres d'Usage qui en dépendent | KO | A15 | win-hooks | E2E : `token-stats.json` écrit |
-| 14 | Terminal rapide, Projects > Terminal | KO | A2, B/A-05 | win-platform + win-process | E2E : invite de shell affichée |
-| 15 | Installation de skills / plugins | KO | A25, B/A-06, B/A-07 | win-process | E2E ou manuel en bac à sable |
-| 16 | Délégation ACP (retour de résultat) | KO | A20, A21 | win-process | E2E : délégation à un faux agent ACP, stop reason reçu, aucun process orphelin |
+| 6 | Créer un agent (UI) | **OK** (E2E `agent-launch.spec` : agent créé, terminal PowerShell au repos ; lot `win/agent-launch`, f9daecf2 ; checklist §4 du 2026-09-28 ; sans tâche, l'agent attend dans son shell : comportement voulu, voir « Comportements connus ») | B/A-01, A1 | win-process + win-platform | E2E : PTY créé, carte au repos |
+| 7 | Lancer un agent (UI, API, bots, restauration) | **OK** (E2E `agent-launch.spec` : fenêtre, API et bot, argv exact, jamais par un shell, prompt multi-ligne piégé A4 ; `launch-call-sites.test` : chaque site, dont `initAgentPty` ; vrai agent Claude, bots et mise à jour win.1 vers win.2 dans la checklist du 2026-09-28) | A1, A3, A4, B/A-02, B/A-04 | win-providers + win-platform | E2E : le faux CLI reçoit l'argv exact |
+| 8 | Trouver les CLIs (npm `.cmd`, `claude.exe` natif, PATHEXT) | **OK** (`cli-binary.test`, `cli-exec.test`, `path-env.test`, `cli-paths-platforms.test` ; E2E `agent-launch.spec` par un shim npm `.cmd`, `acp-delegation.spec` par `npx.cmd` ; `claude.exe` réel dans la checklist du 2026-09-28 ; lots `win/platform-launch` 8bddb6c8, `win/cli-invocation` 0487ce10) | A5, A16, A17, B/C-01..C-03 | win-platform | unit : résolution `.exe` / shim `.cmd` vers `node <script>` |
+| 9 | Envoi de messages dans un CLI lancé (bracketed paste, ConPTY) | partiel : collage de l'utilisateur **OK** sous ConPTY (E2E `desktop-shell.win32.spec` : deux lignes en un seul collage entre crochets ; `terminal-replay-modes.spec`) ; la séquence de `writeProgrammaticInput` est tenue par `pty-manager.test`, vert sous win32. Manque : une spec qui envoie 5 Ko multi-ligne par `/dispatch` ou `/message` à un CLI vivant sous ConPTY, 10/10 | A23, A6 | win-process | spec : 5 Ko multi-ligne arrive en un tour, 10/10 |
+| 10 | « Le CLI tourne-t-il ? » (bots, dispatch, agent:get) | **OK** (E2E `agent-launch.spec` : le démarrage par le bot lance le CLI au lieu de taper la tâche dans le shell ; `launch-call-sites.test` point 10 ; bots dans la checklist du 2026-09-28) ; un CLI lancé à la main reste invisible : limite connue ci-dessous | A6 | win-process | unit + E2E démarrage via le chemin Telegram |
+| 11 | Hooks Claude (statut, session, mémoire) | **OK** (D1, lot `win/hooks-node`, 33ca3429 : `node-hook-runner.test`, `node-hook-wiring.test`, `node-hook-api.test` contre le vrai serveur API par Git Bash et PowerShell ; `__tests__/hooks/app-hooks-e2e.mjs` : SessionStart enregistré, statuts reçus ; vrai agent Claude dans la checklist du 2026-09-28) | A7, A8, A9, A14 | win-hooks | E2E : SessionStart enregistré, statuts reçus |
+| 12 | Hooks Gemini | partiel : **OK** en test (`node-hook-api.test` « SessionStart registers, BeforeAgent runs, AfterAgent waits » par PowerShell contre le vrai serveur API avec le jeton ; `node-hook-wiring.test` points 4 à 6 ; lot `win/hooks-node`, 33ca3429). Manque : un vrai CLI Gemini n'a jamais tourné sous Windows | A10, A11, A13 ; A12 (bug upstream) | win-hooks | E2E : AfterAgent poste le statut avec le jeton |
+| 13 | Statusline et chiffres d'Usage qui en dépendent | **OK** (`node-statusline.test` ; `app-hooks-e2e.mjs` : `token-stats.json` écrit par Git Bash et PowerShell ; course du verrou corrigée, lot `win/statusline-race` 4fcc52ab ; page Usage dans la checklist du 2026-09-28) | A15 | win-hooks | E2E : `token-stats.json` écrit |
+| 14 | Terminal rapide, Projects > Terminal | **OK** (E2E `agent-launch.spec` : terminal de projet ouvert, invite PowerShell affichée ; `launch-call-sites.test` point 3 ; sélecteur de shell D9 dans la checklist du 2026-09-28) | A2, B/A-05 | win-platform + win-process | E2E : invite de shell affichée |
+| 15 | Installation de skills / plugins | partiel : argv **OK** en test (`launch-call-sites.test` point 4 : `npx` résolu au lieu du nom nu, aucun `-c` ni `&&` donné à un shell, 2e étape d'un plugin sautée si la 1re échoue ; lot `win/agent-launch`, f9daecf2). Manque : une vraie installation de skill et de plugin, E2E ou à la main en bac à sable | A25, B/A-06, B/A-07 | win-process | E2E ou manuel en bac à sable |
+| 16 | Délégation ACP (retour de résultat) | **OK** (E2E `acp-delegation.spec` : stop reason reçu, aucun process orphelin, 15/15 après `win/acp-econnreset` 22a6947d ; `acp-windows-launch.test`, `kill-tree.test` ; lot `win/acp-delegation`, bd527aee) | A20, A21 | win-process | E2E : délégation à un faux agent ACP, stop reason reçu, aucun process orphelin |
 | 17 | Fermeture d'un terminal sans dialogue d'erreur | **OK** (`killPty` aux 18 sites, E2E `pty-kill.spec` : 0 AttachConsole) | A22 | win-process | spec : 20 kills, aucune erreur non gérée |
-| 18 | 7 serveurs MCP (build + enregistrement) | build OK, enregistrement ? | A18, A19, B/M-01, B/M-02 | win-platform + win-providers | 7 builds exit 0 ; `config.toml` Codex valide |
-| 19 | Mise à jour auto des CLIs | KO (silencieux) | A28 | win-process | décision : porter ou désactiver sous Windows |
+| 18 | 7 serveurs MCP (build + enregistrement) | **OK** (build : 7/7 en phase 0 et à chaque CI Windows ; enregistrement : `mcp-registration-cli.test`, `mcp-registered.test`, `codex-toml.test`, `tasmania-setup.test`, 7 mutants tués, 12d4fad8 du lot `win/cli-invocation`, 0487ce10) | A18, A19, B/M-01, B/M-02 | win-platform + win-providers | 7 builds exit 0 ; `config.toml` Codex valide |
+| 19 | Mise à jour auto des CLIs | **OK** (porté, pas désactivé : `cli-updater-windows.test`, `cli-updater-scenarios-windows.test` sur copies de `claude.exe` et shims `.cmd` npm, `cli-updater-scratch-held.test` ; lots `win/acp-delegation` bd527aee et `win/file-retry` ec79a885) ; une vraie mise à jour d'un CLI installé n'a pas été observée | A28 | win-process | décision : porter ou désactiver sous Windows |
 | 20 | Worktrees | **OK** (garde, `isInsideWorktreesDir`) | B/W-01..W-03 | win-platform | unit : noms de périphériques refusés, chemins `\` |
-| 21 | Review git | ? (argv, a priori OK) | B/R-01, B/U-02 | win-shell-ui | E2E surface review |
-| 22 | Usage | ? (a priori OK) | B/G-01, A15 | win-qa | E2E surface usage |
-| 23 | Memory, Projects, reprise de session (`~/.claude/projects`) | KO | B/H-01..H-05 | win-platform | unit encodage `C--Users-...` ; E2E Projects |
-| 24 | Hermes, Tailscale, Tasmania | ? | B/I-01..I-03 | win-platform | unit emplacements par plateforme |
-| 25 | Bots Telegram / Slack / Discord | lancement **OK** ; noms de projets **OK** (bots) ; checklist manuelle : ? | B/A-04, B/J-01 | win-providers | checklist manuelle §4 |
-| 26 | Tray (icône, panneau, menu) | **OK** (`.ico` grille orange, panneau au-dessus de la barre des tâches, clic droit Show/Quit, K-02 ; E2E `desktop-shell.win32.spec`) ; netteté 125-150 % : checklist manuelle | B/K-01..K-04 | win-shell-ui (visuel) | capture validée par Nicolas |
-| 27 | Ouvrir dans un terminal | KO | B/L-01 | win-platform | unit win32 : `wt.exe -d`, puis PowerShell, puis cmd |
+| 21 | Review git | **OK** (surface E2E review sur référence `win32/`, CI Windows verte ; noms de projets U-02 : `project-names.spec` ; page Review dans la checklist du 2026-09-28) | B/R-01, B/U-02 | win-shell-ui | E2E surface review |
+| 22 | Usage | **OK** (surface E2E usage sur référence `win32/` et `usage-unreadable.spec`, CI Windows verte ; statusline : ligne 13 ; page Usage dans la checklist du 2026-09-28) | B/G-01, A15 | win-qa | E2E surface usage |
+| 23 | Memory, Projects, reprise de session (`~/.claude/projects`) | **OK** (encodage `C--Users-...` : `claude-project-dir.test`, `claude-projects-windows.test`, `memory-known-project-path.test` ; E2E `claude-projects-paths.spec` (Projects et Memory) et `panel-history.spec` (H-02, H-05) ; lot `win/paths-memory-security`, 9e715b0b ; page Brain dans la checklist du 2026-09-28) | B/H-01..H-05 | win-platform | unit encodage `C--Users-...` ; E2E Projects |
+| 24 | Hermes, Tailscale, Tasmania | partiel : commande MCP de Tasmania **OK** (`tasmania-setup.test`) ; page Brain ouverte dans la checklist du 2026-09-28. Non portés : I-01 (config Hermes Desktop cherchée seulement sous `~/Library`, `hermes-handlers.ts:44`), I-02 (`tailscale.exe` hors PATH jamais cherché, `hermes-handlers.ts:125`), I-03 (jeton Tasmania sous `~/Library`, `tasmania-client.ts:6`) | B/I-01..I-03 | win-platform | unit emplacements par plateforme |
+| 25 | Bots Telegram / Slack / Discord | **OK** (lancement : E2E `agent-launch.spec` ; noms de projets : `project-names-in-messages.test` ; Telegram, Slack et Discord dans la checklist du 2026-09-28) | B/A-04, B/J-01 | win-providers | checklist manuelle §4 |
+| 26 | Tray (icône, panneau, menu) | **OK** (`.ico` grille orange, panneau au-dessus de la barre des tâches, clic droit Show/Quit, K-02 ; E2E `desktop-shell.win32.spec`) ; netteté et panneau : checklist du 2026-09-28 | B/K-01..K-04 | win-shell-ui (visuel) | capture validée par Nicolas |
+| 27 | Ouvrir dans un terminal | **OK** (`open-terminal.test`, branche win32 : `wt.exe -d`, puis le shell résolu dans conhost ; lot `win/paths-memory-security`, 9e715b0b ; « ouvrir dans un terminal » dans la checklist du 2026-09-28) | B/L-01 | win-platform | unit win32 : `wt.exe -d`, puis PowerShell, puis cmd |
 | 28 | Fenêtre, barre de titre, déplacement | **OK** (D5 : titleBarOverlay 32 px, suit le thème, zones de déplacement ; D15 panneaux sous la bande) | B/N-01, B/N-02 | win-shell-ui (visuel) | capture validée par Nicolas |
-| 29 | Cycle de vie (fermer, instance unique, notifications) | **OK** (D6 : fermer masque dans le tray, instance unique, fin de session Windows sauvegarde et arrête, AUMID) ; toast packagé : checklist manuelle | B/N-03..N-05 | win-shell-ui | manuel : fermer la fenêtre ne tue pas les agents |
+| 29 | Cycle de vie (fermer, instance unique, notifications) | **OK** (D6 : fermer masque dans le tray, instance unique, fin de session Windows sauvegarde et arrête, AUMID) ; fermer vers le tray, 2e lancement et toast packagé : checklist du 2026-09-28 | B/N-03..N-05 | win-shell-ui | manuel : fermer la fenêtre ne tue pas les agents |
 | 30 | Raccourcis clavier (Ctrl+W/R/chiffres) | **OK** (D7 : pas de menu, Ctrl+chiffre pages, Alt+chiffre panneaux, Ctrl+C/V terminal, collage multi-ligne entre crochets) | B/N-07..N-09 | win-shell-ui | E2E touche Ctrl+chiffre : une seule action |
 | 31 | Textes et chemins affichés (noms de projets, `~`, copies Mac) | **OK** noms de projets, arborescence Code, `~` (`src/lib/display-path.ts`) ; textes mac : D10 en attente | B/U-01..U-08 | win-shell-ui | E2E surfaces avec chemins Windows |
-| 32 | Secrets (modes POSIX sans effet, écritures atomiques) | KO | B/S-01, B/S-02 | win-platform | stress test rename ; SECURITY.md documenté |
-| 33 | Packaging NSIS + `.ico` | **OK** (NSIS par utilisateur + zip, `.ico`, `release:win` ; install/lancement/désinstall prouvés en bac à sable ; 127 Mo) ; install réelle : checklist manuelle | B/P-01..P-03 | win-build | install / désinstall / mise à jour sur cette machine |
-| 34 | Auto-update depuis le fork | **OK** en local (1.9.0-win.1 vers 1.9.0-win.2 via flux local, agents conservés) ; flux GitHub réel : à la première release | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
+| 32 | Secrets (modes POSIX sans effet, écritures atomiques) | **OK** (S-01 documenté : `SECURITY.md` §7, les ACL du profil tiennent lieu de 0600, aucune ACL resserrée par Tars ; S-02 : `rename-replacing.test` (198 renames sur 200 échouaient sous 20 lecteurs), `agents-save-while-read.test`, branchés dans `secret-file.ts` et `shared-file.ts`) | B/S-01, B/S-02 | win-platform | stress test rename ; SECURITY.md documenté |
+| 33 | Packaging NSIS + `.ico` | **OK** (NSIS par utilisateur + zip, `.ico`, `release:win` ; install/lancement/désinstall prouvés en bac à sable ; 127 Mo) ; install réelle, menu Démarrer et désinstallation : checklist du 2026-09-28 | B/P-01..P-03 | win-build | install / désinstall / mise à jour sur cette machine |
+| 34 | Auto-update depuis le fork | **OK** en local (1.9.0-win.1 vers 1.9.0-win.2 via flux local, agents conservés) ; flux GitHub réel **OK** : `v1.9.0-win.1` vers `v1.9.0-win.2` sur la machine de Nicolas, checklist du 2026-09-28 | B/P-09, B/P-10 | win-build | 1.x.0 packagée se met à jour vers 1.x.1 |
 | 35 | Bac à sable (`npm run sandbox`) | **OK** (`npm run sandbox` : `win-unpacked`, profil isolé, port 31499) | B/P-04 | win-build | lance `win-unpacked` sur 31499, USERPROFILE isolé |
 | 36 | E2E (38 surfaces, références Windows dédiées) | **OK** (46/46 surfaces sur références `win32/`, stables quel que soit `%TEMP%` ; 7 tests à entrée OS réelle à relancer sur bureau libre) | B/E-01..E-07 | win-qa | 38/38, `__screenshots__/win32/` |
-| 37 | CI `windows-latest` | **OK** (`CI - Windows` vert sur windows-latest : unit + E2E 46/46, run 36250753440 ; `CI - Tests` ubuntu vert ; synchro quotidienne 04:17 UTC opérationnelle, premier run : rien à synchroniser) | B/P-11 | win-build | job vert sur PR vers `windows` |
-| 38 | Zéro régression macOS / Linux | ? | | win-reviewer | CI ubuntu verte, diffs darwin/linux prouvés identiques |
+| 37 | CI `windows-latest` | **OK** (`CI - Windows` vert sur windows-latest : unit + E2E 46/46, run 36250753440 ; dernier vert : 89e7bf38, unit + E2E (119 surfaces), run 36320171886 tentative 2 ; `CI - Tests` ubuntu vert ; synchro quotidienne 04:17 UTC opérationnelle, premier run : rien à synchroniser) | B/P-11 | win-build | job vert sur PR vers `windows` |
+| 38 | Zéro régression macOS / Linux | **OK** dans la limite de ces preuves : `CI - Tests` verte sur ubuntu à 89e7bf38 ; APPROVE de win-reviewer sur chaque lot du journal (§6), qui vérifie les branches darwin/linux à l'octet près ; tests épinglés sur les valeurs d'avant le port (`posix-byte-identical.test`, `launch-call-sites.test`, `node-hook-wiring.test`). Aucune machine macOS n'a rien lancé | | win-reviewer | CI ubuntu verte, diffs darwin/linux prouvés identiques |
 
 ## 3. Sécurité (priorité dans chaque lot)
 
@@ -115,18 +143,27 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 - Un CLI lancé **à la main** dans le PowerShell d'attente d'un agent n'est pas vu comme « CLI en cours » : ConPTY ne donne pas le processus au premier plan (`pty.process` renvoie le nom du terminal). Tars refuse de remplacer ce terminal si une session s'y est enregistrée (Claude, via le hook SessionStart) ; un CLI qui n'enregistre pas de session (codex, gemini) lancé à la main n'est pas détectable et meurt avec le shell si l'agent est démarré depuis Tars (lot `win/agent-launch`).
 - Transcript Claude : si la dernière réponse de l'assistant est à plus de 8 Mo de la fin du fichier, le hook Stop/SessionEnd ne la poste pas (lecture bornée ; idle et agent-stopped restent postés).
 
+### Comportements connus (voulus, pas des bugs)
+
+- Un agent créé sans tâche ouvre un shell au repos (l'invite PowerShell sous Windows) ; Claude ne démarre qu'au clic sur Start. C'est le comportement de l'upstream, identique sur macOS : la création ne lance l'agent que si un prompt a été donné (`src/app/agents/page.tsx:150-153`, `src/app/projects/page.tsx:319-323`). Observé par Nicolas le 2026-09-28.
+
 ## 4. Checklist manuelle (ce que l'E2E ne couvre pas)
 
-- [ ] Bot Telegram : `/start_agent` lance l'agent, la réponse revient
-- [ ] Bot Slack : idem
-- [ ] Bot Discord : idem
-- [ ] Tray : icône nette à 100 et 150 %, panneau au-dessus de la barre des tâches, clic droit
-- [ ] Notification Windows (toast) en dev et packagé
-- [ ] Fermer la fenêtre : les agents continuent, le tray rouvre
-- [ ] Deuxième lancement : focalise la première instance
-- [ ] Installeur NSIS : install, lancement depuis le menu Démarrer, désinstallation propre
-- [ ] Mise à jour auto : 1.x.0 vers 1.x.1 depuis le fork
-- [ ] Ouvrir dans un terminal : Windows Terminal s'ouvre dans le bon dossier
+Passée en entier le 2026-09-28 par Nicolas sur sa machine : vrai installeur `v1.9.0-win.1`, vrai agent Claude,
+tray, fermer vers le tray, deuxième lancement, notification, raccourcis, sélecteur de shell, « ouvrir dans un
+terminal », pages Brain, Usage et Review, mise à jour auto de win.1 vers win.2, quitter, bots, désinstallation.
+Son verdict : « tout à l'air de marcher ».
+
+- [x] Bot Telegram : `/start_agent` lance l'agent, la réponse revient (Nicolas, 2026-09-28)
+- [x] Bot Slack : idem (Nicolas, 2026-09-28)
+- [x] Bot Discord : idem (Nicolas, 2026-09-28)
+- [x] Tray : icône nette à 100 et 150 %, panneau au-dessus de la barre des tâches, clic droit (Nicolas, 2026-09-28)
+- [x] Notification Windows (toast) en dev et packagé (Nicolas, 2026-09-28, sur l'app packagée)
+- [x] Fermer la fenêtre : les agents continuent, le tray rouvre (Nicolas, 2026-09-28)
+- [x] Deuxième lancement : focalise la première instance (Nicolas, 2026-09-28)
+- [x] Installeur NSIS : install, lancement depuis le menu Démarrer, désinstallation propre (Nicolas, 2026-09-28)
+- [x] Mise à jour auto : 1.x.0 vers 1.x.1 depuis le fork (Nicolas, 2026-09-28)
+- [x] Ouvrir dans un terminal : Windows Terminal s'ouvre dans le bon dossier (Nicolas, 2026-09-28)
 
 ## 5. Décisions d'architecture
 
@@ -148,11 +185,25 @@ scripts bash morts, injection latente), B/§4 `git-review.ts:318-331` (lecture h
 | D15 | Panneaux fixés en haut sous Windows | Tiroirs, terminal plein écran et tout panneau `fixed top-0` démarrent sous la bande de 32 px des boutons natifs (Windows seulement) | 2026-09-26 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
-## 5bis. Reprise (état au 2026-09-25 soir)
+## 5bis. Reprise (état au 2026-09-28)
 
-Phases 0 à 5 mergées, CI Windows verte sur GitHub (2414b187). Fork configuré (branche par défaut `windows`, Issues, `SYNC_TOKEN`). Reste : première release `1.9.0-win.1` (accord de Nicolas), checklist manuelle §4, textes D10, suivis de `tasks/todo.md`, phase 6 (upstream, sur go de Nicolas).
+**Fait.** Phases 0 à 5 mergées dans `windows` (tête 89e7bf38), puis les lots de robustesse du journal (§6).
+`CI - Windows` verte sur windows-latest à 89e7bf38 (unit + E2E, 119 surfaces, run 36320171886, tentative 2),
+`CI - Tests` verte sur ubuntu au même commit. Releases publiées sur `Nexarion434/Tars` : `v1.9.0-win.1`
+(2026-09-26, depuis 389e9e04, run 36267386561) et `v1.9.0-win.2` (2026-09-27, depuis 89e7bf38, run 36328847825),
+`latest.yml` vérifié pour les deux. Checklist manuelle §4 passée en entier par Nicolas le 2026-09-28, mise à
+jour auto win.1 vers win.2 comprise. Fork configuré (branche par défaut `windows`, Issues, `SYNC_TOKEN`,
+synchro quotidienne D13).
 
-Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/`, CI `windows-latest`), renderer (noms de projets U-02, chemins U-01..U-08, raccourcis N-07/N-08), phase 5 (NSIS, `.ico`, auto-update depuis le fork : voir `.claude/win-port/dorothy-windows.md`), décisions visuelles de Nicolas (barre de titre, tray, fermeture = masquer ou quitter, texte « Additional PATH », UI du réglage de shell), phase 6 (upstream, sur go de Nicolas).
+**Ouvert.**
+- D10 : textes propres à mac, en attente de la relecture de Nicolas (`PROPOSALS.md`) ; aucun texte modifié d'ici là.
+- Upstream (phase 6) : PR JeanBrasse/Tars #216, #217 et #218 ouvertes, en attente de Noah. Deux autres
+  préparées en local, non ouvertes : `up/file-id-bigint` et `up/discord-bot-test-wait` (go de Nicolas requis).
+- Un brouillon d'avis de sécurité privé attend le go de Nicolas ; rien n'est publié sans lui.
+- Matrice (§2), lignes encore partielles : 9 (envoi programmatique de 5 Ko multi-ligne à un CLI vivant sous
+  ConPTY, sans spec), 12 (aucun vrai CLI Gemini lancé), 15 (aucune vraie installation de skill ou de plugin),
+  24 (I-01 Hermes Desktop, I-02 `tailscale.exe`, I-03 jeton Tasmania : non portés), 31 (textes mac, D10).
+  Ligne 38 : aucune machine macOS n'a rien lancé.
 
 ## 6. Journal des lots
 
@@ -179,3 +230,5 @@ Ensuite : phase 4 (références visuelles win32 dans `e2e/__screenshots__/win32/
 | 2026-09-27 | Sécurité : les gardes de fichiers (fs:read/write-text-file, fs:read-project-files, local-file://, /api/local-file) jugent la vraie cible, liens suivis ; un lien sous ~/.dorothy vers le home n'ouvre plus ~/.ssh ni ~/.tars-private ; exception étroite pour un markdown relié à des dotfiles (canaux renderer seulement) ; /api/local-file refuse aussi une pièce jointe à liens physiques | `win/fs-realpath` | 14 mutants rouges, clé servie en 200 avant, refusée après | APPROVE (2 tours) | 43d44a71 |
 | 2026-09-27 | E2E : l'en-tête Windows est mesuré une fois ses règles de déplacement appliquées, et l'écran de démarrage attend l'hydratation puis tient à son propre plafond (délais fixes remplacés par de vrais signaux) | `win/d5-caption-wait` | 3 + 2 mutants | APPROVE | 0df2851d |
 | 2026-09-27 | Quitter sous Windows : la fin des terminaux ConPTY faisait courir le thread de sortie de node-pty contre l'arrêt de Node (processus bloqué après exit, ou plantage 0xC0000409 avec profil tenu) ; le quit attend au plus 5 s la fin de chaque terminal, et les notifications de statut s'arrêtent au début du quit | `win/quit-hang` | 10/10 quits propres en ~150 ms (avant : 7 blocages, 3 plantages) ; E2E quit-time | APPROVE (2 tours) | 18478a91 |
+| 2026-09-27 | Test de `release.test.ts` : les trois describes qui lancent le script reçoivent le délai de 30 s que le fichier donne déjà à ses autres lancements (sur le runner chargé, la vérification du checkout propre dépassait les 5 s par défaut de vitest) | `windows` | CI Windows verte, run 36320171886 (tentative 2) ; CI ubuntu verte | n/a | 89e7bf38 |
+| 2026-09-27 | Deuxième release publiée : `v1.9.0-win.2` (installeur NSIS, zip, `latest.yml` vérifié), construite par `release-windows.yml` depuis `windows` 89e7bf38 ; mise à jour auto depuis win.1 vérifiée par Nicolas le 2026-09-28 | release | run 36328847825 | accord de Nicolas | 89e7bf38 |
