@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as path from 'path';
 import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
@@ -9,6 +10,7 @@ import * as https from 'https';
 import { API_PORT, DATA_DIR, dataPath } from '../constants';
 import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
+import { describeSecretFileError } from '../utils/secret-file';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
 import { provisionWebhookSecret } from '../services/hermes-webhook-secret';
@@ -40,7 +42,15 @@ import {
 const execFileAsync = promisify(execFile);
 
 /** Where Hermes Desktop keeps its own connection config (per platform: see electron/platform). */
-const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath({ home: os.homedir() });
+const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath(
+  { home: os.homedir() },
+);
+/**
+ * Its v2 registry, beside it. connection.json is the v1 file, which Hermes
+ * Desktop imports into the registry once and keeps for older builds; a gateway
+ * or a token set up after that lives here, and `primary` names the one in use.
+ */
+const HERMES_DESKTOP_REGISTRY = path.join(path.dirname(HERMES_DESKTOP_CONFIG), 'connections.json');
 
 const readConnection = readHermesConnection;
 const writeConnection = writeHermesConnection;
@@ -58,19 +68,99 @@ async function viaGateway<T>(call: (conn: HermesConnection) => Promise<T>): Prom
   return call(configured.conn);
 }
 
-/** Hermes Desktop's config shape -> ours (same vocabulary, nested differently). */
-function importDesktopConfig(): HermesConnection | null {
+/**
+ * A token Hermes Desktop stored in the clear, its default. One it encrypted
+ * with its own safeStorage key (keychain encryption turned on) is that app's
+ * secret: Tars cannot read it and does not try.
+ */
+function plainToken(token: unknown): string | undefined {
+  const t = token as { encoding?: unknown; value?: unknown } | undefined;
+  return t?.encoding === 'plain' && typeof t.value === 'string' && t.value ? t.value : undefined;
+}
+
+/** A token Hermes Desktop encrypted: the one an import has to leave behind, and say so. */
+function encryptedToken(token: unknown): boolean {
+  const t = token as { encoding?: unknown; value?: unknown } | undefined;
+  return t?.encoding === 'safeStorage' && typeof t.value === 'string' && t.value.length > 0;
+}
+
+/** What an import brings, and whether it left an encrypted token behind. */
+interface DesktopImport { conn: HermesConnection; tokenNotImported: boolean }
+
+/**
+ * The port connection.json gives Hermes Desktop's local runtime, or the
+ * default. Only the port is read from it: once the registry exists, the rest of
+ * v1 is what it was when the registry was made. A v1 that is missing or cannot
+ * be read gives no port, which is what the default is for.
+ */
+function desktopLocalPort(): number {
   try {
+    const port = JSON.parse(fs.readFileSync(HERMES_DESKTOP_CONFIG, 'utf-8'))?.local?.port;
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : HERMES_DEFAULT_PORT;
+  } catch {
+    return HERMES_DEFAULT_PORT;
+  }
+}
+
+/**
+ * The registry's primary: a gateway over the network or SSH, or the local
+ * runtime. Null when there is no registry, when it cannot be read, or when its
+ * primary names no entry: connection.json then describes it, as before.
+ */
+function importDesktopRegistry(): DesktopImport | null {
+  if (!fs.existsSync(HERMES_DESKTOP_REGISTRY)) return null;
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(HERMES_DESKTOP_REGISTRY, 'utf-8'));
+  } catch (err) {
+    // Not the error itself: a parse error quotes the file, which holds tokens.
+    console.error(`[hermes] cannot read Hermes Desktop's connections.json: ${describeSecretFileError(err)}`);
+    return null;
+  }
+  const entry = Array.isArray(raw?.connections)
+    ? raw.connections.find((c: { id?: unknown }) => c?.id === raw.primary)
+    : undefined;
+  if (entry?.kind === 'remote' || entry?.kind === 'cloud') {
+    const conn: HermesConnection = { mode: entry.kind, url: entry.url, authMode: entry.authMode === 'oauth' ? 'oauth' : 'token' };
+    const token = plainToken(entry.token);
+    if (token) conn.token = token;
+    if (entry.org) conn.org = entry.org;
+    return { conn, tokenNotImported: encryptedToken(entry.token) };
+  }
+  if (entry?.kind === 'ssh') {
+    const conn: HermesConnection = {
+      mode: 'ssh', authMode: 'token',
+      ssh: { host: entry.host, user: entry.user, port: entry.port, keyPath: entry.keyPath, remotePort: HERMES_DEFAULT_PORT },
+    };
+    // No SSH token is imported, plain or encrypted, as before, and the page has
+    // no token field in SSH mode: a notice asking to paste one could not be answered.
+    return { conn, tokenNotImported: false };
+  }
+  if (entry?.kind === 'local') return { conn: { mode: 'local', authMode: 'token', localPort: desktopLocalPort() }, tokenNotImported: false };
+  return null;
+}
+
+/** Hermes Desktop's config shape -> ours (same vocabulary, nested differently). */
+function importDesktopConfig(): DesktopImport | null {
+  try {
+    const fromRegistry = importDesktopRegistry();
+    if (fromRegistry) return fromRegistry;
     if (!fs.existsSync(HERMES_DESKTOP_CONFIG)) return null;
     const raw = JSON.parse(fs.readFileSync(HERMES_DESKTOP_CONFIG, 'utf-8'));
+    // Hermes Desktop's v1 keeps an SSH connection under `remote`, which says so
+    // with a mode of its own, where there is no `ssh` section (measured on a
+    // Windows install): read from there, or the import brings no host.
+    if (raw?.mode === 'ssh' && !raw.ssh && raw.remote?.mode === 'ssh') raw.ssh = raw.remote;
     const mode = raw?.mode as HermesConnection['mode'];
     if (!mode) return null;
     const conn: HermesConnection = { mode, authMode: 'token' };
     const section = raw?.[mode] ?? {};
+    let tokenNotImported = false;
     if (mode === 'remote' || mode === 'cloud') {
       conn.url = section.url;
       conn.authMode = section.authMode === 'oauth' ? 'oauth' : 'token';
       if (section.token?.encoding === 'plain' && section.token?.value) conn.token = section.token.value;
+      tokenNotImported = encryptedToken(section.token);
       if (section.org) conn.org = section.org;
     } else if (mode === 'ssh') {
       conn.ssh = {
@@ -79,14 +169,44 @@ function importDesktopConfig(): HermesConnection | null {
         remotePort: section.remotePort || HERMES_DEFAULT_PORT,
         localPort: section.localPort,
       };
+      // SSH mode has the token field in the fork: see withSshToken below.
+      const token = plainToken(section.token);
+      if (token) conn.token = token;
+      tokenNotImported = encryptedToken(section.token);
     } else {
       conn.localPort = section.port || HERMES_DEFAULT_PORT;
     }
-    return conn;
+    return { conn, tokenNotImported };
   } catch (err) {
-    console.error('[hermes] cannot import Hermes Desktop config:', err);
+    // The kind only: a parse error quotes the file, which can hold a plain token.
+    console.error(`[hermes] cannot import Hermes Desktop config: ${describeSecretFileError(err)}`);
     return null;
   }
+}
+
+/**
+ * The token of an SSH connection imported from the registry. JeanBrasse/Tars#262
+ * imports none, since upstream's SSH mode has no token field; the fork shows
+ * that field in SSH mode, so a plain token comes and an encrypted one is said to
+ * be left behind (the notice). Kept apart from #262's own lines, which stay as
+ * upstream wrote them: the registry is read again, and only an SSH primary,
+ * the one #262 imports from it, is looked at. v1's SSH token is read in place.
+ */
+function withSshToken(imported: DesktopImport): void {
+  if (imported.conn.mode !== 'ssh' || !fs.existsSync(HERMES_DESKTOP_REGISTRY)) return;
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(HERMES_DESKTOP_REGISTRY, 'utf-8'));
+  } catch {
+    return; // The import fell back to connection.json; the parse error was logged there.
+  }
+  const entry = Array.isArray(raw?.connections)
+    ? raw.connections.find((c: { id?: unknown }) => c?.id === raw.primary)
+    : undefined;
+  if (entry?.kind !== 'ssh') return;
+  const token = plainToken(entry.token);
+  if (token) imported.conn.token = token;
+  imported.tokenNotImported = encryptedToken(entry.token);
 }
 
 /** GET a Hermes endpoint, following the gateway's own auth conventions. */
@@ -239,7 +359,7 @@ export function registerHermesHandlers(): void {
     return {
       connection,
       baseUrl: configured && !('unusable' in configured) ? resolveHermesBaseUrl(configured.conn) : '',
-      desktopConfigAvailable: fs.existsSync(HERMES_DESKTOP_CONFIG),
+      desktopConfigAvailable: fs.existsSync(HERMES_DESKTOP_CONFIG) || fs.existsSync(HERMES_DESKTOP_REGISTRY),
     };
   });
 
@@ -261,10 +381,16 @@ export function registerHermesHandlers(): void {
 
   ipcMain.handle('hermes:connection:import', async () => {
     const imported = importDesktopConfig();
+    if (imported) withSshToken(imported);
     if (!imported) return { success: false, error: 'No Hermes Desktop configuration found on this machine.' };
-    writeConnection(imported);
+    writeConnection(imported.conn);
     resetLiveSession();
-    return { success: true, connection: imported, baseUrl: resolveHermesBaseUrl(imported) };
+    return {
+      success: true,
+      connection: imported.conn,
+      baseUrl: resolveHermesBaseUrl(imported.conn),
+      tokenNotImported: imported.tokenNotImported,
+    };
   });
 
   /**

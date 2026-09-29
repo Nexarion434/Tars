@@ -6,6 +6,7 @@ import { getAppBasePath } from '../utils';
 import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
 import { landsUnderSafeRoot } from '../platform/real-target';
 import { titleBarOptions } from '../platform/desktop-shell';
+import { installEditContextMenu } from './edit-context-menu';
 
 // Global reference to the main window
 let mainWindow: BrowserWindow | null = null;
@@ -240,6 +241,9 @@ export function hardenWindow(window: BrowserWindow): void {
   });
 
   window.webContents.on('will-attach-webview', event => event.preventDefault());
+
+  // Cut, copy, paste and select all on a right click in text (edit-context-menu.ts).
+  installEditContextMenu(window.webContents);
 }
 
 /**

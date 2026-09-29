@@ -229,7 +229,7 @@ const row = (label: string) => page.locator('[data-settings-row]').filter({ has:
 const gatewayField = () => row('Gateway URL').locator('input');
 const tokenField = () => page.getByPlaceholder('X-Hermes-Session-Token');
 const statusHint = () => row('Status').locator('[data-settings-hint]');
-const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|unreachable|unknown)$/ }).first();
+const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|signed out|unreachable|unknown)$/ }).first();
 const connectionFile = () => path.join(home, '.dorothy', 'hermes-connection.json');
 const readConnectionFile = () => JSON.parse(fs.readFileSync(connectionFile(), 'utf-8'));
 
@@ -760,7 +760,9 @@ test('import: Hermes Desktop\'s own connection is offered where that app keeps i
   expect(offered, 'the import is offered when Hermes Desktop keeps a connection here').toBe(true);
 
   await importButton.click();
-  await expect(statusHint()).toHaveText(`Imported from Hermes Desktop - ${gateway.url}`);
+  // The import asks the gateway, as Test does, and says what it answered: the
+  // token came with the import, so signed in (e2e/hermes-bugs.spec.ts, a4).
+  await expect(statusHint()).toHaveText(`Imported from Hermes Desktop · ${gateway.url} · Hermes ${VERSION} · running · signed in`, { timeout: 15_000 });
   const after = await fieldReport(gatewayField());
   await gatewayField().fill(`${gateway.url}/`);
   const editable = await gatewayField().inputValue();

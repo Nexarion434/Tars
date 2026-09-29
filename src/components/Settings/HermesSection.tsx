@@ -38,6 +38,24 @@ const AUTH_MODES = [
   { value: 'oauth' as const, label: 'OAuth' },
 ];
 
+/**
+ * What the Status badge says. A gateway that answered but wants a sign-in is
+ * signed out, not unreachable: the page's result is not a success then, and
+ * the badge read that as "unreachable" in the error tone. `needsSignIn` is the
+ * test's own answer, the one the Chat keys its `needs_sign_in` on. Frame:
+ * `row Status · signed out` (zBCak) in `Settings · Connection`.
+ */
+export function gatewayStatus(
+  testing: boolean,
+  result: { success: boolean } | null,
+  needsSignIn: boolean,
+): { word: string; tone: AnyTone } {
+  if (testing) return { word: 'checking', tone: result ? (result.success ? 'running' : 'error') : 'idle' };
+  if (!result) return { word: 'unknown', tone: 'idle' };
+  if (needsSignIn) return { word: 'signed out', tone: 'waiting' };
+  return result.success ? { word: 'connected', tone: 'running' } : { word: 'unreachable', tone: 'error' };
+}
+
 export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionProps) => {
   const [info, setInfo] = useState<ConnectionInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +74,9 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [signingIn, setSigningIn] = useState(false);
+  // The last import came without the token Hermes Desktop keeps encrypted. Said
+  // until something answers it: a sign-in, a token typed in, another import.
+  const [tokenNotImported, setTokenNotImported] = useState(false);
   const connDirty = JSON.stringify(conn) !== savedConn;
 
   /**
@@ -91,6 +112,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   function patchConn(patch: Partial<HermesConnection>) {
     setConn(prev => ({ ...prev, ...patch }));
+    if (patch.token || (patch.mode && patch.mode !== conn.mode)) setTokenNotImported(false);
     setGatewayResult(null);
   }
   function patchSsh(patch: Partial<NonNullable<HermesConnection['ssh']>>) {
@@ -103,7 +125,10 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     if (r?.success && r.connection) {
       setConn(r.connection);
       setSavedConn(JSON.stringify(r.connection));
+      setTokenNotImported(!!r.tokenNotImported);
       setGatewayResult({ success: true, message: `Imported from Hermes Desktop - ${r.baseUrl}` });
+      // Then asked of the gateway, as Test does: "connected" was said on faith.
+      await probeGateway(r.connection, 'Imported from Hermes Desktop');
     } else {
       setGatewayResult({ success: false, message: r?.error || 'Import failed' });
     }
@@ -116,10 +141,11 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (r?.success) {
         setNeedsSignIn(false);
         setSignedIn(true);
+        setTokenNotImported(false);
         setPassword('');
         setGatewayResult({ success: true, message: `Signed in - Hermes ${r.version ?? ''} ${r.gatewayState ?? ''}`.trim() });
       } else {
-        setGatewayResult({ success: false, message: r?.error || 'Sign-in failed' });
+        setGatewayResult({ success: false, message: sshTunnelHint(conn, r?.error) ?? (r?.error || 'Sign-in failed') });
       }
     } finally {
       setSigningIn(false);
@@ -143,17 +169,19 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   /**
    * The one reading of the gateway, used by the mount probe and by Test, so
-   * the two can never disagree about what "signed in" means.
+   * the two can never disagree about what "signed in" means. `lead` names what
+   * led to the probe (an import), ahead of the gateway's answer.
    */
-  async function probeGateway(target: HermesConnection) {
+  async function probeGateway(target: HermesConnection, lead?: string) {
+    const said = (message: string) => (lead ? `${lead} · ${message}` : message);
     setGatewayTesting(true);
     setGatewayResult(null);
     try {
-      const r = await window.electronAPI?.hermes?.testConnection(target);
+      const r = await window.electronAPI?.hermes?.testConnection?.(target);
       if (!r) {
         setSignedIn(false);
         setNeedsSignIn(false);
-        setGatewayResult({ success: false, message: 'Electron API unavailable' });
+        setGatewayResult({ success: false, message: said('Electron API unavailable') });
         return;
       }
       // A gateway that answers but demands a sign-in is reachable, not broken:
@@ -163,7 +191,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (!reachable) {
         setSignedIn(false);
         setNeedsSignIn(false);
-        setGatewayResult({ success: false, message: `${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}` });
+        setGatewayResult({ success: false, message: said(sshTunnelHint(target, r.error) ?? `${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}`) });
         return;
       }
       const bits = [`Hermes ${r.version ?? '?'}`];
@@ -173,7 +201,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (r.needsSignIn) bits.push(`sign-in required (${(r.authProviders || []).join(', ') || 'cookie'})`);
       else if (r.authRequired) bits.push('signed in');
       else bits.push('open');
-      setGatewayResult({ success: !r.needsSignIn, message: `${r.baseUrl} · ${bits.join(' · ')}` });
+      setGatewayResult({ success: !r.needsSignIn, message: said(`${r.baseUrl} · ${bits.join(' · ')}`) });
     } finally {
       setGatewayTesting(false);
       setAuthChecked(true);
@@ -193,10 +221,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     : `http://127.0.0.1:${conn.localPort ?? 9119}`;
   const typedUrl = conn.mode === 'remote' || conn.mode === 'cloud';
 
-  const statusTone: AnyTone = gatewayResult ? (gatewayResult.success ? 'running' : 'error') : 'idle';
-  const statusWord = gatewayTesting
-    ? 'checking'
-    : gatewayResult ? (gatewayResult.success ? 'connected' : 'unreachable') : 'unknown';
+  const { word: statusWord, tone: statusTone } = gatewayStatus(gatewayTesting, gatewayResult, needsSignIn);
 
   // What Tailscale is doing decides whether a VPS can reach the webhook at all,
   // so it stays - as the row's one muted line, not as a panel of prose.
@@ -254,6 +279,17 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
         }
       />
 
+      {/* Frame: row Import · token not imported, the notice of the template
+          import review (JezkD) as a row of its own. */}
+      {tokenNotImported && (
+        <div className="px-4 py-[11px]">
+          <div className="flex items-start gap-2 border border-border bg-secondary px-3 py-2">
+            <StatusSquare tone="waiting" className="mt-[5px]" />
+            <p className="text-xs text-foreground">Token not imported: Hermes Desktop keeps it encrypted. Sign in or paste it.</p>
+          </div>
+        </div>
+      )}
+
       {conn.mode === 'local' && (
         <SettingsRow
           label="Gateway port"
@@ -278,7 +314,12 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
             control={
               <div className="flex items-center gap-2 w-full">
                 <Input mono className="min-w-0 flex-1" value={conn.ssh?.host || ''} onChange={e => patchSsh({ host: e.target.value })} placeholder="vps.example.com" />
-                <Input mono className="w-24 shrink-0" value={conn.ssh?.user || ''} onChange={e => patchSsh({ user: e.target.value })} placeholder="root" />
+                {/* The width on a wrapper: Input always sets w-full, which the
+                    stylesheet orders after w-24, so a w-24 on the field itself
+                    lost and left the host field 18px wide. */}
+                <span className="w-24 shrink-0">
+                  <Input mono value={conn.ssh?.user || ''} onChange={e => patchSsh({ user: e.target.value })} placeholder="root" />
+                </span>
               </div>
             }
           />
@@ -313,7 +354,9 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
         />
       )}
 
-      {typedUrl && (
+      {/* SSH too: a gateway at the far end of the tunnel can want its token
+          (Hermes Desktop's SSH connections hold one). */}
+      {(typedUrl || conn.mode === 'ssh') && (
         <SettingsRow
           label="Auth"
           description={
@@ -408,6 +451,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
       <SettingsRow
         label="Status"
+        wrap
         description={gatewayResult?.message ?? 'Not probed yet - test the connection to read the version and the sign-in it demands.'}
         control={
           <div className="flex items-center gap-2 w-full justify-end">
@@ -459,3 +503,19 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     </>
   );
 };
+
+/**
+ * What to say when nothing answers on an SSH connection's local end. Tars
+ * does not open the tunnel: the user or Hermes Desktop does, so the hint
+ * names the command, from the form's own values. Null for any other failure,
+ * which keeps its own words.
+ */
+function sshTunnelHint(target: HermesConnection, error?: string): string | null {
+  if (target.mode !== 'ssh' || !error || !/ECONNREFUSED|timeout/i.test(error)) return null;
+  const ssh = target.ssh;
+  const remote = ssh?.remotePort || 9119;
+  const local = ssh?.localPort || remote;
+  const port = ssh?.port && ssh.port !== 22 ? `-p ${ssh.port} ` : '';
+  const who = ssh?.host ? `${ssh.user ? `${ssh.user}@` : ''}${ssh.host}` : 'user@host';
+  return `Nothing answers on 127.0.0.1:${local}. Tars does not open the SSH tunnel: start it first (ssh ${port}-L ${local}:127.0.0.1:${remote} ${who}).`;
+}
