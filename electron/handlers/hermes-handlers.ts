@@ -169,6 +169,10 @@ function importDesktopConfig(): DesktopImport | null {
         remotePort: section.remotePort || HERMES_DEFAULT_PORT,
         localPort: section.localPort,
       };
+      // SSH mode has the token field in the fork: see withSshToken below.
+      const token = plainToken(section.token);
+      if (token) conn.token = token;
+      tokenNotImported = encryptedToken(section.token);
     } else {
       conn.localPort = section.port || HERMES_DEFAULT_PORT;
     }
@@ -178,6 +182,31 @@ function importDesktopConfig(): DesktopImport | null {
     console.error(`[hermes] cannot import Hermes Desktop config: ${describeSecretFileError(err)}`);
     return null;
   }
+}
+
+/**
+ * The token of an SSH connection imported from the registry. JeanBrasse/Tars#262
+ * imports none, since upstream's SSH mode has no token field; the fork shows
+ * that field in SSH mode, so a plain token comes and an encrypted one is said to
+ * be left behind (the notice). Kept apart from #262's own lines, which stay as
+ * upstream wrote them: the registry is read again, and only an SSH primary,
+ * the one #262 imports from it, is looked at. v1's SSH token is read in place.
+ */
+function withSshToken(imported: DesktopImport): void {
+  if (imported.conn.mode !== 'ssh' || !fs.existsSync(HERMES_DESKTOP_REGISTRY)) return;
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(HERMES_DESKTOP_REGISTRY, 'utf-8'));
+  } catch {
+    return; // The import fell back to connection.json; the parse error was logged there.
+  }
+  const entry = Array.isArray(raw?.connections)
+    ? raw.connections.find((c: { id?: unknown }) => c?.id === raw.primary)
+    : undefined;
+  if (entry?.kind !== 'ssh') return;
+  const token = plainToken(entry.token);
+  if (token) imported.conn.token = token;
+  imported.tokenNotImported = encryptedToken(entry.token);
 }
 
 /** GET a Hermes endpoint, following the gateway's own auth conventions. */
@@ -352,6 +381,7 @@ export function registerHermesHandlers(): void {
 
   ipcMain.handle('hermes:connection:import', async () => {
     const imported = importDesktopConfig();
+    if (imported) withSshToken(imported);
     if (!imported) return { success: false, error: 'No Hermes Desktop configuration found on this machine.' };
     writeConnection(imported.conn);
     resetLiveSession();

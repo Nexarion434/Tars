@@ -30,14 +30,17 @@ import * as path from 'node:path';
  * 9. a connection.json that cannot be parsed has its text, a plain token
  *    included, written to the log;
  * 10. an import that leaves an encrypted token behind does not say so
- *    (`tokenNotImported`), or says so of a token it brought, or of none, or of
- *    an SSH primary's: Tars imports no SSH token, plain or encrypted, and the
- *    page has no token field in SSH mode for the user to paste one;
+ *    (`tokenNotImported`), or says so of a token it brought, or of none. An SSH
+ *    primary's encrypted token is said too: the fork shows the token field in
+ *    SSH mode, where #262 (ab1e7f01) says nothing until upstream does;
  * 11. a v1 SSH connection Hermes Desktop kept under `remote` (`{ mode: 'ssh',
  *    remote: { mode: 'ssh', host, user, keyPath } }`, no `ssh` key, as measured
  *    on a Windows install) imports with no host, user or key;
  * 12. a v1 that does have an `ssh` section is no longer read from it, or a
- *    `remote` section that is not SSH is read as one.
+ *    `remote` section that is not SSH is read as one;
+ * 13. an SSH connection's plain token, from the registry or from v1, is left
+ *    behind, now that SSH mode has a field for it; or its encrypted one is
+ *    imported as if it were the token.
  *
  * The handler is the real one, over a Hermes Desktop folder in the test's home.
  */
@@ -195,7 +198,7 @@ describe('importing Hermes Desktop\'s connection', () => {
     expect((await importDesktop()).tokenNotImported).toBeFalsy();
 
     write(V2, registry('vps', { id: 'vps', kind: 'ssh', label: 'vps', host: 'vps.example', user: 'root', token: { encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' } }));
-    expect((await importDesktop()).tokenNotImported).toBe(false);
+    expect((await importDesktop()).tokenNotImported).toBe(true);
 
     // connection.json alone, as an older Hermes Desktop writes it.
     fs.rmSync(V2);
@@ -228,5 +231,30 @@ describe('importing Hermes Desktop\'s connection', () => {
 
     write(V1, { mode: 'ssh', remote: { url: 'http://box.example:9119', host: 'not-ssh.example' } });
     expect((await importDesktop()).connection).toEqual({ mode: 'ssh', authMode: 'token', ssh: { remotePort: 9119 } });
+  });
+
+  it('brings an SSH connection\'s plain token, and leaves its encrypted one behind (13)', async () => {
+    const vps = (token: object) => registry('vps', { id: 'vps', kind: 'ssh', label: 'vps', host: 'vps.example', user: 'root', token });
+
+    write(V2, vps({ encoding: 'plain', value: 'tok-ssh' }));
+    let r = await importDesktop();
+    expect(r.connection).toEqual({ mode: 'ssh', authMode: 'token', token: 'tok-ssh', ssh: { host: 'vps.example', user: 'root', remotePort: 9119 } });
+    expect(r.tokenNotImported).toBe(false);
+
+    write(V2, vps({ encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' }));
+    r = await importDesktop();
+    expect(r.connection?.token).toBeUndefined();
+
+    // connection.json alone, the SSH connection under `remote`.
+    fs.rmSync(V2);
+    write(V1, { mode: 'ssh', remote: { mode: 'ssh', host: 'vps.example', user: 'root', token: { encoding: 'plain', value: 'tok-v1-ssh' } } });
+    r = await importDesktop();
+    expect(r.connection?.token).toBe('tok-v1-ssh');
+    expect(r.tokenNotImported).toBe(false);
+
+    write(V1, { mode: 'ssh', remote: { mode: 'ssh', host: 'vps.example', user: 'root', token: { encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' } } });
+    r = await importDesktop();
+    expect(r.connection?.token).toBeUndefined();
+    expect(r.tokenNotImported).toBe(true);
   });
 });
