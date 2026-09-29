@@ -229,7 +229,7 @@ const row = (label: string) => page.locator('[data-settings-row]').filter({ has:
 const gatewayField = () => row('Gateway URL').locator('input');
 const tokenField = () => page.getByPlaceholder('X-Hermes-Session-Token');
 const statusHint = () => row('Status').locator('[data-settings-hint]');
-const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|unreachable|unknown)$/ }).first();
+const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|signed out|unreachable|unknown)$/ }).first();
 const connectionFile = () => path.join(home, '.dorothy', 'hermes-connection.json');
 const readConnectionFile = () => JSON.parse(fs.readFileSync(connectionFile(), 'utf-8'));
 
