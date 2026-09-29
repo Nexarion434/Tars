@@ -310,7 +310,12 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
             control={
               <div className="flex items-center gap-2 w-full">
                 <Input mono className="min-w-0 flex-1" value={conn.ssh?.host || ''} onChange={e => patchSsh({ host: e.target.value })} placeholder="vps.example.com" />
-                <Input mono className="w-24 shrink-0" value={conn.ssh?.user || ''} onChange={e => patchSsh({ user: e.target.value })} placeholder="root" />
+                {/* The width on a wrapper: Input always sets w-full, which the
+                    stylesheet orders after w-24, so a w-24 on the field itself
+                    lost and left the host field 18px wide. */}
+                <span className="w-24 shrink-0">
+                  <Input mono value={conn.ssh?.user || ''} onChange={e => patchSsh({ user: e.target.value })} placeholder="root" />
+                </span>
               </div>
             }
           />
