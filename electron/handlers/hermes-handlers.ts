@@ -42,7 +42,9 @@ import {
 const execFileAsync = promisify(execFile);
 
 /** Where Hermes Desktop keeps its own connection config (per platform: see electron/platform). */
-const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath({ home: os.homedir() });
+const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath(
+  { home: os.homedir() },
+);
 /**
  * Its v2 registry, beside it. connection.json is the v1 file, which Hermes
  * Desktop imports into the registry once and keeps for older builds; a gateway
