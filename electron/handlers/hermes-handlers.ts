@@ -147,6 +147,10 @@ function importDesktopConfig(): DesktopImport | null {
     if (fromRegistry) return fromRegistry;
     if (!fs.existsSync(HERMES_DESKTOP_CONFIG)) return null;
     const raw = JSON.parse(fs.readFileSync(HERMES_DESKTOP_CONFIG, 'utf-8'));
+    // Hermes Desktop's v1 keeps an SSH connection under `remote`, which says so
+    // with a mode of its own, where there is no `ssh` section (measured on a
+    // Windows install): read from there, or the import brings no host.
+    if (raw?.mode === 'ssh' && !raw.ssh && raw.remote?.mode === 'ssh') raw.ssh = raw.remote;
     const mode = raw?.mode as HermesConnection['mode'];
     if (!mode) return null;
     const conn: HermesConnection = { mode, authMode: 'token' };

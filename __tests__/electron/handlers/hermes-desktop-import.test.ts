@@ -32,7 +32,12 @@ import * as path from 'node:path';
  * 10. an import that leaves an encrypted token behind does not say so
  *    (`tokenNotImported`), or says so of a token it brought, or of none, or of
  *    an SSH primary's: Tars imports no SSH token, plain or encrypted, and the
- *    page has no token field in SSH mode for the user to paste one.
+ *    page has no token field in SSH mode for the user to paste one;
+ * 11. a v1 SSH connection Hermes Desktop kept under `remote` (`{ mode: 'ssh',
+ *    remote: { mode: 'ssh', host, user, keyPath } }`, no `ssh` key, as measured
+ *    on a Windows install) imports with no host, user or key;
+ * 12. a v1 that does have an `ssh` section is no longer read from it, or a
+ *    `remote` section that is not SSH is read as one.
  *
  * The handler is the real one, over a Hermes Desktop folder in the test's home.
  */
@@ -196,5 +201,32 @@ describe('importing Hermes Desktop\'s connection', () => {
     fs.rmSync(V2);
     write(V1, { mode: 'remote', remote: { url: 'http://box.example:9119', authMode: 'token', token: { encoding: 'safeStorage', value: 'djEwY2lwaGVydGV4dA==' } } });
     expect((await importDesktop()).tokenNotImported).toBe(true);
+  });
+
+  it('reads a v1 SSH connection Hermes Desktop kept under `remote` (11)', async () => {
+    write(V1, {
+      mode: 'ssh',
+      remote: { mode: 'ssh', host: 'vps.example', user: 'operator', keyPath: 'C:\\Users\\u\\.ssh\\id_ed25519', remoteHermesPath: '/opt/hermes', authMode: 'token' },
+      profiles: {},
+    });
+
+    const r = await importDesktop();
+
+    expect(r.success).toBe(true);
+    expect(r.connection).toEqual({
+      mode: 'ssh', authMode: 'token',
+      ssh: { host: 'vps.example', user: 'operator', keyPath: 'C:\\Users\\u\\.ssh\\id_ed25519', remotePort: 9119 },
+    });
+  });
+
+  it('still reads a v1 `ssh` section, and never a `remote` section that is not SSH (12)', async () => {
+    write(V1, { mode: 'ssh', ssh: { host: 'own.example', user: 'root', port: 2200, localPort: 9300 }, remote: { mode: 'ssh', host: 'not-this.example' } });
+    expect((await importDesktop()).connection).toEqual({
+      mode: 'ssh', authMode: 'token',
+      ssh: { host: 'own.example', user: 'root', port: 2200, remotePort: 9119, localPort: 9300 },
+    });
+
+    write(V1, { mode: 'ssh', remote: { url: 'http://box.example:9119', host: 'not-ssh.example' } });
+    expect((await importDesktop()).connection).toEqual({ mode: 'ssh', authMode: 'token', ssh: { remotePort: 9119 } });
   });
 });
