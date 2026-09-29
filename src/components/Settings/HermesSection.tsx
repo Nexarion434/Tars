@@ -127,6 +127,8 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       setSavedConn(JSON.stringify(r.connection));
       setTokenNotImported(!!r.tokenNotImported);
       setGatewayResult({ success: true, message: `Imported from Hermes Desktop - ${r.baseUrl}` });
+      // Then asked of the gateway, as Test does: "connected" was said on faith.
+      await probeGateway(r.connection, 'Imported from Hermes Desktop');
     } else {
       setGatewayResult({ success: false, message: r?.error || 'Import failed' });
     }
@@ -167,17 +169,19 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   /**
    * The one reading of the gateway, used by the mount probe and by Test, so
-   * the two can never disagree about what "signed in" means.
+   * the two can never disagree about what "signed in" means. `lead` names what
+   * led to the probe (an import), ahead of the gateway's answer.
    */
-  async function probeGateway(target: HermesConnection) {
+  async function probeGateway(target: HermesConnection, lead?: string) {
+    const said = (message: string) => (lead ? `${lead} · ${message}` : message);
     setGatewayTesting(true);
     setGatewayResult(null);
     try {
-      const r = await window.electronAPI?.hermes?.testConnection(target);
+      const r = await window.electronAPI?.hermes?.testConnection?.(target);
       if (!r) {
         setSignedIn(false);
         setNeedsSignIn(false);
-        setGatewayResult({ success: false, message: 'Electron API unavailable' });
+        setGatewayResult({ success: false, message: said('Electron API unavailable') });
         return;
       }
       // A gateway that answers but demands a sign-in is reachable, not broken:
@@ -187,7 +191,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (!reachable) {
         setSignedIn(false);
         setNeedsSignIn(false);
-        setGatewayResult({ success: false, message: `${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}` });
+        setGatewayResult({ success: false, message: said(`${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}`) });
         return;
       }
       const bits = [`Hermes ${r.version ?? '?'}`];
@@ -197,7 +201,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (r.needsSignIn) bits.push(`sign-in required (${(r.authProviders || []).join(', ') || 'cookie'})`);
       else if (r.authRequired) bits.push('signed in');
       else bits.push('open');
-      setGatewayResult({ success: !r.needsSignIn, message: `${r.baseUrl} · ${bits.join(' · ')}` });
+      setGatewayResult({ success: !r.needsSignIn, message: said(`${r.baseUrl} · ${bits.join(' · ')}`) });
     } finally {
       setGatewayTesting(false);
       setAuthChecked(true);
