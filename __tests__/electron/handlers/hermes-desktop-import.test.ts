@@ -51,7 +51,10 @@ vi.mock('os', async importOriginal => ({
   homedir: () => home,
 }));
 
-const desktopDir = path.join(home, 'Library', 'Application Support', 'Hermes');
+// Where the handler looks on this platform (electron/platform): %APPDATA%\Hermes on
+// Windows, which the suite points into its throwaway home. Imported once `home` exists.
+const { hermesDesktopConfigPath } = await import('../../../electron/platform');
+const desktopDir = path.dirname(hermesDesktopConfigPath({ home }));
 const V1 = path.join(desktopDir, 'connection.json');
 const V2 = path.join(desktopDir, 'connections.json');
 
