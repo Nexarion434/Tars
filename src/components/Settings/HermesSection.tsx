@@ -451,6 +451,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
       <SettingsRow
         label="Status"
+        wrap
         description={gatewayResult?.message ?? 'Not probed yet - test the connection to read the version and the sign-in it demands.'}
         control={
           <div className="flex items-center gap-2 w-full justify-end">
