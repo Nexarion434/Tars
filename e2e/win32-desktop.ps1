@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('frame', 'capture', 'print', 'keys', 'click', 'list')][string]$Mode,
+  [Parameter(Mandatory=$true)][ValidateSet('frame', 'capture', 'print', 'keys', 'click', 'rclick', 'menukeys', 'list')][string]$Mode,
   [string]$Hwnd = '0',
   [string]$Combo = '',
   [string]$Out = '',
@@ -11,9 +11,13 @@ param(
 # never reaches the window frame, the menu accelerators or the drag regions),
 # and pixels as the screen shows them, native title bar included.
 #
-# keys and click only act when the sandboxed window is the foreground window at
-# that instant, and exit 3 otherwise: a chord like Ctrl+W must never land in
-# another application.
+# keys, click and rclick only act when the sandboxed window is the foreground
+# window at that instant, and exit 3 otherwise: a chord like Ctrl+W must never
+# land in another application. menukeys sends keys (here "+" is a sequence,
+# not a chord) to an open popup menu, -Hwnd, of the process -ProcId, only while
+# the foreground window is that process's own. (Electron draws its menus on
+# Windows with Chromium's views, in windows of class Chrome_WidgetWin_1, not
+# the system's #32768.)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;
@@ -118,6 +122,34 @@ switch ($Mode) {
     Start-Sleep -Milliseconds 80
     [D]::SetCursorPos($p.X, $p.Y) | Out-Null
     "CLICKED $X,$Y"
+  }
+  'rclick' {
+    Take-Foreground
+    $p = New-Object D+POINT
+    [D]::GetCursorPos([ref]$p) | Out-Null
+    [D]::SetCursorPos($X, $Y) | Out-Null
+    Start-Sleep -Milliseconds 80
+    # RIGHTDOWN, RIGHTUP. The cursor stays where the menu opened, under it.
+    [D]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 40
+    [D]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+    "RCLICKED $X,$Y"
+  }
+  'menukeys' {
+    # Keys for an open menu: taking the foreground (Take-Foreground) would close
+    # it, so instead the menu -Hwnd must be up and the foreground window must be
+    # the process -ProcId's own, which is where the keys then land.
+    $open = @([D]::List([uint32]$ProcId) | Where-Object { $_.Split('|')[0] -eq $Hwnd }).Count -gt 0
+    $fgPid = [uint32]0
+    [D]::GetWindowThreadProcessId([D]::GetForegroundWindow(), [ref]$fgPid) | Out-Null
+    if (-not $open -or $fgPid -ne [uint32]$ProcId) { 'NOT-IN-MENU'; exit 3 }
+    $map = @{ enter = 0x0D; esc = 0x1B; down = 0x28; up = 0x26 }
+    foreach ($k in $Combo.ToLower().Split('+')) {
+      $vk = [byte]$map[$k]
+      [D]::keybd_event($vk, [byte][D]::MapVirtualKey($vk, 0), 0, [UIntPtr]::Zero)
+      [D]::keybd_event($vk, [byte][D]::MapVirtualKey($vk, 0), 2, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 150
+    }
+    "MENUKEYS $Combo"
   }
   'list' { [D]::List([uint32]$ProcId) }
 }
