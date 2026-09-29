@@ -790,10 +790,15 @@ test('(helper) win32-desktop.ps1 refuses to act where its target is not', async 
     unknownKey: refused(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', hwnd, '-Combo', 'down+f13']),
     otherForeground: null as null | { code: number; out: string },
   };
-  await inMain('w.setAlwaysOnTop(false); w.minimize();');
-  await page.waitForTimeout(800);
+  await inMain('w.setAlwaysOnTop(false); w.minimize(); w.blur();');
   try {
-    guards.otherForeground = refused(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', hwnd, '-Combo', 'esc']);
+    // Windows hands the foreground on when it likes: asked again until another
+    // process holds it. Until then the Esc goes to the app itself, which is harmless.
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(500);
+      guards.otherForeground = refused(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', hwnd, '-Combo', 'esc']);
+      if (guards.otherForeground.code !== 0) break;
+    }
   } finally {
     await inMain('w.restore(); w.show(); w.focus();');
   }
