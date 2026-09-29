@@ -13,9 +13,12 @@ param(
 #
 # keys, click and rclick only act when the sandboxed window is the foreground
 # window at that instant, and exit 3 otherwise: a chord like Ctrl+W must never
-# land in another application. menukeys sends keys (here "+" is a sequence,
-# not a chord) to an open popup menu, -Hwnd, of the process -ProcId, only while
-# the foreground window is that process's own. (Electron draws its menus on
+# land in another application. click and rclick also require the window at the
+# point (WindowFromPoint, its root) to be the target, since a click reaches
+# whatever is there, and exit 3 otherwise. menukeys sends keys (here "+" is a
+# sequence, not a chord) to an open popup menu, -Hwnd, of the process -ProcId:
+# every key name must be known (exit 2 otherwise, before any is sent), and the
+# foreground window must be that process's own before each key. (Electron draws its menus on
 # Windows with Chromium's views, in windows of class Chrome_WidgetWin_1, not
 # the system's #32768.)
 Add-Type -AssemblyName System.Drawing
@@ -47,6 +50,10 @@ public static class D {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder sb, int n);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder sb, int n);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
+  /** The top-level window at a screen point (GA_ROOT), the one a click there reaches. */
+  public static IntPtr RootAt(int x, int y) { var p = new POINT(); p.X = x; p.Y = y; return GetAncestor(WindowFromPoint(p), 2); }
   public static List<string> List(uint pid) {
     var r = new List<string>();
     EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p);
@@ -82,6 +89,19 @@ function Take-Foreground {
   if ([D]::GetForegroundWindow() -ne $target) { 'NOT-FOREGROUND'; exit 3 }
 }
 
+# A click lands on whatever window is at the point, foreground or not: a window
+# kept on top by another program, or a point off the target, would take it.
+function Assert-TargetAt($x, $y) {
+  if ([D]::RootAt($x, $y) -ne $target) { 'NOT-TARGET-AT-POINT'; exit 3 }
+}
+
+# The foreground window belongs to the process -ProcId, asked before every key.
+function Assert-ForegroundProcess {
+  $fgPid = [uint32]0
+  [D]::GetWindowThreadProcessId([D]::GetForegroundWindow(), [ref]$fgPid) | Out-Null
+  if ($fgPid -ne [uint32]$ProcId) { 'NOT-FOREGROUND-PROCESS'; exit 3 }
+}
+
 switch ($Mode) {
   'frame' {
     # DWMWA_EXTENDED_FRAME_BOUNDS: the visible window, without the invisible resize borders.
@@ -113,6 +133,7 @@ switch ($Mode) {
   }
   'click' {
     Take-Foreground
+    Assert-TargetAt $X $Y
     $p = New-Object D+POINT
     [D]::GetCursorPos([ref]$p) | Out-Null
     [D]::SetCursorPos($X, $Y) | Out-Null
@@ -125,6 +146,7 @@ switch ($Mode) {
   }
   'rclick' {
     Take-Foreground
+    Assert-TargetAt $X $Y
     $p = New-Object D+POINT
     [D]::GetCursorPos([ref]$p) | Out-Null
     [D]::SetCursorPos($X, $Y) | Out-Null
@@ -138,12 +160,14 @@ switch ($Mode) {
     # Keys for an open menu: taking the foreground (Take-Foreground) would close
     # it, so instead the menu -Hwnd must be up and the foreground window must be
     # the process -ProcId's own, which is where the keys then land.
-    $open = @([D]::List([uint32]$ProcId) | Where-Object { $_.Split('|')[0] -eq $Hwnd }).Count -gt 0
-    $fgPid = [uint32]0
-    [D]::GetWindowThreadProcessId([D]::GetForegroundWindow(), [ref]$fgPid) | Out-Null
-    if (-not $open -or $fgPid -ne [uint32]$ProcId) { 'NOT-IN-MENU'; exit 3 }
     $map = @{ enter = 0x0D; esc = 0x1B; down = 0x28; up = 0x26 }
-    foreach ($k in $Combo.ToLower().Split('+')) {
+    $names = @($Combo.ToLower().Split('+'))
+    # Every key named before any is sent: an unknown one would have been sent as 0.
+    foreach ($k in $names) { if (-not $map.ContainsKey($k)) { "UNKNOWN-KEY $k"; exit 2 } }
+    $open = @([D]::List([uint32]$ProcId) | Where-Object { $_.Split('|')[0] -eq $Hwnd }).Count -gt 0
+    if (-not $open) { 'NOT-IN-MENU'; exit 3 }
+    foreach ($k in $names) {
+      Assert-ForegroundProcess
       $vk = [byte]$map[$k]
       [D]::keybd_event($vk, [byte][D]::MapVirtualKey($vk, 0), 0, [UIntPtr]::Zero)
       [D]::keybd_event($vk, [byte][D]::MapVirtualKey($vk, 0), 2, [UIntPtr]::Zero)

@@ -717,9 +717,24 @@ test('(b) a real right click on the SSH host field opens a menu whose Paste land
     try {
       await page.waitForTimeout(300);
       const before = new Set(windows().map(l => l.split('|')[0]));
-      const clicked = desktop(['-Mode', 'rclick', '-Hwnd', hwnd, '-X', String(x), '-Y', String(y)]);
-      await page.waitForTimeout(700);
-      const open = windows().filter(l => !before.has(l.split('|')[0]));
+      // The helper refuses (exit 3) while another window holds the point or the
+      // foreground, which a user working beside the run causes: tried three times.
+      let clicked = '';
+      for (let attempt = 1; !clicked; attempt++) {
+        try {
+          clicked = desktop(['-Mode', 'rclick', '-Hwnd', hwnd, '-X', String(x), '-Y', String(y)]);
+        } catch (err) {
+          if (attempt === 3) throw err;
+          await osPoint(field);
+          await page.waitForTimeout(1000);
+        }
+      }
+      // The menu's window, once it is shown: asked for up to 3 s.
+      let open: string[] = [];
+      for (let i = 0; i < 10 && open.length === 0; i++) {
+        await page.waitForTimeout(300);
+        open = windows().filter(l => !before.has(l.split('|')[0]));
+      }
       if (open.length === 0) return { clicked, menus: 0, main: await seen(), value: await field.inputValue() };
       const [menuHwnd, menuClass, , L, T, W, H] = open[0].split('|');
       const rect = { x: Number(L), y: Number(T), w: Number(W), h: Number(H) };
@@ -727,10 +742,9 @@ test('(b) a real right click on the SSH host field opens a menu whose Paste land
       if (SHOTS) desktop(['-Mode', 'capture', '-X', String(rect.x - 320), '-Y', String(rect.y - 80), '-W', String(rect.w + 640), '-H', String(rect.h + 160), '-Out', path.join(SHOTS, 'b-ssh-native-menu.png')]);
       // The first item the keyboard can reach: with nothing selected and text
       // on the clipboard, Paste is the only one enabled.
-      const picked = [desktop(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', menuHwnd, '-Combo', 'down'])];
-      await page.waitForTimeout(300);
-      if (SHOTS) desktop(['-Mode', 'capture', '-X', String(rect.x - 320), '-Y', String(rect.y - 80), '-W', String(rect.w + 640), '-H', String(rect.h + 160), '-Out', path.join(SHOTS, 'b-ssh-native-menu-paste-selected.png')]);
-      picked.push(desktop(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', menuHwnd, '-Combo', 'enter']));
+      // In one call, the two keys 150 ms apart: the menu closes as soon as
+      // another window takes the foreground, and the helper checks it before each.
+      const picked = [desktop(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', menuHwnd, '-Combo', 'down+enter'])];
       await expect.poll(() => field.inputValue(), { timeout: 5000 }).toBe(TEXT).catch(() => {});
       return { clicked, menus: open.length, menuClass, main: await seen(), rect, picked, value: await field.inputValue() };
     } finally {
@@ -745,6 +759,49 @@ test('(b) a real right click on the SSH host field opens a menu whose Paste land
   });
   check('b: a real right click on an editable field opens a menu', result.menus > 0, true);
   check('b: its Paste puts the clipboard in the SSH host field', result.value, TEXT);
+});
+
+/**
+ * The helper's own guards, each made to trip: a click or a right click at a
+ * point the target window does not hold (another window, or none, is there),
+ * a key name menukeys does not know, and a key while another process holds the
+ * foreground. Each is refused before any input is sent.
+ */
+test('(helper) win32-desktop.ps1 refuses to act where its target is not', async () => {
+  test.skip(process.platform !== 'win32', 'the OS input helper is Windows only');
+  const pid = String(await app.evaluate(() => process.pid));
+  const hwnd = await inMain<string>('return w.getNativeWindowHandle().readBigInt64LE(0).toString();');
+  const refused = (args: string[]) => {
+    try { return { code: 0, out: desktop(args) }; } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? -1, out: String(e.stdout ?? '').trim() };
+    }
+  };
+  // 40 px right of the window's right edge, on the screen's own pixels.
+  const outside = await app.evaluate(({ screen }, { dist }) => {
+    const w = process.mainModule!.require(`${dist}/core/window-manager.js`).getMainWindow();
+    const b = w.getBounds();
+    const p = screen.dipToScreenPoint({ x: b.x + b.width + 40, y: b.y + Math.round(b.height / 2) });
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  }, { dist: DIST });
+  const guards = {
+    clickOutside: refused(['-Mode', 'click', '-Hwnd', hwnd, '-X', String(outside.x), '-Y', String(outside.y)]),
+    rclickOutside: refused(['-Mode', 'rclick', '-Hwnd', hwnd, '-X', String(outside.x), '-Y', String(outside.y)]),
+    unknownKey: refused(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', hwnd, '-Combo', 'down+f13']),
+    otherForeground: null as null | { code: number; out: string },
+  };
+  await inMain('w.setAlwaysOnTop(false); w.minimize();');
+  await page.waitForTimeout(800);
+  try {
+    guards.otherForeground = refused(['-Mode', 'menukeys', '-ProcId', pid, '-Hwnd', hwnd, '-Combo', 'esc']);
+  } finally {
+    await inMain('w.restore(); w.show(); w.focus();');
+  }
+  journey.helperGuards = guards;
+  check('helper: a click outside the target is refused', guards.clickOutside, { code: 3, out: 'NOT-TARGET-AT-POINT' });
+  check('helper: a right click outside the target is refused', guards.rclickOutside, { code: 3, out: 'NOT-TARGET-AT-POINT' });
+  check('helper: an unknown key name is refused', guards.unknownKey, { code: 2, out: 'UNKNOWN-KEY f13' });
+  check('helper: a key while another process holds the foreground is refused', guards.otherForeground, { code: 3, out: 'NOT-FOREGROUND-PROCESS' });
 });
 
 test('no page error on the way', async () => {
