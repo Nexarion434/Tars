@@ -27,7 +27,9 @@ function assistantLine(i: number): string {
   return JSON.stringify({
     type: 'assistant',
     requestId: `req_${i}`,
-    timestamp: '2026-09-15T12:00:00.000Z',
+    // Now, not a fixed day: the page opens on the last 14 days, and a fixed date
+    // fell out of them on 2026-09-29 and priced nothing.
+    timestamp: new Date().toISOString(),
     message: {
       id: `msg_${i}`,
       model: 'claude-opus-5',
