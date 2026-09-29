@@ -145,7 +145,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
         setPassword('');
         setGatewayResult({ success: true, message: `Signed in - Hermes ${r.version ?? ''} ${r.gatewayState ?? ''}`.trim() });
       } else {
-        setGatewayResult({ success: false, message: r?.error || 'Sign-in failed' });
+        setGatewayResult({ success: false, message: sshTunnelHint(conn, r?.error) ?? (r?.error || 'Sign-in failed') });
       }
     } finally {
       setSigningIn(false);
@@ -191,7 +191,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
       if (!reachable) {
         setSignedIn(false);
         setNeedsSignIn(false);
-        setGatewayResult({ success: false, message: said(`${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}`) });
+        setGatewayResult({ success: false, message: said(sshTunnelHint(target, r.error) ?? `${r.baseUrl || ''} - ${r.error || `HTTP ${r.status}`}`) });
         return;
       }
       const bits = [`Hermes ${r.version ?? '?'}`];
@@ -354,7 +354,9 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
         />
       )}
 
-      {typedUrl && (
+      {/* SSH too: a gateway at the far end of the tunnel can want its token
+          (Hermes Desktop's SSH connections hold one). */}
+      {(typedUrl || conn.mode === 'ssh') && (
         <SettingsRow
           label="Auth"
           description={
@@ -500,3 +502,19 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
     </>
   );
 };
+
+/**
+ * What to say when nothing answers on an SSH connection's local end. Tars
+ * does not open the tunnel: the user or Hermes Desktop does, so the hint
+ * names the command, from the form's own values. Null for any other failure,
+ * which keeps its own words.
+ */
+function sshTunnelHint(target: HermesConnection, error?: string): string | null {
+  if (target.mode !== 'ssh' || !error || !/ECONNREFUSED|timeout/i.test(error)) return null;
+  const ssh = target.ssh;
+  const remote = ssh?.remotePort || 9119;
+  const local = ssh?.localPort || remote;
+  const port = ssh?.port && ssh.port !== 22 ? `-p ${ssh.port} ` : '';
+  const who = ssh?.host ? `${ssh.user ? `${ssh.user}@` : ''}${ssh.host}` : 'user@host';
+  return `Nothing answers on 127.0.0.1:${local}. Tars does not open the SSH tunnel: start it first (ssh ${port}-L ${local}:127.0.0.1:${remote} ${who}).`;
+}
