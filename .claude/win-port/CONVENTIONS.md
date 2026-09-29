@@ -52,6 +52,12 @@ Read this before any work. It completes `CLAUDE.md` (upstream rules, still bindi
   worktree still holds a junction, remove it with `cmd /c rmdir node_modules` before anything else
   (never `Remove-Item -Recurse` or `git worktree remove --force` on a junction: they can follow it
   and wipe the main install).
+- **Shared temp folders** (`C:\Users\Public\tars-tmp` and the like) are used by several agents at
+  once. Never glob-delete there (`rm -rf ...*`): delete only the exact paths you created, recorded
+  when you created them. A glob once wiped another agent's live E2E sandbox (2026-09-28).
+- **CI artifacts**: to diagnose a CI failure you may download that run's artifacts from the fork
+  (Nicolas's standing OK, 2026-09-28): `gh run download <run> --repo Nexarion434/Tars -n e2e-runs-windows
+  -D <your scratch dir>`. Fork only, keep them out of git (they can show the tailnet name and local paths).
 - **E2E in a fresh worktree under the safe env**: `next dev` fails on `next/font/google` (Turbopack:
   "queries have exactly one entry") until the fonts are cached in that worktree's `.next`. Start
   `next dev` once in the normal environment (the dev server only, never Electron), stop it, then run
