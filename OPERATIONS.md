@@ -569,7 +569,7 @@ silently drops to the GitHub-API fallback.
 
 ### Which builds are kept
 
-**The kept folder is `release/` of the main checkout**, `/Users/demo/tars/release/`, the one JeanBrasse
+**The kept folder is `release/` of the main checkout**, `~/tars/release/` on this machine, the one JeanBrasse
 opens. `scripts/prune-releases.mjs` finds it through git (the parent of
 `git rev-parse --git-common-dir`) from the main checkout or any worktree, and never uses
 `release/` of the current directory; tests name their folder with `--release-dir` or
