@@ -34,6 +34,8 @@ export interface BridgeDeps {
 export interface BindTarget { host: string; port: number }
 
 let server: http.Server | null = null;
+/** A start under way: a second call waits for it rather than opening a second server on the port. */
+let starting: Promise<{ listening: boolean; reason?: string; target?: BindTarget }> | null = null;
 let state: { listening: boolean; reason?: string; target?: BindTarget } = { listening: false, reason: 'Not started.' };
 let offer: Offer | null = null;
 let activeDeps: BridgeDeps | null = null;
@@ -153,9 +155,14 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   return send(200, { ok: true });
 }
 
-export async function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {
+export function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {
   activeDeps = deps;
-  if (server) return bridgeState();
+  if (server) return Promise.resolve(bridgeState());
+  starting ??= listen(deps).finally(() => { starting = null; });
+  return starting;
+}
+
+async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {
   const tailscale = await detectTailscale();
   const target = resolveBindTarget(process.env, app?.isPackaged ?? true, tailscale.ip);
   if ('reason' in target) {
@@ -168,11 +175,17 @@ export async function startBridge(deps: BridgeDeps): Promise<{ listening: boolea
     });
   });
   await new Promise<void>((resolve) => {
-    created.once('error', (err: NodeJS.ErrnoException) => {
+    const failed = (err: NodeJS.ErrnoException) => {
       state = { listening: false, reason: `The bridge could not listen on ${target.host}:${target.port} (${err.code}).` };
       resolve();
-    });
+    };
+    created.once('error', failed);
     created.listen(target.port, target.host, () => {
+      // Listening: an error from now on is one connection's (an accept that
+      // failed), not the listener's, and must neither say the bridge is down
+      // nor go unhandled.
+      created.off('error', failed);
+      created.on('error', () => {});
       const bound = created.address();
       server = created;
       state = { listening: true, target: { host: target.host, port: typeof bound === 'object' && bound ? bound.port : target.port } };
