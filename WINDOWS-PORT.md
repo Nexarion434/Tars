@@ -10,10 +10,10 @@ renvoie au constat 12 de l'audit A, `B/N-03` au constat N-03 de l'audit B.
 
 Statuts : **KO** cassé (vérifié), **?** non testé, **OK** vérifié avec la preuve indiquée.
 
-**État au 2026-09-29.** Le portage est livré. `windows` à a6621c6d, synchronisé avec l'upstream 1.9.1
-(6c104a73), `CI - Windows` verte sur windows-latest (unit + E2E, run 36486432151) et `CI - Tests` verte sur
-ubuntu au même commit. Releases publiées sur `Nexarion434/Tars` : `v1.9.0-win.1`, `v1.9.0-win.2`,
-`v1.9.1-win.1`, `v1.9.1-win.2`, `v1.9.1-win.3` (la dernière depuis a6621c6d). Checklist manuelle du §4
+**État au 2026-10-02.** Le portage est livré. `windows` à ca057ed2, synchronisé avec l'upstream 1.9.2
+(74508222), `CI - Windows` verte sur windows-latest (unit + E2E, run 37000763260) et `CI - Tests` verte sur
+ubuntu au même commit. Dernière release publiée sur `Nexarion434/Tars` : `v1.9.2-win.1` (depuis ca057ed2) ;
+avant elle `v1.9.0-win.1` à `v1.9.1-win.5`. Checklist manuelle du §4
 passée en entier par Nicolas le 2026-09-28. Matrice (§2) : restent partielles 9 (envoi programmatique),
 12 (vrai Gemini), 15 (vraie installation de skill) et 31 (textes mac, D10) ; la 24 (Hermes Desktop,
 Tailscale, Tasmania) est faite (`win/integrations-paths`). Ce qui reste ouvert : §5bis.
@@ -187,10 +187,10 @@ Son verdict : « tout à l'air de marcher ».
 | D17 | Comptes Claude multiples (upstream 1.9.2) | Masqués et désactivés sous Windows tant qu'ils ne sont pas portés : l'option se lit éteinte sous win32 quel que soit le registre (`electron/platform/claude-accounts.ts`, lu par `readAccountsSettings`), la section Settings et son lien ne sont pas offerts (`src/lib/claude-accounts-offered.ts`), leurs tests et specs sautés sous win32 en le disant. Portage : lot à part | 2026-10-02 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
-## 5bis. Reprise (état au 2026-09-29)
+## 5bis. Reprise (état au 2026-10-02)
 
-**Fait.** Portage complet dans `windows` (tête a6621c6d), synchronisé avec l'upstream 1.9.1 (6c104a73) le
-2026-09-28. CI Windows et Linux vertes à a6621c6d. Dernière release : `v1.9.1-win.3` (run 36489799374,
+**Fait.** Portage complet dans `windows` (tête ca057ed2), synchronisé avec l'upstream 1.9.2 (74508222) le
+2026-10-02. CI Windows et Linux vertes à ca057ed2. Dernière release : `v1.9.2-win.1` (run 37004161915,
 `latest.yml` vérifié), publiée sur autorisation de Nicolas. Synchro quotidienne (D13) : sur conflit elle ouvre
 une issue « Upstream sync conflict » sur le fork et ne publie rien ; il faut alors une synchro à la main.
 
@@ -280,3 +280,5 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
 | 2026-09-29 | Spec `usage-unreadable` : tours datés de maintenant, la date fixe du 15/09 était sortie de la fenêtre de 14 jours (même correctif proposé à l upstream, branche `up/usage-date`) | `windows` | échec CI 36573749517, puis CI Windows et Linux vertes | direct | 04c6169f |
 | 2026-09-29 | Release `v1.9.1-win.4` publiée depuis 04c6169f (run 36585650059, `latest.yml` vérifié), sur accord de Nicolas | release | CI Windows et Linux vertes | accord de Nicolas | 04c6169f |
 | 2026-10-02 | Synchro upstream 1.9.2 (74508222, dont nos PR #256 à #268) à la main, la quotidienne ayant buté sur 26 conflits (issue #9) : 28 conflits résolus au profit de l'upstream + ajouts win32 (killPty, attente ConPTY au quit, lancement direct D2, childEnv, gardes de chemins de `platform/real-target`) ; D17 : comptes Claude masqués et éteints sous Windows ; la fenêtre relit la fiche d'un agent passé à stopped (qui, quand, pourquoi), que le garde Windows de `agent:complete` ne lui faisait plus relire ; tests et specs POSIX sautés sous win32 en le disant, specs du fork mises au stop avec raison et au bouton plein écran ; 5 références win32 refaites (dashboard, agents, projects, usage, settings-system) | `win/sync-upstream-1002` | npm test 5210/0 hors Ctrl+C local ; E2E 166 : 40 surfaces, specs corrigées vertes, quit-time.win32 18 tours verts (~0,36 s, rien de restant), pty-kill vert | APPROVE (win-reviewer, 0 bloquant) | bdab49a6 |
+| 2026-10-02 | CI sur windows-latest après la synchro : stop-reason-routes démarre un claude.exe de remplacement (le runner n'a pas de claude), deux specs Usage des comptes Claude sautées sous win32 (D17), 30 s pour les tests git et npm de scripts (dépassements de 5 s sur un runner chargé), pty-kill 8 dit comment son harnais a fini quand il ne rend rien | `windows` | CI Windows (unit + E2E) et Linux vertes, run 37000763260 | n/a | ca057ed2 |
+| 2026-10-02 | Release `v1.9.2-win.1` publiée depuis ca057ed2 (run 37004161915, installeur 133 Mo, `latest.yml` vérifié), sur accord de Nicolas (« si c'est vert tu peux publier ») | release | CI Windows et Linux vertes | accord de Nicolas | ca057ed2 |
