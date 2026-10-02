@@ -591,7 +591,10 @@ units (`__tests__/electron/machines/`).
 **What listens.** A second HTTP server, `electron/services/machines/bridge-server.ts`,
 apart from the loopback API of §2. It binds this machine's Tailscale IPv4 on
 port 31418, and nothing at all when Tailscale gives no address: never
-`0.0.0.0`, never Funnel, never `tailscale serve`. It starts only once a
+`0.0.0.0`, never Funnel, never `tailscale serve`. It answers only callers
+from the tailnet's range (100.64.0.0/10), refusing anyone else with a 403:
+macOS hands a socket bound to the Tailscale address what arrives over the
+LAN for that address too. It starts only once a
 machine is paired, or while a pairing code is shown, and stops in the quit's
 first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a

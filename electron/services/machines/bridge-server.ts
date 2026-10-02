@@ -43,14 +43,30 @@ let activeDeps: BridgeDeps | null = null;
 const isIpv4 = (s: string) => /^\d+\.\d+\.\d+\.\d+$/.test(s) && s !== '0.0.0.0';
 
 /**
+ * 100.64.0.0/10, the range Tailscale draws every machine's IPv4 from, as a
+ * socket may report it (::ffff:100.x). Bound to the tailnet address, the
+ * bridge still answers only callers from it: macOS also hands that socket
+ * what arrives over the LAN for the address.
+ */
+export function isTailnetAddress(address: string | undefined): boolean {
+  const m = /^(?:::ffff:)?100\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address ?? '');
+  if (!m) return false;
+  const second = Number(m[1]);
+  return second >= 64 && second <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
+}
+
+/** Whether a development run names where to listen; a packaged Tars never does. */
+const usesDevOverride = (env: NodeJS.ProcessEnv, packaged: boolean) => !packaged && env.TARS_MACHINES_BIND !== undefined;
+
+/**
  * Where to listen: the tailnet address on 31416. A development run may name
  * the address and the port (TARS_MACHINES_BIND, TARS_MACHINES_PORT, 0 for any
  * free port), as the e2e suite does to run two Tars on one machine; a
  * packaged Tars never reads them.
  */
 export function resolveBindTarget(env: NodeJS.ProcessEnv, packaged: boolean, tailnetIp: string | undefined): BindTarget | { reason: string } {
-  if (!packaged && env.TARS_MACHINES_BIND !== undefined) {
-    const host = env.TARS_MACHINES_BIND.trim();
+  if (usesDevOverride(env, packaged)) {
+    const host = (env.TARS_MACHINES_BIND ?? '').trim();
     const raw = env.TARS_MACHINES_PORT;
     const port = raw !== undefined && raw.trim() !== '' && Number.isInteger(Number(raw)) ? Number(raw) : MACHINES_PORT_DEFAULT;
     return isIpv4(host) ? { host, port } : { reason: `TARS_MACHINES_BIND must be one IPv4 address, not ${host || 'empty'}.` };
@@ -96,9 +112,10 @@ const peerFor = (authorization: string | undefined): PairedMachine | undefined =
 
 const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair']);
 
-export async function handleBridgeRequest(req: http.IncomingMessage, res: http.ServerResponse, deps: BridgeDeps): Promise<void> {
+export async function handleBridgeRequest(req: http.IncomingMessage, res: http.ServerResponse, deps: BridgeDeps, opts: { tailnetOnly?: boolean } = {}): Promise<void> {
   activeDeps = deps;
   const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+  if (opts.tailnetOnly && !isTailnetAddress(req.socket.remoteAddress)) return send(403, { error: 'Forbidden' });
   // No browser ever calls the bridge: a page that tries is refused before anything is read.
   if (req.headers.origin) return send(403, { error: 'Forbidden' });
   const path = new URL(req.url || '/', 'http://bridge').pathname;
@@ -164,13 +181,16 @@ export function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; rea
 
 async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {
   const tailscale = await detectTailscale();
-  const target = resolveBindTarget(process.env, app?.isPackaged ?? true, tailscale.ip);
+  const packaged = app?.isPackaged ?? true;
+  const target = resolveBindTarget(process.env, packaged, tailscale.ip);
+  // Only a development run bound to 127.0.0.1 answers callers off the tailnet.
+  const tailnetOnly = !usesDevOverride(process.env, packaged);
   if ('reason' in target) {
     state = { listening: false, reason: target.reason };
     return bridgeState();
   }
   const created = http.createServer((req, res) => {
-    void handleBridgeRequest(req, res, deps).catch(() => {
+    void handleBridgeRequest(req, res, deps, { tailnetOnly }).catch(() => {
       if (!res.headersSent) { res.writeHead(500); res.end(); }
     });
   });

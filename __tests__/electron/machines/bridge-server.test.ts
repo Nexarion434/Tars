@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, isTailnetAddress, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
 import { API_PORT, OPENAI_BRIDGE_PORT } from '../../../electron/constants';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 import { codeProof, answerProof } from '../../../electron/services/machines/pairing';
@@ -29,6 +29,10 @@ import { codeProof, answerProof } from '../../../electron/services/machines/pair
  *    tell this machine from any other that answers (final review, C1); or
  *    a secret that is not what newSecret makes is stored, and a line break
  *    in it breaks every header this side sends with it.
+ * 11. A machine off the tailnet reaches it anyway: on macOS a socket bound
+ *    to the Tailscale address also takes what arrives over the LAN for
+ *    that address (final review, Important 7). A development run bound to
+ *    127.0.0.1 is the one exception.
  */
 let server: http.Server;
 let base: string;
@@ -131,5 +135,26 @@ describe('what it answers', () => {
     expect((await call('GET', '/machines/v1/ping', undefined, { origin: 'https://evil.example' })).status).toBe(403);
     openPairingOffer();
     expect((await call('POST', '/machines/v1/pair', { pad: 'x'.repeat(70_000) })).status).toBe(413);
+  });
+});
+
+describe('who may reach it', () => {
+  it('answers only a tailnet address when it listens on the tailnet (11)', async () => {
+    const strict = http.createServer((req, res) => { void handleBridgeRequest(req, res, deps, { tailnetOnly: true }); });
+    await new Promise<void>(r => strict.listen(0, '127.0.0.1', r));
+    try {
+      openPairingOffer();
+      const at = `http://127.0.0.1:${(strict.address() as AddressInfo).port}`;
+      expect((await fetch(at + '/machines/v1/hello')).status).toBe(403);
+      // The development run's own server, beside it, answers the same caller.
+      expect((await call('GET', '/machines/v1/hello')).status).toBe(200);
+    } finally { await new Promise<void>(r => strict.close(() => r())); }
+  });
+
+  it.each([
+    ['100.64.0.1', true], ['100.127.255.254', true], ['::ffff:100.100.1.2', true],
+    ['100.63.255.255', false], ['100.128.0.1', false], ['192.168.1.20', false], ['127.0.0.1', false], ['', false],
+  ])('reads %j as on the tailnet: %s (11)', (address, yes) => {
+    expect(isTailnetAddress(address)).toBe(yes);
   });
 });
