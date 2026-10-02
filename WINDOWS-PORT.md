@@ -213,7 +213,7 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
 - Tests upstream POSIX sautés sous win32, raison écrite : `quit-ends-terminals` (groupes bash), `agent-stop`
   1, 3, 4, 8, `mcp-server-runtime` 18, 19, 21 (chemins macOS de copie transitoire), `statusline-account(s)`
   (status line bash, D1) ; specs `stop-ends-agent`, `quit-ends-agents` (arbre entier), `stall-signal` (ps,
-  caffeinate) ; comptes Claude (D17) : leurs 8 fichiers de tests et 4 specs.
+  caffeinate) ; comptes Claude (D17) : leurs 8 fichiers de tests et 6 specs.
 - Suivis de la relecture (non bloquants) : sous win32 la veille des agents bloqués et la lecture de l'arbre lancent `ps`
   sans `windowsHide` (une console clignote si un `ps` est sur le PATH ; absent chez Nicolas) : ne pas démarrer la veille
   sous win32 ; à la fermeture de session Windows, la deuxième passe du quit (`closeVaultDb`,
