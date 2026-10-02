@@ -579,3 +579,59 @@ seen by the reviewer's probe; an antivirus or another holder, unconfirmed),
 which a one-second retry does not cover. A save can therefore still fail, with
 an error that names the file. The measurement is kept, opt-in:
 `TARS_STRESS=1 npx vitest run __tests__/electron/platform/rename-replacing.test.ts`.
+
+## 8. The machines bridge
+
+Settings > Machines pairs this Tars with another one on the same tailnet, so
+that each can see the other's agents (and, later, drive them where allowed).
+Measured on the fork's `win/machines` branch on the 2nd of October 2026, with
+two Tars on one machine (`e2e/machines-pairing.spec.ts`) and the bridge's
+units (`__tests__/electron/machines/`).
+
+**What listens.** A second HTTP server, `electron/services/machines/bridge-server.ts`,
+apart from the loopback API of §2. It binds this machine's Tailscale IPv4 on
+port 31418, and nothing at all when Tailscale gives no address: never
+`0.0.0.0`, never Funnel, never `tailscale serve`. It starts only once a
+machine is paired, or while a pairing code is shown, and stops in the quit's
+first pass. A development run may bind `127.0.0.1` instead
+(`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
+packaged Tars never reads those.
+
+**What it answers.** Four routes, listed one by one; any other path is a 404
+before a credential is read, so a prober cannot tell a wrong secret from a
+missing route, and no route of the loopback API answers here.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /machines/v1/hello` | anyone on the tailnet | this machine's id, name and the offer's nonce, only while a code is shown; 404 otherwise |
+| `POST /machines/v1/pair` | anyone holding the code | a proof of the code; on success a secret issued to the caller |
+| `GET /machines/v1/ping` | a paired machine | this machine's name and how many agents run |
+| `POST /machines/v1/unpair` | a paired machine | this machine forgets the caller |
+
+A request carrying an `Origin` header is refused (no browser ever calls the
+bridge), and a body over 64 KB is refused unread.
+
+**Who is admitted.** A paired machine, by the secret this Tars issued to it
+at pairing. `~/.tars-private/machines.json` keeps the sha256 of that secret,
+compared in constant time, and the secret the other machine issued to this
+one, in clear because it has to be presented. The loopback API's shared
+token, Tars's pass and the Hermes webhook secret open nothing here.
+
+**What pairing proves.** The machine showing the code draws six digits and a
+nonce; the typing machine sends `HMAC-SHA256(code, nonce:its id)`, never the
+code. An offer is good for five minutes by the offering machine's clock, five
+wrong proofs and one success, and refuses a machine pairing with itself.
+
+**Its known limit.** The typing machine sends its proof to the first machine
+of the tailnet that answers `hello`. A device of the same tailnet that
+answered `hello` while a code was shown would receive a proof it can test
+offline against all 10^6 codes, then present the right one to the real
+offering machine within the five minutes. What stands in the way is the
+tailnet itself (your own devices) and its access rules. A later step could
+have the typing machine show the name it found and wait for a click before it
+sends the proof.
+
+**What a paired machine may do here.** See, by default; Drive only when this
+machine says so in Settings > Machines. The machine being driven decides,
+never the caller. In this first part the bridge serves no agent, no
+terminal and no file: what See and Drive open is the next plans'.
