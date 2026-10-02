@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /**
  * The stop as the API, the MCP tool and the window ask for it (PLAN-1.9.2.md
@@ -103,6 +105,20 @@ async function call(method: string, path: string, opts: { body?: unknown; caller
   return answer;
 }
 
+/**
+ * The CLI a start may launch. On Windows the start resolves it to a file
+ * before it opens the terminal (the direct launch, D2), and a runner has no
+ * claude: a stand-in claude.exe, never run (node-pty is mocked). Elsewhere
+ * nothing, and `claude` by name, as upstream's test has it.
+ */
+function startableCli(): Partial<AgentStatus> {
+  if (process.platform !== 'win32') return {};
+  const cliPath = path.join(tmpHome, 'bin', 'claude.exe');
+  fs.mkdirSync(path.dirname(cliPath), { recursive: true });
+  fs.writeFileSync(cliPath, '');
+  return { cliPath };
+}
+
 function agent(id: string, over: Partial<AgentStatus> = {}): AgentStatus {
   const a = { id, name: `Agent ${id}`, status: 'running', provider: 'claude', projectPath: tmpHome, skills: [], output: [], lastActivity: '', currentSessionId: `sess-${id}`, ...over } as AgentStatus;
   agents.set(id, a);
@@ -175,7 +191,7 @@ describe('after the stop', () => {
 
   it('5. a start clears the stop: the agent runs, and no longer reads as stopped', async () => {
     agent('orch', { status: 'idle' });
-    const w1 = agent('w1');
+    const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'frozen' }, caller: 'orch' });
 
     const r = await call('POST', '/api/agents/w1/start', { body: { prompt: 'again' }, caller: 'orch' });
