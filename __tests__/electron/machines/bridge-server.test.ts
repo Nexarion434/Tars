@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
+import { API_PORT, OPENAI_BRIDGE_PORT } from '../../../electron/constants';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 import { codeProof } from '../../../electron/services/machines/pairing';
 
@@ -22,6 +23,8 @@ import { codeProof } from '../../../electron/services/machines/pairing';
  *    whole.
  * 8. pair answers before the file is written, so a crash in between leaves
  *    one side paired and the other not.
+ * 9. Its port is one a loopback server of Tars already holds (the API, or
+ *    the OpenAI bridge on the API's port + 1), so the two collide.
  */
 let server: http.Server;
 let base: string;
@@ -47,7 +50,7 @@ afterEach(() => new Promise<void>(r => server.close(() => r())));
 
 describe('where the bridge listens', () => {
   it('on the tailnet address, never 0.0.0.0, and nowhere without one (1)', () => {
-    expect(resolveBindTarget({}, true, '100.64.0.1')).toEqual({ host: '100.64.0.1', port: 31416 });
+    expect(resolveBindTarget({}, true, '100.64.0.1')).toEqual({ host: '100.64.0.1', port: 31418 });
     expect(resolveBindTarget({}, true, undefined)).toEqual({ reason: expect.stringContaining('Tailscale') });
     expect(resolveBindTarget({ TARS_MACHINES_BIND: '0.0.0.0' }, false, undefined)).toEqual({ reason: expect.any(String) });
   });
@@ -55,7 +58,14 @@ describe('where the bridge listens', () => {
   it('takes the development overrides only when not packaged (2)', () => {
     const env = { TARS_MACHINES_BIND: '127.0.0.1', TARS_MACHINES_PORT: '31999' };
     expect(resolveBindTarget(env, false, '100.64.0.1')).toEqual({ host: '127.0.0.1', port: 31999 });
-    expect(resolveBindTarget(env, true, '100.64.0.1')).toEqual({ host: '100.64.0.1', port: 31416 });
+    expect(resolveBindTarget(env, true, '100.64.0.1')).toEqual({ host: '100.64.0.1', port: 31418 });
+  });
+});
+
+describe('its port', () => {
+  it('is none a loopback server of Tars already holds (9)', () => {
+    expect(MACHINES_PORT_DEFAULT).toBe(31418);
+    expect([API_PORT, OPENAI_BRIDGE_PORT, 31415, 31416]).not.toContain(MACHINES_PORT_DEFAULT);
   });
 });
 

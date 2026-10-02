@@ -16,7 +16,12 @@ import type { PairedMachine } from './types';
  * paired machine when it presents the secret this Tars issued to it at
  * pairing (kept here as a hash). SECURITY.md, "The machines bridge".
  */
-export const MACHINES_PORT_DEFAULT = 31416;
+/**
+ * Fixed, since the other machine has to know it without asking: not the
+ * API's 31415, nor 31416, which the OpenAI bridge takes (OPENAI_BRIDGE_PORT,
+ * the API's port + 1).
+ */
+export const MACHINES_PORT_DEFAULT = 31418;
 const MAX_BODY = 64 * 1024;
 
 export interface BridgeDeps {

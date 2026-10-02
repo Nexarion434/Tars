@@ -32,11 +32,11 @@ beforeEach(async () => {
 afterEach(() => new Promise<void>(r => server.close(() => r())));
 
 describe('candidates', () => {
-  it('are the online peers on 31416, or the development list when not packaged (5)', () => {
+  it('are the online peers on 31418, or the development list when not packaged (5)', () => {
     const peers = [{ ip: '100.64.0.2', online: true }, { ip: '100.64.0.3', online: false }];
-    expect(candidatesFrom({}, true, peers)).toEqual([{ host: '100.64.0.2', port: 31416 }]);
+    expect(candidatesFrom({}, true, peers)).toEqual([{ host: '100.64.0.2', port: 31418 }]);
     expect(candidatesFrom({ TARS_MACHINES_PEERS: '127.0.0.1:31484' }, false, peers)).toEqual([{ host: '127.0.0.1', port: 31484 }]);
-    expect(candidatesFrom({ TARS_MACHINES_PEERS: '127.0.0.1:31484' }, true, peers)).toEqual([{ host: '100.64.0.2', port: 31416 }]);
+    expect(candidatesFrom({ TARS_MACHINES_PEERS: '127.0.0.1:31484' }, true, peers)).toEqual([{ host: '100.64.0.2', port: 31418 }]);
   });
 });
 
