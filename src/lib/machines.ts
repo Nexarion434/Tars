@@ -1,4 +1,4 @@
-import type { MachineView } from '@/types/electron';
+import type { MachineView, MachinesView } from '@/types/electron';
 
 /**
  * The words Settings > Machines writes under each paired machine. Frame:
@@ -22,4 +22,16 @@ export function statusLine(m: MachineView, now: Date): string {
     return `${n} ${n === 1 ? 'agent' : 'agents'} running · seen ${seenAgo(m.lastSeen, now)}`;
   }
   return m.lastSeen ? `offline · last seen ${seenAgo(m.lastSeen, now)}` : 'offline · not seen since Tars started';
+}
+
+/**
+ * What the address row says in place of the address, or null to show it:
+ * that Tailscale is off, or why the bridge cannot listen while machines are
+ * paired. A bridge with nothing paired and no code shown is not started, and
+ * that is no fault.
+ */
+export function addressNote(view: Pick<MachinesView, 'tailscale' | 'bridge' | 'peers'>): string | null {
+  if (!view.tailscale.running) return 'Tailscale is not running';
+  if (!view.bridge.listening && view.bridge.reason && view.peers.length > 0) return view.bridge.reason;
+  return null;
 }

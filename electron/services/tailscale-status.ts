@@ -48,6 +48,9 @@ export function parseTailscaleStatus(json: unknown): Omit<TailscaleInfo, 'instal
   return { running: s.BackendState === 'Running', dnsName: bare(s.Self.DNSName), ip: ipv4(s.Self.TailscaleIPs), peers };
 }
 
+/** This machine's tailnet address while Tailscale runs, and none when it is stopped (its address is then bound to nothing). */
+export const tailnetIp = (ts: { running: boolean; ip?: string }): string | undefined => (ts.running ? ts.ip : undefined);
+
 /**
  * Where to look for `tailscale`: where this platform installs it
  * (tailscaleCandidates). A development run may name the one binary to ask,

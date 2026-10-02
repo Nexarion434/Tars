@@ -2,7 +2,7 @@ import * as http from 'http';
 import { app } from 'electron';
 import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, cleanName, isSecret } from './store';
 import { Offer, openOffer, checkProof, answerProof } from './pairing';
-import { detectTailscale } from '../tailscale-status';
+import { detectTailscale, tailnetIp } from '../tailscale-status';
 import type { PairedMachine } from './types';
 
 /**
@@ -36,7 +36,7 @@ export interface BindTarget { host: string; port: number }
 let server: http.Server | null = null;
 /** A start under way: a second call waits for it rather than opening a second server on the port. */
 let starting: Promise<{ listening: boolean; reason?: string; target?: BindTarget }> | null = null;
-let state: { listening: boolean; reason?: string; target?: BindTarget } = { listening: false, reason: 'Not started.' };
+let state: { listening: boolean; reason?: string; target?: BindTarget } = { listening: false };
 let offer: Offer | null = null;
 let activeDeps: BridgeDeps | null = null;
 
@@ -182,7 +182,7 @@ export function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; rea
 async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {
   const tailscale = await detectTailscale();
   const packaged = app?.isPackaged ?? true;
-  const target = resolveBindTarget(process.env, packaged, tailscale.ip);
+  const target = resolveBindTarget(process.env, packaged, tailnetIp(tailscale));
   // Only a development run bound to 127.0.0.1 answers callers off the tailnet.
   const tailnetOnly = !usesDevOverride(process.env, packaged);
   if ('reason' in target) {
@@ -218,6 +218,6 @@ async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: 
 export function stopBridge(): Promise<void> {
   const s = server;
   server = null;
-  state = { listening: false, reason: 'Stopped.' };
+  state = { listening: false };
   return new Promise(resolve => (s ? s.close(() => resolve()) : resolve()));
 }

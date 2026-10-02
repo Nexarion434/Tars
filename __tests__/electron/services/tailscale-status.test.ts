@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTailscaleStatus } from '../../../electron/services/tailscale-status';
+import { parseTailscaleStatus, tailnetIp } from '../../../electron/services/tailscale-status';
 
 /**
  * What `tailscale status --json` says about this machine and its peers.
@@ -13,6 +13,9 @@ import { parseTailscaleStatus } from '../../../electron/services/tailscale-statu
  * 5. This machine (Self) is listed among its own peers.
  * 6. A machine shared in from another tailnet (ShareeNode) is not told
  *    apart, so pairing would trust a stranger's device (final review, C1).
+ * 7. The address of a Tailscale that is stopped is used: the bridge then
+ *    fails to bind it (EADDRNOTAVAIL) and says so in words nobody can act
+ *    on, not that Tailscale is off (final review, Important 4).
  */
 const status = {
   BackendState: 'Running',
@@ -41,5 +44,12 @@ describe('parseTailscaleStatus', () => {
 
   it.each([null, 42, 'x', {}, { Self: 'nope', Peer: [] }])('reads %j as not running, with no peers (4)', (raw) => {
     expect(parseTailscaleStatus(raw)).toEqual({ running: false, peers: [] });
+  });
+});
+
+describe('tailnetIp', () => {
+  it('is the address only while Tailscale runs (7)', () => {
+    expect(tailnetIp({ running: false, ip: '100.64.0.1' })).toBeUndefined();
+    expect(tailnetIp({ running: true, ip: '100.64.0.1' })).toBe('100.64.0.1');
   });
 });

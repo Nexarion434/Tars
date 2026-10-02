@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button, Input, SegmentedControl, StatusSquare } from '@/components/ui';
 import type { MachineView, PeerPermission } from '@/types/electron';
 import { useMachines } from '@/hooks/useMachines';
-import { statusLine } from '@/lib/machines';
+import { statusLine, addressNote } from '@/lib/machines';
 import { rendererPlatform } from '@/lib/display-path';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
@@ -85,9 +85,9 @@ export const MachinesSection = () => {
         label="Address on your tailnet"
         wrap
         description="Your machines reach it over Tailscale only, never from the internet. Your system may ask once whether Tars can accept connections: allow it on private networks."
-        control={view.tailscale.running
+        control={addressNote(view) === null
           ? <Input width="control" mono readOnly aria-label="Address on your tailnet" value={view.self.address ?? ''} />
-          : <span className="text-[11.5px] text-muted-foreground">Tailscale is not running</span>}
+          : <span className="text-[11.5px] text-muted-foreground">{addressNote(view)}</span>}
       />
       {view.offer && (
         <div data-settings-row className="px-4 py-[11px] shrink-0">

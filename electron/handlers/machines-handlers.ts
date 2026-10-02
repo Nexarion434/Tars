@@ -3,7 +3,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { readMachines, writeMachines, cleanName } from '../services/machines/store';
 import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer } from '../services/machines/bridge-server';
 import { pairWithCode, candidatesFrom, unpairPeer } from '../services/machines/client';
-import { startStatusPolling, peerStatus } from '../services/machines/status';
+import { startStatusPolling, peerStatus, forgetStatus, pollNow } from '../services/machines/status';
 import { formatCode } from '../services/machines/pairing';
 import { detectTailscale } from '../services/tailscale-status';
 import type { MachinesView } from '../services/machines/types';
@@ -14,7 +14,11 @@ import type { MachinesView } from '../services/machines/types';
  * holds every state; the window reads view() again whenever it is told
  * `machines:changed`. No secret and no hash ever reaches the window.
  */
-export interface MachinesHandlerDeps { runningAgents: () => number }
+export interface MachinesHandlerDeps {
+  runningAgents: () => number;
+  /** How often paired machines are asked (ten seconds); a test shortens it. */
+  pollEveryMs?: number;
+}
 
 const changed = () => broadcastToAllWindows('machines:changed', {});
 const fail = (err: unknown) => ({ success: false as const, error: err instanceof Error ? err.message : String(err) });
@@ -22,8 +26,15 @@ const fail = (err: unknown) => ({ success: false as const, error: err instanceof
 export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPaired: () => Promise<void> } {
   const bridgeDeps = {
     runningAgents: deps.runningAgents,
-    onChanged: () => { changed(); startStatusPolling(changed); },
+    onChanged: () => { changed(); poll(); },
   };
+  // Tailscale may come up after Tars: while machines are paired, every poll
+  // tries the bridge again until it listens.
+  const ensureBridge = async () => {
+    if (bridgeState().listening || readMachines().peers.length === 0) return;
+    if ((await startBridge(bridgeDeps)).listening) changed();
+  };
+  const poll = () => startStatusPolling(changed, deps.pollEveryMs ?? 10_000, ensureBridge);
 
   ipcMain.handle('machines:view', async (): Promise<MachinesView> => {
     const file = readMachines();
@@ -71,7 +82,8 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     const result = await pairWithCode(String(code ?? ''), candidatesFrom(process.env, app?.isPackaged ?? true, ts.peers), s.target.port);
     if (!result.ok) return { success: false, error: result.error };
     changed();
-    startStatusPolling(changed);
+    poll();
+    await pollNow(changed);
     return { success: true, name: result.name };
   });
 
@@ -86,6 +98,7 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
 
   ipcMain.handle('machines:unpair', async (_e, id: unknown) => {
     await unpairPeer(String(id));
+    forgetStatus(String(id));
     changed();
     return { success: true };
   });
@@ -94,7 +107,7 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     startIfPaired: async () => {
       if (readMachines().peers.length === 0) return;
       await startBridge(bridgeDeps);
-      startStatusPolling(changed);
+      poll();
     },
   };
 }
