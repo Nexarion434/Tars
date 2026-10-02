@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+
+// Every case runs git several times: a loaded windows-latest runner took 6.8 s
+// for one, past vitest's 5 s (fork CI run 36998579236), as release.test.ts's
+// launches did before they were given 30 s.
+vi.setConfig({ testTimeout: 30_000 });
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';

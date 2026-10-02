@@ -102,7 +102,9 @@ it('refuses a tool other than npm or npx', () => {
   expect(() => npmCommand('yarn' as 'npm', [])).toThrow('npmCommand runs npm or npx, not yarn');
 });
 
-describe('on this machine', () => {
+// The real npm and npx, started cold: a loaded windows-latest runner took more
+// than vitest's 5 s for `npm --version` (fork CI run 36998579236).
+describe('on this machine', { timeout: 30_000 }, () => {
   it.for(['npm', 'npx'] as const)('runs %s with no shell', tool => {
     const { command, args } = npmCommand(tool, ['--version']);
     const run = spawnSync(command, args, { encoding: 'utf8', shell: false });

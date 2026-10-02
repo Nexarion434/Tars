@@ -437,6 +437,11 @@ describe.skipIf(process.platform !== 'win32')('killing 20 real ConPTY terminals'
     // Both streams kept: the forked helpers print on stderr, the harness reports on stdout.
     const runCapturing = (mode: 'plain' | 'killPty') => {
       const r = spawnSync(process.execPath, [path.join(dir, 'harness.js'), mode], { env, cwd: dir, encoding: 'utf8', timeout: 90_000 });
+      // A harness that printed no report says how it ended (fork CI run 36998579236:
+      // an empty report, and nothing else to go on).
+      if (!r.stdout.trim()) {
+        throw new Error(`the ${mode} harness printed no report: status ${r.status}, signal ${r.signal}, error ${r.error?.message ?? 'none'}, stderr: ${r.stderr.slice(-1500)}`);
+      }
       const report = JSON.parse(r.stdout.trim().split('\n').pop() || '{}') as { uncaught: string[]; alive: number[]; reused: number[]; born: number; running: number[]; exited: number[]; staleKills: number[] };
       const failed = (report as { harnessError?: string }).harnessError;
       if (failed) throw new Error(`the ${mode} harness failed: ${failed}`);
