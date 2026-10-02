@@ -28,12 +28,28 @@ describe('the machines file', () => {
     expect(readMachines().self).toEqual(first.self);
   });
 
-  it('reads a malformed file as no peers, keeping a readable self (2)', () => {
+  it('sets a malformed file aside before starting a fresh one, so nothing in it is lost (2)', () => {
     fs.mkdirSync(path.dirname(MACHINES_FILE), { recursive: true });
+    for (const f of fs.readdirSync(path.dirname(MACHINES_FILE))) if (f.startsWith('machines.json.unreadable-')) fs.rmSync(path.join(path.dirname(MACHINES_FILE), f));
     fs.writeFileSync(MACHINES_FILE, '{nope');
     const file = readMachines();
     expect(file.peers).toEqual([]);
     expect(file.self.id).toMatch(/^m-[0-9a-f]{16}$/);
+    const aside = fs.readdirSync(path.dirname(MACHINES_FILE)).filter(f => f.startsWith('machines.json.unreadable-'));
+    expect(aside).toHaveLength(1);
+    expect(fs.readFileSync(path.join(path.dirname(MACHINES_FILE), aside[0]), 'utf8')).toBe('{nope');
+  });
+
+  it('throws, and writes nothing, when the file is there but cannot be read (2)', () => {
+    // A folder where the file should be: readFileSync fails with EISDIR, as a
+    // held file fails with EBUSY on Windows. Neither is a reason to start over.
+    fs.mkdirSync(MACHINES_FILE, { recursive: true });
+    try {
+      expect(() => readMachines()).toThrow(/machines\.json cannot be read \(EISDIR\)/);
+      expect(fs.statSync(MACHINES_FILE).isDirectory()).toBe(true);
+    } finally {
+      fs.rmSync(MACHINES_FILE, { recursive: true, force: true });
+    }
   });
 
   it('drops a peer whose fields are not what pairing writes (3)', () => {

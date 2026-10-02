@@ -28,6 +28,8 @@ export function cleanName(name: unknown): string {
 }
 
 export const newSecret = (): string => randomBytes(32).toString('base64url');
+/** What newSecret makes, and nothing else: a secret either side accepts from the other. */
+export const isSecret = (s: unknown): s is string => typeof s === 'string' && /^[A-Za-z0-9_-]{43}$/.test(s);
 export const hashSecret = (secret: string): string => createHash('sha256').update(secret, 'utf8').digest('hex');
 
 /** Whether `presented` is the secret whose hash is kept, in a time that does not depend on where they differ. */
@@ -47,13 +49,32 @@ const isPeer = (p: unknown): p is PairedMachine => {
     && (x.mayOnMe === 'see' || x.mayOnMe === 'drive') && typeof x.pairedAt === 'string';
 };
 
-/** The file, or a fresh identity (written at once, so it is the same at the next read) and no peers. */
+/**
+ * The file, or, when there is none yet, a fresh identity (written at once, so
+ * it is the same at the next read) and no peers. A file that is there but
+ * does not parse is set aside (machines.json.unreadable-<time>) before a
+ * fresh one is started; one that cannot be read at all (held, EBUSY on
+ * Windows; EPERM; EISDIR) throws and nothing is written: starting over would
+ * lose every pairing for a read that may work a second later.
+ */
 export function readMachines(): MachinesFile {
   let raw: Record<string, unknown> = {};
+  let text: string | null = null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) raw = parsed;
-  } catch { /* none yet, or unreadable: a fresh identity below */ }
+    text = fs.readFileSync(MACHINES_FILE, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') throw new Error(`~/.tars-private/machines.json cannot be read (${code ?? 'error'}). Nothing is changed until it can.`);
+  }
+  if (text !== null) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) raw = parsed;
+      else throw new Error('not an object');
+    } catch {
+      fs.renameSync(MACHINES_FILE, `${MACHINES_FILE}.unreadable-${Date.now()}`);
+    }
+  }
   const self = raw.self as Record<string, unknown> | undefined;
   const hasSelf = !!self && typeof self.id === 'string' && ID.test(self.id) && typeof self.name === 'string';
   const file: MachinesFile = {
