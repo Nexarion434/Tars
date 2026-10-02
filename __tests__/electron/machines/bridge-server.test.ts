@@ -5,7 +5,7 @@ import { AddressInfo } from 'net';
 import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
 import { API_PORT, OPENAI_BRIDGE_PORT } from '../../../electron/constants';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
-import { codeProof } from '../../../electron/services/machines/pairing';
+import { codeProof, answerProof } from '../../../electron/services/machines/pairing';
 
 /**
  * The machines bridge, driven over a real socket on 127.0.0.1. How it can
@@ -25,13 +25,17 @@ import { codeProof } from '../../../electron/services/machines/pairing';
  *    one side paired and the other not.
  * 9. Its port is one a loopback server of Tars already holds (the API, or
  *    the OpenAI bridge on the API's port + 1), so the two collide.
+ * 10. The pair answer does not prove the code back, so the caller cannot
+ *    tell this machine from any other that answers (final review, C1); or
+ *    a secret that is not what newSecret makes is stored, and a line break
+ *    in it breaks every header this side sends with it.
  */
 let server: http.Server;
 let base: string;
 let changed = 0;
 const deps = { runningAgents: () => 2, onChanged: () => { changed++; } };
 const PC = 'm-bbbbbbbbbbbbbbbb';
-const THEIRS = 'their-secret-for-us-0123456789abcdefghijk';
+const THEIRS = 'their-secret-for-us_0123456789abcdefghijklm';
 
 async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -95,6 +99,21 @@ describe('what it answers', () => {
     expect(JSON.stringify(readMachines())).not.toContain(issued);
     expect(changed).toBe(1);
     expect((await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS })).status).toBe(403);
+  });
+
+  it('proves the code back in its answer, over the caller and itself (10)', async () => {
+    const offer = openPairingOffer();
+    const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS });
+    expect(ok.status).toBe(200);
+    expect(ok.body!.proof).toBe(answerProof(offer.code, offer.nonce, PC, readMachines().self.id));
+  });
+
+  it.each([['a line break', 'abc\r\nX-Evil: 1' + 'A'.repeat(30)], ['one character short', THEIRS.slice(1)], ['a character newSecret never draws', THEIRS.slice(1) + '=']])
+  ('refuses a secret with %s, and stores nothing (10)', async (_what, secret) => {
+    const offer = openPairingOffer();
+    const r = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret });
+    expect(r.status).toBe(403);
+    expect(readMachines().peers).toEqual([]);
   });
 
   it('pings and unpairs for the peer secret only (6)', async () => {

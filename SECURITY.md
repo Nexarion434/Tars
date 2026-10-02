@@ -598,8 +598,9 @@ first pass. A development run may bind `127.0.0.1` instead
 packaged Tars never reads those.
 
 **What it answers.** Four routes, listed one by one; any other path is a 404
-before a credential is read, so a prober cannot tell a wrong secret from a
-missing route, and no route of the loopback API answers here.
+before a credential is read, and no route of the loopback API answers here.
+The four are not hidden: `ping` and `unpair` answer 401 without a paired
+machine's secret, so a prober on the tailnet can tell a Tars listens.
 
 | Route | Who | What |
 |---|---|---|
@@ -618,18 +619,30 @@ one, in clear because it has to be presented. The loopback API's shared
 token, Tars's pass and the Hermes webhook secret open nothing here.
 
 **What pairing proves.** The machine showing the code draws six digits and a
-nonce; the typing machine sends `HMAC-SHA256(code, nonce:its id)`, never the
-code. An offer is good for five minutes by the offering machine's clock, five
-wrong proofs and one success, and refuses a machine pairing with itself.
+nonce. Both sides key their proofs by the code stretched with scrypt over the
+nonce (N 2^15, r 8: 32 MiB and 110 ms per code, measured on a desktop PC).
+The typing machine sends `HMAC-SHA256(key, nonce:its id)`, never the code;
+the offering machine answers with `HMAC-SHA256(key, answer:nonce:caller
+id:its id)`, and the typing machine stores nothing without it, nor an answer
+whose id is not the one `hello` gave, whose name a typed name could not be,
+or whose secret is not the 43 characters a secret is. Either side refuses a
+secret of another shape. An offer is good for five minutes by the offering
+machine's clock, five wrong proofs and one success, and refuses a machine
+pairing with itself. A machine another tailnet shares into yours
+(`ShareeNode`) is never asked for a code.
 
 **Its known limit.** The typing machine sends its proof to the first machine
-of the tailnet that answers `hello`. A device of the same tailnet that
-answered `hello` while a code was shown would receive a proof it can test
-offline against all 10^6 codes, then present the right one to the real
-offering machine within the five minutes. What stands in the way is the
-tailnet itself (your own devices) and its access rules. A later step could
-have the typing machine show the name it found and wait for a click before it
-sends the proof.
+of the tailnet that answers `hello`. A hostile device of your own tailnet
+that answered in the offering machine's place cannot prove the code back
+without trying the codes, and 10^6 of them cost some 30 CPU hours: the
+typing machine stops waiting after five seconds, so it pairs with nothing.
+That device can still keep the proof it was sent and try the codes on many
+cores or a GPU, then present the right one to the real offering machine,
+which would pair with it, if it finds the code within the offer's five
+minutes and before the real pairing closes the offer. What stands in the way
+is the tailnet itself (your own devices), its access rules, and that cost. A
+later step could close it: the typing machine shows the name it found and
+waits for a click, or the offering machine asks before it pairs.
 
 **What a paired machine may do here.** See, by default; Drive only when this
 machine says so in Settings > Machines. The machine being driven decides,

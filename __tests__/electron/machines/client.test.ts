@@ -3,9 +3,9 @@ import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
 import { handleBridgeRequest, openPairingOffer, closePairingOffer } from '../../../electron/services/machines/bridge-server';
-import { pairWithCode, ping, candidatesFrom } from '../../../electron/services/machines/client';
-import { MACHINES_FILE } from '../../../electron/services/machines/store';
-import { formatCode } from '../../../electron/services/machines/pairing';
+import { pairWithCode, ping, candidatesFrom, unpairPeer } from '../../../electron/services/machines/client';
+import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
+import { formatCode, answerProof } from '../../../electron/services/machines/pairing';
 
 /**
  * This Tars calling another one, over 127.0.0.1. One process has one
@@ -19,6 +19,14 @@ import { formatCode } from '../../../electron/services/machines/pairing';
  * 4. A machine that does not answer hangs the poll.
  * 5. Offline peers are tried as candidates, or the development peer list
  *    is honoured in a packaged Tars.
+ * 6. A machine that answers hello and pair without knowing the code is
+ *    taken for the offering one and stored (final review, Critical 1).
+ * 7. An answer whose id, name or secret is not what pairing makes is
+ *    stored: a name with a direction override, a secret that breaks a
+ *    header, an id that differs from hello's or is this machine's own.
+ * 8. A machine shared in from another tailnet is tried as a candidate.
+ * 9. Unpairing a machine that does not answer, or whose stored secret
+ *    cannot be sent, leaves it in the list for good.
  */
 let server: http.Server;
 let port: number;
@@ -32,8 +40,8 @@ beforeEach(async () => {
 afterEach(() => new Promise<void>(r => server.close(() => r())));
 
 describe('candidates', () => {
-  it('are the online peers on 31418, or the development list when not packaged (5)', () => {
-    const peers = [{ ip: '100.64.0.2', online: true }, { ip: '100.64.0.3', online: false }];
+  it('are the online peers of this tailnet on 31418, or the development list when not packaged (5, 8)', () => {
+    const peers = [{ ip: '100.64.0.2', online: true }, { ip: '100.64.0.3', online: false }, { ip: '100.64.0.9', online: true, shared: true }];
     expect(candidatesFrom({}, true, peers)).toEqual([{ host: '100.64.0.2', port: 31418 }]);
     expect(candidatesFrom({ TARS_MACHINES_PEERS: '127.0.0.1:31484' }, false, peers)).toEqual([{ host: '127.0.0.1', port: 31484 }]);
     expect(candidatesFrom({ TARS_MACHINES_PEERS: '127.0.0.1:31484' }, true, peers)).toEqual([{ host: '100.64.0.2', port: 31418 }]);
@@ -62,5 +70,73 @@ describe('ping', () => {
     const started = Date.now();
     expect(await ping({ ...peer, address: '10.255.255.1', port: 9 })).toEqual({ status: 'offline' });
     expect(Date.now() - started).toBeLessThan(4_000);
+  });
+});
+
+/** A machine of the tailnet that does not know the code, and answers as if it did. */
+async function impostor(answer: (body: Record<string, unknown>) => Record<string, unknown>) {
+  const got: Record<string, unknown>[] = [];
+  const srv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => { raw += c; });
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url === '/machines/v1/hello') return res.end(JSON.stringify({ id: 'm-dddddddddddddddd', name: 'Mac', nonce: 'a'.repeat(32) }));
+      const body = JSON.parse(raw || '{}');
+      got.push(body);
+      res.end(JSON.stringify(answer(body)));
+    });
+  });
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
+  return { srv, port: (srv.address() as AddressInfo).port, got };
+}
+
+describe('the answer to a pairing', () => {
+  const GOOD_SECRET = 'A'.repeat(43);
+
+  it('is refused, and nothing is stored, when the machine does not prove the code back (6)', async () => {
+    const fake = await impostor(() => ({ id: 'm-dddddddddddddddd', name: 'Mac', secret: GOOD_SECRET }));
+    try {
+      const r = await pairWithCode('482913', [{ host: '127.0.0.1', port: fake.port }], 31418);
+      expect(r).toEqual({ ok: false, error: 'That machine did not prove it knows the code. Nothing was paired.' });
+      expect(readMachines().peers).toEqual([]);
+    } finally { fake.srv.close(); }
+  });
+
+  it.each([
+    ['a name with a direction override', { name: 'Mac\u202Eevil' }],
+    ['a secret that breaks a header', { secret: 'abc\r\nX-Evil: 1' + 'A'.repeat(30) }],
+    ['an id that is not hello\'s', { id: 'm-eeeeeeeeeeeeeeee' }],
+  ])('is refused when it carries %s, even with the right proof (7)', async (_what, change) => {
+    const fake = await impostor(body => {
+      const id = (change as { id?: string }).id ?? 'm-dddddddddddddddd';
+      return { id, name: 'Mac', secret: GOOD_SECRET, ...change, proof: answerProof('482913', 'a'.repeat(32), String(body.id), id) };
+    });
+    try {
+      const r = await pairWithCode('482913', [{ host: '127.0.0.1', port: fake.port }], 31418);
+      expect(r.ok).toBe(false);
+      expect(readMachines().peers).toEqual([]);
+    } finally { fake.srv.close(); }
+  });
+
+  it('is taken when the machine proves the code back and its fields are what pairing makes', async () => {
+    const fake = await impostor(body => ({ id: 'm-dddddddddddddddd', name: 'Mac', secret: GOOD_SECRET, proof: answerProof('482913', 'a'.repeat(32), String(body.id), 'm-dddddddddddddddd') }));
+    try {
+      expect(await pairWithCode('482 913', [{ host: '127.0.0.1', port: fake.port }], 31418)).toEqual({ ok: true, name: 'Mac' });
+      expect(readMachines().peers.map(p => p.id)).toEqual(['m-dddddddddddddddd']);
+    } finally { fake.srv.close(); }
+  });
+});
+
+describe('unpairing', () => {
+  it('forgets the machine here even when it cannot be told: no answer, or a secret that cannot be sent (9)', async () => {
+    const self = readMachines().self;
+    writeMachines({ version: 1, self, peers: [
+      { id: 'm-1111111111111111', name: 'Gone', address: '10.255.255.1', port: 9, inboundSecretHash: hashSecret('x'), outboundSecret: 'B'.repeat(43), mayOnMe: 'see', pairedAt: '' },
+      { id: 'm-2222222222222222', name: 'Broken', address: '127.0.0.1', port, inboundSecretHash: hashSecret('y'), outboundSecret: 'bad\r\nsecret', mayOnMe: 'see', pairedAt: '' },
+    ] });
+    await unpairPeer('m-1111111111111111');
+    await unpairPeer('m-2222222222222222');
+    expect(readMachines().peers).toEqual([]);
   });
 });

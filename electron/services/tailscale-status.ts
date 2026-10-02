@@ -5,8 +5,12 @@ import { tailscaleCandidates } from '../platform';
 
 const execFileAsync = promisify(execFile);
 
-/** A machine of the tailnet other than this one, as `tailscale status` lists it. */
-export interface TailscalePeer { name: string; dnsName?: string; ip: string; online: boolean; os?: string }
+/**
+ * A machine of the tailnet other than this one, as `tailscale status` lists it.
+ * `shared` is a machine another tailnet shares in (ShareeNode): reachable, but
+ * not one of yours, so it is never asked for a pairing code.
+ */
+export interface TailscalePeer { name: string; dnsName?: string; ip: string; online: boolean; os?: string; shared: boolean }
 
 /** What Tailscale says about this machine: Settings > Hermes reads it, and Settings > Machines. */
 export interface TailscaleInfo {
@@ -37,6 +41,7 @@ export function parseTailscaleStatus(json: unknown): Omit<TailscaleInfo, 'instal
         ip,
         online: p.Online === true,
         os: typeof p.OS === 'string' ? p.OS : undefined,
+        shared: p.ShareeNode === true,
       });
     }
   }

@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { app } from 'electron';
-import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, cleanName } from './store';
-import { Offer, openOffer, checkProof } from './pairing';
+import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, cleanName, isSecret } from './store';
+import { Offer, openOffer, checkProof, answerProof } from './pairing';
 import { detectTailscale } from '../tailscale-status';
 import type { PairedMachine } from './types';
 
@@ -117,7 +117,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     const file = readMachines();
     const id = typeof body.id === 'string' && /^m-[0-9a-f]{16}$/.test(body.id) ? body.id : '';
     const port = Number(body.port);
-    const theirs = typeof body.secret === 'string' && body.secret.length >= 32 ? body.secret : '';
+    const theirs = isSecret(body.secret) ? body.secret : '';
     let name = '';
     try { name = cleanName(body.name); } catch { /* refused below */ }
     const verdict = open && id && theirs && name && Number.isInteger(port) && port > 0 && port < 65536
@@ -134,7 +134,8 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     writeMachines({ ...file, peers });
     offer = null;
     deps.onChanged();
-    return send(200, { id: file.self.id, name: file.self.name, secret: issued });
+    // The code proved back, so the caller knows it is this machine that shows it.
+    return send(200, { id: file.self.id, name: file.self.name, secret: issued, proof: answerProof(open!.code, open!.nonce, id, file.self.id) });
   }
 
   const peer = peerFor(req.headers.authorization);

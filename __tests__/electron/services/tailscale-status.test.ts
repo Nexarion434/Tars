@@ -11,6 +11,8 @@ import { parseTailscaleStatus } from '../../../electron/services/tailscale-statu
  * 4. Output that is not the expected shape throws instead of saying
  *    "not running".
  * 5. This machine (Self) is listed among its own peers.
+ * 6. A machine shared in from another tailnet (ShareeNode) is not told
+ *    apart, so pairing would trust a stranger's device (final review, C1).
  */
 const status = {
   BackendState: 'Running',
@@ -19,6 +21,7 @@ const status = {
     k1: { HostName: 'pc', DNSName: 'pc.example.ts.net.', TailscaleIPs: ['100.64.0.2'], Online: true, OS: 'windows' },
     k2: { HostName: 'old', DNSName: 'old.example.ts.net.', TailscaleIPs: ['100.64.0.3'], Online: false, OS: 'macOS' },
     k3: { HostName: 'v6', DNSName: 'v6.example.ts.net.', TailscaleIPs: ['fd7a::9'], Online: true, OS: 'linux' },
+    k4: { HostName: 'friend', DNSName: 'friend.other.ts.net.', TailscaleIPs: ['100.64.0.9'], Online: true, OS: 'linux', ShareeNode: true },
   },
 };
 
@@ -27,11 +30,12 @@ describe('parseTailscaleStatus', () => {
     expect(parseTailscaleStatus(status)).toMatchObject({ running: true, dnsName: 'mac.example.ts.net', ip: '100.64.0.1' });
   });
 
-  it('lists the peers with an IPv4, online or not, never itself (1, 2, 5)', () => {
+  it('lists the peers with an IPv4, online or not, never itself, shared ones said so (1, 2, 5, 6)', () => {
     const { peers } = parseTailscaleStatus(status);
     expect(peers).toEqual([
-      { name: 'pc', dnsName: 'pc.example.ts.net', ip: '100.64.0.2', online: true, os: 'windows' },
-      { name: 'old', dnsName: 'old.example.ts.net', ip: '100.64.0.3', online: false, os: 'macOS' },
+      { name: 'pc', dnsName: 'pc.example.ts.net', ip: '100.64.0.2', online: true, os: 'windows', shared: false },
+      { name: 'old', dnsName: 'old.example.ts.net', ip: '100.64.0.3', online: false, os: 'macOS', shared: false },
+      { name: 'friend', dnsName: 'friend.other.ts.net', ip: '100.64.0.9', online: true, os: 'linux', shared: true },
     ]);
   });
 

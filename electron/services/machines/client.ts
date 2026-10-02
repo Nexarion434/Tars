@@ -1,6 +1,6 @@
 import * as http from 'http';
-import { readMachines, writeMachines, newSecret, hashSecret } from './store';
-import { codeProof } from './pairing';
+import { readMachines, writeMachines, newSecret, hashSecret, cleanName, isSecret } from './store';
+import { codeProof, answerMatches } from './pairing';
 import { MACHINES_PORT_DEFAULT } from './bridge-server';
 import type { PairedMachine } from './types';
 
@@ -16,7 +16,9 @@ export type PingResult = { status: 'connected'; agentsRunning: number } | { stat
 function request(c: Candidate, method: string, path: string, opts: { secret?: string; body?: unknown; timeoutMs: number }): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve) => {
     const data = opts.body === undefined ? undefined : JSON.stringify(opts.body);
-    const req = http.request({
+    let req: http.ClientRequest;
+    // A header Node refuses (a stored secret with a line break) throws here: no answer, never a throw.
+    try { req = http.request({
       host: c.host,
       port: c.port,
       path,
@@ -34,7 +36,7 @@ function request(c: Candidate, method: string, path: string, opts: { secret?: st
         try { body = JSON.parse(raw); } catch { /* not json */ }
         resolve({ status: res.statusCode ?? 0, body });
       });
-    });
+    }); } catch { resolve({ status: 0, body: {} }); return; }
     req.on('timeout', () => req.destroy());
     req.on('error', () => resolve({ status: 0, body: {} }));
     if (data) req.write(data);
@@ -48,40 +50,56 @@ function request(c: Candidate, method: string, path: string, opts: { secret?: st
  * (TARS_MACHINES_PEERS="127.0.0.1:31484,..."), as the e2e suite does; a
  * packaged Tars never reads it.
  */
-export function candidatesFrom(env: NodeJS.ProcessEnv, packaged: boolean, peers: { ip: string; online: boolean }[]): Candidate[] {
+export function candidatesFrom(env: NodeJS.ProcessEnv, packaged: boolean, peers: { ip: string; online: boolean; shared?: boolean }[]): Candidate[] {
   if (!packaged && env.TARS_MACHINES_PEERS) {
     return env.TARS_MACHINES_PEERS.split(',').map(s => s.trim()).filter(Boolean).map(s => {
       const [host, port] = s.split(':');
       return { host, port: Number(port) || MACHINES_PORT_DEFAULT };
     });
   }
-  return peers.filter(p => p.online).map(p => ({ host: p.ip, port: MACHINES_PORT_DEFAULT }));
+  return peers.filter(p => p.online && !p.shared).map(p => ({ host: p.ip, port: MACHINES_PORT_DEFAULT }));
 }
 
-/** Pairs with the first candidate showing a code, proving the code over its nonce; the code itself never leaves. */
+/**
+ * Pairs with the first candidate showing a code, proving the code over its
+ * nonce; the code itself never leaves. Only a machine that proves the code
+ * back is stored, under the id it said hello with, its name and secret as
+ * pairing makes them: any other machine of the tailnet can answer hello.
+ */
 export async function pairWithCode(typed: string, candidates: Candidate[], myPort: number): Promise<PairResult> {
   const code = typed.replace(/\D/g, '');
   if (code.length !== 6) return { ok: false, error: 'A pairing code is six digits.' };
   const file = readMachines();
   for (const c of candidates) {
     const hello = await request(c, 'GET', '/machines/v1/hello', { timeoutMs: 2_000 });
-    if (hello.status !== 200 || typeof hello.body.nonce !== 'string') continue;
+    const theirId = hello.body.id;
+    if (hello.status !== 200 || typeof hello.body.nonce !== 'string' || typeof theirId !== 'string' || !/^m-[0-9a-f]{16}$/.test(theirId)) continue;
+    const nonce = hello.body.nonce;
     const mine = newSecret();
     const answer = await request(c, 'POST', '/machines/v1/pair', {
       timeoutMs: 5_000,
-      body: { id: file.self.id, name: file.self.name, port: myPort, proof: codeProof(code, hello.body.nonce, file.self.id), secret: mine },
+      body: { id: file.self.id, name: file.self.name, port: myPort, proof: codeProof(code, nonce, file.self.id), secret: mine },
     });
     if (answer.status !== 200) {
       return { ok: false, error: typeof answer.body.error === 'string' ? answer.body.error : 'The other machine refused the code.' };
     }
-    const id = String(answer.body.id);
-    const name = String(answer.body.name);
+    const unlike: PairResult = { ok: false, error: 'That machine answered with something pairing does not make. Nothing was paired.' };
+    // The id hello gave, and never this machine's own (the other side refuses that first, with its sentence).
+    if (answer.body.id !== theirId || theirId === file.self.id) return unlike;
+    if (!answerMatches(answer.body.proof, code, nonce, file.self.id, theirId)) {
+      return { ok: false, error: 'That machine did not prove it knows the code. Nothing was paired.' };
+    }
+    let name: string;
+    try { name = cleanName(answer.body.name); } catch { return unlike; }
+    const secret = answer.body.secret;
+    if (!isSecret(secret)) return unlike;
+    const id = theirId;
     const latest = readMachines();
     writeMachines({
       ...latest,
       peers: [...latest.peers.filter(p => p.id !== id), {
         id, name, address: c.host, port: c.port,
-        inboundSecretHash: hashSecret(mine), outboundSecret: String(answer.body.secret),
+        inboundSecretHash: hashSecret(mine), outboundSecret: secret,
         mayOnMe: 'see', pairedAt: new Date().toISOString(),
       }],
     });
@@ -98,11 +116,15 @@ export async function ping(peer: PairedMachine): Promise<PingResult> {
   return { status: 'offline' };
 }
 
-/** Tells the other machine (best effort: it may be off) and forgets it here, whatever it answered. */
+/**
+ * Forgets the machine here first, then tells it (best effort: it may be off,
+ * or never answer). Its secret no longer opens this bridge either way, and a
+ * machine that was not told finds out at its next ping (401).
+ */
 export async function unpairPeer(peerId: string): Promise<void> {
-  const peer = readMachines().peers.find(p => p.id === peerId);
-  if (!peer) return;
-  await request({ host: peer.address, port: peer.port }, 'POST', '/machines/v1/unpair', { secret: peer.outboundSecret, body: {}, timeoutMs: 3_000 });
   const latest = readMachines();
+  const peer = latest.peers.find(p => p.id === peerId);
+  if (!peer) return;
   writeMachines({ ...latest, peers: latest.peers.filter(p => p.id !== peerId) });
+  await request({ host: peer.address, port: peer.port }, 'POST', '/machines/v1/unpair', { secret: peer.outboundSecret, body: {}, timeoutMs: 3_000 });
 }
