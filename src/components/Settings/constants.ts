@@ -71,6 +71,14 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     ],
   },
   {
+    id: 'machines',
+    label: 'Machines',
+    icon: Monitor,
+    children: [
+      { id: 'machines', label: 'Your machines', description: 'Your other computers running Tars, reached over Tailscale.', icon: Monitor },
+    ],
+  },
+  {
     id: 'integrations',
     label: 'Integrations',
     icon: Plug,

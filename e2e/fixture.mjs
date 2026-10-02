@@ -387,6 +387,13 @@ export function seedSandbox(home, { chatRooms = false } = {}) {
   const dir = path.join(home, '.dorothy');
   fs.mkdirSync(dir, { recursive: true });
 
+  // This machine for Settings > Machines: a fixed id and name. Left to itself
+  // the app names it after the host, which differs on every machine and is
+  // often its owner's own name.
+  const privateDir = path.join(home, '.tars-private');
+  fs.mkdirSync(privateDir, { recursive: true });
+  fs.writeFileSync(path.join(privateDir, 'machines.json'), `${JSON.stringify({ version: 1, self: { id: 'm-0000000000000000', name: 'Sandbox' }, peers: [] }, null, 2)}\n`);
+
   const chatPaths = {
     tars: PROJECT,
     capital: SECOND,

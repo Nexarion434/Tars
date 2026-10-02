@@ -60,16 +60,22 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings (6 groups, 19 sections)
+## Settings (7 groups, 20 sections)
 
 | Group | Sections |
 |---|---|
 | General | Preferences, Terminal, Notifications, System |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules) |
+| Machines | Your machines |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
+
+Your machines names this machine, shows its tailnet address and a one-time
+pairing code (Add a machine), pairs with the code another machine shows, and
+lists the paired machines: connected, offline or unpaired by the other one,
+and what each may do here (See or Drive). Frame: Settings · Machines.
 
 Claude accounts is off until turned on. On, it lists up to five Claude
 subscriptions, each with its 5 h and weekly use, and the two thresholds that
