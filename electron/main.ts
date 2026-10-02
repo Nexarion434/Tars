@@ -84,6 +84,9 @@ import {
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
 import { announceAgentAccount, registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
+import { registerMachinesHandlers } from './handlers/machines-handlers';
+import { stopBridge } from './services/machines/bridge-server';
+import { stopStatusPolling } from './services/machines/status';
 import { setAccountEnvResolver } from './core/account-env';
 import { claudeAccountEnvFor } from './services/claude-accounts/launch';
 import { movedLaunch } from './services/claude-accounts/switching';
@@ -546,6 +549,12 @@ app.whenReady().then(async () => {
   // Which accounts are signed in, asked of Claude Code before the first
   // launches need it; until it answers, only account 1 is used.
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
+  // Other machines of the tailnet (Settings > Machines): the bridge listens
+  // only once a machine is paired, or while a pairing code is shown.
+  const machines = registerMachinesHandlers({
+    runningAgents: () => [...agents.values()].filter(a => a.status === 'running' || a.status === 'waiting').length,
+  });
+  void machines.startIfPaired();
   registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
@@ -863,6 +872,8 @@ app.on('before-quit', (event) => {
       // from before the quit does not go out while it waits for them (on
       // Windows the exit is held up to 5 s more, pty-kill.ts).
       ['stopStatusNotifications', stopStatusNotifications],
+      // No machine is answered once the quit has begun.
+      ['stopMachines', () => { stopStatusPolling(); void stopBridge(); }],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))

@@ -885,6 +885,32 @@ export interface ClaudeAccountState extends ClaudeAccount {
   error: string | null;
 }
 
+/** What a paired machine may do on this one (Settings > Machines). */
+export type PeerPermission = 'see' | 'drive';
+export type PeerStatus = 'connected' | 'offline' | 'unpaired' | 'unknown';
+
+/** A paired machine as the window sees it: never a secret, never a hash. */
+export interface MachineView {
+  id: string;
+  name: string;
+  address: string;
+  mayOnMe: PeerPermission;
+  status: PeerStatus;
+  lastSeen?: string;
+  agentsRunning?: number;
+}
+
+/** Everything Settings > Machines shows (electron/handlers/machines-handlers.ts). */
+export interface MachinesView {
+  self: { id: string; name: string; address?: string };
+  tailscale: { installed: boolean; running: boolean };
+  bridge: { listening: boolean; reason?: string };
+  offer: { code: string; expiresAt: string } | null;
+  peers: MachineView[];
+}
+
+type MachinesResult<T extends object = object> = ({ success: true } & T) | { success: false; error: string };
+
 export interface ClaudeAccountsView {
   settings: ClaudeAccountsSettings;
   accounts: ClaudeAccountState[];
@@ -1045,6 +1071,16 @@ export interface ElectronAPI {
   };
 
   // Several Claude subscriptions (Settings). See ClaudeAccountsView.
+  machines?: {
+    view: () => Promise<MachinesView>;
+    setName: (name: string) => Promise<MachinesResult>;
+    openOffer: () => Promise<MachinesResult<{ code: string; expiresAt: string }>>;
+    closeOffer: () => Promise<{ success: true }>;
+    pair: (code: string) => Promise<MachinesResult<{ name: string }>>;
+    setPermission: (id: string, mayOnMe: PeerPermission) => Promise<MachinesResult>;
+    unpair: (id: string) => Promise<{ success: true }>;
+    onChanged: (callback: () => void) => () => void;
+  };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */
     list: () => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;

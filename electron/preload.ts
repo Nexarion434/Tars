@@ -248,6 +248,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // Other machines of the tailnet running Tars (services/machines, Settings > Machines)
+  machines: {
+    view: () => ipcRenderer.invoke('machines:view'),
+    setName: (name: string) => ipcRenderer.invoke('machines:set-name', name),
+    openOffer: () => ipcRenderer.invoke('machines:open-offer'),
+    closeOffer: () => ipcRenderer.invoke('machines:close-offer'),
+    pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    setPermission: (id: string, mayOnMe: 'see' | 'drive') => ipcRenderer.invoke('machines:set-permission', id, mayOnMe),
+    unpair: (id: string) => ipcRenderer.invoke('machines:unpair', id),
+    onChanged: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('machines:changed', listener);
+      return () => ipcRenderer.removeListener('machines:changed', listener);
+    },
+  },
+
   // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)
   claudeAccounts: {
     list: () => ipcRenderer.invoke('claude-accounts:list'),
