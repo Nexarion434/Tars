@@ -239,7 +239,13 @@ async function launchAndQuit(round: number) {
     for (const p of load) p.kill();
     if (watcher && watcher.exitCode === null) watcher.kill();
     if (!exitAt) await app.close().catch(() => {});
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    // The cleanup never stands in for the round's own result: a profile still
+    // held is measured above (profileRemoved, 5) and asserted on there.
+    try {
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    } catch (err) {
+      console.warn(`[quit-time] round ${round}: the sandbox could not be removed: ${err}`);
+    }
   }
 }
 

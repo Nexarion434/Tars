@@ -214,6 +214,17 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
   1, 3, 4, 8, `mcp-server-runtime` 18, 19, 21 (chemins macOS de copie transitoire), `statusline-account(s)`
   (status line bash, D1) ; specs `stop-ends-agent`, `quit-ends-agents` (arbre entier), `stall-signal` (ps,
   caffeinate) ; comptes Claude (D17) : leurs 8 fichiers de tests et 4 specs.
+- Suivis de la relecture (non bloquants) : sous win32 la veille des agents bloqués et la lecture de l'arbre lancent `ps`
+  sans `windowsHide` (une console clignote si un `ps` est sur le PATH ; absent chez Nicolas) : ne pas démarrer la veille
+  sous win32 ; à la fermeture de session Windows, la deuxième passe du quit (`closeVaultDb`,
+  `stopOpenAIBridgeServer`) ne tourne plus ; `platform/real-target` et `platform/home-root` servent aussi darwin et linux
+  à la place des copies `utils/` de l'upstream (même résultat, à unifier) ; le SIGKILL d'un shell têtu
+  (`pty-manager.ts` `endTerminals`) passe à côté de la garde de pid réutilisé de `pty-kill.ts` ; D17 : `claude auth status`
+  tourne encore en fond (`claude-accounts:list`) ; tests D17 « option éteinte » de `launch.test.ts` à faire tourner sous
+  win32 ; `real-claude-bypass.test.ts` saute sans le dire ; commentaires qui nomment encore `killAllPty` ; spec
+  `quit-time.win32` : un EBUSY sur le cache du profil au nettoyage (2 fois, non reproduit en 18 tours ensuite).
+- À proposer à l'upstream : la fenêtre relit la fiche d'un agent passé à `stopped` (`src/hooks/useElectron.ts`) ; sans
+  cela, un agent arrêté sans terminal (run délégué seul) ne montre ni qui ni pourquoi avant un rechargement.
 - Test local seulement : `build-renderer` « Ctrl+C » échoue sur cette machine avant comme après la synchro
   (le script ne sort pas après le Ctrl+C) ; vert en CI.
 
@@ -268,4 +279,4 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
 | 2026-09-29 | Page Hermes, Connexion : champ utilisateur SSH, import Hermes Desktop (SSH, sonde après import, jeton chiffré signalé), menu clic droit des champs, ligne du jeton et rappel du tunnel en SSH ; reprise de #262 et #265 par cherry-pick | `win/hermes-bugs-2` | npm test 4678/0, specs hermes-bugs 15/15 et hermes-connection 12/12 | APPROVE | 20d8c59b |
 | 2026-09-29 | Spec `usage-unreadable` : tours datés de maintenant, la date fixe du 15/09 était sortie de la fenêtre de 14 jours (même correctif proposé à l upstream, branche `up/usage-date`) | `windows` | échec CI 36573749517, puis CI Windows et Linux vertes | direct | 04c6169f |
 | 2026-09-29 | Release `v1.9.1-win.4` publiée depuis 04c6169f (run 36585650059, `latest.yml` vérifié), sur accord de Nicolas | release | CI Windows et Linux vertes | accord de Nicolas | 04c6169f |
-| 2026-10-02 | Synchro upstream 1.9.2 (74508222, dont nos PR #256 à #268) à la main, la quotidienne ayant buté sur 26 conflits (issue #9) : 28 conflits résolus au profit de l'upstream + ajouts win32 (killPty, attente ConPTY au quit, lancement direct D2, childEnv, gardes de chemins de `platform/real-target`) ; D17 : comptes Claude masqués et éteints sous Windows ; la fenêtre relit la fiche d'un agent passé à stopped (qui, quand, pourquoi), que le garde Windows de `agent:complete` ne lui faisait plus relire ; tests et specs POSIX sautés sous win32 en le disant, specs du fork mises au stop avec raison et au bouton plein écran ; 5 références win32 refaites (dashboard, agents, projects, usage, settings-system) | `win/sync-upstream-1002` | npm test 5210/0 hors Ctrl+C local, E2E : 40 surfaces, specs corrigées vertes | à faire | |
+| 2026-10-02 | Synchro upstream 1.9.2 (74508222, dont nos PR #256 à #268) à la main, la quotidienne ayant buté sur 26 conflits (issue #9) : 28 conflits résolus au profit de l'upstream + ajouts win32 (killPty, attente ConPTY au quit, lancement direct D2, childEnv, gardes de chemins de `platform/real-target`) ; D17 : comptes Claude masqués et éteints sous Windows ; la fenêtre relit la fiche d'un agent passé à stopped (qui, quand, pourquoi), que le garde Windows de `agent:complete` ne lui faisait plus relire ; tests et specs POSIX sautés sous win32 en le disant, specs du fork mises au stop avec raison et au bouton plein écran ; 5 références win32 refaites (dashboard, agents, projects, usage, settings-system) | `win/sync-upstream-1002` | npm test 5210/0 hors Ctrl+C local ; E2E 166 : 40 surfaces, specs corrigées vertes, quit-time.win32 18 tours verts (~0,36 s, rien de restant), pty-kill vert | APPROVE (win-reviewer, 0 bloquant) | bdab49a6 |
