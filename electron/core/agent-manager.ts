@@ -26,6 +26,8 @@ import { renameReplacingSync } from '../platform/rename-replacing';
 import { scheduleTick } from '../utils/agents-tick';
 import { getTasmaniaStatus } from '../services/tasmania-client';
 import { emitAgentStatus } from '../services/agent-events';
+import { agentStatusOnExit } from './quit-state';
+import { clearStop } from './agent-stop';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -595,10 +597,14 @@ export function loadAgents() {
         agent.pathMissing = false;
       }
 
-      agent.status = 'idle';
+      // A stopped agent stays stopped across a restart, with who, when and
+      // why, or the Dashboard resumes it at launch like any idle one.
+      if (agent.status !== 'stopped') agent.status = 'idle';
       agent.ptyId = undefined;
       agent.ptyCwd = undefined;
       agent.pendingDelivery = undefined;
+      // Runtime only: a stall is measured on a live CLI (services/stall-watch.ts).
+      agent.stalledSince = undefined;
       // `output` is typed as required but is runtime state: nothing writes it
       // to agents.json, so every agent read back from disk arrives without it.
       // Consumers that trusted the type crashed - fleetSummary did
@@ -947,49 +953,6 @@ export async function initAgentPty(
 }
 
 /**
- * The exit of the terminal of an agent the Kanban automation created
- * (main.ts): its status, and the two events kanban sync reads, `agent:status`
- * and `agent:complete`. Only for the terminal the agent still names, or an
- * agent already deleted, as before: a terminal a start replaced (on Windows
- * every start kills the shell the agent waited in) is not the agent finishing
- * its board task, and announced as one it moved the task to Done.
- */
-export function boardAgentExited(
-  agentId: string,
-  ptyId: string,
-  exitCode: number,
-  notify: (agent: AgentStatus, newStatus: string) => void,
-): void {
-  const agent = agents.get(agentId);
-  if (agent && agent.ptyId !== ptyId) {
-    ptyProcesses.delete(ptyId);
-    return;
-  }
-  if (agent) {
-    const newStatus = exitCode === 0 ? 'completed' : 'error';
-    agent.status = newStatus;
-    agent.lastActivity = new Date().toISOString();
-    notify(agent, newStatus);
-  }
-  ptyProcesses.delete(ptyId);
-  // Emit status event so kanban sync can detect completion
-  broadcastToAllWindows('agent:status', {
-    type: 'status',
-    agentId,
-    status: exitCode === 0 ? 'completed' : 'error',
-    timestamp: new Date().toISOString(),
-  });
-  broadcastToAllWindows('agent:complete', {
-    type: 'complete',
-    agentId,
-    ptyId,
-    exitCode,
-    timestamp: new Date().toISOString(),
-  });
-  scheduleTick();
-}
-
-/**
  * The CLI initAgentPty starts in place of a shell, handed over by
  * startCliInTerminal and taken once. Keyed by the agent record because every
  * caller reaches initAgentPty through a wrapper that passes the agent alone
@@ -1115,6 +1078,8 @@ async function initAgentPtyLocked(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   agent.ptyCwd = cwd;
+  // A terminal again: a stop is over (core/agent-stop.ts).
+  clearStop(agent);
 
   attachAgentTerminal(agent, ptyId, ptyProcess, handleStatusChangeNotificationCallback, saveAgentsCallback);
   return ptyId;
@@ -1253,16 +1218,19 @@ function attachAgentTerminal(
 
   ptyProcess.onExit(({ exitCode }) => {
     console.log(`Agent ${agent.id} PTY exited with code ${exitCode}`);
+    ptyProcesses.delete(ptyId);
+    // Ended by the quit: neither the agent's completion nor its error, and
+    // the closing window is not told it was (the Audit's gate of #235).
+    const newStatus = agentStatusOnExit(exitCode);
+    if (!newStatus) return;
     const agentData = agents.get(agent.id);
     // Guard: only mutate if this PTY is still the active one (prevents race on restart/stop)
     if (agentData && agentData.ptyId === ptyId) {
-      const newStatus = exitCode === 0 ? 'completed' : 'error';
       agentData.status = newStatus;
       agentData.lastActivity = new Date().toISOString();
       handleStatusChangeNotificationCallback(agentData, newStatus);
       saveAgentsCallback();
     }
-    ptyProcesses.delete(ptyId);
     // Only for the terminal the agent still names. A replaced one (a restart,
     // the local switch, and on Windows every start, which kills the shell the
     // agent waited in) is not the agent finishing, and the Kanban board moves

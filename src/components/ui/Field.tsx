@@ -32,12 +32,11 @@ interface FieldProps {
 /**
  * Read-only reads as read-only (frame XFApe, rows kjeqD and B85KKr): the
  * panel's `surface` fill instead of a field's `surface-raised`, the value in
- * `text-secondary` and the default cursor. Focused, it takes the accent focus
- * border an editable field has, from a click or from Tab (decision A1: a
- * keyboard-only border cannot be told apart in CSS, since Chromium matches
- * `:focus-visible` on a click into any text field). The text stays
- * selectable. `enabled:` leaves a disabled field alone, which `:read-only`
- * matches too; and not on Select, which `:read-only` always matches.
+ * `text-secondary` and the default cursor. On focus it takes the accent border
+ * every field takes, the only sign a field holds the focus (state RKPfa).
+ * The text stays selectable. `enabled:` leaves a disabled field alone, which
+ * `:read-only` matches too; and not on Select, which `:read-only` always
+ * matches.
  */
 const READ_ONLY = 'read-only:enabled:bg-card read-only:enabled:text-text-secondary read-only:enabled:cursor-default';
 

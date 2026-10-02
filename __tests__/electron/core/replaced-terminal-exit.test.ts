@@ -81,7 +81,7 @@ vi.mock('../../../electron/services/tasmania-client', () => ({
 }));
 vi.mock('../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 
-import { initAgentPty, agents, startCliInTerminal, boardAgentExited } from '../../../electron/core/agent-manager';
+import { initAgentPty, agents, startCliInTerminal } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { toLaunch, type DirectLaunch } from '../../../electron/platform/launch';
 import type { FsProbe } from '../../../electron/platform/fs-probe';
@@ -170,59 +170,16 @@ describe('an agent terminal opened by initAgentPty', () => {
 });
 
 describe('an agent the Kanban automation created (main.ts)', () => {
-  function boardAgent(id: string): { agent: AgentStatus; ptyId: string } {
-    const agent = agentNamed(id);
-    agent.status = 'running';
-    const ptyId = `pty-of-${id}`;
-    agent.ptyId = ptyId;
-    ptyProcesses.set(ptyId, {} as never);
-    return { agent, ptyId };
-  }
-
-  it('3. for the terminal it names: the status, the notification, both broadcasts, as before', () => {
-    const { agent, ptyId } = boardAgent('board-current');
-    const notify = vi.fn();
-
-    boardAgentExited(agent.id, ptyId, 1, notify);
-
-    expect(agent.status).toBe('error');
-    expect(notify).toHaveBeenCalledWith(agent, 'error');
-    expect(ptyProcesses.has(ptyId)).toBe(false);
-    expect(broadcasts.map(b => [b.channel, b.payload.status ?? b.payload.exitCode])).toEqual([
-      ['agent:status', 'error'],
-      ['agent:complete', 1],
-    ]);
-  });
-
-  it('3. for an agent already deleted: both broadcasts, as before', () => {
-    ptyProcesses.set('pty-of-gone', {} as never);
-    const notify = vi.fn();
-
-    boardAgentExited('gone', 'pty-of-gone', 0, notify);
-
-    expect(notify).not.toHaveBeenCalled();
-    expect(ptyProcesses.has('pty-of-gone')).toBe(false);
-    expect(broadcasts.map(b => b.channel)).toEqual(['agent:status', 'agent:complete']);
-  });
-
-  it('3. for a terminal it replaced: nothing but the terminal forgotten', () => {
-    const { agent, ptyId } = boardAgent('board-replaced');
-    agent.ptyId = 'its-cli';
-    const notify = vi.fn();
-
-    boardAgentExited(agent.id, ptyId, 1, notify);
-
-    expect(agent.status).toBe('running');
-    expect(notify).not.toHaveBeenCalled();
-    expect(ptyProcesses.has(ptyId)).toBe(false);
-    expect(broadcasts).toEqual([]);
-  });
-
-  it('3. is what main.ts wires the board agent\'s exit to', () => {
+  // Since upstream 1.9.2 main.ts holds the guard itself (#235): its handler
+  // returns before any status or broadcast once the agent names another pty.
+  it('3. for a terminal it replaced: main.ts sets no status and tells no window', () => {
     const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
     const kanban = main.slice(main.indexOf('initKanbanAutomation({'), main.indexOf('saveAgents,\n  });'));
-    expect(kanban).toContain('ptyProcess.onExit(({ exitCode }) => boardAgentExited(id, ptyId, exitCode, handleStatusChangeNotificationWrapper));');
-    expect(kanban).not.toContain("broadcastToAllWindows('agent:complete'");
+    const exit = kanban.slice(kanban.indexOf('ptyProcess.onExit('));
+    const guard = exit.indexOf('if (agent?.ptyId !== ptyId) return;');
+    expect(guard, 'the board exit handler has no replaced-terminal guard').toBeGreaterThan(0);
+    expect(guard).toBeLessThan(exit.indexOf('agent.status = newStatus'));
+    expect(guard).toBeLessThan(exit.indexOf("broadcastToAllWindows('agent:complete'"));
   });
 });
 

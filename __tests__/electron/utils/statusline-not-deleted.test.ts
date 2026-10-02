@@ -80,7 +80,7 @@ afterAll(() => {
 
 describe('turning the Tars status line off', () => {
   it('leaves a status line pointing at somebody else\'s script alone', async () => {
-    const theirs = { type: 'command', command: '/Users/noah/bin/my-own-statusline.sh', padding: 0 };
+    const theirs = { type: 'command', command: '/Users/you/bin/my-own-statusline.sh', padding: 0 };
     write(settingsWith(theirs));
 
     const { disableStatusLine } = await load();
@@ -142,7 +142,7 @@ describe('turning it on', () => {
   });
 
   it('replaces somebody else\'s entry, which is what asking for ours means', async () => {
-    write(settingsWith({ type: 'command', command: '/Users/noah/bin/my-own-statusline.sh' }));
+    write(settingsWith({ type: 'command', command: '/Users/you/bin/my-own-statusline.sh' }));
 
     const { enableStatusLine } = await load();
     enableStatusLine();

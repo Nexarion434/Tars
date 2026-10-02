@@ -59,7 +59,10 @@ describe("the app's own before-quit handler", () => {
     const source = ts.createSourceFile(MAIN, fs.readFileSync(MAIN, 'utf-8'), ts.ScriptTarget.ES2022, true);
     let names: string[] | null = null;
 
+    // The first list: the quit's first pass, where the writes are. The second
+    // pass closes what the terminals no longer need.
     const visit = (node: ts.Node): void => {
+      if (names) return;
       if (ts.isCallExpression(node)
           && ts.isIdentifier(node.expression)
           && node.expression.text === 'runShutdownSteps'
@@ -86,17 +89,25 @@ describe("the app's own before-quit handler", () => {
     // do not write are in it too, after the two that do.
     expect(steps.length, JSON.stringify(steps)).toBeGreaterThan(WRITERS.length);
     expect(steps.slice(0, WRITERS.length)).toEqual(WRITERS);
-    expect(steps).toContain('killAllPty');
+    // The terminals are ended after these steps, by endAllTerminals, which
+    // waits for their exits and so is not a step (quit-ends-terminals.test.ts).
+    expect(steps).toContain('endAcpRunsOnQuit');
     expect(steps).not.toContain('<not a literal>');
   });
 
-  it('silences status notifications before it ends the terminals', () => {
-    // The terminals' exits set their agents to `error`: announced, they would
-    // notify (or reach Telegram) while the user is quitting. See
-    // quit-status-notifications.test.ts.
-    const steps = shutdownStepNames();
-    expect(steps).toContain('stopStatusNotifications');
-    expect(steps.indexOf('stopStatusNotifications')).toBeLessThan(steps.indexOf('killAllPty'));
+  it('stops the stall watch in its first pass, before the terminals it reads are ended (#283)', () => {
+    // Its check reads each agent's process tree and posts to an orchestrator:
+    // run against a fleet whose trees are being ended, every agent reads
+    // stalled, or its notice lands in a terminal that is going away.
+    expect(shutdownStepNames()).toContain('stopStallWatch');
+  });
+
+  it('silences status notifications in its first pass, before the terminals\' exits come in', () => {
+    // An announcement pending from before the quit would notify (or reach
+    // Telegram) while the quit waits for the terminals, up to 5 s more on
+    // Windows. The exits themselves come after this synchronous pass, once
+    // the event loop turns. See quit-status-notifications.test.ts.
+    expect(shutdownStepNames()).toContain('stopStatusNotifications');
   });
 
   it('does its work through the guarded runner and not as bare statements', () => {
@@ -107,7 +118,7 @@ describe("the app's own before-quit handler", () => {
     expect(body).toContain('runShutdownSteps(');
     // Every step is inside the array, so none of the eight is called on its own
     // line where a throw would skip the rest.
-    for (const step of [...WRITERS, 'killAllPty', 'closeVaultDb', 'destroyTray']) {
+    for (const step of [...WRITERS, 'endAcpRunsOnQuit', 'closeVaultDb', 'destroyTray']) {
       expect(body, `${step}() is called outside runShutdownSteps`).not.toMatch(new RegExp(`^\\s*${step}\\(\\);`, 'm'));
     }
   });

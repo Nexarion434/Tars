@@ -184,6 +184,7 @@ Son verdict : « tout à l'air de marcher ».
 | D14 | Textes du lot desktop-shell | Validés tels quels : dialogue de première fermeture (« Keep your agents running? », « Keep running in the tray » / « Quit and stop agents »), menu du tray « Show Tars » / « Quit Tars », lignes « Shell » / « Shell path » et libellés des shells ; badge d'alerte du tray : point rouge actuel conservé | 2026-09-26 | Nicolas |
 | D15 | Panneaux fixés en haut sous Windows | Tiroirs, terminal plein écran et tout panneau `fixed top-0` démarrent sous la bande de 32 px des boutons natifs (Windows seulement) | 2026-09-26 | Nicolas |
 | D16 | Rapports d'erreur (Sentry, upstream 1.9.1) | Rapports d'erreur Sentry masqués et désactivés sous Windows tant que Noah n'a pas accepté de recevoir ceux du portage : le main ne charge jamais le SDK sous win32 quel que soit `errorReportsEnabled` (`electron/platform/error-reports.ts`), la fenêtre non plus, et la ligne « Send error reports » n'est pas affichée | 2026-09-28 | Nicolas |
+| D17 | Comptes Claude multiples (upstream 1.9.2) | Masqués et désactivés sous Windows tant qu'ils ne sont pas portés : l'option se lit éteinte sous win32 quel que soit le registre (`electron/platform/claude-accounts.ts`, lu par `readAccountsSettings`), la section Settings et son lien ne sont pas offerts (`src/lib/claude-accounts-offered.ts`), leurs tests et specs sautés sous win32 en le disant. Portage : lot à part | 2026-10-02 | Nicolas |
 | D4 | Environnement de dev | VS Build Tools C++ installés (`npm ci` tel quel). Mode développeur **non** activé : les tests qui créent des symlinks sont sautés sous Windows sans privilège, avec la raison affichée, et tournent en CI `windows-latest` | 2026-09-25 | Nicolas |
 
 ## 5bis. Reprise (état au 2026-09-29)
@@ -193,12 +194,28 @@ Son verdict : « tout à l'air de marcher ».
 `latest.yml` vérifié), publiée sur autorisation de Nicolas. Synchro quotidienne (D13) : sur conflit elle ouvre
 une issue « Upstream sync conflict » sur le fork et ne publie rien ; il faut alors une synchro à la main.
 
-**Upstream.** Mergées dans la 1.9.1 : JeanBrasse/Tars #216, #217, #218. Ouvertes, en attente de Noah :
-#256 (ids de fichier en bigint), #257 (test Discord), #258 (sécurité : racines du home et liens), #259
-(`--add-dir` échappé), #260 (badge Claude Code), #261 (jeton Hermes en OAuth), #262 (import Hermes Desktop et
-notice « token not imported »), #264 (champs en lecture seule, design de Nicolas ; à merger avant #262 et #265),
-#265 (statut Hermes « signed out »), #268 (relecture automatique de la liste des salons). Plusieurs portent la
-même entrée 1.9.2 / id 51 : à replier au fil des merges.
+**Upstream.** Mergées dans la 1.9.1 : JeanBrasse/Tars #216, #217, #218. Mergées dans la 1.9.2 (sortie le
+2026-10-01) : #256, #257, #258, #259, #260, #261, #262, #264, #265, #268. Aucune PR ouverte.
+
+**Synchro upstream 1.9.2 (2026-10-02, à la main : la synchro quotidienne du 01/10 a buté sur 26 conflits,
+issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés :
+- Arrêt et quit : l'arbre de process d'un agent est lu par `ps` (`electron/core/pty-manager.ts` `processTableNow`,
+  `electron/services/acp/client.ts` `processTable`), absent sous Windows : un stop ou un quit ferme la console
+  ConPTY (`killPty`, comme avant) mais un enfant sorti de la console survit. Port : `taskkill /T` via `killTree`.
+- Agents bloqués (`electron/services/stall-watch.ts`, `ps -A`) : inactif sous Windows, sans erreur.
+- Comptes Claude multiples, masqués et éteints sous Windows (D17) : `claude auth status/logout` lancés par leur nom nu
+  (`electron/services/claude-accounts/auth.ts`, `execFile`) et terminal de connexion par `pty.spawn` du binaire
+  (`electron/handlers/claude-accounts-handlers.ts`), sans la résolution Windows (`.cmd`) ; la status line Node
+  (`hooks/statusline.mjs`) n'écrit ni `rate-limits.d/<compte>.json` ni le compte dans `token-stats.json` ; le
+  compte est résolu deux fois à un démarrage Windows (shell d'attente, puis CLI) ; `unsetEnv` /
+  `withAccountEnv` suppriment les variables avec la casse exacte.
+- `scripts/worktree.mjs` (outil de dev de Noah) copie par `cp`.
+- Tests upstream POSIX sautés sous win32, raison écrite : `quit-ends-terminals` (groupes bash), `agent-stop`
+  1, 3, 4, 8, `mcp-server-runtime` 18, 19, 21 (chemins macOS de copie transitoire), `statusline-account(s)`
+  (status line bash, D1) ; specs `stop-ends-agent`, `quit-ends-agents` (arbre entier), `stall-signal` (ps,
+  caffeinate) ; comptes Claude (D17) : leurs 8 fichiers de tests et 4 specs.
+- Test local seulement : `build-renderer` « Ctrl+C » échoue sur cette machine avant comme après la synchro
+  (le script ne sort pas après le Ctrl+C) ; vert en CI.
 
 **Ouvert.**
 - D10 : textes propres à mac, en attente de Nicolas.
@@ -251,3 +268,4 @@ même entrée 1.9.2 / id 51 : à replier au fil des merges.
 | 2026-09-29 | Page Hermes, Connexion : champ utilisateur SSH, import Hermes Desktop (SSH, sonde après import, jeton chiffré signalé), menu clic droit des champs, ligne du jeton et rappel du tunnel en SSH ; reprise de #262 et #265 par cherry-pick | `win/hermes-bugs-2` | npm test 4678/0, specs hermes-bugs 15/15 et hermes-connection 12/12 | APPROVE | 20d8c59b |
 | 2026-09-29 | Spec `usage-unreadable` : tours datés de maintenant, la date fixe du 15/09 était sortie de la fenêtre de 14 jours (même correctif proposé à l upstream, branche `up/usage-date`) | `windows` | échec CI 36573749517, puis CI Windows et Linux vertes | direct | 04c6169f |
 | 2026-09-29 | Release `v1.9.1-win.4` publiée depuis 04c6169f (run 36585650059, `latest.yml` vérifié), sur accord de Nicolas | release | CI Windows et Linux vertes | accord de Nicolas | 04c6169f |
+| 2026-10-02 | Synchro upstream 1.9.2 (74508222, dont nos PR #256 à #268) à la main, la quotidienne ayant buté sur 26 conflits (issue #9) : 28 conflits résolus au profit de l'upstream + ajouts win32 (killPty, attente ConPTY au quit, lancement direct D2, childEnv, gardes de chemins de `platform/real-target`) ; D17 : comptes Claude masqués et éteints sous Windows ; la fenêtre relit la fiche d'un agent passé à stopped (qui, quand, pourquoi), que le garde Windows de `agent:complete` ne lui faisait plus relire ; tests et specs POSIX sautés sous win32 en le disant, specs du fork mises au stop avec raison et au bouton plein écran ; 5 références win32 refaites (dashboard, agents, projects, usage, settings-system) | `win/sync-upstream-1002` | npm test 5210/0 hors Ctrl+C local, E2E : 40 surfaces, specs corrigées vertes | à faire | |

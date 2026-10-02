@@ -176,7 +176,7 @@ test('a delegated task returns its stop reason, and a stopped run leaves no proc
     leftovers.push(hangRoot, hangChild);
     await until('the command and the one it started are up', async () => (await processesNaming(marker)).length >= 2);
     const running = (await processesNaming(marker)).length;
-    const stopped = await api('stop', {});
+    const stopped = await api('stop', { reason: 'the delegation spec stops the hanging run' });
     expect(stopped.status, JSON.stringify(stopped.data)).toBe(200);
     const answer = await hanging;
     expect(answer.status, JSON.stringify(answer.data)).toBe(200);

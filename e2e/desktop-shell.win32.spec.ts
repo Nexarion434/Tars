@@ -337,13 +337,13 @@ test.describe('the Windows desktop shell', () => {
 
     await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3500);
-    await page.getByRole('button', { name: 'Panel actions' }).first().click();
-    await page.getByRole('button', { name: 'fullscreen', exact: true }).click();
+    // Fullscreen is a button of the panel header since upstream 1.9.2, no
+    // longer an item of its menu; the same button exits it.
+    await page.getByRole('button', { name: 'Fullscreen', exact: true }).first().click();
     await page.waitForTimeout(1200);
     found.panelFullscreen = await underBand();
     await shotWindow(app, 'overlay-panel-fullscreen');
-    await page.getByRole('button', { name: 'Panel actions' }).first().click();
-    await page.getByRole('button', { name: 'exit fullscreen', exact: true }).click();
+    await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
     await page.waitForTimeout(600);
 
     // The broadcast banner (Ctrl+Shift+B on the board), which holds no control:

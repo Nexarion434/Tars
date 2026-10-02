@@ -30,9 +30,11 @@ vi.mock('@sentry/electron/main', () => {
     makeElectronTransport: vi.fn(() => ({ send: vi.fn(), flush: vi.fn() })),
   };
 });
-vi.mock('electron', () => ({
-  app: { getVersion: () => '1.9.1', isReady: () => false, getPath: () => '/tmp' },
-}));
+vi.mock('electron', async () => {
+  const { EventEmitter } = await import('node:events');
+  // ipcMain: the start guards the SDK's renderer channels (upstream 1.9.2).
+  return { app: { getVersion: () => '1.9.1', isReady: () => false, getPath: () => '/tmp' }, ipcMain: new EventEmitter() };
+});
 
 import { errorReportsAvailable } from '../../../electron/platform';
 

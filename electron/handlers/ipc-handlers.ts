@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { stopAgent } from '../core/agent-stop';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -19,7 +20,9 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters } from '../types';
+import { countersForUsagePage } from '../services/claude-accounts/counters';
+import { readAccountsSettings } from '../services/claude-accounts/registry';
 import { buildFullPath } from '../utils/path-builder';
 import { cliPathDirs } from '../utils/cli-path-dirs';
 import { projectFolders } from '../services/project-index';
@@ -30,6 +33,7 @@ import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
+import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
@@ -183,6 +187,7 @@ function registerPtyHandlers(deps: IpcHandlerDependencies): void {
 
   // Create a new PTY terminal
   ipcMain.handle('pty:create', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = resolveShell({ setting: deps.getAppSettings().terminalShell });
 
@@ -491,10 +496,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     ptyProcess.onExit(({ exitCode }) => {
       const agent = agents.get(id);
+      // Ended by the quit: neither the agent's completion nor its error, and
+      // the closing window is not told it was (the Audit's gate of #235).
+      const newStatus = agentStatusOnExit(exitCode);
       // Skip status update if this PTY was replaced by a newer one
-      if (agent && agent.ptyId === ptyId) {
+      if (newStatus && agent && agent.ptyId === ptyId) {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
-        const newStatus = exitCode === 0 ? 'completed' : 'error';
         agent.status = newStatus;
         agent.lastActivity = new Date().toISOString();
         handleStatusChangeNotification(agent, newStatus);
@@ -602,6 +609,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // Writing `export ...` to an already-running shell is racy: the shell may not
       // process the export before the claude command runs. Baking vars into pty.spawn()
       // guarantees they're in the process environment from the start.
+      refuseWhileQuitting('agent terminal');
       const oldPty = ptyProcesses.get(agent.ptyId!);
       if (oldPty) {
         killPty(oldPty);
@@ -684,15 +692,18 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       newPty.onExit(({ exitCode }) => {
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
+        ptyProcesses.delete(newPtyId);
+        // Ended by the quit: neither the agent's completion nor its error, and
+        // the closing window is not told it was (the Audit's gate of #235).
+        const newStatus = agentStatusOnExit(exitCode);
+        if (!newStatus) return;
         const agentData = agents.get(id);
         // Guard: only mutate if this PTY is still the active one (prevents race on restart)
         if (agentData && agentData.ptyId === newPtyId) {
-          const newStatus = exitCode === 0 ? 'completed' : 'error';
           agentData.status = newStatus;
           agentData.lastActivity = new Date().toISOString();
           handleStatusChangeNotification(agentData, newStatus);
         }
-        ptyProcesses.delete(newPtyId);
         // Only for the terminal the agent still names: a replaced one is not
         // the agent finishing (see initAgentPty's own exit).
         if (agentData && agentData.ptyId === newPtyId) {
@@ -761,7 +772,6 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           projectPath: agent.projectPath,
           settings: appSettingsForCommand as never,
           hermes: usableHermesConnection(),
-          budgetMs: 3000,
         });
         const wrapped = wrapDigestForPrompt(digest);
         if (wrapped) promptWithMemory = `${wrapped}\n\n${prompt}`;
@@ -1155,44 +1165,22 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true, agent };
   });
 
-  // Stop an agent
-  ipcMain.handle('agent:stop', async (_event, id: string) => {
+  // Stop an agent, from the window: filed under "you" (core/agent-stop.ts).
+  ipcMain.handle('agent:stop', async (_event, id: string, reason?: unknown) => {
     const agent = agents.get(id);
-    // A delegated run too, which has no terminal: an agent running only one
-    // was not stopped at all (the Audit's table, #6).
-    if (agent) await stopAcpRuns(agent.id, 'the agent was stopped');
-    if (agent?.ptyId) {
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (ptyProcess) {
-        killPty(ptyProcess);
-        ptyProcesses.delete(agent.ptyId);
-      }
-      agent.ptyId = undefined;
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-      // The killed session is a tombstone, exactly as the API's stop makes
-      // it. Its hooks outlive the kill: SessionEnd posts `completed` under the
-      // session id this agent still recorded as its owner, so the post passed
-      // the stale check and put a stopped agent back to done. Only the owner
-      // field moves; the refusal of posts from any other session is untouched.
-      if (agent.currentSessionId) {
-        agent.lastKilledSessionId = agent.currentSessionId;
-      }
-      agent.currentSessionId = undefined;
-      agent.lastActivity = new Date().toISOString();
-      // Mark as manually stopped to prevent status detection from overriding
-      (agent as AgentStatus & { _manuallyStoppedAt?: number })._manuallyStoppedAt = Date.now();
-      saveAgents();
-
-      // Send status change notification to all windows
-      broadcastToAllWindows('agent:status', {
-        type: 'status',
-        agentId: id,
-        status: 'idle',
-        timestamp: new Date().toISOString(),
-      });
-      scheduleTick();
-    }
+    if (!agent) return { success: true };
+    await stopAgent(agent, { by: 'you', reason: typeof reason === 'string' ? reason : undefined }, {
+      save: saveAgents,
+      announce: stopped => {
+        broadcastToAllWindows('agent:status', {
+          type: 'status',
+          agentId: stopped.id,
+          status: stopped.status,
+          timestamp: stopped.lastActivity,
+        });
+        scheduleTick();
+      },
+    });
     return { success: true };
   });
 
@@ -1370,6 +1358,7 @@ function registerSkillHandlers(deps: IpcHandlerDependencies): void {
     }
 
     const fullPath = buildFullPath();
+    refuseWhileQuitting('skill install');
     const ptyProcess = spawnSkillInstallerOnWindows(npxArgs, { cols, rows }, withPath(process.env, fullPath, process.platform)) ?? pty.spawn('npx', npxArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -1550,9 +1539,6 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
 
     const id = uuidv4();
     const env = withPath(process.env, buildFullPath(), process.platform) as { [key: string]: string };
-    const onWindows = startPluginInstallOnWindows(id, command, { cols, rows }, env, pluginPtyProcesses, getMainWindow);
-    if (onWindows) return onWindows;
-
     const shell = defaultShell();
 
     // If the command starts with /, it's a Claude CLI slash command - prefix with 'claude'
@@ -1564,6 +1550,9 @@ function registerPluginHandlers(deps: IpcHandlerDependencies): void {
       ? ['--no-rcs', '-c', finalCommand]
       : ['-c', finalCommand];
 
+    refuseWhileQuitting('plugin install');
+    const onWindows = startPluginInstallOnWindows(id, command, { cols, rows }, env, pluginPtyProcesses, getMainWindow);
+    if (onWindows) return onWindows;
     const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -1655,6 +1644,15 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         // ignore parse errors
       }
 
+      // Every Claude account's counters, for one pair of bars each: account 1's
+      // status lines alone write rate-limits.json.
+      let accountRateLimits: ClaudeAccountCounters[] = [];
+      try {
+        accountRateLimits = countersForUsagePage(readAccountsSettings());
+      } catch {
+        // an unreadable registry: the page keeps account 1's bars
+      }
+
       // Read accumulated token stats from statusline
       let tokenStats = null;
       try {
@@ -1723,6 +1721,7 @@ function registerClaudeDataHandlers(deps: IpcHandlerDependencies): void {
         history,
         activeSessions: [],
         rateLimits,
+        accountRateLimits,
         tokenStats,
       };
     } catch (err) {
@@ -1750,7 +1749,7 @@ function permissionsCarryNothing(value: unknown): boolean {
   return (p.allow?.length ?? 0) === 0 && (p.deny?.length ?? 0) === 0;
 }
 
-function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
+function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
   // Get Claude settings
@@ -1842,22 +1841,30 @@ function registerSettingsHandlers(_deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execFileSync } = await import('child_process');
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
 
-      // Try to get Claude version. By argv, never a shell string: on Windows
-      // the claude found on the PATH (a .exe, or an npm shim read through to
-      // node and its script), which libuv could not start by its bare name.
-      let claudeVersion = 'Unknown';
-      const claude = resolveCliBinary('claude', process.env, process.platform);
-      if (claude.ok) {
-        try {
-          claudeVersion = execFileSync(claude.file, [...claude.prefixArgs, '--version'], {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim();
-        } catch {
-          // Claude not installed or not in PATH
+      // Empty unless claude answers: the System page reads any version as
+      // ready, and started from 'Unknown', so a missing claude read as ready.
+      // Resolved the way an agent launch resolves it: the path set in
+      // Settings > CLI Paths, else 'claude' on the PATH built with those
+      // folders, not on Electron's own. By argv, and on Windows the claude
+      // found there (a .exe, or an npm shim read through to node and its
+      // script), which libuv could not start by its bare name.
+      const cliPaths = deps.getAppSettings()?.cliPaths;
+      const env = withPath(process.env, buildFullPath(cliPathDirs(cliPaths)), process.platform);
+      const claude = resolveCliBinary(cliPaths?.claude || 'claude', env, process.platform);
+      let claudeVersion = '';
+      try {
+        if (claude.ok) {
+          const { stdout } = await promisify(execFile)(claude.file, [...claude.prefixArgs, '--version'], {
+            timeout: 8000,
+            env: env as NodeJS.ProcessEnv,
+          });
+          claudeVersion = stdout.trim();
         }
+      } catch {
+        // Not installed, not on that PATH, or it failed: not ready.
       }
 
       return {
@@ -1944,7 +1951,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   });
 
   ipcMain.handle('logs:tail', async (_event, { agentId, lines }: { agentId: string; lines?: number }) => {
-    return agentTail(agentId, lines) ?? { lines: [], agentName: '' };
+    return (await agentTail(agentId, lines)) ?? { lines: [], agentName: '' };
   });
 
   ipcMain.handle('logs:fleet', async () => ({ agents: fleetSummary() }));
@@ -2980,6 +2987,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
 
   // Start a new quick terminal PTY
   ipcMain.handle('shell:startPty', async (_event, { cwd, cols, rows }: { cwd?: string; cols?: number; rows?: number }) => {
+    refuseWhileQuitting('terminal');
     const id = uuidv4();
     const shell = resolveShell({ setting: deps.getAppSettings().terminalShell });
 

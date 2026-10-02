@@ -20,10 +20,11 @@ import * as path from 'path';
  * those.
  *
  * Identities are read as BigInt. A plain stat gives the inode as a Number,
- * exact only below 2^53, and an NTFS file id is 64 bits whose top 16 grow
- * each time a record is reused: two files a record apart then read as one
- * number, and this took an ordinary folder for a blocked one (CI run
- * 36260463284) or a folder outside the home for the home.
+ * exact only below 2^53, and some volumes hand out 64-bit file ids above it
+ * (NTFS, or a share whose client passes the server's ids through, as Linux's
+ * CIFS does by default): two files a few ids apart then read as one number,
+ * and this took an ordinary folder for a blocked one, or a folder outside the
+ * home for the home.
  */
 export function isWithinDir(candidate: string, dir: string): boolean {
   let target: fs.BigIntStats;

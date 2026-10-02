@@ -52,7 +52,13 @@ export function useElectronAgents() {
             // change moves nothing else on the record.
             prevAgent.role !== agent.role ||
             // A rename, which every agent row draws the mark from.
-            prevAgent.name !== agent.name
+            prevAgent.name !== agent.name ||
+            // The Claude account it runs on, and the one it is pinned to,
+            // which its account control names.
+            prevAgent.claudeAccountId !== agent.claudeAccountId ||
+            prevAgent.claudeAccountPin !== agent.claudeAccountPin ||
+            // The last move by Tars, which its control's title tells.
+            prevAgent.claudeAccountMove?.at !== agent.claudeAccountMove?.at
           );
         });
         return hasChanged ? list : prev;
@@ -183,7 +189,10 @@ export function useElectronAgents() {
       // reason is only on the full record. Patching the status alone put
       // `error` beside whatever reason this copy last read, which is nothing
       // for a first failure and the previous failure's sentence for a second.
-      if (event.status === 'error') {
+      // The same for a stop: who, when and why are on the record only, and the
+      // terminal's exit, whose agent:complete reads it again, never comes for
+      // an agent stopped without one, or for a terminal it no longer names.
+      if (event.status === 'error' || event.status === 'stopped') {
         fetchAgents();
         return;
       }
@@ -192,6 +201,20 @@ export function useElectronAgents() {
           ? { ...a, status: event.status as AgentStatus['status'], lastActivity: event.timestamp || new Date().toISOString() }
           : a
       ));
+    });
+
+    // An agent's Claude account or pin, changed from this window's control,
+    // from another window, or by main itself: main says it to every window
+    // with both fields, so the agent is patched where it is.
+    const unsubAccount = window.electronAPI!.claudeAccounts?.onAgentChanged?.((change) => {
+      setAgents(prev => prev.map(a => a.id === change.agentId
+        ? { ...a, claudeAccountId: change.claudeAccountId ?? undefined, claudeAccountPin: change.claudeAccountPin ?? undefined }
+        : a));
+    });
+    // A move by Tars, kept on the agent for its control's title; the new
+    // account follows on onAgentChanged.
+    const unsubMove = window.electronAPI!.claudeAccounts?.onAgentMoved?.((move) => {
+      setAgents(prev => prev.map(a => a.id === move.agentId ? { ...a, claudeAccountMove: move } : a));
     });
 
     // Also subscribe to agents:tick for reliable live status updates
@@ -252,6 +275,8 @@ export function useElectronAgents() {
       unsubComplete();
       unsubStatus?.();
       unsubTick?.();
+      unsubAccount?.();
+      unsubMove?.();
     };
   }, [fetchAgents]);
 

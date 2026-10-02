@@ -8,9 +8,8 @@ import { BUS_READ_MS, BUS_RETRY_MS, retryingRead } from '../../src/lib/bus-read'
  * the page put "The bus did not answer, so this list is not the whole truth.
  * bus:listRooms, no answer in 10 s" where the rows would be, and read the list
  * again only on the next bus:message or a click on retry. The answer that came
- * at 12 s was thrown away. A person saw an empty Chat, and CI met it too (fork
- * runs 36320171886 and 36461229599). Written before the code, as the ways the
- * read can fail:
+ * at 12 s was thrown away. A person saw an empty Chat, and a slow CI
+ * runner met it too. Written before the code, as the ways the read can fail:
  *
  * 1. An answer that comes after the 10 s is thrown away, and the list stays
  *    empty behind the note, though the bus did answer.

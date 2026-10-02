@@ -20,6 +20,7 @@ import {
   TasmaniaSection,
   GoogleWorkspaceSection,
   AIProvidersSection,
+  ClaudeAccountsSection,
   PermissionsSection,
   SkillsSection,
   McpSection,
@@ -30,6 +31,7 @@ import {
   SECTIONS,
 } from '@/components/Settings';
 import type { SettingsSection } from '@/components/Settings';
+import { settingsSectionOffered } from '@/lib/claude-accounts-offered';
 import 'xterm/css/xterm.css';
 
 /**
@@ -45,7 +47,7 @@ import 'xterm/css/xterm.css';
  * body until that section is converted, so they render disabled with a note
  * rather than claiming to do something they do not.
  */
-type HeaderActionKind = 'save' | 'refresh' | 'unwired';
+type HeaderActionKind = 'save' | 'refresh' | 'unwired' | 'none';
 
 const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActionKind }> = {
   general: { label: 'Save', kind: 'save' },
@@ -57,6 +59,8 @@ const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActio
   'google-workspace': { label: 'Save', kind: 'save' },
   tasmania: { label: 'Save', kind: 'save' },
   'ai-providers': { label: 'Detect', kind: 'unwired' },
+  // Every control acts at once, as drawn: add an account sits in its list.
+  'claude-accounts': { label: '', kind: 'none' },
   cli: { label: 'Detect', kind: 'unwired' },
   hermes: { label: 'Test connection', kind: 'unwired' },
   telegram: { label: 'Test', kind: 'unwired' },
@@ -83,7 +87,7 @@ function SettingsPageInner() {
 
   // Deep-link: initialize from URL param
   useEffect(() => {
-    if (sectionParam && SECTIONS.some(s => s.id === sectionParam)) {
+    if (sectionParam && SECTIONS.some(s => s.id === sectionParam) && settingsSectionOffered(sectionParam)) {
       setActiveSection(sectionParam as SettingsSection);
     }
   }, [sectionParam]);
@@ -178,6 +182,8 @@ function SettingsPageInner() {
             onUpdateLocalSettings={updateLocalAppSettings}
           />
         );
+      case 'claude-accounts':
+        return <ClaudeAccountsSection />;
       case 'permissions':
         return <PermissionsSection settings={settings} />;
       case 'skills':
@@ -253,7 +259,7 @@ function SettingsPageInner() {
         title={activeLeaf?.label ?? 'Settings'}
         subtitle={activeLeaf?.description}
         actions={
-          action.kind === 'save' ? (
+          action.kind === 'none' ? undefined : action.kind === 'save' ? (
             <Button
               variant="primary"
               size="md"

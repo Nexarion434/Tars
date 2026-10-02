@@ -109,7 +109,7 @@ test('twenty terminals ended through every kill site raise no AttachConsole fail
         'agent:remove': id => invoke('agent:remove', id),
         'agent:update': id => invoke('agent:update', { id, cliPath: `${process.execPath}.other` }),
         'api stop': id => fetch(`http://127.0.0.1:${port}/api/agents/${id}/stop`, {
-          method: 'POST', headers: { Authorization: `Bearer ${internalToken()}`, 'Content-Type': 'application/json' }, body: '{}',
+          method: 'POST', headers: { Authorization: `Bearer ${internalToken()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'the kill sites spec' }),
         }).then(r => r.status),
         killStalePty: async id => {
           const agent = manager.agents.get(id);

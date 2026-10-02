@@ -25,6 +25,10 @@ export const POSIX_MODES_REASON = 'Windows has no POSIX permission bits: chmod o
   + 'attribute and stat reports 0o666 or 0o444 (audit B/S-01, SECURITY.md section 7); the mode is '
   + 'asserted on macOS, Linux and CI, and the rest of the test runs here';
 
+export const ACCOUNTS_REASON = 'several Claude accounts are off on a Windows build until they are ported '
+  + '(decision D17: owner-only folders by POSIX modes, sign-in by the bare claude, no counters in the Node '
+  + 'status line; held there by windows-off.test.ts and claude-accounts-offered.test.ts); these run on macOS, Linux and CI';
+
 const said = new Set<string>();
 
 /**
@@ -56,4 +60,9 @@ export function shHooksNotShipped(): boolean {
 /** True where permission bits exist to be asserted; on Windows false, having said why. */
 export function hasPosixModes(): boolean {
   return !skipOnWindows(POSIX_MODES_REASON);
+}
+
+/** True where the Claude accounts feature is off (D17), for `skipIf`, having said why. */
+export function claudeAccountsNotPorted(): boolean {
+  return skipOnWindows(ACCOUNTS_REASON);
 }

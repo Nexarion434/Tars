@@ -35,15 +35,15 @@ import * as path from 'node:path';
  * discord.js (a client that records what it is given and sends), node-pty, the
  * window, Discord's REST answer, and Claude's usage stats.
  *
- * How the harness itself can fail (CI - Windows run 36269650084): discord.js
- * does not wait for a listener, and the bot's listener voids its work: nothing says
- * when a message is done with. A fixed 450 ms stood for it, and a cold start
- * takes the fake shell's prompt (20 ms) plus the quiet shellReady waits for
- * (SHELL_QUIET_MS, 150 ms) plus the files it writes: on a loaded runner it
- * answered after the 450 ms, so its test saw nothing, and its answer landed in
- * the next test's log. So a message now names the replies it is owed and
- * discord() waits for them (every reply is the last thing its flow does), and
- * each test keeps its own log, which a late answer cannot reach.
+ * How the harness itself can fail: discord.js does not wait for a listener,
+ * and the bot's listener voids its work: nothing says when a message is done
+ * with. A fixed 450 ms stood for it, and a cold start takes the fake shell's
+ * prompt (20 ms) plus the quiet shellReady waits for (SHELL_QUIET_MS, 150 ms)
+ * plus the files it writes: on a slow CI runner it answered after the 450 ms,
+ * so its test saw nothing, and its answer landed in the next test's log. So a
+ * message now names the replies it is owed and discord() waits for them (every
+ * reply is the last thing its flow does), and each test keeps its own log,
+ * which a late answer cannot reach.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
