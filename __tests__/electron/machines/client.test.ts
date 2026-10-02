@@ -27,6 +27,10 @@ import { formatCode, answerProof } from '../../../electron/services/machines/pai
  * 8. A machine shared in from another tailnet is tried as a candidate.
  * 9. Unpairing a machine that does not answer, or whose stored secret
  *    cannot be sent, leaves it in the list for good.
+ * 10. A machine that sends its headers and then stalls, or drops the
+ *    connection mid-answer, holds the call forever, and the status poll
+ *    with it (final review, Important 3).
+ * 11. An answer of any size is read whole into memory.
  */
 let server: http.Server;
 let port: number;
@@ -138,5 +142,35 @@ describe('unpairing', () => {
     await unpairPeer('m-1111111111111111');
     await unpairPeer('m-2222222222222222');
     expect(readMachines().peers).toEqual([]);
+  });
+});
+
+/** A machine that answers ping in its own way. */
+async function oddPeer(handler: (res: http.ServerResponse) => void) {
+  const srv = http.createServer((_req, res) => handler(res));
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
+  const at = (srv.address() as AddressInfo).port;
+  const peer = { id: 'm-4444444444444444', name: 'Odd', address: '127.0.0.1', port: at, inboundSecretHash: '0'.repeat(64), outboundSecret: 'C'.repeat(43), mayOnMe: 'see' as const, pairedAt: '' };
+  return { srv, peer };
+}
+
+describe('an answer that never ends well', () => {
+  it.each([
+    ['sends its headers and stalls', (res: http.ServerResponse) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.write('{"agentsRunning":'); }],
+    ['drops the connection mid-answer', (res: http.ServerResponse) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.write('{"agentsRunning":'); setTimeout(() => res.socket?.destroy(), 50); }],
+  ])('reads offline, within its own time limit, from a machine that %s (10)', async (_what, handler) => {
+    const { srv, peer } = await oddPeer(handler);
+    try {
+      const started = Date.now();
+      expect(await ping(peer)).toEqual({ status: 'offline' });
+      expect(Date.now() - started).toBeLessThan(4_000);
+    } finally { srv.closeAllConnections(); srv.close(); }
+  }, 10_000);
+
+  it('stops reading an answer past 64 KB, and reads it as offline (11)', async () => {
+    const { srv, peer } = await oddPeer(res => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ agentsRunning: 1, pad: 'x'.repeat(200_000) })); });
+    try {
+      expect(await ping(peer)).toEqual({ status: 'offline' });
+    } finally { srv.closeAllConnections(); srv.close(); }
   });
 });

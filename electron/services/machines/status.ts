@@ -9,11 +9,19 @@ import type { PeerStatus } from './types';
  */
 const known = new Map<string, { status: PeerStatus; lastSeen?: string; agentsRunning?: number }>();
 let timer: NodeJS.Timeout | null = null;
+/** A poll under way: the next tick skips rather than start a second one beside it. */
+let polling = false;
 
 export const peerStatus = (id: string): { status: PeerStatus; lastSeen?: string; agentsRunning?: number } =>
   known.get(id) ?? { status: 'unknown' };
 
 async function pollOnce(onChanged: () => void): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try { await pollPeers(onChanged); } finally { polling = false; }
+}
+
+async function pollPeers(onChanged: () => void): Promise<void> {
   let moved = false;
   for (const peer of readMachines().peers) {
     const r = await ping(peer);

@@ -13,32 +13,62 @@ export interface Candidate { host: string; port: number }
 export type PairResult = { ok: true; name: string } | { ok: false; error: string };
 export type PingResult = { status: 'connected'; agentsRunning: number } | { status: 'offline' } | { status: 'unpaired' };
 
+/** The most an answer may weigh: every answer of the bridge is a few hundred bytes. */
+const MAX_ANSWER = 64 * 1024;
+
+/**
+ * One call to another bridge. It always settles, within timeoutMs from the
+ * start whatever the other side does (headers then nothing, a connection
+ * dropped mid-answer, an answer that never ends), as status 0 when no whole
+ * answer came: a call that hung would hold the status poll with it.
+ */
 function request(c: Candidate, method: string, path: string, opts: { secret?: string; body?: unknown; timeoutMs: number }): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve) => {
     const data = opts.body === undefined ? undefined : JSON.stringify(opts.body);
-    let req: http.ClientRequest;
+    let req: http.ClientRequest | undefined;
+    let settled = false;
+    const settle = (status: number, body: Record<string, unknown> = {}) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (status === 0) req?.destroy();
+      resolve({ status, body });
+    };
+    const deadline = setTimeout(() => settle(0), opts.timeoutMs);
     // A header Node refuses (a stored secret with a line break) throws here: no answer, never a throw.
-    try { req = http.request({
-      host: c.host,
-      port: c.port,
-      path,
-      method,
-      timeout: opts.timeoutMs,
-      headers: {
-        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
-        ...(opts.secret ? { Authorization: `Bearer ${opts.secret}` } : {}),
-      },
-    }, res => {
-      let raw = '';
-      res.on('data', chunk => { raw += chunk; });
-      res.on('end', () => {
-        let body: Record<string, unknown> = {};
-        try { body = JSON.parse(raw); } catch { /* not json */ }
-        resolve({ status: res.statusCode ?? 0, body });
+    try {
+      req = http.request({
+        host: c.host,
+        port: c.port,
+        path,
+        method,
+        headers: {
+          ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+          ...(opts.secret ? { Authorization: `Bearer ${opts.secret}` } : {}),
+        },
+      }, res => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        res.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_ANSWER) return settle(0);
+          chunks.push(chunk);
+        });
+        res.on('end', () => {
+          let body: Record<string, unknown> = {};
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed;
+          } catch { /* not json */ }
+          settle(res.statusCode ?? 0, body);
+        });
+        // Dropped before its end: after a whole answer, settle has already run.
+        res.on('aborted', () => settle(0));
+        res.on('error', () => settle(0));
+        res.on('close', () => settle(0));
       });
-    }); } catch { resolve({ status: 0, body: {} }); return; }
-    req.on('timeout', () => req.destroy());
-    req.on('error', () => resolve({ status: 0, body: {} }));
+    } catch { settle(0); return; }
+    req.on('error', () => settle(0));
     if (data) req.write(data);
     req.end();
   });
