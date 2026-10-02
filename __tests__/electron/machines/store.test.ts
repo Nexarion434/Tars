@@ -61,7 +61,7 @@ describe('the machines file', () => {
     expect(secretMatches('right', 'not-a-hash')).toBe(false);
   });
 
-  it.each([['', 'A machine needs a name.'], ['x'.repeat(41), 'A machine name is 40 characters at most.'], ['PC\nx', 'A machine name is one line of plain text.'], ['PC‮x', 'A machine name is one line of plain text.']])
+  it.each([['', 'A machine needs a name.'], ['x'.repeat(41), 'A machine name is 40 characters at most.'], ['PC\nx', 'A machine name is one line of plain text.'], ['PC\u202Ex', 'A machine name is one line of plain text.']])
   ('refuses the name %j with a sentence (6)', (name, sentence) => {
     expect(() => cleanName(name)).toThrow(sentence);
   });
