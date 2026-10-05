@@ -109,7 +109,7 @@ export async function pairWithCode(typed: string, candidates: Candidate[], myPor
     // asks, then clicks, which takes its whole wait at most.
     const knock = await request(c, 'POST', '/machines/v1/knock', {
       timeoutMs: PAIR_WAIT_MS + 15_000,
-      body: { id: file.self.id, name: file.self.name },
+      body: { id: file.self.id, name: file.self.name, nonce },
     });
     if (knock.status !== 200) {
       return { ok: false, error: typeof knock.body.error === 'string' ? knock.body.error : 'The other machine did not accept this one.' };

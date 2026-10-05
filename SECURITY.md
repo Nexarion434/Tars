@@ -641,7 +641,8 @@ pairing with itself. A machine another tailnet shares into yours
 showing the code names the caller by the MagicDNS name of the device at its
 address, which the tailnet keeps unique (a device that sets its hostname to
 another's gets `name-1`), and by that address, which WireGuard authenticates;
-nothing more happens until the person there clicks Accept. One machine at a
+nothing more happens until the person there clicks Accept. The knock names
+the code its caller read in `hello`, so it never lands on one shown since. One machine at a
 time: from its knock to the end of its half minute to prove the code, any
 other is turned away, and a knock asks Tailscale one quick question, never
 several at once. A refusal, or a minute without an answer, spends
@@ -659,8 +660,8 @@ key takes the typing machine's fresh nonce, and 10^6 codes cost some 30 CPU
 hours: within the five seconds the typing machine waits, it pairs with
 nothing. It can keep the proof, find the code later on many cores or a GPU,
 and knock on the real offering machine within the offer's five minutes: the
-person there sees its MagicDNS name and address, not the machine expected,
-and refuses. A person who accepts a device they do not recognise is what
+person there sees its MagicDNS name and address, which differ from the
+machine expected, if only by a suffix such as `-1`, and refuses. A person who accepts a device they do not recognise is what
 remains; Tailscale's access rules, which can keep every other device off port
 31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
 altogether; the code's short life and the person's click stand in for it.

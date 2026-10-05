@@ -180,7 +180,8 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     try { name = cleanName(body.name); } catch { /* refused below */ }
     const self = readMachines().self;
     const mine = currentOffer();
-    if (!mine || !id || !name) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    // The knock names the code its caller read in hello: one shown since then is not the one it typed.
+    if (!mine || body.nonce !== mine.nonce || !id || !name) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
     if (id === self.id) return send(403, { error: 'A machine does not pair with itself.' });
     // One machine at a time, from its knock to the end of its half minute to prove the code.
     if (knocking || request || (accepted && now() <= accepted.until)) {
@@ -208,7 +209,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
       deps.onRequestChanged?.();
     });
     if (decision === 'gone') return;
-    if (decision === 'closed') return send(403, { error: `The code changed on ${self.name}. Type the one it shows now.` });
+    if (decision === 'closed') return send(403, { error: `The code on ${self.name} changed or ran out. Type the one it shows now, or ask for a new one.` });
     if (decision !== 'accepted') {
       // A refusal, or no answer: this code is spent, and the person here opens another. A newer one is left alone.
       if (offer === mine) closePairingOffer();

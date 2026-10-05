@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, isTailnetAddress, currentRequest, decidePairRequest, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, openPairingOffer as openOfferHere, closePairingOffer, resolveBindTarget, isTailnetAddress, currentRequest, decidePairRequest, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
 import { API_PORT, OPENAI_BRIDGE_PORT } from '../../../electron/constants';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 import { codeProof, answerProof } from '../../../electron/services/machines/pairing';
@@ -54,6 +54,11 @@ import { codeProof, answerProof } from '../../../electron/services/machines/pair
  *    each, before any is turned away; a caller gone while Tailscale answered
  *    leaves a request nobody can accept; a second machine knocks in the half
  *    minute the accepted one has to send its proof (security review).
+ * 19. A knock is taken for whatever code is shown when it arrives, not the
+ *    one its caller read in hello: the person accepts a caller whose proof
+ *    can only fail, and the failure costs the new code a try; or the proof
+ *    is taken from another address than the one accepted, or after its half
+ *    minute (security review, round 2).
  */
 let server: http.Server;
 let base: string;
@@ -70,7 +75,12 @@ const PC = 'm-bbbbbbbbbbbbbbbb';
 const THEIRS = 'their-secret-for-us_0123456789abcdefghijklm';
 
 /** What a machine sends before its proof: who it is. With autoAccept, the person here says yes at once. */
-const knock = (id = PC, name = 'PC') => call('POST', '/machines/v1/knock', { id, name });
+const knock = (id = PC, name = 'PC', nonce?: string) => call('POST', '/machines/v1/knock', { id, name, nonce: nonce ?? currentNonce() });
+/** Opens a code and keeps its nonce, the one hello gives and a knock sends back. */
+const openPairingOffer = () => { const o = openOfferHere(); shown = o.nonce; return o; };
+/** The nonce hello gives for the code shown now, which a knock sends back. */
+let shown = '';
+const currentNonce = () => shown;
 
 async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -238,7 +248,7 @@ describe('asking the person here before pairing', () => {
     try {
       openPairingOffer();
       const at = 'http://127.0.0.1:' + (quick.address() as AddressInfo).port;
-      const res = await fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: PC, name: 'PC' }) });
+      const res = await fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: PC, name: 'PC', nonce: shown }) });
       expect(res.status).toBe(403);
       expect(((await res.json()) as { error: string }).error).toBe('Nobody accepted the pairing on ' + readMachines().self.name + ' in time.');
       expect(currentRequest()).toBeNull();
@@ -249,7 +259,7 @@ describe('asking the person here before pairing', () => {
   it('drops the request of a caller that gave up (14)', async () => {
     autoAccept = false;
     openPairingOffer();
-    const body = JSON.stringify({ id: PC, name: 'PC' });
+    const body = JSON.stringify({ id: PC, name: 'PC', nonce: shown });
     const req = http.request(base + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } });
     req.on('error', () => {});
     req.end(body);
@@ -317,7 +327,7 @@ describe('knocks that come together', () => {
     try {
       openPairingOffer();
       const at = 'http://127.0.0.1:' + (slow.address() as AddressInfo).port;
-      const one = (i: number) => fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'm-' + String(i).repeat(16), name: 'N' + i }) }).then(x => x.status);
+      const one = (i: number) => fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'm-' + String(i).repeat(16), name: 'N' + i, nonce: shown }) }).then(x => x.status);
       const first = one(1);
       await new Promise(r => setTimeout(r, 30));
       const others = await Promise.all([2, 3, 4, 5].map(one));
@@ -335,7 +345,7 @@ describe('knocks that come together', () => {
     await new Promise<void>(r => slow.listen(0, '127.0.0.1', r));
     try {
       openPairingOffer();
-      const body = JSON.stringify({ id: PC, name: 'PC' });
+      const body = JSON.stringify({ id: PC, name: 'PC', nonce: shown });
       const req = http.request('http://127.0.0.1:' + (slow.address() as AddressInfo).port + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } });
       req.on('error', () => {});
       req.end(body);
@@ -353,5 +363,44 @@ describe('knocks that come together', () => {
     autoAccept = false;
     expect((await knock('m-cccccccccccccccc', 'Other')).status).toBe(403);
     expect(currentRequest()).toBeNull();
+  });
+});
+
+describe('the code a knock is for', () => {
+  it('is the one its caller read in hello: a knock for an older code is turned away (19)', async () => {
+    autoAccept = false;
+    const old = openPairingOffer();
+    openPairingOffer();
+    const r = await knock(PC, 'PC', old.nonce);
+    expect(r.status).toBe(403);
+    expect(currentRequest()).toBeNull();
+  });
+
+  it('takes the proof from the address accepted only (19)', async () => {
+    const offer = openPairingOffer();
+    expect((await knock(PC, 'PC', offer.nonce)).status).toBe(200);
+    const body = JSON.stringify({ id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS });
+    const status = await new Promise<number>((resolve) => {
+      const req = http.request(base + '/machines/v1/pair', { method: 'POST', localAddress: '127.0.0.2', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, res => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on('error', () => resolve(0));
+      req.end(body);
+    });
+    expect(status).toBe(403);
+    expect(readMachines().peers).toEqual([]);
+  });
+
+  it('takes the proof within the half minute after the accept only (19)', async () => {
+    let clock = Date.now();
+    const timed = http.createServer((req, res) => { void handleBridgeRequest(req, res, { ...deps, now: () => clock }); });
+    await new Promise<void>(r => timed.listen(0, '127.0.0.1', r));
+    try {
+      const at = 'http://127.0.0.1:' + (timed.address() as AddressInfo).port;
+      const post = (path: string, b: unknown) => fetch(at + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }).then(x => x.status);
+      const offer = openPairingOffer();
+      expect(await post('/machines/v1/knock', { id: PC, name: 'PC', nonce: offer.nonce })).toBe(200);
+      clock += 31_000;
+      expect(await post('/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS })).toBe(403);
+      expect(readMachines().peers).toEqual([]);
+    } finally { await new Promise<void>(r => timed.close(() => r())); }
   });
 });

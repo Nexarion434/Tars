@@ -163,7 +163,7 @@ describe('a machine that asks to pair', () => {
     const { nonce } = await (await fetch(at + '/machines/v1/hello')).json() as { nonce: string };
     sent.length = 0;
     const post = (path: string, body: unknown) => fetch(at + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    const asking = post('/machines/v1/knock', { id: PC, name: 'PC' });
+    const asking = post('/machines/v1/knock', { id: PC, name: 'PC', nonce });
     expect(await until(() => sent.includes('machines:changed'))).toBe(true);
     const view = await call('machines:view');
     expect(view.request).toMatchObject({ name: 'PC', address: '127.0.0.1' });

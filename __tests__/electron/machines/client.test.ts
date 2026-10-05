@@ -195,7 +195,12 @@ describe('waiting for the other machine to accept', () => {
         seen.push(String(req.url));
         const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
         if (req.url === '/machines/v1/hello') return send(200, { id: 'm-dddddddddddddddd', name: 'Mac', nonce: 'a'.repeat(32) });
-        if (req.url === '/machines/v1/knock') { setTimeout(() => { accepted = true; send(200, { ok: true }); }, 5_500); return; }
+        if (req.url === '/machines/v1/knock') {
+          // The knock names the code it read in hello.
+          if (JSON.parse(raw || '{}').nonce !== 'a'.repeat(32)) return send(403, { error: 'wrong code' });
+          setTimeout(() => { accepted = true; send(200, { ok: true }); }, 5_500);
+          return;
+        }
         if (!accepted) return send(403, { error: 'Mac has not accepted this machine. Pair again, and accept it there.' });
         const body = JSON.parse(raw || '{}');
         send(200, { id: 'm-dddddddddddddddd', name: 'Mac', secret: 'A'.repeat(43), proof: answerProof('482913', 'a'.repeat(32), String(body.callerNonce), String(body.id), 'm-dddddddddddddddd') });
