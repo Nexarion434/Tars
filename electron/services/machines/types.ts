@@ -40,5 +40,7 @@ export interface MachinesView {
   tailscale: { installed: boolean; running: boolean };
   bridge: { listening: boolean; reason?: string };
   offer: { code: string; expiresAt: string } | null;
+  /** A machine that proved the code and waits for the person here to accept it. */
+  request: { name: string; device?: string; address: string; expiresAt: string } | null;
   peers: MachineView[];
 }

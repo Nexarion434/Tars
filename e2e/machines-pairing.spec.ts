@@ -8,8 +8,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
 /**
  * Two Tars, two homes, two bridges on 127.0.0.1: the development overrides
  * TARS_MACHINES_BIND / _PORT / _PEERS stand where the tailnet would. A shows a
- * code, B types it, both list the other as connected; A lets B drive, which
- * changes A's file only; B unpairs, and A forgets B too. Leaves a run
+ * code, B types it and waits; A is asked, nothing is written on either side
+ * until A accepts; then both list the other as connected; A lets B drive,
+ * which changes A's file only; B unpairs, and A forgets B too. Leaves a run
  * directory with each step's picture and the values asserted.
  *   E2E_PORT_OFFSET=90 npx playwright test e2e/machines-pairing.spec.ts
  */
@@ -36,7 +37,7 @@ async function launch(name: string, me: typeof A, other: typeof A): Promise<{ ap
   return { app, page, home };
 }
 
-test('two Tars pair with a code, see each other, and one unpairs', async () => {
+test('two Tars pair with a code once the one showing it accepts, see each other, and one unpairs', async () => {
   test.setTimeout(240_000);
   const a = await launch('Mac', A, B);
   const b = await launch('PC', B, A);
@@ -50,10 +51,24 @@ test('two Tars pair with a code, see each other, and one unpairs', async () => {
     values.codeShown = true;
     await stepShot(a.page, '01-a-shows-a-code');
 
-    // B types it.
+    // B types it, and waits for A's answer.
     await b.page.getByLabel('Pair with a code', { exact: true }).fill(code);
     await b.page.getByRole('button', { name: 'Pair', exact: true }).click();
+    await expect(b.page.getByRole('button', { name: 'Waiting…', exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // A is asked, and neither side has written anything before A answers.
+    const ask = a.page.getByText(/^PC wants to pair with this machine/);
+    await expect(ask).toBeVisible({ timeout: 15_000 });
+    expect(machinesFile(a.home).peers).toEqual([]);
+    expect(machinesFile(b.home).peers).toEqual([]);
+    values.nothingWrittenBeforeAccept = true;
+    await stepShot(a.page, '02-a-is-asked');
+    await stepShot(b.page, '03-b-waits');
+
+    // A accepts.
+    await a.page.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(b.page.getByText('Paired with Mac.')).toBeVisible({ timeout: 20_000 });
+    await expect(ask).toHaveCount(0, { timeout: 15_000 });
     await expect(a.page.getByText(/^Pairing code/)).toHaveCount(0, { timeout: 15_000 });
 
     // Both list the other, connected, within one poll.
@@ -61,8 +76,8 @@ test('two Tars pair with a code, see each other, and one unpairs', async () => {
     await expect(b.page.getByText('Mac', { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(a.page.getByText('connected', { exact: true })).toBeVisible({ timeout: 25_000 });
     await expect(b.page.getByText('connected', { exact: true })).toBeVisible({ timeout: 25_000 });
-    await stepShot(a.page, '02-a-lists-pc');
-    await stepShot(b.page, '03-b-lists-mac');
+    await stepShot(a.page, '04-a-lists-pc');
+    await stepShot(b.page, '05-b-lists-mac');
 
     // A lets B drive: A's file says so, B's does not move.
     await a.page.getByRole('radio', { name: 'Drive' }).click();
@@ -85,7 +100,7 @@ test('two Tars pair with a code, see each other, and one unpairs', async () => {
     values.bPeersAfter = machinesFile(b.home).peers.length;
     expect(values.aPeersAfter).toBe(0);
     expect(values.bPeersAfter).toBe(0);
-    await stepShot(a.page, '04-a-after-b-unpaired');
+    await stepShot(a.page, '06-a-after-b-unpaired');
   } finally {
     recordValues(values);
     await a.app.close();

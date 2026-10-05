@@ -600,15 +600,16 @@ first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
 packaged Tars never reads those.
 
-**What it answers.** Four routes, listed one by one; any other path is a 404
+**What it answers.** Five routes, listed one by one; any other path is a 404
 before a credential is read, and no route of the loopback API answers here.
-The four are not hidden: `ping` and `unpair` answer 401 without a paired
+They are not hidden: `ping` and `unpair` answer 401 without a paired
 machine's secret, so a prober on the tailnet can tell a Tars listens.
 
 | Route | Who | What |
 |---|---|---|
 | `GET /machines/v1/hello` | anyone on the tailnet | this machine's id, name and the offer's nonce, only while a code is shown; 404 otherwise |
-| `POST /machines/v1/pair` | anyone holding the code | a proof of the code; on success a secret issued to the caller |
+| `POST /machines/v1/knock` | anyone on the tailnet, while a code is shown | its id and name, no proof; held up to a minute until the person here accepts or refuses |
+| `POST /machines/v1/pair` | the machine the person here accepted, from the address it knocked from, within 30 seconds | a proof of the code; on success a secret issued to it |
 | `GET /machines/v1/ping` | a paired machine | this machine's name and how many agents run |
 | `POST /machines/v1/unpair` | a paired machine | this machine forgets the caller |
 
@@ -634,18 +635,24 @@ machine's clock, five wrong proofs and one success, and refuses a machine
 pairing with itself. A machine another tailnet shares into yours
 (`ShareeNode`) is never asked for a code.
 
-**Its known limit.** The typing machine sends its proof to the first machine
-of the tailnet that answers `hello`. A hostile device of your own tailnet
-that answered in the offering machine's place cannot prove the code back
-without trying the codes, and 10^6 of them cost some 30 CPU hours: the
-typing machine stops waiting after five seconds, so it pairs with nothing.
-That device can still keep the proof it was sent and try the codes on many
-cores or a GPU, then present the right one to the real offering machine,
-which would pair with it, if it finds the code within the offer's five
-minutes and before the real pairing closes the offer. What stands in the way
-is the tailnet itself (your own devices), its access rules, and that cost. A
-later step could close it: the typing machine shows the name it found and
-waits for a click, or the offering machine asks before it pairs.
+**Who decides.** Before any proof, the typing machine knocks. The machine
+showing the code names the caller as Tailscale lists the device at its
+address, a name the caller cannot choose, and nothing more happens until the
+person there clicks Accept. A refusal, or a minute without an answer, spends
+the code. Only the accepted machine, from the address it knocked from, may
+then send its proof, within 30 seconds, and it is stored under the name the
+person saw. The typing machine waits up to a minute for that click, and five
+seconds for the answer to its proof.
+
+**What is left.** A hostile device of your own tailnet that answered `hello`
+in the offering machine's place can accept the knock itself and receive the
+typing machine's proof. It must prove the code back within five seconds, and
+10^6 codes cost some 30 CPU hours, so the typing machine pairs with nothing.
+It can keep the proof, find the code on many cores or a GPU, and knock on the
+real offering machine within the offer's five minutes: the person there sees
+its Tailscale name, not the one expected, and refuses. A person who accepts a
+device they do not recognise is what remains; Tailscale's access rules, which
+can keep every other device off port 31418, close that too.
 
 **What a paired machine may do here.** See, by default; Drive only when this
 machine says so in Settings > Machines. The machine being driven decides,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusLine, seenAgo, addressNote } from '../../src/lib/machines';
+import { statusLine, seenAgo, addressNote, requestLine } from '../../src/lib/machines';
 
 /**
  * The words under each paired machine. How they can fail, written before the code:
@@ -12,6 +12,9 @@ import { statusLine, seenAgo, addressNote } from '../../src/lib/machines';
  *    the firewall refused) and the address row still shows the address,
  *    so nothing says why no machine reaches this one (final review,
  *    Important 4); or a bridge merely not started yet reads as a fault.
+ * 5. A machine asking to pair is not named as Tailscale knows it, or a
+ *    caller Tailscale does not list reads as if it did; the time left to
+ *    answer is missing, negative or a raw date.
  */
 const now = new Date('2026-10-02T15:00:00Z');
 const base = { id: 'm-bbbbbbbbbbbbbbbb', name: 'PC', address: '100.64.0.2', mayOnMe: 'see' as const };
@@ -65,5 +68,17 @@ describe('addressNote', () => {
     expect(addressNote(view({ listening: true, peers: 1 }))).toBeNull();
     expect(addressNote(view({ peers: 0 }))).toBeNull();
     expect(addressNote(view({ peers: 1 }))).toBeNull();
+  });
+});
+
+describe('requestLine', () => {
+  const ask = { name: 'MacBook-Pro-de-Nicolas-2.local', address: '100.76.84.44', expiresAt: '2026-10-02T15:00:52Z' };
+
+  it('names the machine as Tailscale knows it, and the time left to answer (5)', () => {
+    expect(requestLine({ ...ask, device: 'macbook-pro-de-nicolas-2' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine. Tailscale knows it as macbook-pro-de-nicolas-2, 100.76.84.44. Accept only if you just typed this machine's code there. It waits 0:52 for your answer.");
+  });
+
+  it('gives only the address of a caller Tailscale does not list, and never a negative time (5)', () => {
+    expect(requestLine({ ...ask, expiresAt: '2026-10-02T14:59:00Z' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine, from 100.76.84.44. Accept only if you just typed this machine's code there. It waits 0:00 for your answer.");
   });
 });

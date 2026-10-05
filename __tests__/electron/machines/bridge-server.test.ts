@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, isTailnetAddress, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, openPairingOffer, closePairingOffer, resolveBindTarget, isTailnetAddress, currentRequest, decidePairRequest, MACHINES_PORT_DEFAULT } from '../../../electron/services/machines/bridge-server';
 import { API_PORT, OPENAI_BRIDGE_PORT } from '../../../electron/constants';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 import { codeProof, answerProof } from '../../../electron/services/machines/pairing';
@@ -33,13 +33,36 @@ import { codeProof, answerProof } from '../../../electron/services/machines/pair
  *    to the Tailscale address also takes what arrives over the LAN for
  *    that address (final review, Important 7). A development run bound to
  *    127.0.0.1 is the one exception.
+ * 12. A proof is taken, or the caller written, before the person at this
+ *    machine accepts it: a machine that found the code pairs unseen; or the
+ *    caller waits for that click with its proof already sent, which gives a
+ *    machine answering hello in this one's place a minute, not five
+ *    seconds, to try the codes against it (Nicolas, 2026-10-05).
+ * 13. A refusal, or no answer within the wait, pairs anyway, or leaves the
+ *    code good for another try.
+ * 14. A caller that gave up leaves its request waiting for a click.
+ * 15. A second caller, while one waits, is asked about too or replaces it;
+ *    or a machine other than the one accepted proves the code in its place,
+ *    or under another name than the person saw.
+ * 16. The request says only the name the caller chose, not who it is as
+ *    Tailscale knows it.
  */
 let server: http.Server;
 let base: string;
 let changed = 0;
-const deps = { runningAgents: () => 2, onChanged: () => { changed++; } };
+/** Most cases are about what follows a pairing: the person here accepts at once. */
+let autoAccept = true;
+const deps = {
+  runningAgents: () => 2,
+  onChanged: () => { changed++; },
+  onRequestChanged: () => { if (autoAccept && currentRequest()) decidePairRequest(true); },
+  deviceAt: async (address: string) => (address === '127.0.0.1' ? 'pc' : undefined),
+};
 const PC = 'm-bbbbbbbbbbbbbbbb';
 const THEIRS = 'their-secret-for-us_0123456789abcdefghijklm';
+
+/** What a machine sends before its proof: who it is. With autoAccept, the person here says yes at once. */
+const knock = (id = PC, name = 'PC') => call('POST', '/machines/v1/knock', { id, name });
 
 async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -49,6 +72,8 @@ async function call(method: string, path: string, body?: unknown, headers: Recor
 beforeEach(async () => {
   fs.rmSync(MACHINES_FILE, { force: true });
   changed = 0;
+  autoAccept = true;
+  decidePairRequest(false);
   closePairingOffer();
   server = http.createServer((req, res) => { void handleBridgeRequest(req, res, deps); });
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
@@ -93,6 +118,7 @@ describe('what it answers', () => {
 
   it('pairs once on the right proof, keeps the hash of what it issued, writes before answering (5, 8)', async () => {
     const offer = openPairingOffer();
+    expect((await knock()).status).toBe(200);
     const wrong = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: '0'.repeat(64), secret: THEIRS });
     expect(wrong.status).toBe(403);
     const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS });
@@ -107,6 +133,7 @@ describe('what it answers', () => {
 
   it('proves the code back in its answer, over the caller and itself (10)', async () => {
     const offer = openPairingOffer();
+    await knock();
     const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS });
     expect(ok.status).toBe(200);
     expect(ok.body!.proof).toBe(answerProof(offer.code, offer.nonce, PC, readMachines().self.id));
@@ -115,6 +142,7 @@ describe('what it answers', () => {
   it.each([['a line break', 'abc\r\nX-Evil: 1' + 'A'.repeat(30)], ['one character short', THEIRS.slice(1)], ['a character newSecret never draws', THEIRS.slice(1) + '=']])
   ('refuses a secret with %s, and stores nothing (10)', async (_what, secret) => {
     const offer = openPairingOffer();
+    await knock();
     const r = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret });
     expect(r.status).toBe(403);
     expect(readMachines().peers).toEqual([]);
@@ -156,5 +184,92 @@ describe('who may reach it', () => {
     ['100.63.255.255', false], ['100.128.0.1', false], ['192.168.1.20', false], ['127.0.0.1', false], ['', false],
   ])('reads %j as on the tailnet: %s (11)', (address, yes) => {
     expect(isTailnetAddress(address)).toBe(yes);
+  });
+});
+
+const waitFor = async (check: () => boolean) => {
+  const end = Date.now() + 3_000;
+  while (!check() && Date.now() < end) await new Promise(r => setTimeout(r, 10));
+  return check();
+};
+
+describe('asking the person here before pairing', () => {
+  const pairBody = (code: string, nonce: string, id = PC) => ({ id, name: 'PC', port: 31416, proof: codeProof(code, nonce, id), secret: THEIRS });
+
+  it('takes no proof before the person here accepts, and writes nothing before (12, 16)', async () => {
+    autoAccept = false;
+    const offer = openPairingOffer();
+    const asking = knock();
+    expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+    expect(currentRequest()).toMatchObject({ name: 'PC', device: 'pc', address: '127.0.0.1' });
+    expect((await call('POST', '/machines/v1/pair', pairBody(offer.code, offer.nonce))).status).toBe(403);
+    expect(readMachines().peers).toEqual([]);
+    expect(changed).toBe(0);
+    expect(decidePairRequest(true)).toBe(true);
+    expect((await asking).status).toBe(200);
+    expect(currentRequest()).toBeNull();
+    expect((await call('POST', '/machines/v1/pair', pairBody(offer.code, offer.nonce))).status).toBe(200);
+    expect(readMachines().peers.map(p => p.id)).toEqual([PC]);
+  });
+
+  it('pairs nothing on a refusal, and the code is spent (13)', async () => {
+    autoAccept = false;
+    openPairingOffer();
+    const asking = knock();
+    expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+    decidePairRequest(false);
+    expect(await asking).toEqual({ status: 403, body: { error: readMachines().self.name + ' refused the pairing.' } });
+    expect(readMachines().peers).toEqual([]);
+    expect((await call('GET', '/machines/v1/hello')).status).toBe(404);
+  });
+
+  it('pairs nothing when nobody answers within the wait, and the code is spent (13)', async () => {
+    autoAccept = false;
+    const quick = http.createServer((req, res) => { void handleBridgeRequest(req, res, { ...deps, pairWaitMs: 60 }); });
+    await new Promise<void>(r => quick.listen(0, '127.0.0.1', r));
+    try {
+      openPairingOffer();
+      const at = 'http://127.0.0.1:' + (quick.address() as AddressInfo).port;
+      const res = await fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: PC, name: 'PC' }) });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { error: string }).error).toBe('Nobody accepted the pairing on ' + readMachines().self.name + ' in time.');
+      expect(currentRequest()).toBeNull();
+      expect((await call('GET', '/machines/v1/hello')).status).toBe(404);
+    } finally { await new Promise<void>(r => quick.close(() => r())); }
+  });
+
+  it('drops the request of a caller that gave up (14)', async () => {
+    autoAccept = false;
+    openPairingOffer();
+    const body = JSON.stringify({ id: PC, name: 'PC' });
+    const req = http.request(base + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } });
+    req.on('error', () => {});
+    req.end(body);
+    expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+    req.destroy();
+    expect(await waitFor(() => currentRequest() === null)).toBe(true);
+    expect(readMachines().peers).toEqual([]);
+  });
+
+  it('refuses a second machine while one waits, and keeps asking about the first (15)', async () => {
+    autoAccept = false;
+    openPairingOffer();
+    const first = knock();
+    expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+    const second = await knock('m-cccccccccccccccc', 'Other');
+    expect(second.status).toBe(403);
+    expect(currentRequest()).toMatchObject({ name: 'PC' });
+    decidePairRequest(true);
+    expect((await first).status).toBe(200);
+  });
+
+  it('takes the proof of the machine accepted only, under the name the person saw (15)', async () => {
+    const offer = openPairingOffer();
+    expect((await knock()).status).toBe(200);
+    const other = 'm-cccccccccccccccc';
+    expect((await call('POST', '/machines/v1/pair', pairBody(offer.code, offer.nonce, other))).status).toBe(403);
+    const ok = await call('POST', '/machines/v1/pair', { ...pairBody(offer.code, offer.nonce), name: 'Not what you saw' });
+    expect(ok.status).toBe(200);
+    expect(readMachines().peers.map(p => [p.id, p.name])).toEqual([[PC, 'PC']]);
   });
 });

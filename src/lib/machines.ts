@@ -35,3 +35,20 @@ export function addressNote(view: Pick<MachinesView, 'tailscale' | 'bridge' | 'p
   if (!view.bridge.listening && view.bridge.reason && view.peers.length > 0) return view.bridge.reason;
   return null;
 }
+
+/** "4:52": what is left until a time, never below 0:00. */
+export function timeLeft(iso: string, now: Date): string {
+  const s = Math.max(0, Math.round((new Date(iso).getTime() - now.getTime()) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * What the machine showing the code says when another proved it and waits:
+ * who asks, as Tailscale names it when Tailscale lists it (a name the caller
+ * cannot choose), and how long it waits. Frame: `Settings · Machines · a
+ * machine asks to pair`.
+ */
+export function requestLine(r: NonNullable<MachinesView['request']>, now: Date): string {
+  const who = r.device ? `${r.name} wants to pair with this machine. Tailscale knows it as ${r.device}, ${r.address}.` : `${r.name} wants to pair with this machine, from ${r.address}.`;
+  return `${who} Accept only if you just typed this machine's code there. It waits ${timeLeft(r.expiresAt, now)} for your answer.`;
+}

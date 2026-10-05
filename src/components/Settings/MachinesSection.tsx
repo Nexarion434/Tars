@@ -4,18 +4,12 @@ import { useEffect, useState } from 'react';
 import { Button, Input, SegmentedControl, StatusSquare } from '@/components/ui';
 import type { MachineView, PeerPermission } from '@/types/electron';
 import { useMachines } from '@/hooks/useMachines';
-import { statusLine, addressNote } from '@/lib/machines';
+import { statusLine, addressNote, requestLine, timeLeft } from '@/lib/machines';
 import { rendererPlatform } from '@/lib/display-path';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
 
 const api = () => window.electronAPI?.machines;
-
-/** "4:52": what is left of a code's five minutes. */
-const left = (iso: string, now: Date) => {
-  const s = Math.max(0, Math.round((new Date(iso).getTime() - now.getTime()) / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
 
 const STATUS: Record<MachineView['status'], { tone: 'running' | 'idle' | 'error'; ink: string; word: (m: MachineView) => string }> = {
   connected: { tone: 'running', ink: 'text-status-running', word: () => 'connected' },
@@ -29,8 +23,10 @@ const mayHeading = (name: string) => `What ${/^(PC|Mac)$/i.test(name) ? `the ${n
 
 /**
  * Settings > Machines: this machine's name and tailnet address, a one-time
- * pairing code, the paired machines, what each may do here, and unpairing.
- * Frame: `Settings · Machines` in design/tars-redesign.pen. Main holds every
+ * pairing code, the machine that proved it and waits to be accepted, the
+ * paired machines, what each may do here, and unpairing. Frames: `Settings ·
+ * Machines`, `... · a machine asks to pair` and `... · waiting for the other
+ * machine` in design/tars-redesign.pen. Main holds every
  * state (electron/handlers/machines-handlers.ts); this reads its view, and
  * the header's Add a machine opens the code (src/app/settings/page.tsx).
  */
@@ -40,6 +36,8 @@ export const MachinesSection = () => {
   const [nameError, setNameError] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [pairNote, setPairNote] = useState<{ ok: boolean; text: string } | null>(null);
+  // The other machine shows who asks and waits for a click there: up to a minute.
+  const [pairing, setPairing] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const here = rendererPlatform() === 'win32' ? 'this PC' : 'this Mac';
 
@@ -47,10 +45,10 @@ export const MachinesSection = () => {
   const savedName = view?.self.name;
   useEffect(() => { if (savedName !== undefined) setName(savedName); }, [savedName]);
   useEffect(() => {
-    if (!view?.offer) return;
+    if (!view?.offer && !view?.request) return;
     const tick = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(tick);
-  }, [view?.offer]);
+  }, [view?.offer, view?.request]);
   useEffect(() => {
     if (view?.offer && new Date(view.offer.expiresAt) <= now) void api()?.closeOffer();
   }, [now, view?.offer]);
@@ -66,7 +64,8 @@ export const MachinesSection = () => {
   };
   const pair = async () => {
     setPairNote(null);
-    const r = await api()?.pair(code);
+    setPairing(true);
+    const r = await api()?.pair(code).finally(() => setPairing(false));
     setPairNote(r?.success ? { ok: true, text: `Paired with ${r.name}.` } : { ok: false, text: r && !r.success ? r.error : 'Pairing failed.' });
     if (r?.success) setCode('');
   };
@@ -84,7 +83,7 @@ export const MachinesSection = () => {
       <SettingsRow
         label="Address on your tailnet"
         wrap
-        description="Your machines reach it over Tailscale only, never from the internet. Your system may ask once whether Tars can accept connections: allow it on private networks."
+        description="Your machines reach it over Tailscale only, never from the internet. Your system may ask once whether Tars can accept connections: allow it."
         control={addressNote(view) === null
           ? <Input width="control" mono readOnly aria-label="Address on your tailnet" value={view.self.address ?? ''} />
           : <span className="text-[11.5px] text-muted-foreground">{addressNote(view)}</span>}
@@ -94,19 +93,33 @@ export const MachinesSection = () => {
           <div className="flex items-center gap-2 px-2.5 py-2 bg-secondary border border-border">
             <StatusSquare tone="waiting" />
             <span className="text-[11.5px] leading-snug text-foreground">
-              {`Pairing code ${view.offer.code}. Type it on the other machine, in Settings > Machines. It works once and expires in ${left(view.offer.expiresAt, now)}.`}
+              {`Pairing code ${view.offer.code}. Type it on the other machine, in Settings > Machines. It works once and expires in ${timeLeft(view.offer.expiresAt, now)}.`}
             </span>
+          </div>
+        </div>
+      )}
+      {view.request && (
+        <div data-settings-row className="px-4 py-[11px] shrink-0">
+          <div className="flex items-center gap-2.5 px-2.5 py-2 bg-secondary border border-border">
+            <StatusSquare tone="waiting" />
+            <span className="flex-1 text-[11.5px] leading-snug text-foreground">{requestLine(view.request, now)}</span>
+            <Button size="sm" variant="secondary" onClick={() => { void api()?.refuse(); }}>Refuse</Button>
+            <Button size="sm" variant="primary" onClick={() => { void api()?.accept(); }}>Accept</Button>
           </div>
         </div>
       )}
       <SettingsRow
         label="Pair with a code"
-        description={pairNote ? pairNote.text : 'The code the other machine shows under Add a machine.'}
+        description={pairing
+          ? 'Waiting for the other machine to accept. Answer there, in Settings > Machines, within a minute.'
+          : pairNote ? pairNote.text : 'The code the other machine shows under Add a machine.'}
         control={(
           <div className="flex items-center gap-2">
             <Input mono aria-label="Pair with a code" value={code} placeholder="000 000"
               onChange={e => setCode(e.target.value)} />
-            <Button size="sm" variant="primary" onClick={pair} disabled={code.replace(/\D/g, '').length !== 6}>Pair</Button>
+            <Button size="sm" variant={pairing ? 'secondary' : 'primary'} onClick={pair} disabled={pairing || code.replace(/\D/g, '').length !== 6}>
+              {pairing ? 'Waiting…' : 'Pair'}
+            </Button>
           </div>
         )}
       />

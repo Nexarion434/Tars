@@ -31,6 +31,12 @@ import { formatCode, answerProof } from '../../../electron/services/machines/pai
  *    connection mid-answer, holds the call forever, and the status poll
  *    with it (final review, Important 3).
  * 11. An answer of any size is read whole into memory.
+ * 12. The typing machine sends its proof before the other machine's person
+ *    accepted it, so whoever answered hello holds a proof while the person
+ *    reads; or it gives up after five seconds, while that person is still
+ *    reading who asks (Nicolas, 2026-10-05).
+ * 13. "No machine shows a code" says nothing of Tailscale's access rules,
+ *    the cause the first real pairing met (2026-10-05).
  */
 let server: http.Server;
 let port: number;
@@ -53,8 +59,8 @@ describe('candidates', () => {
 });
 
 describe('pairing with a code', () => {
-  it('says what to do when no machine shows a code (2)', async () => {
-    expect(await pairWithCode('482913', [{ host: '127.0.0.1', port }], 31416)).toEqual({ ok: false, error: 'No machine on your tailnet shows a pairing code. Click Add a machine on the other machine first.' });
+  it('says what to do when no machine shows a code, Tailscale access rules included (2, 13)', async () => {
+    expect(await pairWithCode('482913', [{ host: '127.0.0.1', port }], 31416)).toEqual({ ok: false, error: "No machine on your tailnet shows a pairing code. Click Add a machine on the other machine first. If it shows one, your Tailscale access rules may keep the two apart: they must let them reach each other on port 31418." });
   });
 
   it('sends nothing for a code that is not six digits, and takes one with its space (1)', async () => {
@@ -172,5 +178,45 @@ describe('an answer that never ends well', () => {
     try {
       expect(await ping(peer)).toEqual({ status: 'offline' });
     } finally { srv.closeAllConnections(); srv.close(); }
+  });
+});
+
+describe('waiting for the other machine to accept', () => {
+  it('asks first, sends its proof only once accepted, and waits past five seconds for the click (12)', async () => {
+    const seen: string[] = [];
+    let accepted = false;
+    const other = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', c => { raw += c; });
+      req.on('end', () => {
+        seen.push(String(req.url));
+        const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+        if (req.url === '/machines/v1/hello') return send(200, { id: 'm-dddddddddddddddd', name: 'Mac', nonce: 'a'.repeat(32) });
+        if (req.url === '/machines/v1/knock') { setTimeout(() => { accepted = true; send(200, { ok: true }); }, 5_500); return; }
+        if (!accepted) return send(403, { error: 'Mac has not accepted this machine. Pair again, and accept it there.' });
+        const body = JSON.parse(raw || '{}');
+        send(200, { id: 'm-dddddddddddddddd', name: 'Mac', secret: 'A'.repeat(43), proof: answerProof('482913', 'a'.repeat(32), String(body.id), 'm-dddddddddddddddd') });
+      });
+    });
+    await new Promise<void>(r => other.listen(0, '127.0.0.1', r));
+    try {
+      const r = await pairWithCode('482913', [{ host: '127.0.0.1', port: (other.address() as AddressInfo).port }], 31418);
+      expect(r).toEqual({ ok: true, name: 'Mac' });
+      expect(seen).toEqual(['/machines/v1/hello', '/machines/v1/knock', '/machines/v1/pair']);
+    } finally { other.close(); }
+  }, 15_000);
+
+  it('passes on what the other machine says when its person refuses, and sends no proof (12)', async () => {
+    const seen: string[] = [];
+    const other = http.createServer((req, res) => {
+      seen.push(String(req.url));
+      res.writeHead(req.url === '/machines/v1/hello' ? 200 : 403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(req.url === '/machines/v1/hello' ? { id: 'm-dddddddddddddddd', name: 'Mac', nonce: 'a'.repeat(32) } : { error: 'Mac refused the pairing.' }));
+    });
+    await new Promise<void>(r => other.listen(0, '127.0.0.1', r));
+    try {
+      expect(await pairWithCode('482913', [{ host: '127.0.0.1', port: (other.address() as AddressInfo).port }], 31418)).toEqual({ ok: false, error: 'Mac refused the pairing.' });
+      expect(seen).toEqual(['/machines/v1/hello', '/machines/v1/knock']);
+    } finally { other.close(); }
   });
 });

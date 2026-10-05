@@ -255,6 +255,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openOffer: () => ipcRenderer.invoke('machines:open-offer'),
     closeOffer: () => ipcRenderer.invoke('machines:close-offer'),
     pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    accept: () => ipcRenderer.invoke('machines:accept'),
+    refuse: () => ipcRenderer.invoke('machines:refuse'),
     setPermission: (id: string, mayOnMe: 'see' | 'drive') => ipcRenderer.invoke('machines:set-permission', id, mayOnMe),
     unpair: (id: string) => ipcRenderer.invoke('machines:unpair', id),
     onChanged: (callback: () => void) => {

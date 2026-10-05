@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { readMachines, writeMachines, newSecret, hashSecret, cleanName, isSecret } from './store';
 import { codeProof, answerMatches } from './pairing';
-import { MACHINES_PORT_DEFAULT } from './bridge-server';
+import { MACHINES_PORT_DEFAULT, PAIR_WAIT_MS } from './bridge-server';
 import type { PairedMachine } from './types';
 
 /**
@@ -105,6 +105,17 @@ export async function pairWithCode(typed: string, candidates: Candidate[], myPor
     const theirId = hello.body.id;
     if (hello.status !== 200 || typeof hello.body.nonce !== 'string' || typeof theirId !== 'string' || !/^m-[0-9a-f]{16}$/.test(theirId)) continue;
     const nonce = hello.body.nonce;
+    // Asks first, with no proof: the person at the other machine sees who
+    // asks, then clicks, which takes its whole wait at most.
+    const knock = await request(c, 'POST', '/machines/v1/knock', {
+      timeoutMs: PAIR_WAIT_MS + 15_000,
+      body: { id: file.self.id, name: file.self.name },
+    });
+    if (knock.status !== 200) {
+      return { ok: false, error: typeof knock.body.error === 'string' ? knock.body.error : 'The other machine did not accept this one.' };
+    }
+    // Then the proof, answered within five seconds: a machine that accepted in
+    // the other one's place cannot try the codes against it in that time.
     const mine = newSecret();
     const answer = await request(c, 'POST', '/machines/v1/pair', {
       timeoutMs: 5_000,
@@ -135,7 +146,7 @@ export async function pairWithCode(typed: string, candidates: Candidate[], myPor
     });
     return { ok: true, name };
   }
-  return { ok: false, error: 'No machine on your tailnet shows a pairing code. Click Add a machine on the other machine first.' };
+  return { ok: false, error: 'No machine on your tailnet shows a pairing code. Click Add a machine on the other machine first. If it shows one, your Tailscale access rules may keep the two apart: they must let them reach each other on port 31418.' };
 }
 
 /** Whether a paired machine is there: 401 means it forgot this one, which is not the same as offline. */

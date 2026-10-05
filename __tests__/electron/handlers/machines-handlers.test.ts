@@ -16,6 +16,10 @@ import { AddressInfo } from 'net';
  * 6. Tailscale started after Tars: the bridge, which could not listen at
  *    launch, never tries again while machines are paired (final review,
  *    Important 4).
+ * 7. The window cannot answer a machine that asks to pair: no accept or
+ *    refuse, or one that says yes when nothing waits (2026-10-05).
+ * 8. view() does not show who asks, or hands the window its secret; the
+ *    window is not told when a request comes or goes.
  */
 const handlers = new Map<string, (...a: unknown[]) => unknown>();
 const sent: string[] = [];
@@ -26,7 +30,7 @@ import { registerMachinesHandlers } from '../../../electron/handlers/machines-ha
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 import { stopBridge, bridgeState } from '../../../electron/services/machines/bridge-server';
 import { stopStatusPolling, startStatusPolling, peerStatus } from '../../../electron/services/machines/status';
-import { answerProof } from '../../../electron/services/machines/pairing';
+import { answerProof, codeProof } from '../../../electron/services/machines/pairing';
 
 const PC = 'm-bbbbbbbbbbbbbbbb';
 const call = (c: string, ...a: unknown[]) => handlers.get(c)!({}, ...a) as Promise<Record<string, unknown>>;
@@ -146,5 +150,34 @@ describe('Tailscale started after Tars', () => {
     process.env.TARS_MACHINES_PORT = '0';
     expect(await until(() => bridgeState().listening)).toBe(true);
     expect(sent).toContain('machines:changed');
+  });
+});
+
+describe('a machine that asks to pair', () => {
+  it('shows in the view without its secret, and pairs once accepted (7, 8)', async () => {
+    process.env.TARS_MACHINES_BIND = '127.0.0.1';
+    process.env.TARS_MACHINES_PORT = '0';
+    const offer = await call('machines:open-offer');
+    const code = String(offer.code).replace(/\D/g, '');
+    const at = `http://127.0.0.1:${bridgeState().target!.port}`;
+    const { nonce } = await (await fetch(at + '/machines/v1/hello')).json() as { nonce: string };
+    sent.length = 0;
+    const post = (path: string, body: unknown) => fetch(at + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const asking = post('/machines/v1/knock', { id: PC, name: 'PC' });
+    expect(await until(() => sent.includes('machines:changed'))).toBe(true);
+    const view = await call('machines:view');
+    expect(view.request).toMatchObject({ name: 'PC', address: '127.0.0.1' });
+    expect(await call('machines:accept')).toEqual({ success: true });
+    expect((await asking).status).toBe(200);
+    expect((await call('machines:view')).request).toBeNull();
+    const secret = 'S'.repeat(43);
+    expect((await post('/machines/v1/pair', { id: PC, name: 'PC', port: 31999, proof: codeProof(code, nonce, PC), secret })).status).toBe(200);
+    expect(readMachines().peers.map(p => p.id)).toEqual([PC]);
+    expect(JSON.stringify(await call('machines:view'))).not.toContain(secret);
+  });
+
+  it('says so when nothing waits to be accepted or refused (7)', async () => {
+    expect(await call('machines:accept')).toEqual({ success: false, error: 'No machine is waiting to pair.' });
+    expect(await call('machines:refuse')).toEqual({ success: false, error: 'No machine is waiting to pair.' });
   });
 });

@@ -11,7 +11,7 @@ import type { PairedMachine } from './types';
  * A server of its own, apart from the loopback API (api-server.ts), which
  * never leaves 127.0.0.1 and whose token, pass and webhook secret are not
  * accepted here. It listens on this machine's Tailscale IPv4 only, never on
- * 0.0.0.0, and not at all without one. Four routes, listed below and nothing
+ * 0.0.0.0, and not at all without one. Five routes, listed below and nothing
  * else: an unknown path is 404 before any credential is read. A caller is a
  * paired machine when it presents the secret this Tars issued to it at
  * pairing (kept here as a hash). SECURITY.md, "The machines bridge".
@@ -29,8 +29,20 @@ export interface BridgeDeps {
   runningAgents: () => number;
   /** Told after a pairing or an unpairing changed the file. */
   onChanged: () => void;
+  /** Told when a machine starts asking to pair, and when it stops (accepted, refused, gone, out of time). */
+  onRequestChanged?: () => void;
+  /** The name Tailscale gives the device at an address, which the caller cannot choose. */
+  deviceAt?: (address: string) => Promise<string | undefined>;
+  /** How long a request waits for the person here (PAIR_WAIT_MS); a test shortens it. */
+  pairWaitMs?: number;
   now?: () => number;
 }
+
+/** A machine that proved the code and waits for the person at this one to accept it. */
+export interface PairRequest { name: string; device?: string; address: string; expiresAt: number }
+
+/** How long a machine that proved the code waits for the person here to answer. */
+export const PAIR_WAIT_MS = 60_000;
 export interface BindTarget { host: string; port: number }
 
 let server: http.Server | null = null;
@@ -83,12 +95,31 @@ export const bridgeState = () => ({ ...state });
 
 export function openPairingOffer(): Offer {
   offer = openOffer(now());
+  accepted = null;
   return offer;
 }
 
 export function closePairingOffer(): void {
   if (offer) offer.closed = true;
   offer = null;
+  accepted = null;
+}
+
+type Decision = 'accepted' | 'refused' | 'gone' | 'late';
+let request: { view: PairRequest; decide: (d: Decision) => void } | null = null;
+/** The machine the person here accepted: it may prove the code, from its address, for a short while. */
+let accepted: { id: string; name: string; address: string; until: number } | null = null;
+/** Long enough for the caller to send its proof once accepted, too short for anything else. */
+const PROVE_WITHIN_MS = 30_000;
+
+/** The machine waiting for the person here to accept it, or null. */
+export const currentRequest = (): PairRequest | null => (request ? { ...request.view } : null);
+
+/** The person here accepts or refuses the machine that waits; false when none does. */
+export function decidePairRequest(accept: boolean): boolean {
+  if (!request) return false;
+  request.decide(accept ? 'accepted' : 'refused');
+  return true;
 }
 
 async function readBody(req: http.IncomingMessage): Promise<Record<string, unknown> | 'too-large'> {
@@ -110,7 +141,7 @@ const peerFor = (authorization: string | undefined): PairedMachine | undefined =
   return presented ? readMachines().peers.find(p => secretMatches(presented, p.inboundSecretHash)) : undefined;
 };
 
-const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair']);
+const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair']);
 
 export async function handleBridgeRequest(req: http.IncomingMessage, res: http.ServerResponse, deps: BridgeDeps, opts: { tailnetOnly?: boolean } = {}): Promise<void> {
   activeDeps = deps;
@@ -129,6 +160,57 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     return send(200, { id: self.id, name: self.name, nonce: open.nonce });
   }
 
+  const address = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+
+  // A machine asks to pair, with no proof yet: the person here sees who asks,
+  // as Tailscale names it (a name the caller cannot choose), and accepts or
+  // refuses. No proof travels before that, so a machine that answered hello
+  // in this one's place gets one only to fail the five seconds that follow.
+  if (key === 'POST /machines/v1/knock') {
+    const body = await readBody(req);
+    if (body === 'too-large') return send(413, { error: 'Too large' });
+    const id = typeof body.id === 'string' && /^m-[0-9a-f]{16}$/.test(body.id) ? body.id : '';
+    let name = '';
+    try { name = cleanName(body.name); } catch { /* refused below */ }
+    const self = readMachines().self;
+    const closed = () => !currentOffer() || !id || !name;
+    const busy = () => request !== null;
+    if (closed()) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    if (id === self.id) return send(403, { error: 'A machine does not pair with itself.' });
+    if (busy()) return send(403, { error: `Another machine is waiting for an answer on ${self.name}. Try again in a minute.` });
+    let device: string | undefined;
+    try { device = await deps.deviceAt?.(address); } catch { /* Tailscale did not answer: the address alone */ }
+    // Asked again after the wait for Tailscale, so two machines asking at once cannot both pass.
+    if (closed()) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    if (busy()) return send(403, { error: `Another machine is waiting for an answer on ${self.name}. Try again in a minute.` });
+    const wait = deps.pairWaitMs ?? PAIR_WAIT_MS;
+    const decision = await new Promise<Decision>((resolve) => {
+      const decide = (d: Decision) => {
+        if (request?.decide !== decide) return;
+        clearTimeout(timer);
+        request = null;
+        resolve(d);
+        deps.onRequestChanged?.();
+      };
+      const timer = setTimeout(() => decide('late'), wait);
+      request = { view: { name, device, address, expiresAt: now() + wait }, decide };
+      // A caller that gave up leaves nothing to accept.
+      res.once('close', () => decide('gone'));
+      deps.onRequestChanged?.();
+    });
+    if (decision === 'gone') return;
+    if (decision !== 'accepted') {
+      // A refusal, or no answer: the code is spent, and the person here opens another.
+      closePairingOffer();
+      deps.onChanged();
+      return send(403, { error: decision === 'refused' ? `${self.name} refused the pairing.` : `Nobody accepted the pairing on ${self.name} in time.` });
+    }
+    accepted = { id, name, address, until: now() + PROVE_WITHIN_MS };
+    return send(200, { ok: true });
+  }
+
+  // The proof, from the machine the person here accepted, from its address,
+  // under the name the person saw: nothing else is tried against the code.
   if (key === 'POST /machines/v1/pair') {
     const body = await readBody(req);
     if (body === 'too-large') return send(413, { error: 'Too large' });
@@ -137,21 +219,22 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     const id = typeof body.id === 'string' && /^m-[0-9a-f]{16}$/.test(body.id) ? body.id : '';
     const port = Number(body.port);
     const theirs = isSecret(body.secret) ? body.secret : '';
-    let name = '';
-    try { name = cleanName(body.name); } catch { /* refused below */ }
-    const verdict = open && id && theirs && name && Number.isInteger(port) && port > 0 && port < 65536
+    const ok = accepted && accepted.id === id && accepted.address === address && now() <= accepted.until;
+    if (!ok) return send(403, { error: `${file.self.name} has not accepted this machine. Pair again, and accept it there.` });
+    const verdict = open && theirs && Number.isInteger(port) && port > 0 && port < 65536
       ? checkProof(open, typeof body.proof === 'string' ? body.proof : '', id, file.self.id, now())
       : 'wrong';
     if (verdict !== 'ok') {
       return send(403, { error: verdict === 'self' ? 'A machine does not pair with itself.' : 'That code is not the one this machine shows, or it expired.' });
     }
+    const name = accepted!.name;
+    accepted = null;
+    offer = null;
     const issued = newSecret();
-    const address = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
     const peers = file.peers.filter(p => p.id !== id);
     peers.push({ id, name, address, port, inboundSecretHash: hashSecret(issued), outboundSecret: theirs, mayOnMe: 'see', pairedAt: new Date(now()).toISOString() });
     // Written before the answer: a crash in between leaves the caller unpaired, never this side alone.
     writeMachines({ ...file, peers });
-    offer = null;
     deps.onChanged();
     // The code proved back, so the caller knows it is this machine that shows it.
     return send(200, { id: file.self.id, name: file.self.name, secret: issued, proof: answerProof(open!.code, open!.nonce, id, file.self.id) });

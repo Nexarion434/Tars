@@ -906,6 +906,8 @@ export interface MachinesView {
   tailscale: { installed: boolean; running: boolean };
   bridge: { listening: boolean; reason?: string };
   offer: { code: string; expiresAt: string } | null;
+  /** A machine that proved the code and waits for the person here to accept it; device is its name on Tailscale. */
+  request: { name: string; device?: string; address: string; expiresAt: string } | null;
   peers: MachineView[];
 }
 
@@ -1077,6 +1079,9 @@ export interface ElectronAPI {
     openOffer: () => Promise<MachinesResult<{ code: string; expiresAt: string }>>;
     closeOffer: () => Promise<{ success: true }>;
     pair: (code: string) => Promise<MachinesResult<{ name: string }>>;
+    /** Answers the machine waiting to pair here (view().request). */
+    accept: () => Promise<MachinesResult>;
+    refuse: () => Promise<MachinesResult>;
     setPermission: (id: string, mayOnMe: PeerPermission) => Promise<MachinesResult>;
     unpair: (id: string) => Promise<{ success: true }>;
     onChanged: (callback: () => void) => () => void;

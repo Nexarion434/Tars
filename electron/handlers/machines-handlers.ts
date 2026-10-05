@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { readMachines, writeMachines, cleanName } from '../services/machines/store';
-import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer } from '../services/machines/bridge-server';
+import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer, currentRequest, decidePairRequest } from '../services/machines/bridge-server';
 import { pairWithCode, candidatesFrom, unpairPeer } from '../services/machines/client';
 import { startStatusPolling, peerStatus, forgetStatus, pollNow } from '../services/machines/status';
 import { formatCode } from '../services/machines/pairing';
@@ -27,6 +27,8 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
   const bridgeDeps = {
     runningAgents: deps.runningAgents,
     onChanged: () => { changed(); poll(); },
+    onRequestChanged: changed,
+    deviceAt: async (address: string) => (await detectTailscale()).peers.find(p => p.ip === address)?.name,
   };
   // Tailscale may come up after Tars: while machines are paired, every poll
   // tries the bridge again until it listens.
@@ -40,12 +42,14 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     const file = readMachines();
     const ts = await detectTailscale();
     const offer = currentOffer();
+    const request = currentRequest();
     const bridge = bridgeState();
     return {
       self: { ...file.self, address: ts.dnsName ?? ts.ip },
       tailscale: { installed: ts.installed, running: ts.running },
       bridge: { listening: bridge.listening, reason: bridge.reason },
       offer: offer ? { code: formatCode(offer.code), expiresAt: new Date(offer.expiresAt).toISOString() } : null,
+      request: request ? { name: request.name, device: request.device, address: request.address, expiresAt: new Date(request.expiresAt).toISOString() } : null,
       peers: file.peers.map(p => ({ id: p.id, name: p.name, address: p.address, mayOnMe: p.mayOnMe, ...peerStatus(p.id) })),
     };
   });
@@ -86,6 +90,10 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     await pollNow(changed);
     return { success: true, name: result.name };
   });
+
+  // The person here answers the machine that proved the code (bridge-server, pair).
+  ipcMain.handle('machines:accept', async () => (decidePairRequest(true) ? { success: true } : { success: false, error: 'No machine is waiting to pair.' }));
+  ipcMain.handle('machines:refuse', async () => (decidePairRequest(false) ? { success: true } : { success: false, error: 'No machine is waiting to pair.' }));
 
   ipcMain.handle('machines:set-permission', async (_e, id: unknown, mayOnMe: unknown) => {
     if (mayOnMe !== 'see' && mayOnMe !== 'drive') return { success: false, error: 'A machine may see, or drive.' };
