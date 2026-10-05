@@ -59,6 +59,10 @@ test('two Tars pair with a code once the one showing it accepts, see each other,
     // A is asked, and neither side has written anything before A answers.
     const ask = a.page.getByText(/^PC wants to pair with this machine/);
     await expect(ask).toBeVisible({ timeout: 15_000 });
+    // As the frame draws it: the request in place of the code, and a wait of a minute at most.
+    await expect(a.page.getByText(/^Pairing code/)).toHaveCount(0);
+    await expect(ask).toHaveText(/It waits (1:00|0:[0-5]\d) for your answer\.$/);
+    values.askedInPlaceOfTheCode = true;
     expect(machinesFile(a.home).peers).toEqual([]);
     expect(machinesFile(b.home).peers).toEqual([]);
     values.nothingWrittenBeforeAccept = true;

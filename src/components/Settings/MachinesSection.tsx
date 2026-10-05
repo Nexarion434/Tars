@@ -44,11 +44,17 @@ export const MachinesSection = () => {
   // The field follows the saved name (a change from the other window, or this one's save).
   const savedName = view?.self.name;
   useEffect(() => { if (savedName !== undefined) setName(savedName); }, [savedName]);
+  // The clock runs while a code or a request counts down. Keyed on whether one
+  // does, not on the view itself, which every refresh replaces: a timer
+  // restarted at each refresh never ticked, and the count read seconds late.
+  const counting = !!(view?.offer || view?.request);
   useEffect(() => {
-    if (!view?.offer && !view?.request) return;
-    const tick = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(tick);
-  }, [view?.offer, view?.request]);
+    if (!counting) return;
+    const now = () => setNow(new Date());
+    const first = setTimeout(now, 0);
+    const tick = setInterval(now, 1000);
+    return () => { clearTimeout(first); clearInterval(tick); };
+  }, [counting]);
   useEffect(() => {
     if (view?.offer && new Date(view.offer.expiresAt) <= now) void api()?.closeOffer();
   }, [now, view?.offer]);
@@ -88,7 +94,7 @@ export const MachinesSection = () => {
           ? <Input width="control" mono readOnly aria-label="Address on your tailnet" value={view.self.address ?? ''} />
           : <span className="text-[11.5px] text-muted-foreground">{addressNote(view)}</span>}
       />
-      {view.offer && (
+      {view.offer && !view.request && (
         <div data-settings-row className="px-4 py-[11px] shrink-0">
           <div className="flex items-center gap-2 px-2.5 py-2 bg-secondary border border-border">
             <StatusSquare tone="waiting" />
