@@ -93,7 +93,7 @@ async function otherMachine(mode: { forgot: boolean }) {
       if (req.url === '/machines/v1/hello') { nonce = 'f'.repeat(32); return send(200, { id: PC, name: 'PC', nonce }); }
       if (req.url === '/machines/v1/pair') {
         const caller = String(JSON.parse(raw).id);
-        return send(200, { id: PC, name: 'PC', secret: 'E'.repeat(43), proof: answerProof('482913', nonce, caller, PC) });
+        return send(200, { id: PC, name: 'PC', secret: 'E'.repeat(43), proof: answerProof('482913', nonce, String(JSON.parse(raw).callerNonce), caller, PC) });
       }
       if (mode.forgot) return send(401, { error: 'Unauthorized' });
       return send(200, { id: PC, name: 'PC', agentsRunning: 2 });
@@ -171,7 +171,7 @@ describe('a machine that asks to pair', () => {
     expect((await asking).status).toBe(200);
     expect((await call('machines:view')).request).toBeNull();
     const secret = 'S'.repeat(43);
-    expect((await post('/machines/v1/pair', { id: PC, name: 'PC', port: 31999, proof: codeProof(code, nonce, PC), secret })).status).toBe(200);
+    expect((await post('/machines/v1/pair', { id: PC, name: 'PC', port: 31999, callerNonce: 'c'.repeat(32), proof: codeProof(code, nonce, 'c'.repeat(32), PC), secret })).status).toBe(200);
     expect(readMachines().peers.map(p => p.id)).toEqual([PC]);
     expect(JSON.stringify(await call('machines:view'))).not.toContain(secret);
   });

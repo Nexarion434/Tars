@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { readMachines, writeMachines, newSecret, hashSecret, cleanName, isSecret } from './store';
-import { codeProof, answerMatches } from './pairing';
+import { codeProof, answerMatches, newCallerNonce } from './pairing';
 import { MACHINES_PORT_DEFAULT, PAIR_WAIT_MS } from './bridge-server';
 import type { PairedMachine } from './types';
 
@@ -116,10 +116,12 @@ export async function pairWithCode(typed: string, candidates: Candidate[], myPor
     }
     // Then the proof, answered within five seconds: a machine that accepted in
     // the other one's place cannot try the codes against it in that time.
+    // A nonce of this machine's own, fresh each time, in the key: no key can be worked out before the proof is sent.
+    const callerNonce = newCallerNonce();
     const mine = newSecret();
     const answer = await request(c, 'POST', '/machines/v1/pair', {
       timeoutMs: 5_000,
-      body: { id: file.self.id, name: file.self.name, port: myPort, proof: codeProof(code, nonce, file.self.id), secret: mine },
+      body: { id: file.self.id, name: file.self.name, port: myPort, callerNonce, proof: codeProof(code, nonce, callerNonce, file.self.id), secret: mine },
     });
     if (answer.status !== 200) {
       return { ok: false, error: typeof answer.body.error === 'string' ? answer.body.error : 'The other machine refused the code.' };
@@ -127,7 +129,7 @@ export async function pairWithCode(typed: string, candidates: Candidate[], myPor
     const unlike: PairResult = { ok: false, error: 'That machine answered with something pairing does not make. Nothing was paired.' };
     // The id hello gave, and never this machine's own (the other side refuses that first, with its sentence).
     if (answer.body.id !== theirId || theirId === file.self.id) return unlike;
-    if (!answerMatches(answer.body.proof, code, nonce, file.self.id, theirId)) {
+    if (!answerMatches(answer.body.proof, code, nonce, callerNonce, file.self.id, theirId)) {
       return { ok: false, error: 'That machine did not prove it knows the code. Nothing was paired.' };
     }
     let name: string;

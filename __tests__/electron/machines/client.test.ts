@@ -35,6 +35,9 @@ import { formatCode, answerProof } from '../../../electron/services/machines/pai
  *    accepted it, so whoever answered hello holds a proof while the person
  *    reads; or it gives up after five seconds, while that person is still
  *    reading who asks (Nicolas, 2026-10-05).
+ * 14. The proof is made over the answering machine's nonce alone, so that
+ *    machine can work out every key in advance (security review,
+ *    2026-10-05): the typing machine must draw its own, fresh each time.
  * 13. "No machine shows a code" says nothing of Tailscale's access rules,
  *    the cause the first real pairing met (2026-10-05).
  */
@@ -120,7 +123,7 @@ describe('the answer to a pairing', () => {
   ])('is refused when it carries %s, even with the right proof (7)', async (_what, change) => {
     const fake = await impostor(body => {
       const id = (change as { id?: string }).id ?? 'm-dddddddddddddddd';
-      return { id, name: 'Mac', secret: GOOD_SECRET, ...change, proof: answerProof('482913', 'a'.repeat(32), String(body.id), id) };
+      return { id, name: 'Mac', secret: GOOD_SECRET, ...change, proof: answerProof('482913', 'a'.repeat(32), String(body.callerNonce), String(body.id), id) };
     });
     try {
       const r = await pairWithCode('482913', [{ host: '127.0.0.1', port: fake.port }], 31418);
@@ -130,7 +133,7 @@ describe('the answer to a pairing', () => {
   });
 
   it('is taken when the machine proves the code back and its fields are what pairing makes', async () => {
-    const fake = await impostor(body => ({ id: 'm-dddddddddddddddd', name: 'Mac', secret: GOOD_SECRET, proof: answerProof('482913', 'a'.repeat(32), String(body.id), 'm-dddddddddddddddd') }));
+    const fake = await impostor(body => ({ id: 'm-dddddddddddddddd', name: 'Mac', secret: GOOD_SECRET, proof: answerProof('482913', 'a'.repeat(32), String(body.callerNonce), String(body.id), 'm-dddddddddddddddd') }));
     try {
       expect(await pairWithCode('482 913', [{ host: '127.0.0.1', port: fake.port }], 31418)).toEqual({ ok: true, name: 'Mac' });
       expect(readMachines().peers.map(p => p.id)).toEqual(['m-dddddddddddddddd']);
@@ -195,7 +198,7 @@ describe('waiting for the other machine to accept', () => {
         if (req.url === '/machines/v1/knock') { setTimeout(() => { accepted = true; send(200, { ok: true }); }, 5_500); return; }
         if (!accepted) return send(403, { error: 'Mac has not accepted this machine. Pair again, and accept it there.' });
         const body = JSON.parse(raw || '{}');
-        send(200, { id: 'm-dddddddddddddddd', name: 'Mac', secret: 'A'.repeat(43), proof: answerProof('482913', 'a'.repeat(32), String(body.id), 'm-dddddddddddddddd') });
+        send(200, { id: 'm-dddddddddddddddd', name: 'Mac', secret: 'A'.repeat(43), proof: answerProof('482913', 'a'.repeat(32), String(body.callerNonce), String(body.id), 'm-dddddddddddddddd') });
       });
     });
     await new Promise<void>(r => other.listen(0, '127.0.0.1', r));
@@ -218,5 +221,19 @@ describe('waiting for the other machine to accept', () => {
       expect(await pairWithCode('482913', [{ host: '127.0.0.1', port: (other.address() as AddressInfo).port }], 31418)).toEqual({ ok: false, error: 'Mac refused the pairing.' });
       expect(seen).toEqual(['/machines/v1/hello', '/machines/v1/knock']);
     } finally { other.close(); }
+  });
+});
+
+describe('the nonce this machine draws', () => {
+  it('is fresh for each pairing, and sent with the proof (14)', async () => {
+    const fake = await impostor(() => ({ error: 'no' }));
+    try {
+      await pairWithCode('482913', [{ host: '127.0.0.1', port: fake.port }], 31418);
+      await pairWithCode('482913', [{ host: '127.0.0.1', port: fake.port }], 31418);
+      const sent = fake.got.filter(b => 'proof' in b).map(b => b.callerNonce);
+      expect(sent).toHaveLength(2);
+      for (const n of sent) expect(n).toMatch(/^[0-9a-f]{32}$/);
+      expect(sent[0]).not.toBe(sent[1]);
+    } finally { fake.srv.close(); }
   });
 });

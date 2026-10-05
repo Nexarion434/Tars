@@ -121,29 +121,29 @@ describe('what it answers', () => {
     expect((await knock()).status).toBe(200);
     const wrong = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: '0'.repeat(64), secret: THEIRS });
     expect(wrong.status).toBe(403);
-    const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS });
+    const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS });
     expect(ok.status).toBe(200);
     const issued = ok.body!.secret as string;
     const peer = readMachines().peers.find(p => p.id === PC)!;
     expect(peer).toMatchObject({ name: 'PC', address: '127.0.0.1', port: 31416, outboundSecret: THEIRS, mayOnMe: 'see', inboundSecretHash: hashSecret(issued) });
     expect(JSON.stringify(readMachines())).not.toContain(issued);
     expect(changed).toBe(1);
-    expect((await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS })).status).toBe(403);
+    expect((await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS })).status).toBe(403);
   });
 
   it('proves the code back in its answer, over the caller and itself (10)', async () => {
     const offer = openPairingOffer();
     await knock();
-    const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret: THEIRS });
+    const ok = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS });
     expect(ok.status).toBe(200);
-    expect(ok.body!.proof).toBe(answerProof(offer.code, offer.nonce, PC, readMachines().self.id));
+    expect(ok.body!.proof).toBe(answerProof(offer.code, offer.nonce, 'c'.repeat(32), PC, readMachines().self.id));
   });
 
   it.each([['a line break', 'abc\r\nX-Evil: 1' + 'A'.repeat(30)], ['one character short', THEIRS.slice(1)], ['a character newSecret never draws', THEIRS.slice(1) + '=']])
   ('refuses a secret with %s, and stores nothing (10)', async (_what, secret) => {
     const offer = openPairingOffer();
     await knock();
-    const r = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, proof: codeProof(offer.code, offer.nonce, PC), secret });
+    const r = await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret });
     expect(r.status).toBe(403);
     expect(readMachines().peers).toEqual([]);
   });
@@ -194,7 +194,7 @@ const waitFor = async (check: () => boolean) => {
 };
 
 describe('asking the person here before pairing', () => {
-  const pairBody = (code: string, nonce: string, id = PC) => ({ id, name: 'PC', port: 31416, proof: codeProof(code, nonce, id), secret: THEIRS });
+  const pairBody = (code: string, nonce: string, id = PC) => ({ id, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(code, nonce, 'c'.repeat(32), id), secret: THEIRS });
 
   it('takes no proof before the person here accepts, and writes nothing before (12, 16)', async () => {
     autoAccept = false;

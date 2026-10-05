@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { app } from 'electron';
 import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, cleanName, isSecret } from './store';
-import { Offer, openOffer, checkProof, answerProof } from './pairing';
+import { Offer, openOffer, checkProof, answerProof, isNonce } from './pairing';
 import { detectTailscale, tailnetIp } from '../tailscale-status';
 import type { PairedMachine } from './types';
 
@@ -219,10 +219,11 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     const id = typeof body.id === 'string' && /^m-[0-9a-f]{16}$/.test(body.id) ? body.id : '';
     const port = Number(body.port);
     const theirs = isSecret(body.secret) ? body.secret : '';
+    const callerNonce = isNonce(body.callerNonce) ? body.callerNonce : '';
     const ok = accepted && accepted.id === id && accepted.address === address && now() <= accepted.until;
     if (!ok) return send(403, { error: `${file.self.name} has not accepted this machine. Pair again, and accept it there.` });
-    const verdict = open && theirs && Number.isInteger(port) && port > 0 && port < 65536
-      ? checkProof(open, typeof body.proof === 'string' ? body.proof : '', id, file.self.id, now())
+    const verdict = open && theirs && callerNonce && Number.isInteger(port) && port > 0 && port < 65536
+      ? checkProof(open, typeof body.proof === 'string' ? body.proof : '', callerNonce, id, file.self.id, now())
       : 'wrong';
     if (verdict !== 'ok') {
       return send(403, { error: verdict === 'self' ? 'A machine does not pair with itself.' : 'That code is not the one this machine shows, or it expired.' });
@@ -237,7 +238,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     writeMachines({ ...file, peers });
     deps.onChanged();
     // The code proved back, so the caller knows it is this machine that shows it.
-    return send(200, { id: file.self.id, name: file.self.name, secret: issued, proof: answerProof(open!.code, open!.nonce, id, file.self.id) });
+    return send(200, { id: file.self.id, name: file.self.name, secret: issued, proof: answerProof(open!.code, open!.nonce, callerNonce, id, file.self.id) });
   }
 
   const peer = peerFor(req.headers.authorization);
