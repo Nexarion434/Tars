@@ -5,7 +5,7 @@ import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentO
 import { pairWithCode, candidatesFrom, unpairPeer } from '../services/machines/client';
 import { startStatusPolling, peerStatus, forgetStatus, pollNow } from '../services/machines/status';
 import { formatCode } from '../services/machines/pairing';
-import { detectTailscale } from '../services/tailscale-status';
+import { detectTailscale, tailnetPeers, deviceName } from '../services/tailscale-status';
 import type { MachinesView } from '../services/machines/types';
 
 /**
@@ -28,7 +28,10 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     runningAgents: deps.runningAgents,
     onChanged: () => { changed(); poll(); },
     onRequestChanged: changed,
-    deviceAt: async (address: string) => (await detectTailscale()).peers.find(p => p.ip === address)?.name,
+    deviceAt: async (address: string) => {
+      const peer = (await tailnetPeers()).find(p => p.ip === address);
+      return peer ? deviceName(peer) : undefined;
+    },
   };
   // Tailscale may come up after Tars: while machines are paired, every poll
   // tries the bridge again until it listens.
@@ -91,7 +94,7 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     return { success: true, name: result.name };
   });
 
-  // The person here answers the machine that proved the code (bridge-server, pair).
+  // The person here answers the machine that knocks (bridge-server, knock).
   ipcMain.handle('machines:accept', async () => (decidePairRequest(true) ? { success: true } : { success: false, error: 'No machine is waiting to pair.' }));
   ipcMain.handle('machines:refuse', async () => (decidePairRequest(false) ? { success: true } : { success: false, error: 'No machine is waiting to pair.' }));
 

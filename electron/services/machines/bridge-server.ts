@@ -31,17 +31,17 @@ export interface BridgeDeps {
   onChanged: () => void;
   /** Told when a machine starts asking to pair, and when it stops (accepted, refused, gone, out of time). */
   onRequestChanged?: () => void;
-  /** The name Tailscale gives the device at an address, which the caller cannot choose. */
+  /** The MagicDNS name of the device at an address, which the tailnet keeps unique (tailscale-status, deviceName). */
   deviceAt?: (address: string) => Promise<string | undefined>;
   /** How long a request waits for the person here (PAIR_WAIT_MS); a test shortens it. */
   pairWaitMs?: number;
   now?: () => number;
 }
 
-/** A machine that proved the code and waits for the person at this one to accept it. */
+/** A machine that knocked, with no proof yet, and waits for the person at this one to accept it. */
 export interface PairRequest { name: string; device?: string; address: string; expiresAt: number }
 
-/** How long a machine that proved the code waits for the person here to answer. */
+/** How long a machine that knocked waits for the person here to answer, the code's own end permitting. */
 export const PAIR_WAIT_MS = 60_000;
 export interface BindTarget { host: string; port: number }
 
@@ -93,22 +93,28 @@ const now = () => (activeDeps?.now ?? Date.now)();
 export const currentOffer = (): Offer | null => (offer && !offer.closed && now() <= offer.expiresAt ? offer : null);
 export const bridgeState = () => ({ ...state });
 
+/** A new code ends whatever the old one had started: a machine waiting on it, or one accepted for it. */
 export function openPairingOffer(): Offer {
+  request?.decide('closed');
   offer = openOffer(now());
   accepted = null;
   return offer;
 }
 
 export function closePairingOffer(): void {
+  request?.decide('closed');
   if (offer) offer.closed = true;
   offer = null;
   accepted = null;
 }
 
-type Decision = 'accepted' | 'refused' | 'gone' | 'late';
-let request: { view: PairRequest; decide: (d: Decision) => void } | null = null;
-/** The machine the person here accepted: it may prove the code, from its address, for a short while. */
-let accepted: { id: string; name: string; address: string; until: number } | null = null;
+type Decision = 'accepted' | 'refused' | 'gone' | 'late' | 'closed';
+/** The machine waiting for the person here, for one code. */
+let request: { view: PairRequest; offer: Offer; decide: (d: Decision) => void } | null = null;
+/** A knock between its arrival and its request: what Tailscale is asked meanwhile, for one knock at a time. */
+let knocking = false;
+/** The machine the person here accepted: it may prove that code, from its address, for a short while. */
+let accepted: { id: string; name: string; address: string; offer: Offer; until: number } | null = null;
 /** Long enough for the caller to send its proof once accepted, too short for anything else. */
 const PROVE_WITHIN_MS = 30_000;
 
@@ -163,8 +169,8 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   const address = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
 
   // A machine asks to pair, with no proof yet: the person here sees who asks,
-  // as Tailscale names it (a name the caller cannot choose), and accepts or
-  // refuses. No proof travels before that, so a machine that answered hello
+  // by the MagicDNS name the tailnet keeps unique and its address, and accepts
+  // or refuses. No proof travels before that, so a machine that answered hello
   // in this one's place gets one only to fail the five seconds that follow.
   if (key === 'POST /machines/v1/knock') {
     const body = await readBody(req);
@@ -173,17 +179,20 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     let name = '';
     try { name = cleanName(body.name); } catch { /* refused below */ }
     const self = readMachines().self;
-    const closed = () => !currentOffer() || !id || !name;
-    const busy = () => request !== null;
-    if (closed()) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    const mine = currentOffer();
+    if (!mine || !id || !name) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
     if (id === self.id) return send(403, { error: 'A machine does not pair with itself.' });
-    if (busy()) return send(403, { error: `Another machine is waiting for an answer on ${self.name}. Try again in a minute.` });
+    // One machine at a time, from its knock to the end of its half minute to prove the code.
+    if (knocking || request || (accepted && now() <= accepted.until)) {
+      return send(403, { error: `Another machine is waiting for an answer on ${self.name}. Try again in a minute.` });
+    }
+    knocking = true;
     let device: string | undefined;
-    try { device = await deps.deviceAt?.(address); } catch { /* Tailscale did not answer: the address alone */ }
-    // Asked again after the wait for Tailscale, so two machines asking at once cannot both pass.
-    if (closed()) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
-    if (busy()) return send(403, { error: `Another machine is waiting for an answer on ${self.name}. Try again in a minute.` });
-    const wait = deps.pairWaitMs ?? PAIR_WAIT_MS;
+    try { device = await deps.deviceAt?.(address); } catch { /* Tailscale did not answer: the address alone */ } finally { knocking = false; }
+    if (req.socket.destroyed) return;
+    if (currentOffer() !== mine) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    // No longer than the code itself lives.
+    const wait = Math.max(0, Math.min(deps.pairWaitMs ?? PAIR_WAIT_MS, mine.expiresAt - now()));
     const decision = await new Promise<Decision>((resolve) => {
       const decide = (d: Decision) => {
         if (request?.decide !== decide) return;
@@ -193,19 +202,21 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
         deps.onRequestChanged?.();
       };
       const timer = setTimeout(() => decide('late'), wait);
-      request = { view: { name, device, address, expiresAt: now() + wait }, decide };
+      request = { view: { name, device, address, expiresAt: now() + wait }, offer: mine, decide };
       // A caller that gave up leaves nothing to accept.
       res.once('close', () => decide('gone'));
       deps.onRequestChanged?.();
     });
     if (decision === 'gone') return;
+    if (decision === 'closed') return send(403, { error: `The code changed on ${self.name}. Type the one it shows now.` });
     if (decision !== 'accepted') {
-      // A refusal, or no answer: the code is spent, and the person here opens another.
-      closePairingOffer();
+      // A refusal, or no answer: this code is spent, and the person here opens another. A newer one is left alone.
+      if (offer === mine) closePairingOffer();
       deps.onChanged();
       return send(403, { error: decision === 'refused' ? `${self.name} refused the pairing.` : `Nobody accepted the pairing on ${self.name} in time.` });
     }
-    accepted = { id, name, address, until: now() + PROVE_WITHIN_MS };
+    if (currentOffer() !== mine) return send(403, { error: 'That code is not the one this machine shows, or it expired.' });
+    accepted = { id, name, address, offer: mine, until: now() + PROVE_WITHIN_MS };
     return send(200, { ok: true });
   }
 
@@ -220,7 +231,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     const port = Number(body.port);
     const theirs = isSecret(body.secret) ? body.secret : '';
     const callerNonce = isNonce(body.callerNonce) ? body.callerNonce : '';
-    const ok = accepted && accepted.id === id && accepted.address === address && now() <= accepted.until;
+    const ok = accepted && accepted.id === id && accepted.address === address && accepted.offer === open && now() <= accepted.until;
     if (!ok) return send(403, { error: `${file.self.name} has not accepted this machine. Pair again, and accept it there.` });
     const verdict = open && theirs && callerNonce && Number.isInteger(port) && port > 0 && port < 65536
       ? checkProof(open, typeof body.proof === 'string' ? body.proof : '', callerNonce, id, file.self.id, now())

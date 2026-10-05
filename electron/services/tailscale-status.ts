@@ -48,6 +48,32 @@ export function parseTailscaleStatus(json: unknown): Omit<TailscaleInfo, 'instal
   return { running: s.BackendState === 'Running', dnsName: bare(s.Self.DNSName), ip: ipv4(s.Self.TailscaleIPs), peers };
 }
 
+/**
+ * How the person is told who asks to pair: the MagicDNS name, which the
+ * tailnet keeps unique (a device that sets its hostname to another's gets
+ * "name-1"), never the hostname the device reports. Its first label within
+ * this tailnet; the whole name for a device another tailnet shares in.
+ */
+export function deviceName(peer: TailscalePeer): string | undefined {
+  if (!peer.dnsName) return undefined;
+  return peer.shared ? peer.dnsName : peer.dnsName.split('.')[0];
+}
+
+/**
+ * The tailnet's machines, from `tailscale status --json` alone, with a short
+ * timeout: what a knock asks, so an unauthenticated caller costs one quick
+ * process, not the two detectTailscale runs.
+ */
+export async function tailnetPeers(): Promise<TailscalePeer[]> {
+  for (const bin of tailscalePlaces()) {
+    try {
+      const { stdout } = await execFileAsync(bin, ['status', '--json'], { timeout: 3000, windowsHide: true });
+      return parseTailscaleStatus(JSON.parse(stdout)).peers;
+    } catch { /* try the next candidate */ }
+  }
+  return [];
+}
+
 /** This machine's tailnet address while Tailscale runs, and none when it is stopped (its address is then bound to nothing). */
 export const tailnetIp = (ts: { running: boolean; ip?: string }): string | undefined => (ts.running ? ts.ip : undefined);
 

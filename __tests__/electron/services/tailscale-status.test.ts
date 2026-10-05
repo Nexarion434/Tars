@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTailscaleStatus, tailnetIp } from '../../../electron/services/tailscale-status';
+import { parseTailscaleStatus, tailnetIp, deviceName } from '../../../electron/services/tailscale-status';
 
 /**
  * What `tailscale status --json` says about this machine and its peers.
@@ -16,6 +16,10 @@ import { parseTailscaleStatus, tailnetIp } from '../../../electron/services/tail
  * 7. The address of a Tailscale that is stopped is used: the bridge then
  *    fails to bind it (EADDRNOTAVAIL) and says so in words nobody can act
  *    on, not that Tailscale is off (final review, Important 4).
+ * 8. A device asking to pair is named by the hostname it reports, which it
+ *    can set to any other machine's (security review, 2026-10-05), not by its
+ *    MagicDNS name, which the tailnet keeps unique; or a device shared in
+ *    from another tailnet loses the part of its name that says so.
  */
 const status = {
   BackendState: 'Running',
@@ -51,5 +55,18 @@ describe('tailnetIp', () => {
   it('is the address only while Tailscale runs (7)', () => {
     expect(tailnetIp({ running: false, ip: '100.64.0.1' })).toBeUndefined();
     expect(tailnetIp({ running: true, ip: '100.64.0.1' })).toBe('100.64.0.1');
+  });
+});
+
+describe('deviceName', () => {
+  const peer = { name: 'warmachine', ip: '100.64.0.9', online: true, shared: false };
+  it('is the MagicDNS name the tailnet keeps unique, never the hostname the device reports (8)', () => {
+    expect(deviceName({ ...peer, dnsName: 'macbook-pro-de-nicolas-2.tail957bfd.ts.net' })).toBe('macbook-pro-de-nicolas-2');
+    expect(deviceName({ ...peer, dnsName: 'warmachine-1.tail957bfd.ts.net' })).toBe('warmachine-1');
+    expect(deviceName(peer)).toBeUndefined();
+  });
+
+  it('keeps the whole name of a device shared in from another tailnet (8)', () => {
+    expect(deviceName({ ...peer, shared: true, dnsName: 'friend.other.ts.net' })).toBe('friend.other.ts.net');
   });
 });

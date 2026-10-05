@@ -46,6 +46,14 @@ import { codeProof, answerProof } from '../../../electron/services/machines/pair
  *    or under another name than the person saw.
  * 16. The request says only the name the caller chose, not who it is as
  *    Tailscale knows it.
+ * 17. A request outlives its code: a new code opened while a machine waits
+ *    is spent when that old request is refused or runs out, the person
+ *    accepts for a code the caller never saw, or the request waits past the
+ *    code's own end (security review, 2026-10-05).
+ * 18. Knocks that come together each ask Tailscale who they are, one process
+ *    each, before any is turned away; a caller gone while Tailscale answered
+ *    leaves a request nobody can accept; a second machine knocks in the half
+ *    minute the accepted one has to send its proof (security review).
  */
 let server: http.Server;
 let base: string;
@@ -271,5 +279,79 @@ describe('asking the person here before pairing', () => {
     const ok = await call('POST', '/machines/v1/pair', { ...pairBody(offer.code, offer.nonce), name: 'Not what you saw' });
     expect(ok.status).toBe(200);
     expect(readMachines().peers.map(p => [p.id, p.name])).toEqual([[PC, 'PC']]);
+  });
+});
+
+describe('a request and its code', () => {
+  it('answers a waiting machine when the code changes, and the new code stays good (17)', async () => {
+    autoAccept = false;
+    openPairingOffer();
+    const asking = knock();
+    expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+    const fresh = openPairingOffer();
+    const r = await asking;
+    expect(r.status).toBe(403);
+    expect(currentRequest()).toBeNull();
+    const hello = await call('GET', '/machines/v1/hello');
+    expect(hello.status).toBe(200);
+    expect(hello.body!.nonce).toBe(fresh.nonce);
+  });
+
+  it('waits no longer than the code lives (17)', async () => {
+    autoAccept = false;
+    const offer = openPairingOffer();
+    offer.expiresAt = Date.now() + 150;
+    const started = Date.now();
+    const r = await knock();
+    expect(r.status).toBe(403);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe('knocks that come together', () => {
+  it('ask Tailscale once, and turn the others away (18)', async () => {
+    autoAccept = false;
+    let lookups = 0;
+    const slow = http.createServer((req, res) => { void handleBridgeRequest(req, res, { ...deps, deviceAt: async () => { lookups++; await new Promise(r => setTimeout(r, 150)); return 'pc'; } }); });
+    await new Promise<void>(r => slow.listen(0, '127.0.0.1', r));
+    try {
+      openPairingOffer();
+      const at = 'http://127.0.0.1:' + (slow.address() as AddressInfo).port;
+      const one = (i: number) => fetch(at + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'm-' + String(i).repeat(16), name: 'N' + i }) }).then(x => x.status);
+      const first = one(1);
+      await new Promise(r => setTimeout(r, 30));
+      const others = await Promise.all([2, 3, 4, 5].map(one));
+      expect(others).toEqual([403, 403, 403, 403]);
+      expect(await waitFor(() => currentRequest() !== null)).toBe(true);
+      expect(lookups).toBe(1);
+      decidePairRequest(false);
+      expect(await first).toBe(403);
+    } finally { await new Promise<void>(r => slow.close(() => r())); }
+  });
+
+  it('leave no request behind a caller gone while Tailscale answered (18)', async () => {
+    autoAccept = false;
+    const slow = http.createServer((req, res) => { void handleBridgeRequest(req, res, { ...deps, deviceAt: async () => { await new Promise(r => setTimeout(r, 200)); return 'pc'; } }); });
+    await new Promise<void>(r => slow.listen(0, '127.0.0.1', r));
+    try {
+      openPairingOffer();
+      const body = JSON.stringify({ id: PC, name: 'PC' });
+      const req = http.request('http://127.0.0.1:' + (slow.address() as AddressInfo).port + '/machines/v1/knock', { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } });
+      req.on('error', () => {});
+      req.end(body);
+      await new Promise(r => setTimeout(r, 60));
+      req.destroy();
+      await new Promise(r => setTimeout(r, 400));
+      expect(currentRequest()).toBeNull();
+      expect((await call('GET', '/machines/v1/hello')).status).toBe(200);
+    } finally { await new Promise<void>(r => slow.close(() => r())); }
+  });
+
+  it('turn a second machine away while the accepted one has its half minute (18)', async () => {
+    openPairingOffer();
+    expect((await knock()).status).toBe(200);
+    autoAccept = false;
+    expect((await knock('m-cccccccccccccccc', 'Other')).status).toBe(403);
+    expect(currentRequest()).toBeNull();
   });
 });

@@ -906,7 +906,7 @@ export interface MachinesView {
   tailscale: { installed: boolean; running: boolean };
   bridge: { listening: boolean; reason?: string };
   offer: { code: string; expiresAt: string } | null;
-  /** A machine that proved the code and waits for the person here to accept it; device is its name on Tailscale. */
+  /** A machine that knocked, with no proof yet, and waits for the person here to accept it; device is its MagicDNS name, unique in the tailnet. */
   request: { name: string; device?: string; address: string; expiresAt: string } | null;
   peers: MachineView[];
 }

@@ -43,10 +43,10 @@ export function timeLeft(iso: string, now: Date): string {
 }
 
 /**
- * What the machine showing the code says when another proved it and waits:
- * who asks, as Tailscale names it when Tailscale lists it (a name the caller
- * cannot choose), and how long it waits. Frame: `Settings · Machines · a
- * machine asks to pair`.
+ * What the machine showing the code says when another knocks and waits:
+ * who asks, by the MagicDNS name the tailnet keeps unique when Tailscale
+ * lists it, and its address, and how long it waits. Frame: `Settings ·
+ * Machines · a machine asks to pair`.
  */
 export function requestLine(r: NonNullable<MachinesView['request']>, now: Date): string {
   const who = r.device ? `${r.name} wants to pair with this machine. Tailscale knows it as ${r.device}, ${r.address}.` : `${r.name} wants to pair with this machine, from ${r.address}.`;

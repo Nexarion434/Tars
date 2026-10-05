@@ -623,11 +623,13 @@ one, in clear because it has to be presented. The loopback API's shared
 token, Tars's pass and the Hermes webhook secret open nothing here.
 
 **What pairing proves.** The machine showing the code draws six digits and a
-nonce. Both sides key their proofs by the code stretched with scrypt over the
-nonce (N 2^15, r 8: 32 MiB and 110 ms per code, measured on a desktop PC).
-The typing machine sends `HMAC-SHA256(key, nonce:its id)`, never the code;
+nonce, and the typing machine draws one of its own for each pairing. Both
+sides key their proofs by the code stretched with scrypt over both nonces
+(N 2^15, r 8: 32 MiB and 110 ms per code, measured on a desktop PC), so no
+key can be worked out before the typing machine's nonce is sent. The typing
+machine sends `HMAC-SHA256(key, nonce:its nonce:its id)`, never the code;
 the offering machine answers with `HMAC-SHA256(key, answer:nonce:caller
-id:its id)`, and the typing machine stores nothing without it, nor an answer
+nonce:caller id:its id)`, and the typing machine stores nothing without it, nor an answer
 whose id is not the one `hello` gave, whose name a typed name could not be,
 or whose secret is not the 43 characters a secret is. Either side refuses a
 secret of another shape. An offer is good for five minutes by the offering
@@ -636,23 +638,32 @@ pairing with itself. A machine another tailnet shares into yours
 (`ShareeNode`) is never asked for a code.
 
 **Who decides.** Before any proof, the typing machine knocks. The machine
-showing the code names the caller as Tailscale lists the device at its
-address, a name the caller cannot choose, and nothing more happens until the
-person there clicks Accept. A refusal, or a minute without an answer, spends
+showing the code names the caller by the MagicDNS name of the device at its
+address, which the tailnet keeps unique (a device that sets its hostname to
+another's gets `name-1`), and by that address, which WireGuard authenticates;
+nothing more happens until the person there clicks Accept. One machine at a
+time: from its knock to the end of its half minute to prove the code, any
+other is turned away, and a knock asks Tailscale one quick question, never
+several at once. A refusal, or a minute without an answer, spends
 the code. Only the accepted machine, from the address it knocked from, may
 then send its proof, within 30 seconds, and it is stored under the name the
-person saw. The typing machine waits up to a minute for that click, and five
-seconds for the answer to its proof.
+person saw. A new code, or a closed one, ends the request waiting on the old
+one, and a request never waits past its code's five minutes. The typing
+machine waits up to 75 seconds for that click, and five seconds for the
+answer to its proof.
 
 **What is left.** A hostile device of your own tailnet that answered `hello`
 in the offering machine's place can accept the knock itself and receive the
-typing machine's proof. It must prove the code back within five seconds, and
-10^6 codes cost some 30 CPU hours, so the typing machine pairs with nothing.
-It can keep the proof, find the code on many cores or a GPU, and knock on the
-real offering machine within the offer's five minutes: the person there sees
-its Tailscale name, not the one expected, and refuses. A person who accepts a
-device they do not recognise is what remains; Tailscale's access rules, which
-can keep every other device off port 31418, close that too.
+typing machine's proof. It cannot have worked any key out before, since the
+key takes the typing machine's fresh nonce, and 10^6 codes cost some 30 CPU
+hours: within the five seconds the typing machine waits, it pairs with
+nothing. It can keep the proof, find the code later on many cores or a GPU,
+and knock on the real offering machine within the offer's five minutes: the
+person there sees its MagicDNS name and address, not the machine expected,
+and refuses. A person who accepts a device they do not recognise is what
+remains; Tailscale's access rules, which can keep every other device off port
+31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
+altogether; the code's short life and the person's click stand in for it.
 
 **What a paired machine may do here.** See, by default; Drive only when this
 machine says so in Settings > Machines. The machine being driven decides,
