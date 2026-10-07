@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, stepShot, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -27,8 +27,7 @@ const WRITTEN = 7000;
 const KEPT = 5000;
 
 function writer(): string {
-  return `#!${process.execPath}
-process.stdin.setRawMode(true);
+  return `process.stdin.setRawMode(true);
 process.stdin.resume();
 let out = '';
 for (let i = 1; i <= ${WRITTEN}; i++) out += 'line ' + i + '\\n';
@@ -73,8 +72,8 @@ test('a Dashboard panel keeps the last 5,000 lines of history, not 10,000', asyn
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-panel-history-'));
   seedSandbox(home);
   const project = path.join(home, 'projects', 'tars');
-  const cli = path.join(home, `${AGENT.id}.cjs`);
-  fs.writeFileSync(cli, writer(), { mode: 0o755 });
+  // writeNodeCli: the script itself on macOS and Linux, npm's shim beside it on Windows.
+  const cli = writeNodeCli(path.join(home, `${AGENT.id}.cjs`), writer());
   // The writer alone, idle and without a terminal, so the board's auto start
   // runs it through the agent's own CLI path.
   fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{

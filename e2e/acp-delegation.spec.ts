@@ -92,12 +92,17 @@ const run = promisify(execFile);
  * Asynchronous: Get-CimInstance takes seconds on a loaded machine, and a
  * synchronous call held the test's event loop for all of them, inside until()'s
  * polls, while the hanging run-task request it had in flight waited to be read.
+ *
+ * In UTF-8, as cli-updater-windows.ts reads the same table: Windows PowerShell
+ * writes in the console's code page otherwise, where a character it lacks (an
+ * arrow in a CLI's prompt on its command line) becomes a raw 0x1A, which no
+ * JSON string may hold, and the parse failed on whatever ran on the machine.
  */
 async function processesNaming(marker: string): Promise<{ pid: number; cmd: string }[]> {
   if (onWindows) {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const { stdout: out } = await run(powershell, ['-NoProfile', '-NonInteractive', '-Command',
-      'Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     const rows = JSON.parse(out) as { ProcessId: number; CommandLine: string }[];
     return rows.filter(r => r.CommandLine.includes(marker)).map(r => ({ pid: r.ProcessId, cmd: r.CommandLine }));
   }

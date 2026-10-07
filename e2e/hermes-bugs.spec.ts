@@ -173,6 +173,10 @@ const row = (label: string) => page.locator('[data-settings-row]').filter({ has:
 const statusHint = () => row('Status').locator('[data-settings-hint]');
 const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|signed out|unreachable|unknown)$/ }).first();
 const connectionFile = () => path.join(home, '.dorothy', 'hermes-connection.json');
+// Since 1.9.3 the token is saved apart from the connection, in ~/.tars-private,
+// which no agent is handed (electron/services/hermes-config.ts).
+const privateTokenFile = () => path.join(home, '.tars-private', 'hermes-token');
+const readPrivateToken = () => (fs.existsSync(privateTokenFile()) ? fs.readFileSync(privateTokenFile(), 'utf-8').trim() : undefined);
 const desktopDir = () => path.join(home, 'AppData', 'Roaming', 'Hermes');
 
 async function shot(name: string) {
@@ -367,8 +371,9 @@ const REGISTRY = {
 };
 
 async function importWith(v1: unknown | null, name: string, registry: unknown | null = REGISTRY) {
-  // Local on a dead port, so the mount probe reaches nothing.
+  // Local on a dead port, so the mount probe reaches nothing, and no token.
   fs.writeFileSync(connectionFile(), JSON.stringify({ mode: 'local', localPort: DEAD_PORT, authMode: 'token' }));
+  fs.rmSync(privateTokenFile(), { force: true });
   fs.rmSync(desktopDir(), { recursive: true, force: true });
   fs.mkdirSync(desktopDir(), { recursive: true });
   if (registry) fs.writeFileSync(path.join(desktopDir(), 'connections.json'), JSON.stringify(registry));
@@ -385,6 +390,7 @@ async function importWith(v1: unknown | null, name: string, registry: unknown | 
   const mode = await page.locator('[aria-label="Hermes connection mode"] [aria-checked="true"]').textContent();
   const fields = await measureFields();
   const saved = JSON.parse(fs.readFileSync(connectionFile(), 'utf-8'));
+  const savedToken = readPrivateToken();
   await shot(name);
   return {
     offered: true as const,
@@ -395,7 +401,7 @@ async function importWith(v1: unknown | null, name: string, registry: unknown | 
       textOverflow: getComputedStyle(el).textOverflow, whiteSpace: getComputedStyle(el).whiteSpace,
     })),
     gatewayCalls: gw.log.slice(calls).map(l => `${l.method} ${l.url}`),
-    fields: fields.map(f => ({ key: f.key, placeholder: f.placeholder, value: f.value, w: f.w })), saved,
+    fields: fields.map(f => ({ key: f.key, placeholder: f.placeholder, value: f.value, w: f.w })), saved, savedToken,
   };
 }
 
@@ -468,7 +474,8 @@ test('(a) import: an SSH primary\'s plain token comes with it, into the token fi
   const notice = await page.getByText(NOTICE).isVisible();
   journey.importSshPlainToken = { ...r, tokenField: tokenField === 'tok-ssh-plain' ? '(the token)' : tokenField, notice };
   if (!r.offered) { check('a5: the import is offered', false, true); return; }
-  check('a5: the SSH token is saved', r.saved.token === 'tok-ssh-plain', true);
+  check('a5: the SSH token is saved', r.savedToken === 'tok-ssh-plain', true);
+  check('a5: and not with the connection', r.saved.token, undefined);
   check('a5: the token field holds it', tokenField === 'tok-ssh-plain', true);
   check('a5: no notice when the token came', notice, false);
 });
@@ -479,7 +486,7 @@ test('(a) import: an SSH primary\'s encrypted token is left behind, and the noti
   const notice = await page.getByText(NOTICE).isVisible();
   journey.importSshEncryptedToken = { ...r, notice };
   if (!r.offered) { check('a6: the import is offered', false, true); return; }
-  check('a6: no token is saved', r.saved.token, undefined);
+  check('a6: no token is saved', [r.saved.token, r.savedToken], [undefined, undefined]);
   check('a6: the notice shows in SSH mode', notice, true);
 });
 
@@ -494,14 +501,14 @@ const MODES: { name: string; mode: ModeLabel; auth?: 'Token' | 'OAuth' }[] = [
   { name: 'cloud-oauth', mode: 'Cloud', auth: 'OAuth' },
 ];
 
-test('(b) every field, every mode: its size, and typing, Ctrl+V and a right click', async () => {
-  test.setTimeout(600_000);
-  fs.rmSync(connectionFile(), { force: true });
-  fs.rmSync(desktopDir(), { recursive: true, force: true });
-  await openConnection();
-  const cssOrder = await widthRuleOrder();
-  // A right click here must not leave native menus open over the run: the
-  // menus the app pops are recorded instead of shown, for this test only.
+/**
+ * The menus the app pops, recorded instead of shown (showPopups puts them
+ * back): editField's right click must not leave a native menu open over the
+ * run. Electron pops it at the OS cursor, wherever the mouse rests, and one
+ * left open there by the real Ctrl+V test held the point of the real right
+ * click that follows, which the helper then refused (NOT-TARGET-AT-POINT).
+ */
+async function recordPopups() {
   await app.evaluate(({ Menu }) => {
     const g = globalThis as unknown as { __popups: unknown[]; __realPopup?: typeof Menu.prototype.popup };
     g.__popups = [];
@@ -510,6 +517,22 @@ test('(b) every field, every mode: its size, and typing, Ctrl+V and a right clic
       g.__popups.push(this.items.map(i => ({ role: i.role, enabled: i.enabled })));
     };
   });
+}
+
+async function showPopups() {
+  await app.evaluate(({ Menu }) => {
+    const g = globalThis as unknown as { __realPopup?: typeof Menu.prototype.popup };
+    if (g.__realPopup) Menu.prototype.popup = g.__realPopup;
+  });
+}
+
+test('(b) every field, every mode: its size, and typing, Ctrl+V and a right click', async () => {
+  test.setTimeout(600_000);
+  fs.rmSync(connectionFile(), { force: true });
+  fs.rmSync(desktopDir(), { recursive: true, force: true });
+  await openConnection();
+  const cssOrder = await widthRuleOrder();
+  await recordPopups();
   const byMode: Record<string, unknown> = {};
   // Filled as the modes go, so a step that fails still leaves what was measured.
   journey.fields = { cssOrder, byMode };
@@ -536,10 +559,7 @@ test('(b) every field, every mode: its size, and typing, Ctrl+V and a right clic
     // Leave the form as found for the next mode.
     await openConnection();
   }
-  await app.evaluate(({ Menu }) => {
-    const g = globalThis as unknown as { __realPopup?: typeof Menu.prototype.popup };
-    if (g.__realPopup) Menu.prototype.popup = g.__realPopup;
-  });
+  await showPopups();
 
   const ssh = (byMode.ssh as { fields: Awaited<ReturnType<typeof measureFields>> }).fields;
   const host = ssh.find(f => f.key === 'SSH host#0')!;
@@ -676,11 +696,16 @@ test('(b) the SSH host row takes a real Ctrl+V from the OS', async () => {
   await openConnection();
   await pickMode('SSH');
   const menu = await app.evaluate(({ Menu }) => Menu.getApplicationMenu() === null);
-  journey.osPaste = {
-    applicationMenuIsNull: menu,
-    host: await editField('SSH host#0', 'vps.example.com', true),
-    user: await editField('SSH host#1', 'typed-abc1', true),
-  };
+  await recordPopups();
+  try {
+    journey.osPaste = {
+      applicationMenuIsNull: menu,
+      host: await editField('SSH host#0', 'vps.example.com', true),
+      user: await editField('SSH host#1', 'typed-abc1', true),
+    };
+  } finally {
+    await showPopups();
+  }
   await shot('b-ssh-after-os-paste');
 });
 
