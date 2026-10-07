@@ -235,7 +235,13 @@ issue #10 du fork).** Fusion du tag `v1.9.3` (la 1.9.4 en cours sur `main` viend
   comme les `.sh` de la 1.9.3, sinon Tars compte deux fois un tour quand le mod d'état tourne ; `probeVersion`
   (`electron/core/version-probe.ts`) résout un CLI Windows (`.cmd` npm) par `resolveCliBinary`, sans console, et
   n'appelle `taskkill /T` que tant que la sonde tourne (un pid libéré est réutilisé par Windows) ; le dossier
-  temporaire des tests prend l'orthographe canonique (RUNNER~1) et attend qu'un process lâche son dossier de travail.
+  temporaire des tests prend l'orthographe canonique (RUNNER~1) et attend qu'un process lâche son dossier de travail ;
+  les dossiers orphelins donnent leur vraie taille (\`electron/platform/disk-usage.ts\`, sans \`du\` : 0 Ko avant) et
+  sont nommés par leur projet, jamais par un chemin qui contient le home.
+- À trancher (Nicolas) : sous Windows, Réglages > Système propose encore de supprimer les dossiers orphelins alors
+  que rien ne peut l'être (tous gardés « usage inconnu »).
+- À vérifier : un message de plusieurs lignes tapé juste après l'enregistrement de session, avant que le CLI passe en
+  mode brut, perd ses marqueurs de collage sous ConPTY et part ligne par ligne (vu avec un CLI de test lent).
 - Inactifs sous Windows, sans erreur : la mise en veille des agents (`electron/services/agent-sleep.ts`, lit `ps`
   comme la veille des agents bloqués : refus `no-process-table`) ; les dossiers orphelins
   (`electron/services/orphan-folders.ts`, `lsof` ou `/proc` : tout dossier reste « usage inconnu », rien n'est
