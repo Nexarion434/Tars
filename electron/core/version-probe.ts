@@ -20,8 +20,14 @@ const running = new Set<ChildProcess>();
 /** The probe's whole group, then the probe itself should it have left it. */
 function end(child: ChildProcess): void {
   if (child.pid === undefined) return;
-  // Windows has no process groups: taskkill /T ends the probe and what it started.
-  if (process.platform === 'win32') { void killTree(child.pid).catch(() => {}); return; }
+  // Windows has no process groups: taskkill /T ends the probe and what it
+  // started, while the probe runs. Once Node has read its exit, its id is free
+  // and Windows may have handed it to another process, whose tree /T would end
+  // (as acp/client.ts's endProcessTreeOnWindows; version-probe-windows.test.ts).
+  if (process.platform === 'win32') {
+    if (child.exitCode === null && child.signalCode === null) void killTree(child.pid).catch(() => {});
+    return;
+  }
   try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
   try { child.kill('SIGKILL'); } catch { /* already gone */ }
 }
