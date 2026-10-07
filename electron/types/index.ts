@@ -54,9 +54,34 @@ export interface AgentWaitingOn {
   text: string;
 }
 
+/** How an asleep agent was woken (core/agent-asleep.ts). */
+export type AgentWakeVia = 'message' | 'chat' | 'wake' | 'key' | 'start';
+
+/** An asleep agent whose CLI is on its way back: who woke it, how, and when. */
+export interface AgentWaking {
+  /** "you", "Tars", an agent's name, or a chat ("Telegram"). */
+  by: string;
+  via: AgentWakeVia;
+  /** ISO. */
+  since: string;
+}
+
 export interface AgentStatus {
   id: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** 'asleep': its CLI was ended after 30 minutes without a turn, its
+   *  conversation kept; a message, a dispatch, a chat, the wake call or a key
+   *  typed into its terminal wakes it on that conversation (core/agent-asleep.ts,
+   *  services/agent-sleep.ts). Not stopped: nothing has to start it again. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
+  /** ISO: since when it is asleep. Set with `asleep`, gone when it wakes. */
+  asleepSince?: string;
+  /** Set from the moment a wake starts its CLI until that CLI's session is up
+   *  or its launch is given up (AgentStatus.launching). Not saved. */
+  waking?: AgentWaking;
+  /** What its last Stop hook counted inside its CLI: timers (ScheduleWakeup,
+   *  CronCreate) and background tasks still running. Gone at its next turn or
+   *  session; absent when the hook counted nothing. Not saved. */
+  restPending?: { crons: number; background: number };
   /** Set by a stop (core/agent-stop.ts) until the agent gets a terminal again:
    *  "you", "Tars", or the name of the agent that asked. */
   stoppedBy?: string;
@@ -64,6 +89,25 @@ export interface AgentStatus {
   stoppedAt?: string;
   /** One line, as the caller gave it; none from a window that gave none. */
   stopReason?: string;
+  /** A permission question the state mod asked Tars instead of showing its
+   *  dialog (services/permission-asks.ts): the window answers it with
+   *  agent:answerPermission. Without it, a permission wait is the terminal's
+   *  dialog. Not saved. */
+  permissionAsk?: {
+    tool: string;
+    askedAt: string;
+    /** When Tars hands the question back to the terminal's dialog if nobody answers. */
+    until: string;
+    /** What is asked, whole: the command, the path or the address (the fields' first), the tool when none. */
+    subject: string;
+    /** The fields the person decides on, whole (each at most 2,000 characters). */
+    fields: Record<string, string>;
+    /** Why Claude Code asks, and the settings rule that asked, when it gave them. */
+    reason?: string;
+    rule?: string;
+  };
+  /** The last start that undid a stop: the stop, and who started it again and when (core/agent-stop.ts). */
+  lastRestartAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string; restartedBy: string; restartedAt: string };
   /** ISO: running, yet its transcript has had no write since then (30 minutes
    *  at least) and its CLI runs no tool (services/stall-watch.ts). Cleared by
    *  a write or by any other status. Not saved. */
@@ -290,6 +334,12 @@ export interface AppSettings {
   telegramAuthToken: string; // Secret token for authentication
   telegramAuthorizedChatIds: string[]; // List of authorized chat IDs
   telegramRequireMention: boolean; // Only respond when bot is @mentioned in groups
+  /**
+   * The relay to the user's Telegram through their Hermes (services/hermes-relay.ts): off unless turned on in
+   * Settings, Hermes. On, it is the only voice there: the Tars bot's token is erased and the bot off
+   * (hermes-relay-switch.ts), questions, reports and the orchestrator's send_telegram go through it.
+   */
+  hermesRelayEnabled?: boolean;
   slackEnabled: boolean;
   slackBotToken: string;
   slackAppToken: string;
@@ -319,6 +369,14 @@ export interface AppSettings {
    * (services/error-reports). Off by default; followed live.
    */
   errorReportsEnabled: boolean;
+  /**
+   * The error triage (services/error-triage): a Sentry auth token with the
+   * event:read scope and nothing more, and the project whose Hermes board gets
+   * a parked task for each new error. While either is empty, or error reports
+   * are off, or Hermes is not configured, nothing polls. Read at each poll.
+   */
+  sentryAuthToken: string;
+  sentryTriageProject: string;
   jiraEnabled: boolean;
   jiraDomain: string;
   jiraEmail: string;
@@ -708,11 +766,21 @@ export interface ClaudeAccountWindow {
 export interface ClaudeAccountCounters {
   accountId: ClaudeAccountId;
   label: string;
-  /** null when no status line has reported it, or its reset has passed. */
+  /** null when no status line or probe has reported it, or its reset has passed. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
-  /** Epoch ms of the status line's last report on that account. */
+  /** The per-model weeklies a probe read (get_usage), when it read any. */
+  models?: ClaudeAccountModelWindow[];
+  /** Epoch ms of the last report on that account: a status line's or a probe's. */
   updatedAt: number | null;
+}
+
+/** One per-model weekly window ("Fable"), as Claude Code's get_usage gives it. */
+export interface ClaudeAccountModelWindow {
+  name: string;
+  usedPercentage: number;
+  /** Epoch seconds. */
+  resetsAt: number;
 }
 
 export interface ClaudeAccountState extends ClaudeAccount {
@@ -720,9 +788,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** Last reported by a status line on this account; null when never seen or reset. */
+  /** Last reported by a status line or a probe; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** The per-model weeklies a probe read; empty when none. */
+  models: ClaudeAccountModelWindow[];
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, the account is skipped until then. */

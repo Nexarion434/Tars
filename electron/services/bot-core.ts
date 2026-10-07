@@ -16,14 +16,16 @@ import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
-import { writeProgrammaticInput } from '../core/pty-manager';
+import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
 import { cliRunningIn, shellReady, agentPtyEnv } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
 import { killStalePty, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { toLaunch, projectName, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
+import { noteWaker } from '../core/agent-asleep';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
-import { sessionStarted, launchUnlessRunning, launchAbandoned } from '../core/agent-launch';
+import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown } from '../core/agent-launch';
+import { handOffFrom, noteHandOff } from './task-ledger';
 
 /** What a bot needs from the rest of Tars. */
 export interface BotFleet {
@@ -42,13 +44,14 @@ export function findAgent(agents: Map<string, AgentStatus>, name: string): Agent
   return Array.from(agents.values()).find(a => a.name?.toLowerCase().includes(name) || a.id === name);
 }
 
-export type StatusGroup = 'running' | 'waiting' | 'error' | 'stopped' | 'idle';
+export type StatusGroup = 'running' | 'waiting' | 'error' | 'stopped' | 'idle' | 'asleep';
 const GROUPS: Array<[StatusGroup, string, (a: AgentStatus) => boolean]> = [
   ['running', 'Running', a => a.status === 'running'],
   ['waiting', 'Waiting', a => a.status === 'waiting'],
   ['error', 'Error', a => a.status === 'error'],
   ['stopped', 'Stopped', a => a.status === 'stopped'],
   ['idle', 'Idle', a => a.status === 'idle' || a.status === 'completed'],
+  ['asleep', 'Asleep', a => a.status === 'asleep'],
 ];
 
 /**
@@ -230,7 +233,10 @@ async function claimLaunch(agent: AgentStatus): Promise<object | null> {
  */
 async function typeLaunch(
   fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string, before: StatusBefore,
+  from: BotChannel, handedOver: string,
 ): Promise<void> {
+  // Work handed over, for the task its first turn opens (task-ledger.ts).
+  noteHandOff(agent.id, { ...handOffFrom({ kind: 'channel', channel: from }), text: handedOver });
   // win32: nothing is typed, the CLI replaces the shell (decision D2).
   let cli: pty.IPty;
   try {
@@ -284,7 +290,7 @@ export type StartOutcome = 'no-terminal' | 'refused' | 'held' | 'written' | 'sta
  * the flow: a Slack reply that fails is a failure of the flow, as it was, while
  * Telegram's replies are sent and not waited for (its callbacks return nothing).
  */
-export type Reply<Outcome> = (outcome: Outcome) => unknown;
+export type Reply<Outcome, Detail = undefined> = (outcome: Outcome, detail?: Detail) => unknown;
 
 /**
  * Start an agent on a task from a chat. A CLI already up in its terminal is a
@@ -299,6 +305,10 @@ export async function startWithTask(
   opts: { resume: boolean; reply: Reply<StartOutcome> },
 ): Promise<void> {
   let launch: object | null = null;
+  // Asleep, it wakes on its own conversation whatever this chat resumes, and
+  // reads woken by the chat (core/agent-asleep.ts).
+  const asleep = agent.status === 'asleep';
+  if (asleep) noteWaker(agent.id, from, 'chat');
   try {
     const workingDir = workingDirOf(agent);
     launch = await claimLaunch(agent);
@@ -332,7 +342,7 @@ export async function startWithTask(
     const binaryPath = provider.resolveBinaryPath(fleet.settings());
     const mcpConfigPath = mcpConfigPathFor(provider);
     const command = provider.buildInteractiveCommand({
-      resumeSessionId: opts.resume ? consumeResumeSessionId(agent) ?? undefined : undefined,
+      resumeSessionId: opts.resume || asleep ? consumeResumeSessionId(agent) ?? undefined : undefined,
       binaryPath,
       prompt: task,
       model: agent.model,
@@ -352,7 +362,7 @@ export async function startWithTask(
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
     const before = markRunning(agent, task);
-    await typeLaunch(fleet, agent, ptyProcess, start, task, before);
+    await typeLaunch(fleet, agent, ptyProcess, start, task, before, from, task);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
@@ -371,7 +381,10 @@ export function stopNow(fleet: BotFleet, agent: AgentStatus): void {
   fleet.saveAgents();
 }
 
-export type ForwardOutcome = 'no-terminal' | 'typed' | 'started';
+export type ForwardOutcome = 'no-terminal' | 'typed' | 'refused' | 'started';
+
+/** With `typed`: what the message waits behind, when it is held rather than in the field yet. */
+export type ForwardDetail = { heldBy: 'dialog' | 'draft' };
 
 /**
  * A chat message to the orchestrator: typed into its session when a CLI runs
@@ -387,15 +400,21 @@ export async function forwardToOrchestrator(
   from: BotChannel,
   opts: {
     message: string;
+    /** Before the message, when there is something to say about where it came from; '' for nothing. */
     context: string;
+    /**
+     * Who the line before it names: the chat by default. The relay passes the
+     * user, whose own words it carries (hermes-relay-routing.ts).
+     */
+    sender?: MessageSender;
     permissionMode: AgentPermissionMode;
     resume: boolean;
     /** Read only for a launch: Telegram writes a file of its own for it. */
     systemPromptFile: () => string | undefined;
-    reply: Reply<ForwardOutcome>;
+    reply: Reply<ForwardOutcome, ForwardDetail>;
   },
 ): Promise<void> {
-  const prompt = `${opts.context} ${opts.message}`;
+  const prompt = opts.context ? `${opts.context} ${opts.message}` : opts.message;
   let launch: object | null = null;
   try {
     launch = await claimLaunch(orchestrator);
@@ -409,10 +428,25 @@ export async function forwardToOrchestrator(
       orchestrator.currentTask = opts.message.slice(0, 100);
       orchestrator.lastActivity = new Date().toISOString();
       fleet.saveAgents();
-      writeProgrammaticInput(ptyProcess, prompt, true, {
-        agentId: orchestrator.id, from, sender: { kind: 'channel', channel: from },
+      // Held for a person: somebody is typing there, or left a draft. Called
+      // at once when that is why; never for Tars's own previous write, which
+      // ends by itself in a moment.
+      let heldForPerson = false;
+      const outcome = writeProgrammaticInput(ptyProcess, prompt, true, {
+        agentId: orchestrator.id, from, sender: opts.sender ?? { kind: 'channel', channel: from }, task: opts.message,
+        onHeld: () => { heldForPerson = true; },
       });
-      await opts.reply('typed');
+      // Refused: the terminal holds all it can, and nothing was typed.
+      if (outcome === 'refused') {
+        await opts.reply('refused');
+        return;
+      }
+      // Held: it goes in by itself once what holds it is gone, and whoever
+      // sent it can be told what that is (Noah's answer 24 of 2026-10-05).
+      const heldBy = outcome !== 'held' ? undefined
+        : dialogShown(orchestrator, ptyProcess) ? 'dialog' as const
+          : heldForPerson ? 'draft' as const : undefined;
+      await opts.reply('typed', heldBy ? { heldBy } : undefined);
       return;
     }
     const workingDir = workingDirOf(orchestrator);
@@ -439,7 +473,7 @@ export async function forwardToOrchestrator(
     });
     const start = launchIn(orchestrator, ptyProcess, workingDir, command);
     const before = markRunning(orchestrator, opts.message);
-    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before);
+    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before, from, opts.message);
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(orchestrator.id, launch);

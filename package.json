@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -56,6 +56,10 @@
       "node_modules/node-pty/**/*"
     ],
     "extraResources": [
+      {
+        "from": "mods/tars-state",
+        "to": "mods/tars-state"
+      },
       {
         "from": "mcp-memory",
         "to": "mcp-memory",

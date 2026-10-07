@@ -360,6 +360,10 @@ describe('npm run release, before anything is built', { timeout: 30_000 }, () =>
   });
 });
 
+// Each case runs the release script for real: 1.6 to 3.9 s a case alone
+// (2026-10-05, load average 47 to 56), and "refuses, like the real run" was cut
+// at vitest's 5 s in two full suites that night. 30 s, as the describes below
+// that run it already have.
 describe('npm run release --dry-run', { timeout: 30_000 }, () => {
   it.skipIf(noPlutil())('builds, publishes, moves and deletes nothing, from a worktree with a build ready', async () => {
     const { root, dir } = checkout();
@@ -672,7 +676,10 @@ describe('checking a build against its manifest', () => {
   });
 });
 
-describe('moving a build into the release/ that is kept', () => {
+// Three cases run git and the move for real: 1.1 to 2.8 s a case alone
+// (2026-10-05, load average 47 to 56), and "replaces an older published
+// build's manifest" was cut at vitest's 5 s in a full suite that night.
+describe('moving a build into the release/ that is kept', { timeout: 30_000 }, () => {
   function folders() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-release-move-'));
     const fromDir = path.join(root, 'worktree-release');

@@ -10,7 +10,7 @@ import { SiteNav } from '@/components/SiteNav';
 const FEATURES = [
   {
     title: 'Every agent, one screen',
-    body: 'Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.',
+    body: 'Real terminals in a grid, grouped by project. Watch six agents work at once, open any of them fullscreen in one press, broadcast one instruction to all.',
   },
   {
     title: 'Someone watching the whole thing',
@@ -34,7 +34,35 @@ const FEATURES = [
   },
   {
     title: 'See what they actually did',
-    body: 'A diff review of every branch, one search across the whole fleet\u2019s output, and per-provider spend against the budget you set.',
+    body: 'A diff review of every branch, one search across the fleet\u2019s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, down to what each task cost, with the work it handed on to other agents.',
+  },
+  {
+    title: 'Several Claude subscriptions',
+    body: 'Run your Claude agents on up to five subscriptions. Tars asks Claude Code itself for each account\u2019s 5 h and weekly use, never its sign-in, and starts each agent on the account with the most room left; one cut short by a limit carries on from another, in the same conversation.',
+  },
+  {
+    title: 'When an agent stops, or stalls',
+    body: 'Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. On Claude Code 2.1.289 or newer, a Claude agent reports its state from inside it: one whose Claude Code froze is marked stalled after five minutes of silence, never for a long command or a subagent, and its orchestrator is told.',
+  },
+  {
+    title: 'Your Telegram, through Hermes',
+    body: 'Turn on Telegram through Hermes, and your own Hermes becomes Tars\u2019s voice on Telegram: your orchestrators\u2019 questions and the event reports reach you there, and your reply goes to the orchestrator it answers, or to the project you name with @project.',
+  },
+  {
+    title: 'Agents that sleep, and come back',
+    body: 'An agent with no turn for 30 minutes sleeps and gives back its memory; a message, a task or a key typed in its panel wakes it on its own conversation in about a second. After a crash or a power cut, the agents that were working start again on theirs, with a note of what was cut.',
+  },
+  {
+    title: 'Permissions, asked in Tars',
+    body: 'On Claude Code 2.1.289 or newer, a Claude agent asks Tars, not its terminal, before a command or a call Claude Code would ask you about. Its card, its panel and its window say what it would run, read or open; allow it, or deny it with a reason the agent reads.',
+  },
+  {
+    title: 'Worktrees that start ready, and lose nothing',
+    body: 'An agent\u2019s worktree starts with its project\u2019s dependencies cloned, at almost no disk space, when the project\u2019s own install matches its lock on a volume that can clone. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule\u2019s unpushed work, stays where it is, and Tars says why.',
+  },
+  {
+    title: 'Your disk, in view',
+    body: 'Settings, System says how much your disk has free and lists the folders under your projects\u2019 .worktrees that git no longer knows and no agent owns, with their size. Tars removes them only once you confirm, keeps one a process works in, and starts no agent under 2 GB free.',
   },
 ];
 

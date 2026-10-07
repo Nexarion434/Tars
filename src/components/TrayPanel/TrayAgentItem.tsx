@@ -20,6 +20,11 @@ const STATUS_TONES: Record<DisplayStatus, StatusTone> = {
   done: 'idle',
   ready: 'idle',
   stopped: 'idle',
+  // An agent whose CLI Tars ended after 30 minutes without a turn, in the idle
+  // ink, and one coming back on its conversation, in the waiting one.
+  // Frame: `Agent asleep · and how it wakes`.
+  asleep: 'idle',
+  waking: 'waiting',
 };
 
 export default function TrayAgentItem({

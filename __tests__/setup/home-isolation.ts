@@ -150,13 +150,20 @@ if (firstRun) {
 }
 
 guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-'));
-guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome)];
-const temp = canonical(os.tmpdir());
-if (guard.protectedRoots.some(root => temp !== root && inside(temp, root))) guard.allowedRoots.push(temp);
+// The temporary folder too: on Windows it lives inside the account's home
+// (C:\Users\<you>\AppData\Local\Temp), so without it every mkdtemp of the
+// suite read as a write into the real home (the first Windows run, 01/10:
+// about 300 of 340 failing files). Elsewhere it is outside the home anyway.
+guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome), canonical(os.tmpdir())];
 // HOME, and on Windows the variables that name the profile: test-home.ts's list.
 const moved = homeVariables(guard.throwawayHome);
 for (const dir of [moved.APPDATA, moved.LOCALAPPDATA]) if (dir) fs.mkdirSync(dir, { recursive: true });
 Object.assign(process.env, moved);
+
+/** The length of the closest of `roots` that holds `target`, or -1. */
+function closest(target: string, roots: string[]): number {
+  return roots.filter(root => inside(target, root)).reduce((longest, root) => Math.max(longest, root.length), -1);
+}
 
 /**
  * Refused when some protected root holds the target and no allowed root inside
@@ -173,10 +180,12 @@ function violationAt(value: unknown): string | undefined {
   // climbs out with `..` is a file, and is checked as one.
   if (isNamedPipe(target)) return undefined;
   const resolved = canonical(target);
-  const protectedBy = guard.protectedRoots.filter(root => inside(resolved, root));
-  if (protectedBy.length === 0) return undefined;
-  const allowedBy = guard.allowedRoots.filter(root => inside(resolved, root));
-  if (protectedBy.every(root => allowedBy.some(allowed => inside(allowed, root)))) return undefined;
+  const guarded = closest(resolved, guard.protectedRoots);
+  if (guarded < 0) return undefined;
+  // The closer root decides: the temporary folder inside the account's home on
+  // Windows stays writable, and a home a test protects inside the temporary
+  // folder stays protected.
+  if (closest(resolved, guard.allowedRoots) >= guarded) return undefined;
   return resolved;
 }
 

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AgentStatus } from './types';
 
 // Agent event types
 type AgentEventCallback = (event: {
@@ -111,20 +112,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('agent:stop', id, reason),
     remove: (id: string) =>
       ipcRenderer.invoke('agent:remove', id),
+    answerPermission: (id: string, decision: 'allow' | 'deny' | 'ask', reason?: string) =>
+      ipcRenderer.invoke('agent:answerPermission', id, decision, reason),
     sendInput: (params: { id: string; input: string }) =>
       ipcRenderer.invoke('agent:input', params),
+    wake: (id: string) =>
+      ipcRenderer.invoke('agent:wake', id),
     resize: (params: { id: string; cols: number; rows: number }) =>
       ipcRenderer.invoke('agent:resize', params),
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) =>
       ipcRenderer.invoke('agent:setSecondaryProject', params),
-    /**
-     * The agent's real conversation, from the journal Claude Code writes.
-     * Oldest first. Page upwards by passing the previous answer's nextCursor
-     * as `before`. Answers available:false with a named reason for the CLIs
-     * that write no transcript, rather than an empty list.
-     */
-    transcript: (params: { agentId: string; before?: string; limit?: number }) =>
-      ipcRenderer.invoke('agent:transcript', params),
 
     // Event listeners
     onOutput: (callback: AgentEventCallback) => {
@@ -147,7 +144,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:tool_use', listener);
       return () => ipcRenderer.removeListener('agent:tool_use', listener);
     },
-    onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => {
+    onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => {
       const listener = (_: unknown, event: { type: string; agentId: string; status: string; timestamp: string }) => callback(event);
       ipcRenderer.on('agent:status', listener);
       return () => ipcRenderer.removeListener('agent:status', listener);
@@ -364,6 +361,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   usage: {
     byProvider: (sinceDays?: number) =>
       ipcRenderer.invoke('usage:by-provider', { sinceDays }),
+    tasks: (query?: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string }) =>
+      ipcRenderer.invoke('usage:tasks', query ?? {}),
   },
 
   logs: {
@@ -375,8 +374,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   review: {
-    diff: (repoPath: string, baseBranch?: string) =>
-      ipcRenderer.invoke('review:diff', { repoPath, baseBranch }),
+    // listOnly: the file list without the patches, which review:file reads one at a time.
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
+      ipcRenderer.invoke('review:diff', { repoPath, baseBranch, listOnly: opts?.listOnly === true }),
     file: (repoPath: string, file: string, baseBranch?: string) =>
       ipcRenderer.invoke('review:file', { repoPath, file, baseBranch }),
     repo: (repoPath: string) =>
@@ -550,59 +550,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('orchestrator:remove'),
   },
 
-  // Kanban Board
-  kanban: {
-    list: () =>
-      ipcRenderer.invoke('kanban:list'),
-    get: (id: string) =>
-      ipcRenderer.invoke('kanban:get', id),
-    create: (params: {
-      title: string;
-      description: string;
-      projectId: string;
-      projectPath: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-    }) =>
-      ipcRenderer.invoke('kanban:create', params),
-    update: (params: {
-      id: string;
-      title?: string;
-      description?: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-      progress?: number;
-      assignedAgentId?: string | null;
-    }) =>
-      ipcRenderer.invoke('kanban:update', params),
-    move: (params: { id: string; column: 'backlog' | 'planned' | 'ongoing' | 'done'; order?: number }) =>
-      ipcRenderer.invoke('kanban:move', params),
-    delete: (id: string) =>
-      ipcRenderer.invoke('kanban:delete', id),
-    reorder: (params: { taskIds: string[]; column: 'backlog' | 'planned' | 'ongoing' | 'done' }) =>
-      ipcRenderer.invoke('kanban:reorder', params),
-    generate: (params: { prompt: string; availableProjects: Array<{ path: string; name: string }> }) =>
-      ipcRenderer.invoke('kanban:generate', params),
-    // Event listeners
-    onTaskCreated: (callback: (task: unknown) => void) => {
-      const listener = (_: unknown, task: unknown) => callback(task);
-      ipcRenderer.on('kanban:task-created', listener);
-      return () => ipcRenderer.removeListener('kanban:task-created', listener);
-    },
-    onTaskUpdated: (callback: (task: unknown) => void) => {
-      const listener = (_: unknown, task: unknown) => callback(task);
-      ipcRenderer.on('kanban:task-updated', listener);
-      return () => ipcRenderer.removeListener('kanban:task-updated', listener);
-    },
-    onTaskDeleted: (callback: (event: { id: string }) => void) => {
-      const listener = (_: unknown, event: { id: string }) => callback(event);
-      ipcRenderer.on('kanban:task-deleted', listener);
-      return () => ipcRenderer.removeListener('kanban:task-deleted', listener);
-    },
-  },
-
   // Agent templates
   template: {
     list: () =>
@@ -633,6 +580,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('hermes:connection:save', connection),
     importDesktopConnection: () =>
       ipcRenderer.invoke('hermes:connection:import'),
+    // The relay to the user's Telegram through their Hermes: its state now, and each change of it.
+    relayStatus: () =>
+      ipcRenderer.invoke('hermes:relay:status'),
+    onRelayStatus: (callback: (status: unknown) => void) => {
+      const listener = (_: unknown, status: unknown) => callback(status);
+      ipcRenderer.on('hermes:relay:status', listener);
+      return () => ipcRenderer.removeListener('hermes:relay:status', listener);
+    },
     testConnection: (connection: Record<string, unknown>) =>
       ipcRenderer.invoke('hermes:connection:test', connection),
     signIn: (params: { connection: Record<string, unknown>; username: string; password: string; provider?: string }) =>
@@ -856,6 +811,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectVault: (projectPath: string) => ipcRenderer.invoke('obsidian:detectVault', projectPath),
     addVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:addVault', vaultPath),
     removeVault: (vaultPath: string) => ipcRenderer.invoke('obsidian:removeVault', vaultPath),
+  },
+
+  // The disk, and the folders no agent owns (Settings · System). The removal
+  // asks nothing itself: the window confirms before it calls.
+  system: {
+    disk: () => ipcRenderer.invoke('system:disk'),
+    orphanFolders: () => ipcRenderer.invoke('system:orphanFolders'),
+    removeOrphanFolders: (paths: string[]) => ipcRenderer.invoke('system:removeOrphanFolders', paths),
+    onOrphanRemovalProgress: (callback: (progress: { done: number; total: number; freedBytes: number; current: string }) => void) => {
+      const listener = (_: unknown, progress: { done: number; total: number; freedBytes: number; current: string }) => callback(progress);
+      ipcRenderer.on('system:orphanFolders:progress', listener);
+      return () => ipcRenderer.removeListener('system:orphanFolders:progress', listener);
+    },
   },
 
   // Tray menu events
