@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { reviewDiff, fileDiff, resetReviewCache } from '../../../electron/services/git-review';
+import { cannotSymlink } from '../../setup/symlink-privilege';
 
 /**
  * The Review page reads what is in the repository, and says when a patch was cut.
@@ -46,8 +47,11 @@ beforeAll(() => {
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'base');
   fs.writeFileSync(path.join(repo, 'inside.txt'), 'inside\n');
-  fs.symlinkSync('../secret-outside.txt', path.join(repo, 'link-out'));
-  fs.symlinkSync('../outside-dir', path.join(repo, 'dir-out'));
+  // Only where this account may make a link (symlink-privilege.ts): 3 and 4 need them, the rest runs everywhere.
+  if (!cannotSymlink()) {
+    fs.symlinkSync('../secret-outside.txt', path.join(repo, 'link-out'));
+    fs.symlinkSync('../outside-dir', path.join(repo, 'dir-out'));
+  }
 
   fs.mkdirSync(big);
   git(big, 'init', '-q', '-b', 'main');
@@ -83,7 +87,7 @@ describe('review:file reads the repository and nothing else', () => {
     }
   });
 
-  it('3. a link that points out is shown as the link it is: its target path, never what it points to', async () => {
+  it.skipIf(cannotSymlink())('3. a link that points out is shown as the link it is: its target path, never what it points to', async () => {
     const shown = await fileDiff(repo, 'link-out');
 
     expect(shown).toContain('+../secret-outside.txt');
@@ -92,7 +96,7 @@ describe('review:file reads the repository and nothing else', () => {
     expect(listed, 'the link is listed').toMatchObject({ status: 'untracked', additions: 1 });
   });
 
-  it('4. a file reached through a linked folder that points out is refused', async () => {
+  it.skipIf(cannotSymlink())('4. a file reached through a linked folder that points out is refused', async () => {
     const shown = await fileDiff(repo, 'dir-out/secret.txt').catch((e: Error) => `refused: ${e.message}`);
 
     expect(shown).toMatch(/^refused: /);
