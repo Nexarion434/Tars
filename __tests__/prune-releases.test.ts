@@ -135,7 +135,11 @@ describe('the gh the scripts run', () => {
     execFileSync(process.execPath, [script, '--release-dir', 'release'], { cwd: dir, stdio: 'pipe' });
     fs.rmSync(dir, { recursive: true, force: true });
 
-    expect(gh.calls()).toEqual([['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets']]);
+    // Asked of the two older than the two it keeps (1.9.3), newest first.
+    expect(gh.calls()).toEqual([
+      ['release', 'view', 'v1.6.2', '--repo', 'acme/tars', '--json', 'assets'],
+      ['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets'],
+    ]);
   });
 
   it('is the fake, for the script run inside this process', async () => {
@@ -145,7 +149,11 @@ describe('the gh the scripts run', () => {
 
     await main(['--release-dir', release], { cwd: path.dirname(release), log: () => {} });
 
-    expect(gh.calls()).toEqual([['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets']]);
+    // Asked of the two older than the two it keeps (1.9.3), newest first.
+    expect(gh.calls()).toEqual([
+      ['release', 'view', 'v1.6.2', '--repo', 'acme/tars', '--json', 'assets'],
+      ['release', 'view', 'v1.6.1', '--repo', 'acme/tars', '--json', 'assets'],
+    ]);
   });
 
   it('is refused at install when the fake is missing, rather than left to the gh on the PATH', () => {

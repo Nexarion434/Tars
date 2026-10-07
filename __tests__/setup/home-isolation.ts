@@ -154,7 +154,12 @@ guard.throwawayHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-vitest-home-')
 // (C:\Users\<you>\AppData\Local\Temp), so without it every mkdtemp of the
 // suite read as a write into the real home (the first Windows run, 01/10:
 // about 300 of 340 failing files). Elsewhere it is outside the home anyway.
-guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome), canonical(os.tmpdir())];
+// The run's folder, which holds the file's own (tmpdir-isolation.ts hands it
+// over): a write past the file's folder is for the run's guard to report
+// (tmpdir-run.ts), as on macOS and Linux, and on Windows this guard refused
+// it first, as a write into the real home (tmpdir-isolation.test.ts, 7).
+const runTmpdir = (globalThis as typeof globalThis & { [key: symbol]: string | undefined })[Symbol.for('tars.test.runTmpdir')] ?? os.tmpdir();
+guard.allowedRoots = [canonical(process.cwd()), canonical(guard.throwawayHome), canonical(runTmpdir)];
 // HOME, and on Windows the variables that name the profile: test-home.ts's list.
 const moved = homeVariables(guard.throwawayHome);
 for (const dir of [moved.APPDATA, moved.LOCALAPPDATA]) if (dir) fs.mkdirSync(dir, { recursive: true });
