@@ -116,9 +116,14 @@ beforeEach(() => {
   vi.stubEnv('PATH', `${bin}:${process.env.PATH}`);
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  // Retried, and not synchronously: a patch past the cut ends git at
+  // maxBuffer, and execFile answers without waiting for git to exit. On
+  // Windows the folder git works in cannot be removed until it has, and rmSync
+  // does not retry that refusal at all (EBUSY on the folder's first rmdir);
+  // fs.promises.rm retries the whole removal, here for at most 5.5 s.
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 const listOnly = { listOnly: true } as Parameters<typeof reviewDiff>[1];

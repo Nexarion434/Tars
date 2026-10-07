@@ -228,7 +228,7 @@ describe('a start after a stop (Noah, 05/10)', () => {
   // 9. A start of an agent that was not stopped reads as a restart.
   it('7, 8. tells the restarter who stopped it, when and why, and notes the restart', async () => {
     agent('orch', { status: 'idle' });
-    const w1 = agent('w1');
+    const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'out of budget' }, caller: 'orch' });
     const stoppedAt = w1.stoppedAt;
 
@@ -242,7 +242,7 @@ describe('a start after a stop (Noah, 05/10)', () => {
 
   it('7. a /dispatch that starts it again says so too, as a scheduled task\'s does', async () => {
     agent('orch', { status: 'idle' });
-    const w1 = agent('w1');
+    const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'night' }, caller: 'orch' });
 
     const r = await call('POST', '/api/agents/w1/dispatch', { body: { message: 'the morning task' }, caller: 'orch' });
@@ -254,7 +254,7 @@ describe('a start after a stop (Noah, 05/10)', () => {
 
   it('9. a start of an agent that was not stopped is no restart', async () => {
     agent('orch', { status: 'idle' });
-    const w1 = agent('w1', { status: 'idle', currentSessionId: undefined });
+    const w1 = agent('w1', { status: 'idle', currentSessionId: undefined, ...startableCli() });
 
     const r = await call('POST', '/api/agents/w1/start', { body: { prompt: 'go' }, caller: 'orch' });
 
