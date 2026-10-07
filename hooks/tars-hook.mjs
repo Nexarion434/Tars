@@ -214,7 +214,7 @@ async function onStop(input) {
   if (message) {
     const trimmed = subst(headBytes(message, 4000));
     const answer = await postJson(`${api}/api/hooks/output`, token(),
-      JSON.stringify({ agent_id: agentId, session_id: sessionId, output: trimmed }));
+      JSON.stringify({ agent_id: agentId, hook: 'Stop', session_id: sessionId, output: trimmed }));
     if (answer) appendLog(debugLog, answer);
     appendLog(debugLog, `  Output sent (${Array.from(trimmed).length} chars)`);
   }

@@ -407,7 +407,7 @@ const CASES: Case[] = [
     payload: { session_id: S, last_assistant_message: 'Done: "all" green\n\n' },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: 'Done: "all" green' } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: 'Done: "all" green' } },
       { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
       { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
@@ -420,7 +420,7 @@ const CASES: Case[] = [
     env: AGENT,
     setup: home => { writeTranscript(home); },
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: 'first part\nsecond part' } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: 'first part\nsecond part' } },
       { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
       { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
@@ -432,7 +432,7 @@ const CASES: Case[] = [
     payload: { session_id: S, last_assistant_message: `${'a'.repeat(3999)}€tail` },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
       { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
       { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
@@ -788,7 +788,7 @@ describe('a long transcript', () => {
     expect(run.code).toBe(0);
     expect(run.ms).toBeLessThan(10_000);
     const output = requests.find(r => r.path === '/api/hooks/output');
-    expect(output?.body).toEqual({ agent_id: 'agent-1', session_id: S, output: Buffer.from(last).subarray(0, 4000).toString('utf8').replace(/\n+$/, '') });
+    expect(output?.body).toEqual({ agent_id: 'agent-1', hook: 'Stop', session_id: S, output: Buffer.from(last).subarray(0, 4000).toString('utf8').replace(/\n+$/, '') });
     expect(requests.map(r => r.path)).toEqual(['/api/hooks/output', '/api/hooks/status', '/api/hooks/agent-stopped']);
   }, 60_000);
 
