@@ -1,0 +1,199 @@
+import { describe, it, expect } from 'vitest';
+import type { AgentStatus, RemoteAgent } from '../../src/types/electron';
+import {
+  ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
+  localMachineLabel, machineFilterOptions, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
+} from '../../src/lib/machines';
+
+/**
+ * What the Dashboard and the Agents page say about the agents of another
+ * machine. How it can fail, written before the code:
+ * 1. A project folder is compared by more than its name: a Windows path with
+ *    `\`, a trailing separator, a `~\` home, or a different case makes the
+ *    same folder two projects; or a folder that only ends the same way
+ *    (`tars-old` against `tars`) is taken for it.
+ * 2. A remote agent lands on no local tab when one matches, or on a local tab
+ *    when none does; two remote machines with the same folder get two tabs;
+ *    a local agent is changed, moved or dropped by the merge; the remote's
+ *    own path is lost (the Agents page shows it as given).
+ * 3. A remote agent keeps an id that could meet a local one, or carries a
+ *    status the panel does not know (it must read as idle, not crash).
+ * 4. The machine filter keeps the other machine's agents under This Mac, hides
+ *    the local ones under All machines, or keeps a machine that is gone and
+ *    leaves the board empty with no way back.
+ * 5. The local machine is called by the wrong name on a platform; the filter
+ *    lists a machine twice, or one that forgot this machine.
+ * 6. The offline line names the wrong time (UTC instead of local, no zero
+ *    padding), prints "Invalid Date" when offlineSince is missing or garbled,
+ *    or promises a return of the wrong machine.
+ * 7. The status bar says an offline or unknown machine is connected.
+ * 8. A remote-only project tab does not say which machine it is on, or a tab
+ *    with a local agent in it claims to be remote.
+ */
+
+const remote = (over: Partial<RemoteAgent> = {}): RemoteAgent => ({
+  id: 'm:m-bbbb:a1', agentId: 'a1', machine: { id: 'm-bbbb', name: 'PC', status: 'connected' },
+  name: 'QA Engineer', status: 'waiting', projectName: 'tars', projectPath: 'C:\\Users\\n\\tars', cliRunning: true, ...over,
+});
+const local = (id: string, projectPath: string): AgentStatus =>
+  ({ id, name: id, status: 'idle', projectPath, skills: [], output: [], lastActivity: '2026-10-08T10:00:00.000Z' }) as AgentStatus;
+
+describe('folderKey', () => {
+  it('is the folder name, whichever separator wrote it, in lower case (1)', () => {
+    expect(folderKey('/Users/n/Tars')).toBe('tars');
+    expect(folderKey('C:\\Users\\n\\tars')).toBe('tars');
+    expect(folderKey('C:/Users/n/TARS/')).toBe('tars');
+    expect(folderKey('~\\sakartvelo')).toBe('sakartvelo');
+    expect(folderKey('/Users/n/tars\\')).toBe('tars');
+  });
+  it('does not take a name that only ends the same way for the folder (1)', () => {
+    expect(folderKey('/w/tars-old')).not.toBe(folderKey('/w/tars'));
+    expect(folderKey('/w/old-tars')).not.toBe(folderKey('/w/tars'));
+  });
+  it('is empty for no path, so nothing matches it by accident (1)', () => {
+    expect(folderKey('')).toBe('');
+    expect(folderKey('/')).toBe('');
+  });
+});
+
+describe('isRemoteId', () => {
+  it('tells a remote id from a local one (3)', () => {
+    expect(isRemoteId('m:m-bbbb:a1')).toBe(true);
+    expect(isRemoteId('3f2a9c1e-0000-4000-8000-000000000000')).toBe(false);
+  });
+});
+
+describe('remoteToAgent', () => {
+  it('carries what a pane draws, and its machine and path as given (2, 3)', () => {
+    const a = remoteToAgent(remote({ provider: 'gemini', model: 'gemini-3-pro', branch: 'feat/qa', currentTask: 'run tests' }));
+    expect(a).toMatchObject({
+      id: 'm:m-bbbb:a1', name: 'QA Engineer', status: 'waiting', provider: 'gemini', model: 'gemini-3-pro',
+      branchName: 'feat/qa', currentTask: 'run tests', cliRunning: true, projectPath: 'C:\\Users\\n\\tars', skills: [], output: [],
+    });
+    expect(a.remote).toEqual({ machineId: 'm-bbbb', machineName: 'PC', status: 'connected', offlineSince: undefined, projectPath: 'C:\\Users\\n\\tars' });
+  });
+  it('reads a status the panel does not know as idle (3)', () => {
+    expect(remoteToAgent(remote({ status: 'rebooting' })).status).toBe('idle');
+    for (const s of ['idle', 'running', 'completed', 'error', 'waiting', 'stopped', 'asleep']) expect(remoteToAgent(remote({ status: s })).status).toBe(s);
+  });
+  it('keeps the offline time of its machine (6)', () => {
+    const a = remoteToAgent(remote({ machine: { id: 'm-bbbb', name: 'PC', status: 'offline', offlineSince: '2026-10-08T12:02:00Z' } }));
+    expect(a.remote).toMatchObject({ status: 'offline', offlineSince: '2026-10-08T12:02:00Z' });
+  });
+});
+
+describe('placeRemote', () => {
+  it('puts a remote agent under the local project with the same folder name (2)', () => {
+    const l = [local('l1', '/Users/n/Documents/tars')];
+    const [, r] = placeRemote(l, [remote()]);
+    expect(r?.projectPath).toBe('/Users/n/Documents/tars');
+    expect(r?.remote?.projectPath).toBe('C:\\Users\\n\\tars');
+  });
+  it('leaves a remote agent with no local match on its own project (2)', () => {
+    const [, r] = placeRemote([local('l1', '/Users/n/other')], [remote({ projectPath: 'C:\\x\\sakartvelo' })]);
+    expect(r?.projectPath).toBe('C:\\x\\sakartvelo');
+  });
+  it('does not match a folder that only ends the same way (1, 2)', () => {
+    const [, r] = placeRemote([local('l1', '/w/tars-old')], [remote()]);
+    expect(r?.projectPath).toBe('C:\\Users\\n\\tars');
+  });
+  it('gives two machines with the same folder one project (2)', () => {
+    const out = placeRemote([], [
+      remote({ id: 'm:m-1:a', projectPath: 'C:\\a\\Writer' }),
+      remote({ id: 'm:m-2:b', machine: { id: 'm-2', name: 'Mini', status: 'connected' }, projectPath: '/Users/z/writer' }),
+    ]);
+    expect(out[0]?.projectPath).toBe(out[1]?.projectPath);
+  });
+  it('keeps every local agent, first, as it was (2)', () => {
+    const l = [local('l1', '/a/tars'), local('l2', '/a/x')];
+    const out = placeRemote(l, [remote()]);
+    expect(out.slice(0, 2)).toEqual(l);
+    expect(out[0]).toBe(l[0]);
+    expect(out).toHaveLength(3);
+  });
+  it('is the local list itself when there is nothing remote (2)', () => {
+    const l = [local('l1', '/a/tars')];
+    expect(placeRemote(l, [])).toEqual(l);
+  });
+});
+
+describe('filterByMachine', () => {
+  const l = local('l1', '/a/tars');
+  const all = placeRemote([l], [remote(), remote({ id: 'm:m-2:z', machine: { id: 'm-2', name: 'Mini', status: 'connected' } })]);
+  it('keeps everything under All machines (4)', () => {
+    expect(filterByMachine(all, ALL_MACHINES)).toHaveLength(3);
+  });
+  it('keeps only this machine under This Mac (4)', () => {
+    expect(filterByMachine(all, THIS_MACHINE).map(a => a.id)).toEqual(['l1']);
+  });
+  it('keeps only one machine under its id (4)', () => {
+    expect(filterByMachine(all, 'm-2').map(a => a.id)).toEqual(['m:m-2:z']);
+  });
+  it('is back to all when the machine is gone (4)', () => {
+    expect(activeFilter('m-9', [{ id: 'm-2', name: 'Mini', status: 'connected' }])).toBe(ALL_MACHINES);
+    expect(activeFilter('m-2', [{ id: 'm-2', name: 'Mini', status: 'connected' }])).toBe('m-2');
+    expect(activeFilter(THIS_MACHINE, [{ id: 'm-2', name: 'Mini', status: 'connected' }])).toBe(THIS_MACHINE);
+    expect(activeFilter(THIS_MACHINE, [])).toBe(ALL_MACHINES);
+  });
+});
+
+describe('the filter and its words', () => {
+  it('names this machine by its platform (5)', () => {
+    expect(localMachineLabel('darwin')).toBe('This Mac');
+    expect(localMachineLabel('win32')).toBe('This PC');
+    expect(localMachineLabel('linux')).toBe('This machine');
+    expect(localMachineLabel('')).toBe('This machine');
+  });
+  it('lists All machines, this one, then each other by name (5)', () => {
+    expect(machineFilterOptions([{ id: 'm-b', name: 'PC', status: 'connected' }], 'darwin')).toEqual([
+      { value: 'all', label: 'All machines' }, { value: 'local', label: 'This Mac' }, { value: 'm-b', label: 'PC' },
+    ]);
+  });
+  it('knows a machine from the peers, once, and from its agents when the peers lack it (5)', () => {
+    const peers = [
+      { id: 'm-b', name: 'PC', status: 'connected' as const },
+      { id: 'm-c', name: 'Old', status: 'unpaired' as const },
+    ];
+    const agents = [remote({ machine: { id: 'm-b', name: 'PC', status: 'connected' } }), remote({ id: 'm:m-d:q', machine: { id: 'm-d', name: 'Mini', status: 'offline' } })];
+    expect(fleetMachines(peers, agents).map(m => m.id)).toEqual(['m-b', 'm-d']);
+  });
+});
+
+describe('offlineLine', () => {
+  it('says the machine, the local time, and that the pane comes back with it (6)', () => {
+    const iso = new Date(2026, 9, 8, 14, 2).toISOString();
+    expect(offlineLine({ machineName: 'PC', offlineSince: iso })).toBe('PC offline since 14:02. Its last output stays below, and the pane is live again when the PC is back.');
+  });
+  it('pads the hour and the minutes (6)', () => {
+    const iso = new Date(2026, 9, 8, 9, 5).toISOString();
+    expect(offlineLine({ machineName: 'Mini', offlineSince: iso })).toContain('Mini offline since 09:05.');
+  });
+  it('says no time when there is none, or it is not a date (6)', () => {
+    const tail = 'Its last output stays below, and the pane is live again when the PC is back.';
+    expect(offlineLine({ machineName: 'PC' })).toBe(`PC offline. ${tail}`);
+    expect(offlineLine({ machineName: 'PC', offlineSince: 'not a date' })).toBe(`PC offline. ${tail}`);
+  });
+});
+
+describe('readOnlyTitle and machineStatusLabel', () => {
+  it('says where the agent runs (title)', () => {
+    expect(readOnlyTitle('PC')).toBe('Read only: this agent runs on PC');
+  });
+  it('ticks a connected machine and says offline for any other (7)', () => {
+    expect(machineStatusLabel({ id: 'm-b', name: 'PC', status: 'connected' })).toBe('PC ✓');
+    expect(machineStatusLabel({ id: 'm-b', name: 'PC', status: 'offline' })).toBe('PC offline');
+    expect(machineStatusLabel({ id: 'm-b', name: 'PC', status: 'unknown' })).toBe('PC offline');
+  });
+});
+
+describe('tabMachines', () => {
+  it('names the machines of a project only remote agents are on (8)', () => {
+    const agents = placeRemote([local('l1', '/a/tars')], [
+      remote(), remote({ id: 'm:m-bbbb:w', projectPath: 'C:\\x\\sakartvelo' }),
+      remote({ id: 'm:m-2:w', machine: { id: 'm-2', name: 'Mini', status: 'connected' }, projectPath: 'C:\\x\\sakartvelo' }),
+    ]);
+    const tabs = tabMachines(agents);
+    expect(tabs.has('/a/tars')).toBe(false);
+    expect(tabs.get('C:\\x\\sakartvelo')).toEqual(['PC', 'Mini']);
+  });
+});
