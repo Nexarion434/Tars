@@ -977,6 +977,32 @@ export interface MachinesView {
   peers: MachineView[];
 }
 
+/**
+ * An agent of another machine, read only (electron/services/machines/types.ts).
+ * Never a token, an env, a CLI path, nor its terminal history: its screen and
+ * live output come one agent at a time (agentScreen, watch).
+ */
+export interface RemoteAgent {
+  /** `m:<machineId>:<agentId>`: never an id of this machine's own fleet. */
+  id: string;
+  agentId: string;
+  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string };
+  name: string;
+  character?: string;
+  provider?: string;
+  model?: string;
+  status: string;
+  currentTask?: string;
+  branch?: string;
+  projectName: string;
+  /** The project's path on its own machine, shown, never opened here. */
+  projectPath: string;
+  cliRunning: boolean;
+  lastActivity?: string;
+  stoppedBy?: string;
+  stopReason?: string;
+}
+
 type MachinesResult<T extends object = object> = ({ success: true } & T) | { success: false; error: string };
 
 export interface ClaudeAccountsView {
@@ -1182,6 +1208,15 @@ export interface ElectronAPI {
     setPermission: (id: string, mayOnMe: PeerPermission) => Promise<MachinesResult>;
     unpair: (id: string) => Promise<{ success: true }>;
     onChanged: (callback: () => void) => () => void;
+    /** The other machines' agents (read only), offline ones included with their machine's offlineSince. */
+    agents: () => Promise<RemoteAgent[]>;
+    /** A remote agent's terminal as it is now, to write into its pane once; null when its machine does not answer. */
+    agentScreen: (id: string) => Promise<{ screen: string; cliRunning: boolean } | null>;
+    /** Its live output, on agent:output under the remote id, until unwatch. Counted: each watch needs its unwatch. */
+    watch: (id: string) => Promise<void>;
+    unwatch: (id: string) => Promise<void>;
+    /** Pushed whenever the other machines' agents change (every poll that saw a change, a machine going offline or back). */
+    onFleet: (callback: (agents: RemoteAgent[]) => void) => () => void;
   };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */

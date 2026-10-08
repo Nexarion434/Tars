@@ -44,3 +44,34 @@ export interface MachinesView {
   request: { name: string; device?: string; address: string; expiresAt: string } | null;
   peers: MachineView[];
 }
+
+/**
+ * An agent of another machine, as this one shows it (bridge `GET
+ * /machines/v1/fleet`). Picked field by field on the machine it runs on:
+ * never a token, an env, a CLI path, a path other than its project's, nor its
+ * terminal history, which only `screen` and `stream` carry, for one agent.
+ */
+export interface RemoteAgent {
+  /** `m:<machineId>:<agentId>`: never an id of this machine's own fleet. */
+  id: string;
+  /** Its id on its own machine. */
+  agentId: string;
+  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string };
+  name: string;
+  character?: string;
+  provider?: string;
+  model?: string;
+  status: string;
+  currentTask?: string;
+  branch?: string;
+  projectName: string;
+  /** The project's path on its own machine, shown, never opened here. */
+  projectPath: string;
+  cliRunning: boolean;
+  lastActivity?: string;
+  stoppedBy?: string;
+  stopReason?: string;
+}
+
+/** A remote agent's terminal as it is now (bridge `GET /machines/v1/agents/:id/screen`). */
+export interface RemoteScreen { screen: string; cliRunning: boolean }

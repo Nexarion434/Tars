@@ -261,6 +261,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('machines:changed', listener);
       return () => ipcRenderer.removeListener('machines:changed', listener);
     },
+    /** The other machines' agents, read only; their output comes on agent:output under their own ids. */
+    agents: () => ipcRenderer.invoke('machines:agents'),
+    agentScreen: (id: string) => ipcRenderer.invoke('machines:agent-screen', id),
+    watch: (id: string) => ipcRenderer.invoke('machines:watch', id),
+    unwatch: (id: string) => ipcRenderer.invoke('machines:unwatch', id),
+    onFleet: (callback: (agents: unknown[]) => void) => {
+      const listener = (_: unknown, agents: unknown[]) => callback(agents);
+      ipcRenderer.on('machines:fleet', listener);
+      return () => ipcRenderer.removeListener('machines:fleet', listener);
+    },
   },
 
   // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)
