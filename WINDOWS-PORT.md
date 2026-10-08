@@ -266,7 +266,9 @@ mises à jour Windows viennent toujours du fork (`WINDOWS_UPDATE_REPO`). Écarts
   dossier.
 - Tests upstream adaptés : `memory-project-spellings` lie ses projets par une jonction (aucun privilège requis) et
   nomme le dossier Claude par `encodeClaudeProjectDir` ; dans `acp-quit-ends-runs`, le balayage de fin de cas lit
-  les lignes de commande dans Win32_Process, après un cas en échec seulement (jusqu'à 25 s la requête sur le runner).
+  les lignes de commande dans Win32_Process, après un cas en échec seulement (jusqu'à 25 s la requête sur le runner) ;
+  `per-task-requester` écrit ses faux CLIs par `writeNodeCli` (le shim `.cmd` sous Windows). Le masque du disque de
+  Réglages > Système est celui de l'upstream (indice et colonne de 300), qui rend inutile celui ajouté pour Windows.
 
 **Ouvert.**
 - D10 : textes propres à mac, en attente de Nicolas.
