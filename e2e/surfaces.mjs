@@ -231,20 +231,12 @@ export const VOLATILE = {
   },
   'disk-space': {
     surfaces: ['settings-system'],
-    selector: 'text=/^\\d+ GB free/',
+    // The Disk row's hint and its 300px control column, boxes whose size the
+    // numbers do not move: masking the "N GB free" text itself gave a box one
+    // digit wider or narrower when the disk crossed 10 or 100 GB free, about
+    // 100 pixels (QA's gate of #336).
+    selector: '[data-settings-row]:has([data-settings-label]:text-is("Disk")) [data-settings-hint], [data-settings-row]:has([data-settings-label]:text-is("Disk")) > div:nth-child(2)',
     why: 'the free and total space of the disk the run is on, which moves with everything written to it',
-  },
-  // Windows only, so the darwin pictures compare as they always have. The mask
-  // above covers the row's hint, as wide as its column, and its value, only as
-  // wide as its digits: measured on 2026-10-08, `NNN GB free` on the Windows
-  // machine recording and `NN GB free` on a runner, 113 pixels apart, all of
-  // them that mask's own edge. The row's control column around the value is
-  // 300 wide whatever it holds (SettingsRow).
-  'disk-space-column': {
-    surfaces: ['settings-system'],
-    platforms: ['win32'],
-    selector: '[data-settings-row]:has([data-settings-label]:text-is("Disk")) > div:last-child',
-    why: 'the free space of the disk the run is on, in a mask the same size on every machine',
   },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
