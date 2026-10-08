@@ -1,0 +1,136 @@
+import { readFleet, parseRemoteId } from './fleet-share';
+import type { PairedMachine, PeerStatus, RemoteAgent, RemoteScreen } from './types';
+
+/**
+ * The other machines' agents as this one keeps them between polls, and the
+ * live outputs the window watches. A machine that stops answering keeps its
+ * last agents, marked offline since its first missed poll, so its panes keep
+ * their last output; a machine forgotten here takes its agents with it.
+ */
+export interface RemoteFleetDeps {
+  peers: () => PairedMachine[];
+  fetchFleet: (peer: PairedMachine) => Promise<{ status: number; body: Record<string, unknown> }>;
+  fetchScreen: (peer: PairedMachine, agentId: string) => Promise<RemoteScreen | null>;
+  openStream: (peer: PairedMachine, agentId: string, onChunk: (chunk: string) => void, onEnd: () => void) => { close: () => void };
+  /** Told whenever the list moved: an agent, a status, a machine gone offline or back. */
+  onFleet: (agents: RemoteAgent[]) => void;
+  /** A watched agent's chunk, under its remote id. */
+  onOutput: (remoteId: string, chunk: string) => void;
+  now?: () => number;
+  later?: (fn: () => void, ms: number) => void;
+  /** How long after a watched stream ended it is opened again. */
+  retryMs?: number;
+  /** How long one machine's poll may take before it counts as not answering. */
+  pollTimeoutMs?: number;
+}
+
+export interface RemoteFleet {
+  poll: () => Promise<void>;
+  list: () => RemoteAgent[];
+  screen: (remoteId: string) => Promise<RemoteScreen | null>;
+  watch: (remoteId: string) => void;
+  unwatch: (remoteId: string) => void;
+  stop: () => void;
+}
+
+interface Kept { agents: RemoteAgent[]; status: PeerStatus; offlineSince?: string }
+interface Watched { count: number; stream: { close: () => void } | null; retry: boolean }
+
+export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
+  const now = deps.now ?? Date.now;
+  const later = deps.later ?? ((fn, ms) => { setTimeout(fn, ms).unref?.(); });
+  const kept = new Map<string, Kept>();
+  const watched = new Map<string, Watched>();
+  let told = '';
+  let stopped = false;
+
+  const peerOf = (machineId: string) => deps.peers().find(p => p.id === machineId);
+
+  const list = (): RemoteAgent[] => [...kept.values()].flatMap(k => k.agents);
+
+  async function answerOf(peer: PairedMachine): Promise<{ status: number; body: Record<string, unknown> }> {
+    let timer: NodeJS.Timeout | undefined;
+    const silent = new Promise<{ status: number; body: Record<string, unknown> }>(resolve => {
+      timer = setTimeout(() => resolve({ status: 0, body: {} }), deps.pollTimeoutMs ?? 6_000);
+    });
+    try {
+      return await Promise.race([deps.fetchFleet(peer).catch(() => ({ status: 0, body: {} })), silent]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function poll(): Promise<void> {
+    const peers = deps.peers();
+    for (const id of [...kept.keys()]) if (!peers.some(p => p.id === id)) kept.delete(id);
+    await Promise.all(peers.map(async peer => {
+      const r = await answerOf(peer);
+      const before = kept.get(peer.id);
+      if (r.status === 200) {
+        kept.set(peer.id, { status: 'connected', agents: readFleet(r.body, { id: peer.id, name: peer.name, status: 'connected' }) });
+        return;
+      }
+      // Not answering, or no longer pairing with this one: its last agents stay, marked.
+      const status: PeerStatus = r.status === 401 ? 'unpaired' : 'offline';
+      const offlineSince = before && before.status !== 'connected' ? before.offlineSince : new Date(now()).toISOString();
+      const machine = { id: peer.id, name: peer.name, status, offlineSince };
+      kept.set(peer.id, { status, offlineSince, agents: (before?.agents ?? []).map(a => ({ ...a, machine })) });
+    }));
+    if (stopped) return;
+    const agents = list();
+    const shown = JSON.stringify(agents);
+    if (shown !== told) {
+      told = shown;
+      deps.onFleet(agents);
+    }
+  }
+
+  function open(remoteId: string, machineId: string, agentId: string): void {
+    const w = watched.get(remoteId);
+    const peer = peerOf(machineId);
+    if (!w || w.count === 0 || stopped || !peer) return;
+    w.stream = deps.openStream(peer, agentId, (chunk) => {
+      if (watched.get(remoteId) === w && w.count > 0) deps.onOutput(remoteId, chunk);
+    }, () => {
+      w.stream = null;
+      // Ended under a pane that still watches: opened again, should its machine be back.
+      if (w.count > 0 && !w.retry) {
+        w.retry = true;
+        later(() => { w.retry = false; open(remoteId, machineId, agentId); }, deps.retryMs ?? 3_000);
+      }
+    });
+  }
+
+  return {
+    poll,
+    list,
+    screen: async (remoteId) => {
+      const parsed = parseRemoteId(remoteId);
+      const peer = parsed && peerOf(parsed.machineId);
+      return peer ? deps.fetchScreen(peer, parsed!.agentId).catch(() => null) : null;
+    },
+    watch: (remoteId) => {
+      const parsed = parseRemoteId(remoteId);
+      if (!parsed || !peerOf(parsed.machineId)) return;
+      const w = watched.get(remoteId) ?? { count: 0, stream: null, retry: false };
+      watched.set(remoteId, w);
+      w.count++;
+      if (w.count === 1 && !w.stream && !w.retry) open(remoteId, parsed.machineId, parsed.agentId);
+    },
+    unwatch: (remoteId) => {
+      const w = watched.get(remoteId);
+      if (!w) return;
+      w.count = Math.max(0, w.count - 1);
+      if (w.count > 0) return;
+      watched.delete(remoteId);
+      const stream = w.stream;
+      w.stream = null;
+      stream?.close();
+    },
+    stop: () => {
+      stopped = true;
+      for (const w of watched.values()) { w.count = 0; w.stream?.close(); }
+      watched.clear();
+    },
+  };
+}

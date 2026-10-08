@@ -3,7 +3,8 @@ import { app } from 'electron';
 import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, cleanName, isSecret } from './store';
 import { Offer, openOffer, checkProof, answerProof, isNonce } from './pairing';
 import { detectTailscale, tailnetIp } from '../tailscale-status';
-import type { PairedMachine } from './types';
+import type { PairedMachine, RemoteScreen } from './types';
+import type { SharedAgent } from './fleet-share';
 
 /**
  * The machines bridge: how another Tars of the same tailnet reaches this one.
@@ -11,7 +12,7 @@ import type { PairedMachine } from './types';
  * A server of its own, apart from the loopback API (api-server.ts), which
  * never leaves 127.0.0.1 and whose token, pass and webhook secret are not
  * accepted here. It listens on this machine's Tailscale IPv4 only, never on
- * 0.0.0.0, and not at all without one. Five routes, listed below and nothing
+ * 0.0.0.0, and not at all without one. Eight routes, listed below and nothing
  * else: an unknown path is 404 before any credential is read. A caller is a
  * paired machine when it presents the secret this Tars issued to it at
  * pairing (kept here as a hash). SECURITY.md, "The machines bridge".
@@ -35,6 +36,15 @@ export interface BridgeDeps {
   deviceAt?: (address: string) => Promise<string | undefined>;
   /** How long a request waits for the person here (PAIR_WAIT_MS); a test shortens it. */
   pairWaitMs?: number;
+  /** This machine's agents as a paired machine sees them (fleet-share.ts). */
+  fleet?: () => SharedAgent[];
+  /** One agent's terminal as it is now, or null when it has none. */
+  screenOf?: (agentId: string) => RemoteScreen | null;
+  /**
+   * Listens to one agent's terminal output until the returned function is
+   * called; onEnd when the terminal ends. Null when the agent has none.
+   */
+  onOutput?: (agentId: string, listener: (chunk: string) => void, onEnd: () => void) => (() => void) | null;
   now?: () => number;
 }
 
@@ -147,7 +157,16 @@ const peerFor = (authorization: string | undefined): PairedMachine | undefined =
   return presented ? readMachines().peers.find(p => secretMatches(presented, p.inboundSecretHash)) : undefined;
 };
 
-const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair']);
+const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair', 'GET /machines/v1/fleet']);
+/** One agent's screen or live output: an id that fleet-share lets travel, and nothing else after it. */
+const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream)$/;
+
+/** Live outputs one machine may hold open at once: a Dashboard of every agent, with room to spare. */
+export const MAX_STREAMS_PER_MACHINE = 32;
+/** The live outputs open now, by the machine that opened them. */
+const streams = new Map<string, number>();
+/** What a slow reader may leave unsent before its stream is closed: it reads the screen again when it comes back. */
+const MAX_UNSENT = 4 * 1024 * 1024;
 
 export async function handleBridgeRequest(req: http.IncomingMessage, res: http.ServerResponse, deps: BridgeDeps, opts: { tailnetOnly?: boolean } = {}): Promise<void> {
   activeDeps = deps;
@@ -157,7 +176,8 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   if (req.headers.origin) return send(403, { error: 'Forbidden' });
   const path = new URL(req.url || '/', 'http://bridge').pathname;
   const key = `${req.method} ${path}`;
-  if (!ROUTES.has(key)) return send(404, { error: 'Not found' });
+  const agentRoute = req.method === 'GET' ? AGENT_ROUTE.exec(path) : null;
+  if (!ROUTES.has(key) && !agentRoute) return send(404, { error: 'Not found' });
 
   if (key === 'GET /machines/v1/hello') {
     const open = currentOffer();
@@ -261,11 +281,60 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     return send(200, { id: self.id, name: self.name, agentsRunning: deps.runningAgents() });
   }
 
+  // What a paired machine sees of this one, whatever it may do here: its
+  // agents (fleet-share.ts picks what travels), one agent's screen, and one
+  // agent's live output.
+  if (key === 'GET /machines/v1/fleet') {
+    const { self } = readMachines();
+    return send(200, { id: self.id, name: self.name, agents: deps.fleet?.() ?? [] });
+  }
+  if (agentRoute && agentRoute[2] === 'screen') {
+    const screen = deps.screenOf?.(agentRoute[1]);
+    return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning }) : send(404, { error: 'No such terminal' });
+  }
+  if (agentRoute) return streamOutput(agentRoute[1], peer.id, res, deps, send);
+
   // POST /machines/v1/unpair: the caller forgets this machine, and this machine forgets the caller.
   const file = readMachines();
   writeMachines({ ...file, peers: file.peers.filter(p => p.id !== peer.id) });
   deps.onChanged();
   return send(200, { ok: true });
+}
+
+/**
+ * One agent's live output as Server-Sent Events, one chunk per event, each a
+ * JSON string so a line break or "data:" inside a chunk stays in it. Ends
+ * with the terminal, when the caller goes, or when the caller reads too
+ * slowly to keep up; a comment every fifteen seconds keeps an idle one open.
+ */
+function streamOutput(agentId: string, peerId: string, res: http.ServerResponse, deps: BridgeDeps, send: (status: number, body: unknown) => void): void {
+  if ((streams.get(peerId) ?? 0) >= MAX_STREAMS_PER_MACHINE) return send(429, { error: 'Too many live outputs open from this machine.' });
+  let stop: (() => void) | null = null;
+  let done = false;
+  const end = () => {
+    if (done) return;
+    done = true;
+    clearInterval(keepAlive);
+    stop?.();
+    streams.set(peerId, (streams.get(peerId) ?? 1) - 1);
+    if (!res.writableEnded) res.end();
+  };
+  const keepAlive = setInterval(() => { res.write(': ping\n\n'); }, 15_000);
+  streams.set(peerId, (streams.get(peerId) ?? 0) + 1);
+  stop = deps.onOutput?.(agentId, (chunk) => {
+    if (done) return;
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    if (res.writableLength > MAX_UNSENT) end();
+  }, end) ?? null;
+  if (!stop) {
+    done = true;
+    clearInterval(keepAlive);
+    streams.set(peerId, (streams.get(peerId) ?? 1) - 1);
+    return send(404, { error: 'No such terminal' });
+  }
+  res.on('close', end);
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  res.flushHeaders();
 }
 
 export function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {

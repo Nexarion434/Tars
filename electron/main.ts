@@ -84,7 +84,7 @@ import {
 import { initDiscordBot } from './services/discord-bot';
 import { registerDiscordHandlers } from './handlers/discord-handlers';
 import { announceAgentAccount, registerClaudeAccountsHandlers } from './handlers/claude-accounts-handlers';
-import { registerMachinesHandlers } from './handlers/machines-handlers';
+import { registerMachinesHandlers, stopFleetPolling } from './handlers/machines-handlers';
 import { stopBridge } from './services/machines/bridge-server';
 import { stopStatusPolling } from './services/machines/status';
 import { setAccountEnvResolver } from './core/account-env';
@@ -782,7 +782,7 @@ app.on('before-quit', (event) => {
       // Windows the exit is held up to 5 s more, pty-kill.ts).
       ['stopStatusNotifications', stopStatusNotifications],
       // No machine is answered once the quit has begun.
-      ['stopMachines', () => { stopStatusPolling(); void stopBridge(); }],
+      ['stopMachines', () => { stopStatusPolling(); stopFleetPolling(); void stopBridge(); }],
       ['stopErrorTriage', stopErrorTriage],
       ['stopSleepWatch', stopSleepWatch],
       ['stopTmpRetention', () => stopTmpRetention()],

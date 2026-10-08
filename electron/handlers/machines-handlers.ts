@@ -2,7 +2,9 @@ import { app, ipcMain } from 'electron';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { readMachines, writeMachines, cleanName } from '../services/machines/store';
 import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer, currentRequest, decidePairRequest } from '../services/machines/bridge-server';
-import { pairWithCode, candidatesFrom, unpairPeer } from '../services/machines/client';
+import { pairWithCode, candidatesFrom, unpairPeer, fetchFleet, fetchScreen, openStream } from '../services/machines/client';
+import { createRemoteFleet, type RemoteFleet } from '../services/machines/remote-fleet';
+import { fleetSource } from '../services/machines/fleet-source';
 import { startStatusPolling, peerStatus, forgetStatus, pollNow } from '../services/machines/status';
 import { formatCode } from '../services/machines/pairing';
 import { detectTailscale, tailnetPeers, deviceName } from '../services/tailscale-status';
@@ -18,13 +20,28 @@ export interface MachinesHandlerDeps {
   runningAgents: () => number;
   /** How often paired machines are asked (ten seconds); a test shortens it. */
   pollEveryMs?: number;
+  /** How often their agents are asked (three seconds); a test shortens it. */
+  fleetEveryMs?: number;
 }
 
 const changed = () => broadcastToAllWindows('machines:changed', {});
+
+/** The other machines' agents, asked every three seconds while something is paired. */
+let fleet: RemoteFleet | null = null;
+let fleetTimer: NodeJS.Timeout | null = null;
+
+/** Stops asking the other machines and closes every live output: the quit. */
+export function stopFleetPolling(): void {
+  if (fleetTimer) clearInterval(fleetTimer);
+  fleetTimer = null;
+  fleet?.stop();
+  fleet = null;
+}
 const fail = (err: unknown) => ({ success: false as const, error: err instanceof Error ? err.message : String(err) });
 
 export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPaired: () => Promise<void> } {
   const bridgeDeps = {
+    ...fleetSource(),
     runningAgents: deps.runningAgents,
     onChanged: () => { changed(); poll(); },
     onRequestChanged: changed,
@@ -39,7 +56,35 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     if (bridgeState().listening || readMachines().peers.length === 0) return;
     if ((await startBridge(bridgeDeps)).listening) changed();
   };
-  const poll = () => startStatusPolling(changed, deps.pollEveryMs ?? 10_000, ensureBridge);
+  const remote = (): RemoteFleet => {
+    fleet ??= createRemoteFleet({
+      peers: () => readMachines().peers,
+      fetchFleet, fetchScreen, openStream,
+      onFleet: (agents) => broadcastToAllWindows('machines:fleet', agents),
+      onOutput: (agentId, data) => broadcastToAllWindows('agent:output', { type: 'output', agentId, data, timestamp: new Date().toISOString() }),
+    });
+    return fleet;
+  };
+  const poll = () => {
+    startStatusPolling(changed, deps.pollEveryMs ?? 10_000, ensureBridge);
+    if (fleetTimer) return;
+    // One poll at a time: a slow machine's answer is waited for, never stacked.
+    let polling = false;
+    const tick = () => {
+      if (polling) return;
+      polling = true;
+      void remote().poll().finally(() => { polling = false; });
+    };
+    tick();
+    fleetTimer = setInterval(tick, deps.fleetEveryMs ?? 3_000);
+  };
+
+  // The other machines' agents, read only (Dashboard, Agents): their screen
+  // once per pane, then their live output on agent:output under their remote ids.
+  ipcMain.handle('machines:agents', () => remote().list());
+  ipcMain.handle('machines:agent-screen', (_e, id: unknown) => (typeof id === 'string' ? remote().screen(id) : null));
+  ipcMain.handle('machines:watch', (_e, id: unknown) => { if (typeof id === 'string') remote().watch(id); });
+  ipcMain.handle('machines:unwatch', (_e, id: unknown) => { if (typeof id === 'string') remote().unwatch(id); });
 
   ipcMain.handle('machines:view', async (): Promise<MachinesView> => {
     const file = readMachines();

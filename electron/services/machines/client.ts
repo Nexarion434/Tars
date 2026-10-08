@@ -22,7 +22,7 @@ const MAX_ANSWER = 64 * 1024;
  * dropped mid-answer, an answer that never ends), as status 0 when no whole
  * answer came: a call that hung would hold the status poll with it.
  */
-function request(c: Candidate, method: string, path: string, opts: { secret?: string; body?: unknown; timeoutMs: number }): Promise<{ status: number; body: Record<string, unknown> }> {
+function request(c: Candidate, method: string, path: string, opts: { secret?: string; body?: unknown; timeoutMs: number; maxBytes?: number }): Promise<{ status: number; body: Record<string, unknown> }> {
   return new Promise((resolve) => {
     const data = opts.body === undefined ? undefined : JSON.stringify(opts.body);
     let req: http.ClientRequest | undefined;
@@ -51,7 +51,7 @@ function request(c: Candidate, method: string, path: string, opts: { secret?: st
         let size = 0;
         res.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > MAX_ANSWER) return settle(0);
+          if (size > (opts.maxBytes ?? MAX_ANSWER)) return settle(0);
           chunks.push(chunk);
         });
         res.on('end', () => {
@@ -157,6 +157,76 @@ export async function ping(peer: PairedMachine): Promise<PingResult> {
   if (r.status === 200) return { status: 'connected', agentsRunning: Number(r.body.agentsRunning) || 0 };
   if (r.status === 401) return { status: 'unpaired' };
   return { status: 'offline' };
+}
+
+/** What a fleet answer may weigh: MAX_SHARED_AGENTS agents of a few hundred bytes each. */
+const MAX_FLEET = 512 * 1024;
+/** What a screen may weigh: 2,500 lines of scrollback with their colours. */
+const MAX_SCREEN = 8 * 1024 * 1024;
+
+/** A paired machine's fleet answer (fleet-share reads it), or the status that came instead: 0 for none, 401 when it forgot this one. */
+export async function fetchFleet(peer: PairedMachine): Promise<{ status: number; body: Record<string, unknown> }> {
+  return request({ host: peer.address, port: peer.port }, 'GET', '/machines/v1/fleet', { secret: peer.outboundSecret, timeoutMs: 5_000, maxBytes: MAX_FLEET });
+}
+
+/** One remote agent's terminal as it is now, or null when its machine does not give one. */
+export async function fetchScreen(peer: PairedMachine, agentId: string): Promise<{ screen: string; cliRunning: boolean } | null> {
+  const r = await request({ host: peer.address, port: peer.port }, 'GET', `/machines/v1/agents/${encodeURIComponent(agentId)}/screen`, { secret: peer.outboundSecret, timeoutMs: 10_000, maxBytes: MAX_SCREEN });
+  return r.status === 200 && typeof r.body.screen === 'string' ? { screen: r.body.screen, cliRunning: r.body.cliRunning === true } : null;
+}
+
+/** What a stream may hold unparsed: more than one event this large is not a terminal's output. */
+const MAX_EVENT = 1024 * 1024;
+
+/**
+ * One remote agent's live output (bridge-server, streamOutput): each chunk
+ * to onChunk, in order, then onEnd once, whether the other side ended it, the
+ * connection dropped, an event came malformed or too large, or close() was
+ * called. Nothing after onEnd.
+ */
+export function openStream(peer: PairedMachine, agentId: string, onChunk: (chunk: string) => void, onEnd: () => void): { close: () => void } {
+  let ended = false;
+  let req: http.ClientRequest | undefined;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    req?.destroy();
+    onEnd();
+  };
+  try {
+    req = http.request({
+      host: peer.address, port: peer.port, method: 'GET',
+      path: `/machines/v1/agents/${encodeURIComponent(agentId)}/stream`,
+      headers: { Authorization: `Bearer ${peer.outboundSecret}`, Accept: 'text/event-stream' },
+    }, res => {
+      if (res.statusCode !== 200) { res.resume(); return end(); }
+      res.setEncoding('utf8');
+      let pending = '';
+      res.on('data', (text: string) => {
+        if (ended) return;
+        pending += text;
+        let at: number;
+        while ((at = pending.indexOf('\n\n')) >= 0) {
+          const event = pending.slice(0, at);
+          pending = pending.slice(at + 2);
+          // A comment (": ping") keeps the line open and carries nothing.
+          if (event.startsWith(':')) continue;
+          let chunk: unknown;
+          try { chunk = event.startsWith('data: ') ? JSON.parse(event.slice('data: '.length)) : undefined; } catch { /* malformed */ }
+          if (typeof chunk !== 'string') return end();
+          onChunk(chunk);
+          if (ended) return;
+        }
+        if (pending.length > MAX_EVENT) end();
+      });
+      res.on('end', end);
+      res.on('close', end);
+      res.on('error', end);
+    });
+  } catch { end(); return { close: end }; }
+  req.on('error', end);
+  req.end();
+  return { close: end };
 }
 
 /**
