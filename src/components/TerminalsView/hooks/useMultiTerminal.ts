@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
-import type { AgentStatus } from '@/types/electron';
+import { isRemoteId, type PaneAgent } from '@/lib/machines';
 import { isElectron } from '@/hooks/useElectron';
 import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { TERMINAL_CONFIG } from '../constants';
@@ -20,10 +20,12 @@ interface TerminalEntry {
   lastRows: number;
   /** Sends typed keys to the agent's terminal, and says so in the panel when there is none. */
   typeKeys: (input: string) => void;
+  /** Gives back the watch on a remote agent's live output (machines.unwatch), once. */
+  release?: () => void;
 }
 
 interface UseMultiTerminalOptions {
-  agents: AgentStatus[];
+  agents: PaneAgent[];
   initialFontSize?: number;
   onFontSizeChange?: (size: number) => void;
   theme?: 'dark' | 'light';
@@ -45,7 +47,8 @@ function safeFit(agentId: string, entry: TerminalEntry) {
     if (cols !== entry.lastCols || rows !== entry.lastRows) {
       entry.lastCols = cols;
       entry.lastRows = rows;
-      if (isElectron()) {
+      // A remote pane is read only: it never sizes the terminal it shows.
+      if (isElectron() && !isRemoteId(agentId)) {
         window.electronAPI!.agent.resize({ id: agentId, cols, rows }).catch(() => {});
       }
     }
@@ -184,9 +187,13 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       term.open(container);
       // The panel under the pointer only, even in broadcast mode.
       passWheelToProgram(term, input => {
-        if (leftFullscreenRef.current.has(agentId)) return;
+        if (leftFullscreenRef.current.has(agentId) || isRemoteId(agentId)) return;
         if (isElectron()) window.electronAPI!.agent.sendInput({ id: agentId, input }).catch(() => {});
       });
+
+      // Another machine's agent is read only: nothing typed in its pane is sent.
+      const remote = isRemoteId(agentId);
+      if (remote) term.options.disableStdin = true;
 
       const entry: TerminalEntry = {
         terminal: term,
@@ -198,7 +205,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         lastRows: 0,
         // An idle agent has no terminal since #164: keys typed into its panel
         // are said to go nowhere instead of being dropped. See keySender.
-        typeKeys: keySender(term, input => (isElectron()
+        typeKeys: remote ? () => {} : keySender(term, input => (isElectron()
           ? window.electronAPI!.agent.sendInput({ id: agentId, input })
           : Promise.resolve(undefined))),
       };
@@ -210,7 +217,23 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
       // Step 2: Replay historical output from Electron main process.
       // Fetch directly via IPC to avoid depending on React state (agents array).
-      if (isElectron() && window.electronAPI?.agent?.get) {
+      if (remote) {
+        // A remote agent: its live output arrives on agent:output once watched
+        // (given back by release), and its screen as it is now is read once.
+        const machines = window.electronAPI?.machines;
+        machines?.watch(agentId).catch(() => {});
+        entry.release = () => {
+          entry.release = undefined;
+          machines?.unwatch(agentId).catch(() => {});
+        };
+        try {
+          const shot = await machines?.agentScreen(agentId);
+          if (shot?.screen && !entry.disposed) {
+            term.write(shot.screen);
+            term.scrollToBottom();
+          }
+        } catch {}
+      } else if (isElectron() && window.electronAPI?.agent?.get) {
         try {
           const agent = await window.electronAPI.agent.get(agentId);
 
@@ -286,6 +309,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     const entry = terminalsRef.current.get(agentId);
     if (entry) {
       entry.resizeObserver?.disconnect();
+      entry.release?.();
       if (!entry.disposed) {
         disposeTerminalSafely(entry.terminal);
         entry.disposed = true;
@@ -319,6 +343,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     // Dispose old terminal if switching containers
     if (existing && !existing.disposed) {
       existing.resizeObserver?.disconnect();
+      existing.release?.();
       disposeTerminalSafely(existing.terminal);
       existing.disposed = true;
     }
@@ -348,6 +373,30 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     for (const agent of agents) notePty(agent.id, agent.ptyId);
   }, [agents, notePty]);
 
+  // A remote pane whose machine is back reads its screen again and starts from
+  // it: what the machine did while it was gone never reached this pane. Its
+  // live output resumes by itself, the watch having been kept the whole time.
+  const resyncRemote = useCallback(async (agentId: string) => {
+    const entry = terminalsRef.current.get(agentId);
+    if (!entry || entry.disposed) return;
+    try {
+      const shot = await window.electronAPI?.machines?.agentScreen(agentId);
+      if (!shot?.screen || entry.disposed) return;
+      entry.terminal.reset();
+      entry.terminal.write(shot.screen);
+      entry.terminal.scrollToBottom();
+    } catch {}
+  }, []);
+  const remoteStatusRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    for (const agent of agents) {
+      if (!agent.remote) continue;
+      const was = remoteStatusRef.current.get(agent.id);
+      remoteStatusRef.current.set(agent.id, agent.remote.status);
+      if (was && was !== 'connected' && agent.remote.status === 'connected') void resyncRemote(agent.id);
+    }
+  }, [agents, resyncRemote]);
+
   // The panel's own text, as it shows it: the active screen, and the history
   // above it on the normal one. Null when this agent has no panel.
   const terminalText = useCallback((agentId: string): string | null => {
@@ -370,14 +419,14 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
 
   // Send input to agent PTY
   const sendInput = useCallback(async (agentId: string, input: string) => {
-    if (!isElectron()) return;
+    if (!isElectron() || isRemoteId(agentId)) return;
     await window.electronAPI!.agent.sendInput({ id: agentId, input });
   }, []);
 
   // Broadcast input to all terminals
   const broadcastInput = useCallback(async (input: string) => {
     if (!isElectron()) return;
-    const promises = Array.from(terminalsRef.current.keys()).map(agentId =>
+    const promises = Array.from(terminalsRef.current.keys()).filter(agentId => !isRemoteId(agentId)).map(agentId =>
       window.electronAPI!.agent.sendInput({ id: agentId, input })
     );
     await Promise.allSettled(promises);
@@ -501,6 +550,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     return () => {
       terminalsRef.current.forEach((entry) => {
         entry.resizeObserver?.disconnect();
+        entry.release?.();
         if (!entry.disposed) {
           disposeTerminalSafely(entry.terminal);
           entry.disposed = true;

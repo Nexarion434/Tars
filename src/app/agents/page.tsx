@@ -18,7 +18,10 @@ import {
   AgentListHeader,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
+import { Chip, Dropdown, LoadingState, MachineBadge, type DropdownOption } from '@/components/ui';
+import { rendererPlatform } from '@/lib/display-path';
+import { activeFilter, ALL_MACHINES, filterByMachine, machineFilterOptions, placeRemote, tabMachines } from '@/lib/machines';
+import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
 import { statusWord } from './constants';
 
 // The words the cards print, in the frames' order: stopped sits between idle
@@ -36,7 +39,7 @@ const agentCount = (n: number) => `${n} agent${n === 1 ? '' : 's'}`;
 
 export default function AgentsPage() {
   const {
-    agents,
+    agents: localAgents,
     isLoading: agentsLoading,
     isElectron: hasElectron,
     createAgent,
@@ -51,6 +54,21 @@ export default function AgentsPage() {
   const { create: createTemplate } = useElectronTemplates();
   const { data: claudeData } = useClaude();
 
+  // The other machines' agents are listed beside this machine's, read only:
+  // each under the local project with the same folder name, or under its own.
+  // Merged here, never in useElectronAgents' list.
+  const remoteAgents = useRemoteAgents();
+  const machines = useFleetMachines(remoteAgents);
+  const [machineChoice, setMachineChoice] = useState(ALL_MACHINES);
+  const machineFilter = activeFilter(machineChoice, machines);
+  const agents = useMemo(
+    () => filterByMachine(placeRemote(localAgents, remoteAgents), machineFilter),
+    [localAgents, remoteAgents, machineFilter],
+  );
+  const machineOptions = useMemo(() => machineFilterOptions(machines, rendererPlatform()), [machines]);
+  // The projects only another machine has, and which machine.
+  const remoteOnly = useMemo(() => tabMachines(agents), [agents]);
+
   // Local state
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [newChatMode, setNewChatMode] = useState<CreationMode>('agent');
@@ -63,7 +81,7 @@ export default function AgentsPage() {
 
 
   // Custom hooks
-  const { superAgent } = useSuperAgent({ agents });
+  const { superAgent } = useSuperAgent({ agents: localAgents });
 
   // A project whose last agent is gone has nothing to show, so the page falls
   // back to every project rather than to an empty list under a stale name.
@@ -264,7 +282,7 @@ export default function AgentsPage() {
     return <DesktopRequiredMessage />;
   }
 
-  if (agentsLoading && agents.length === 0) {
+  if (agentsLoading && localAgents.length === 0) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <LoadingState loading what="Still loading your agents…" detail="reading ~/.dorothy/agents.json" />
@@ -309,6 +327,19 @@ export default function AgentsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-[220px] h-[26px] px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
           />
+          {machines.length > 0 && (
+            <span data-machine-filter className="contents">
+              <Dropdown
+                value={machineFilter}
+                options={machineOptions}
+                onChange={setMachineChoice}
+                size="sm"
+                align="right"
+                ariaLabel="Show the agents of one machine"
+                className="w-48"
+              />
+            </span>
+          )}
           <Dropdown
             value={project ?? ALL_PROJECTS}
             options={projectOptions}
@@ -333,6 +364,7 @@ export default function AgentsPage() {
               <section key={group.path} className="flex flex-col gap-2">
                 <div className="flex items-baseline gap-2 min-w-0" title={group.path}>
                   <h2 className="shrink-0 text-[13px] leading-[1.4] font-medium text-foreground">{projectName(group.path)}</h2>
+                  {remoteOnly.get(group.path)?.map(machine => <MachineBadge key={machine} name={machine} className="self-center" />)}
                   <span className="min-w-0 truncate font-mono text-[11px] text-text-muted">{tildePath(group.path)}</span>
                   <span className="ml-auto shrink-0 font-mono text-[11px] text-text-muted">{agentCount(group.agents.length)}</span>
                 </div>
@@ -425,7 +457,7 @@ export default function AgentsPage() {
         onStart={(id, prompt) => handleStartAgent(id, prompt)}
         onStop={stopAgent}
         projects={projects.map(p => ({ path: p.path, name: p.name }))}
-        agents={agents}
+        agents={localAgents}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
       />
     </div>

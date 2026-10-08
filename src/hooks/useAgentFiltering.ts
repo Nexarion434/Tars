@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
-import type { AgentStatus } from '@/types/electron';
+import type { PaneAgent } from '@/lib/machines';
 import { isSuperAgentCheck, getStatusPriority, statusWord } from '@/app/agents/constants';
 import { applyOrder } from '@/components/TerminalsView/hooks/useProjectTabOrder';
 import { pathName, tildePath } from '@/lib/display-path';
 
 interface UseAgentFilteringProps {
-  agents: AgentStatus[];
+  agents: PaneAgent[];
   projectFilter: string | null;
   statusFilter?: string | null;
   searchQuery?: string;
@@ -20,7 +20,7 @@ interface UniqueProject {
 /** One project's section of the Agents page. */
 export interface ProjectGroup {
   path: string;
-  agents: AgentStatus[];
+  agents: PaneAgent[];
 }
 
 /** The folder name, which is what the Dashboard tabs and the Projects page call a project. */
@@ -48,8 +48,8 @@ export function projectLabels(paths: string[]): Map<string, string> {
  * with nothing left after the filters has no section, and a project missing
  * from `order` still gets one, at the end.
  */
-export function groupByProject(agents: AgentStatus[], order: string[]): ProjectGroup[] {
-  const byPath = new Map<string, AgentStatus[]>();
+export function groupByProject(agents: PaneAgent[], order: string[]): ProjectGroup[] {
+  const byPath = new Map<string, PaneAgent[]>();
   for (const agent of agents) {
     const group = byPath.get(agent.projectPath);
     if (group) group.push(agent);

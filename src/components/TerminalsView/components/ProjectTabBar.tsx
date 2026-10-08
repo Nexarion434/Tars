@@ -3,6 +3,7 @@
 import { memo, useMemo, useState } from 'react';
 import { pathName } from '@/lib/display-path';
 import { ChevronDown } from 'lucide-react';
+import { MachineBadge, SegmentedControl } from '@/components/ui';
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -25,6 +26,10 @@ interface ProjectTabBarProps {
   hidden?: { id: string; name: string }[];
   onShow?: (agentId: string) => void;
   onShowAll?: () => void;
+  /** The machines each tab's agents run on, for a project only another machine has: its badge. */
+  machineBadges?: Map<string, string[]>;
+  /** The machine filter, at the right of the strip; absent while no other machine is paired. */
+  machineFilter?: { value: string; options: { value: string; label: string }[]; onChange: (value: string) => void };
   /** @deprecated the panel toggle no longer lives on the tab strip; kept optional until the call site drops it */
   panelOpen?: boolean;
   /** @deprecated the panel toggle no longer lives on the tab strip; kept optional until the call site drops it */
@@ -39,9 +44,10 @@ interface ProjectTabBarProps {
  * The drag needs 5px of travel before it starts, or every click on a tab would
  * be swallowed as a drag and the strip would stop selecting projects.
  */
-function ProjectTab({ path, name, active, onSelect }: {
+function ProjectTab({ path, name, machines, active, onSelect }: {
   path: string;
   name: string;
+  machines?: string[];
   active: boolean;
   onSelect: () => void;
 }) {
@@ -55,7 +61,7 @@ function ProjectTab({ path, name, active, onSelect }: {
       {...attributes}
       {...listeners}
       className={`
-        flex items-center h-full px-3 text-xs whitespace-nowrap transition-colors shrink-0
+        flex items-center gap-1.5 h-full px-3 text-xs whitespace-nowrap transition-colors shrink-0
         ${active
           ? 'bg-card border border-border border-b-transparent text-foreground'
           : 'text-muted-foreground hover:text-foreground'
@@ -63,6 +69,7 @@ function ProjectTab({ path, name, active, onSelect }: {
       `}
     >
       {name}
+      {machines?.map(machine => <MachineBadge key={machine} name={machine} />)}
     </button>
   );
 }
@@ -77,6 +84,8 @@ function ProjectTabBar({
   hidden = [],
   onShow,
   onShowAll,
+  machineBadges,
+  machineFilter,
 }: ProjectTabBarProps) {
   const [hiddenOpen, setHiddenOpen] = useState(false);
   // tabs are label-only now: the strip only needs the distinct project paths, in order
@@ -113,6 +122,7 @@ function ProjectTabBar({
                 key={project.path}
                 path={project.path}
                 name={project.name}
+                machines={machineBadges?.get(project.path)}
                 active={isActive(project.path)}
                 onSelect={() => onSelectProject(project.path)}
               />
@@ -124,6 +134,19 @@ function ProjectTabBar({
           <span className="flex items-center h-full px-3 text-xs text-muted-foreground">No projects</span>
         )}
       </div>
+
+      {/* Which machine's agents the board shows. Only once a machine is paired:
+          a control with one choice is noise. Frame: `Dashboard · two machines`. */}
+      {machineFilter && (
+        <div data-machine-filter className="shrink-0 pb-1 pr-2">
+          <SegmentedControl
+            ariaLabel="Show the agents of one machine"
+            options={machineFilter.options}
+            value={machineFilter.value}
+            onChange={machineFilter.onChange}
+          />
+        </div>
+      )}
 
       {/* Hiding a panel has to have a way back, and this is where the space
           already is. Absent entirely when nothing is hidden: a control that

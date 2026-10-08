@@ -2,7 +2,7 @@
 
 import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import type { AgentStatus } from '@/types/electron';
+import { offlineLine, type PaneAgent } from '@/lib/machines';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
 import PermissionAskNotice from '@/components/PermissionAskNotice';
 import LeftFullscreenNotice from './LeftFullscreenNotice';
@@ -13,7 +13,7 @@ import { asleepHint } from '@/lib/asleep-line';
 import TerminalPanelHeader from './TerminalPanelHeader';
 
 interface TerminalPanelProps {
-  agent: AgentStatus;
+  agent: PaneAgent;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   isFocused: boolean;
@@ -106,6 +106,9 @@ function TerminalPanel({
   const waiting = useMessageWaiting(agent.id);
   const restartPending = useRestartPending(agent.id);
   const hint = asleepHint(agent);
+  // Another machine's agent whose machine does not answer: its last screen
+  // stays, greyed, under a line saying since when. Frame: `Panel · machine offline`.
+  const offline = agent.remote && agent.remote.status !== 'connected' ? offlineLine(agent.remote) : null;
 
   const handleClick = useCallback(() => {
     onFocus(agent.id);
@@ -167,8 +170,16 @@ function TerminalPanel({
           on the same conversation that opens fullscreen. */}
       {agent.leftFullscreen && <LeftFullscreenNotice onRestart={handleRestart} />}
 
+      {/* Another machine's agent whose machine does not answer: the line is
+          above the terminal, which keeps its last screen, greyed. */}
+      {offline && (
+        <p data-machine-offline className="shrink-0 px-3 py-2 bg-background font-mono text-[11px] text-text-secondary select-none">
+          {offline}
+        </p>
+      )}
+
       {/* Terminal body */}
-      <div className="flex-1 min-h-0 overflow-hidden relative bg-background">
+      <div className={`flex-1 min-h-0 overflow-hidden relative bg-background ${offline ? 'opacity-50' : ''}`}>
         <div ref={containerRef} className="absolute inset-0" />
         {/* Asleep, under the last screen of the CLI it slept in: since when,
             and that a key wakes it; coming back, that its CLI starts again.

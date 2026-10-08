@@ -2,14 +2,17 @@
 
 import { memo } from 'react';
 import type { AgentStatus } from '@/types/electron';
+import { machineStatusLabel, type FleetMachine } from '@/lib/machines';
 
 interface StatusBarProps {
   agents: AgentStatus[];
   /** Current git branch of the active project, rendered on the right. */
   branch?: string;
+  /** The other machines, when any is paired: `PC ✓`, or `PC offline`. */
+  machines?: FleetMachine[];
 }
 
-function StatusBar({ agents, branch }: StatusBarProps) {
+function StatusBar({ agents, branch, machines = [] }: StatusBarProps) {
   const running = agents.filter(a => a.status === 'running').length;
 
   return (
@@ -23,6 +26,14 @@ function StatusBar({ agents, branch }: StatusBarProps) {
 
       {/* Current branch */}
       {branch && <span>{branch}</span>}
+
+      {/* The other machines, the way a pane's machine is told apart. Frame:
+          `Dashboard · two machines`. */}
+      {machines.map(m => (
+        <span key={m.id} data-machine-status={m.id} className={m.status === 'connected' ? 'text-success' : undefined}>
+          {machineStatusLabel(m)}
+        </span>
+      ))}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { MachineView, MachinesView } from '@/types/electron';
+import type { AgentStatus, MachineView, MachinesView, PeerStatus, RemoteAgent } from '@/types/electron';
 
 /**
  * The words Settings > Machines writes under each paired machine. Frame:
@@ -51,4 +51,145 @@ export function timeLeft(iso: string, now: Date): string {
 export function requestLine(r: NonNullable<MachinesView['request']>, now: Date): string {
   const who = r.device ? `${r.name} wants to pair with this machine. Tailscale knows it as ${r.device}, ${r.address}.` : `${r.name} wants to pair with this machine, from ${r.address}.`;
   return `${who} Accept only if you just typed this machine's code there. It waits ${timeLeft(r.expiresAt, now)} for your answer.`;
+}
+
+/**
+ * The agents of the other machines on the Dashboard and the Agents page, read
+ * only. Frames: `Dashboard · two machines`, `Panel · machine offline`,
+ * `Agents · two machines` in design/tars-redesign.pen.
+ */
+
+/** Where a remote agent runs, on the agent a pane or a card is handed. */
+export interface RemoteInfo {
+  machineId: string;
+  machineName: string;
+  status: PeerStatus;
+  offlineSince?: string;
+  /** Its project's path on its own machine, as given. */
+  projectPath: string;
+}
+
+/** An agent of this machine, or a remote one (`remote` set) shaped like it. */
+export type PaneAgent = AgentStatus & { remote?: RemoteInfo };
+
+/** The machine filter: every machine, this one, or one machine by id. */
+export const ALL_MACHINES = 'all';
+export const THIS_MACHINE = 'local';
+
+export interface FleetMachine { id: string; name: string; status: PeerStatus }
+
+/** A remote id is `m:<machineId>:<agentId>`, never one of this machine's own. */
+export const isRemoteId = (id: string): boolean => id.startsWith('m:');
+
+/** What names a project across machines: its folder, in lower case, for `/` and `\` alike. */
+export function folderKey(path: string): string {
+  return path.split(/[\\/]+/).filter(Boolean).pop()?.toLowerCase() ?? '';
+}
+
+const KNOWN_STATUS = ['idle', 'running', 'completed', 'error', 'waiting', 'stopped', 'asleep'] as const;
+
+/** A remote agent as the panes and the cards read an agent. Nothing here is writable. */
+export function remoteToAgent(r: RemoteAgent): PaneAgent {
+  const status = (KNOWN_STATUS as readonly string[]).includes(r.status) ? (r.status as AgentStatus['status']) : 'idle';
+  return {
+    id: r.id,
+    name: r.name,
+    character: r.character as AgentStatus['character'],
+    provider: r.provider as AgentStatus['provider'],
+    model: r.model,
+    status,
+    currentTask: r.currentTask,
+    branchName: r.branch,
+    projectPath: r.projectPath,
+    cliRunning: r.cliRunning,
+    lastActivity: r.lastActivity ?? new Date(0).toISOString(),
+    stoppedBy: r.stoppedBy,
+    stopReason: r.stopReason,
+    skills: [],
+    output: [],
+    remote: { machineId: r.machine.id, machineName: r.machine.name, status: r.machine.status, offlineSince: r.machine.offlineSince, projectPath: r.projectPath },
+  };
+}
+
+/**
+ * This machine's agents, then the others', each remote one filed under the
+ * local project with the same folder name, or under a project of its own
+ * (one per folder name, whatever machine it is on).
+ */
+export function placeRemote(localAgents: AgentStatus[], remote: RemoteAgent[]): PaneAgent[] {
+  if (remote.length === 0) return localAgents;
+  const byKey = new Map<string, string>();
+  for (const a of localAgents) if (!byKey.has(folderKey(a.projectPath))) byKey.set(folderKey(a.projectPath), a.projectPath);
+  const placed = remote.map(r => {
+    const key = folderKey(r.projectPath);
+    // A path with no folder name (a root) matches nothing but itself.
+    const known = key ? byKey.get(key) : undefined;
+    if (!known && key) byKey.set(key, r.projectPath);
+    return { ...remoteToAgent(r), projectPath: known ?? r.projectPath };
+  });
+  return [...localAgents, ...placed];
+}
+
+export function filterByMachine<T extends PaneAgent>(agents: T[], filter: string): T[] {
+  if (filter === ALL_MACHINES) return agents;
+  if (filter === THIS_MACHINE) return agents.filter(a => !a.remote);
+  return agents.filter(a => a.remote?.machineId === filter);
+}
+
+/** The filter as it applies: a machine that is gone, or none paired, is back to all. */
+export function activeFilter(filter: string, machines: FleetMachine[]): string {
+  if (machines.length === 0) return ALL_MACHINES;
+  if (filter === ALL_MACHINES || filter === THIS_MACHINE) return filter;
+  return machines.some(m => m.id === filter) ? filter : ALL_MACHINES;
+}
+
+export function localMachineLabel(platform: string): string {
+  if (platform === 'darwin') return 'This Mac';
+  if (platform === 'win32') return 'This PC';
+  return 'This machine';
+}
+
+export function machineFilterOptions(machines: FleetMachine[], platform: string): { value: string; label: string }[] {
+  return [
+    { value: ALL_MACHINES, label: 'All machines' },
+    { value: THIS_MACHINE, label: localMachineLabel(platform) },
+    ...machines.map(m => ({ value: m.id, label: m.name })),
+  ];
+}
+
+/** The other machines: the paired ones, then any an agent names that the list lacks. */
+export function fleetMachines(peers: FleetMachine[], agents: RemoteAgent[]): FleetMachine[] {
+  const out = new Map<string, FleetMachine>();
+  for (const p of peers) if (p.status !== 'unpaired') out.set(p.id, { id: p.id, name: p.name, status: p.status });
+  for (const a of agents) if (!out.has(a.machine.id)) out.set(a.machine.id, { id: a.machine.id, name: a.machine.name, status: a.machine.status });
+  return [...out.values()];
+}
+
+/** The line over an offline machine's pane. Frame: `Panel · machine offline`. */
+export function offlineLine(m: { machineName: string; offlineSince?: string }): string {
+  const since = m.offlineSince ? new Date(m.offlineSince) : null;
+  const at = since && !Number.isNaN(since.getTime())
+    ? ` since ${String(since.getHours()).padStart(2, '0')}:${String(since.getMinutes()).padStart(2, '0')}`
+    : '';
+  return `${m.machineName} offline${at}. Its last output stays below, and the pane is live again when the ${m.machineName} is back.`;
+}
+
+/** The title of an action that would act on a remote agent. */
+export const readOnlyTitle = (machineName: string): string => `Read only: this agent runs on ${machineName}`;
+
+/** Under the Dashboard: `PC ✓`, or `PC offline`. */
+export const machineStatusLabel = (m: FleetMachine): string => (m.status === 'connected' ? `${m.name} ✓` : `${m.name} offline`);
+
+/** The machines of each project that only remote agents are on, for its tab and its section. */
+export function tabMachines(agents: PaneAgent[]): Map<string, string[]> {
+  const local = new Set<string>();
+  const names = new Map<string, string[]>();
+  for (const a of agents) {
+    if (!a.remote) { local.add(a.projectPath); continue; }
+    const list = names.get(a.projectPath) ?? [];
+    if (!list.includes(a.remote.machineName)) list.push(a.remote.machineName);
+    names.set(a.projectPath, list);
+  }
+  for (const path of local) names.delete(path);
+  return names;
 }

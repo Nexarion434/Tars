@@ -1,7 +1,7 @@
 'use client';
 
-import type { AgentStatus } from '@/types/electron';
-import { AgentMark, Button } from '@/components/ui';
+import { AgentMark, Button, MachineBadge } from '@/components/ui';
+import { readOnlyTitle, type PaneAgent } from '@/lib/machines';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { permissionAskLine } from '@/lib/permission-ask';
@@ -14,7 +14,7 @@ import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountCon
 const ROW_ACTION = 'font-mono lowercase';
 
 interface AgentManagementCardProps {
-  agent: AgentStatus;
+  agent: PaneAgent;
   onClick: () => void;
   onEdit: () => void;
   onStart: () => void;
@@ -49,12 +49,17 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const model = provider === 'local' ? agent.localModel : agent.model;
   // Provider, model and branch as plain words, the way the frame writes them.
   const facts = [provider, model, agent.branchName].filter(Boolean).join(' · ');
+  // Another machine's agent is shown, never driven from here: its actions are
+  // off, and say where it runs. Frame: `Agents · two machines`.
+  const remote = agent.remote;
+  const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
+  const machineOffline = !!remote && remote.status !== 'connected';
 
   return (
     <div
-      onClick={onClick}
+      onClick={remote ? undefined : onClick}
       data-agent-card={agent.id}
-      className="cursor-pointer transition-colors border border-border bg-card hover:bg-secondary"
+      className={`transition-colors border border-border bg-card ${remote ? 'cursor-default' : 'cursor-pointer hover:bg-secondary'}`}
     >
       <div className="p-3 flex flex-col gap-2">
         {/* Row 1: the agent's mark + name, raw status word right-aligned (R6).
@@ -64,7 +69,12 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           <span className="flex-1 min-w-0 truncate text-xs font-semibold text-foreground">
             {agent.name || 'Unnamed Agent'}
           </span>
-          <AgentStatusWord agent={agent} className="text-[11px] font-mono shrink-0" title={stop ?? sleep ?? undefined} />
+          {remote && <MachineBadge name={remote.machineName} />}
+          {machineOffline ? (
+            <span className="text-[11px] font-mono shrink-0 text-status-idle">offline</span>
+          ) : (
+            <AgentStatusWord agent={agent} className="text-[11px] font-mono shrink-0" title={stop ?? sleep ?? undefined} />
+          )}
         </div>
 
         {/* Row 2: one description line - the last prompt, or why there is none.
@@ -107,33 +117,33 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
         </p>
 
         <div className="flex items-center gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" className={ROW_ACTION} onClick={onClick}>
+          <Button size="sm" className={ROW_ACTION} onClick={onClick} disabled={!!remote} title={readOnly}>
             open
           </Button>
           {agent.status === 'asleep' || waking ? (
             // Woken on its own conversation; off while it comes back.
             // Frame: `Agent asleep · and how it wakes`.
-            <Button size="sm" className={ROW_ACTION} onClick={onWake} disabled={!!waking}>
+            <Button size="sm" className={ROW_ACTION} onClick={onWake} disabled={!!waking || !!remote} title={readOnly}>
               wake
             </Button>
           ) : isRunning ? (
-            <Button size="sm" className={ROW_ACTION} onClick={onStop}>
+            <Button size="sm" className={ROW_ACTION} onClick={onStop} disabled={!!remote} title={readOnly}>
               stop
             </Button>
           ) : (
-            <Button size="sm" className={ROW_ACTION} onClick={onStart} disabled={agent.pathMissing}>
+            <Button size="sm" className={ROW_ACTION} onClick={onStart} disabled={agent.pathMissing || !!remote} title={readOnly}>
               start
             </Button>
           )}
-          <Button size="sm" className={ROW_ACTION} onClick={onEdit}>
+          <Button size="sm" className={ROW_ACTION} onClick={onEdit} disabled={!!remote} title={readOnly}>
             edit
           </Button>
-          <Button size="sm" className={ROW_ACTION} onClick={onDelete}>
+          <Button size="sm" className={ROW_ACTION} onClick={onDelete} disabled={!!remote} title={readOnly}>
             delete
           </Button>
           {/* The Claude account it runs on, at the right of the buttons, when
               several subscriptions are on. Frame: `Agent · Claude account`. */}
-          <AgentAccountControl agent={agent} className="ml-auto" />
+          {!remote && <AgentAccountControl agent={agent} className="ml-auto" />}
         </div>
       </div>
     </div>
