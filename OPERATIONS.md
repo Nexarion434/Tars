@@ -372,7 +372,7 @@ visual.
 
 **It runs, and it is the only check made on Linux.** Measured on 2026-09-17, it had never run:
 Actions stay off on a fork until somebody enables them. They are on now, and
-`gh api repos/JeanBrasse/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
+`gh api repos/cooper-labs-tech/Tars/actions/runs` answered `total_count: 87` on 2026-09-24. Its result is
 part of every gate, because the code stays Linux compatible (Noah, 2026-09-24): a test that
 passes on your Mac and fails there is a finding, not noise.
 
@@ -496,13 +496,13 @@ xcrun notarytool store-credentials Tars \
 
 ### The two update paths
 
-Two independent code paths check for updates. On macOS and Linux, **both point at `JeanBrasse/Tars`**, and each
+Two independent code paths check for updates. On macOS and Linux, **both point at `cooper-labs-tech/Tars`**, and each
 reads its own setting, so they agree only as long as both are kept in step:
 
 | path | target | source |
 |---|---|---|
-| `electron-updater` (`latest-mac.yml`) | `JeanBrasse/Tars` | `package.json` → `build.publish` |
-| GitHub-API fallback | `JeanBrasse/Tars` | `electron/constants/index.ts` → `GITHUB_REPO` |
+| `electron-updater` (`latest-mac.yml`) | `cooper-labs-tech/Tars` | `package.json` → `build.publish` |
+| GitHub-API fallback | `cooper-labs-tech/Tars` | `electron/constants/index.ts` → `GITHUB_REPO` |
 
 `electron/services/update-checker.ts` sets `autoDownload = false` and
 `autoInstallOnAppQuit = true`, calls `autoUpdater.checkForUpdates()`, and **only** on throw
@@ -1276,6 +1276,13 @@ turn inside that minute, none brought one. Three rules follow from it.
 - **Sitting still is not news.** An agent that comes back to rest for any other reason, typed in
   by hand or put back by a failed ACP start, reports nothing: the link a dispatch left is spent
   at the end of the work it was recorded for, and a spent link is written to disk with it.
+- **Each request keeps its own asker** (1.9.5, `core/task-requests.ts`). A message or dispatch
+  from an agent queues a request on the worker (`taskQueue` in agents.json): delivered when Tars
+  writes it into the terminal, bound to the turn whose prompt carries its id, spent at the end of
+  its work, when the next delivered request takes the link. Before, a second request overwrote
+  the first's link at send time, and the first's result went to the second's sender. A request
+  given up behind a half-typed line, or left by a stop, a delete or a restart, is told to its
+  asker as never run; news for an asker with no terminal is carried, and an asleep one woken.
   A note held for a busy orchestrator is dropped if the agent was handed new work since, or if
   the wait it described is over.
 
@@ -1350,7 +1357,8 @@ for a person to clear an empty field.
 
 **Who a message is from.** A message Tars types into a CLI, short or pasted, comes after a line
 saying who sent it, as Tars verified it:
-`Message from agent "<name>" ("<id>")` for the agent whose token made the call, `Message from
+`Message from agent "<name>" ("<id>"), task t-xxxxxxxx` for the agent whose token made the call
+(the request's id: `core/task-requests.ts`), `Message from
 Tars` for Tars's own notes and pass, `Message from Telegram`, `Slack` or `Hermes`. Claude Code
 2.1.280 hands a folded paste to the model as `<pasted_content>`, and a dispatch used to arrive
 with nothing outside it; the line stays outside the tag (measured once with a real account; a
@@ -1372,7 +1380,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
 | a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
-| an orchestrator never hears that its agent finished | the link. `jq '.agents[] \| select(.id=="<child>") \| .requestedBy' ~/.dorothy/agents.json`: absent means spent, and a `ptyId` that is not the agent's current one is inert by design |
+| an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
 Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
@@ -2012,7 +2020,9 @@ What each task cost (`usage:tasks`) is read from the same transcripts, per sessi
 tasks `~/.dorothy/task-ledger.jsonl` records: who handed each one over, its parent, its sessions,
 when it started and ended. A task whose sessions left no transcript is priced from what each of
 its turns used, as the state mod reported it (`from: 'turns'` in the report; cache writes at the
-5-minute rate, no web searches); with neither it reads `costUSD: null`, not counted. SPECS.md,
+5-minute rate, no web searches), and that per session: a task with one session's transcript gone
+reads `from: 'mixed'`, and one whose session left neither reads `partial: true`. With neither at
+all it reads `costUSD: null`, not counted. SPECS.md,
 "Tasks and what each cost", has the rules.
 
 ```bash
