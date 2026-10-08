@@ -20,6 +20,13 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  *    nobody watches any more is.
  * 7. A screen is asked of the wrong machine, or for an id that is not remote.
  * 8. One machine that does not answer holds the others' poll.
+ * And from the security review (2026-10-08):
+ * 9. A retry scheduled for an ended stream opens a second stream on a newer
+ *    watch of the same agent: every chunk written twice, one stream never closed.
+ * 10. A stream opened again draws only what comes after it: what the pane
+ *    missed while it was closed stays missed. Its screen comes first, and
+ *    what arrived before the screen is not wiped by it.
+ * 11. A machine forgotten here keeps its watched streams open.
  */
 
 const PC: PairedMachine = { id: 'm-aaaaaaaaaaaaaaaa', name: 'PC', address: '100.88.0.1', port: 31418, inboundSecretHash: 'h', outboundSecret: 's', mayOnMe: 'see', pairedAt: '' };
@@ -174,6 +181,43 @@ describe('live outputs', () => {
     fleet.unwatch('m:m-aaaaaaaaaaaaaaaa:a1');
     opened[0].onChunk('late');
     expect(outputs).toEqual([]);
+  });
+
+  it('9. a retry for an ended stream never opens a second one on a newer watch', async () => {
+    const fleet = createRemoteFleet(deps());
+    fleet.watch('m:m-aaaaaaaaaaaaaaaa:a1');
+    opened[0].onEnd();
+    fleet.unwatch('m:m-aaaaaaaaaaaaaaaa:a1');
+    fleet.watch('m:m-aaaaaaaaaaaaaaaa:a1');
+    expect(opened).toHaveLength(2);
+    clock += 3_000;
+    runTimers();
+    expect(opened).toHaveLength(2);
+  });
+
+  it('10. a stream opened again draws the screen first, then what came while it was asked for', async () => {
+    let answer: (s: { screen: string; cliRunning: boolean }) => void = () => {};
+    const fleet = createRemoteFleet({ ...deps(), fetchScreen: () => new Promise(resolve => { answer = resolve; }) });
+    fleet.watch('m:m-aaaaaaaaaaaaaaaa:a1');
+    opened[0].onChunk('first');
+    opened[0].onEnd();
+    clock += 3_000;
+    runTimers();
+    expect(opened).toHaveLength(2);
+    opened[1].onChunk('after');
+    expect(outputs).toEqual([['m:m-aaaaaaaaaaaaaaaa:a1', 'first']]);
+    answer({ screen: '\x1bcthe screen', cliRunning: true });
+    await new Promise(r => setTimeout(r, 0));
+    expect(outputs).toEqual([['m:m-aaaaaaaaaaaaaaaa:a1', 'first'], ['m:m-aaaaaaaaaaaaaaaa:a1', '\x1bcthe screen'], ['m:m-aaaaaaaaaaaaaaaa:a1', 'after']]);
+  });
+
+  it('11. a machine forgotten here has its watched streams closed at the next poll', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    fleet.watch('m:m-aaaaaaaaaaaaaaaa:a1');
+    peers = [];
+    await fleet.poll();
+    expect(opened[0].closed).toBe(true);
   });
 
   it('7. a screen is asked of the agent\'s own machine, and of none for an id that is not remote', async () => {

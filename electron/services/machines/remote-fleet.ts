@@ -63,6 +63,7 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
   async function poll(): Promise<void> {
     const peers = deps.peers();
     for (const id of [...kept.keys()]) if (!peers.some(p => p.id === id)) kept.delete(id);
+    forgetWatched(peers);
     await Promise.all(peers.map(async peer => {
       const r = await answerOf(peer);
       const before = kept.get(peer.id);
@@ -85,20 +86,51 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     }
   }
 
-  function open(remoteId: string, machineId: string, agentId: string): void {
+  function open(remoteId: string, machineId: string, agentId: string, again = false): void {
     const w = watched.get(remoteId);
     const peer = peerOf(machineId);
     if (!w || w.count === 0 || stopped || !peer) return;
-    w.stream = deps.openStream(peer, agentId, (chunk) => {
-      if (watched.get(remoteId) === w && w.count > 0) deps.onOutput(remoteId, chunk);
+    const relay = (chunk: string) => { if (watched.get(remoteId) === w && w.count > 0) deps.onOutput(remoteId, chunk); };
+    // Opened again after an end: what the pane missed meanwhile comes back as
+    // the screen, drawn first, and what the stream brings waits behind it.
+    let held: string[] | null = again ? [] : null;
+    let ended = false;
+    const stream = deps.openStream(peer, agentId, (chunk) => {
+      if (held) held.push(chunk); else relay(chunk);
     }, () => {
-      w.stream = null;
-      // Ended under a pane that still watches: opened again, should its machine be back.
-      if (w.count > 0 && !w.retry) {
+      ended = true;
+      if (w.stream === stream) w.stream = null;
+      // Ended under a pane that still watches: opened again, should its machine
+      // be back, unless that pane has gone and another watches since.
+      if (watched.get(remoteId) === w && w.count > 0 && !w.retry) {
         w.retry = true;
-        later(() => { w.retry = false; open(remoteId, machineId, agentId); }, deps.retryMs ?? 3_000);
+        later(() => {
+          w.retry = false;
+          if (watched.get(remoteId) === w) open(remoteId, machineId, agentId, true);
+        }, deps.retryMs ?? 3_000);
       }
     });
+    if (!ended) w.stream = stream;
+    if (held) {
+      void deps.fetchScreen(peer, agentId).catch(() => null).then(screen => {
+        const waiting = held ?? [];
+        held = null;
+        if (screen) relay(screen.screen);
+        waiting.forEach(relay);
+      });
+    }
+  }
+
+  /** Closes what the window watches of machines no longer paired here. */
+  function forgetWatched(peers: PairedMachine[]): void {
+    for (const [remoteId, w] of [...watched]) {
+      const parsed = parseRemoteId(remoteId);
+      if (parsed && peers.some(p => p.id === parsed.machineId)) continue;
+      watched.delete(remoteId);
+      w.count = 0;
+      w.stream?.close();
+      w.stream = null;
+    }
   }
 
   return {

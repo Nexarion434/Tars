@@ -45,6 +45,8 @@ export interface BridgeDeps {
    * called; onEnd when the terminal ends. Null when the agent has none.
    */
   onOutput?: (agentId: string, listener: (chunk: string) => void, onEnd: () => void) => (() => void) | null;
+  /** How often a live output pings and reads its machine's pairing again (fifteen seconds); a test shortens it. */
+  streamCheckMs?: number;
   now?: () => number;
 }
 
@@ -165,6 +167,8 @@ const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|str
 export const MAX_STREAMS_PER_MACHINE = 32;
 /** The live outputs open now, by the machine that opened them. */
 const streams = new Map<string, number>();
+/** Each live output open now, to cut a forgotten machine's at once (closeStreamsOf). */
+const openStreams = new Set<{ peerId: string; cut: () => void }>();
 /** What a slow reader may leave unsent before its stream is closed: it reads the screen again when it comes back. */
 const MAX_UNSENT = 4 * 1024 * 1024;
 
@@ -292,13 +296,18 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     const screen = deps.screenOf?.(agentRoute[1]);
     return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning }) : send(404, { error: 'No such terminal' });
   }
-  if (agentRoute) return streamOutput(agentRoute[1], peer.id, res, deps, send);
+  if (agentRoute) return streamOutput(agentRoute[1], peer, res, deps, send);
 
-  // POST /machines/v1/unpair: the caller forgets this machine, and this machine forgets the caller.
-  const file = readMachines();
-  writeMachines({ ...file, peers: file.peers.filter(p => p.id !== peer.id) });
-  deps.onChanged();
-  return send(200, { ok: true });
+  // The caller forgets this machine, and this machine forgets the caller, its live outputs with it.
+  if (key === 'POST /machines/v1/unpair') {
+    const file = readMachines();
+    writeMachines({ ...file, peers: file.peers.filter(p => p.id !== peer.id) });
+    closeStreamsOf(peer.id);
+    deps.onChanged();
+    return send(200, { ok: true });
+  }
+  // A route listed above with no answer here: never a fall-through into another's.
+  return send(404, { error: 'Not found' });
 }
 
 /**
@@ -307,34 +316,52 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
  * with the terminal, when the caller goes, or when the caller reads too
  * slowly to keep up; a comment every fifteen seconds keeps an idle one open.
  */
-function streamOutput(agentId: string, peerId: string, res: http.ServerResponse, deps: BridgeDeps, send: (status: number, body: unknown) => void): void {
-  if ((streams.get(peerId) ?? 0) >= MAX_STREAMS_PER_MACHINE) return send(429, { error: 'Too many live outputs open from this machine.' });
+function streamOutput(agentId: string, peer: PairedMachine, res: http.ServerResponse, deps: BridgeDeps, send: (status: number, body: unknown) => void): void {
+  if ((streams.get(peer.id) ?? 0) >= MAX_STREAMS_PER_MACHINE) return send(429, { error: 'Too many live outputs open from this machine.' });
   let stop: (() => void) | null = null;
   let done = false;
-  const end = () => {
+  let keepAlive: NodeJS.Timeout | undefined = undefined;
+  const open = { peerId: peer.id, cut: () => { end(); res.destroy(); } };
+  // Every way out frees the slot once: the terminal ended, the caller went,
+  // the pairing ended, or the caller read too slowly.
+  const end = (finish = true) => {
     if (done) return;
     done = true;
     clearInterval(keepAlive);
+    openStreams.delete(open);
     stop?.();
-    streams.set(peerId, (streams.get(peerId) ?? 1) - 1);
-    if (!res.writableEnded) res.end();
+    streams.set(peer.id, Math.max(0, (streams.get(peer.id) ?? 1) - 1));
+    if (finish && !res.writableEnded) res.end();
   };
-  const keepAlive = setInterval(() => { res.write(': ping\n\n'); }, 15_000);
-  streams.set(peerId, (streams.get(peerId) ?? 0) + 1);
-  stop = deps.onOutput?.(agentId, (chunk) => {
-    if (done) return;
-    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-    if (res.writableLength > MAX_UNSENT) end();
-  }, end) ?? null;
+  streams.set(peer.id, (streams.get(peer.id) ?? 0) + 1);
+  openStreams.add(open);
+  try {
+    stop = deps.onOutput?.(agentId, (chunk) => {
+      if (done) return;
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      // Ended and cut: an end alone waits behind what was never read, and holds it.
+      if (res.writableLength > MAX_UNSENT) open.cut();
+    }, end) ?? null;
+  } catch { stop = null; }
   if (!stop) {
-    done = true;
-    clearInterval(keepAlive);
-    streams.set(peerId, (streams.get(peerId) ?? 1) - 1);
+    end(false);
     return send(404, { error: 'No such terminal' });
   }
+  // The pairing is read again with each ping: forgotten here, or paired again
+  // under another secret, the machine reads no further.
+  keepAlive = setInterval(() => {
+    const still = readMachines().peers.some(p => p.id === peer.id && p.inboundSecretHash === peer.inboundSecretHash);
+    if (!still) return open.cut();
+    res.write(': ping\n\n');
+  }, deps.streamCheckMs ?? 15_000);
   res.on('close', end);
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   res.flushHeaders();
+}
+
+/** Ends every live output a machine has open here, at once: it has just been forgotten. */
+export function closeStreamsOf(peerId: string): void {
+  for (const open of [...openStreams]) if (open.peerId === peerId) open.cut();
 }
 
 export function startBridge(deps: BridgeDeps): Promise<{ listening: boolean; reason?: string; target?: BindTarget }> {

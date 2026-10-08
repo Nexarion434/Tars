@@ -631,10 +631,12 @@ first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
 packaged Tars never reads those.
 
-**What it answers.** Five routes, listed one by one; any other path is a 404
+**What it answers.** Eight routes, listed one by one; any other path is a 404
 before a credential is read, and no route of the loopback API answers here.
 They are not hidden: `ping` and `unpair` answer 401 without a paired
-machine's secret, so a prober on the tailnet can tell a Tars listens.
+machine's secret, so a prober on the tailnet can tell a Tars listens. An
+agent route answers 401 without that secret whether the agent exists or
+not, so a prober learns no agent's id.
 
 | Route | Who | What |
 |---|---|---|
@@ -642,7 +644,10 @@ machine's secret, so a prober on the tailnet can tell a Tars listens.
 | `POST /machines/v1/knock` | anyone on the tailnet, while a code is shown | its id and name, no proof; held up to a minute until the person here accepts or refuses |
 | `POST /machines/v1/pair` | the machine the person here accepted, from the address it knocked from, within 30 seconds | a proof of the code; on success a secret issued to it |
 | `GET /machines/v1/ping` | a paired machine | this machine's name and how many agents run |
-| `POST /machines/v1/unpair` | a paired machine | this machine forgets the caller |
+| `POST /machines/v1/unpair` | a paired machine | this machine forgets the caller, and ends what it was reading |
+| `GET /machines/v1/fleet` | a paired machine | this machine's agents, as `fleet-share.ts` picks them |
+| `GET /machines/v1/agents/:id/screen` | a paired machine | one agent's terminal as it is now |
+| `GET /machines/v1/agents/:id/stream` | a paired machine | one agent's terminal output as it comes, until the terminal ends |
 
 A request carrying an `Origin` header is refused (no browser ever calls the
 bridge), and a body over 64 KB is refused unread.
@@ -699,5 +704,29 @@ altogether; the code's short life and the person's click stand in for it.
 
 **What a paired machine may do here.** See, by default; Drive only when this
 machine says so in Settings > Machines. The machine being driven decides,
-never the caller. In this first part the bridge serves no agent, no
-terminal and no file: what See and Drive open is the next plans'.
+never the caller. Drive opens nothing yet: no route starts, stops or writes
+to an agent, and the bridge serves no file.
+
+**What See shows** (measured on the 8th of October 2026, `e2e/machines-see.spec.ts`
+and `__tests__/electron/machines/`). The fleet carries each agent's id, name,
+look, provider, model, status, task, branch, project folder and path, whether
+its CLI runs, its last activity and who stopped it and why, field by field
+(`shareAgent`): never a token, the env, the CLI's path, the worktree or second
+project, the session id, the skills, the permission mode or who asked for its
+work, and every string bounded. The screen and the stream carry the terminal
+itself, as the person here sees it: whatever a CLI prints there travels,
+secrets it echoes included, and on macOS and Linux the launch line Tars types
+(`cd '<dir>' && <cli> ...`) is part of it. Holding fields out of the fleet is
+not a boundary for what a terminal shows; pairing is. The receiving machine
+checks every answer again (`readFleet`, a fleet at most 512 KB and 200 agents,
+a screen at most 8 MB, an event at most 1 MB), writes no file, starts
+nothing, and shows another machine's agents read only: no key, paste, resize,
+start or stop reaches them, and their ids (`m:<machine>:<agent>`) are none
+the local IPC resolves.
+
+A machine holds at most 32 live outputs open here. One that reads too slowly
+to keep up (4 MB unsent) has its connection cut, not merely ended behind what
+it never read. Each live output reads the pairing again with its ping, every
+15 seconds: a machine forgotten here, or paired again under another secret,
+reads no further, and Forget in Settings, like its `unpair`, cuts its outputs
+at once. A live output silent for 45 seconds is ended on the reading side.

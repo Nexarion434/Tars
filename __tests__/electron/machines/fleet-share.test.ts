@@ -91,7 +91,8 @@ describe('sharing an agent', () => {
   });
 
   it('6. a fleet goes out without the agents it refused, and one bad record loses nothing else', () => {
-    const fleet = shareFleet([agent({ id: 'good' }), agent({ id: 'bad:id' }), null as never, agent({ id: 'also-good', name: undefined })]);
+    const throwing = Object.defineProperty(agent({ id: 'throws' }), 'status', { get() { throw new Error('a record that cannot be read'); } });
+    const fleet = shareFleet([agent({ id: 'good' }), agent({ id: 'bad:id' }), null as never, throwing, agent({ id: 'also-good', name: undefined })]);
     expect(fleet.map(a => a.id)).toEqual(['good', 'also-good']);
   });
 });

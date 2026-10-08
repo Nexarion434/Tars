@@ -181,10 +181,11 @@ const MAX_EVENT = 1024 * 1024;
 /**
  * One remote agent's live output (bridge-server, streamOutput): each chunk
  * to onChunk, in order, then onEnd once, whether the other side ended it, the
- * connection dropped, an event came malformed or too large, or close() was
+ * connection dropped or went silent past idleMs (the bridge pings every
+ * fifteen seconds), an event came malformed or too large, or close() was
  * called. Nothing after onEnd.
  */
-export function openStream(peer: PairedMachine, agentId: string, onChunk: (chunk: string) => void, onEnd: () => void): { close: () => void } {
+export function openStream(peer: PairedMachine, agentId: string, onChunk: (chunk: string) => void, onEnd: () => void, opts: { idleMs?: number } = {}): { close: () => void } {
   let ended = false;
   let req: http.ClientRequest | undefined;
   const end = () => {
@@ -225,6 +226,7 @@ export function openStream(peer: PairedMachine, agentId: string, onChunk: (chunk
     });
   } catch { end(); return { close: end }; }
   req.on('error', end);
+  req.setTimeout(opts.idleMs ?? 45_000, end);
   req.end();
   return { close: end };
 }

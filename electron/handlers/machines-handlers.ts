@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { readMachines, writeMachines, cleanName } from '../services/machines/store';
-import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer, currentRequest, decidePairRequest } from '../services/machines/bridge-server';
+import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer, currentRequest, decidePairRequest, closeStreamsOf } from '../services/machines/bridge-server';
 import { pairWithCode, candidatesFrom, unpairPeer, fetchFleet, fetchScreen, openStream } from '../services/machines/client';
 import { createRemoteFleet, type RemoteFleet } from '../services/machines/remote-fleet';
 import { fleetSource } from '../services/machines/fleet-source';
@@ -154,6 +154,8 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
 
   ipcMain.handle('machines:unpair', async (_e, id: unknown) => {
     await unpairPeer(String(id));
+    // What it was still reading here ends now, not at its next ping.
+    closeStreamsOf(String(id));
     forgetStatus(String(id));
     changed();
     return { success: true };

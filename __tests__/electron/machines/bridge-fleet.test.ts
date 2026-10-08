@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, MAX_STREAMS_PER_MACHINE, type BridgeDeps } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, closeStreamsOf, MAX_STREAMS_PER_MACHINE, type BridgeDeps } from '../../../electron/services/machines/bridge-server';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 
 /**
@@ -25,6 +25,11 @@ import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../..
  * 7. A stream outlives its terminal: the caller waits forever on an agent
  *    that ended.
  * 8. One machine opens streams without limit.
+ * And from the security review (2026-10-08):
+ * 9. A stream outlives its machine's pairing: forgotten here, or paired again
+ *    under another secret, the machine goes on reading every chunk.
+ * 10. A reader that stops reading is "ended" behind what it never read: the
+ *    buffer stays, the slot is freed, and 32 more streams fill again.
  */
 
 let server: http.Server;
@@ -39,6 +44,7 @@ const endTerminal = (id: string) => terminals.get(id)!.ends.forEach(e => e());
 
 const deps: BridgeDeps = {
   runningAgents: () => 1,
+  streamCheckMs: 50,
   onChanged: () => {},
   fleet: () => [{ id: 'a1', name: 'Backend Engineer', status: 'running', projectName: 'tars', projectPath: 'C:\\code\\tars', cliRunning: true }],
   screenOf: (agentId) => (agentId === 'a1' ? { screen: '\x1bcline one\r\nline two', cliRunning: true } : null),
@@ -77,6 +83,12 @@ function stream(agentId: string, secret = MINE) {
   const status = new Promise<number>(resolve => req.on('response', res => resolve(res.statusCode ?? 0)));
   req.on('error', () => { ended = true; });
   return { events, status, ended: () => ended, close: () => req.destroy() };
+}
+
+/** The peer as the beforeEach pairs it, with another secret's hash when given. */
+function pairPc(inboundSecretHash = hashSecret(MINE)) {
+  const file = readMachines();
+  writeMachines({ ...file, peers: [{ ...file.peers[0], inboundSecretHash }] });
 }
 
 const until = async (what: string, test: () => boolean, ms = 3_000) => {
@@ -156,5 +168,49 @@ describe('the fleet, a screen and a stream', () => {
     const again = stream('a1');
     expect(await again.status).toBe(200);
     for (const s of [...open, extra, again]) s.close();
+  });
+
+  it('9. a stream ends once its machine is forgotten here, or paired again under another secret', async () => {
+    const forgotten = stream('a1');
+    await until('subscribed', () => terminals.get('a1')!.listeners.size === 1);
+    const file = readMachines();
+    writeMachines({ ...file, peers: [] });
+    await until('ended with the pairing', forgotten.ended);
+    expect(terminals.get('a1')!.listeners.size).toBe(0);
+
+    writeMachines(file);
+    const repaired = stream('a1');
+    await until('subscribed again', () => terminals.get('a1')!.listeners.size === 1);
+    pairPc(hashSecret('another-secret-entirely_0123456789abcdefgh'));
+    await until('ended with the old secret', repaired.ended);
+    expect(terminals.get('a1')!.listeners.size).toBe(0);
+  });
+
+  it("9. closeStreamsOf ends a machine's streams at once, and no one else's", async () => {
+    const s = stream('a1');
+    await until('subscribed', () => terminals.get('a1')!.listeners.size === 1);
+    closeStreamsOf('m-cccccccccccccccc');
+    await new Promise(r => setTimeout(r, 30));
+    expect(s.ended()).toBe(false);
+    closeStreamsOf(PC);
+    await until('ended at once', s.ended, 500);
+  });
+
+  it('10. a reader that stops reading has its connection cut, and its slot only then', async () => {
+    // A reader that paused never sees the cut while it reads nothing: it is seen here, on the bridge's side.
+    const req = http.get(`${base}/machines/v1/agents/a1/stream`, { headers: { authorization: `Bearer ${MINE}` } }, res => { res.pause(); });
+    req.on('error', () => {});
+    await until('subscribed', () => terminals.get('a1')!.listeners.size === 1);
+    const connections = () => new Promise<number>(resolve => server.getConnections((_e, n) => resolve(n)));
+    expect(await connections()).toBe(1);
+    const big = 'z'.repeat(256 * 1024);
+    let written = 0;
+    for (; written < 400 && terminals.get('a1')!.listeners.size > 0; written++) write('a1', big);
+    expect(terminals.get('a1')!.listeners.size).toBe(0);
+    expect(written * big.length).toBeLessThan(64 * 1024 * 1024);
+    let open = 1;
+    for (const end = Date.now() + 3_000; open > 0 && Date.now() < end; await new Promise(r => setTimeout(r, 20))) open = await connections();
+    expect(open, 'the connection is cut, not left holding what was never read').toBe(0);
+    req.destroy();
   });
 });
