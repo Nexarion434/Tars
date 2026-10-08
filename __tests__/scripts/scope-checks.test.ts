@@ -33,6 +33,7 @@ describe('changes that cannot reach a rendered surface', () => {
     ['agent prompt text', ['electron/resources/super-agent-instructions.md']],
     ['CI configuration', ['.github/workflows/ci.yml']],
     ['the landing site', ['landing/src/app/page.tsx']],
+    ['a Hermes plugin, installed on the Hermes server', ['hermes-plugins/tars-relay/relay_core.py', 'hermes-plugins/tars-relay/dashboard/plugin_api.py']],
   ])('skips the suite for %s', (_name, files) => {
     expect(runs(files as string[])).toBe(false);
   });
@@ -305,6 +306,10 @@ async function cloneBehindOrigin(from: 'main' | 'fresh') {
   return { ...upstream, root, dir };
 }
 
+// 30 s, not vitest's 5: these cases run git and scope-checks.mjs for real, several at
+// once, and under a gate's load (01/10, load average 140) two were cut off at 5 s while
+// three others passed between 4.9 and 5.0 s (27 full-suite reports of 28/09 to 01/10).
+// Quiet, the slowest is 2.2 s.
 // Each test copies a clone and runs git and the script several times, all at
 // once: measured on Windows 11, 8 cores, 1.3 to 4.9 s idle and up to 6.4 s with
 // every core busy, over the 5 s default; windows-latest timed two of them out.
@@ -431,7 +436,7 @@ describe.concurrent('the base a branch is compared against', { timeout: 30_000 }
   });
 });
 
-describe.concurrent('a reference change, as git reports it', () => {
+describe.concurrent('a reference change, as git reports it', { timeout: 30_000 }, () => {
   it.for([
     ['re-recorded and committed', async (dir: string) => {
       write(dir, 'e2e/__screenshots__/agents.png', PNG_RERECORDED);

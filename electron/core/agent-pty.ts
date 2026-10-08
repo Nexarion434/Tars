@@ -8,6 +8,9 @@ import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
 import { childEnv, type Env } from '../platform';
+import { refuseOnFullDisk } from './disk-space';
+import { stateModLaunchEnv } from '../services/state-mod';
+import { agentTmpEnvOrNone } from '../services/agent-tmp';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -64,9 +67,10 @@ const NODE_PTY_HELPER = 'spawn-helper';
  * agent from the renderer spawned one too. Both predate all of this, both put
  * CLAUDE_AGENT_ID in the environment through getPtyEnvVars, and neither had
  * the API address, so both posted their hooks to whichever Tars owned 31415.
- * Five sites now, all through here. The fifth is the kanban automation in
+ * Five sites, all through here. The fifth was the kanban automation in
  * main.ts, creating agents of its own under a comment saying it duplicates the
- * agent:create handler, which it did, defect included. What deliberately does not are the shells that run no
+ * agent:create handler, which it did, defect included; it went with the old
+ * local board (06/10). What deliberately does not are the shells that run no
  * agent: the quick terminal, the skill and plugin runners, and the npx
  * installer. They carry no CLAUDE_AGENT_ID, so a hook fired from one of them
  * has no agent to name and is refused. Anything that spawns an agent belongs
@@ -101,6 +105,13 @@ export function spawnAgentPty(opts: {
   rows: number;
   env: Record<string, string | undefined>;
 }): pty.IPty {
+  // Once the quit has begun, a terminal spawned here would be in no map the
+  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused,
+  // before a token is minted or an account worked out for a terminal that
+  // will not exist.
+  refuseWhileQuitting('agent terminal');
+  // Nor on a nearly full disk (core/disk-space.ts), whoever calls.
+  refuseOnFullDisk();
   // Whose process this is. Set by the callers through getPtyEnvVars, and read
   // back here rather than taken as a parameter so that a caller cannot spawn
   // an agent pty with one identity in the environment and another in the
@@ -117,9 +128,6 @@ export function spawnAgentPty(opts: {
   // account a caller forgot would be a CLI billed to the wrong subscription.
   const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
 
-  // Once the quit has begun, a terminal spawned here would be in no map the
-  // quit ends: every caller (the API, the IPC, the bots, main.ts) is refused.
-  refuseWhileQuitting('agent terminal');
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
     cols: size.cols,
@@ -153,7 +161,13 @@ export function spawnAgentPty(opts: {
       ...(token ? { CLAUDE_MGR_API_TOKEN: token } : {}),
       // What a hook checks the port with before it sends that token (#11).
       TARS_INSTANCE_ID: tarsInstanceId(),
+      // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
+      // here because every agent terminal is spawned here.
+      ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
+      // The state mod (services/state-mod.ts), for a claude new enough to load
+      // it: its hooks report this terminal's state from inside the CLI.
+      ...stateModLaunchEnv(opts.binaryName, env),
     }) as { [key: string]: string },
   });
   spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: opts.env });
@@ -232,6 +246,16 @@ export function spawnAgentPty(opts: {
  * can be read, starting and then running, and an interactive shell never does
  * at its prompt, where a typed line would run as a command.
  */
+/**
+ * Whether this is an agent terminal Tars started whose CLI has stopped, back
+ * at its shell: what the writer asks before it types a held message
+ * (pty-manager.ts, setCliProbe). A terminal it did not start as an agent's is
+ * not known to have stopped, and is left as it was.
+ */
+export function cliStoppedIn(ptyProcess: pty.IPty): boolean {
+  return spawnedAs.has(ptyProcess) && !cliRunningIn(ptyProcess);
+}
+
 export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.Platform = process.platform): boolean {
   if (!ptyProcess) return false;
   const spawned = spawnedAs.get(ptyProcess);

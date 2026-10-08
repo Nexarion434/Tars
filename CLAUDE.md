@@ -49,7 +49,7 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 113 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/tars-redesign.pen` | Pencil source of truth, 127 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
 | `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
@@ -57,6 +57,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.mjs` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A file it could not read or a pattern it could not parse fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
+| `mods/tars-state/` | The state mod: a Claude Code hooks module that reports an agent's sessions, turns, failures and a heartbeat to Tars from inside the CLI (`electron/services/state-mod.ts`), and asks Tars instead of showing a permission dialog, the window deciding it (`electron/services/permission-asks.ts`); a session without it keeps the shell hooks and the dialog |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
 ## Environment Variables
@@ -91,6 +92,10 @@ ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
+CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: a read-only copy of the state mod (mods/tars-state) in Tars's userData, after any the user named
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
+TMPDIR                # ~/.dorothy/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
+CLAUDE_CODE_TMPDIR    # ~/.dorothy/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
 ```
 
 ---

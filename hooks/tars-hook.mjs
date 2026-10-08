@@ -55,7 +55,7 @@ async function sessionStart(input) {
 
   // Registration, retried once: no probe first, the POST is the probe (see the .sh).
   const result = await postWithRetry(`${api}/api/hooks/status`, token(),
-    JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle', source }));
+    JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle', source, hook: 'SessionStart' }));
   appendLog(hookLog, `[${stamp()}] SESSION_START curl result: ${result}`);
 
   const apiToken = tokenWithFileFallback();
@@ -94,7 +94,7 @@ async function userPromptSubmit(input) {
   const prompt = jqRaw(input, ['prompt']);
   appendLog(hookLog, `[${stamp()}] USER_PROMPT_SUBMIT hook. AGENT_ID=${env.CLAUDE_AGENT_ID || 'unset'} SESSION_ID=${sessionId}`);
   const body = JSON.stringify({
-    agent_id: claudeAgent(sessionId), session_id: sessionId, status: 'running', event: 'UserPromptSubmit',
+    agent_id: claudeAgent(sessionId), session_id: sessionId, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit',
     // `echo "$PROMPT" | head -c 200 | jq -Rs .`: the newline echo adds is kept.
     current_task: echoHead(prompt, 200),
   });
@@ -181,6 +181,26 @@ function lastMessage(input, debugLog) {
   return message;
 }
 
+/** Background task states that are over: the jq list in on-stop.sh. */
+const OVER = new Set(['completed', 'failed', 'killed', 'stopped', 'error']);
+
+/**
+ * What waits at rest, as on-stop.sh counts it: the session's crons, and its
+ * background tasks not over (a task with no status, or not an object, counts
+ * as running). Claude Code 2.1.289 sends both lists to the Stop hook; a claude
+ * that sends neither, as lists, gets no count: nothing is known. An agent put
+ * to sleep loses both with its CLI (services/agent-sleep.ts).
+ */
+function waitingAtRest(input) {
+  if (!input || !Array.isArray(input.session_crons) || !Array.isArray(input.background_tasks)) return undefined;
+  const statusOf = (task) => {
+    const status = task && typeof task === 'object' && !Array.isArray(task) && task.status !== null && task.status !== undefined && task.status !== false
+      ? task.status : 'running';
+    return typeof status === 'string' ? status : JSON.stringify(status);
+  };
+  return { crons: input.session_crons.length, background: input.background_tasks.filter(task => !OVER.has(statusOf(task))).length };
+}
+
 // on-stop.sh
 async function onStop(input) {
   const { debugLog } = logPaths();
@@ -194,12 +214,14 @@ async function onStop(input) {
   if (message) {
     const trimmed = subst(headBytes(message, 4000));
     const answer = await postJson(`${api}/api/hooks/output`, token(),
-      JSON.stringify({ agent_id: agentId, session_id: sessionId, output: trimmed }));
+      JSON.stringify({ agent_id: agentId, hook: 'Stop', session_id: sessionId, output: trimmed }));
     if (answer) appendLog(debugLog, answer);
     appendLog(debugLog, `  Output sent (${Array.from(trimmed).length} chars)`);
   }
-  await postJson(`${api}/api/hooks/status`, token(), JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle' }));
-  await postJson(`${api}/api/hooks/agent-stopped`, token(), JSON.stringify({ agent_id: agentId, session_id: sessionId }));
+  const pending = waitingAtRest(input);
+  await postJson(`${api}/api/hooks/status`, token(),
+    JSON.stringify({ agent_id: agentId, hook: 'Stop', session_id: sessionId, status: 'idle', ...(pending ? { pending } : {}) }));
+  await postJson(`${api}/api/hooks/agent-stopped`, token(), JSON.stringify({ agent_id: agentId, session_id: sessionId, hook: 'Stop' }));
   return CONTINUE;
 }
 
@@ -211,7 +233,7 @@ async function stopFailure(input) {
   const message = jqRaw(input, ['last_assistant_message']);
   appendLog(hookLog, `[${stamp()}] STOP_FAILURE hook. AGENT_ID=${env.CLAUDE_AGENT_ID || 'unset'} SESSION_ID=${sessionId} ERROR=${errorKind}`);
   const body = JSON.stringify({
-    agent_id: claudeAgent(sessionId), session_id: sessionId, status: 'error', event: 'StopFailure',
+    agent_id: claudeAgent(sessionId), session_id: sessionId, status: 'error', event: 'StopFailure', hook: 'StopFailure',
     error_kind: errorKind, error_message: message,
   });
   const result = await postWithRetry(`${apiUrl()}/api/hooks/status`, token(), body);

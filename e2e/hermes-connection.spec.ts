@@ -232,6 +232,10 @@ const statusHint = () => row('Status').locator('[data-settings-hint]');
 const statusBadge = () => row('Status').locator('span').filter({ hasText: /^(checking|connected|signed out|unreachable|unknown)$/ }).first();
 const connectionFile = () => path.join(home, '.dorothy', 'hermes-connection.json');
 const readConnectionFile = () => JSON.parse(fs.readFileSync(connectionFile(), 'utf-8'));
+// Since 1.9.3 the token is saved apart from the connection, in ~/.tars-private,
+// which no agent is handed (electron/services/hermes-config.ts).
+const privateTokenFile = () => path.join(home, '.tars-private', 'hermes-token');
+const readPrivateToken = () => (fs.existsSync(privateTokenFile()) ? fs.readFileSync(privateTokenFile(), 'utf-8').trim() : undefined);
 
 async function openConnection() {
   await page.goto(`${DEV_URL}/settings?section=hermes`, { waitUntil: 'domcontentloaded' });
@@ -537,6 +541,7 @@ test('token: the URL and the token are saved, and a reload shows them again', as
   await row('Status').getByRole('button', { name: 'save', exact: true }).click();
   await expect(row('Status').getByRole('button', { name: 'save', exact: true })).toBeDisabled();
   const saved = readConnectionFile();
+  const savedToken = readPrivateToken();
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await openConnection();
@@ -549,9 +554,11 @@ test('token: the URL and the token are saved, and a reload shows them again', as
     signOutShown: await row('Sign in').getByRole('button', { name: 'sign out', exact: true }).isVisible(),
   };
   await stepShot(page, '04-reloaded');
-  journey.saveAndReload = { saved: { ...saved, token: saved.token === TOKEN ? '(the token typed)' : saved.token }, shown: { ...shown, token: shown.token === TOKEN ? '(the token typed)' : shown.token } };
+  journey.saveAndReload = { saved, privateToken: savedToken === TOKEN ? '(the token typed)' : savedToken, shown: { ...shown, token: shown.token === TOKEN ? '(the token typed)' : shown.token } };
 
-  expect(saved).toEqual({ mode: 'remote', localPort: 9, authMode: 'token', url: gateway.url, token: TOKEN });
+  // The connection without its token, which is in the private file alone.
+  expect(saved).toEqual({ mode: 'remote', localPort: 9, authMode: 'token', url: gateway.url });
+  expect(savedToken).toBe(TOKEN);
   expect(shown).toEqual({ mode: 'Remote', auth: 'Token', url: gateway.url, token: TOKEN, signOutShown: true });
 });
 
@@ -742,8 +749,10 @@ test('import: Hermes Desktop\'s own connection is offered where that app keeps i
       ? path.join(home, 'Library', 'Application Support', 'Hermes')
       : null;
   test.skip(!desktopDir, 'Hermes Desktop has no known location on this platform');
-  // Local first, as a fresh install is: the import is the way out of it.
+  // Local first, as a fresh install is: the import is the way out of it. No
+  // token either, so the one read after the import came with it.
   fs.writeFileSync(connectionFile(), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  fs.rmSync(privateTokenFile(), { force: true });
   fs.mkdirSync(desktopDir!, { recursive: true });
   fs.writeFileSync(path.join(desktopDir!, 'connection.json'), JSON.stringify({
     mode: 'remote',
@@ -767,13 +776,15 @@ test('import: Hermes Desktop\'s own connection is offered where that app keeps i
   await gatewayField().fill(`${gateway.url}/`);
   const editable = await gatewayField().inputValue();
   const saved = readConnectionFile();
+  const savedToken = readPrivateToken();
   await stepShot(page, '10-imported');
-  journey.import = { ...journey.import as object, after: { mode: after.mode, readOnly: after.readOnly, value: after.value }, editable, savedMode: saved.mode, savedUrl: saved.url, tokenImported: saved.token === TOKEN };
+  journey.import = { ...journey.import as object, after: { mode: after.mode, readOnly: after.readOnly, value: after.value }, editable, savedMode: saved.mode, savedUrl: saved.url, tokenImported: savedToken === TOKEN };
 
   expect(before).toMatchObject({ mode: 'Local', readOnly: true });
   expect(after).toMatchObject({ mode: 'Remote', readOnly: false, value: gateway.url });
   expect(editable).toBe(`${gateway.url}/`);
-  expect(saved).toMatchObject({ mode: 'remote', url: gateway.url, token: TOKEN });
+  expect(saved).toMatchObject({ mode: 'remote', url: gateway.url });
+  expect(savedToken).toBe(TOKEN);
 });
 
 test('no page error on the way', async () => {
