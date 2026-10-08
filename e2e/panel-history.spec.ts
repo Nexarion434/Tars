@@ -12,7 +12,14 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * panel scrolls back through is xterm's scrollback.
  *
  * The CLI writes 7,000 numbered lines in the normal buffer, more than 5,000
- * and fewer than 10,000, then waits. The panel's buffer is read from its DOM:
+ * and fewer than 10,000, then waits. It writes them once the panel shows its
+ * first line and a key is typed into it: written before the panel is there,
+ * they reach it through the terminal's mirror (core/terminal-mirror.ts), which
+ * keeps 2,500, and that is not what this measures. Measured on a Windows
+ * runner on 2026-10-08: the writer was done before the Dashboard drew its
+ * panel, which held the mirror's 2,500 lines and its 30 rows.
+ *
+ * The panel's buffer is read from its DOM:
  * the viewport's scroll height over the height of a row is the number of lines
  * xterm holds, the screen's rows included; scrolled to the top, its first row
  * is the oldest line kept. Kept 10,000, the panel held all 7,001 lines and
@@ -26,12 +33,21 @@ const AGENT = { id: 'history-writer', name: 'Writer of a long history' };
 const WRITTEN = 7000;
 const KEPT = 5000;
 
+/** The key that starts the history: in nothing a terminal answers on its own, such as ConPTY's cursor report. */
+const GO = 'g';
+
 function writer(): string {
   return `process.stdin.setRawMode(true);
 process.stdin.resume();
-let out = '';
-for (let i = 1; i <= ${WRITTEN}; i++) out += 'line ' + i + '\\n';
-process.stdout.write(out + 'history written');
+process.stdout.write('ready for the history\\n');
+let written = false;
+process.stdin.on('data', data => {
+  if (written || !String(data).includes('${GO}')) return;
+  written = true;
+  let out = '';
+  for (let i = 1; i <= ${WRITTEN}; i++) out += 'line ' + i + '\\n';
+  process.stdout.write(out + 'history written');
+});
 `;
 }
 
@@ -92,6 +108,9 @@ test('a Dashboard panel keeps the last 5,000 lines of history, not 10,000', asyn
     await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
 
     const screen = await screenOf(page, AGENT.name);
+    await expect(screen.locator('.xterm-rows')).toContainText('ready for the history', { timeout: 60_000 });
+    await screen.click();
+    await page.keyboard.press(GO);
     await expect(screen.locator('.xterm-rows')).toContainText('history written', { timeout: 60_000 });
     const kept = await measure(screen);
     recordValues({ written: WRITTEN + 1, kept });
