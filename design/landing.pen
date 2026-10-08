@@ -420,7 +420,7 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Real terminals in a grid, grouped by project. Watch six agents work at once, jump into any of them, broadcast one instruction to all.",
+                          "content": "Real terminals in a grid, grouped by project. Watch six agents work at once, open any of them fullscreen in one press, broadcast one instruction to all.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,
@@ -663,7 +663,286 @@
                           "fill": "#9B9B9B",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "A diff review of every branch, one search across the whole fleet’s output, and per-provider spend against the budget you set.",
+                          "content": "A diff review of every branch, one search across the fleet’s output as each terminal showed it, and spend hour by hour or day by day, per provider and against the budget you set, down to what each task cost, with the work it handed on to other agents.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "t2snVW",
+                      "name": "f Several Claude subscriptions",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "HhPBV",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Several Claude subscriptions",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "L9qi1W",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Run your Claude agents on up to five subscriptions. Tars asks Claude Code itself for each account’s 5 h and weekly use, never its sign-in, and starts each agent on the account with the most room left; one cut short by a limit carries on from another, in the same conversation.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Of493",
+                  "name": "row4",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "HnCrU",
+                      "name": "f When an agent stops, or stalls",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "TjSNQ",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "When an agent stops, or stalls",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "GUxpp",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Stop one, and its card, panel and window say who stopped it and when, and an orchestrator that stops one says why. On Claude Code 2.1.289 or newer, a Claude agent reports its state from inside it: one whose Claude Code froze is marked stalled after five minutes of silence, never for a long command or a subagent, and its orchestrator is told.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Dct23",
+                      "name": "f Your Telegram, through Hermes",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "MLD3V",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Your Telegram, through Hermes",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kZkgD",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Turn on Telegram through Hermes, and your own Hermes becomes Tars’s voice on Telegram: your orchestrators’ questions and the event reports reach you there, and your reply goes to the orchestrator it answers, or to the project you name with @project.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "So6vC",
+                  "name": "row5",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ABCGl",
+                      "name": "f Agents that sleep, and come back",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UXkf0",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Agents that sleep, and come back",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "SEn1D",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "An agent with no turn for 30 minutes sleeps and gives back its memory; a message, a task or a key typed in its panel wakes it on its own conversation in about a second. After a crash or a power cut, the agents that were working start again on theirs, with a note of what was cut.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bxmTK",
+                      "name": "f Permissions, asked in Tars",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "aSKKQ",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Permissions, asked in Tars",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "d2q4F",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "On Claude Code 2.1.289 or newer, a Claude agent asks Tars, not its terminal, before a command or a call Claude Code would ask you about. Its card, its panel and its window say what it would run, read or open; allow it, or deny it with a reason the agent reads.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b2mS7K",
+                  "name": "row6",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "kVYlN",
+                      "name": "f Worktrees that start ready, and lose nothing",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "xDtV2",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Worktrees that start ready, and lose nothing",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Sg0iY",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "An agent’s worktree starts with its project’s dependencies cloned, at almost no disk space, when the project’s own install matches its lock on a volume that can clone. Delete the agent and what it had not committed is kept on a wip/ branch; a worktree holding what no branch can carry, such as a .env or a submodule’s unpushed work, stays where it is, and Tars says why.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E6nW2S",
+                      "name": "f Your disk, in view",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "MMcNK",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Your disk, in view",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "NNbEI",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Settings, System says how much your disk has free and lists the folders under your projects’ .worktrees that git no longer knows and no agent owns, with their size. Tars removes them only once you confirm, keeps one a process works in, and starts no agent under 2 GB free.",
                           "lineHeight": 1.55,
                           "fontFamily": "$font-ui",
                           "fontSize": 14,

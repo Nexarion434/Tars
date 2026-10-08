@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 113 root frames.
-`design/chat-design.pen` holds 72 of those, the other forty-one being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 134 root frames.
+`design/chat-design.pen` holds 72 of those, the other sixty-two being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -40,21 +40,45 @@ Generated against the code, not from memory. Anything removed from the app
 (ClaudeMon, Support, the 3D view, Obsidian, Automations, Scheduled Tasks,
 custom dashboard boards, the sidebar collapse) is deliberately absent.
 
+## Drawn, not built yet: chats per project (2026-10-07)
+
+Noah's direction of 2026-10-07: a project keeps its team (the orchestrator and its
+agents), and you open several chats in it, each a conversation with the orchestrator
+on one topic, all served by the same team, several at once. The current Chat stays as
+it is, as the super orchestrator's space, and the chats are added beside it. Design
+only: nothing below is built or routed until these frames and the Backend's
+orchestrator per chat design (v2.2) agree, which is why the first column names no
+route and `npm run e2e:guard` does not read this table.
+
+| Surface | Frames |
+|---|---|
+| The shell: main menu (Chat, Projects, then Dashboard, Kanban and Schedules), New chat, the fixed first entry Tars, all projects, the chat list (a project filter; how many chats work against the Mac's limit; Pinned, Active, Working, Snoozed, Settled; each row with its title, project and number, and state), More at the foot | `tars-redesign.pen`: Shell · chats · project page |
+| More open: Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings, What's New | `tars-redesign.pen`: Shell · chats · More open |
+| A page of More, opened as a card above the app, over a scrim | `tars-redesign.pen`: Shell · chats · Settings card |
+| A project's page: its chats by number, its team, its Dashboard terminals and its room | `tars-redesign.pen`: Shell · chats · project page |
+| The chat page: the conversation, its head (title, project and number, team) and what the chat delegated, with its state and result | `chat-redesign-a.pen`: Chat · chats · orchestrator working, · a worker on another chat, · a result back, · waiting on you, · every slot working, · a task given up |
+| New chat: the project, the current one already chosen; the next number; the title from the first message | `chat-redesign-a.pen`: Chat · chats · new chat |
+| Tars, all projects: the current Chat page, unchanged, opened from the new shell | `chat-redesign-a.pen`: Chat · chats · Tars, all projects |
+
+Each frame has its `· light` copy beside it. One notes frame per document says what
+each frame shows: Chats · shell · notes, and Chats · chat page · notes, which also
+says how the room relates to the chats and what follows the Backend's v2.2.
+
 ## Pages (14)
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why (and its light copy) |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
-| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why (and its light copy) |
+| `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
 | `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
 | `/logs` | Logs | Logs · dark |
 | `/vault` | Vault | Vault · dark |
-| `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row) |
+| `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
-| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account (each with its light copy) |
+| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account, Usage · cost per task (each with its light copy) |
 | `/memory` | Brain (Projects / Agents / Backends) | Brain · Projects, Brain · Agents, Brain · Backends |
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |
@@ -64,11 +88,11 @@ custom dashboard boards, the sidebar collapse) is deliberately absent.
 
 | Group | Sections |
 |---|---|
-| General | Preferences, Terminal, Notifications, System |
+| General | Preferences, Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
-| Hermes | Connection (+ link out to Schedules) |
+| Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
 | Machines | Your machines |
-| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace |
+| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
@@ -123,9 +147,10 @@ Agent · Claude account (and their light copies).
   template · review, each with its light copy
 - Agent terminal dialog: header, panel header, footer, sidebar, secondary project,
   super-agent sidebar; a stopped agent's header, second row and the rail's
-  stopped group in Agent stopped · who and why
+  stopped group in Agent stopped · who and why; an asleep agent's, and the
+  rail's asleep group, in Agent asleep · and how it wakes
 - Start prompt (`StartPromptModal`)
-- Kanban: new task, card detail, done summary
+- Kanban (the Hermes board): new task, a task's detail
 - Plugin install, Install terminal (settings)
 
 ## Menus, dropdowns and controls
@@ -153,6 +178,7 @@ read the transcript instead, is gone since 1.9.2.
 | Message waiting · notice | The line a panel shows while a message waits for a field somebody is typing in, with the two ways out |
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with restart (and its light copy) |
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
+| Permission asked of Tars | The question Claude Code would put to its permission dialog, asked of Tars by the state mod instead: the line a panel shows, with allow, deny with a reason and ask in terminal; a call too long for that line, shown whole in the panel before allow; the same question in full in the agent's window, with why Claude Code asks and the rule that asked under the call, and on its card; too late, when the question went back first (and its light copy) |
 
 ## States every data surface must show
 

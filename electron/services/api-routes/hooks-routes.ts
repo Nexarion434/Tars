@@ -1,13 +1,54 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
+import { bindTurn } from '../../core/task-requests';
+import { liveTaskLedger, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
 import { RouteApp, RouteContext } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
-import { waitingOnFrom } from '../../utils/waiting-on';
+import { oneLine, waitingOnFrom } from '../../utils/waiting-on';
 import { emitAgentStatus, agentStatusEmitter } from '../agent-events';
 import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
+import { restPendingOf } from '../../core/agent-asleep';
+import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
+import { dropPermissionAsks, holdPermissionAsk } from '../permission-asks';
+
+/**
+ * The four shell hooks whose posts the state mod makes instead, for a session
+ * it registered (services/state-mod.ts). Each script names itself in `hook`;
+ * the mod's own posts say `via: 'mod'`. One source per session: the shell's
+ * curl landing after the mod's next post put a Stop's idle after the next
+ * turn's running. Every other hook (a permission dialog, a notification) is
+ * still taken from the shell.
+ */
+const MOD_HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure']);
+
+function setAsideForMod(agentId: string, sessionId: string | undefined, body: { hook?: unknown }): boolean {
+  return typeof body.hook === 'string' && MOD_HOOKS.has(body.hook) && modRunsSession(agentId, sessionId);
+}
+
+/** The mod's cap on one asked field: a call whose field is longer is left to the terminal's dialog, which shows it whole. */
+const ASKED_FIELD_CAP = 2000;
+
+/**
+ * The fields a permission question is about, as the mod sent them: strings
+ * only, kept whole. Null when one is past the mod's cap or there are more than
+ * a call has, and the question then goes to the dialog: Tars shows and
+ * decides only what it holds in full (the gate of #318, Medium 2).
+ */
+function askedFields(input: unknown): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const fields: Record<string, string> = {};
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 16) return null;
+  for (const [key, value] of entries) {
+    if (typeof value !== 'string') continue;
+    if (value.length > ASKED_FIELD_CAP) return null;
+    fields[key.slice(0, 64)] = value;
+  }
+  return fields;
+}
 
 /**
  * Session ownership contract:
@@ -192,6 +233,10 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const agent = findAgentByIdOrSession(agent_id, session_id);
+    if (agent && setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod' });
+      return;
+    }
     if (agent) {
       if (isStaleSessionPost(agent, session_id)) {
         // Stale session: don't let a killed PTY's Stop hook overwrite the
@@ -211,7 +256,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
-      tool_name, tool_input,
+      tool_name, tool_input, pending,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -227,6 +272,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       error_message?: string;
       /** PermissionRequest only: when the dialog opened (ms), taken by the hook script. */
       opened_at?: number;
+      /** Stop only: the timers and background tasks the CLI holds at this rest (hooks/on-stop.sh). */
+      pending?: unknown;
       /** PermissionRequest only: the tool the dialog asks about, and its input. */
       tool_name?: string;
       tool_input?: unknown;
@@ -257,6 +304,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod', agent: { id: agent.id, status: agent.status } });
+      return;
+    }
+
     // Tombstone guard: hooks of a killed PTY's session (separate processes
     // that survive the kill) may arrive during the window where the new
     // session hasn't registered yet. Never let them register or flip status.
@@ -277,10 +329,17 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // Remembered separately so a restart can resume it: currentSessionId is
       // ownership and gets cleared on load, this is where the work got to.
       agent.resumableSessionId = session_id;
+      // A new session holds no timer of the last one.
+      agent.restPending = undefined;
       agent.lastActivity = new Date().toISOString();
       // Registered is not started: this only puts the task this session was
       // spawned with on the clock.
       noteSessionRegistered(agent);
+      // A permission question an earlier session left with Tars goes back to it.
+      dropPermissionAsks(agent.id);
+      // Registered by the state mod: the shell hooks' four posts for this
+      // session are set aside from now on, and its heartbeat is taken.
+      if ((req.body as { via?: unknown }).via === 'mod') noteModSession(agent.id, session_id);
       saveAgents();
       // Not a status change, and so no `status:` event (a /wait answers
       // those), but the fleet did change: what agent-watch held for this agent
@@ -321,6 +380,15 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // already set that status at spawn, so the hook names the event instead.
     if (event === 'UserPromptSubmit') {
       noteTurnStarted(agent);
+      // The turn whose prompt carries a request's id is that request's: its
+      // asker is who this turn's result goes to (core/task-requests.ts).
+      if (bindTurn(agent, current_task)) saveAgents();
+      // The turn opens a task, or is counted in the one open (task-ledger.ts).
+      try {
+        liveTaskLedger()?.turnStarted(agent, { sessionId: session_id, text: current_task });
+      } catch (err) {
+        console.warn('[task-ledger] turn not recorded:', (err as Error).message);
+      }
       // And the one post that proves a field emptied. An Enter on a line
       // beginning with `/` may run a command or open a dialog, and the keys
       // alone cannot tell which, so the draft model hedges until something
@@ -331,6 +399,13 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
 
     const oldStatus = agent.status;
 
+    // The turn ended: a permission question it left with Tars goes back to its
+    // engine, which has moved on, and a later answer allows nothing.
+    if (status === 'idle' || status === 'completed' || status === 'error') dropPermissionAsks(agent.id);
+    // Claude Code showed its dialog after all (a request of the mod's that
+    // failed): the terminal asks now, and the window's answer would reach nothing.
+    if (status === 'waiting' && waiting_reason === 'permission') dropPermissionAsks(agent.id);
+
     // Only the idle prompt: a permission prompt is the wait that matters, and
     // it comes in the middle of a turn by definition.
     const staleIdlePrompt = status === 'waiting' && waiting_reason === 'idle' && isStaleIdlePrompt(agent);
@@ -338,6 +413,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       console.log(`[hooks] Ignored an idle prompt for ${agent.id}: it was handed work, or began a turn, less than a minute ago`);
     }
 
+    // What the CLI holds is counted again at the end of each turn.
+    if (status === 'running') agent.restPending = undefined;
     if (status === 'running' && agent.status !== 'running') {
       agent.status = 'running';
       agent.waitingReason = undefined;
@@ -359,6 +436,9 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     } else if (status === 'idle') {
       agent.status = 'idle';
       agent.waitingReason = undefined;
+      // Its timers and background tasks, as the Stop hook counted them: what
+      // keeps it from being put to sleep (services/agent-sleep.ts).
+      if (pending !== undefined) agent.restPending = restPendingOf(pending);
     } else if (status === 'completed') {
       agent.status = 'completed';
       agent.waitingReason = undefined;
@@ -462,6 +542,88 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/hooks/agent-stopped: Send notification when agent finishes a response (Stop hook)
+  // POST /api/hooks/mod-beat: the state mod's heartbeat, every 15 s from the
+  // CLI's own event loop, with the tool in flight. A frozen loop stops it
+  // (stall-watch.ts). Kept only for the session the mod registered, and the
+  // stall watch reads it only while that is the agent's current session.
+  app.post('/api/hooks/mod-beat', (req, sendJson) => {
+    const { agent_id, tool } = req.body as { agent_id?: string; session_id?: string; tool?: unknown };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    if (!agent_id || !session_id) {
+      sendJson({ error: 'agent_id and session_id are required' }, 400);
+      return;
+    }
+    const agent = agents.get(agent_id);
+    if (!agent) {
+      sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+    const kept = noteModBeat(agent.id, session_id, typeof tool === 'string' && tool ? tool.slice(0, 200) : null);
+    sendJson({ success: kept });
+  });
+
+  // POST /api/hooks/turn-usage: a turn's usage, from the state mod's
+  // turn.complete (mods step 4), into the task ledger. It comes after the Stop
+  // that ended the turn's task, so it is filed under the agent's latest task
+  // in that session (task-ledger.ts). Taken only from the agent's current
+  // session, as every post is.
+  app.post('/api/hooks/turn-usage', (req, sendJson) => {
+    const { agent_id, usage } = req.body as { agent_id?: string; session_id?: string; usage?: unknown };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    const parsed = turnUsageOf(usage);
+    if (!agent_id || !session_id || !parsed) {
+      sendJson({ error: 'agent_id, session_id and a usage are required' }, 400);
+      return;
+    }
+    const agent = agents.get(agent_id);
+    if (!agent || agent.currentSessionId !== session_id) {
+      sendJson({ success: false, message: agent ? 'stale' : 'Agent not found' });
+      return;
+    }
+    const taskId = liveTaskLedger()?.turnUsage(agent.id, session_id, parsed) ?? null;
+    sendJson({ success: !!taskId, taskId });
+  });
+
+  // POST /api/hooks/permission: the state mod's tool.check, when Claude Code
+  // would show its permission dialog (services/permission-asks.ts). Held until
+  // the window answers: allow or deny is then the decision, with no dialog.
+  // `pending` after 20 s, and the mod asks again for the same call. `ask`
+  // hands it back to the dialog: for a session that is not the agent's
+  // current one, nothing to name, a question nobody answers, or one dropped.
+  app.post('/api/hooks/permission', async (req, sendJson) => {
+    const { agent_id, tool, input, tool_use_id, reason, rule } = req.body as {
+      agent_id?: string; tool?: unknown; input?: unknown; tool_use_id?: unknown; reason?: unknown; rule?: unknown;
+    };
+    const session_id = usableSessionId((req.body as { session_id?: string }).session_id);
+    const agent = agent_id ? agents.get(agent_id) : undefined;
+    const fields = askedFields(input);
+    if (!agent || !session_id || agent.currentSessionId !== session_id || agent.status === 'stopped'
+      || typeof tool !== 'string' || !tool || typeof tool_use_id !== 'string' || !tool_use_id || !fields) {
+      sendJson({ decision: 'ask' });
+      return;
+    }
+    const question = {
+      tool: tool.slice(0, 200),
+      toolUseId: tool_use_id.slice(0, 200),
+      fields,
+      waitingOn: waitingOnFrom(tool, fields),
+      ...(typeof reason === 'string' && reason ? { reason: reason.slice(0, 1000) } : {}),
+      ...(typeof rule === 'string' && rule ? { rule: rule.slice(0, 1000) } : {}),
+    };
+    const afterError = (req.body as { after_error?: unknown }).after_error;
+    if (typeof afterError === 'string') console.log(`[permission] ${agent.name || agent.id}'s mod asks again after a failed request: ${oneLine(afterError)}`);
+    const answer = await holdPermissionAsk(agent, question, changed => {
+      saveAgents();
+      ctx.handleStatusChangeNotificationCallback(changed, changed.status);
+      emitAgentStatus(changed.id);
+      broadcastToAllWindows('agent:status', {
+        agentId: changed.id, status: changed.status, waitingReason: changed.waitingReason, permissionAsk: changed.permissionAsk ?? null,
+      });
+      scheduleTick();
+    });
+    sendJson(answer);
+  });
+
   app.post('/api/hooks/agent-stopped', (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;
@@ -476,6 +638,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     const agent = findAgentByIdOrSession(agent_id, session_id);
     if (!agent) {
       sendJson({ success: false, message: 'Agent not found' });
+      return;
+    }
+
+    if (setAsideForMod(agent.id, session_id, req.body as { hook?: unknown })) {
+      sendJson({ success: true, ignored: 'state-mod' });
       return;
     }
 

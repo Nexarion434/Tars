@@ -12,11 +12,15 @@
 // First: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
 
+import { startGithubWatch } from './services/github-watch';
+import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
+import { startRelayRouting } from './services/hermes-relay-routing';
+import { settingsForRelay } from './services/hermes-relay-switch';
+import { reportsOn } from './services/event-reports';
 import { app, BrowserWindow } from 'electron';
+import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { resolveShell, shellArgs } from './platform';
 
 // Types
 import type { AppSettings, AgentStatus } from './types';
@@ -54,16 +58,12 @@ import {
   endAllTerminals,
   setFieldProbe,
 } from './core/pty-manager';
-import { agentStatusOnExit } from './core/quit-state';
 import { startErrorReports } from './services/error-reports';
 import { lastLocalCommandAt } from './services/agent-truth';
-import { killPty } from './core/pty-kill';
 
 import { runShutdownSteps } from './core/shutdown';
 import { initTray, destroyTray } from './core/tray-manager';
 import { broadcastToAllWindows } from './utils/broadcast';
-import { extractStatusLine } from './utils/ansi';
-import { scheduleTick } from './utils/agents-tick';
 
 // Services
 import { startApiServer } from './services/api-server';
@@ -104,9 +104,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, appendAgentOutput, wireDialogProbe, stopStatusNotifications } from './core/agent-manager';
-import { assignRole } from './core/agent-role';
-import { forgetRestart } from './core/agent-restart';
+import { startAgentAutosave, stopAgentAutosave, wireDialogProbe, stopStatusNotifications } from './core/agent-manager';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -117,26 +115,33 @@ import {
 // Handlers
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
-import { registerKanbanHandlers } from './handlers/kanban-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
-import { registerTranscriptHandlers } from './handlers/transcript-handlers';
 import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
+import { endRequestsAtLaunch } from './core/task-requests';
+import { startTaskWatch } from './services/task-watch';
+import { beginRun, type PreviousRun } from './services/run-state';
+import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
+import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { startCliUpdates } from './services/cli-updater';
-import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
-import { hermesKanban } from './services/api-routes/kanban-routes';
-import { stopAcpRuns, endAcpRunsOnQuit } from './services/acp/delegate';
+import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
+import { startErrorTriage, stopErrorTriage } from './services/error-triage';
+import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
+import { agentStatusEmitter } from './services/agent-events';
+import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
+import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
@@ -150,8 +155,7 @@ import {
   ensureAgentInstructions,
   migrateFromClaudeManager,
 } from './utils';
-import { spawnAgentPty } from './core/agent-pty';
-import { getProvider } from './providers';
+import { endVersionProbes } from './core/version-probe';
 
 // ============== App Settings Management ==============
 
@@ -164,6 +168,9 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 let appSettings: AppSettings = loadAppSettings();
+let stopTmpRetention: () => void = () => undefined;
+let previousRun: PreviousRun | null = null;
+let recovery: { flush: () => void } | null = null;
 // Off unless the user turned them on; followed live (services/error-reports).
 const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
 
@@ -180,6 +187,7 @@ function loadAppSettings(): AppSettings {
     telegramAuthToken: '',
     telegramAuthorizedChatIds: [],
     telegramRequireMention: false,
+    hermesRelayEnabled: false,
     slackEnabled: false,
     slackBotToken: '',
     slackAppToken: '',
@@ -192,6 +200,8 @@ function loadAppSettings(): AppSettings {
     discordAllowedUserIds: [],
     discordRequireMention: true,
     errorReportsEnabled: false,
+    sentryAuthToken: '',
+    sentryTriageProject: '',
     jiraEnabled: false,
     jiraDomain: '',
     jiraEmail: '',
@@ -242,12 +252,13 @@ function loadAppSettings(): AppSettings {
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
-      return { ...defaults, ...saved };
+      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
+      return { ...defaults, ...sentryTokenOutOf(saved) };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
   }
-  return defaults;
+  return { ...defaults, ...sentryTokenOutOf({}) };
 }
 
 function saveAppSettingsToFile(settings: AppSettings) {
@@ -255,7 +266,8 @@ function saveAppSettingsToFile(settings: AppSettings) {
     ensureDataDir();
     // 0600 and atomic: this file carries every provider API key, the Hermes
     // gateway token and the memory-backend credentials.
-    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    // Everything but the Sentry token, which goes to ~/.tars-private.
+    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settingsToSave(settings), null, 2));
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
@@ -393,6 +405,14 @@ function initApiServer() {
   // route, and for the addressing scheme that lets one server serve both.
   startOpenAIBridgeServer();
   moveLocalKanbanToHermes();
+  // Sentry's new errors, as parked tasks on the board of the project named in
+  // Settings, told to its orchestrator. Does nothing until the token, the
+  // project, error reports and Hermes are all there (services/error-triage.ts).
+  startErrorTriage({
+    settings: () => appSettings, hermes: hermesKanban, tell: tellOrchestratorAsTars,
+    relay: { enabled: relayEnabled, send: relaySend, wasSent: relayWasSent, onReply: onRelayReply, tellUser },
+    onFleetChange: listener => agentStatusEmitter.on('fleet-change', listener),
+  });
 }
 
 /**
@@ -485,6 +505,9 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // Whether the last run stopped abruptly, and who was working then, read
+  // before this run's record replaces it (services/run-state.ts).
+  previousRun = beginRun();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -555,66 +578,12 @@ app.whenReady().then(async () => {
     runningAgents: () => [...agents.values()].filter(a => a.status === 'running' || a.status === 'waiting').length,
   });
   void machines.startIfPaired();
-  registerTranscriptHandlers();
   registerOverseerHandlers();
   registerBusHandlers();
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.
   startOverseerWatch((message) => broadcastToAllWindows('overseer:briefing', message));
-
-  // Register kanban handlers
-  registerKanbanHandlers({
-    getMainWindow,
-    findMatchingAgent,
-    createAgentForTask,
-    startAgent: startAgentForTask,
-    stopAgent: async (agentId: string) => {
-      const agent = agents.get(agentId);
-      await stopAcpRuns(agentId, 'the agent was stopped');
-      if (agent?.ptyId) {
-        const ptyProcess = ptyProcesses.get(agent.ptyId);
-        if (ptyProcess) {
-          // Send Ctrl+C to interrupt
-          ptyProcess.write('\x03');
-        }
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-        agent.lastActivity = new Date().toISOString();
-        saveAgents();
-
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId,
-          status: 'idle',
-          timestamp: new Date().toISOString(),
-        });
-      }
-    },
-    deleteAgent: async (agentId: string) => {
-      const agent = agents.get(agentId);
-      await stopAcpRuns(agentId, 'the agent was deleted');
-      if (agent) {
-        // Stop PTY if running
-        if (agent.ptyId) {
-          const ptyProcess = ptyProcesses.get(agent.ptyId);
-          if (ptyProcess) {
-            killPty(ptyProcess);
-          }
-          ptyProcesses.delete(agent.ptyId);
-        }
-        // Remove agent
-        agents.delete(agentId);
-        forgetRestart(agentId);
-        saveAgents();
-        console.log(`Agent ${agentId} deleted`);
-      }
-    },
-    getAgentOutput: (agentId: string) => {
-      const agent = agents.get(agentId);
-      return agent?.output || [];
-    },
-  });
 
   // Initialize vault database
   initVaultDb();
@@ -623,122 +592,20 @@ app.whenReady().then(async () => {
   registerVaultHandlers({ getMainWindow });
 
 
-  // Initialize kanban automation service
-  initKanbanAutomation({
-    agents,
-    createAgent: async (config) => {
-      // Create agent directly - similar to agent:create handler
-      const { v4: uuidv4 } = await import('uuid');
-
-      const id = uuidv4();
-      // The shell a person gets (decision D3): on Windows nothing is typed
-      // into it, the start replaces it with the CLI (startCliInTerminal).
-      const shell = resolveShell({ setting: appSettings.terminalShell });
-      let cwd = config.projectPath;
-
-      if (!fs.existsSync(cwd)) {
-        cwd = os.homedir();
-      }
-
-      const allSkills = [...new Set(config.skills)];
-
-      // Through spawnAgentPty, like every other agent pty. This is the kanban
-      // automation creating an agent by itself, and the comment above says it
-      // duplicates the agent:create handler: it duplicated the defect too,
-      // setting CLAUDE_AGENT_ID with no API address beside it, so an agent a
-      // sandbox created from a board posted its hooks into the live Tars.
-      const ptyProcess = spawnAgentPty({
-        binaryName: getProvider('claude').binaryName,
-        shell,
-        args: shellArgs(shell),
-        runsCommand: false,
-        cols: 120,
-        rows: 30,
-        cwd,
-        env: {
-          ...process.env as { [key: string]: string },
-          CLAUDE_SKILLS: allSkills.join(','),
-          CLAUDE_AGENT_ID: id,
-          CLAUDE_PROJECT_PATH: config.projectPath,
-        },
-      });
-
-      const ptyId = uuidv4();
-      ptyProcesses.set(ptyId, ptyProcess);
-
-      const status: AgentStatus = {
-        id,
-        status: 'idle',
-        projectPath: config.projectPath,
-        skills: allSkills,
-        output: [],
-        lastActivity: new Date().toISOString(),
-        ptyId,
-        ptyCwd: cwd,
-        character: config.character || 'robot',
-        name: config.name || `Agent ${id.slice(0, 4)}`,
-        permissionMode: config.permissionMode || 'auto',
-      };
-      // A board creates workers, whatever it names them.
-      assignRole(status, 'worker', agents.values());
-
-      agents.set(id, status);
-      saveAgents();
-
-      // Setup PTY event handlers
-      ptyProcess.onData((data) => {
-        const agent = agents.get(id);
-        if (agent) {
-          appendAgentOutput(agent, data);
-          agent.lastActivity = new Date().toISOString();
-          agent.statusLine = extractStatusLine(agent.output);
-        }
-        broadcastToAllWindows('agent:output', {
-          type: 'output',
-          agentId: id,
-          ptyId,
-          data,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
-
-      ptyProcess.onExit(({ exitCode }) => {
-        ptyProcesses.delete(ptyId);
-        // Ended by the quit: neither the agent's completion nor its error, and
-        // the closing window is not told it was (the Audit's gate of #235).
-        const newStatus = agentStatusOnExit(exitCode);
-        if (!newStatus) return;
-        const agent = agents.get(id);
-        // Only while this pty is still the agent's: a stop (core/agent-stop.ts)
-        // or a restart has moved on, and its record is not this exit's.
-        if (agent?.ptyId !== ptyId) return;
-        if (agent) {
-          agent.status = newStatus;
-          agent.lastActivity = new Date().toISOString();
-          handleStatusChangeNotificationWrapper(agent, newStatus);
-        }
-        // Emit status event so kanban sync can detect completion
-        broadcastToAllWindows('agent:status', {
-          type: 'status',
-          agentId: id,
-          status: newStatus,
-          timestamp: new Date().toISOString(),
-        });
-        broadcastToAllWindows('agent:complete', {
-          type: 'complete',
-          agentId: id,
-          ptyId,
-          exitCode,
-          timestamp: new Date().toISOString(),
-        });
-        scheduleTick();
-      });
-
-      return status;
-    },
-    saveAgents,
+  // The relay to the user's Telegram through their Hermes, following its switch
+  // live (services/hermes-relay.ts). On, it is the only voice there: the Tars
+  // bot's token is gone and the bot stays off (hermes-relay-switch.ts).
+  const forRelay = settingsForRelay(appSettings);
+  if (forRelay !== appSettings) {
+    appSettings = forRelay;
+    saveAppSettingsToFile(forRelay);
+  }
+  startHermesRelay({ enabled: () => appSettings.hermesRelayEnabled === true });
+  startRelayRouting({
+    agents, ptyProcesses, settings: () => appSettings, saveAgents,
+    initAgentPty: (agent: AgentStatus) => initAgentPty(agent, getMainWindow(), handleStatusChangeNotificationWrapper, saveAgents),
   });
+  onRelayStatus(status => broadcastToAllWindows('hermes:relay:status', status));
 
   // Initialize services
   initTelegramBot();
@@ -750,10 +617,46 @@ app.whenReady().then(async () => {
   initApiServer();
   // Delegation reports back on its own from here: an agent that finishes tells
   // whoever dispatched it, without the orchestrator having to ask.
+  // What the last run owed, its waiting room messages, the run record, and,
+  // after an abrupt stop, the agents that were working resumed with a note
+  // (services/restart-recovery.ts). After the launcher and the API are up.
+  recovery = startRestartRecovery(previousRun);
   startAgentWatch();
+  // Requests still out from the run before: what was queued or typed into a
+  // terminal that is gone never ran, and each requester is told (the Audit's
+  // R3). The one in hand stays only for a worker the resume restarts (after an
+  // abrupt stop); after a clean quit it is ended too (the Audit's M1).
+  endRequestsAtLaunch(agents.values(), new Set(previousRun && !previousRun.resumedAndCrashedAgain
+    ? previousRun.working.map((w) => w.agentId) : []));
+  saveAgents();
+  // The tasks the Usage page prices: who handed what, from turn to rest
+  // (services/task-ledger.ts).
+  startTaskWatch();
   // And an agent that reads running while it does nothing is told to whoever
   // handed it the work (services/stall-watch.ts).
   startStallWatch();
+  // Agents with no turn for 30 minutes sleep, orchestrators never (services/agent-sleep.ts).
+  startSleepWatch();
+  // Each agent's temporary folder, which a boot does not empty, kept to 7 days
+  // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
+  // first pass forward, for the e2e.
+  const firstRetentionMs = !app.isPackaged ? Number(process.env.DOROTHY_TMP_RETENTION_FIRST_MS) || undefined : undefined;
+  stopTmpRetention = startTmpRetention({
+    liveAgentIds: () => [
+      ...[...agents.values()].filter(a => !!a.ptyId && ptyProcesses.has(a.ptyId)).map(a => a.id),
+      ...agentsRunningOverAcp(),
+    ],
+    knownAgentIds: () => [...agents.keys()],
+    freeBytes: () => {
+      try {
+        const st = fs.statfsSync(DATA_DIR);
+        return st.bavail * st.bsize;
+      } catch {
+        return null;
+      }
+    },
+    log: retentionLog,
+  }, { firstMs: firstRetentionMs });
   // A message held behind a slash command typed by hand goes in once the
   // command's record says the field emptied (core/pty-manager.ts).
   setFieldProbe(agentId => {
@@ -816,6 +719,10 @@ app.whenReady().then(async () => {
   // switch. See services/cli-updater.ts.
   startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
 
+  // PRs merged and changes requested in the agents' repositories, read with
+  // `gh` while the reports go out (the relay is on), for the user's event reports.
+  startGithubWatch(() => [...agents.values()].map(agent => agent.projectPath).filter(Boolean), reportsOn);
+
   console.log('App initialization complete');
 });
 
@@ -864,6 +771,8 @@ app.on('before-quit', (event) => {
       // Before the app exits, which neither the stop's timer nor a run left
       // reparented to launchd would wait for: at most a second, then SIGKILL.
       ['endAcpRunsOnQuit', endAcpRunsOnQuit],
+      // A permission question held for the window: the mod's request is answered, back to its dialog.
+      ['endPermissionAsks', endPermissionAsks],
       ['destroyTray', destroyTray],
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
@@ -874,6 +783,17 @@ app.on('before-quit', (event) => {
       ['stopStatusNotifications', stopStatusNotifications],
       // No machine is answered once the quit has begun.
       ['stopMachines', () => { stopStatusPolling(); void stopBridge(); }],
+      ['stopErrorTriage', stopErrorTriage],
+      ['stopSleepWatch', stopSleepWatch],
+      ['stopTmpRetention', () => stopTmpRetention()],
+      // A claude asked for an account's usage (get_usage) just before the quit.
+      ['endUsageProbes', endUsageProbes],
+      // A CLI's --version asked for by Settings just before the quit: amp's
+      // kept writing into the home after Tars was gone (gate of #298).
+      ['endVersionProbes', endVersionProbes],
+      // Last: what is owed on disk, and the run marked as ended cleanly, so
+      // the next launch resumes nobody.
+      ['endRestartRecovery', () => endRestartRecovery(recovery)],
     ]);
     void terminals
       .catch(err => console.error('Failed to end the terminals on quit:', err))

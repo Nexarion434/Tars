@@ -138,9 +138,24 @@ vi.mock('child_process', async (importOriginal) => {
       },
     },
   );
+  // The version probes (core/version-probe.ts, upstream's since 1.9.3): a
+  // child that answers on stdout and closes, or fails to start. No pid, so
+  // the probe's end signals nothing real.
+  const spawn = (file: string, args: string[], options: Record<string, unknown>) => {
+    children.calls.push({ fn: 'spawn', file, args, options });
+    const child = Object.assign(new EventEmitter(), { pid: undefined, stdout: new EventEmitter(), stderr: new EventEmitter() });
+    process.nextTick(() => {
+      let out: string;
+      try { out = answer([file, ...args].join(' ')); } catch (e) { child.emit('error', e); return; }
+      child.stdout.emit('data', out);
+      child.emit('close', 0, null);
+    });
+    return child;
+  };
   const mocked = {
     ...actual,
     execFile,
+    spawn,
     execFileSync: (file: string, args: string[], options: Record<string, unknown>) => {
       children.calls.push({ fn: 'execFileSync', file, args, options });
       return answer([file, ...args].join(' '));
@@ -438,7 +453,7 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     expect(info.claudeVersion).toBe('2.1.300 (Claude Code)');
     expect(mcp.configured).toBe(true);
     expect(version).toEqual({ success: true, output: '2.1.300 (Claude Code)' });
-    const probe = children.calls.find(c => c.file === 'claude' && c.args?.[0] === '--version' && c.fn === 'execFile');
+    const probe = children.calls.find(c => c.file === 'claude' && c.args?.[0] === '--version' && c.fn === 'spawn');
     expect((probe!.options!.env as Record<string, string>).PATH).toBe(POSIX_PATH);
     expect((await handlers.get('shell:version')!({}, { binary: X86_CLAUDE }) as { success: boolean }).success).toBe(false);
   });
@@ -681,6 +696,10 @@ describe('2-6. on win32', () => {
     expect(mcp.configured).toBe(true);
     expect(version).toEqual({ success: true, output: '2.1.301 (Claude Code)' });
     expect(children.calls.filter(c => c.fn === 'exec' || c.fn === 'execSync')).toEqual([]);
+    expect(children.calls.filter(c => c.fn === 'spawn').map(c => [c.file, c.args, c.options?.shell])).toEqual([
+      [CLAUDE_EXE, ['--version'], undefined],
+      [X86_CLAUDE, ['--version'], undefined],
+    ]);
   });
 });
 

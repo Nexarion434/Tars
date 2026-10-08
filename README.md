@@ -45,6 +45,8 @@ matter once there is more than one.
 
 **Every agent on one screen.** Real terminals in a grid, grouped by project.
 Watch six at once, jump into any of them, broadcast one instruction to all.
+Each panel shows its agent's session as it runs, and opens fullscreen in one
+press on the arrows in its header.
 
 **Someone watching the whole thing.** A Hermes agent sees every agent in every
 project and tells you what they are doing, which decisions are in flight, and
@@ -64,10 +66,87 @@ mode, Tars falls back to the terminal path rather than pretending.
 
 **Your fleet from Telegram, Slack or Discord.** Each bot answers only the people
 you let in, and takes the same commands: the fleet's status, an agent started on a
-task, and messages to the orchestrator, which answers there.
+task, and messages to the orchestrator, which answers there. A message goes to the
+orchestrator of the project it names, as in "@tars fix the build", or to your only
+orchestrator; with several and no name, the bot answers with the list of your
+projects. Or let your own Hermes write to you: turn on Telegram through Hermes in
+Settings, Hermes, Connection, and Hermes becomes the only voice on your Telegram.
+Your orchestrators' questions and the event reports reach you there, and your reply
+reaches the orchestrator it answers, or the project you name with @project. It
+needs the tars-relay plugin on your Hermes, and turning it on switches the Tars bot
+off.
 
 **A whole team in one click.** An orchestrator, frontend, backend, QA, audit and
 database engineer on a project, each on its own git worktree, model and brief.
+
+**Worktrees that start ready, and lose nothing.** An agent created on a worktree
+starts with its project's dependencies already there, cloned at almost no disk
+space, when the project's own node_modules was installed for the same lock and both
+sit on one volume that can clone (APFS on macOS, reflink on Linux); otherwise it
+installs them as before. Deleting an agent that works in a worktree keeps what it
+had not committed, on a branch named wip/ and the agent's name, then removes the
+worktree. A worktree holding what no branch can carry, such as a .env, a repository
+the agent cloned into it or a submodule with commits or changes its remote does not
+have, is left where it is, and Tars says why.
+
+**Your disk, in view.** Settings, System says how much your disk has free, in the
+waiting ink below 30 GB, and lists the folders under your projects' .worktrees that
+git no longer knows and no agent owns, with why, their size and when they last
+changed. Tars never removes them on its own: remove asks first, then removes the
+folders it listed, one at a time, and keeps one a process works in, naming that
+process. A project whose worktrees git could not list is named, never counted as
+having none. Tars starts no agent while the disk has less than 2 GB free.
+
+**Several Claude subscriptions.** Turn on Claude accounts in Settings and Tars
+runs your Claude agents on up to five subscriptions. Each account signs in
+through Claude Code's own login, in a terminal Tars opens, and Tars keeps none
+of it: account 1 is the `~/.claude` Claude Code already uses, and each other
+one gets a Claude Code folder of its own under `~/.claude-accounts`. Tars asks
+Claude Code itself for each account's 5 h and weekly use, every 10 minutes and
+when you refresh the accounts in Settings, and never sees the sign-in: Claude Code
+answers with percentages. An agent starts on the account with the most room left
+in its 5 h and weekly windows.
+Cut by an account's limit, it is started again on another, in the same
+conversation; past its threshold, 90% of the 5 h window or 95% of the week
+unless you change them, it moves when its turn ends. Its card,
+its panel and its window name the account it runs on.
+
+**A stop says who, and a stall is told.** Stopping an agent ends its CLI and
+everything the CLI started. The agent then reads stopped, and its card, panel
+and window say who stopped it and when, and why when an orchestrator stopped
+it, which must give a reason; it stays stopped across a restart,
+so it is not resumed at launch or handed kanban work until it is started again.
+A Claude agent on Claude Code 2.1.289 or newer reports its state to Tars from
+inside Claude Code: a turn's start, its end and its failure arrive in the order
+they happened, and one whose Claude Code has frozen is marked stalled after five
+minutes of silence, never for a long command, a wait on another agent or a
+subagent. Any other agent that reads running but has written nothing for 30
+minutes and runs no command is marked stalled. Either way the orchestrator that
+gave it the work, or its project's orchestrator, is told.
+
+**A permission asked in Tars, not in a terminal.** On Claude Code 2.1.289 or newer,
+a Claude agent asks Tars before a command or another call Claude Code would ask you
+about, and nothing is typed into its terminal. The question shows where you look:
+under its Dashboard panel's header, at the top of its window and on its card, with
+what it would run, read or open, never what a file holds, and the window says why
+Claude Code asks and which of your rules asked, when Claude Code says. Allow it,
+deny it with a reason the agent reads, or answer it in the terminal's dialog, as
+before. A call that carries what Tars does not show, such as an edit, a new file or
+a message, stays with the terminal's dialog, and so does a question left unanswered
+for ten minutes.
+
+**Agents that sleep, and come back.** An agent with no turn for 30 minutes is put
+to sleep, which gives back its memory, a few hundred MB each: its CLI ends, its
+conversation is kept, and its panel keeps its last screen. A message, a dispatch,
+a chat, a Kanban task, wake or a key typed in its panel brings it back on that
+conversation in about a second, and it reads waking, with who woke it, until it
+is up. An orchestrator never sleeps, and neither does an agent with something
+still running, a /loop or a scheduled task of its own, a half-typed line, or a
+message, note or question waiting for it. When Tars stops without being quit (a
+crash, a power cut, a restart of your Mac), the agents that were working start
+again on their own conversation at the next launch, a few at a time, with a note
+from Tars: when it stopped, what was cut, and to check before redoing anything.
+Their last request is not sent again.
 
 **Any CLI, any model.** Nineteen providers, plus local models and any OpenAI-compatible
 endpoint of your own. Model lists and prices come from a
@@ -81,10 +160,18 @@ gateway, gbrain and Honcho behind a single interface, reachable by every CLI,
 not only the ones with a session hook.
 
 **See what they actually did.** A diff review of every branch against the one it
-was cut from, one search across the whole fleet's output, and per-provider spend
-against a budget you set.
+was cut from, in every project you added. One search across the whole fleet's
+output, read as each terminal showed it, and a Claude agent's conversation from
+its transcript. Spend per provider, hour by hour over the last 24 hours or day by
+day, against a budget you set, beside each Claude account's 5 h and weekly
+limits. And, under the Usage page's charts, what each task cost: who handed it
+over, the agent, the model, its turns and tokens, its own cost, and its total with
+the work it handed on to other agents. A task whose CLI writes no transcript reads
+not counted rather than $0.00. On Claude Code 2.1.289 or newer, a Claude agent's
+task stays counted once its transcript is cleaned up: Tars keeps what each of its
+turns used as it ends.
 
-![Usage: what each provider actually cost, against the budget you set](screenshots/usage.png)
+![Usage: what each provider actually cost, against the budget you set, and under it what each task cost](screenshots/usage.png)
 
 ---
 
@@ -92,7 +179,7 @@ against a budget you set.
 
 Download the latest release for macOS 13 (Ventura) or later:
 
-**[github.com/JeanBrasse/Tars/releases/latest](https://github.com/JeanBrasse/Tars/releases/latest)**
+**[github.com/cooper-labs-tech/Tars/releases/latest](https://github.com/cooper-labs-tech/Tars/releases/latest)**
 
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
@@ -175,9 +262,7 @@ Tars does not own a scheduler or a task board. If you run a
 [Hermes](https://github.com/gbrain-ai/hermes) gateway, its cron jobs dispatch
 work to your agents and its kanban board is a screen in the app: create, move
 and assign tasks, and edit a schedule's expression, prompt or enabled state
-without leaving Tars. Without a gateway the rest of Tars works fine, and the
-local board keeps running underneath for the bundled kanban MCP server and the
-completion hook, it simply has no screen of its own.
+without leaving Tars. Without a gateway the rest of Tars works fine.
 
 ![The Hermes board. Hermes owns the tasks, the workers and the runs](screenshots/kanban.png)
 
@@ -187,17 +272,17 @@ completion hook, it simply has no screen of its own.
 
 | Screen | What it is for |
 |---|---|
-| **Dashboard** | The terminal grid. Every agent, live, grouped by project |
+| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press. An asleep agent's panel keeps its last screen, and a key typed there wakes it |
 | **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team listed under the rooms, and what needs you above the thread |
-| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. Templates and whole teams |
+| **Agents** | Create, configure, start and stop, grouped by project or one project at a time. A stopped agent says who stopped it and when, and why when an orchestrator did; an asleep one says since when, under its own filter, and wakes from its card. Templates and whole teams |
 | **Kanban** | The Hermes task board |
 | **Schedules** | Your Hermes cron jobs: run now, pause, resume, edit, delete |
-| **Review** | What each agent changed, as a diff against its base branch |
-| **Logs** | One search across every agent's output, regex included |
+| **Review** | What each agent changed, as a diff against its base branch, in every project you added |
+| **Logs** | One search across every agent's output, as its terminal showed it, regex included |
 | **Vault** | Documents your agents can read and write |
 | **Projects** | The folders Tars knows about, and their agents |
 | **Extensions** | Skills and plugins, per provider |
-| **Usage** | Spend per provider and per model, against your budgets |
+| **Usage** | Spend per provider and per model, over the last 24 hours or 14 days, 12 weeks or 12 months, against your budgets, each Claude account's limits, and what each task cost |
 | **Brain** | The five memory sources, and whether each one answers |
 
 ![The vault: documents your agents can read and write](screenshots/vault.png)
@@ -272,7 +357,7 @@ from it.
 
 This is a fork of [Charlie85270/Dorothy](https://github.com/Charlie85270/Dorothy),
 substantially rewritten. Issues and pull requests go to
-[JeanBrasse/Tars](https://github.com/JeanBrasse/Tars); nothing is pushed
+[cooper-labs-tech/Tars](https://github.com/cooper-labs-tech/Tars); nothing is pushed
 upstream.
 
 ## License

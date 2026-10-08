@@ -13,18 +13,16 @@ import * as path from 'node:path';
  * whatever the agent then named: the Kanban board (useElectronKanban, which
  * reads onComplete as "the task is done") moved the task the new CLI was just
  * starting into Done. The board's own agents (main.ts, created by the Kanban
- * automation) also set their status from it.
+ * automation) also set their status from it, until upstream 1.9.3 removed the
+ * board and its automation.
  *
  * How it fails, written before the code (2026-09-25, win-reviewer's CHANGES):
  * 1. initAgentPty's exit broadcasts `agent:complete` (or sets a status) for a
  *    terminal the agent no longer names.
  * 2. It stops broadcasting it for the terminal the agent does name: the
- *    completion the board waits for is lost.
- * 3. The board agent's exit (main.ts) sets a status or broadcasts
- *    `agent:status` / `agent:complete` for a replaced terminal; or, for the
- *    terminal it names or for an agent already deleted, does anything else
- *    than it did before the Windows port (status, notification, the two
- *    broadcasts, the terminal forgotten).
+ *    completion the windows read the agent back on (useElectron) is lost.
+ * 3. (The board agent's exit in main.ts: gone with the old local Kanban board
+ *    in upstream 1.9.3, and its case with it.)
  * 4. On Windows a start kills the shell an agent waits in although a CLI was
  *    typed there by hand and registered its session from it: the live
  *    session is ended without the tombstone spawnAgentSession lays, and its
@@ -166,20 +164,6 @@ describe('an agent terminal opened by initAgentPty', () => {
 
     spawned[1].exit(0);
     expect(completes(agent.ptyId)).toHaveLength(1);
-  });
-});
-
-describe('an agent the Kanban automation created (main.ts)', () => {
-  // Since upstream 1.9.2 main.ts holds the guard itself (#235): its handler
-  // returns before any status or broadcast once the agent names another pty.
-  it('3. for a terminal it replaced: main.ts sets no status and tells no window', () => {
-    const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
-    const kanban = main.slice(main.indexOf('initKanbanAutomation({'), main.indexOf('saveAgents,\n  });'));
-    const exit = kanban.slice(kanban.indexOf('ptyProcess.onExit('));
-    const guard = exit.indexOf('if (agent?.ptyId !== ptyId) return;');
-    expect(guard, 'the board exit handler has no replaced-terminal guard').toBeGreaterThan(0);
-    expect(guard).toBeLessThan(exit.indexOf('agent.status = newStatus'));
-    expect(guard).toBeLessThan(exit.indexOf("broadcastToAllWindows('agent:complete'"));
   });
 });
 

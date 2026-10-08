@@ -97,18 +97,16 @@ describe('the suite runs in a HOME of its own', () => {
   it('protects the home the run started in, and the account home', () => {
     expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.originalHome as string));
     if (guard.accountHome) expect(guard.protectedRoots).toContain(fs.realpathSync.native(guard.accountHome));
-    // And lets nothing under them through but the repository and the throwaway
-    // HOME. The tests here never write into the real home, so a guard that let
-    // that home through would pass all of them: this is what fails instead.
-    // The temp dir too, when it lies under a protected home, as Windows puts it
-    // (%LOCALAPPDATA%\Temp): on macOS and Linux it does not, and the list is
-    // those two and nothing else.
-    const temp = fs.realpathSync.native(os.tmpdir());
-    const underAHome = guard.protectedRoots.some(root => temp.startsWith(root + path.sep));
+    // And lets nothing under them through but the repository, the throwaway
+    // HOME and the run's temporary folder, which holds this file's
+    // (tmpdir-isolation.ts) and which on Windows lies inside the account's home
+    // (AppData\Local\Temp). The tests here never write into the real home, so
+    // a guard that let that home through would pass all of them: this is what
+    // fails instead.
     expect(guard.allowedRoots).toEqual([
       fs.realpathSync.native(process.cwd()),
       fs.realpathSync.native(guard.throwawayHome),
-      ...(underAHome ? [temp] : []),
+      fs.realpathSync.native(path.dirname(os.tmpdir())),
     ]);
   });
 

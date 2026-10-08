@@ -16,6 +16,75 @@ export interface LogLine {
   position: number;
 }
 
+/** One task, as usage.tasks reports it (electron/services/task-ledger.ts and task-cost.ts). */
+export interface TaskEntry {
+  id: string;
+  agentId: string;
+  projectPath: string | null;
+  worktreePath: string | null;
+  /** The agent's provider, model and Claude account when the task started. */
+  provider: string | null;
+  model: string | null;
+  accountId: string | null;
+  /** Who handed it over: typed in its window ('terminal'), another agent, Tars, a chat, or a run over ACP. */
+  source: 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
+  requesterAgentId: string | null;
+  /** The task of the requester it was handed for; null when it was handed for none. */
+  parentTaskId: string | null;
+  /** What it was handed, or the prompt typed: one line, at most 200 characters. */
+  text: string;
+  /** Epoch ms. */
+  startedAt: number;
+  /** Null while it runs. */
+  endedAt: number | null;
+  lastAt: number;
+  /** 'stopped' also covers a task cut short by a quit of Tars. */
+  outcome: 'running' | 'completed' | 'error' | 'stopped';
+  turns: number;
+  sessionIds: string[];
+  acp?: { inputTokens: number; outputTokens: number; cachedReadTokens: number; cachedWriteTokens: number; costUSD: number | null };
+  /** Null: not counted (no transcript and no turn's usage: a CLI that writes none). Never shown as 0. */
+  costUSD: number | null;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
+  /** Cost per model the replies came from. */
+  byModel: Record<string, number>;
+  /** What priced it: its transcripts; its turns' usage, as the state mod reported each, when its transcript is
+   *  gone (cache writes at the 5-minute rate, no web searches: Claude Code does not report them per turn); the ACP
+   *  run's report; null when nothing did (costUSD null). `mixed`: a session each, one's transcript gone and priced
+   *  from its turns, the other's from its transcript. */
+  from?: 'transcript' | 'turns' | 'mixed' | 'acp' | null;
+  /** A session of it left neither a transcript nor its turns' usage: the figure is lower than it was, and its total
+   *  says partial too (totalPartial). */
+  partial?: boolean;
+  /** Its own cost and that of every task handed on from it, down the line. */
+  totalCostUSD: number;
+  /** The total leaves out a task not counted, or one counted only in part (partial). */
+  totalPartial: boolean;
+  /** Null while it runs. */
+  durationMs: number | null;
+}
+
+export interface TaskAverage {
+  tasks: number;
+  /** Of those, the ones whose cost is known. */
+  counted: number;
+  /** Mean over the counted ones; null when none is. */
+  costUSD: number | null;
+  /** Mean over the ended ones; null when none has. */
+  durationMs: number | null;
+}
+
+export interface TaskReport {
+  /** Newest first. */
+  tasks: TaskEntry[];
+  /** byModel: the model that did most of a task's work, or the one it was launched on when nothing was counted. */
+  averages: { byAgent: Record<string, TaskAverage>; byModel: Record<string, TaskAverage> };
+  /** Tasks in the report whose cost is not known. */
+  notCounted: number;
+  /** The agents' names as they are now; a deleted agent has none. */
+  agentNames: Record<string, string>;
+}
+
 export interface FleetEntry {
   agentId: string;
   agentName: string;
@@ -84,14 +153,18 @@ export interface CatalogModel {
   alias?: boolean;
 }
 
-export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error';
+export type DisplayStatus = 'working' | 'waiting' | 'done' | 'ready' | 'stopped' | 'error' | 'asleep' | 'waking';
 
 export interface AgentTickItem {
   id: string;
   name: string;
   character: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
   displayStatus: DisplayStatus;
+  /** Since when it is asleep (ISO). See AgentStatus.asleepSince. */
+  asleepSince?: string;
+  /** Who woke it and how, while its CLI comes back. See AgentStatus.waking. */
+  waking?: AgentWaking;
   statusLine: string;
   currentTask: string;
   projectName: string;
@@ -100,6 +173,8 @@ export interface AgentTickItem {
   statusSince?: string;
   /** What a waiting agent waits on. See AgentStatus.waitingOn. */
   waitingOn?: AgentWaitingOn;
+  /** A permission question Tars holds for the window. See AgentStatus.permissionAsk. */
+  permissionAsk?: AgentStatus['permissionAsk'];
   /** A launch is on its way. See AgentStatus.launching. Always set on agents:tick. */
   launching?: boolean;
   provider: string;
@@ -162,23 +237,6 @@ export interface AgentEvent {
   data: string;
   timestamp: string;
   exitCode?: number;
-}
-
-export interface KanbanTaskElectron {
-  id: string;
-  title: string;
-  description: string;
-  column: 'backlog' | 'planned' | 'ongoing' | 'done';
-  projectId: string;
-  projectPath: string;
-  assignedAgentId: string | null;
-  requiredSkills: string[];
-  priority: 'low' | 'medium' | 'high';
-  progress: number;
-  createdAt: string;
-  updatedAt: string;
-  order: number;
-  labels: string[];
 }
 
 export interface VaultDocumentElectron {
@@ -294,6 +352,18 @@ export type AgentProvider =
  *  the command, file or tool asked about; `question` is an AskUserQuestion's
  *  first question. One line, controls and direction overrides removed, at most
  *  200 characters. */
+/** How an asleep agent was woken. Mirror of `AgentWakeVia` in electron/types/index.ts. */
+export type AgentWakeVia = 'message' | 'chat' | 'wake' | 'key' | 'start';
+
+/** An asleep agent whose CLI is on its way back. Mirror of `AgentWaking`. */
+export interface AgentWaking {
+  /** "you", "Tars", an agent's name, or a chat ("Telegram"). */
+  by: string;
+  via: AgentWakeVia;
+  /** ISO. */
+  since: string;
+}
+
 export interface AgentWaitingOn {
   kind: 'permission' | 'question';
   text: string;
@@ -301,14 +371,44 @@ export interface AgentWaitingOn {
 
 export interface AgentStatus {
   id: string;
-  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again. */
-  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped';
+  /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again.
+   *  'asleep': its CLI was ended after 30 minutes without a turn (never an orchestrator), its
+   *  conversation kept, from asleepSince; a message, a dispatch, a chat, `wake` or a key typed into
+   *  its pane wakes it on that conversation. agent:get gives the pane the last screen of the CLI it
+   *  slept in, in `output`. */
+  status: 'idle' | 'running' | 'completed' | 'error' | 'waiting' | 'stopped' | 'asleep';
+  /** ISO: since when it is asleep. */
+  asleepSince?: string;
+  /** Set by agent:list, agent:get and agents:tick from the moment a wake starts its CLI until
+   *  that CLI's session is up or its launch is given up: who woke it, how, and when. The status
+   *  beside it is `idle` (a key, `wake`, a room message, a start with no task) or `running` (a
+   *  message or a dispatch, a chat's cold start, a kanban task, a start with one): show waking whatever it says. */
+  waking?: AgentWaking;
   /** "you", "Tars", or the name of the agent that stopped it. */
   stoppedBy?: string;
   /** ISO. */
   stoppedAt?: string;
   /** One line, or none when the window's stop gave none. */
   stopReason?: string;
+  /** A permission question the state mod asked Tars instead of showing its
+   *  dialog (services/permission-asks.ts): the window answers it with
+   *  agent:answerPermission. Without it, a permission wait is the terminal's
+   *  dialog. Not saved. */
+  permissionAsk?: {
+    tool: string;
+    askedAt: string;
+    /** When Tars hands the question back to the terminal's dialog if nobody answers. */
+    until: string;
+    /** What is asked, whole: the command, the path or the address (the fields' first), the tool when none. */
+    subject: string;
+    /** The fields the person decides on, whole (each at most 2,000 characters). */
+    fields: Record<string, string>;
+    /** Why Claude Code asks, and the settings rule that asked, when it gave them. */
+    reason?: string;
+    rule?: string;
+  };
+  /** The last start that undid a stop: who stopped it, when and why, and who started it again and when. */
+  lastRestartAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string; restartedBy: string; restartedAt: string };
   /** ISO: running, yet nothing written to its transcript since then (30 minutes
    *  at least) and no tool at work: it looks frozen. Cleared by a write or by any
    *  other status. */
@@ -447,6 +547,23 @@ export interface HermesSshConfig {
   keyPath?: string;
   remotePort?: number;
   localPort?: number;
+}
+
+/**
+ * The relay to the user's Telegram through their Hermes (electron/services/hermes-relay.ts), as Settings, Hermes shows
+ * it. `state`: off (the switch, hermesRelayEnabled, is off); ready; unreachable (Hermes did not answer); not-configured
+ * (the tars-relay plugin has no user id on the server); plugin-missing (not installed on the server); unauthorized
+ * (the dashboard token was refused); no-connection (no Hermes connection saved). `waiting`: sends Hermes has not
+ * taken yet, which go when it does.
+ */
+export interface HermesRelayStatus {
+  enabled: boolean;
+  state: 'off' | 'ready' | 'unreachable' | 'not-configured' | 'plugin-missing' | 'unauthorized' | 'no-connection';
+  waiting: number;
+  lastError?: string;
+  lastSentAt?: string;
+  lastReplyAt?: string;
+  checkedAt?: string;
 }
 
 export interface HermesConnection {
@@ -626,59 +743,6 @@ export interface OverseerModelProvider {
   models: string[];
   isCurrent: boolean;
 }
-
-/** One message of an agent's conversation, from Claude Code's own journal. */
-export interface TranscriptToolCall {
-  id: string;
-  name: string;
-  /** One short line naming what the tool was called on. */
-  summary: string;
-}
-
-export interface TranscriptMessage {
-  /** The record's uuid, and the cursor to page above it. */
-  id: string;
-  role: 'user' | 'assistant';
-  /** ISO 8601. */
-  timestamp: string;
-  /** What to show. Empty when the message carried only tool activity. */
-  text: string;
-  /** The text hit the 4000 character cap and was cut. */
-  truncated?: boolean;
-  model?: string;
-  toolCalls?: TranscriptToolCall[];
-  /** Present when this record is a tool's answer, not something a person said.
-   *  Nine user records in ten are this. */
-  toolResult?: { toolUseId: string; isError: boolean };
-  /** Assistant thinking, separate so it can be folded away. Expect it to be
-   *  absent: Claude Code writes these blocks with an empty body, all 1756 of
-   *  them measured here, so do not build a view that depends on it. */
-  thinking?: string;
-}
-
-export type TranscriptUnavailableReason =
-  | 'unsupported-provider'
-  | 'no-session'
-  | 'not-found'
-  | 'unreadable';
-
-export type AgentTranscript =
-  | {
-      available: false;
-      reason: TranscriptUnavailableReason;
-      /** A plain sentence, safe to show as is. */
-      detail: string;
-    }
-  | {
-      available: true;
-      sessionId: string;
-      /** Oldest first. */
-      messages: TranscriptMessage[];
-      /** Something older than messages[0] exists. */
-      hasMore: boolean;
-      /** Pass as `before` for the page above this one. */
-      nextCursor?: string;
-    };
 
 /* ── The agent bus ─────────────────────────────────────────────────────────
  * Mirror of electron/types/index.ts. The Chat page reads these and never
@@ -872,9 +936,11 @@ export interface ClaudeAccountState extends ClaudeAccount {
   signedIn: boolean | null;
   email: string | null;
   subscriptionType: string | null;
-  /** From a status line on this account; null when never seen or reset. */
+  /** From a status line or a probe (get_usage) of this account; null when never seen or reset. */
   fiveHour: ClaudeAccountWindow | null;
   sevenDay: ClaudeAccountWindow | null;
+  /** Per-model weeklies a probe read ("Fable"); empty when none. */
+  models: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
   /** Epoch ms of that report. */
   updatedAt: number | null;
   /** Epoch seconds: a limit was hit, skipped until then. */
@@ -953,6 +1019,36 @@ export interface ClaudeAccountAgentChange {
   claudeAccountPin: ClaudeAccountId | null;
 }
 
+/** The disk Tars runs on: its free and total space, and the floor below which Tars warns (30 GB). */
+export interface DiskSpace { freeBytes: number; totalBytes: number; floorBytes: number }
+
+/** A folder under a project's .worktrees that no git worktree holds and no agent owns. */
+export interface OrphanFolder {
+  project: string;
+  path: string;
+  /** Its path under the project's .worktrees. */
+  name: string;
+  /** git-forgot: its .git points to a gitdir that is gone. no-git: it never had one. */
+  reason: 'git-forgot' | 'no-git';
+  sizeBytes: number;
+  /** The newest change in it (caches and .git aside), or null. */
+  lastChangedAt: string | null;
+}
+export interface OrphanListing {
+  folders: OrphanFolder[];
+  count: number;
+  totalBytes: number;
+  /** The projects whose worktrees git could not list (as OrphanFolder.project): none of their folders is offered, which an empty list does not say. */
+  unreadProjects: string[];
+}
+export interface OrphanRemovalProgress { done: number; total: number; freedBytes: number; current: string }
+/** in-use: a process works in it (detail names it). unknown-use: the processes could not be read. failed: detail says why. */
+export interface OrphanRemovalReport {
+  removed: number;
+  freedBytes: number;
+  kept: Array<{ path: string; project: string; reason: 'in-use' | 'unknown-use' | 'failed'; detail?: string }>;
+}
+
 /** What the claude-accounts channels answer: the result, or a sentence. */
 export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
 
@@ -1015,20 +1111,21 @@ export interface ElectronAPI {
     list: () => Promise<AgentStatus[]>;
     /** Ends the agent's terminal and everything its CLI started; the agent reads `stopped`, by "you". */
     stop: (id: string, reason?: string) => Promise<{ success: boolean }>;
-    remove: (id: string) => Promise<{ success: boolean }>;
-    sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean }>;
+    /** savedTo: the wip/ branch its uncommitted work was saved on. worktreeKept: why its worktree was not removed (the save failed, or it holds what no commit keeps). */
+    remove: (id: string) => Promise<{ success: boolean; savedTo?: string; worktreeKept?: string }>;
+    /** Answers the permission question the state mod asked Tars for this agent (AgentStatus.permissionAsk): allow or deny decide the call, ask shows it in the terminal's dialog. False when there was none. */
+    answerPermission: (id: string, decision: 'allow' | 'deny' | 'ask', reason?: string) => Promise<{ success: boolean }>;
+    /** Into the agent's terminal. Asleep, a key wakes it (`woke: true`); a lone Esc or Ctrl+C, a mouse or focus report does nothing. */
+    sendInput: (params: { id: string; input: string }) => Promise<{ success: boolean; woke?: boolean; error?: string }>;
+    /** An asleep agent's CLI started on its own conversation, nothing typed; refused for one that is not asleep. */
+    wake: (id: string) => Promise<{ success: boolean; error?: string }>;
     resize: (params: { id: string; cols: number; rows: number }) => Promise<{ success: boolean }>;
-    /**
-     * The agent's real conversation, oldest first. Page upwards with the
-     * previous answer's nextCursor as `before`. Default 50 messages, 200 max.
-     */
-    transcript: (params: { agentId: string; before?: string; limit?: number }) => Promise<AgentTranscript>;
     setSecondaryProject: (params: { id: string; secondaryProjectPath: string | null }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
     onOutput: (callback: (event: AgentEvent) => void) => () => void;
     onError: (callback: (event: AgentEvent) => void) => () => void;
     onComplete: (callback: (event: AgentEvent) => void) => () => void;
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
-    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string }) => void) => () => void;
+    onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
      *  began: the event below only reaches a window already listening. An
@@ -1164,6 +1261,8 @@ export interface ElectronAPI {
         label: string;
         fiveHour: { usedPercentage: number; resetsAt: number } | null;
         sevenDay: { usedPercentage: number; resetsAt: number } | null;
+        /** Per-model weeklies ("Fable"), read through Claude Code's get_usage; absent when none was read. */
+        models?: Array<{ name: string; usedPercentage: number; resetsAt: number }>;
         updatedAt: number | null;
       }>;
       tokenStats: {
@@ -1265,6 +1364,22 @@ export interface ElectronAPI {
         turns: number;
       }>;
     }>;
+    /**
+     * What each task cost (PLAN-1.9.3.md, item 2). A task runs from the turn that starts it to the rest that ends
+     * it, in one agent; work handed on from it to other agents is a task of their own, under it. Priced from the
+     * transcripts when asked, the way the rest of the page prices them; an ACP run at what it reported.
+     */
+    tasks: (query?: {
+      /**
+       * An exact start, ms since the epoch: the tasks started from it, the averages over those alone. What a page whose
+       * window starts at a local midnight or at an hour asks for; before `sinceDays` when both are given.
+       */
+      since?: number;
+      /** The last `sinceDays` 24-hour periods back from now; all of the file without it. */
+      sinceDays?: number;
+      projectPath?: string;
+      agentId?: string;
+    }) => Promise<TaskReport>;
   };
 
   /** Search across every agent's output at once. */
@@ -1287,7 +1402,8 @@ export interface ElectronAPI {
 
   /** What an agent changed: per-file stats plus the actual patch. */
   review?: {
-    diff: (repoPath: string, baseBranch?: string) =>
+    /** `listOnly`: the files and counts, with `patch` empty; read each file's patch with `file`. */
+    diff: (repoPath: string, baseBranch?: string, opts?: { listOnly?: boolean }) =>
       Promise<{ success: boolean; diff?: ReviewDiff; error?: string }>;
     file: (repoPath: string, file: string, baseBranch?: string) =>
       Promise<{ success: boolean; patch?: string; error?: string }>;
@@ -1324,6 +1440,8 @@ export interface ElectronAPI {
       telegramAuthToken: string;
       telegramAuthorizedChatIds: string[];
       telegramRequireMention: boolean;
+      /** The relay to the user's Telegram through their Hermes. On, the Tars bot's token is erased and the bot off. */
+      hermesRelayEnabled?: boolean;
       slackEnabled: boolean;
       slackBotToken: string;
       slackAppToken: string;
@@ -1337,6 +1455,9 @@ export interface ElectronAPI {
       discordRequireMention: boolean;
       /** Error reports to Sentry, off by default (services/error-reports in main). */
       errorReportsEnabled: boolean;
+      /** The error triage (services/error-triage in main): a Sentry token with the event:read scope, and the project whose board gets the tasks. Empty, nothing polls. */
+      sentryAuthToken: string;
+      sentryTriageProject: string;
       jiraEnabled: boolean;
       jiraDomain: string;
       jiraEmail: string;
@@ -1428,6 +1549,7 @@ export interface ElectronAPI {
       telegramAuthToken?: string;
       telegramAuthorizedChatIds?: string[];
       telegramRequireMention?: boolean;
+      hermesRelayEnabled?: boolean;
       slackEnabled?: boolean;
       slackBotToken?: string;
       slackAppToken?: string;
@@ -1440,6 +1562,8 @@ export interface ElectronAPI {
       discordAllowedUserIds?: string[];
       discordRequireMention?: boolean;
       errorReportsEnabled?: boolean;
+      sentryAuthToken?: string;
+      sentryTriageProject?: string;
       jiraEnabled?: boolean;
       jiraDomain?: string;
       jiraEmail?: string;
@@ -1821,65 +1945,6 @@ export interface ElectronAPI {
     onThread: (callback: (thread: BusThread) => void) => () => void;
   };
 
-  kanban?: {
-    list: () => Promise<{ tasks: KanbanTaskElectron[]; error?: string }>;
-    get: (id: string) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    create: (params: {
-      title: string;
-      description: string;
-      projectId: string;
-      projectPath: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-    }) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    update: (params: {
-      id: string;
-      title?: string;
-      description?: string;
-      requiredSkills?: string[];
-      priority?: 'low' | 'medium' | 'high';
-      labels?: string[];
-      progress?: number;
-      assignedAgentId?: string | null;
-    }) => Promise<{ success: boolean; task?: KanbanTaskElectron; error?: string }>;
-    move: (params: {
-      id: string;
-      column: 'backlog' | 'planned' | 'ongoing' | 'done';
-      order?: number;
-    }) => Promise<{
-      success: boolean;
-      task?: KanbanTaskElectron;
-      agentSpawned?: boolean;
-      agentId?: string;
-      error?: string;
-    }>;
-    delete: (id: string) => Promise<{ success: boolean; error?: string }>;
-    reorder: (params: {
-      taskIds: string[];
-      column: 'backlog' | 'planned' | 'ongoing' | 'done';
-    }) => Promise<{ success: boolean; error?: string }>;
-    generate: (params: {
-      prompt: string;
-      availableProjects: Array<{ path: string; name: string }>;
-    }) => Promise<{
-      success: boolean;
-      task?: {
-        title: string;
-        description: string;
-        projectPath: string;
-        projectId: string;
-        priority: 'low' | 'medium' | 'high';
-        labels: string[];
-        requiredSkills: string[];
-      };
-      error?: string;
-    }>;
-    onTaskCreated: (callback: (task: KanbanTaskElectron) => void) => () => void;
-    onTaskUpdated: (callback: (task: KanbanTaskElectron) => void) => () => void;
-    onTaskDeleted: (callback: (event: { id: string }) => void) => () => void;
-  };
-
   // Agent templates
   template?: {
     list: () => Promise<{ templates: AgentTemplate[]; error?: string }>;
@@ -1898,6 +1963,9 @@ export interface ElectronAPI {
     saveConnection: (connection: HermesConnection) => Promise<{ success: boolean; error?: string }>;
     /** `tokenNotImported`: the connection came without the token Hermes Desktop keeps encrypted, which Tars cannot read. */
     importDesktopConnection: () => Promise<{ success: boolean; connection?: HermesConnection; baseUrl?: string; error?: string; tokenNotImported?: boolean }>;
+    /** The relay's state now; `onRelayStatus` hears each change of it. */
+    relayStatus: () => Promise<HermesRelayStatus>;
+    onRelayStatus: (callback: (status: HermesRelayStatus) => void) => () => void;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;
@@ -2048,6 +2116,15 @@ export interface ElectronAPI {
     }) => void) => () => void;
     onUpdateDownloaded: (callback: () => void) => () => void;
     onUpdateError: (callback: (error: string) => void) => () => void;
+  };
+
+  // The disk and the folders no agent owns (Settings · System)
+  system: {
+    disk: () => Promise<DiskSpace | null>;
+    orphanFolders: () => Promise<OrphanListing>;
+    /** Removes the folders named (the OrphanFolder.path of the rows shown), each only if it is still an orphan, and nothing else; one at a time, asking nothing itself (the window confirms first). A folder a process works in is kept. */
+    removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>;
+    onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

@@ -265,7 +265,7 @@ const CASES: Case[] = [
     env: AGENT,
     respond: bootstrapAndMemory,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
@@ -278,7 +278,7 @@ const CASES: Case[] = [
     env: { CLAUDE_MGR_API_TOKEN: 'tok-1' },
     respond: ({ path: p }) => (p === '/api/memory/context' ? { body: JSON.stringify({ context: 'No previous context found for this agent/project.' }) } : {}),
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume', hook: 'SessionStart' } },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: S, project_path: PROJECT } },
     ],
     stdout: CONTINUE,
@@ -290,8 +290,8 @@ const CASES: Case[] = [
     env: { ...AGENT, CLAUDE_PROJECT_PATH: '/from/env' },
     respond: ({ n }) => (n === 0 ? { drop: true } : {}),
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: '/from/env' } },
     ],
@@ -307,7 +307,7 @@ const CASES: Case[] = [
       fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok\n');
     },
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: 'Bearer shared-tok' },
       { method: 'GET', path: '/api/memory/context', auth: 'Bearer shared-tok', query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
@@ -319,7 +319,7 @@ const CASES: Case[] = [
     payload: { session_id: S, cwd: 'C:\\Users\\n\\Claude Project\\a&b #1' },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: 'C:\\Users\\n\\Claude Project\\a&b #1' } },
     ],
@@ -332,7 +332,7 @@ const CASES: Case[] = [
     payload: { session_id: S, prompt: 'rebase onto main', hook_event_name: 'UserPromptSubmit' },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'running', event: 'UserPromptSubmit', current_task: 'rebase onto main\n' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit', current_task: 'rebase onto main\n' } },
     ],
     stdout: CONTINUE,
   },
@@ -344,7 +344,7 @@ const CASES: Case[] = [
     respond: ({ n }) => (n === 0 ? { drop: true } : {}),
     requests: [0, 1].map(() => ({
       method: 'POST' as const, path: '/api/hooks/status', auth: BEARER,
-      body: { agent_id: 'agent-1', session_id: S, status: 'running', event: 'UserPromptSubmit', current_task: 'é'.repeat(100) },
+      body: { agent_id: 'agent-1', session_id: S, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit', current_task: 'é'.repeat(100) },
     })),
     stdout: CONTINUE,
   },
@@ -407,9 +407,9 @@ const CASES: Case[] = [
     payload: { session_id: S, last_assistant_message: 'Done: "all" green\n\n' },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: 'Done: "all" green' } },
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle' } },
-      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: 'Done: "all" green' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
+      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
     stdout: CONTINUE,
   },
@@ -420,9 +420,9 @@ const CASES: Case[] = [
     env: AGENT,
     setup: home => { writeTranscript(home); },
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: 'first part\nsecond part' } },
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle' } },
-      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: 'first part\nsecond part' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
+      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
     stdout: CONTINUE,
   },
@@ -432,9 +432,20 @@ const CASES: Case[] = [
     payload: { session_id: S, last_assistant_message: `${'a'.repeat(3999)}€tail` },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle' } },
-      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S } },
+      { method: 'POST', path: '/api/hooks/output', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', hook: 'Stop' } },
+      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'Stop posts what waits at rest: its crons, and its background tasks still running',
+    event: 'on-stop',
+    payload: { session_id: S, session_crons: [{ id: 'c1' }, { id: 'c2' }], background_tasks: [{ status: 'running' }, { status: 'completed' }, 'x', { status: 'failed' }, {}] },
+    env: AGENT,
+    requests: [
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', hook: 'Stop', session_id: S, status: 'idle', pending: { crons: 2, background: 3 } } },
+      { method: 'POST', path: '/api/hooks/agent-stopped', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, hook: 'Stop' } },
     ],
     stdout: CONTINUE,
   },
@@ -454,7 +465,7 @@ const CASES: Case[] = [
     respond: ({ n }) => (n === 0 ? { drop: true } : {}),
     requests: [0, 1].map(() => ({
       method: 'POST' as const, path: '/api/hooks/status', auth: BEARER,
-      body: { agent_id: 'agent-1', session_id: S, status: 'error', event: 'StopFailure', error_kind: 'authentication_failed', error_message: 'Not logged in · "run" /login\nnow' },
+      body: { agent_id: 'agent-1', session_id: S, status: 'error', event: 'StopFailure', hook: 'StopFailure', error_kind: 'authentication_failed', error_message: 'Not logged in · "run" /login\nnow' },
     })),
     stdout: '',
   },
@@ -714,7 +725,7 @@ describe('the runner never blocks the CLI', () => {
     expect(run.code).toBe(0);
     expect(run.stdout).toBe(CONTINUE);
     await settle(1);
-    expect(recorded.map(r => r.body)).toEqual([{ agent_id: 'agent-1', session_id: '', status: 'running', event: 'UserPromptSubmit', current_task: '\n' }]);
+    expect(recorded.map(r => r.body)).toEqual([{ agent_id: 'agent-1', session_id: '', status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit', current_task: '\n' }]);
   }, 30_000);
 
   it('fails loudly on an event it does not know, and posts nothing', async () => {
@@ -777,7 +788,7 @@ describe('a long transcript', () => {
     expect(run.code).toBe(0);
     expect(run.ms).toBeLessThan(10_000);
     const output = requests.find(r => r.path === '/api/hooks/output');
-    expect(output?.body).toEqual({ agent_id: 'agent-1', session_id: S, output: Buffer.from(last).subarray(0, 4000).toString('utf8').replace(/\n+$/, '') });
+    expect(output?.body).toEqual({ agent_id: 'agent-1', hook: 'Stop', session_id: S, output: Buffer.from(last).subarray(0, 4000).toString('utf8').replace(/\n+$/, '') });
     expect(requests.map(r => r.path)).toEqual(['/api/hooks/output', '/api/hooks/status', '/api/hooks/agent-stopped']);
   }, 60_000);
 

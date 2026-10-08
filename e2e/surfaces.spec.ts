@@ -90,10 +90,18 @@ for (const surface of ALL as Array<{ name: string; route: string; clickText?: st
     // Anything that publishes an async probe state waits for it to land rather
     // than being photographed mid-probe. Chat's gateway banner is the case
     // that forced this: it appears a beat late and moves the whole thread, a
-    // 16,000 pixel difference between two runs of the same build.
-    const probing = page.locator('[data-gateway-state="checking"]');
-    if (await probing.count() > 0) {
-      await probing.first().waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
+    // 16,000 pixel difference between two runs of the same build. Settings ·
+    // Hermes reads the tailnet for its webhook row, two `tailscale` calls one
+    // after the other, and the row says "detecting…" until both answer: it was
+    // photographed that way at a load average of about 90 (2026-10-05).
+    // Settings · AI & Providers asks each CLI for its version, and every row
+    // reads "checking" until all of them have answered: it was photographed
+    // that way at a load average of about 40, 5,161 pixels (QA's gate of #311,
+    // 2026-10-05). A probe with several rows waits for the last of them.
+    for (const probe of ['[data-gateway-state="checking"]', 'input[placeholder="detecting…"]', ':text-is("checking")']) {
+      const probing = page.locator(probe);
+      const until = Date.now() + 15_000;
+      while (await probing.count() > 0 && Date.now() < until) await page.waitForTimeout(100);
     }
 
     await page.waitForTimeout(surface.settle ?? 900);

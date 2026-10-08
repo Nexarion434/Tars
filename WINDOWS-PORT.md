@@ -12,8 +12,8 @@ Statuts : **KO** cassé (vérifié), **?** non testé, **OK** vérifié avec la 
 
 **État au 2026-10-02.** Le portage est livré. `windows` à ca057ed2, synchronisé avec l'upstream 1.9.2
 (74508222), `CI - Windows` verte sur windows-latest (unit + E2E, run 37000763260) et `CI - Tests` verte sur
-ubuntu au même commit. Dernière release publiée sur `Nexarion434/Tars` : `v1.9.2-win.1` (depuis ca057ed2) ;
-avant elle `v1.9.0-win.1` à `v1.9.1-win.5`. Checklist manuelle du §4
+ubuntu au même commit. Dernière release publiée sur `Nexarion434/Tars` : `v1.9.3-win.1` (depuis 256d7a15, le 2026-10-08) ;
+avant elle `v1.9.0-win.1` à `v1.9.2-win.1`. Checklist manuelle du §4
 passée en entier par Nicolas le 2026-09-28. Matrice (§2) : restent partielles 9 (envoi programmatique),
 12 (vrai Gemini), 15 (vraie installation de skill) et 31 (textes mac, D10) ; la 24 (Hermes Desktop,
 Tailscale, Tasmania) est faite (`win/integrations-paths`). Ce qui reste ouvert : §5bis.
@@ -228,6 +228,48 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
 - Test local seulement : `build-renderer` « Ctrl+C » échoue sur cette machine avant comme après la synchro
   (le script ne sort pas après le Ctrl+C) ; vert en CI.
 
+**Synchro upstream 1.9.3 (2026-10-07, à la main : la synchro quotidienne bute depuis le 05/10 sur 21 conflits,
+issue #10 du fork).** Fusion du tag `v1.9.3` (la 1.9.4 en cours sur `main` viendra par la synchro quotidienne).
+Écarts Windows du code arrivé avec la 1.9.3 :
+- Corrigés : le runner Node des hooks (D1) nomme le hook qu'il poste (`hook`) et ce qui attend au repos (`pending`)
+  comme les `.sh` de la 1.9.3, sinon Tars compte deux fois un tour quand le mod d'état tourne ; `probeVersion`
+  (`electron/core/version-probe.ts`) résout un CLI Windows (`.cmd` npm) par `resolveCliBinary`, sans console, et
+  n'appelle `taskkill /T` que tant que la sonde tourne (un pid libéré est réutilisé par Windows) ; le dossier
+  temporaire des tests prend l'orthographe canonique (RUNNER~1) et attend qu'un process lâche son dossier de travail ;
+  les dossiers orphelins donnent leur vraie taille (\`electron/platform/disk-usage.ts\`, sans \`du\` : 0 Ko avant) et
+  sont nommés par leur projet, jamais par un chemin qui contient le home.
+- À trancher (Nicolas) : sous Windows, Réglages > Système propose encore de supprimer les dossiers orphelins alors
+  que rien ne peut l'être (tous gardés « usage inconnu »).
+- À vérifier : un message de plusieurs lignes tapé juste après l'enregistrement de session, avant que le CLI passe en
+  mode brut, perd ses marqueurs de collage sous ConPTY et part ligne par ligne (vu avec un CLI de test lent).
+- Inactifs sous Windows, sans erreur : la mise en veille des agents (`electron/services/agent-sleep.ts`, lit `ps`
+  comme la veille des agents bloqués : refus `no-process-table`) ; les dossiers orphelins
+  (`electron/services/orphan-folders.ts`, `lsof` ou `/proc` : tout dossier reste « usage inconnu », rien n'est
+  supprimé) ; le partage des `node_modules` d'un worktree (`worktree-deps.ts`, APFS ou reflink : installation comme
+  avant). Port commun aux trois : lire la table des process et les dossiers ouverts sous Windows.
+- Dossier temporaire par agent (`agent-tmp.ts`) : `TMPDIR` et `CLAUDE_CODE_TMPDIR` seulement ; sous Windows les
+  commandes gardent `%TEMP%`, que Windows ne vide pas au démarrage.
+- D17 (comptes Claude) : la sonde d'usage (`usage-probe.ts`) lance `claude` par son nom nu avec des kills de groupe
+  POSIX ; à porter avec les comptes.
+- Tests upstream adaptés : bits de mode POSIX (`hasPosixModes`), liens symboliques selon le privilège, dossier de
+  projet Claude par `encodeClaudeProjectDir`, hooks `.sh` non livrés (`shHooksNotShipped`), lancement Windows (le
+  CLI est le process du terminal), faux CLIs en shim `.cmd`. Retirés avec l'ancien tableau Kanban local de
+  l'upstream : `kanban-match-windows-paths` et le cas « board » de `replaced-terminal-exit`.
+- Publiée : `v1.9.3-win.1` le 2026-10-08 depuis 256d7a15 (run 37752677559, `latest.yml` vérifié), sur accord de
+  Nicolas.
+
+**Synchro upstream 1.9.5 (2026-10-08, à la main).** Fusion du tag `v1.9.5` (1.9.4 et 1.9.5, 57 commits), 4 conflits.
+L'upstream a changé de nom : `JeanBrasse/Tars` est devenu `cooper-labs-tech/Tars` (l'ancien nom redirige) ; les
+mises à jour Windows viennent toujours du fork (`WINDOWS_UPDATE_REPO`). Écarts Windows :
+- Mémoire (Brain) : la double orthographe d'un projet (chemin enregistré et chemin réel, `spellingsOf`) passe par
+  les noms de dossier de la couche plateforme (`claudeProjectDirNames`), qui écartent un nom qui n'est pas un seul
+  dossier.
+- Tests upstream adaptés : `memory-project-spellings` lie ses projets par une jonction (aucun privilège requis) et
+  nomme le dossier Claude par `encodeClaudeProjectDir` ; dans `acp-quit-ends-runs`, le balayage de fin de cas lit
+  les lignes de commande dans Win32_Process, après un cas en échec seulement (jusqu'à 25 s la requête sur le runner) ;
+  `per-task-requester` écrit ses faux CLIs par `writeNodeCli` (le shim `.cmd` sous Windows). Le masque du disque de
+  Réglages > Système est celui de l'upstream (indice et colonne de 300), qui rend inutile celui ajouté pour Windows.
+
 **Ouvert.**
 - D10 : textes propres à mac, en attente de Nicolas.
 - Matrice §2, lignes partielles : 9, 12, 15, 31 (voir la matrice). Ligne 38 : aucune machine macOS n'a rien lancé.
@@ -281,5 +323,8 @@ issue #9 du fork).** Écarts Windows du code arrivé avec la 1.9.2, non portés 
 | 2026-09-29 | Release `v1.9.1-win.4` publiée depuis 04c6169f (run 36585650059, `latest.yml` vérifié), sur accord de Nicolas | release | CI Windows et Linux vertes | accord de Nicolas | 04c6169f |
 | 2026-10-02 | Synchro upstream 1.9.2 (74508222, dont nos PR #256 à #268) à la main, la quotidienne ayant buté sur 26 conflits (issue #9) : 28 conflits résolus au profit de l'upstream + ajouts win32 (killPty, attente ConPTY au quit, lancement direct D2, childEnv, gardes de chemins de `platform/real-target`) ; D17 : comptes Claude masqués et éteints sous Windows ; la fenêtre relit la fiche d'un agent passé à stopped (qui, quand, pourquoi), que le garde Windows de `agent:complete` ne lui faisait plus relire ; tests et specs POSIX sautés sous win32 en le disant, specs du fork mises au stop avec raison et au bouton plein écran ; 5 références win32 refaites (dashboard, agents, projects, usage, settings-system) | `win/sync-upstream-1002` | npm test 5210/0 hors Ctrl+C local ; E2E 166 : 40 surfaces, specs corrigées vertes, quit-time.win32 18 tours verts (~0,36 s, rien de restant), pty-kill vert | APPROVE (win-reviewer, 0 bloquant) | bdab49a6 |
 | 2026-10-02 | CI sur windows-latest après la synchro : stop-reason-routes démarre un claude.exe de remplacement (le runner n'a pas de claude), deux specs Usage des comptes Claude sautées sous win32 (D17), 30 s pour les tests git et npm de scripts (dépassements de 5 s sur un runner chargé), pty-kill 8 dit comment son harnais a fini quand il ne rend rien | `windows` | CI Windows (unit + E2E) et Linux vertes, run 37000763260 | n/a | ca057ed2 |
+| 2026-10-08 | Synchro upstream 1.9.5 (tag `v1.9.5`, 1.9.4 et 1.9.5) à la main : 4 conflits (mémoire, OPERATIONS, un test ACP), résolus des deux côtés ; tests upstream adaptés à Windows (§5bis) | `win/sync-1.9.5` | unit, tsc, lint | à publier | |
+| 2026-10-08 | Release `v1.9.3-win.1` publiée depuis 256d7a15 (run 37752677559, installeur 133 Mo, `latest.yml` vérifié), sur accord de Nicolas (« oui ») | release | CI Windows et Linux vertes (PR #11) | accord de Nicolas | 256d7a15 |
+| 2026-10-07 | Synchro upstream 1.9.3 (tag `v1.9.3`) à la main, la quotidienne butant sur 21 conflits depuis le 05/10 (issue #10) : conflits résolus au profit de l'upstream + chemins win32 (lancement direct D2 avec le réveil et la note de reprise de l'upstream, variables de profil du HOME de test) ; runner Node des hooks à parité avec les `.sh` 1.9.3 ; sonde de version Windows ; tests upstream adaptés à Windows (§5bis) | `win/sync-1.9.3` | unit, tsc, lint, E2E | publiée (`v1.9.3-win.1`) | 256d7a15 |
 | 2026-10-02 | Release `v1.9.2-win.1` publiée depuis ca057ed2 (run 37004161915, installeur 133 Mo, `latest.yml` vérifié), sur accord de Nicolas (« si c'est vert tu peux publier ») | release | CI Windows et Linux vertes | accord de Nicolas | ca057ed2 |
 | 2026-10-02 | Machines, partie 1 (fonctionnalité du fork, à proposer à l'upstream ensuite) : un pont par Tars sur l'adresse Tailscale (port 31418, quatre routes, un secret par machine appairée, haché), appairage par code à six chiffres prouvé par HMAC sur un nonce (cinq essais, cinq minutes, une fois), Réglages > Machines (nom, adresse, code, machines appairées, See ou Drive, désappairer) ; maquettes validées par Nicolas (`Settings · Machines` et les quatre autres) ; SECURITY.md §8 | `win/machines` | unités machines 32/32, spec `machines-pairing` (deux Tars) verte et mordue par deux mutants | relecture finale | |

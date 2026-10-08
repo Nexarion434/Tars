@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
+import { dropPermissionAsks } from '../permission-asks';
 import { publishedWaitingOn } from '../../utils/waiting-on';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -9,7 +10,10 @@ import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
-import { clearStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
+import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
+import { diskRefusal, freeSpace } from '../../core/disk-space';
+import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
+import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
@@ -25,6 +29,8 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
+import { liveTaskLedger, noteHandOff } from '../task-ledger';
+import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests } from '../../core/task-requests';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
@@ -32,6 +38,7 @@ import { withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
+import { envelopeValue } from '../../utils/envelope-value';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -49,6 +56,12 @@ type SpawnOpts = {
   model?: string;
   permissionMode?: 'normal' | 'auto' | 'bypass';
   printMode?: boolean;
+  /** Who starts it: noted when the start undoes a stop (core/agent-stop.ts). */
+  by?: string;
+  /** Who this session wakes the agent for, and how, should it be asleep (core/agent-asleep.ts). */
+  wokenBy?: { by: string; via: AgentWakeVia };
+  /** The request this prompt runs (core/task-requests.ts): delivered as the session starts. */
+  taskRef?: string;
 };
 
 /**
@@ -81,6 +94,17 @@ function stopOf(agent: AgentStatus): { stoppedBy?: string; stoppedAt?: string; s
     : {};
 }
 
+/**
+ * The stop a start just undid, for the one who started it (Noah, 05/10: an
+ * orchestrator may start again an agent Noah stopped, and is told why it was
+ * stopped). Nothing when this start undid none.
+ */
+function restartedAfterStop(agent: AgentStatus, since: string): { restartedAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string } } {
+  const restart = agent.lastRestartAfterStop;
+  if (!restart || restart.restartedAt < since) return {};
+  return { restartedAfterStop: { stoppedBy: restart.stoppedBy, stoppedAt: restart.stoppedAt, stopReason: restart.stopReason } };
+}
+
 function announceAgent(agent: AgentStatus): void {
   broadcastToAllWindows('agent:status', {
     type: 'status',
@@ -102,6 +126,13 @@ async function spawnAgentSession(
   // quit ends: refused before anything here ends the old terminal (the Audit's
   // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
   // outlived Tars). spawnAgentPty refuses too, for the callers that are not here.
+  // A nearly full disk: the reason, rather than the 500 a throw from the
+  // spawn below would come back as (core/disk-space.ts).
+  const full = diskRefusal(freeSpace());
+  if (full) {
+    sendJson({ error: full, diskFull: true }, 507);
+    return false;
+  }
   if (isQuitting()) {
     sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
     return false;
@@ -354,16 +385,33 @@ async function spawnAgentSession(
   noteLaunch(ptyProcess, launchSettings(agent));
 
   agent.ptyId = ptyId;
-  // The link recorded at the top of the route named the session that was live
-  // then, which this call has just replaced. Carry it onto the new one: the
-  // caller did ask for this work, and without this the notification would be
-  // dropped as belonging to a session that no longer exists.
-  if (agent.requestedBy) agent.requestedBy = { ...agent.requestedBy, ptyId };
+  // The request this prompt runs is delivered with it, and its first turn is
+  // its turn (core/task-requests.ts). A link left from before (an older Tars)
+  // is carried onto the new terminal, as it was.
+  const request = opts.taskRef ? agent.taskQueue?.find(r => r.ref === opts.taskRef) : undefined;
+  if (request) {
+    requestStartsSession(agent, request.ref);
+    requestDelivered(agent, request.ref);
+  } else if (agent.requestedBy) {
+    agent.requestedBy = { ...agent.requestedBy, ptyId };
+  }
   agent.ptyCwd = rawWorkingDir;
-  // A terminal again: a stop is over (core/agent-stop.ts).
+  // A terminal again: a stop is over (core/agent-stop.ts), and if there was
+  // one, who undid it is noted beside who made it; and a sleep is over too,
+  // the agent waking on its conversation, its task the message that woke it.
+  noteRestartAfterStop(agent, opts.by ?? opts.wokenBy?.by ?? 'Tars');
   clearStop(agent);
+  if (opts.wokenBy) noteWaker(agent.id, opts.wokenBy.by, opts.wokenBy.via);
+  wakeFromSleep(agent);
   agent.status = 'running';
   agent.workHandedAt = new Date().toISOString();
+  // Work handed over, for the task its first turn opens (task-ledger.ts).
+  if (prompt.trim()) {
+    const asker = request?.requesterAgentId ?? agent.requestedBy?.agentId;
+    noteHandOff(agent.id, asker
+      ? { source: 'agent', requesterAgentId: asker, text: prompt }
+      : { source: 'tars', text: prompt });
+  }
   agent.currentTask = prompt;
   agent.output = [];
   agent.lastCleanOutput = undefined;  // Clear stale output from previous task
@@ -499,6 +547,48 @@ function heldReasonFor(agent: AgentStatus): string {
   return dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined) ? DIALOG_REASON : HELD_REASON;
 }
 
+/**
+ * How long a held message waits before the agent that sent it is told again
+ * (bug-held-forever-05-10.md: three messages answered HELD, "Nothing needs
+ * resending", waited 2 h 20 to 2 h 40, and nobody heard of them again).
+ */
+export const HELD_RETELL_MS = 3 * 60_000;
+
+const clockOf = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+
+/**
+ * Tells the agent that sent a message, once, when it is still held
+ * HELD_RETELL_MS on: why, and that only a person at the terminal ends the
+ * wait. A target in a turn may have somebody typing at it: it is looked at
+ * again later. Returns what cancels it, for when the message goes in or is
+ * dropped.
+ */
+function retellWhileHeld(target: AgentStatus, sender: MessageSender | undefined, sentAt: number): () => void {
+  if (sender?.kind !== 'agent' || sender.id === target.id) return () => undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    timer = setTimeout(() => {
+      if (target.status === 'running') { arm(); return; }
+      const from = agents.get(sender.id);
+      const pty = from?.ptyId ? ptyProcesses.get(from.ptyId) : undefined;
+      if (!pty) return;
+      // Quoted as data, as every value a note of Tars's carries outside a fence
+      // (utils/envelope-value.ts): a name with a line separator in it would
+      // otherwise put a line of its own in Tars's voice (the Audit's gate of #314).
+      const name = envelopeValue(target.name || target.id);
+      const minutes = Math.max(1, Math.round((Date.now() - sentAt) / 60_000));
+      writeProgrammaticInput(pty,
+        `[Tars] Your message to ${name} of ${clockOf(sentAt)} is still not in its terminal, ${minutes} minutes on. `
+        + `${heldReasonFor(target)} Only a person at that terminal can end this wait: if nobody is there, tell the user, `
+        + `or stop ${name} and start it again, which drops the message, and send it again then.`,
+        true, { agentId: sender.id, from: 'Tars', sender: { kind: 'tars' } });
+    }, HELD_RETELL_MS);
+    timer.unref?.();
+  };
+  arm();
+  return () => { if (timer) clearTimeout(timer); };
+}
+
 /** Who a message into an agent's terminal is from, as verified: the agent whose
  *  token made the call, or Tars when it is Tars's own pass or the agent itself. */
 function senderOf(agent: AgentStatus, req: RouteRequest): MessageSender {
@@ -514,17 +604,55 @@ function senderName(agent: AgentStatus, req: RouteRequest): string {
   return agents.get(callerId)?.name || callerId;
 }
 
-function recordRequester(agent: AgentStatus, req: RouteRequest): void {
+/**
+ * The request this call hands over, queued on the agent (core/task-requests.ts),
+ * or undefined when the caller is nobody's requester: Tars, the agent itself,
+ * or a worker reporting to the agent that leads it. It used to be written into
+ * `requestedBy` here, at send time, so a second request overwrote the first
+ * while the first was still the agent's work. Returns its id, for the sender
+ * line Tars types before the message.
+ */
+function requestFor(agent: AgentStatus, req: RouteRequest): string | undefined {
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
-  // Bound to the session this work is about to run in. When the route ends up
-  // spawning a fresh one, spawnAgentSession re-stamps it with the new ptyId
-  // below; when the spawn fails, the link keeps a ptyId that is not live and
-  // is therefore ignored, which is the right way round.
-  const requestedBy = agentId ? { agentId, ptyId: agent.ptyId ?? '' } : undefined;
-  if (agent.requestedBy?.agentId === requestedBy?.agentId
-      && agent.requestedBy?.ptyId === requestedBy?.ptyId) return;
-  agent.requestedBy = requestedBy;
+  // A worker writing to the agent that leads it (the orchestrator that handed
+  // it the work, or its project's orchestrator) is reporting, not delegating:
+  // as a link, the orchestrator's next outcome was typed into the worker's
+  // terminal as news of work it had never handed over. The orchestrator's own
+  // link, if it has one, stays as it is.
+  const caller = agentId ? agents.get(agentId) : undefined;
+  if (caller && (caller.requestedBy?.agentId === agent.id
+      || (agent.role === 'orchestrator' && agent.projectPath === caller.projectPath))) return undefined;
+  if (!agentId) return undefined;
+  const ref = enqueueRequest(agent, agentId);
+  saveAgents();
+  return ref;
+}
+
+/**
+ * Written into the agent's terminal: the request may take the link
+ * (core/task-requests.ts). Returns whether it is now the agent's work: a
+ * request typed in during another's turn waits, and must not move what marks
+ * the work in hand (QA's gate of #351). A message with no request is.
+ */
+function delivered(agent: AgentStatus, ref: string | undefined): boolean {
+  if (!ref) return true;
+  requestDelivered(agent, ref);
+  saveAgents();
+  return agent.requestedBy?.taskRef === ref;
+}
+
+/** Refused before anything was typed: the caller had the answer, so nobody is told. */
+function dropped(agent: AgentStatus, ref: string | undefined): void {
+  if (!ref) return;
+  requestDropped(agent, ref);
+  saveAgents();
+}
+
+/** Given up before it went in: off the queue, and its requester told it never ran (the Audit's R2). */
+function givenUp(agent: AgentStatus, ref: string | undefined): void {
+  if (!ref) return;
+  requestGivenUp(agent, ref);
   saveAgents();
 }
 
@@ -657,8 +785,15 @@ export interface DispatchOpts {
   permissionMode?: 'normal' | 'auto' | 'bypass';
   from?: string;
   sender?: MessageSender;
-  /** Run once the agent takes keys, before anything is typed: never for a sender refused 409. */
-  onAccepted?: () => void;
+  /**
+   * Run once the agent takes keys, before anything is typed: never for a
+   * sender refused 409. Returns the request it queued (core/task-requests.ts),
+   * whose id goes in the sender line and which the write delivers.
+   */
+  onAccepted?: () => string | undefined | void;
+  /** Typed into a live session: once it is written into the terminal, or once the terminal gives it up (WriteOrigin). */
+  onWritten?: () => void;
+  onDropped?: () => void;
 }
 
 export async function performDispatch(
@@ -702,7 +837,7 @@ async function performDispatchLocked(
     sendJson(stillStarting(agent), 409);
     return;
   }
-  opts.onAccepted?.();
+  const taskRef = opts.onAccepted?.() || undefined;
 
   // BUG 4 guard: kill the PTY if its cwd no longer matches the agent's
   // worktree so the spawn path below restarts it in the right directory.
@@ -714,6 +849,7 @@ async function performDispatchLocked(
     // A blocking permission dialog expects arrow keys/enter, not text: a
     // typed message is useless and the delayed \r could ACCEPT the pending
     // permission. Refuse and surface the reason instead.
+    dropped(agent, taskRef);
     sendJson({
       error: `Agent "${agent.name || agent.id}" is blocked on a permission dialog; a typed message cannot answer it. Resolve it in the Tars UI, or stop the agent and re-dispatch.`,
       waitingReason: 'permission',
@@ -733,20 +869,45 @@ async function performDispatchLocked(
   // Elsewhere a session is started with the message as its task.
   if (livePty && cliRunningIn(livePty)) {
     // A live session, mid-task or at its prompt: type the message into it.
+    // Working once the message is in its terminal, not before: an agent read
+    // `running` for hours from the instant a message was held behind its
+    // field, and nothing else reached it (bug-held-forever-05-10.md).
+    // `onWritten` runs at once for a message that goes straight in.
+    let cancelRetell: (() => void) | undefined;
+    let handed = false;
+    // `isTheWork`: false for a request typed in during another request's
+    // turn. It waits behind that work, and moving `workHandedAt` made the turn
+    // in hand no longer count as handed work: its end told nobody (QA's gate
+    // of #351). Its own turn, when it comes, is after the mark either way.
+    const handedOver = (isTheWork = true) => {
+      if (handed) return;
+      handed = true;
+      cancelRetell?.();
+      agent.status = 'running';
+      agent.waitingReason = undefined;
+      if (isTheWork) {
+        agent.workHandedAt = new Date().toISOString();
+        // This message starts a new piece of work in the same session; the
+        // previous task's captured output must not be mistaken for its result.
+        agent.lastCleanOutput = undefined;
+      }
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      announceAgent(agent);
+    };
     const outcome = writeProgrammaticInput(livePty, opts.message, true, {
       agentId: agent.id,
       from: opts.from ?? 'Tars',
       sender: opts.sender ?? { kind: 'tars' },
+      // Both: the agent reads working once the message is in (#314), and the
+      // caller hears it went in or was given up (#292).
+      onWritten: () => { handedOver(delivered(agent, taskRef)); opts.onWritten?.(); },
+      onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
+      taskRef,
     });
-    agent.status = 'running';
-    agent.waitingReason = undefined;
-    agent.workHandedAt = new Date().toISOString();
-    // This message starts a new piece of work in the same session; the
-    // previous task's captured output must not be mistaken for its result.
-    agent.lastCleanOutput = undefined;
-    agent.lastActivity = new Date().toISOString();
-    saveAgents();
-    announceAgent(agent);
+    if (outcome === 'refused') dropped(agent, taskRef);
+    if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
+    if (outcome === 'held') cancelRetell = retellWhileHeld(agent, opts.sender, Date.now());
     // `held` is not `written`. The message is queued for that terminal and
     // goes in when the field frees, but answering a caller "sent" while
     // nothing has been typed tells it something it cannot check: the QA
@@ -761,10 +922,13 @@ async function performDispatchLocked(
   }
 
   // No session: spawn a fresh one with the message as the prompt.
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode }, ctx, sendJson))) {
+  const since = new Date().toISOString();
+  const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef }, ctx, sendJson))) {
+    dropped(agent, taskRef);
     return;
   }
-  sendJson({ success: true, mode: 'start', previousStatus, agent: { id: agent.id, name: agent.name, status: agent.status } });
+  sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), agent: { id: agent.id, name: agent.name, status: agent.status } });
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
@@ -780,9 +944,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const currentStatus = agent.status;
 
     // Return immediately if already in terminal state
-    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped') {
+    if (currentStatus === 'completed' || currentStatus === 'error' || currentStatus === 'idle' || currentStatus === 'waiting' || currentStatus === 'stopped' || currentStatus === 'asleep') {
       sendJson({
         status: agent.status,
+        // Asleep: a message wakes it on its conversation (core/agent-asleep.ts).
+        asleepSince: agent.asleepSince,
         lastCleanOutput: agent.lastCleanOutput,
         error: agent.error,
         waitingReason: agent.waitingReason,
@@ -1047,6 +1213,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    // The name is typed before the task id in the line that says who a message
+    // is from: one that carries a task id would read as Tars's own (the Audit's
+    // gate of #351; core/task-requests.ts reads the envelope, this keeps the
+    // line plain for whoever reads it).
+    if (typeof name === 'string' && /,\s*task\s+t-/i.test(name)) {
+      sendJson({ error: 'An agent\'s name cannot contain ", task t-": Tars types the task id after the name in the line that says who a message is from.' }, 400);
+      return;
+    }
+
     const id = uuidv4();
     const resolvedName = name || `Agent ${id.slice(0, 6)}`;
     const agent: AgentStatus = {
@@ -1084,6 +1259,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
+    const since = new Date().toISOString();
     const { prompt, model, permissionMode: bodyPermissionMode, printMode } = req.body as {
       prompt: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; printMode?: boolean;
     };
@@ -1091,7 +1267,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: 'prompt is required' }, 400);
       return;
     }
-    recordRequester(agent, req);
+    const taskRef = requestFor(agent, req);
 
     const spawned = await withAgentLock(agent.id, async () => {
       // Starting kills the terminal. With a CLI up in it, that is its session:
@@ -1104,11 +1280,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef }, ctx, sendJson);
     });
-    if (!spawned) return;
+    if (!spawned) {
+      dropped(agent, taskRef);
+      return;
+    }
 
-    sendJson({ success: true, agent: { id: agent.id, status: agent.status } });
+    sendJson({ success: true, ...restartedAfterStop(agent, since), agent: { id: agent.id, status: agent.status } });
   });
 
   // POST /api/agents/:id/dispatch: atomic "send this task to the agent".
@@ -1133,7 +1312,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     await performDispatch(agent, {
       message, model, permissionMode, from: senderName(agent, req), sender: senderOf(agent, req),
       // After the wait: a sender refused 409 typed nothing and takes no link.
-      onAccepted: () => recordRequester(agent, req),
+      onAccepted: () => requestFor(agent, req),
     }, ctx, sendJson);
   });
 
@@ -1199,6 +1378,31 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       announceAgent(agent);
     }
 
+    // A task of its own, with what the run reported it cost (task-ledger.ts).
+    // A run that never started did no work.
+    if (result.started) {
+      try {
+        const requester = resolveCallerId(req);
+        liveTaskLedger()?.acpRun({
+          agent,
+          requesterAgentId: requester && requester !== agent.id ? requester : undefined,
+          text: task,
+          startedAt: Date.parse(handedAt),
+          endedAt: Date.now(),
+          outcome: result.ok ? 'completed' : result.stopReason === 'turn_limit' ? 'stopped' : 'error',
+          usage: result.usage ? {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            cachedReadTokens: result.usage.cachedReadTokens ?? 0,
+            cachedWriteTokens: result.usage.cachedWriteTokens ?? 0,
+          } : null,
+          costUSD: result.costUSD ?? null,
+        });
+      } catch (err) {
+        console.warn('[task-ledger] ACP run not recorded:', (err as Error).message);
+      }
+    }
+
     // A run that started is an answer, however it ended: 502 only when none
     // did, which is when delegate_task may type the task into the terminal
     // instead without running it twice.
@@ -1251,8 +1455,6 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         sendJson(stillStarting(agent), 409);
         return;
       }
-      recordRequester(agent, req);
-
       // BUG 4 guard: if the agent's worktreePath changed after the PTY was
       // spawned, the existing PTY is stuck in the wrong cwd. Kill it so the
       // reconnect path below spawns fresh with the correct working directory.
@@ -1267,6 +1469,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return;
       }
+      // Queued once nothing can refuse it any more (core/task-requests.ts).
+      const taskRef = requestFor(agent, req);
 
       if (!cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) {
         // No session: the claude process exited (e.g. crashed while 'waiting'),
@@ -1276,26 +1480,44 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // using the message as the prompt, identical to the /start path. This
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
-        if (!(await spawnAgentSession(agent, message, {}, ctx, sendJson))) {
+        const since = new Date().toISOString();
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef }, ctx, sendJson))) {
+          dropped(agent, taskRef);
           return;
         }
-        sendJson({ success: true });
+        sendJson({ success: true, ...restartedAfterStop(agent, since) });
         return;
       }
 
       const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
       if (ptyProcess) {
+        // Working once it is in, as /dispatch (bug-held-forever-05-10.md).
+        let cancelRetell: (() => void) | undefined;
+        let handed = false;
+        // As /dispatch: a request waiting behind another's turn does not move the mark.
+        const handedOver = (isTheWork = true) => {
+          if (handed) return;
+          handed = true;
+          cancelRetell?.();
+          agent.status = 'running';
+          agent.waitingReason = undefined;
+          if (isTheWork) agent.workHandedAt = new Date().toISOString();
+          agent.lastActivity = new Date().toISOString();
+          saveAgents();
+          announceAgent(agent);
+        };
+        const sender = senderOf(agent, req);
         const outcome = writeProgrammaticInput(ptyProcess, message, true, {
           agentId: agent.id,
           from: senderName(agent, req),
-          sender: senderOf(agent, req),
+          sender,
+          onWritten: () => handedOver(delivered(agent, taskRef)),
+          onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); },
+          taskRef,
         });
-        agent.status = 'running';
-        agent.waitingReason = undefined;
-        agent.workHandedAt = new Date().toISOString();
-        agent.lastActivity = new Date().toISOString();
-        saveAgents();
-        announceAgent(agent);
+        if (outcome === 'refused') dropped(agent, taskRef);
+        if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
+        if (outcome === 'held') cancelRetell = retellWhileHeld(agent, sender, Date.now());
         sendJson({ success: true, ...(outcome === 'held' ? { held: true, heldReason: heldReasonFor(agent) } : {}) });
         return;
       }
@@ -1313,6 +1535,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
     await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(agent.id);
 
     if (agent.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
@@ -1321,6 +1544,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         ptyProcesses.delete(agent.ptyId);
       }
     }
+    endWorkerRequests(agent, 'deleted', { withLinked: true });
     agents.delete(req.params.id);
     forgetRestart(req.params.id);
     saveAgents();

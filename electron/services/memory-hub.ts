@@ -3,9 +3,12 @@ import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { encodeClaudeProjectDir, claudeProjectDirNames } from '../platform/claude-project-dir';
+import { spellingsOf } from '../utils/resume-session';
 import { probeMcpEndpoint, callMcpTool, listMcpTools, type McpEndpoint } from './mcp-http-client';
 import {
   fetchHermesMemoryFiles,
+  fetchHermesMemoryFile,
+  HERMES_MEMORY_FILES,
   searchHermesSessions,
   fetchHermesSessionParent,
   fetchHermesMemoryState,
@@ -64,8 +67,19 @@ export interface SourceStatus {
 
 /* ── Local sources ─────────────────────────────────────── */
 
+/**
+ * The folder names Claude Code may keep a project under, its real path first:
+ * Claude Code files a session under the real path, and Tars hands this the
+ * path it saved, which may go through a link (QA's gate of #346). Each
+ * spelling as claudeProjectDirNames names it, which drops a name that is not
+ * one folder (a Windows path keeps its separators in the old spellings).
+ */
+function candidateProjectDirs(projectPath: string): string[] {
+  return [...new Set([...spellingsOf(projectPath)].reverse().flatMap(spelling => claudeProjectDirNames(spelling)))];
+}
+
 export function projectMemoryDir(projectPath: string): string | null {
-  for (const dir of claudeProjectDirNames(projectPath)) {
+  for (const dir of candidateProjectDirs(projectPath)) {
     const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, 'memory');
     if (fs.existsSync(candidate)) return candidate;
   }
@@ -161,16 +175,19 @@ function ledgerPathFor(projectPath: string): string {
   return path.join(OBSERVATIONS_DIR, `${projectPath.replace(/[^a-zA-Z0-9]/g, '-')}.jsonl`);
 }
 
+/** A project's observations, filed under the path it was saved by or its real path, oldest first. */
 function readObservations(projectPath: string, limit: number): Observation[] {
-  try {
-    const p = ledgerPathFor(projectPath);
-    if (!fs.existsSync(p)) return [];
-    return fs.readFileSync(p, 'utf-8').trim().split('\n').slice(-limit).flatMap(line => {
-      try { return [JSON.parse(line) as Observation]; } catch { return []; }
-    });
-  } catch {
-    return [];
-  }
+  const all = [...new Set(spellingsOf(projectPath).map(ledgerPathFor))].flatMap(p => {
+    try {
+      if (!fs.existsSync(p)) return [];
+      return fs.readFileSync(p, 'utf-8').trim().split('\n').slice(-limit).flatMap(line => {
+        try { return [JSON.parse(line) as Observation]; } catch { return []; }
+      });
+    } catch {
+      return [];
+    }
+  });
+  return all.sort((a, b) => String(a.ts).localeCompare(String(b.ts))).slice(-limit);
 }
 
 /* ── Remote backends ───────────────────────────────────── */
@@ -298,21 +315,22 @@ export async function assembleDigest(opts: {
   }
 
   if (hermes) {
-    try {
-      const res = await Promise.race([
-        fetchHermesMemoryFiles(hermes),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), HERMES_START_BUDGET_MS)),
-      ]);
-      if (res && res.success) {
-        for (const file of res.files) {
-          const body = file.content.length > MAX_SECTION_CHARS
-            ? `${file.content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
-            : file.content;
-          sections.push(`## Hermes memory: ${file.name}\n${body.trim()}`);
-        }
-      }
-    } catch {
-      // A gateway that is down must not delay the agent.
+    // Each file on its own, both at once, under one budget. Read one after the
+    // other inside a single race, a Hermes that answered MEMORY.md and never
+    // USER.md kept neither (the Audit's gate of #271). What has come back when
+    // the budget runs out goes in; a gateway that is down delays nobody.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), HERMES_START_BUDGET_MS); });
+    const reads = await Promise.all(HERMES_MEMORY_FILES.map(name =>
+      Promise.race([fetchHermesMemoryFile(hermes, name).catch(() => null), late])));
+    clearTimeout(timer);
+    for (const read of reads) {
+      if (!read || !read.success || !read.file) continue;
+      const { name, content } = read.file;
+      const body = content.length > MAX_SECTION_CHARS
+        ? `${content.slice(0, MAX_SECTION_CHARS)}\n…(truncated)`
+        : content;
+      sections.push(`## Hermes memory: ${name}\n${body.trim()}`);
     }
   }
 

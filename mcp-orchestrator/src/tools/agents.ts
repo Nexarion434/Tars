@@ -18,6 +18,8 @@ type WaitResult = {
   stopReason?: string;
   /** ISO: running, yet nothing written and no tool at work since then (Tars's stall watch). */
   stalledSince?: string;
+  /** ISO: asleep since then, its CLI ended after 30 minutes without a turn. */
+  asleepSince?: string;
 };
 
 type DispatchResult = {
@@ -31,14 +33,28 @@ type DispatchResult = {
    */
   held?: boolean;
   heldReason?: string;
+  /** This start undid a stop: who had stopped the agent, when, and why. Tars notes the restart on the agent. */
+  restartedAfterStop?: { stoppedBy?: string; stoppedAt?: string; stopReason?: string };
   agent: { id: string; name?: string; status: string };
 };
+
+/** What a caller is told when its start undid somebody's stop, or nothing. */
+function restartNote(data: DispatchResult): string {
+  const stop = data.restartedAfterStop;
+  if (!stop) return "";
+  // Another agent's words, or the user's: quoted as data, as the other tool
+  // texts quote what others wrote. The window files its stops as "you".
+  const by = !stop.stoppedBy ? "someone" : stop.stoppedBy === "you" ? "the user" : JSON.stringify(stop.stoppedBy);
+  return `\nIt had been stopped by ${by}${stop.stopReason ? `: ${JSON.stringify(stop.stopReason)}.` : ", with no reason given."} Your restart is noted on it.`;
+}
 
 /** What a caller is told when its message is queued rather than typed. */
 function heldText(agentName: string, what: string, reason?: string): string {
   return `HELD: ${what} for "${agentName}" is waiting for its terminal and has not been typed in yet. `
     + (reason ?? "Its field is in use.")
-    + " Nothing needs resending: it goes in by itself once the field is free.";
+    // Never "nothing needs resending": a field only a person can free may not
+    // free (bug-held-forever-05-10.md). The route tells the sender again.
+    + " It goes in by itself once the field is free; if it still waits a few minutes on, Tars tells you again.";
 }
 
 /**
@@ -371,7 +387,7 @@ const AGENT_TOOLS: Tool[] = [
         return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"`);
       }
 
-      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}`);
+      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}${restartNote(data)}`);
     },
   }),
 
@@ -419,7 +435,7 @@ const AGENT_TOOLS: Tool[] = [
       }
 
       if (data.mode === "start") {
-        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}`);
+        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}${restartNote(data)}`);
       }
 
       if (previousStatus === "running") {
@@ -478,6 +494,10 @@ const AGENT_TOOLS: Tool[] = [
 
       if (data.status === "stopped") {
         return text(`Agent "${agentName}" was stopped by ${data.stoppedBy || "someone"}${data.stopReason ? `: ${data.stopReason}` : ""}. It does nothing until it is started again.`);
+      }
+
+      if (data.status === "asleep") {
+        return text(`Agent "${agentName}" is asleep${data.asleepSince ? ` since ${data.asleepSince}` : ""}: it had no turn for 30 minutes, so Tars ended its CLI and kept its conversation. Its last work is done; get_agent_output reads what it last said, and send_message wakes it on that conversation.`);
       }
 
       if (data.status === "waiting") {

@@ -31,8 +31,14 @@ import { spawn, execFileSync } from 'node:child_process';
  * 10. (same gate) With no run under way, ps is run anyway: the shortcut that
  *    skips it had no test, and a mutant that removed it survived.
  *
+ * And of the tests themselves (2026-10-07): a case that fails before it has
+ * read its run's pids, as one did on 2026-10-06, never handed them to the
+ * cleanup, and the stand-ins that ignore SIGTERM ran on for 23 minutes until
+ * they were ended by hand.
+ * 11. A test leaves a stand-in, or what it started, running after it ends.
+ *
  * On win32 (audit A21, and the phase 0 run where ps was ENOENT at every quit):
- * 11. The quit ends each run's root alone, `child.kill()`, and what runs under
+ * 12. The quit ends each run's root alone, `child.kill()`, and what runs under
  *    it outlives Tars. There the tree is ended by taskkill /T /F run while the
  *    quit waits (platform/kill-tree.ts), and taskkill takes the place of ps in
  *    cases 7, 9 and 10: missing, hung, and not run at all for no run.
@@ -42,6 +48,9 @@ import { spawn, execFileSync } from 'node:child_process';
  * SIGSTOP, which Windows does not have, and does not need to be, since
  * taskkill /F asks nothing of the process it ends; and a process is alive
  * until Windows says it has exited, there being no zombie to tell apart.
+ * And 11's sweep reads the command lines from Win32_Process, ps having none
+ * there, after a case that failed only: one query takes up to 25 s on CI's
+ * runner, and a case that passed has handed its pids to the cleanup.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-quit-'));
@@ -169,13 +178,40 @@ const until = async (what: string, test: () => boolean, ms = 10_000) => {
   while (!test()) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
 };
 
+/** The processes whose argv names this file's folder: a run's adapter, and the commands it started. */
+function startedIn(dir: string): number[] {
+  if (onWindows) return commandLinesNaming(dir);
+  const ps = execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' });
+  return ps.split('\n').flatMap(line => {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line);
+    return m && m[2].includes(dir + path.sep) && Number(m[1]) !== process.pid ? [Number(m[1])] : [];
+  });
+}
+
+/** win32: the processes whose command line names `dir`, from Win32_Process. */
+function commandLinesNaming(dir: string): number[] {
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command',
+    'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'],
+  { windowsHide: true, timeout: 60_000, maxBuffer: 64 * 1024 * 1024 }).toString();
+  return out.split(/\r?\n/).flatMap(line => {
+    const m = /^(\d+) (.*)$/.exec(line);
+    return m && m[2].includes(dir + path.sep) && Number(m[1]) !== process.pid ? [Number(m[1])] : [];
+  });
+}
+
 // Ended by id only while the id is still the process the test saw: see leftover-processes.ts.
 const leftovers = new Leftovers();
-afterEach(() => {
+afterEach((context) => {
   psBroken.value = false;
   psHung.value = false;
   psRuns.counting = false;
   leftovers.end();
+  // 11. Whatever the case did, and even when it failed before it read its run's
+  // pids: every process whose argv names this file's folder, by PID. On win32
+  // after a case that failed only (see the header).
+  if (onWindows && context.task.result?.state !== 'fail') return;
+  for (const pid of startedIn(tmp)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 }, 60_000);
 
 /** Starts a delegated run of `tag`, and never awaits it: the app quits under it. */

@@ -44,7 +44,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const REAL_PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const BASE = '1.9.0';
 const FORK = 'Nexarion434/Tars';
-const MCPS = REAL_PKG.build.extraResources.map((e: { from: string }) => e.from);
+/** The MCP bundles among package.json's extra resources: the state mod beside them (mods/tars-state, 1.9.3) has no build. */
+const MCPS = REAL_PKG.build.extraResources.map((e: { from: string }) => e.from).filter((from: string) => from.startsWith('mcp-'));
 
 describe('the version it stamps', () => {
   it('is <base>-win.<n>', () => {
@@ -100,6 +101,8 @@ describe('the Windows build config', () => {
     expect(rest).toEqual(ownRest);
     expect(files.slice(0, ownFiles.length)).toEqual(ownFiles);
     expect(files.slice(ownFiles.length).every((p: string) => p.startsWith('!'))).toBe(true);
+    // The extra resources with it: the state mod Claude Code loads ships beside the MCP bundles.
+    expect(config.extraResources.map((e: { from: string }) => e.from)).toContain('mods/tars-state');
   });
 
   it('leaves out every path the artifact check refuses, and none the app loads', () => {

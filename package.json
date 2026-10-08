@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "1.9.2",
+  "version": "1.9.5",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -31,7 +31,7 @@
     "productName": "Tars",
     "publish": {
       "provider": "github",
-      "owner": "JeanBrasse",
+      "owner": "cooper-labs-tech",
       "repo": "Tars"
     },
     "directories": {
@@ -56,6 +56,10 @@
       "node_modules/node-pty/**/*"
     ],
     "extraResources": [
+      {
+        "from": "mods/tars-state",
+        "to": "mods/tars-state"
+      },
       {
         "from": "mcp-memory",
         "to": "mcp-memory",

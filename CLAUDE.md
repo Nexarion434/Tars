@@ -2,8 +2,8 @@
 
 - **App**: Tars, an Electron desktop app that runs many AI coding-agent CLIs in parallel, each in its own PTY terminal, and orchestrates them
 - **Goal**: one window where a fleet of agents (Claude Code, Codex, Gemini, Grok, OpenCode, Pi, and thirteen API-key providers) work on your projects at once, are delegated to, report back, and are billed
-- **Repo**: https://github.com/JeanBrasse/Tars, a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
-- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `JeanBrasse/Tars`. The code stays Linux compatible (Noah, 2026-09-24): the CI runs the tests on ubuntu, and no macOS-only code path ships without a Linux one or a clean failure.
+- **Repo**: https://github.com/cooper-labs-tech/Tars (moved from `JeanBrasse/Tars` on 2026-10-07, Noah's decision; GitHub redirects the old URLs, so an installed 1.9.x still finds its updates), a fork of `Charlie85270/Dorothy`, renamed to Tars. Nothing is ever pushed upstream; `git remote get-url --push upstream` returns `DISABLED-no-push`
+- **Bundle**: `xyz.cooperlabs.tars`, product name `Tars`, macOS only (`electron-builder --mac`, dmg + zip). Updates are published to and fetched from the fork: `GITHUB_REPO` in `electron/constants/index.ts` and `build.publish` in `package.json` both say `cooper-labs-tech/Tars`. The code stays Linux compatible (Noah, 2026-09-24): the CI runs the tests on ubuntu, and no macOS-only code path ships without a Linux one or a clean failure.
 - **Docs**: all four exist and are current. `DESIGN.md` (tokens + components) before touching a pixel, `SPECS.md` (what it is), `OPERATIONS.md` (runbook), `ETHOS.md` (how decisions get made). This line used to say only DESIGN.md had been written; the other three were added on 2026-08-23 and the README links to all of them. A fifth, `SECURITY.md`, was added on 2026-09-18: what is a boundary, what only looks like one, and the measurements behind each
 
 ## Stack
@@ -49,7 +49,7 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 113 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/tars-redesign.pen` | Pencil source of truth, 134 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
 | `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by Noah on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
@@ -57,6 +57,7 @@
 | `e2e/surfaces.mjs` | Executable manifest: 18 pages, 18 settings sections, 3 overlays = 39 surfaces |
 | `scripts/design-lint.mjs` | The design guardrail. Bans inline `borderRadius`, `shadow-*`, `bg-gradient`, `animate-ping`, the raw Tailwind palette and hardcoded hex colours outside `src/components/ui/`, in the `.ts`, `.tsx` and `.css` files under `src/`. A file it could not read or a pattern it could not parse fails it |
 | `scripts/sandbox.sh` | A second Tars beside your real one: `HOME=~/Tars-sandbox`, API port 31499 |
+| `mods/tars-state/` | The state mod: a Claude Code hooks module that reports an agent's sessions, turns, failures and a heartbeat to Tars from inside the CLI (`electron/services/state-mod.ts`), and asks Tars instead of showing a permission dialog, the window deciding it (`electron/services/permission-asks.ts`); a session without it keeps the shell hooks and the dialog |
 | `hooks/` | Shell hooks installed into the CLIs. `session-start.sh` registers the session and injects `/bootstrap` + memory context; `user-prompt-submit.sh`, `on-stop.sh` and `stop-failure.sh` own the status lifecycle |
 
 ## Environment Variables
@@ -91,6 +92,10 @@ ANTHROPIC_API_KEY     # from app-settings.json, per provider
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
+CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: a read-only copy of the state mod (mods/tars-state) in Tars's userData, after any the user named
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
+TMPDIR                # ~/.dorothy/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
+CLAUDE_CODE_TMPDIR    # ~/.dorothy/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
 ```
 
 ---
@@ -162,7 +167,7 @@ Never the other way round. Do not "build it then draw it". If a surface is new, 
 | What | Where | When |
 |---|---|---|
 | Changelog entry + version bump | `src/data/changelog.ts`, `package.json` | Every change a user would notice. **Once a version has been released, it is frozen** - bump the patch (1.5.0 → 1.5.1 → 1.5.2) and add a new entry rather than editing the shipped one. Only extend the top entry while `gh release list` shows it has never been cut |
-| Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit**, but a new version is only downloadable once it has actually been published, and publishing goes through `npm run release`, never `gh release create` by hand. Check `gh release list --repo JeanBrasse/Tars` before claiming a version is available |
+| Download link | `landing/src/app/api/download/route.ts` | It resolves the latest GitHub release at request time, so it needs **no edit**, but a new version is only downloadable once it has actually been published, and publishing goes through `npm run release`, never `gh release create` by hand. Check `gh release list --repo cooper-labs-tech/Tars` before claiming a version is available |
 | The docs that are now wrong | `README.md`, `SPECS.md`, `OPERATIONS.md`, `DESIGN.md` | Whichever ones the change falsified. A version number in the Tech Stack table, a file path in the structure tree, a limitation in §13 that is no longer true |
 | No em dashes | everywhere | `—` and `–` never appear in anything a user reads: interface copy, the changelog, the agent prompts Tars writes, the landing page, or the repo's own documents. Noah has asked for this twice. Rewrite the sentence rather than swapping in ` - ` every time. The one exception is the `next dev` block at the tail of this file, which is regenerated on every run |
 | Screenshots | `screenshots/` | If a surface changed. They come from `npx playwright test --update-snapshots`, which photographs the real app against a seeded sandbox, never hand-made or reused from an older UI |
@@ -202,7 +207,7 @@ Pencil traps that will cost you an afternoon:
 ### 2. Delivery
 
 - Work on a feature branch. Never commit to `main` directly
-- Deliver as a **PR into `JeanBrasse/Tars` `main`**, then merge it
+- Deliver as a **PR into `cooper-labs-tech/Tars` `main`**, then merge it
 - **Never push to `Charlie85270/Dorothy`.** Its push URL is deliberately set to `DISABLED-no-push`. If a command would push there, stop. You have the wrong remote
 - Commit subjects say what changed for the user, in lowercase, prefixed `feat:` / `fix:` / `chore:` / `perf:` / `security:` / `test:` / `design:`
 - `.worktrees/` and `.claude/worktrees/` are embedded checkouts of other branches. They are gitignored and eslint-ignored. Never edit a file inside them and never commit one

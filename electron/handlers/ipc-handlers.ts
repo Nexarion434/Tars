@@ -1,6 +1,12 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAcpRuns } from '../services/acp/delegate';
+import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
+import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
+import { endWorkerRequests } from '../core/task-requests';
+import { cloneDependencies, logDependencies } from '../services/worktree-deps';
+import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
+import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
 import { openTerminal } from '../utils/open-terminal';
@@ -31,18 +37,21 @@ import { skillsProblem } from '../utils/skill-name';
 import { resolveWorktreePath } from '../utils/worktree-path';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
-import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
+import { messagesWaiting, writeHumanInput, writeProgrammaticInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
+import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
@@ -58,6 +67,7 @@ import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary
 import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../core/installer-pty';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
+import { probeVersion } from '../core/version-probe';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -356,6 +366,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
           }
         }
+        // Its dependencies, cloned from the project's where they were installed
+        // for this lock (Noah's choice 17, 05/10): each agent ran its own npm ci
+        // into its worktree.
+        await logDependencies(worktreePath, await cloneDependencies(cwd, worktreePath));
 
         // Use the worktree path as the working directory
         cwd = worktreePath;
@@ -521,8 +535,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   });
 
   // Start an agent with a prompt (sends command to PTY). The one launch of an
-  // agent's CLI into its terminal: the handler below, the Kanban automation and
-  // the restart that applies changed settings all come through here. See
+  // agent's CLI into its terminal: the handler below and the restart that
+  // applies changed settings both come through here. See
   // core/agent-launch.ts.
   const launchInTerminal: AgentLauncher = async (id, prompt, options) => {
     const agent = agents.get(id);
@@ -698,23 +712,19 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         const newStatus = agentStatusOnExit(exitCode);
         if (!newStatus) return;
         const agentData = agents.get(id);
-        // Guard: only mutate if this PTY is still the active one (prevents race on restart)
-        if (agentData && agentData.ptyId === newPtyId) {
-          agentData.status = newStatus;
-          agentData.lastActivity = new Date().toISOString();
-          handleStatusChangeNotification(agentData, newStatus);
-        }
-        // Only for the terminal the agent still names: a replaced one is not
-        // the agent finishing (see initAgentPty's own exit).
-        if (agentData && agentData.ptyId === newPtyId) {
-          broadcastToAllWindows('agent:complete', {
-            type: 'complete',
-            agentId: id,
-            ptyId: newPtyId,
-            exitCode,
-            timestamp: new Date().toISOString(),
-          });
-        }
+        // Only while this terminal is still the agent's: a stop or a restart
+        // has moved on, and its end is not the agent's news (as initAgentPty).
+        if (!agentData || agentData.ptyId !== newPtyId) return;
+        agentData.status = newStatus;
+        agentData.lastActivity = new Date().toISOString();
+        handleStatusChangeNotification(agentData, newStatus);
+        broadcastToAllWindows('agent:complete', {
+          type: 'complete',
+          agentId: id,
+          ptyId: newPtyId,
+          exitCode,
+          timestamp: new Date().toISOString(),
+        });
         scheduleTick();
       });
     }
@@ -815,7 +825,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // done. This one put every orchestrator in bypass whatever it was set
       // to, so a permission mode changed in the Agents page never reached an
       // orchestrator, restart or not, and a worker switched to orchestrator
-      // was quietly given bypass. The Kanban automation still asks for it.
+      // was quietly given bypass. A start may still ask for another, for
+      // that launch alone.
       permissionMode: options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'),
       effort: agent.effort,
       secondaryProjectPath: agent.secondaryProjectPath,
@@ -920,15 +931,27 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     id: string;
     prompt: string;
     options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string }
-  }) =>
+  }) => {
+    // Started from a window while asleep: woken by you (core/agent-asleep.ts).
+    if (agents.get(id)?.status === 'asleep') noteWaker(id, 'you', 'start');
     // What a window may choose, and nothing else: the session a restart
     // resumes lands on a command line, and the permission the Kanban
     // automation imposes is its own. Neither is taken from an IPC message.
-    startAgentCli(id, prompt, {
+    return startAgentCli(id, prompt, {
       model: options?.model,
       provider: options?.provider,
       localModel: options?.localModel,
-    }));
+    });
+  });
+
+  // Wake an asleep agent: its CLI started on its own conversation, nothing
+  // typed (core/agent-asleep.ts). The window's `wake`.
+  ipcMain.handle('agent:wake', async (_event, id: string) => {
+    const agent = agents.get(id);
+    if (!agent) return { success: false, error: 'Agent not found' };
+    const answer = await wakeAgent(agent, 'you', 'wake');
+    return answer.success ? { success: true } : answer;
+  });
 
   // Get agent status
   ipcMain.handle('agent:get', async (_event, id: string) => {
@@ -942,7 +965,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the Chat's fleet list; agent:start opens the terminal a launch needs.
     const ptyProcess = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
     if (!ptyProcess) {
-      return { ...agent, ptyId: undefined, output: [], cliRunning: false, leftFullscreen: false, launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent) };
+      // Asleep, its pane shows the last screen of the CLI it slept in: the
+      // terminal and its mirror are gone, the screen is kept (core/agent-asleep.ts).
+      const kept = screenWhileAsleep(agent);
+      const launching = sessionStarting(agent);
+      return { ...agent, ptyId: undefined, output: kept ? [kept] : [], cliRunning: false, leftFullscreen: false, launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent) };
     }
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
@@ -950,12 +977,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // nothing awaited after it, so no chunk can reach a panel between the
     // snapshot and this reply.
     const screen = terminalSnapshot(ptyProcess);
+    const launching = sessionStarting(agent);
     return {
       ...agent,
       output: screen === undefined ? agent.output : [screen],
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
-      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
+      launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent),
     };
   });
 
@@ -973,7 +1001,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       output: [],
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
-      launching: sessionStarting(agent), waitingOn: publishedWaitingOn(agent),
+      launching: sessionStarting(agent), waking: publishedWaking(agent, sessionStarting(agent)), waitingOn: publishedWaitingOn(agent),
     }));
   });
 
@@ -1131,6 +1159,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
               execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
             }
           }
+          await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
           agent.worktreePath = worktreePath;
           agent.branchName = branchName;
           // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
@@ -1184,6 +1213,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return { success: true };
   });
 
+  // The window's answer to a permission question the state mod asked Tars
+  // (services/permission-asks.ts): allow or deny decide the call, ask hands it
+  // back to the terminal's dialog. Given as the user: the model reads it.
+  ipcMain.handle('agent:answerPermission', async (_event, id: string, decision: unknown, reason?: unknown) => {
+    // The window hears of it through the question's own event (hooks-routes).
+    const answered = answerPermission(id, decision as PermissionDecision, 'the user', typeof reason === 'string' ? reason : undefined);
+    return { success: answered };
+  });
+
   // Remove an agent
   /**
    * Which providers actually enforce orchestrator mode.
@@ -1202,9 +1240,38 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return out;
   });
 
+  // The disk and the folders no agent owns (Settings · System; Noah's choice
+  // 16 of 05/10). The projects are Tars's own: those added by hand and those
+  // its agents work in; an agent's worktree is never offered.
+  const orphanScope = () => ({
+    projects: [...new Set([...readCustomProjects(), ...[...agents.values()].map(a => a.projectPath).filter(Boolean)])],
+    // Every folder an agent works in, its project's too: one created on a
+    // folder inside a .worktrees, with no worktree of its own, was offered
+    // (the Audit's gate of #334, M2).
+    owned: [...agents.values()].flatMap(a => [a.worktreePath, a.projectPath, a.secondaryProjectPath]).filter((p): p is string => !!p),
+  });
+  ipcMain.handle('system:disk', async () => diskSpace());
+  ipcMain.handle('system:orphanFolders', async () => listOrphanFolders(orphanScope()));
+  // The rows the window showed and the person confirmed: nothing else goes.
+  ipcMain.handle('system:removeOrphanFolders', async (_event, paths: unknown) => {
+    if (!Array.isArray(paths) || !paths.every(p => typeof p === 'string')) {
+      return { error: 'the folders to remove must be the list of paths the window showed' };
+    }
+    try {
+      return await removeOrphanFolders({
+        ...orphanScope(),
+        paths,
+        onProgress: progress => broadcastToAllWindows('system:orphanFolders:progress', progress),
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('agent:remove', async (_event, id: string) => {
     const agent = agents.get(id);
     if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
+    dropPermissionAsks(id);
     if (agent?.ptyId) {
       const ptyProcess = ptyProcesses.get(agent.ptyId);
       if (ptyProcess) {
@@ -1215,8 +1282,44 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.ptyId = undefined;
     }
 
+    // Its uncommitted work is saved on wip/<name> first, without asking (Noah,
+    // 05/10): `--force` below removes whatever was not committed. A save that
+    // fails keeps the worktree where it is, and says so.
+    let savedTo: string | undefined;
+    let worktreeKept: string | undefined;
+    if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
+      try {
+        const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
+        savedTo = saved?.branch;
+        if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+        // What git ignores, a .env or an e2e run, no commit keeps: the
+        // worktree stays, rebuildable caches aside (the Audit's gate of #312).
+        // And a git repository of its own, which the save could only point at.
+        if (saved?.nestedRepos.length) {
+          worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        // A submodule's commits and changes live in the worktree's own git
+        // store, which the removal deletes, and no remote may have them.
+        const submodules = worktreeKept ? [] : await submodulesWithWork(agent.worktreePath);
+        if (submodules.length) {
+          worktreeKept = `its submodules hold work no remote has (${submodules.slice(0, 5).join(', ')}), which removing the worktree would lose, so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+        const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
+        if (ignored.length) {
+          const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
+          worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
+          console.warn(`[agent:remove] ${worktreeKept}`);
+        }
+      } catch (err) {
+        worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+    }
+
     // Clean up worktree if it exists
-    if (agent?.worktreePath && agent?.branchName) {
+    if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
       try {
         // argv, not a shell string: an apostrophe in the project path used to
         // make this fail silently and leak a stale worktree behind the deleted
@@ -1231,13 +1334,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
     }
 
+    // What it was asked and will never finish, each requester told (the Audit's R3).
+    if (agent) endWorkerRequests(agent, 'deleted', { withLinked: true });
     agents.delete(id);
     forgetRestart(id);
 
     // Save agents to disk
     saveAgents();
 
-    return { success: true };
+    return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
   });
 
   // Update agent's secondary project path
@@ -1284,6 +1389,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           return { success: false, error: 'Failed to write to PTY' };
         }
       }
+    }
+    // A key typed into the pane of an asleep agent wakes it on its own
+    // conversation; the key itself is not kept. A lone Esc or Ctrl+C, a mouse
+    // or focus report, or a terminal's reply wakes nothing (wakesOnKey).
+    if (agent?.status === 'asleep' && wakesOnKey(input)) {
+      const answer = await wakeAgent(agent, 'you', 'key');
+      return answer.success ? { success: true, woke: true } : answer;
     }
     return { success: false, error: 'PTY not found' };
   });
@@ -1841,8 +1953,6 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
   // Get Claude info (version, paths, etc.)
   ipcMain.handle('settings:getInfo', async () => {
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
 
       // Empty unless claude answers: the System page reads any version as
       // ready, and started from 'Unknown', so a missing claude read as ready.
@@ -1853,16 +1963,10 @@ function registerSettingsHandlers(deps: IpcHandlerDependencies): void {
       // script), which libuv could not start by its bare name.
       const cliPaths = deps.getAppSettings()?.cliPaths;
       const env = withPath(process.env, buildFullPath(cliPathDirs(cliPaths)), process.platform);
-      const claude = resolveCliBinary(cliPaths?.claude || 'claude', env, process.platform);
       let claudeVersion = '';
       try {
-        if (claude.ok) {
-          const { stdout } = await promisify(execFile)(claude.file, [...claude.prefixArgs, '--version'], {
-            timeout: 8000,
-            env: env as NodeJS.ProcessEnv,
-          });
-          claudeVersion = stdout.trim();
-        }
+        const { stdout } = await probeVersion(cliPaths?.claude || 'claude', env as NodeJS.ProcessEnv);
+        claudeVersion = stdout.trim();
       } catch {
         // Not installed, not on that PATH, or it failed: not ready.
       }
@@ -1933,9 +2037,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // What an agent actually changed. Shell-free: git runs with an argv array,
   // so a branch or path with a quote in it is data rather than syntax.
-  ipcMain.handle('review:diff', async (_event, { repoPath, baseBranch }: { repoPath: string; baseBranch?: string }) => {
+  ipcMain.handle('review:diff', async (
+    _event,
+    { repoPath, baseBranch, listOnly }: { repoPath: string; baseBranch?: string; listOnly?: boolean },
+  ) => {
     try {
-      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch }) };
+      return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch, listOnly: listOnly === true }) };
     } catch (err) {
       return { success: false as const, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1962,6 +2069,16 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   // page can cut the same window from them as from the transcripts' days.
   ipcMain.handle('usage:by-provider', async (_event, { sinceDays }: { sinceDays?: number } = {}) =>
     ledgerUsageByProvider(sinceDays));
+
+  // What each task cost, with who handed it over and the tasks handed on from
+  // it, priced from the transcripts when asked (services/task-watch.ts).
+  ipcMain.handle('usage:tasks', async (_event, query: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
+    tasksReport({
+      since: typeof query?.since === 'number' && Number.isFinite(query.since) ? query.since : undefined,
+      sinceDays: typeof query?.sinceDays === 'number' ? query.sinceDays : undefined,
+      projectPath: typeof query?.projectPath === 'string' ? query.projectPath : undefined,
+      agentId: typeof query?.agentId === 'string' ? query.agentId : undefined,
+    }));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
     try {
@@ -2026,13 +2143,21 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
                              newSettings.discordBotToken !== undefined;
 
       const currentSettings = getAppSettings();
-      const updatedSettings = { ...currentSettings, ...newSettings };
+      // With the relay on, Hermes is the only voice on the user's Telegram: the
+      // Tars bot's token is erased and the bot off, whatever else was saved
+      // (hermes-relay-switch.ts).
+      const updatedSettings = settingsForRelay({ ...currentSettings, ...newSettings });
+      const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
 
       // Reinitialize Telegram bot if settings changed
-      if (telegramChanged) {
+      if (telegramChanged || relayTurnedOn) {
         initTelegramBot();
+      }
+      // mcp-telegram sends with the bot's token past the relay: out of every CLI.
+      if (relayTurnedOn) {
+        void retireTelegramMcp(getAllProviders());
       }
 
       // Reinitialize Slack bot if settings changed
@@ -2947,17 +3072,8 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
       return { success: false, error: 'invalid binary' };
     }
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
       const env = withPath(process.env, buildFullPath(), process.platform) as NodeJS.ProcessEnv;
-      // What Windows can start: a .cmd is refused without a shell (EINVAL), so
-      // an npm shim is read through to node and its script.
-      const cli = resolveCliBinary(binary, env, process.platform);
-      if (!cli.ok) return { success: false, error: cli.detail };
-      const { stdout, stderr } = await promisify(execFile)(cli.file, [...cli.prefixArgs, '--version'], {
-        timeout: 8000,
-        env,
-      });
+      const { stdout, stderr } = await probeVersion(binary, env);
       return { success: true, output: (stdout || stderr || '').trim() };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };

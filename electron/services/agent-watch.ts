@@ -8,6 +8,9 @@ import { envelopeValue } from '../utils/envelope-value';
 import { lastInterruptAt, pendingBackgroundWork } from './agent-truth';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
+import { carriedSince, type CarriedNote } from './carry-over';
+import { wakeAgent } from '../core/agent-asleep';
+import { linkSpent, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -56,8 +59,10 @@ import { scheduleTick } from '../utils/agents-tick';
 type News = {
   /** `stopped`: its terminal went before the background work it left reported.
    *  `stalled`: running, but nothing written and no tool at work for a long
-   *  while (stall-watch.ts); `reason` holds the minutes of silence. */
-  kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled';
+   *  while (stall-watch.ts); `reason` holds the minutes of silence.
+   *  `not_delivered`: a request never ran, its message given up or its worker
+   *  stopped, deleted or cut by a restart (core/task-requests.ts); `reason` says which. */
+  kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled' | 'not_delivered';
   status: AgentStatus['status'];
   reason?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
@@ -68,6 +73,10 @@ type News = {
    * that work reports, so the rest is not the end of the work handed to it.
    */
   background?: string[];
+  /** When it became owed, ISO: what carries it across a restart (carry-over.ts). */
+  since?: string;
+  /** Owed by a run of Tars before this one, and carried across its restart. */
+  carried?: boolean;
 };
 
 /**
@@ -105,7 +114,8 @@ function stateOf(agent: AgentStatus): string {
 
 function isAtRest(agent: AgentStatus): boolean {
   // A stopped agent is done with the work it was handed: whoever handed it is told.
-  return agent.status === 'idle' || agent.status === 'stopped' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
+  // An asleep one rests (core/agent-asleep.ts).
+  return agent.status === 'idle' || agent.status === 'stopped' || agent.status === 'asleep' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
 }
 
 /** A turn has begun since the latest work was handed to this agent. */
@@ -166,6 +176,60 @@ type Pending = {
 };
 
 const pending = new Map<string, Pending>();
+
+/**
+ * What the run before this one owed, by requester, from carry-over.json: given
+ * to the first session of the requester that registers in this run, at its
+ * first rest, once (RD-REDEMARRAGE.md, 2.3).
+ */
+const carried = new Map<string, Array<{ childId: string; news: News }>>();
+
+/** Told whenever what is owed changes, to keep carry-over.json in step. */
+let queuesChanged: () => void = () => undefined;
+
+export function setQueuesChangedHook(hook: (() => void) | undefined): void {
+  queuesChanged = hook ?? (() => undefined);
+}
+
+/** Everything owed now, held or carried, as carry-over.json keeps it. */
+export function owedNews(): CarriedNote[] {
+  const now = new Date().toISOString();
+  const out: CarriedNote[] = [];
+  for (const [requesterId, held] of pending) {
+    for (const [childId, news] of held.children) out.push({ requesterId, childId, news: { ...news }, at: news.since ?? now });
+  }
+  for (const [requesterId, items] of carried) {
+    for (const { childId, news } of items) out.push({ requesterId, childId, news: { ...news }, at: news.since ?? now });
+  }
+  return out;
+}
+
+/** What the run before this one owed, taken back at launch. */
+export function carryNews(notes: CarriedNote[]): void {
+  for (const note of notes) {
+    const list = carried.get(note.requesterId) ?? [];
+    list.push({ childId: note.childId, news: { ...(note.news as News), since: note.at, carried: true } });
+    carried.set(note.requesterId, list);
+  }
+}
+
+/**
+ * A carried note goes into the queue of the requester's first session of this
+ * run: one that registered in the terminal it runs in now. Before that, the
+ * terminal holds a shell or a CLI still starting, and nothing is typed there.
+ */
+function takeCarried(agent: AgentStatus): void {
+  const items = carried.get(agent.id);
+  if (!items?.length) return;
+  if (!agent.ptyId || !ptyProcesses.has(agent.ptyId) || !agent.currentSessionId || agent.sessionPtyId !== agent.ptyId) return;
+  const held = heldFor(agent);
+  for (const { childId, news } of items) {
+    if (!held.children.has(childId)) held.children.set(childId, news);
+  }
+  pending.set(agent.id, held);
+  carried.delete(agent.id);
+  queuesChanged();
+}
 
 /** Called when a queued bus message actually reaches a terminal, so the
  *  journal can mark the delivery and the Chat page can show it. Injected to
@@ -242,6 +306,17 @@ export function startAgentWatch(): void {
   if (listening) return;
   listening = true;
   agentStatusEmitter.on('fleet-change', onFleetChange);
+  setRequestsEndedHook(tellRequestsEnded);
+}
+
+/** Each request a worker will never run, told to whoever asked (the Audit's R2, R3). */
+function tellRequestsEnded(worker: RequestWorker, requests: TaskRequest[], why: RequestsEndedWhy): void {
+  const child = agents.get(worker.id);
+  if (!child) return;
+  for (const request of requests) {
+    if (request.requesterAgentId === child.id) continue;
+    handToRequester(request.requesterAgentId, child, { kind: 'not_delivered', status: child.status, reason: why, handedAt: child.workHandedAt });
+  }
 }
 
 export function stopAgentWatch(): void {
@@ -289,7 +364,7 @@ function settleBackgroundLinks(): void {
     const live = !!link.ptyId && child.ptyId === link.ptyId && ptyProcesses.has(link.ptyId);
     if (live) continue;
     console.log(`[agent-watch] ${child.name || child.id} is gone before its background work reported: telling ${link.agentId}`);
-    child.requestedBy = undefined;
+    linkSpent(child);
     saveAgents();
     if (link.agentId === child.id) continue;
     handToRequester(link.agentId, child, { kind: 'stopped', status: child.status, background: link.backgroundLeft, handedAt: child.workHandedAt });
@@ -339,6 +414,7 @@ function onFleetChange(agentId: string): void {
     return;
   }
 
+  takeCarried(agent);
   const before = lastSeen.get(agentId);
   const now = stateOf(agent);
   lastSeen.set(agentId, now);
@@ -427,7 +503,9 @@ function queueForRequester(child: AgentStatus, news: News): void {
     if (left.length > 0) news = { ...news, background: left };
   }
   if (news.kind !== 'wait' && !news.background) {
-    child.requestedBy = undefined;
+    // This task's link, and only it: the next request already written into
+    // the worker's terminal takes the link (core/task-requests.ts).
+    linkSpent(child);
     saveAgents();
   } else if (news.background) {
     // Kept, and marked: if the terminal goes before that work reports, the
@@ -457,7 +535,22 @@ export function reportStall(child: AgentStatus, silentMinutes: number): void {
 function handToRequester(requesterId: string, child: AgentStatus, news: News): void {
   const link = { agentId: requesterId };
   const requester = agents.get(link.agentId);
-  if (!requester || !requester.ptyId) return;
+  if (!requester) return;
+  // No terminal: asleep, stopped, or not started yet. The news was dropped
+  // here; it is carried now, given at the requester's next session, and an
+  // asleep requester is woken for it (the Audit's H2, R4).
+  if (!requester.ptyId || !ptyProcesses.has(requester.ptyId)) {
+    const list = carried.get(requesterId) ?? [];
+    list.push({ childId: child.id, news: { ...news, since: new Date().toISOString() } });
+    carried.set(requesterId, list);
+    queuesChanged();
+    if (requester.status === 'asleep') {
+      void wakeAgent(requester, 'Tars', 'message').then(answer => {
+        if (!answer.success) console.warn(`[agent-watch] ${requester.name || requesterId} could not be woken for news: ${answer.error}`);
+      });
+    }
+    return;
+  }
 
   // Already asked, and about to be answered. /wait is the long poll an
   // orchestrator sits in while its agent works, and the transition that ends
@@ -471,8 +564,9 @@ function handToRequester(requesterId: string, child: AgentStatus, news: News): v
   if (isWaitingOn(link.agentId, child.id)) return;
 
   const held = heldFor(requester);
-  held.children.set(child.id, news);
+  held.children.set(child.id, { ...news, since: new Date().toISOString() });
   pending.set(link.agentId, held);
+  queuesChanged();
 
   flush(link.agentId);
 }
@@ -520,11 +614,15 @@ function isWaitingOn(waiterAgentId: string, watchedAgentId: string): boolean {
  * worked on it (2026-09-16, 23:30). Work handed since overtakes what was held
  * about the work before it, and a wait that is over is not a wait.
  */
-function stillNews(childId: string, news: News): boolean {
+function stillNews(childId: string, news: News, requesterId: string): boolean {
   const child = agents.get(childId);
   // Gone since: what it did is still what it did.
   if (!child) return true;
-  if (child.workHandedAt !== news.handedAt) return false;
+  // A request that never ran stays news whatever the worker does next.
+  if (news.kind === 'not_delivered') return true;
+  // Work handed since overtakes this news only when this requester handed
+  // it: another's request is another task (core/task-requests.ts).
+  if (child.workHandedAt !== news.handedAt && (!child.requestedBy || child.requestedBy.agentId === requesterId)) return false;
   if (news.kind === 'wait') return child.status === 'waiting' && child.waitingReason === news.reason;
   if (news.kind === 'stalled') return child.status === 'running' && !!child.stalledSince;
   return true;
@@ -594,6 +692,7 @@ function flush(requesterId: string): void {
   if (!requester) {
     abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
   if (requester.status === 'running') return;
@@ -632,14 +731,19 @@ function flush(requesterId: string): void {
     console.warn(`[agent-watch] ${requesterId} is no longer the session that was owed this, dropping ${holding(held)} pending item(s)`);
     abandonBusMessages(requesterId, held);
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
 
   for (const [childId, news] of held.children) {
-    if (!stillNews(childId, news)) held.children.delete(childId);
+    if (!stillNews(childId, news, requesterId)) {
+      held.children.delete(childId);
+      queuesChanged();
+    }
   }
   if (holding(held) === 0) {
     pending.delete(requesterId);
+    queuesChanged();
     return;
   }
 
@@ -660,6 +764,7 @@ function flush(requesterId: string): void {
     });
     if (outcome === 'refused') return;
     held.children.clear();
+    queuesChanged();
   } else {
     const message = held.bus[0];
     const outcome = writeProgrammaticInput(ptyProcess, composeBusNote(message), true, {
@@ -679,6 +784,7 @@ function flush(requesterId: string): void {
   }
 
   if (holding(held) === 0) pending.delete(requesterId);
+  queuesChanged();
 
   // Held slightly past the submit keystroke, so anything that finishes in the
   // meantime waits for a line of its own instead of joining this one.
@@ -723,9 +829,23 @@ function describeNews(news: News): string {
     return `has written nothing to its transcript for ${news.reason} minutes and runs no tool: it looks frozen. `
       + 'Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done';
   }
+  if (news.kind === 'not_delivered') {
+    if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
+    if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';
+    const why = news.reason === 'stopped' ? 'it was stopped before it ran it'
+      : news.reason === 'restart' ? 'Tars stopped before it ran it'
+      : 'it was waiting behind text typed in its field, and its terminal ended before it could go in';
+    return `never ran what you asked of it: ${why}. Nothing was retried; ask again if it is still needed`;
+  }
   if (news.kind === 'ended') return 'has finished its turn';
   if (news.kind === 'wait' && news.reason === 'permission') return 'is now waiting for a permission answer';
   return `is now ${news.status}`;
+}
+
+/** What the note says, and, for news carried across a restart, since when it was owed. */
+function describeOwed(news: News): string {
+  const said = describeNews(news);
+  return news.carried && news.since ? `${said} (${carriedSince(news.since)})` : said;
 }
 
 function composeNote(finished: Map<string, News>): string {
@@ -734,7 +854,7 @@ function composeNote(finished: Map<string, News>): string {
     const name = agent?.name || id;
     // Raw until the room note made "This is Noah, not a teammate." a sentence
     // Tars really writes: a name with a line break in it could append one here.
-    return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeNews(news)}`;
+    return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeOwed(news)}`;
   });
 
   if (lines.length === 1) {
@@ -856,6 +976,7 @@ export async function releaseBusMessagesNow(
 export function resetAgentWatch(): void {
   lastSeen.clear();
   pending.clear();
+  carried.clear();
   waitingOn.clear();
   releasing.clear();
   for (const timer of delivering.values()) clearTimeout(timer);
