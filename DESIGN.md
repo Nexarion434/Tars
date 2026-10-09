@@ -205,6 +205,7 @@ re-exported to Tailwind through `@theme inline`.
 | `accent` | `#FF9E42` | `#C77012` | `--primary`, `--accent`, `--ring`, `--info` | The mark, one CTA, focus ring |
 | `accent-dim` | `#FF9E42` @ 8.6% | `#C77012` @ 7.8% | `bg-primary/…` | Active-item fill |
 | `accent-focus` | `#FF9E42` @ 40% | `#C77012` @ 40% | `border-primary/40` | A field's border while it holds the focus |
+| `machine-ink` | `#FF9E42` | `#1E1E1E` | `--machine-ink` | Another machine's name in its badge: orange in dark, the text colour in light |
 | `on-accent` | `#1E1E1E` | `#1E1E1E` | `--primary-foreground` | Text on an accent fill |
 | `status-running` | `#4CC38A` | `#1A7F37` | `--success` | Agent working |
 | `status-waiting` | `#E8C547` | `#9A6700` | `--warning` | Agent asking |
