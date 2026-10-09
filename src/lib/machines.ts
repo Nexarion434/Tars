@@ -235,7 +235,7 @@ export function remoteActions(remote: Pick<RemoteInfo, 'status' | 'drive'>, runn
 /** Under a pane of a machine that lets this one see only. Frame: `Panel · machine you may only see`. */
 export function seeOnlyLine(machineName: string, platform: string): string {
   const me = localMachineLabel(platform).replace('This ', 'this ');
-  return `${machineName} lets ${me} see only. To start, stop or message its agents, choose Drive for ${me} on ${machineName}, in Settings > Machines.`;
+  return `${machineName} lets ${me} see only. To start, stop or type into its agents, choose Drive for ${me} on ${machineName}, in Settings > Machines.`;
 }
 
 /** The reason a stop is given, or null when it is blank. */

@@ -275965,7 +275965,7 @@
               "fill": "$text-muted",
               "textGrowth": "fixed-width",
               "width": 690,
-              "content": "PC lets this Mac see only. To start, stop or message its agents, choose Drive for this Mac on PC, in Settings > Machines.",
+              "content": "PC lets this Mac see only. To start, stop or type into its agents, choose Drive for this Mac on PC, in Settings > Machines.",
               "lineHeight": 1.5,
               "fontFamily": "$font-mono",
               "fontSize": 11,

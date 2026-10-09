@@ -262,8 +262,8 @@ describe('remoteActions', () => {
 
 describe('seeOnlyLine', () => {
   it('names the machine and this one by its platform (12)', () => {
-    expect(seeOnlyLine('PC', 'darwin')).toBe('PC lets this Mac see only. To start, stop or message its agents, choose Drive for this Mac on PC, in Settings > Machines.');
-    expect(seeOnlyLine('Mini', 'win32')).toBe('Mini lets this PC see only. To start, stop or message its agents, choose Drive for this PC on Mini, in Settings > Machines.');
+    expect(seeOnlyLine('PC', 'darwin')).toBe('PC lets this Mac see only. To start, stop or type into its agents, choose Drive for this Mac on PC, in Settings > Machines.');
+    expect(seeOnlyLine('Mini', 'win32')).toBe('Mini lets this PC see only. To start, stop or type into its agents, choose Drive for this PC on Mini, in Settings > Machines.');
     expect(seeOnlyLine('Mini', 'linux')).toContain('lets this machine see only.');
   });
 });
