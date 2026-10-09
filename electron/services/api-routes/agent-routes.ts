@@ -16,6 +16,7 @@ import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
+import { remoteControlName } from '../../providers/cli-provider';
 import { skillsProblem } from '../../utils/skill-name';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
@@ -273,7 +274,7 @@ async function spawnAgentSession(
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
       // Not in print mode: Remote Control is for an interactive session.
-      remoteControl: appSettings.remoteControlEnabled && !usePrintMode ? agent.name : undefined,
+      remoteControl: usePrintMode ? undefined : remoteControlName(appSettings, agent),
     });
   } catch (err) {
     sendJson({ error: err instanceof Error ? err.message : 'Invalid agent configuration' }, 400);

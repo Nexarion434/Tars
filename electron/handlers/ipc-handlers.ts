@@ -60,7 +60,7 @@ import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSk
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
-import { enforcesOrchestratorMode } from '../providers/cli-provider';
+import { enforcesOrchestratorMode, remoteControlName } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
 import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot, landsUnderSafeRoot } from '../platform';
@@ -836,7 +836,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       skills: allAgentSkills,
       isSuperAgent: isSuperAgentCheck,
       chrome: appSettingsForCommand.chromeEnabled,
-      remoteControl: appSettingsForCommand.remoteControlEnabled ? agent.name : undefined,
+      remoteControl: remoteControlName(appSettingsForCommand, agent),
       // BUG 5: an orchestrator cannot edit files.
       orchestratorMode: isSuperAgentCheck,
     });

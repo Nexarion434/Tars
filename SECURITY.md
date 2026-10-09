@@ -795,7 +795,10 @@ at once. A live output silent for 45 seconds is ended on the reading side.
 
 Settings > Providers > Claude Code > Remote Control, off unless turned on,
 starts each Claude Code agent with `--remote-control <its name>`, from a
-window, the API (not in print mode) or a bot. Its session then shows in the
+window, the API (not in print mode) or a bot, at its next start: turning it
+off leaves a session started with it reachable until that agent stops. Not a
+local agent: it is still signed in to claude.ai, and its session would be
+kept on Anthropic's servers. Its session then shows in the
 Claude apps of the claude.ai account its CLI is signed in to, and whoever can
 sign in to that account can read it and type into it from claude.ai or a
 phone, its permission prompts included. Claude Code makes the link: outbound

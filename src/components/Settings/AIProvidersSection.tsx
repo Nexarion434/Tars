@@ -423,7 +423,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
                 />
                 <SettingsRow
                   label="Remote Control"
-                  description="Shows agents in the Claude app under their names, via --remote-control. Needs a claude.ai login."
+                  description="Shows agents in the Claude app under their names, from their next start. Needs a claude.ai login."
                   control={
                     <Toggle
                       label="Remote Control"

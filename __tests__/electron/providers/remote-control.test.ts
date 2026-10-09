@@ -30,6 +30,12 @@ import { argvReached, writeArgvPrinter } from './argv-reached';
  *    (an API key, ANTHROPIC_BASE_URL): Remote Control needs a claude.ai login,
  *    so they never pass it, switch on or not.
  * 9. A resumed conversation: `--resume <id>` keeps its id with the switch on.
+ * Which agents the launchers ask it for (remoteControlName), found in review:
+ * 10. A local agent (Tasmania) runs the Claude provider against a model on
+ *    this machine, still signed in to claude.ai: with the flag its session,
+ *    project code included, would be kept on Anthropic's servers. Never.
+ * 11. An agent with no name, switch on: still asked for, under "Tars agent".
+ * 12. The switch off, or absent from the settings: never asked for.
  */
 
 let tmpDir: string;
@@ -136,6 +142,31 @@ describe('a Claude agent reachable from the Claude apps', () => {
     const argv = argvFor(command);
     expect(argv[argv.indexOf('--resume') + 1]).toBe('0b3c2a1e-1111-4222-8333-944455556666');
     expect(remoteControlOf(argv)).toEqual({ present: true, name: 'Resumed' });
+  });
+
+  it('10. a local agent (Tasmania) is never asked for it, nor any provider but Claude Code', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    const on = { remoteControlEnabled: true };
+    expect(remoteControlName(on, { name: 'On a local model', provider: 'local' })).toBeUndefined();
+    for (const provider of [...OTHER_APIS, 'codex', 'gemini', 'grok', 'opencode', 'pi', 'amp']) {
+      expect(remoteControlName(on, { name: 'Elsewhere', provider }), provider).toBeUndefined();
+    }
+    expect(remoteControlName(on, { name: 'Claude', provider: 'claude' })).toBe('Claude');
+    expect(remoteControlName(on, { name: 'Claude by default' })).toBe('Claude by default');
+  });
+
+  it('11. an agent with no name is still asked for it, and its title is "Tars agent"', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    const name = remoteControlName({ remoteControlEnabled: true }, { provider: 'claude' });
+    expect(name).toBe('');
+    expect(remoteControlOf(await launch('claude', name))).toEqual({ present: true, name: 'Tars agent' });
+  });
+
+  it('12. the switch off or absent: never asked for', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    expect(remoteControlName({ remoteControlEnabled: false }, { name: 'A', provider: 'claude' })).toBeUndefined();
+    expect(remoteControlName({}, { name: 'A', provider: 'claude' })).toBeUndefined();
+    expect(remoteControlName(undefined, { name: 'A' })).toBeUndefined();
   });
 
   for (const id of OTHER_APIS) {

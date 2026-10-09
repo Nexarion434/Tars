@@ -321,6 +321,45 @@ export function safeEffort(effort: string | undefined): string | undefined {
 }
 
 /**
+ * `--remote-control <name>`: the session shows in the Claude apps under the
+ * agent's name. Verified against `claude --help` (2.1.284): `--remote-control
+ * [name]`, an optional value, so the name is always given and never opens with
+ * a dash, or the CLI would read it as an option it does not know and refuse to
+ * start. It is a title in a list: one plain line, at most 80 characters, never
+ * cutting one in two.
+ */
+export function remoteControlFlag(name: string | undefined): string {
+  if (name === undefined) return '';
+  const title = Array.from(name
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s-]+/, '')
+    .trim())
+    .slice(0, 80)
+    .join('')
+    .trim();
+  return ` --remote-control ${shellQuote(title || 'Tars agent')}`;
+}
+
+/**
+ * The name a launcher asks Remote Control for (Settings, Claude Code), or
+ * undefined. Claude Code agents only: Remote Control needs a claude.ai login,
+ * which the providers that point the claude binary at another API do not use,
+ * and a local agent (Tasmania, the Claude provider against a model on this
+ * machine) is still signed in to claude.ai, so its session, project code
+ * included, would be kept on Anthropic's servers. An agent with no name is
+ * asked for under an empty one, which remoteControlFlag titles "Tars agent".
+ */
+export function remoteControlName(
+  settings: Partial<Pick<AppSettings, 'remoteControlEnabled'>> | undefined,
+  agent: { name?: string; provider?: string },
+): string | undefined {
+  if (settings?.remoteControlEnabled !== true) return undefined;
+  if ((agent.provider ?? 'claude') !== 'claude') return undefined;
+  return agent.name ?? '';
+}
+
+/**
  * The agent's effort as the CLI's flag: every level Tars stores, medium too.
  *
  * Medium used to be left off, as if no flag meant medium. It means whatever the
@@ -337,27 +376,6 @@ export function safeEffort(effort: string | undefined): string | undefined {
  * the fourteen providers that run the claude binary, which each carried their
  * own copy of the medium exception.
  */
-/**
- * `--remote-control <name>`: the session shows in the Claude apps under the
- * agent's name. Verified against `claude --help` (2.1.284): `--remote-control
- * [name]`, an optional value, so the name is always given and never opens with
- * a dash, or the CLI would read it as an option it does not know and refuse to
- * start. It is a title in a list: one plain line, at most 80 characters.
- * Claude Code alone passes it: Remote Control needs a claude.ai login, which
- * the providers that point the same binary at another API do not use.
- */
-export function remoteControlFlag(name: string | undefined): string {
-  if (name === undefined) return '';
-  const title = name
-    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s-]+/, '')
-    .trim()
-    .slice(0, 80)
-    .trim();
-  return ` --remote-control ${shellQuote(title || 'Tars agent')}`;
-}
-
 export function effortFlag(effort: string | undefined): string {
   const level = safeEffort(effort);
   return level ? ` --effort ${level}` : '';
