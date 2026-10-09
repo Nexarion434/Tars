@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type * as pty from 'node-pty';
 import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
-import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
+import { isSuperAgent, getSuperAgentInstructionsPath, projectFolderName } from '../utils';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
@@ -96,7 +96,7 @@ export function projectsReport(
   const b = words.strong ?? '*';
   let text = words.title;
   byProject.forEach((projectAgents, projectPath) => {
-    text += `${words.folder} ${b}${projectPath.split('/').pop() || 'Unknown'}${b}\n`;
+    text += `${words.folder} ${b}${projectFolderName(projectPath) || 'Unknown'}${b}\n`;
     text += `${words.indent}\`${projectPath}\`\n`;
     text += `${words.indent}${words.people} Agents: ${projectAgents.map(a => `${words.face(a)}${a.name}${statusDot(a, words.dot)}`).join(', ')}\n\n`;
   });

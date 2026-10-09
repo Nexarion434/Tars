@@ -82,9 +82,14 @@ async function readMemoryFileAsync(filePath: string): Promise<MemoryFile> {
   return memoryFile(filePath, stat, content);
 }
 
-/** Claude Code's own encoding: every '/' and '.' becomes '-'. */
+/**
+ * Claude Code's own encoding: every character that is not an ASCII letter or
+ * a digit becomes '-', as memory-hub names the folder too. Only `/` and `.`
+ * were turned, so a path with a space or an underscore got a folder Claude
+ * never reads.
+ */
 function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/[/.]/g, '-');
+  return projectPath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 /**
@@ -95,6 +100,17 @@ function encodeProjectPath(projectPath: string): string {
 export async function listProjectMemories(extraProjectPaths: string[] = []): Promise<ProjectMemory[]> {
   const results: ProjectMemory[] = [];
   const seenPaths = new Set<string>();
+  // The folder a known project's path, or its real path, names stands for that
+  // path: decoding cannot rebuild a space or an underscore from a '-', and a
+  // Tars project was listed once under the guess, with its memory, and again
+  // empty. The real path's row is then claimed below like any other.
+  const knownByFolder = new Map<string, string>();
+  for (const known of extraProjectPaths) {
+    for (const spelling of known ? spellingsOf(known) : []) {
+      const name = encodeProjectPath(spelling);
+      if (!knownByFolder.has(name)) knownByFolder.set(name, spelling);
+    }
+  }
   /** The rows read from the CLIs' folders, by the path each folder stands for. */
   const byPath = new Map<string, ProjectMemory>();
 
@@ -102,7 +118,7 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
     // Read without blocking, each folder's path decoded once (project-index.ts).
     for (const folder of await projectFolders(projectsDir)) {
       const memoryDir = path.join(folder.dir, 'memory');
-      const decodedPath = folder.projectPath;
+      const decodedPath = knownByFolder.get(folder.name) ?? folder.projectPath;
       const projectName = getProjectName(decodedPath);
 
       const project: ProjectMemory = {

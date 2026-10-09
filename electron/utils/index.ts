@@ -231,6 +231,16 @@ export function getSuperAgent(agents: Map<string, AgentStatus>, projectPath?: st
   return orchestrators[0];
 }
 
+/**
+ * The folder a project goes by in the bots' messages: the last segment of its
+ * path, a trailing `/` dropped as the chat rooms drop it (`/Users/noah/atlas/`
+ * is `atlas`, where the bots said '' or 'Unknown'). '' for `/` or an empty
+ * path, which each caller replaces with its own fallback.
+ */
+export function projectFolderName(projectPath: string): string {
+  return projectPath.split('/').filter(Boolean).pop() ?? '';
+}
+
 export function formatAgentStatus(agent: AgentStatus): string {
   const isSuper = isSuperAgent(agent);
   const emoji = isSuper ? '👑' : (TG_CHARACTER_FACES[agent.character || ''] || '🤖');
@@ -244,7 +254,7 @@ export function formatAgentStatus(agent: AgentStatus): string {
     text += `   Task: ${agent.currentTask.slice(0, 50)}${agent.currentTask.length > 50 ? '...' : ''}\n`;
   }
   if (!isSuper) {
-    text += `   Project: \`${agent.projectPath.split('/').pop()}\``;
+    text += `   Project: \`${projectFolderName(agent.projectPath)}\``;
   }
   return text;
 }
@@ -258,7 +268,7 @@ export function formatSlackAgentStatus(a: AgentStatus): string {
 
   let text = `${emoji} *${a.name}* ${statusEmoji}\n`;
   if (!isSuper) {
-    const project = a.projectPath.split('/').pop() || 'Unknown';
+    const project = projectFolderName(a.projectPath) || 'Unknown';
     text += `    :file_folder: \`${project}\`\n`;
   }
   if (a.skills.length > 0) {
