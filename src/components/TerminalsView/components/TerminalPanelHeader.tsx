@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { GripVertical, ShieldOff, Bot, Shield, Gauge, Maximize2, Minimize2 } from 'lucide-react';
 import { AgentMark, MachineBadge } from '@/components/ui';
-import { readOnlyTitle, type PaneAgent } from '@/lib/machines';
+import { readOnlyTitle, remoteActions, type PaneAgent } from '@/lib/machines';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { asleepLine, wakingLine } from '@/lib/asleep-line';
@@ -62,6 +62,9 @@ export default function TerminalPanelHeader({
   const remote = agent.remote;
   const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
   const machineOffline = !!remote && remote.status !== 'connected';
+  // What the machine lets this one do to it: stop while it runs, start at rest.
+  const allowed = remote ? remoteActions(remote, isLive) : null;
+  const blocked = !!allowed && !(isLive ? allowed.stop : allowed.start);
 
   const showDragHandle = tabType === 'custom';
   // Neither kind of tab deletes anything from here any more. A custom tab
@@ -204,7 +207,7 @@ export default function TerminalPanelHeader({
           and fullscreen`. */}
       <span
         className="inline-flex items-center h-[26px] px-2.5 mr-0.5 text-xs border bg-secondary border-border-accent text-foreground shrink-0"
-        title={readOnly ?? "The agent's session, in its terminal"}
+        title={(allowed && !allowed.message ? readOnly : undefined) ?? "The agent's session, in its terminal"}
       >
         session
       </span>
@@ -230,19 +233,19 @@ export default function TerminalPanelHeader({
           type="button"
           onMouseDown={e => e.stopPropagation()}
           onClick={isLive ? onStop : onStart}
-          disabled={!!remote}
+          disabled={blocked}
           // A bordered 26px row action, like every other action in the app. The
           // first version was accent-filled, which put a solid orange block in
           // every pane header at once - the accent is for one primary action on
           // a screen, not for six of them in a row.
           className={`h-[26px] px-2 text-[11px] font-mono lowercase border transition-colors ${
-            remote
+            blocked
               ? 'border-border text-muted-foreground opacity-40 cursor-default'
               : isLive
                 ? 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer'
                 : 'border-border-accent text-foreground hover:border-primary hover:text-primary cursor-pointer'
           }`}
-          title={readOnly ?? (isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`)}
+          title={(blocked ? readOnly : undefined) ?? (isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`)}
         >
           {isLive ? 'stop' : 'start'}
         </button>

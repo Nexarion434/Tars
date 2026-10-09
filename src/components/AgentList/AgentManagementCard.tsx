@@ -1,7 +1,10 @@
 'use client';
 
 import { AgentMark, Button, MachineBadge } from '@/components/ui';
-import { readOnlyTitle, type PaneAgent } from '@/lib/machines';
+import { useState } from 'react';
+import { readOnlyTitle, remoteActions, type PaneAgent } from '@/lib/machines';
+import { useRemoteDrive } from '@/hooks/useRemoteDrive';
+import { MachineStopReason } from '@/components/MachineStopReason';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { permissionAskLine } from '@/lib/permission-ask';
@@ -54,6 +57,11 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const remote = agent.remote;
   const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
   const machineOffline = !!remote && remote.status !== 'connected';
+  // Where its machine lets this one drive it, start and stop work, over the
+  // bridge; stop asks why first. Edit and delete never do.
+  const drive = useRemoteDrive(agent.id);
+  const [askStop, setAskStop] = useState(false);
+  const allowed = remote ? remoteActions(remote, isRunning) : null;
 
   return (
     <div
@@ -127,11 +135,11 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
               wake
             </Button>
           ) : isRunning ? (
-            <Button size="sm" className={ROW_ACTION} onClick={onStop} disabled={!!remote} title={readOnly}>
+            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => setAskStop(true) : onStop} disabled={!!allowed && !allowed.stop} title={allowed?.stop ? undefined : readOnly}>
               stop
             </Button>
           ) : (
-            <Button size="sm" className={ROW_ACTION} onClick={onStart} disabled={agent.pathMissing || !!remote} title={readOnly}>
+            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => { void drive.start(); } : onStart} disabled={agent.pathMissing || (!!allowed && !allowed.start)} title={allowed?.start ? undefined : readOnly}>
               start
             </Button>
           )}
@@ -145,6 +153,17 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
               several subscriptions are on. Frame: `Agent · Claude account`. */}
           {!remote && <AgentAccountControl agent={agent} className="ml-auto" />}
         </div>
+        {drive.error && (
+          <p data-machine-drive-error className="text-[11px] text-status-error">{drive.error}</p>
+        )}
+        {askStop && allowed?.stop && (
+          <MachineStopReason
+            agentName={agent.name || 'this agent'}
+            busy={drive.busy}
+            onStop={async reason => { if (await drive.stop(reason)) setAskStop(false); }}
+            onCancel={() => setAskStop(false)}
+          />
+        )}
       </div>
     </div>
   );
