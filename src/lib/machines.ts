@@ -70,7 +70,7 @@ export interface RemoteInfo {
   /** The size its terminal is drawn for there, both or neither. */
   cols?: number;
   rows?: number;
-  /** Its machine lets this one start, stop and message its agents. */
+  /** Its machine lets this one start, stop and type into its agents. */
   drive?: boolean;
 }
 
@@ -220,30 +220,22 @@ export function scaleToFit(body: { width: number; height: number }, term: { widt
   return ok ? Math.min(1, body.width / term.width, body.height / term.height) : 1;
 }
 
-/** The longest message sent to another machine's agent. */
-export const MESSAGE_MAX = 8000;
-
 /**
  * What can be done to a remote agent from here: only on a connected machine
  * that lets this one drive (its own Settings decides, and it asks again at
- * every action). `seeOnly` is the machine that answers and allows nothing.
+ * every action). `type` is keys typed into its pane. `seeOnly` is the machine
+ * that answers and allows nothing.
  */
 export function remoteActions(remote: Pick<RemoteInfo, 'status' | 'drive'>, running: boolean) {
   const connected = remote.status === 'connected';
   const drive = connected && remote.drive === true;
-  return { start: drive && !running, stop: drive && running, message: drive, seeOnly: connected && !drive };
+  return { start: drive && !running, stop: drive && running, type: drive, seeOnly: connected && !drive };
 }
 
 /** Under a pane of a machine that lets this one see only. Frame: `Panel · machine you may only see`. */
 export function seeOnlyLine(machineName: string, platform: string): string {
   const me = localMachineLabel(platform).replace('This ', 'this ');
   return `${machineName} lets ${me} see only. To start, stop or message its agents, choose Drive for ${me} on ${machineName}, in Settings > Machines.`;
-}
-
-/** The message as sent, or null when it is blank or too long. */
-export function checkMessage(text: string): string | null {
-  const t = text.trim();
-  return t && t.length <= MESSAGE_MAX ? t : null;
 }
 
 /** The reason a stop is given, or null when it is blank. */

@@ -3,7 +3,8 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
-import { isRemoteId, remoteSize, scaleToFit, type PaneAgent } from '@/lib/machines';
+import { isRemoteId, remoteActions, remoteSize, scaleToFit, type PaneAgent } from '@/lib/machines';
+import { reportDriveAnswer } from '@/hooks/useRemoteDrive';
 import { isElectron } from '@/hooks/useElectron';
 import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { TERMINAL_CONFIG } from '../constants';
@@ -106,6 +107,10 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   const ptyOfRef = useRef<Map<string, string>>(new Map());
   // The size each remote agent's terminal is drawn for, as the fleet last said.
   const remoteSizeRef = useRef<Map<string, { cols?: number; rows?: number }>>(new Map());
+  // Whether each remote agent's machine is connected and lets this one type
+  // into it. Read when a key is typed, so a machine changing its mind, or going
+  // away, takes effect on the next key.
+  const remoteTypeRef = useRef<Map<string, boolean>>(new Map());
   // Written in an effect, not during render: a ref assignment during render
   // is unsafe under concurrent rendering, and every reader of this one runs
   // after commit (a callback, a subscription), so the timing is the same.
@@ -219,9 +224,10 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         if (isElectron()) window.electronAPI!.agent.sendInput({ id: agentId, input }).catch(() => {});
       });
 
-      // Another machine's agent is read only: nothing typed in its pane is sent.
+      // Another machine's agent takes keys only where its machine lets this
+      // one drive; otherwise nothing typed in its pane is sent.
       const remote = isRemoteId(agentId);
-      if (remote) term.options.disableStdin = true;
+      if (remote) term.options.disableStdin = !remoteTypeRef.current.get(agentId);
 
       const entry: TerminalEntry = {
         terminal: term,
@@ -233,7 +239,16 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         lastRows: 0,
         // An idle agent has no terminal since #164: keys typed into its panel
         // are said to go nowhere instead of being dropped. See keySender.
-        typeKeys: remote ? () => {} : keySender(term, input => (isElectron()
+        // Each chunk goes at once, in order, without waiting for the one
+        // before: the main process queues them per agent. The answer is only
+        // read for the sentence a refusal says (reportDriveAnswer).
+        typeKeys: remote ? input => {
+          if (!remoteTypeRef.current.get(agentId)) return;
+          window.electronAPI?.machines?.typeKeys(agentId, input).then(
+            answer => reportDriveAnswer(agentId, answer),
+            err => reportDriveAnswer(agentId, undefined, err),
+          );
+        } : keySender(term, input => (isElectron()
           ? window.electronAPI!.agent.sendInput({ id: agentId, input })
           : Promise.resolve(undefined))),
       };
@@ -290,10 +305,12 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       // Helper: send input to one agent or broadcast to all
       const sendOrBroadcast = (input: string) => {
         if (!isElectron()) return;
-        if (broadcastModeRef.current) {
-          // Broadcast to all terminals, each panel saying so if its agent has none
-          for (const other of terminalsRef.current.values()) {
-            if (!other.disposed) other.typeKeys(input);
+        if (broadcastModeRef.current && !remote) {
+          // Broadcast to all of this machine's terminals, each panel saying so
+          // if its agent has none. Another machine's agent is never in it, nor
+          // does a key typed in its pane reach the others.
+          for (const [otherId, other] of terminalsRef.current) {
+            if (!other.disposed && !isRemoteId(otherId)) other.typeKeys(input);
           }
         } else {
           entry.typeKeys(input);
@@ -424,6 +441,10 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   useEffect(() => {
     for (const agent of agents) {
       if (!agent.remote) continue;
+      const canType = remoteActions(agent.remote, false).type;
+      remoteTypeRef.current.set(agent.id, canType);
+      const entry = terminalsRef.current.get(agent.id);
+      if (entry && !entry.disposed) entry.terminal.options.disableStdin = !canType;
       const was = remoteStatusRef.current.get(agent.id);
       remoteStatusRef.current.set(agent.id, agent.remote.status);
       const size = { cols: agent.remote.cols, rows: agent.remote.rows };

@@ -210,7 +210,7 @@ export default function TerminalPanelHeader({
           and fullscreen`. */}
       <span
         className="inline-flex items-center h-[26px] px-2.5 mr-0.5 text-xs border bg-secondary border-border-accent text-foreground shrink-0"
-        title={(allowed && !allowed.message ? readOnly : undefined) ?? "The agent's session, in its terminal"}
+        title={(allowed && !allowed.type ? readOnly : undefined) ?? "The agent's session, in its terminal"}
       >
         session
       </span>
