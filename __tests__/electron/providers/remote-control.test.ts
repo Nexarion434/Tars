@@ -48,6 +48,11 @@ import { argvReached, writeArgvPrinter } from './argv-reached';
  *    the agent must still start, under what is left.
  * 18. A double quote or a backslash in the name (Windows builds its command
  *    line with them): one argument still, and no option after it.
+ * Orchestrators only (Nicolas, 2026-10-09: "que pour l'orchestrateur et pas
+ * les sous agents"), the setting has three positions, off, orchestrator, all:
+ * 19. On "orchestrator", a project's orchestrator gets it and a worker, or an
+ *    agent with no role, does not; on "all", both do.
+ * 20. A value the setting cannot hold (an older file's `true`, a typo): none.
  */
 
 let tmpDir: string;
@@ -158,7 +163,7 @@ describe('a Claude agent reachable from the Claude apps', () => {
 
   it('10. a local agent (Tasmania) is never asked for it, nor any provider but Claude Code', async () => {
     const { remoteControlName } = await import('../../../electron/providers/cli-provider');
-    const on = { remoteControlEnabled: true };
+    const on = { remoteControl: 'all' as const };
     expect(remoteControlName(on, { name: 'On a local model', provider: 'local' })).toBeUndefined();
     for (const provider of [...OTHER_APIS, 'codex', 'gemini', 'grok', 'opencode', 'pi', 'amp']) {
       expect(remoteControlName(on, { name: 'Elsewhere', provider }), provider).toBeUndefined();
@@ -169,20 +174,20 @@ describe('a Claude agent reachable from the Claude apps', () => {
 
   it('11. an agent with no name is still asked for it, and its title is "Tars agent"', async () => {
     const { remoteControlName } = await import('../../../electron/providers/cli-provider');
-    const name = remoteControlName({ remoteControlEnabled: true }, { provider: 'claude' });
+    const name = remoteControlName({ remoteControl: 'all' as const }, { provider: 'claude' });
     expect(name).toBe('');
     expect(remoteControlOf(await launch('claude', name))).toEqual({ present: true, name: 'Tars agent' });
   });
 
   it('12. the switch off or absent: never asked for', async () => {
     const { remoteControlName } = await import('../../../electron/providers/cli-provider');
-    expect(remoteControlName({ remoteControlEnabled: false }, { name: 'A', provider: 'claude' })).toBeUndefined();
+    expect(remoteControlName({ remoteControl: 'off' as const }, { name: 'A', provider: 'claude' })).toBeUndefined();
     expect(remoteControlName({}, { name: 'A', provider: 'claude' })).toBeUndefined();
     expect(remoteControlName(undefined, { name: 'A' })).toBeUndefined();
   });
 
   describe('the project in the title', () => {
-    const on = { remoteControlEnabled: true };
+    const on = { remoteControl: 'all' as const };
     const project = (name: string) => path.join(os.tmpdir(), 'work', name);
 
     it('13. the project\'s folder name, then the agent\'s', async () => {
@@ -209,7 +214,7 @@ describe('a Claude agent reachable from the Claude apps', () => {
 
   it('17. a name or a project that is not text never stops the agent from starting', async () => {
     const { remoteControlName } = await import('../../../electron/providers/cli-provider');
-    const on = { remoteControlEnabled: true };
+    const on = { remoteControl: 'all' as const };
     const odd = { name: 42 as unknown as string, projectPath: { x: 1 } as unknown as string, provider: 'claude' };
     expect(() => remoteControlName(on, odd)).not.toThrow();
     expect(remoteControlName(on, odd)).toBe('');
@@ -222,6 +227,30 @@ describe('a Claude agent reachable from the Claude apps', () => {
     expect(remoteControlOf(argv)).toEqual({ present: true, name });
     expect(argv).not.toContain('--dangerously-skip-permissions');
     expect(promptOf(argv)).toEqual([TASK]);
+  });
+
+  it('19. on "orchestrator", only a project\'s orchestrator; on "all", every Claude agent', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    const orchestrator = { name: 'Lead', provider: 'claude', role: 'orchestrator' as const };
+    const worker = { name: 'Copywriting', provider: 'claude', role: 'worker' as const };
+    const noRole = { name: 'Old agent', provider: 'claude' };
+    const only = { remoteControl: 'orchestrator' as const };
+    expect(remoteControlName(only, orchestrator)).toBe('Lead');
+    expect(remoteControlName(only, worker)).toBeUndefined();
+    expect(remoteControlName(only, noRole)).toBeUndefined();
+    const all = { remoteControl: 'all' as const };
+    expect(remoteControlName(all, orchestrator)).toBe('Lead');
+    expect(remoteControlName(all, worker)).toBe('Copywriting');
+    // A local orchestrator still never: Remote Control needs a claude.ai login.
+    expect(remoteControlName(only, { ...orchestrator, provider: 'local' })).toBeUndefined();
+  });
+
+  it('20. a value the setting cannot hold gives none', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    for (const value of [true, 'yes', 'ALL', 1]) {
+      expect(remoteControlName({ remoteControl: value as never }, { name: 'A', provider: 'claude', role: 'orchestrator' }), String(value)).toBeUndefined();
+    }
+    expect(remoteControlName({ remoteControlEnabled: true } as never, { name: 'A', provider: 'claude' })).toBeUndefined();
   });
 
   for (const id of OTHER_APIS) {

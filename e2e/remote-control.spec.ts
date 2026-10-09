@@ -6,20 +6,21 @@ import { launchSandboxed, listenForErrors, recordValues, splashGone, stepShot } 
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * Remote Control (Nicolas, 2026-10-09): one switch in Settings, under Claude
- * Code's configure, and each Claude agent started after it starts as
- * `claude --remote-control <its name>`, reachable from the Claude app on his
- * phone under that name.
+ * Remote Control (Nicolas, 2026-10-09): one choice in Settings, under Claude
+ * Code's configure, Off, Orchestrators only or All Claude agents, and the
+ * agents it names start as `claude --remote-control <title>`, reachable from
+ * the Claude app on his phone under that title.
  *
  * Asserted, in the real app, the CLI a recorder that writes down its argv:
- * 1. The switch is off at first, and an agent started then gets no
- *    `--remote-control`.
- * 2. Turned on in Settings > Providers > Claude Code > configure, it is saved.
- * 3. An agent started after it gets `--remote-control` and its title, its
- *    project's folder then its own name ("demo · Ana's landing $HOME"), as one
- *    argument (a quote and `$HOME` reach the CLI as typed), and its task is
- *    still the prompt.
- * Leaves a run directory with the switch's picture and the argv of each start.
+ * 1. Off at first: an agent started then gets no `--remote-control`.
+ * 2. "Orchestrators only", chosen in Settings > Providers > Claude Code >
+ *    configure, is saved.
+ * 3. Then a worker gets none, and the project's orchestrator gets
+ *    `--remote-control` and its title, its project's folder then its own
+ *    name ("demo · Ana's landing $HOME"), as one argument (a quote and `$HOME`
+ *    reach the CLI as typed), its task still the prompt.
+ * 4. "All Claude agents": a worker gets it too.
+ * Leaves a run directory with the choice's picture and the argv of each start.
  *   npx playwright test e2e/remote-control.spec.ts
  */
 
@@ -78,18 +79,18 @@ function remoteControlOf(argv: string[]): string | null {
   return at === -1 ? null : options[at + 1] ?? '';
 }
 
-async function startAgent(page: Page, project: string, cli: string, name: string): Promise<string> {
+async function startAgent(page: Page, project: string, cli: string, name: string, role: 'worker' | 'orchestrator' = 'worker'): Promise<string> {
   const id = await page.evaluate(async (arg) => {
     const api = (window as unknown as Api).electronAPI.agent;
-    const agent = await api.create({ projectPath: arg.project, skills: [], name: arg.name, cliPath: arg.cli, permissionMode: 'normal' });
+    const agent = await api.create({ projectPath: arg.project, skills: [], name: arg.name, cliPath: arg.cli, permissionMode: 'normal', role: arg.role });
     const started = await api.start({ id: agent.id, prompt: arg.task });
     if (!started.success) throw new Error(started.error ?? 'start failed');
     return agent.id;
-  }, { project, cli, name, task: TASK });
+  }, { project, cli, name, role, task: TASK });
   return id;
 }
 
-test('with Remote Control on in Settings, a Claude agent starts with --remote-control under its project and name', async () => {
+test('Remote Control on the orchestrators only, then on every Claude agent: the agents it names start with --remote-control under their project and name', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-remote-control-'));
   const dataDir = path.join(home, '.dorothy');
@@ -121,23 +122,36 @@ test('with Remote Control on in Settings, a Claude agent starts with --remote-co
     expect(remoteControlOf(before.argv), JSON.stringify(before.argv)).toBeNull();
     values.argvOff = before.argv;
 
-    // 2. Turned on under Claude Code's configure, and saved.
+    // 2. "Orchestrators only", chosen under Claude Code's configure, and saved.
     await page.getByText('AI & Providers', { exact: true }).click();
     await page.getByText('Providers', { exact: true }).first().click();
     await page.getByRole('button', { name: 'configure' }).first().click();
-    const toggle = page.getByRole('switch', { name: 'Remote Control' });
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(() => settingsOnDisk().remoteControlEnabled, { timeout: 10_000 }).toBe(true);
-    await toggle.scrollIntoViewIfNeeded();
-    await stepShot(page, '01-remote-control-on');
+    const choice = page.getByRole('button', { name: 'Remote Control' });
+    await expect(choice).toContainText('Off');
+    const choose = async (value: 'orchestrator' | 'all') => {
+      await choice.click();
+      await page.locator(`[role="option"][data-value="${value}"]`).click();
+      await expect.poll(() => settingsOnDisk().remoteControl, { timeout: 10_000 }).toBe(value);
+    };
+    await choose('orchestrator');
+    await expect(choice).toContainText('Orchestrators only');
+    await choice.scrollIntoViewIfNeeded();
+    await stepShot(page, '01-remote-control-orchestrators-only');
 
-    // 3. An agent started now: --remote-control, its own name as one argument, and the task still the prompt.
-    const after = await launchOf(log, await startAgent(page, project, cli, NAME));
-    expect(remoteControlOf(after.argv), JSON.stringify(after.argv)).toBe(`demo · ${NAME}`);
-    expect(after.argv.slice(after.argv.indexOf('--') + 1)).toEqual([TASK]);
-    values.argvOn = after.argv;
+    // 3. A worker gets none; the orchestrator gets its title as one argument, the task still the prompt.
+    const worker = await launchOf(log, await startAgent(page, project, cli, 'A worker'));
+    expect(remoteControlOf(worker.argv), JSON.stringify(worker.argv)).toBeNull();
+    const lead = await launchOf(log, await startAgent(page, project, cli, NAME, 'orchestrator'));
+    expect(remoteControlOf(lead.argv), JSON.stringify(lead.argv)).toBe(`demo · ${NAME}`);
+    expect(lead.argv.slice(lead.argv.indexOf('--') + 1)).toEqual([TASK]);
+    values.argvWorkerOrchestratorsOnly = worker.argv;
+    values.argvOrchestrator = lead.argv;
+
+    // 4. "All Claude agents": a worker gets it too.
+    await choose('all');
+    const another = await launchOf(log, await startAgent(page, project, cli, 'Another worker'));
+    expect(remoteControlOf(another.argv), JSON.stringify(another.argv)).toBe('demo · Another worker');
+    values.argvWorkerAll = another.argv;
 
     expect(errors, errors.join('\n')).toEqual([]);
     recordValues(values);
