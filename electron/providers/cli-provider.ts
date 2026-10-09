@@ -35,6 +35,12 @@ export interface InteractiveCommandParams {
   skills?: string[];
   isSuperAgent?: boolean;
   chrome?: boolean;
+  /**
+   * The name to start the session under with Remote Control on (Settings,
+   * Claude Code), so it can be followed and driven from the Claude apps.
+   * Only Claude Code on a claude.ai login acts on it: see remoteControlFlag.
+   */
+  remoteControl?: string;
   /** Orchestrator mode: disable Edit/Write/NotebookEdit/Task so the agent
    *  cannot do implementation work itself and must delegate. See BUG 5. */
   orchestratorMode?: boolean;
@@ -331,6 +337,27 @@ export function safeEffort(effort: string | undefined): string | undefined {
  * the fourteen providers that run the claude binary, which each carried their
  * own copy of the medium exception.
  */
+/**
+ * `--remote-control <name>`: the session shows in the Claude apps under the
+ * agent's name. Verified against `claude --help` (2.1.284): `--remote-control
+ * [name]`, an optional value, so the name is always given and never opens with
+ * a dash, or the CLI would read it as an option it does not know and refuse to
+ * start. It is a title in a list: one plain line, at most 80 characters.
+ * Claude Code alone passes it: Remote Control needs a claude.ai login, which
+ * the providers that point the same binary at another API do not use.
+ */
+export function remoteControlFlag(name: string | undefined): string {
+  if (name === undefined) return '';
+  const title = name
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s-]+/, '')
+    .trim()
+    .slice(0, 80)
+    .trim();
+  return ` --remote-control ${shellQuote(title || 'Tars agent')}`;
+}
+
 export function effortFlag(effort: string | undefined): string {
   const level = safeEffort(effort);
   return level ? ` --effort ${level}` : '';

@@ -359,6 +359,7 @@ export async function startWithTask(
       skills: [...new Set(agent.skills || [])],
       isSuperAgent: isSuperAgent(agent),
       orchestratorMode: isSuperAgent(agent),
+      remoteControl: fleet.settings().remoteControlEnabled ? agent.name : undefined,
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
     const before = markRunning(agent, task);
@@ -470,6 +471,7 @@ export async function forwardToOrchestrator(
       skills: [...new Set(orchestrator.skills || [])],
       isSuperAgent: true,
       orchestratorMode: true,
+      remoteControl: fleet.settings().remoteControlEnabled ? orchestrator.name : undefined,
     });
     const start = launchIn(orchestrator, ptyProcess, workingDir, command);
     const before = markRunning(orchestrator, opts.message);

@@ -89,6 +89,7 @@ export interface AppSettings {
   gwsSkillsInstalled: boolean;
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
+  remoteControlEnabled?: boolean;
   autoCheckUpdates: boolean;
   /** Error reports to Sentry: off unless the user turns them on. Main reads
    *  it at launch and follows every change, so off stops them at once. */

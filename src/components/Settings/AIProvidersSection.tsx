@@ -422,6 +422,17 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
                   }
                 />
                 <SettingsRow
+                  label="Remote Control"
+                  description="Shows agents in the Claude app under their names, via --remote-control. Needs a claude.ai login."
+                  control={
+                    <Toggle
+                      label="Remote Control"
+                      enabled={!!appSettings.remoteControlEnabled}
+                      onChange={() => onSaveAppSettings({ remoteControlEnabled: !appSettings.remoteControlEnabled })}
+                    />
+                  }
+                />
+                <SettingsRow
                   label="Status line"
                   description="Model, context, branch, session time and tokens, live inside the CLI."
                   control={

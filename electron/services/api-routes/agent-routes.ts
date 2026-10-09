@@ -272,6 +272,8 @@ async function spawnAgentSession(
       orchestratorMode: isSuperAgentApi,
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
+      // Not in print mode: Remote Control is for an interactive session.
+      remoteControl: appSettings.remoteControlEnabled && !usePrintMode ? agent.name : undefined,
     });
   } catch (err) {
     sendJson({ error: err instanceof Error ? err.message : 'Invalid agent configuration' }, 400);
