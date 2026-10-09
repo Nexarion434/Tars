@@ -36,26 +36,42 @@ const asMachine = (name: string) => `${name} (machine)`;
  * (bridge-server checks that first): what the window's own start and stop do,
  * filed under that machine's name, and a message typed after its sender line.
  */
+/** The agents a paired machine's start is on its way for. */
+const startsUnderWay = new Set<string>();
+
+/** One start, as the window's own start or wake runs it. */
+async function startOne(agent: AgentStatus, by: string): Promise<DriveOutcome> {
+  // Woken by that machine, as the window's wake does it, its waker undone should the launch fail.
+  if (agent.status === 'asleep') {
+    const woken = await wakeAgent(agent, asMachine(by), 'start');
+    return woken.success ? done : { ok: false, status: 409, error: woken.error };
+  }
+  noteRestartAfterStop(agent, asMachine(by));
+  try {
+    const result = await launchAgent(agent.id, '');
+    return result.success ? done : { ok: false, status: 409, error: result.error };
+  } catch (err) {
+    // A missing project folder, a CLI Windows cannot start: the sentence, not a bare 500.
+    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 const drive: NonNullable<BridgeDeps['drive']> = {
   start: async (agentId, by) => {
     const agent = agents.get(agentId);
     if (!agent) return notHere();
-    // One launch at a time: a second would type its line into the first CLI. A
-    // stopped agent has none under way: the stop ended it, whatever the record
-    // of a launch begun a few seconds before still says.
-    if (agent.status !== 'stopped' && sessionStarting(agent)) return { ok: false, status: 409, error: `${nameOf(agent)} is starting already.` };
-    // Woken by that machine, as the window's wake does it, its waker undone should the launch fail.
-    if (agent.status === 'asleep') {
-      const woken = await wakeAgent(agent, asMachine(by), 'start');
-      return woken.success ? done : { ok: false, status: 409, error: woken.error };
+    // One launch at a time: a second would type its line into the first CLI.
+    // A remote start on its way counts, a stopped agent's included, which stays
+    // stopped until its launch clears the stop; the record of a launch a stop
+    // ended does not.
+    if (startsUnderWay.has(agentId) || (agent.status !== 'stopped' && sessionStarting(agent))) {
+      return { ok: false, status: 409, error: `${nameOf(agent)} is starting already.` };
     }
-    noteRestartAfterStop(agent, asMachine(by));
+    startsUnderWay.add(agentId);
     try {
-      const result = await launchAgent(agentId, '');
-      return result.success ? done : { ok: false, status: 409, error: result.error };
-    } catch (err) {
-      // A missing project folder, a CLI Windows cannot start: the sentence, not a bare 500.
-      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+      return await startOne(agent, by);
+    } finally {
+      startsUnderWay.delete(agentId);
     }
   },
   stop: async (agentId, by, reason) => {

@@ -747,7 +747,8 @@ look, provider, model, status, task, branch, project folder and path, whether
 its CLI runs, its last activity and who stopped it and why, field by field
 (`shareAgent`): never a token, the env, the CLI's path, the worktree or second
 project, the session id, the skills, the permission mode or who asked for its
-work, and every string bounded. The screen and the stream carry the terminal
+work, and every string bounded (a start that fails, for a machine that may
+drive, answers its sentence, which may name the CLI or its folder). The screen and the stream carry the terminal
 itself, as the person here sees it: whatever a CLI prints there travels,
 secrets it echoes included, and on macOS and Linux the launch line Tars types
 (`cd '<dir>' && <cli> ...`) is part of it. Holding fields out of the fleet is

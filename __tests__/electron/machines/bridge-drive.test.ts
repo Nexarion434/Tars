@@ -156,7 +156,7 @@ describe('driving an agent here', () => {
   });
 
   it('11. a message or a reason of control and format characters only is refused as empty', async () => {
-    for (const text of ['\u0007', '\u001b\u0007', '\u200b\u202e', ' \u0000 ']) {
+    for (const text of ['\u0007', '\u001b\u0007', '\u200b\u202e', ' \u0000 ', '\u001b[200~', '\u001b[201~\u001b[200~ ']) {
       expect((await call('POST', '/machines/v1/agents/a1/message', { text })).status, JSON.stringify(text)).toBe(400);
     }
     for (const reason of ['\u0007', '\u202e\u200b', '\u001b']) {

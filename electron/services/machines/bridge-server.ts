@@ -170,7 +170,7 @@ const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'PO
 const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream|start|stop|message)$/;
 const READS = new Set(['screen', 'stream']);
 
-/** What a start's first prompt or a message may hold: a long brief, not a file. */
+/** What a message may hold: a long brief, not a file. */
 export const MAX_DRIVE_TEXT = 8000;
 /** What this machine's side of an action answers: done, or why not, with its status. */
 export type DriveOutcome = { ok: true } | { ok: false; status: 404 | 409; error: string };
@@ -326,8 +326,12 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   return send(404, { error: 'Not found' });
 }
 
-/** What is left of a text once the characters nobody sees are taken out: controls and format characters (bidi, zero width). */
-const visible = (text: string) => text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
+/**
+ * What is left of a text once what nobody sees is taken out: the paste
+ * markers, which Tars's typing takes out too, then controls and format
+ * characters (bidi, zero width).
+ */
+const visible = (text: string) => text.replace(/\u001b\[20[01]~/g, '').replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
 
 /**
  * An action on one of this machine's agents, from a paired machine that this
@@ -344,9 +348,9 @@ async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message',
   if (body === 'too-large') return send(413, { error: 'Too large' });
   // Asked again once the body is in: Drive taken back, or the machine
   // forgotten, while the request was on its way refuses it.
-  const now = peerFor(req.headers.authorization);
-  if (!now || now.id !== peer.id) return send(401, { error: 'Unauthorized' });
-  if (now.mayOnMe !== 'drive') return seeOnly(now);
+  const current = peerFor(req.headers.authorization);
+  if (!current || current.id !== peer.id) return send(401, { error: 'Unauthorized' });
+  if (current.mayOnMe !== 'drive') return seeOnly(current);
   const tooLong = `A message to an agent is at most ${MAX_DRIVE_TEXT.toLocaleString('en-US')} characters.`;
   if (!deps.drive) return send(404, { error: 'No such agent' });
   let outcome: DriveOutcome;
@@ -354,14 +358,14 @@ async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message',
     // One line of a card: any run of spaces and line breaks reads as one space.
     const reason = typeof body.reason === 'string' ? visible(body.reason.replace(/\s+/g, ' ')) : '';
     if (!reason) return send(400, { error: 'A stop needs a reason.' });
-    outcome = await deps.drive.stop(agentId, now.name, reason.slice(0, 200));
+    outcome = await deps.drive.stop(agentId, current.name, reason.slice(0, 200));
   } else if (action === 'message') {
     const text = typeof body.text === 'string' ? body.text : '';
     if (!visible(text)) return send(400, { error: 'A message needs some text.' });
     if (text.length > MAX_DRIVE_TEXT) return send(413, { error: tooLong });
-    outcome = await deps.drive.message(agentId, now.name, text);
+    outcome = await deps.drive.message(agentId, current.name, text);
   } else {
-    outcome = await deps.drive.start(agentId, now.name);
+    outcome = await deps.drive.start(agentId, current.name);
   }
   return outcome.ok ? send(200, { ok: true }) : send(outcome.status, { error: outcome.error });
 }
@@ -437,7 +441,7 @@ async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: 
     state = { listening: false, reason: target.reason };
     return bridgeState();
   }
-  const created = http.createServer((req, res) => {
+  const created = http.createServer({ connectionsCheckingInterval: 5_000 }, (req, res) => {
     void handleBridgeRequest(req, res, deps, { tailnetOnly }).catch(() => {
       if (!res.headersSent) { res.writeHead(500); res.end(); }
     });
