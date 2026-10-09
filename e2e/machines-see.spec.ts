@@ -15,7 +15,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * Asserted, in order:
  * 1. A's Dashboard shows B's agent, under B's name as its badge.
- * 2. Its pane shows B's terminal and goes on with it: a later tick appears.
+ * 2. Its pane shows B's terminal and goes on with it: a later tick appears;
+ *    and at B's terminal's size, as many rows with the status bar B's CLI
+ *    draws on its last one, scaled to stay within the panel.
  * 3. Read only: what is typed into A's pane never reaches B's CLI.
  * 4. B quits: within twenty seconds A's pane says B is offline since when,
  *    and its last output stays.
@@ -43,13 +45,13 @@ function pairHomes(aHome: string, bHome: string) {
   write(bHome, { version: 1, self: { id: ids.b, name: 'PC' }, peers: [{ id: ids.a, name: 'Mac', address: '127.0.0.1', port: Number(A.bridge), inboundSecretHash: hash(bIssued), outboundSecret: aIssued, mayOnMe: 'see', pairedAt: at }] });
 }
 
-async function launch(home: string, me: typeof A): Promise<{ app: ElectronApplication; page: Page }> {
+async function launch(home: string, me: typeof A, viewport = { width: 1440, height: 900 }): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchSandboxed(electron, home, { env: {
     NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: me.api, DOROTHY_E2E: '1',
     TARS_MACHINES_BIND: '127.0.0.1', TARS_MACHINES_PORT: me.bridge,
   } });
   const page = await app.firstWindow();
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize(viewport);
   return { app, page };
 }
 
@@ -78,8 +80,10 @@ test('a paired machine\'s agents show on the Dashboard with its badge, live and 
   const cli = writeNodeCli(path.join(bHome, 'ticker.cjs'), [
     'if (process.stdin.isTTY) process.stdin.setRawMode(true);',
     `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(received)}, d));`,
-    "let n = 0; process.stdout.write('ticker ready\\r\\n');",
-    "setInterval(() => process.stdout.write('tick ' + (++n) + '\\r\\n'), 500);",
+    // A status bar on its terminal's last row, as Claude Code draws one: placed by the size it runs in.
+    "const bar = () => process.stdout.write('\\x1b7\\x1b[' + process.stdout.rows + ';1Hstatus bar ' + process.stdout.columns + 'x' + process.stdout.rows + '\\x1b8');",
+    "let n = 0; process.stdout.write('ticker ready\\r\\n'); bar(); process.stdout.on('resize', bar);",
+    "setInterval(() => { process.stdout.write('tick ' + (++n) + '\\r\\n'); bar(); }, 500);",
     '',
   ].join('\n'));
   fs.mkdirSync(path.join(bHome, '.dorothy'), { recursive: true });
@@ -90,7 +94,8 @@ test('a paired machine\'s agents show on the Dashboard with its badge, live and 
   fs.writeFileSync(path.join(bHome, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }));
 
   const values: Record<string, unknown> = {};
-  const b = await launch(bHome, B);
+  // A smaller window than A's, so B's terminal is not the size A's pane would fit itself to.
+  const b = await launch(bHome, B, { width: 1100, height: 680 });
   const a = await launch(aHome, A);
   try {
     await b.page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
@@ -117,6 +122,25 @@ test('a paired machine\'s agents show on the Dashboard with its badge, live and 
     values.firstTick = first;
     values.laterTick = Math.max(...ticksIn(await rows.innerText()));
     await stepShot(a.page, '01-a-shows-the-pc-agent-live');
+
+    // 2b. At the PC terminal's size (Mac and PC, 2026-10-09): as many rows, the
+    // status bar its CLI draws on the last one, and the whole within its panel.
+    type MachinesApi = { electronAPI: { machines: { agents: () => Promise<Array<{ agentId: string; cols?: number; rows?: number }>> } } };
+    const remoteSize = async () => (await a.page.evaluate(() => (window as unknown as MachinesApi).electronAPI.machines.agents())).find(r => r.agentId === AGENT.id);
+    await expect.poll(async () => (await remoteSize())?.rows ?? 0, { timeout: 10_000 }).toBeGreaterThan(0);
+    const size = (await remoteSize())!;
+    const rowDivs = terminal.locator('.xterm-rows > div');
+    await expect.poll(() => rowDivs.count(), { timeout: 10_000 }).toBe(size.rows);
+    await expect.poll(async () => rowDivs.last().innerText(), { timeout: 10_000 }).toContain(`status bar ${size.cols}x${size.rows}`);
+    const fit = await terminal.evaluate((xterm) => {
+      const screen = (xterm.querySelector('.xterm-screen') as HTMLElement).getBoundingClientRect();
+      const body = (xterm.parentElement as HTMLElement).getBoundingClientRect();
+      return { screen: { w: screen.width, h: screen.height }, body: { w: body.width, h: body.height }, transform: getComputedStyle(xterm).transform };
+    });
+    expect(fit.screen.w, JSON.stringify(fit)).toBeLessThanOrEqual(fit.body.w + 1);
+    expect(fit.screen.h, JSON.stringify(fit)).toBeLessThanOrEqual(fit.body.h + 1);
+    values.pcTerminalSize = size;
+    values.paneFit = fit;
 
     // 3. Read only: keys typed into A's pane never reach B's CLI.
     await terminal.locator('.xterm-screen').click();
