@@ -47,8 +47,10 @@ import { listProjectMemories } from '../../../electron/services/memory-service';
 import { memoryStatus, projectMemoryDir } from '../../../electron/services/memory-hub';
 
 let base: string;
-/** The folder Claude Code keeps for a project at `real`, as it names it. */
-const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects', real.replace(/[/.]/g, '-'));
+/** The folder Claude Code keeps for a project at `real`, as it names it: every character but a letter or a digit to `-`. */
+const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects', real.replace(/[^a-zA-Z0-9]/g, '-'));
+/** The folder 1.9.3's Brain made for a project, `/` and `.` to `-` only. */
+const brainFolder = (saved: string) => path.join(tmpHome, '.claude', 'projects', saved.replace(/[/.]/g, '-'));
 
 /** A project at a real path, a link to it, and optionally Claude Code's folder for it with a MEMORY.md. */
 function project(name: string, withClaude: boolean): { real: string; link: string } {
@@ -112,15 +114,15 @@ describe('the same project, as the other readers key it', () => {
   it('7. takes a Claude Code folder under the saved spelling as the project\'s, and never puts two rows under one path', async () => {
     const { real, link } = project('epsilon', true);
     // A MEMORY.md 1.9.3's Brain made under the saved spelling.
-    fs.mkdirSync(path.join(claudeFolder(link), 'memory'), { recursive: true });
-    fs.writeFileSync(path.join(claudeFolder(link), 'memory', 'MEMORY.md'), '# made by 1.9.3\n');
+    fs.mkdirSync(path.join(brainFolder(link), 'memory'), { recursive: true });
+    fs.writeFileSync(path.join(brainFolder(link), 'memory', 'MEMORY.md'), '# made by 1.9.3\n');
     const listed = of(await listProjectMemories([link]), real, link);
     expect(listed.filter(p => p.projectPath === link)).toHaveLength(1);
     expect(new Set(listed.map(p => p.projectPath)).size).toBe(listed.length);
 
     const { real: r2, link: l2 } = project('zeta', false);
-    fs.mkdirSync(path.join(claudeFolder(l2), 'memory'), { recursive: true });
-    fs.writeFileSync(path.join(claudeFolder(l2), 'memory', 'MEMORY.md'), '# only here\n');
+    fs.mkdirSync(path.join(brainFolder(l2), 'memory'), { recursive: true });
+    fs.writeFileSync(path.join(brainFolder(l2), 'memory', 'MEMORY.md'), '# only here\n');
     const only = of(await listProjectMemories([l2]), r2, l2);
     expect(only).toHaveLength(1);
     expect(only[0]).toMatchObject({ projectPath: l2, hasMemory: true });
