@@ -36,6 +36,9 @@ import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../..
  * 13. Keys are changed on the way: Esc, Enter, Ctrl+C or a paste's markers
  *    taken out (they are what a person types), or a batch past MAX_KEYS, or
  *    an empty one, typed.
+ * And the terminal following whoever looks at it (Nicolas, 2026-10-09):
+ * 14. A machine that may only see resizes a terminal here, or a size no
+ *    terminal can have (zero, a fraction, past 1000, text) is passed on.
  */
 
 let server: http.Server;
@@ -55,6 +58,7 @@ const deps: BridgeDeps = {
     stop: async (agentId, by, reason) => { calls.push(['stop', agentId, by, reason]); return outcome; },
     message: async (agentId, by, text) => { calls.push(['message', agentId, by, text]); return outcome; },
     keys: async (agentId, by, data) => { calls.push(['keys', agentId, by, data]); return outcome; },
+    size: async (agentId, by, cols, rows) => { calls.push(['size', agentId, by, `${cols}x${rows}`]); return outcome; },
   },
 };
 
@@ -228,6 +232,24 @@ describe('typing into an agent here', () => {
       setTimeout(() => { pair('see'); req.end(body); }, 100);
     });
     expect(await answer).toBe(403);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('sizing an agent\'s terminal here', () => {
+  it('14. a machine that may drive gives the size its pane draws at, as whole numbers a terminal can have', async () => {
+    expect((await call('POST', '/machines/v1/agents/a1/size', { cols: 96, rows: 28 })).status).toBe(200);
+    expect(calls).toEqual([['size', 'a1', 'PC', '96x28']]);
+    calls = [];
+    for (const body of [{ cols: 0, rows: 28 }, { cols: 96.5, rows: 28 }, { cols: 1001, rows: 28 }, { cols: '96', rows: 28 }, { cols: 96 }]) {
+      expect((await call('POST', '/machines/v1/agents/a1/size', body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('14. a machine that may only see sizes nothing', async () => {
+    pair('see');
+    expect((await call('POST', '/machines/v1/agents/a1/size', { cols: 96, rows: 28 })).status).toBe(403);
     expect(calls).toEqual([]);
   });
 });

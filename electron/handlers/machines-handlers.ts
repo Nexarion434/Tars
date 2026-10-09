@@ -99,6 +99,9 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
   ipcMain.handle('machines:stop-agent', (_e, id: unknown, reason: unknown) => drive(id, 'stop', { reason }));
   ipcMain.handle('machines:message-agent', (_e, id: unknown, text: unknown) => drive(id, 'message', { text }));
   // Keys typed in a remote pane, in order: no poll after each, the stream shows what came of them.
+  // A remote pane's size, which that agent's terminal then draws at.
+  ipcMain.handle('machines:resize-agent', (_e, id: unknown, cols: unknown, rows: unknown) =>
+    (typeof id === 'string' && typeof cols === 'number' && typeof rows === 'number' ? remote().resize(id, cols, rows) : { success: false as const, error: 'There is no such agent.' }));
   ipcMain.handle('machines:type-keys', (_e, id: unknown, data: unknown) =>
     (typeof id === 'string' && typeof data === 'string' && data ? remote().keys(id, data) : { success: false as const, error: 'There is no such agent.' }));
 

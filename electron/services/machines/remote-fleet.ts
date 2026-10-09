@@ -27,7 +27,7 @@ export interface RemoteFleetDeps {
   pollTimeoutMs?: number;
 }
 
-export type DriveAction = 'start' | 'stop' | 'message' | 'keys';
+export type DriveAction = 'start' | 'stop' | 'message' | 'keys' | 'size';
 
 export interface RemoteFleet {
   poll: () => Promise<void>;
@@ -35,6 +35,8 @@ export interface RemoteFleet {
   drive: (remoteId: string, action: DriveAction, body: Record<string, unknown>) => Promise<DriveResult>;
   /** Keys typed in a remote pane: sent in order, one batch on its way per agent, those typed meanwhile gathered behind it. */
   keys: (remoteId: string, data: string) => Promise<DriveResult>;
+  /** The size of a remote pane, which that agent's terminal then draws at. */
+  resize: (remoteId: string, cols: number, rows: number) => Promise<DriveResult>;
   list: () => RemoteAgent[];
   screen: (remoteId: string) => Promise<RemoteScreen | null>;
   watch: (remoteId: string) => void;
@@ -195,6 +197,7 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
   return {
     poll,
     list,
+    resize: (remoteId, cols, rows) => drive(remoteId, 'size', { cols, rows }),
     keys: (remoteId, data) => {
       if (!parseRemoteId(remoteId)) return Promise.resolve({ success: false, error: 'There is no such agent.' });
       const t = typing.get(remoteId) ?? { sending: false, pending: '', waiters: [] };

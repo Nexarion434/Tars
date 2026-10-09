@@ -1244,6 +1244,13 @@ export interface ElectronAPI {
      * drive. Sent in order; the answer says why not when it refused them.
      */
     typeKeys: (id: string, data: string) => Promise<{ success: true } | { success: false; error: string }>;
+    /**
+     * A remote pane's size, where its machine lets this one drive: that
+     * agent's terminal draws at it, for whoever looks at it last.
+     */
+    resizeAgent: (id: string, cols: number, rows: number) => Promise<{ success: true } | { success: false; error: string }>;
+    /** One of this machine's agents whose terminal a paired machine resized: its pane takes the size back at its next click or key. */
+    onSizeTaken: (callback: (agentId: string) => void) => () => void;
   };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */

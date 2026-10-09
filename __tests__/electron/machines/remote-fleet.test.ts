@@ -34,6 +34,7 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  * 14. Keys typed in a pane reach the other machine out of order, or one POST
  *    per key while one is on its way (a burst of typing becomes a burst of
  *    requests), or a refusal is lost.
+ * 16. A pane's size goes to another machine, or for an id that is not remote.
  * 15. Keys gathered past MAX_KEYS (a long paste, typing behind a slow batch)
  *    go as one batch the other side refuses whole; or a batch that throws
  *    (the pairing file unreadable) leaves the queue stuck, every later key
@@ -311,6 +312,16 @@ describe('live outputs', () => {
     expect((await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'x')).success).toBe(false);
     unreadable = false;
     expect(await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'y')).toEqual({ success: true });
+  });
+
+  it('16. a pane\'s size goes to its agent\'s own machine, and none for an id that is not remote', async () => {
+    peers = [PC, NAS];
+    const fleet = createRemoteFleet(deps());
+    expect(await fleet.resize('m:m-bbbbbbbbbbbbbbbb:x9', 96, 28)).toEqual({ success: true });
+    expect(driven).toEqual([[NAS.id, 'x9', 'size', { cols: 96, rows: 28 }]]);
+    driven = [];
+    expect(await fleet.resize('x9', 96, 28)).toEqual({ success: false, error: 'There is no such agent.' });
+    expect(driven).toEqual([]);
   });
 
   it('14. a refusal comes back to every key of its batch, and the next keys still go', async () => {

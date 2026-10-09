@@ -54,6 +54,8 @@ export interface BridgeDeps {
     message: (agentId: string, by: string, text: string) => Promise<DriveOutcome>;
     /** Keys typed in that machine's pane, as a person at this window types them. */
     keys: (agentId: string, by: string, data: string) => Promise<DriveOutcome>;
+    /** The size of that machine's pane: the terminal draws for whoever looks at it. */
+    size: (agentId: string, by: string, cols: number, rows: number) => Promise<DriveOutcome>;
   };
   now?: () => number;
 }
@@ -169,7 +171,7 @@ const peerFor = (authorization: string | undefined): PairedMachine | undefined =
 
 const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair', 'GET /machines/v1/fleet']);
 /** One agent's screen or live output (GET), or an action on it (POST): an id that fleet-share lets travel, and nothing else after it. */
-const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream|start|stop|message|keys)$/;
+const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream|start|stop|message|keys|size)$/;
 const READS = new Set(['screen', 'stream']);
 
 /** What a message may hold: a long brief, not a file. */
@@ -318,7 +320,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
     return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning, ...terminalSize(screen.cols, screen.rows) }) : send(404, { error: 'No such terminal' });
   }
   if (agentRoute && agentRoute[2] === 'stream') return streamOutput(agentRoute[1], peer, res, deps, send);
-  if (agentRoute) return driveAgent(agentRoute[1], agentRoute[2] as 'start' | 'stop' | 'message' | 'keys', peer, req, deps, send);
+  if (agentRoute) return driveAgent(agentRoute[1], agentRoute[2] as 'start' | 'stop' | 'message' | 'keys' | 'size', peer, req, deps, send);
 
   // The caller forgets this machine, and this machine forgets the caller, its live outputs with it.
   if (key === 'POST /machines/v1/unpair') {
@@ -347,7 +349,7 @@ const visible = (text: string) => text.replace(/\u001b\[20[01]~/g, '').replace(/
  * task, with no sender line, kept as the agent's role, and on some CLIs read
  * as a flag (security review of part 3); the task goes as a message.
  */
-async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message' | 'keys', peer: PairedMachine, req: http.IncomingMessage, deps: BridgeDeps, send: (status: number, body: unknown) => void): Promise<void> {
+async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message' | 'keys' | 'size', peer: PairedMachine, req: http.IncomingMessage, deps: BridgeDeps, send: (status: number, body: unknown) => void): Promise<void> {
   const seeOnly = (caller: PairedMachine) => send(403, { error: `${readMachines().self.name} lets ${caller.name} see only.` });
   if (peer.mayOnMe !== 'drive') return seeOnly(peer);
   const body = await readBody(req);
@@ -365,6 +367,10 @@ async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message' 
     const reason = typeof body.reason === 'string' ? visible(body.reason.replace(/\s+/g, ' ')) : '';
     if (!reason) return send(400, { error: 'A stop needs a reason.' });
     outcome = await deps.drive.stop(agentId, current.name, reason.slice(0, 200));
+  } else if (action === 'size') {
+    const size = terminalSize(body.cols, body.rows);
+    if (!('cols' in size)) return send(400, { error: 'A terminal size is two whole numbers from 1 to 1000.' });
+    outcome = await deps.drive.size(agentId, current.name, size.cols, size.rows);
   } else if (action === 'keys') {
     // As typed: Esc, Enter, Ctrl+C and a paste's markers are what a person types.
     const data = typeof body.data === 'string' ? body.data : '';

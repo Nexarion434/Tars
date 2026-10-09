@@ -277,6 +277,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     messageAgent: (id: string, text: string) => ipcRenderer.invoke('machines:message-agent', id, text),
     /** Keys typed in a remote agent's pane, as they come: that machine types them into its running CLI. */
     typeKeys: (id: string, data: string) => ipcRenderer.invoke('machines:type-keys', id, data),
+    /** A remote pane's size: that agent's terminal draws for whoever looks at it. */
+    resizeAgent: (id: string, cols: number, rows: number) => ipcRenderer.invoke('machines:resize-agent', id, cols, rows),
+    /** This machine's agent whose terminal a paired machine resized: its pane takes the size back at its next click or key. */
+    onSizeTaken: (callback: (agentId: string) => void) => {
+      const listener = (_: unknown, event: { agentId: string }) => callback(event.agentId);
+      ipcRenderer.on('machines:size-taken', listener);
+      return () => ipcRenderer.removeListener('machines:size-taken', listener);
+    },
   },
 
   // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)

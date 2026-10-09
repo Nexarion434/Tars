@@ -183,7 +183,7 @@ export async function fetchScreen(peer: PairedMachine, agentId: string): Promise
  * One action on a remote agent (bridge-server, driveAgent): the other
  * machine's answer, or status 0 for none. A start waits for its launch.
  */
-export async function driveAgent(peer: PairedMachine, agentId: string, action: 'start' | 'stop' | 'message' | 'keys', body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function driveAgent(peer: PairedMachine, agentId: string, action: 'start' | 'stop' | 'message' | 'keys' | 'size', body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   return request({ host: peer.address, port: peer.port }, 'POST', `/machines/v1/agents/${encodeURIComponent(agentId)}/${action}`, {
     secret: peer.outboundSecret, body, timeoutMs: action === 'start' ? 30_000 : 10_000,
   });

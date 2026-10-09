@@ -7,7 +7,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { readMachines } from './store';
 import { cliRunningIn } from '../../core/agent-pty';
-import { terminalSnapshot } from '../../core/terminal-mirror';
+import { terminalSnapshot, rememberPanelSize, resizeTerminalMirror } from '../../core/terminal-mirror';
 import { withSessionTruth } from '../agent-truth';
 import { shareFleet, terminalSize } from './fleet-share';
 import type { BridgeDeps, DriveOutcome } from './bridge-server';
@@ -96,6 +96,23 @@ const drive: NonNullable<BridgeDeps['drive']> = {
   },
   // As this window's own keys reach an agent (agent:input), and only while its
   // CLI runs: never into the bare shell of a terminal whose CLI has ended.
+  // As this window's own resize (agent:resize): the terminal draws for the
+  // machine that looks at it. This window is told, and takes the size back at
+  // its next click or key in that pane.
+  size: async (agentId, _by, cols, rows) => {
+    const agent = agents.get(agentId);
+    if (!agent) return notHere();
+    const terminal = terminalOf(agent);
+    if (!terminal || !rememberPanelSize(agentId, cols, rows)) return { ok: false, status: 409, error: `${nameOf(agent)} has no terminal on ${here()}.` };
+    try {
+      terminal.resize(cols, rows);
+      resizeTerminalMirror(terminal, cols, rows);
+    } catch (err) {
+      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+    broadcastToAllWindows('machines:size-taken', { agentId });
+    return done;
+  },
   keys: async (agentId, _by, data) => {
     const agent = agents.get(agentId);
     if (!agent) return notHere();
