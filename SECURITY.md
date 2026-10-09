@@ -732,16 +732,18 @@ typed in the caller's pane, Esc, Enter, Ctrl+C and pastes as they are, through
 this window's own `writeHumanInput`, at most 4,096 characters a batch, in
 order, a batch only while that CLI runs (checked before each batch: a batch
 holding the keys that end or suspend the CLI, `/exit` and Enter, Ctrl+Z, can
-leave the rest of itself to the shell on macOS and Linux; on Windows the
-terminal closes with its CLI). Keys carry no sender line: the agent cannot tell them from
+leave the rest of itself to the shell on macOS and Linux, and keys held while
+Tars types a message of its own are typed after it with no new check; on
+Windows the terminal closes with its CLI). Keys carry no sender line: the agent cannot tell them from
 the user's at this machine. Stops, starts after a stop and wakes are
 filed under the name this machine paired the caller under, as `<name>
 (machine)`: the caller chose that name at pairing, and the person who
 accepted it saw it; it never comes from a request. Driving gives the caller
 what a person at this keyboard has over an agent: with keys it can change the
 agent's model (`/model`), cycle its permission mode, answer its permission
-dialogs and run a shell through the CLI (`!`). The routes themselves read or
-write no file and change no agent record, and the bridge serves no file.
+dialogs and run a shell through the CLI (`!`). The routes themselves change
+no agent setting (model, project, permission mode) and read or write no file
+of the caller's choosing, and the bridge serves no file.
 
 **What Drive gives away.** Drive given to a machine is given to every process
 of its user there, its agents included: the secret that drives sits in that
