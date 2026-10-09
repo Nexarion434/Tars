@@ -148,7 +148,7 @@ export class OllamaProvider implements CLIProvider {
   }
 
   getEnvVarsToDelete(): string[] {
-    return ['CLAUDECODE'];
+    return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'];
   }
 
   getHookConfig(): HookConfig {
@@ -219,7 +219,7 @@ if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 export CLAUDE_PROVIDER="ollama"
 OLLAMA_BASE="$(jq -r '${baseUrlJq}' "${DATA_DIR_SHELL}/app-settings.json")"
 export ANTHROPIC_BASE_URL="\${OLLAMA_BASE:-${OLLAMA_DEFAULT_BASE_URL}}"

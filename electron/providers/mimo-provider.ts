@@ -93,7 +93,7 @@ export class MiMoProvider implements CLIProvider {
     return vars;
   }
 
-  getEnvVarsToDelete(): string[] { return ['CLAUDECODE']; }
+  getEnvVarsToDelete(): string[] { return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION']; }
   getHookConfig(): HookConfig { return { supportsNativeHooks: true, configDir: this.configDir, settingsFile: path.join(this.configDir, 'settings.json') }; }
   async configureHooks(_hooksDir: string): Promise<void> {}
 
@@ -138,7 +138,7 @@ if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 export CLAUDE_PROVIDER="mimo"
 export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
 export ANTHROPIC_API_KEY="$(jq -r '.openRouterApiKey // empty' "${DATA_DIR_SHELL}/app-settings.json")"

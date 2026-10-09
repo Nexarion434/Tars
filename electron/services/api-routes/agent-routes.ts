@@ -294,7 +294,7 @@ async function spawnAgentSession(
 
   // Assemble the environment. Identity vars are re-asserted explicitly
   // (MCP project scoping and the hooks depend on them), and provider-specified
-  // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
+  // vars (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) are purged so nested sessions don't inherit them.
   const spawnEnv: Record<string, string | undefined> = {
     ...withPath(process.env, fullPath, process.platform),
     TERM: 'xterm-256color',

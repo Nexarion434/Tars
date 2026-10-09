@@ -174,7 +174,7 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   getEnvVarsToDelete(): string[] {
-    return ['CLAUDECODE'];
+    return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'];
   }
 
   getHookConfig(): HookConfig {
@@ -443,7 +443,7 @@ fi
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

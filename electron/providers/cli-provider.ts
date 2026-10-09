@@ -310,6 +310,24 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
  * claude binary get them; codex, gemini, grok, opencode and pi have their own
  * updaters and would silently ignore them.
  */
+/**
+ * What a Claude Code session leaves in the environment of what it starts, and
+ * so of a Tars started from one (`npm run electron:start` run by a Claude Code
+ * session): CLAUDECODE, the nested-session marker, and CLAUDE_CODE_CHILD_SESSION,
+ * with which an interactive claude saves no transcript ("Transcript saving is
+ * off, inherited CLAUDE_CODE_CHILD_SESSION marker", 2.1.284, 2026-10-09). No
+ * agent is that session's child: every agent terminal is spawned without them
+ * (core/agent-pty.ts), and the providers that run claude remove them too.
+ */
+export const NESTED_SESSION_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'] as const;
+
+/** An environment without the markers of a Claude Code session (NESTED_SESSION_MARKERS). */
+export function withoutNestedSessionMarkers<T extends Record<string, string | undefined>>(env: T): T {
+  const out = { ...env };
+  for (const key of NESTED_SESSION_MARKERS) delete out[key];
+  return out;
+}
+
 export function managedCliEnv(binaryName: string): Record<string, string> {
   if (binaryName !== 'claude') return {};
   return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };

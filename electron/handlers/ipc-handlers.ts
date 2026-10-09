@@ -395,8 +395,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Create PTY for this agent
     // Strip nested-session env vars to prevent errors
     const cleanEnv = { ...process.env as { [key: string]: string } };
-    // Each provider may have env vars to delete; always delete CLAUDECODE for Claude
+    // Each provider may have env vars to delete; always the markers of a Claude
+    // Code session (NESTED_SESSION_MARKERS), which spawnAgentPty removes too.
     delete cleanEnv['CLAUDECODE'];
+    delete cleanEnv['CLAUDE_CODE_CHILD_SESSION'];
 
     const allSkills = [...new Set(config.skills)];
 
@@ -635,6 +637,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       const cleanEnvLocal = { ...process.env as { [key: string]: string } };
       delete cleanEnvLocal['CLAUDECODE'];
+      delete cleanEnvLocal['CLAUDE_CODE_CHILD_SESSION'];
 
       const workingDir = agent.worktreePath || agent.projectPath;
       const cwd = fs.existsSync(workingDir) ? workingDir : os.homedir();
