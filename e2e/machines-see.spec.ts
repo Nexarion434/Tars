@@ -23,8 +23,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    and its last output stays.
  *
  * Driving it (part 3), where B lets A drive:
- * 5. A's message reaches B's CLI after its sender line, 'Message from the
- *    machine "Mac"', never one that says the user.
+ * 5. What is typed in A's pane reaches B's CLI as typed, Enter and Esc
+ *    included, with no bar to type it in (Nicolas, 2026-10-09).
  * 6. A's stop needs a reason, and B files it: stopped by "Mac (machine)",
  *    with that reason.
  * 7. A's start runs B's agent again: its CLI runs.
@@ -198,7 +198,7 @@ test('a paired machine\'s agents show on the Dashboard with its badge, live and 
   }
 });
 
-test('a paired machine that lets this one drive: a message typed there after its sender line, a stop filed with its reason, a start, and see only refused with its sentence', async () => {
+test('a paired machine that lets this one drive: what is typed in its pane goes to its agent as typed, a stop filed with its reason, a start, and see only refused with its sentence', async () => {
   test.setTimeout(300_000);
   const { aHome, bHome, received } = twoHomes('drive', 'drive');
   const values: Record<string, unknown> = {};
@@ -211,19 +211,18 @@ test('a paired machine that lets this one drive: a message typed there after its
     const terminal = await terminalOf(a.page, AGENT.name);
     await expect(terminal.locator('.xterm-rows')).toContainText('tick', { timeout: 30_000 });
 
-    // 5. A message, typed in B's CLI after its sender line.
-    const field = a.page.locator('[data-machine-message]');
-    await expect(field).toBeVisible({ timeout: 10_000 });
-    await field.fill('hello from the mac');
-    await a.page.locator('[data-machine-send]').click();
-    await expect.poll(() => (fs.existsSync(received) ? fs.readFileSync(received, 'utf8') : ''), { timeout: 15_000 }).toContain('hello from the mac');
-    const typed = fs.readFileSync(received, 'utf8');
-    expect(typed).toContain('Message from the machine "Mac": ');
-    expect(typed.indexOf('Message from the machine "Mac": ')).toBeLessThan(typed.indexOf('hello from the mac'));
-    expect(typed).not.toMatch(/Message from the user/);
-    await expect(field).toHaveValue('');
-    values.messageTypedOnPc = true;
-    await stepShot(a.page, '03-a-may-drive-and-sends-a-message');
+    // 5. Typed in A's pane, as typed in B's CLI: no bar, the keys themselves.
+    await expect(a.page.locator('[data-machine-message]')).toHaveCount(0);
+    await terminal.locator('.xterm-screen').click();
+    await a.page.keyboard.type('hello from the mac');
+    await a.page.keyboard.press('Enter');
+    await a.page.keyboard.press('Escape');
+    const readTyped = () => (fs.existsSync(received) ? fs.readFileSync(received, 'utf8') : '');
+    await expect.poll(readTyped, { timeout: 15_000 }).toContain('hello from the mac\r');
+    await expect.poll(readTyped, { timeout: 15_000 }).toContain('\u001b');
+    expect(readTyped()).not.toContain('Message from');
+    values.keysTypedOnPc = JSON.stringify(readTyped());
+    await stepShot(a.page, '03-a-types-into-the-pc-agent');
 
     // 6. A stop needs its reason, and B files it under A's name.
     await a.page.getByRole('button', { name: 'stop', exact: true }).first().click();
@@ -249,16 +248,20 @@ test('a paired machine that lets this one drive: a message typed there after its
     // 8. B takes Drive back: A may only see, and an action asked anyway is refused with B's sentence.
     letA(bHome, 'see');
     await expect(a.page.locator('[data-machine-see-only]')).toBeVisible({ timeout: 15_000 });
-    await expect(a.page.locator('[data-machine-message]')).toHaveCount(0);
     await expect(a.page.getByRole('button', { name: /^(stop|start)$/ }).first()).toBeDisabled();
-    type MachinesApi = { electronAPI: { machines: { messageAgent: (id: string, text: string) => Promise<unknown>; agents: () => Promise<Array<{ id: string; agentId: string }>> } } };
+    // Typed in the pane: nothing goes. Asked of the bridge anyway: B refuses with its sentence.
+    await terminal.locator('.xterm-screen').click();
+    await a.page.keyboard.type('still there?');
+    type MachinesApi = { electronAPI: { machines: { typeKeys: (id: string, data: string) => Promise<unknown>; agents: () => Promise<Array<{ id: string; agentId: string }>> } } };
     const refused = await a.page.evaluate(async (agentId) => {
       const api = (window as unknown as MachinesApi).electronAPI.machines;
       const remote = (await api.agents()).find(r => r.agentId === agentId)!;
-      return api.messageAgent(remote.id, 'still there?');
+      return api.typeKeys(remote.id, 'anyway\r');
     }, AGENT.id);
     expect(refused).toEqual({ success: false, error: 'PC lets Mac see only.' });
-    expect(fs.readFileSync(received, 'utf8')).not.toContain('still there?');
+    await a.page.waitForTimeout(1_000);
+    expect(readTyped()).not.toContain('still there?');
+    expect(readTyped()).not.toContain('anyway');
     values.seeOnlyRefused = refused;
     await stepShot(a.page, '04-a-may-only-see');
     recordValues(values);
