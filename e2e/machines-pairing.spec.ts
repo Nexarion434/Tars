@@ -83,14 +83,17 @@ test('two Tars pair with a code once the one showing it accepts, see each other,
     await stepShot(a.page, '04-a-lists-pc');
     await stepShot(b.page, '05-b-lists-mac');
 
-    // A lets B drive: A's file says so, B's does not move.
-    await a.page.getByRole('radio', { name: 'Drive' }).click();
-    await expect.poll(() => machinesFile(a.home).peers[0]?.mayOnMe, { timeout: 10_000 }).toBe('drive');
+    // Paired, each may drive the other (Nicolas, 2026-10-09). A lets B see
+    // only: A's file says so, B's does not move.
+    expect(machinesFile(a.home).peers[0]?.mayOnMe).toBe('drive');
+    expect(machinesFile(b.home).peers[0]?.mayOnMe).toBe('drive');
+    await a.page.getByRole('radio', { name: 'See' }).click();
+    await expect.poll(() => machinesFile(a.home).peers[0]?.mayOnMe, { timeout: 10_000 }).toBe('see');
     const aFile = machinesFile(a.home);
     const bFile = machinesFile(b.home);
     values.aMayB = aFile.peers[0].mayOnMe;
     values.bMayA = bFile.peers[0].mayOnMe;
-    expect(bFile.peers[0].mayOnMe).toBe('see');
+    expect(bFile.peers[0].mayOnMe).toBe('drive');
     // Each side keeps the secret it presents, and only the hash of the one it issued.
     expect(JSON.stringify(aFile)).not.toContain(bFile.peers[0].outboundSecret);
     expect(JSON.stringify(bFile)).not.toContain(aFile.peers[0].outboundSecret);

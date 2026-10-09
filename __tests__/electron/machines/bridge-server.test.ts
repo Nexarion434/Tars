@@ -143,7 +143,8 @@ describe('what it answers', () => {
     expect(ok.status).toBe(200);
     const issued = ok.body!.secret as string;
     const peer = readMachines().peers.find(p => p.id === PC)!;
-    expect(peer).toMatchObject({ name: 'PC', address: '127.0.0.1', port: 31416, outboundSecret: THEIRS, mayOnMe: 'see', inboundSecretHash: hashSecret(issued) });
+    // Drive from the start (Nicolas, 2026-10-09): See is chosen in Settings.
+    expect(peer).toMatchObject({ name: 'PC', address: '127.0.0.1', port: 31416, outboundSecret: THEIRS, mayOnMe: 'drive', inboundSecretHash: hashSecret(issued) });
     expect(JSON.stringify(readMachines())).not.toContain(issued);
     expect(changed).toBe(1);
     expect((await call('POST', '/machines/v1/pair', { id: PC, name: 'PC', port: 31416, callerNonce: 'c'.repeat(32), proof: codeProof(offer.code, offer.nonce, 'c'.repeat(32), PC), secret: THEIRS })).status).toBe(403);

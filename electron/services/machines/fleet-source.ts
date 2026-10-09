@@ -1,5 +1,5 @@
 import { agents, onAgentOutput, saveAgents } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
+import { ptyProcesses, writeHumanInput, writeProgrammaticInput } from '../../core/pty-manager';
 import { launchAgent, sessionStarting } from '../../core/agent-launch';
 import { wakeAgent } from '../../core/agent-asleep';
 import { noteRestartAfterStop, stopAgent } from '../../core/agent-stop';
@@ -93,6 +93,16 @@ const drive: NonNullable<BridgeDeps['drive']> = {
     if (!terminal || !cliRunningIn(terminal)) return { ok: false, status: 409, error: `${nameOf(agent)} is not running on ${here()}: start it first.` };
     const outcome = writeProgrammaticInput(terminal, text, true, { agentId, from: by, sender: { kind: 'machine', name: by } });
     return outcome === 'refused' ? { ok: false, status: 409, error: `${nameOf(agent)} did not take the message.` } : done;
+  },
+  // As this window's own keys reach an agent (agent:input), and only while its
+  // CLI runs: never into the bare shell of a terminal whose CLI has ended.
+  keys: async (agentId, _by, data) => {
+    const agent = agents.get(agentId);
+    if (!agent) return notHere();
+    const terminal = terminalOf(agent);
+    if (!terminal || !cliRunningIn(terminal)) return { ok: false, status: 409, error: `${nameOf(agent)} is not running on ${here()}: start it first.` };
+    writeHumanInput(terminal, data);
+    return done;
   },
 };
 

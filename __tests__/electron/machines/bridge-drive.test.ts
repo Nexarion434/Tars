@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
 import * as fs from 'fs';
 import { AddressInfo } from 'net';
-import { handleBridgeRequest, MAX_DRIVE_TEXT, type BridgeDeps, type DriveOutcome } from '../../../electron/services/machines/bridge-server';
+import { handleBridgeRequest, MAX_DRIVE_TEXT, MAX_KEYS, type BridgeDeps, type DriveOutcome } from '../../../electron/services/machines/bridge-server';
 import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../../electron/services/machines/store';
 
 /**
@@ -30,6 +30,12 @@ import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../..
  *    later) lets it act.
  * 11. A message or a reason made of control or format characters only goes
  *    through as empty.
+ * And typing straight into an agent (Nicolas, 2026-10-09):
+ * 12. Keys reach an agent from a machine that may only see, by GET, or from
+ *    one whose Drive was taken back while they were on their way.
+ * 13. Keys are changed on the way: Esc, Enter, Ctrl+C or a paste's markers
+ *    taken out (they are what a person types), or a batch past MAX_KEYS, or
+ *    an empty one, typed.
  */
 
 let server: http.Server;
@@ -48,6 +54,7 @@ const deps: BridgeDeps = {
     start: async (...args: unknown[]) => { calls.push(['start', String(args[0]), String(args[1]), args[2] as string | undefined]); return outcome; },
     stop: async (agentId, by, reason) => { calls.push(['stop', agentId, by, reason]); return outcome; },
     message: async (agentId, by, text) => { calls.push(['message', agentId, by, text]); return outcome; },
+    keys: async (agentId, by, data) => { calls.push(['keys', agentId, by, data]); return outcome; },
   },
 };
 
@@ -183,5 +190,44 @@ describe('driving an agent here', () => {
     expect((await call('GET', '/machines/v1/fleet')).body?.youMay).toBe('drive');
     pair('see');
     expect((await call('GET', '/machines/v1/fleet')).body?.youMay).toBe('see');
+  });
+});
+
+describe('typing into an agent here', () => {
+  it('12. keys from a machine that may only see, or by GET, are refused and typed nowhere', async () => {
+    pair('see');
+    const r = await call('POST', '/machines/v1/agents/a1/keys', { data: 'ls\r' });
+    expect(r.status).toBe(403);
+    expect(r.body?.error).toBe('Mac lets PC see only.');
+    pair('drive');
+    expect((await call('GET', '/machines/v1/agents/a1/keys', undefined, null)).status).toBe(404);
+    expect(calls).toEqual([]);
+  });
+
+  it('13. keys are typed exactly as sent: Esc, Enter, Ctrl+C and a paste included', async () => {
+    const data = 'y\r\u001b\u0003\u001b[200~pasted\nlines\u001b[201~\u001b[A';
+    expect((await call('POST', '/machines/v1/agents/a1/keys', { data })).status).toBe(200);
+    expect(calls).toEqual([['keys', 'a1', 'PC', data]]);
+  });
+
+  it('13. an empty batch, a batch past MAX_KEYS or one that is not text is refused', async () => {
+    for (const data of ['', undefined, 7]) expect((await call('POST', '/machines/v1/agents/a1/keys', { data })).status, String(data)).toBe(400);
+    expect((await call('POST', '/machines/v1/agents/a1/keys', { data: 'x'.repeat(MAX_KEYS + 1) })).status).toBe(413);
+    expect(calls).toEqual([]);
+  });
+
+  it('12. keys on their way when Drive is taken back are refused', async () => {
+    const body = JSON.stringify({ data: 'rm -rf .\r' });
+    const answer = new Promise<number>((resolve, reject) => {
+      const req = http.request(`${base}/machines/v1/agents/a1/keys`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${MINE}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 0)); });
+      req.on('error', reject);
+      req.flushHeaders();
+      setTimeout(() => { pair('see'); req.end(body); }, 100);
+    });
+    expect(await answer).toBe(403);
+    expect(calls).toEqual([]);
   });
 });

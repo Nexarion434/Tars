@@ -26,12 +26,14 @@ export interface RemoteFleetDeps {
   pollTimeoutMs?: number;
 }
 
-export type DriveAction = 'start' | 'stop' | 'message';
+export type DriveAction = 'start' | 'stop' | 'message' | 'keys';
 
 export interface RemoteFleet {
   poll: () => Promise<void>;
   /** An action on a remote agent: done, or the other machine's sentence why not. That machine decides. */
   drive: (remoteId: string, action: DriveAction, body: Record<string, unknown>) => Promise<DriveResult>;
+  /** Keys typed in a remote pane: sent in order, one batch on its way per agent, those typed meanwhile gathered behind it. */
+  keys: (remoteId: string, data: string) => Promise<DriveResult>;
   list: () => RemoteAgent[];
   screen: (remoteId: string) => Promise<RemoteScreen | null>;
   watch: (remoteId: string) => void;
@@ -48,6 +50,8 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
   const kept = new Map<string, Kept>();
   const watched = new Map<string, Watched>();
   let told = '';
+  /** Per remote agent: the batch on its way, and the keys gathered behind it with those waiting on them. */
+  const typing = new Map<string, { sending: boolean; pending: string; waiters: Array<(r: DriveResult) => void> }>();
   let stopped = false;
 
   const peerOf = (machineId: string) => deps.peers().find(p => p.id === machineId);
@@ -141,22 +145,49 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     }
   }
 
+  async function drive(remoteId: string, action: DriveAction, body: Record<string, unknown>): Promise<DriveResult> {
+    const parsed = parseRemoteId(remoteId);
+    const peer = parsed && peerOf(parsed.machineId);
+    if (!parsed || !peer || !deps.driveAgent) return { success: false, error: 'There is no such agent.' };
+    const r = await deps.driveAgent(peer, parsed.agentId, action, body).catch(() => ({ status: 0, body: {} as Record<string, unknown> }));
+    if (r.status === 200) return { success: true };
+    if (r.status === 0) {
+      return { success: false, error: action === 'start' ? `${peer.name} did not answer in time. The agent may have started anyway.` : `${peer.name} did not answer.` };
+    }
+    // One line, without controls or format characters (bidi, zero width): it is shown as it is.
+    const said = typeof r.body.error === 'string' ? r.body.error.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    return { success: false, error: said || `${peer.name} refused it (${r.status}).` };
+  }
+
+  /** Sends what has gathered for one agent, then what gathered meanwhile, until nothing waits. */
+  async function flush(remoteId: string): Promise<void> {
+    const t = typing.get(remoteId);
+    if (!t || t.sending || !t.pending) return;
+    t.sending = true;
+    const data = t.pending;
+    const waiters = t.waiters;
+    t.pending = '';
+    t.waiters = [];
+    const result = await drive(remoteId, 'keys', { data });
+    waiters.forEach(w => w(result));
+    t.sending = false;
+    if (t.pending) void flush(remoteId);
+    else typing.delete(remoteId);
+  }
+
   return {
     poll,
     list,
-    drive: async (remoteId, action, body) => {
-      const parsed = parseRemoteId(remoteId);
-      const peer = parsed && peerOf(parsed.machineId);
-      if (!parsed || !peer || !deps.driveAgent) return { success: false, error: 'There is no such agent.' };
-      const r = await deps.driveAgent(peer, parsed.agentId, action, body).catch(() => ({ status: 0, body: {} as Record<string, unknown> }));
-      if (r.status === 200) return { success: true };
-      if (r.status === 0) {
-        return { success: false, error: action === 'start' ? `${peer.name} did not answer in time. The agent may have started anyway.` : `${peer.name} did not answer.` };
-      }
-      // One line, without controls or format characters (bidi, zero width): it is shown as it is.
-      const said = typeof r.body.error === 'string' ? r.body.error.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
-      return { success: false, error: said || `${peer.name} refused it (${r.status}).` };
+    keys: (remoteId, data) => {
+      if (!parseRemoteId(remoteId)) return Promise.resolve({ success: false, error: 'There is no such agent.' });
+      const t = typing.get(remoteId) ?? { sending: false, pending: '', waiters: [] };
+      typing.set(remoteId, t);
+      t.pending += data;
+      const answer = new Promise<DriveResult>(resolve => { t.waiters.push(resolve); });
+      void flush(remoteId);
+      return answer;
     },
+    drive,
     screen: async (remoteId) => {
       const parsed = parseRemoteId(remoteId);
       const peer = parsed && peerOf(parsed.machineId);

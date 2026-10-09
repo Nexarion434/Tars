@@ -30,6 +30,9 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  * And for driving (part 3, 2026-10-09):
  * 12. A machine reads as drivable when its fleet does not say it lets this
  *    one drive, or still does once it stops answering.
+ * 14. Keys typed in a pane reach the other machine out of order, or one POST
+ *    per key while one is on its way (a burst of typing becomes a burst of
+ *    requests), or a refusal is lost.
  * 13. An action goes to another machine, or for an id that is not remote;
  *    the other machine's sentence is lost, or shown with characters nobody
  *    sees (bidi, zero width, controls); no answer reads as done, and a start
@@ -266,6 +269,35 @@ describe('live outputs', () => {
     driven = [];
     for (const id of ['x9', 'm:m-cccccccccccccccc:x9']) expect(await fleet.drive(id, 'start', {})).toEqual({ success: false, error: 'There is no such agent.' });
     expect(driven).toEqual([]);
+  });
+
+  it('14. keys go in order, one batch on its way per agent, the keys typed meanwhile gathered behind it', async () => {
+    const answers: Array<() => void> = [];
+    const sent: string[] = [];
+    const fleet = createRemoteFleet({ ...deps(), driveAgent: (_peer, agentId, action, body) => new Promise(resolve => {
+      sent.push(`${agentId}:${action}:${String(body.data)}`);
+      answers.push(() => resolve({ status: 200, body: { ok: true } }));
+    }) });
+    const first = fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'h');
+    const second = fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'e');
+    const third = fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'llo\r');
+    expect(sent).toEqual(['a1:keys:h']);
+    answers.shift()!();
+    await first;
+    await new Promise(r => setTimeout(r, 0));
+    expect(sent).toEqual(['a1:keys:h', 'a1:keys:ello\r']);
+    answers.shift()!();
+    expect(await second).toEqual({ success: true });
+    expect(await third).toEqual({ success: true });
+  });
+
+  it('14. a refusal comes back to every key of its batch, and the next keys still go', async () => {
+    let status = 403;
+    const fleet = createRemoteFleet({ ...deps(), driveAgent: async () => ({ status, body: { error: 'PC lets Mac see only.' } }) });
+    expect(await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'x')).toEqual({ success: false, error: 'PC lets Mac see only.' });
+    status = 200;
+    expect(await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'y')).toEqual({ success: true });
+    expect(await fleet.keys('a1', 'z')).toEqual({ success: false, error: 'There is no such agent.' });
   });
 
   it('7. a screen is asked of the agent\'s own machine, and of none for an id that is not remote', async () => {
