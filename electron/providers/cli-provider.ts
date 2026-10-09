@@ -349,7 +349,9 @@ export function remoteControlFlag(name: string | undefined): string {
 
 /**
  * The name a launcher asks Remote Control for (Settings, Claude Code), or
- * undefined. Claude Code agents only: Remote Control needs a claude.ai login,
+ * undefined. On "orchestrator", a project's orchestrator only (Nicolas,
+ * 2026-10-09: the workers stay off his phone); on "all", every agent; any
+ * other value, none. Claude Code agents only: Remote Control needs a claude.ai login,
  * which the providers that point the claude binary at another API do not use,
  * and a local agent (Tasmania, the Claude provider against a model on this
  * machine) is still signed in to claude.ai, so its session, project code
@@ -361,10 +363,12 @@ export function remoteControlFlag(name: string | undefined): string {
  * empty one, which remoteControlFlag titles "Tars agent".
  */
 export function remoteControlName(
-  settings: Partial<Pick<AppSettings, 'remoteControlEnabled'>> | undefined,
-  agent: { name?: string; provider?: string; projectPath?: string },
+  settings: Partial<Pick<AppSettings, 'remoteControl'>> | undefined,
+  agent: { name?: string; provider?: string; projectPath?: string; role?: string },
 ): string | undefined {
-  if (settings?.remoteControlEnabled !== true) return undefined;
+  const scope = settings?.remoteControl;
+  if (scope !== 'all' && scope !== 'orchestrator') return undefined;
+  if (scope === 'orchestrator' && agent.role !== 'orchestrator') return undefined;
   if ((agent.provider ?? 'claude') !== 'claude') return undefined;
   // The API stores what it is sent: a name or a folder that is not text is none.
   const name = typeof agent.name === 'string' ? agent.name.trim() : '';

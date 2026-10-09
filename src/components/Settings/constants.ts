@@ -154,7 +154,7 @@ export const DEFAULT_APP_SETTINGS = {
   gwsSkillsInstalled: false,
   verboseModeEnabled: false,
   chromeEnabled: false,
-  remoteControlEnabled: false,
+  remoteControl: 'off' as const,
   autoCheckUpdates: true,
   errorReportsEnabled: false,
   autoStartAgentsOnLaunch: true,

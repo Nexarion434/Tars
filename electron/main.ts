@@ -225,7 +225,7 @@ function loadAppSettings(): AppSettings {
     // `statusLine` out of ~/.claude/settings.json. Absent means unchosen, and
     // unchosen means Tars leaves that file alone.
     chromeEnabled: false,
-    remoteControlEnabled: false,
+    remoteControl: 'off',
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
     opencodeEnabled: false,

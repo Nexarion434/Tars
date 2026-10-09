@@ -425,10 +425,16 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
                   label="Remote Control"
                   description="Lets the Claude app follow and drive agents, under their project and name, from their next start. Needs a claude.ai login."
                   control={
-                    <Toggle
-                      label="Remote Control"
-                      enabled={!!appSettings.remoteControlEnabled}
-                      onChange={() => onSaveAppSettings({ remoteControlEnabled: !appSettings.remoteControlEnabled })}
+                    <Dropdown
+                      className="w-[300px]"
+                      ariaLabel="Remote Control"
+                      value={appSettings.remoteControl || 'off'}
+                      onChange={(v) => onSaveAppSettings({ remoteControl: v as 'off' | 'orchestrator' | 'all' })}
+                      options={[
+                        { value: 'off', label: 'Off' },
+                        { value: 'orchestrator', label: 'Orchestrators only', hint: 'not their workers' },
+                        { value: 'all', label: 'All Claude agents' },
+                      ]}
                     />
                   }
                 />

@@ -793,8 +793,9 @@ at once. A live output silent for 45 seconds is ended on the reading side.
 
 ## 9. Remote Control
 
-Settings > Providers > Claude Code > Remote Control, off unless turned on,
-starts each Claude Code agent with `--remote-control <its title>`, from a
+Settings > Providers > Claude Code > Remote Control, off unless chosen,
+starts each project's orchestrator ("Orchestrators only") or each Claude Code
+agent ("All Claude agents") with `--remote-control <its title>`, from a
 window, the API (not in print mode) or a bot, at its next start. Its session
 then shows in the Claude apps of the claude.ai account its CLI is signed in
 to, and whoever can sign in to that account can read it and type into it from
@@ -816,7 +817,8 @@ then keeps Remote Control off (measured on 2.1.284, 2026-10-09). Nor do the
 providers that run the claude binary against another API: Remote Control
 needs a claude.ai login.
 
-Turning it off connects no new conversation, and cuts none. A conversation
+Turning it off, or down to the orchestrators, connects no new conversation,
+and cuts none. A conversation
 once connected goes back to its remote session each time it is resumed, with
 the flag or without it, and with `remoteControlAtStartup` false (measured on
 Claude Code 2.1.284, 2026-10-09), and Tars resumes an agent's conversation at
