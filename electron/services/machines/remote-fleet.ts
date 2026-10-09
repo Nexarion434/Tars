@@ -1,5 +1,5 @@
 import { readFleet, parseRemoteId } from './fleet-share';
-import type { PairedMachine, PeerStatus, RemoteAgent, RemoteScreen } from './types';
+import type { DriveResult, PairedMachine, PeerStatus, RemoteAgent, RemoteScreen } from './types';
 
 /**
  * The other machines' agents as this one keeps them between polls, and the
@@ -12,6 +12,8 @@ export interface RemoteFleetDeps {
   fetchFleet: (peer: PairedMachine) => Promise<{ status: number; body: Record<string, unknown> }>;
   fetchScreen: (peer: PairedMachine, agentId: string) => Promise<RemoteScreen | null>;
   openStream: (peer: PairedMachine, agentId: string, onChunk: (chunk: string) => void, onEnd: () => void) => { close: () => void };
+  /** One action on a remote agent, as the other machine answers it (client.ts, driveAgent). */
+  driveAgent?: (peer: PairedMachine, agentId: string, action: DriveAction, body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, unknown> }>;
   /** Told whenever the list moved: an agent, a status, a machine gone offline or back. */
   onFleet: (agents: RemoteAgent[]) => void;
   /** A watched agent's chunk, under its remote id. */
@@ -24,8 +26,12 @@ export interface RemoteFleetDeps {
   pollTimeoutMs?: number;
 }
 
+export type DriveAction = 'start' | 'stop' | 'message';
+
 export interface RemoteFleet {
   poll: () => Promise<void>;
+  /** An action on a remote agent: done, or the other machine's sentence why not. That machine decides. */
+  drive: (remoteId: string, action: DriveAction, body: Record<string, unknown>) => Promise<DriveResult>;
   list: () => RemoteAgent[];
   screen: (remoteId: string) => Promise<RemoteScreen | null>;
   watch: (remoteId: string) => void;
@@ -68,13 +74,15 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
       const r = await answerOf(peer);
       const before = kept.get(peer.id);
       if (r.status === 200) {
-        kept.set(peer.id, { status: 'connected', agents: readFleet(r.body, { id: peer.id, name: peer.name, status: 'connected' }) });
+        // Drivable only while it says it lets this machine drive; it checks each action again.
+        const drive = r.body.youMay === 'drive';
+        kept.set(peer.id, { status: 'connected', agents: readFleet(r.body, { id: peer.id, name: peer.name, status: 'connected', drive }) });
         return;
       }
       // Not answering, or no longer pairing with this one: its last agents stay, marked.
       const status: PeerStatus = r.status === 401 ? 'unpaired' : 'offline';
       const offlineSince = before && before.status !== 'connected' ? before.offlineSince : new Date(now()).toISOString();
-      const machine = { id: peer.id, name: peer.name, status, offlineSince };
+      const machine = { id: peer.id, name: peer.name, status, offlineSince, drive: false };
       kept.set(peer.id, { status, offlineSince, agents: (before?.agents ?? []).map(a => ({ ...a, machine })) });
     }));
     if (stopped) return;
@@ -136,6 +144,16 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
   return {
     poll,
     list,
+    drive: async (remoteId, action, body) => {
+      const parsed = parseRemoteId(remoteId);
+      const peer = parsed && peerOf(parsed.machineId);
+      if (!parsed || !peer || !deps.driveAgent) return { success: false, error: 'There is no such agent.' };
+      const r = await deps.driveAgent(peer, parsed.agentId, action, body).catch(() => ({ status: 0, body: {} as Record<string, unknown> }));
+      if (r.status === 200) return { success: true };
+      if (r.status === 0) return { success: false, error: `${peer.name} did not answer.` };
+      const said = typeof r.body.error === 'string' ? r.body.error.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+      return { success: false, error: said || `${peer.name} refused it (${r.status}).` };
+    },
     screen: async (remoteId) => {
       const parsed = parseRemoteId(remoteId);
       const peer = parsed && peerOf(parsed.machineId);

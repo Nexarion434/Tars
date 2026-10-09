@@ -366,7 +366,12 @@ export type MessageSender =
    * there and nowhere else, so no message an agent sends is ever typed after
    * this line.
    */
-  | { kind: 'user'; via: 'Telegram' };
+  | { kind: 'user'; via: 'Telegram' }
+  /**
+   * The person at a paired machine that this one lets drive its agents
+   * (services/machines): its name as this machine paired it, never one it sent.
+   */
+  | { kind: 'machine'; name: string };
 
 /**
  * The line typed before a pasted message: who sent it, and, when Tars hands
@@ -381,6 +386,7 @@ export function senderLine(sender: MessageSender, taskRef?: string): string {
   }
   if (sender.kind === 'channel') return `Message from ${sender.channel}${task}: `;
   if (sender.kind === 'user') return `Message from the user via ${sender.via}${task}: `;
+  if (sender.kind === 'machine') return `Message from the user on ${envelopeValue(sender.name)}${task}: `;
   return `Message from Tars${task}: `;
 }
 

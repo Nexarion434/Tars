@@ -178,6 +178,16 @@ export async function fetchScreen(peer: PairedMachine, agentId: string): Promise
     : null;
 }
 
+/**
+ * One action on a remote agent (bridge-server, driveAgent): the other
+ * machine's answer, or status 0 for none. A start waits for its launch.
+ */
+export async function driveAgent(peer: PairedMachine, agentId: string, action: 'start' | 'stop' | 'message', body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  return request({ host: peer.address, port: peer.port }, 'POST', `/machines/v1/agents/${encodeURIComponent(agentId)}/${action}`, {
+    secret: peer.outboundSecret, body, timeoutMs: action === 'start' ? 30_000 : 10_000,
+  });
+}
+
 /** What a stream may hold unparsed: more than one event this large is not a terminal's output. */
 const MAX_EVENT = 1024 * 1024;
 

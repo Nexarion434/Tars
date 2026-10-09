@@ -27,6 +27,11 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  *    missed while it was closed stays missed. Its screen comes first, and
  *    what arrived before the screen is not wiped by it.
  * 11. A machine forgotten here keeps its watched streams open.
+ * And for driving (part 3, 2026-10-09):
+ * 12. A machine reads as drivable when its fleet does not say it lets this
+ *    one drive, or still does once it stops answering.
+ * 13. An action goes to another machine, or for an id that is not remote;
+ *    the other machine's sentence is lost; no answer reads as done.
  */
 
 const PC: PairedMachine = { id: 'm-aaaaaaaaaaaaaaaa', name: 'PC', address: '100.88.0.1', port: 31418, inboundSecretHash: 'h', outboundSecret: 's', mayOnMe: 'see', pairedAt: '' };
@@ -39,6 +44,8 @@ let outputs: Array<[string, string]>;
 let opened: Array<{ peer: string; agentId: string; onChunk: (c: string) => void; onEnd: () => void; closed: boolean }>;
 let clock: number;
 let timers: Array<{ at: number; fn: () => void }>;
+let driven: Array<[string, string, string, Record<string, unknown>]>;
+let driveAnswer: { status: number; body: Record<string, unknown> };
 
 function deps(): RemoteFleetDeps {
   return {
@@ -53,6 +60,7 @@ function deps(): RemoteFleetDeps {
       opened.push(s);
       return { close: () => { s.closed = true; } };
     },
+    driveAgent: async (peer, agentId, action, body) => { driven.push([peer.id, agentId, action, body]); return driveAnswer; },
     onFleet: (agents) => { fleets.push(agents); },
     onOutput: (id, chunk) => { outputs.push([id, chunk]); },
     now: () => clock,
@@ -72,6 +80,8 @@ beforeEach(() => {
   opened = [];
   clock = Date.parse('2026-10-08T14:00:00.000Z');
   timers = [];
+  driven = [];
+  driveAnswer = { status: 200, body: { ok: true } };
 });
 
 describe('the other machines\' agents', () => {
@@ -79,7 +89,7 @@ describe('the other machines\' agents', () => {
     const fleet = createRemoteFleet(deps());
     await fleet.poll();
     expect(fleet.list().map(a => a.id)).toEqual(['m:m-aaaaaaaaaaaaaaaa:a1', 'm:m-aaaaaaaaaaaaaaaa:a2']);
-    expect(fleet.list()[0].machine).toEqual({ id: PC.id, name: 'PC', status: 'connected' });
+    expect(fleet.list()[0].machine).toEqual({ id: PC.id, name: 'PC', status: 'connected', drive: false });
     expect(fleet.list()[0].projectName).toBe('tars');
   });
 
@@ -90,7 +100,7 @@ describe('the other machines\' agents', () => {
     clock += 3_000;
     await fleet.poll();
     const since = new Date(clock).toISOString();
-    expect(fleet.list().map(a => a.machine)).toEqual([{ id: PC.id, name: 'PC', status: 'offline', offlineSince: since }, { id: PC.id, name: 'PC', status: 'offline', offlineSince: since }]);
+    expect(fleet.list().map(a => a.machine)).toEqual([{ id: PC.id, name: 'PC', status: 'offline', offlineSince: since, drive: false }, { id: PC.id, name: 'PC', status: 'offline', offlineSince: since, drive: false }]);
     clock += 3_000;
     await fleet.poll();
     expect(fleet.list()[0].machine.offlineSince).toBe(since);
@@ -218,6 +228,39 @@ describe('live outputs', () => {
     peers = [];
     await fleet.poll();
     expect(opened[0].closed).toBe(true);
+  });
+
+  it('12. a machine is drivable only while its fleet says it lets this one drive', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    expect(fleet.list()[0].machine.drive).toBe(false);
+    answers.set(PC.id, { status: 200, body: { ...fleetOf('a1').body, youMay: 'drive' } });
+    await fleet.poll();
+    expect(fleet.list()[0].machine.drive).toBe(true);
+    answers.set(PC.id, { status: 200, body: { ...fleetOf('a1').body, youMay: 'everything' } });
+    await fleet.poll();
+    expect(fleet.list()[0].machine.drive).toBe(false);
+    answers.set(PC.id, { status: 200, body: { ...fleetOf('a1').body, youMay: 'drive' } });
+    await fleet.poll();
+    answers.set(PC.id, { status: 0, body: {} });
+    await fleet.poll();
+    expect(fleet.list()[0].machine.drive).toBe(false);
+  });
+
+  it('13. an action goes to the agent\'s own machine, and its sentence comes back as it is', async () => {
+    peers = [PC, NAS];
+    const fleet = createRemoteFleet(deps());
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'stop', { reason: 'night' })).toEqual({ success: true });
+    expect(driven).toEqual([[NAS.id, 'x9', 'stop', { reason: 'night' }]]);
+    driveAnswer = { status: 403, body: { error: 'NAS lets Mac see only.' } };
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'message', { text: 'hi' })).toEqual({ success: false, error: 'NAS lets Mac see only.' });
+    driveAnswer = { status: 0, body: {} };
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'start', {})).toEqual({ success: false, error: 'NAS did not answer.' });
+    driveAnswer = { status: 500, body: {} };
+    expect((await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'start', {})).success).toBe(false);
+    driven = [];
+    for (const id of ['x9', 'm:m-cccccccccccccccc:x9']) expect(await fleet.drive(id, 'start', {})).toEqual({ success: false, error: 'There is no such agent.' });
+    expect(driven).toEqual([]);
   });
 
   it('7. a screen is asked of the agent\'s own machine, and of none for an id that is not remote', async () => {

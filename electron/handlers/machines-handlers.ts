@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { readMachines, writeMachines, cleanName } from '../services/machines/store';
 import { startBridge, bridgeState, openPairingOffer, closePairingOffer, currentOffer, currentRequest, decidePairRequest, closeStreamsOf } from '../services/machines/bridge-server';
-import { pairWithCode, candidatesFrom, unpairPeer, fetchFleet, fetchScreen, openStream } from '../services/machines/client';
+import { pairWithCode, candidatesFrom, unpairPeer, fetchFleet, fetchScreen, openStream, driveAgent } from '../services/machines/client';
 import { createRemoteFleet, type RemoteFleet } from '../services/machines/remote-fleet';
 import { fleetSource } from '../services/machines/fleet-source';
 import { startStatusPolling, peerStatus, forgetStatus, pollNow } from '../services/machines/status';
@@ -59,7 +59,7 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
   const remote = (): RemoteFleet => {
     fleet ??= createRemoteFleet({
       peers: () => readMachines().peers,
-      fetchFleet, fetchScreen, openStream,
+      fetchFleet, fetchScreen, openStream, driveAgent,
       onFleet: (agents) => broadcastToAllWindows('machines:fleet', agents),
       onOutput: (agentId, data) => broadcastToAllWindows('agent:output', { type: 'output', agentId, data, timestamp: new Date().toISOString() }),
     });
@@ -85,6 +85,20 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
   ipcMain.handle('machines:agent-screen', (_e, id: unknown) => (typeof id === 'string' ? remote().screen(id) : null));
   ipcMain.handle('machines:watch', (_e, id: unknown) => { if (typeof id === 'string') remote().watch(id); });
   ipcMain.handle('machines:unwatch', (_e, id: unknown) => { if (typeof id === 'string') remote().unwatch(id); });
+
+  // Driving another machine's agents where it lets this one (machine.drive):
+  // that machine checks each action and files it under this machine's name.
+  // The fleet is asked again at once, so the window sees what came of it.
+  const drive = async (id: unknown, action: 'start' | 'stop' | 'message', body: Record<string, unknown>) => {
+    if (typeof id !== 'string') return { success: false as const, error: 'There is no such agent.' };
+    const result = await remote().drive(id, action, body);
+    if (result.success) void remote().poll();
+    return result;
+  };
+  ipcMain.handle('machines:start-agent', (_e, id: unknown, prompt: unknown) =>
+    drive(id, 'start', typeof prompt === 'string' && prompt.trim() ? { prompt } : {}));
+  ipcMain.handle('machines:stop-agent', (_e, id: unknown, reason: unknown) => drive(id, 'stop', { reason }));
+  ipcMain.handle('machines:message-agent', (_e, id: unknown, text: unknown) => drive(id, 'message', { text }));
 
   ipcMain.handle('machines:view', async (): Promise<MachinesView> => {
     const file = readMachines();
