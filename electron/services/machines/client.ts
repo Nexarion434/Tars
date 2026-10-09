@@ -3,6 +3,7 @@ import { readMachines, writeMachines, newSecret, hashSecret, cleanName, isSecret
 import { codeProof, answerMatches, newCallerNonce } from './pairing';
 import { MACHINES_PORT_DEFAULT, PAIR_WAIT_MS } from './bridge-server';
 import type { PairedMachine } from './types';
+import { terminalSize } from './fleet-share';
 
 /**
  * This Tars calling another one's bridge (bridge-server.ts): to pair with
@@ -170,9 +171,11 @@ export async function fetchFleet(peer: PairedMachine): Promise<{ status: number;
 }
 
 /** One remote agent's terminal as it is now, or null when its machine does not give one. */
-export async function fetchScreen(peer: PairedMachine, agentId: string): Promise<{ screen: string; cliRunning: boolean } | null> {
+export async function fetchScreen(peer: PairedMachine, agentId: string): Promise<{ screen: string; cliRunning: boolean; cols?: number; rows?: number } | null> {
   const r = await request({ host: peer.address, port: peer.port }, 'GET', `/machines/v1/agents/${encodeURIComponent(agentId)}/screen`, { secret: peer.outboundSecret, timeoutMs: 10_000, maxBytes: MAX_SCREEN });
-  return r.status === 200 && typeof r.body.screen === 'string' ? { screen: r.body.screen, cliRunning: r.body.cliRunning === true } : null;
+  return r.status === 200 && typeof r.body.screen === 'string'
+    ? { screen: r.body.screen, cliRunning: r.body.cliRunning === true, ...terminalSize(r.body.cols, r.body.rows) }
+    : null;
 }
 
 /** What a stream may hold unparsed: more than one event this large is not a terminal's output. */

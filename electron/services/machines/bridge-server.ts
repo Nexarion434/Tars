@@ -4,7 +4,7 @@ import { readMachines, writeMachines, newSecret, hashSecret, secretMatches, clea
 import { Offer, openOffer, checkProof, answerProof, isNonce } from './pairing';
 import { detectTailscale, tailnetIp } from '../tailscale-status';
 import type { PairedMachine, RemoteScreen } from './types';
-import type { SharedAgent } from './fleet-share';
+import { terminalSize, type SharedAgent } from './fleet-share';
 
 /**
  * The machines bridge: how another Tars of the same tailnet reaches this one.
@@ -294,7 +294,7 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   }
   if (agentRoute && agentRoute[2] === 'screen') {
     const screen = deps.screenOf?.(agentRoute[1]);
-    return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning }) : send(404, { error: 'No such terminal' });
+    return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning, ...terminalSize(screen.cols, screen.rows) }) : send(404, { error: 'No such terminal' });
   }
   if (agentRoute) return streamOutput(agentRoute[1], peer, res, deps, send);
 

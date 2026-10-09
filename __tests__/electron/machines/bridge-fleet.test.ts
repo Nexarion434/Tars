@@ -17,7 +17,8 @@ import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../..
  * 3. The fleet is not what this machine shares (fleet-share), or carries no
  *    name of this machine.
  * 4. The screen of an agent with no terminal answers 200 with nothing, or
- *    an error page, where it is 404.
+ *    an error page, where it is 404; or a screen comes without the size it
+ *    was drawn for (Mac and PC, 2026-10-09).
  * 5. The live output loses chunks, reorders them, or frames them so a chunk
  *    holding a line break or "data:" reads as two.
  * 6. The output is still listened to after the caller has gone: one listener
@@ -47,7 +48,7 @@ const deps: BridgeDeps = {
   streamCheckMs: 50,
   onChanged: () => {},
   fleet: () => [{ id: 'a1', name: 'Backend Engineer', status: 'running', projectName: 'tars', projectPath: 'C:\\code\\tars', cliRunning: true }],
-  screenOf: (agentId) => (agentId === 'a1' ? { screen: '\x1bcline one\r\nline two', cliRunning: true } : null),
+  screenOf: (agentId) => (agentId === 'a1' ? { screen: '\x1bcline one\r\nline two', cliRunning: true, cols: 132, rows: 40 } : null),
   onOutput: (agentId, listener, onEnd) => {
     const t = terminals.get(agentId);
     if (!t) return null;
@@ -133,7 +134,7 @@ describe('the fleet, a screen and a stream', () => {
   });
 
   it('4. a screen is the agent terminal as it is, and 404 for an agent with none', async () => {
-    expect(await call('/machines/v1/agents/a1/screen', MINE)).toEqual({ status: 200, body: { screen: '\x1bcline one\r\nline two', cliRunning: true } });
+    expect(await call('/machines/v1/agents/a1/screen', MINE)).toEqual({ status: 200, body: { screen: '\x1bcline one\r\nline two', cliRunning: true, cols: 132, rows: 40 } });
     expect((await call('/machines/v1/agents/nobody/screen', MINE)).status).toBe(404);
     expect((await call('/machines/v1/agents/nobody/stream', MINE)).status).toBe(404);
   });

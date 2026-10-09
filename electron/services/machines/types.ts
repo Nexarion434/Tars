@@ -71,7 +71,13 @@ export interface RemoteAgent {
   lastActivity?: string;
   stoppedBy?: string;
   stopReason?: string;
+  /**
+   * The size its terminal draws for: a full-screen CLI places every line by
+   * it, so a pane showing it takes this size, never its own.
+   */
+  cols?: number;
+  rows?: number;
 }
 
-/** A remote agent's terminal as it is now (bridge `GET /machines/v1/agents/:id/screen`). */
-export interface RemoteScreen { screen: string; cliRunning: boolean }
+/** A remote agent's terminal as it is now (bridge `GET /machines/v1/agents/:id/screen`), and the size it was drawn for. */
+export interface RemoteScreen { screen: string; cliRunning: boolean; cols?: number; rows?: number }

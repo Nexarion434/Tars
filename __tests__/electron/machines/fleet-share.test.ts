@@ -29,6 +29,11 @@ import type { AgentStatus } from '../../../electron/types';
  * 9. Thousands of agents are taken.
  * 10. The remote id of one machine's agent can be read as another machine's,
  *    or as a local id.
+ * And from the first test between a Mac and a PC (2026-10-09): a full-screen
+ * CLI draws for its own terminal's size, and drawn in a pane of another size
+ * its lines land on each other.
+ * 11. The terminal's size does not travel, or travels as anything but two
+ *    whole numbers a terminal can have, on either side.
  */
 
 const SECRET = 'tok-SECRET-1234567890';
@@ -47,12 +52,12 @@ function agent(over: Partial<AgentStatus> & Record<string, unknown> = {}): Agent
 
 describe('sharing an agent', () => {
   it('1. sends the picked fields and nothing else, whatever the record holds', () => {
-    const shared = shareAgent(agent({ cliRunning: true, stoppedBy: 'Mac', stopReason: 'night' } as never));
+    const shared = shareAgent(agent({ cliRunning: true, stoppedBy: 'Mac', stopReason: 'night', cols: 132, rows: 40 } as never));
     expect(shared).toEqual({
       id: 'a1b2c3', name: 'Backend Engineer', status: 'running', provider: 'claude', model: 'opus',
       character: 'robot', projectName: 'tars', projectPath: '/Users/nicolas/projects/tars', branch: 'feat/backend',
       currentTask: 'fix the scroll lock', lastActivity: '2026-10-08T12:00:00.000Z', cliRunning: true,
-      stoppedBy: 'Mac', stopReason: 'night',
+      stoppedBy: 'Mac', stopReason: 'night', cols: 132, rows: 40,
     });
     expect(JSON.stringify(shared)).not.toContain(SECRET);
     expect(JSON.stringify(shared)).not.toContain('secret-skill');
@@ -124,6 +129,18 @@ describe('reading another machine fleet', () => {
   it('9. takes at most MAX_SHARED_AGENTS agents', () => {
     const many = Array.from({ length: MAX_SHARED_AGENTS + 50 }, (_, i) => ({ id: `a${i}`, name: 'n' }));
     expect(readFleet({ agents: many }, machine)).toHaveLength(MAX_SHARED_AGENTS);
+  });
+
+  it('11. a terminal size travels as two whole numbers a terminal can have, both or neither, on both sides', () => {
+    for (const [cols, rows] of [[0, 30], [120, 0], [1.5, 30], [120, '30'], [5000, 30], [120, -1], [Number.NaN, 30], [120, undefined]]) {
+      const shared = shareAgent(agent({ cols, rows } as never))!;
+      expect(shared.cols, `${cols}x${rows}`).toBeUndefined();
+      expect(shared.rows, `${cols}x${rows}`).toBeUndefined();
+      const [read] = readFleet({ agents: [{ id: 'a1', cols, rows }] }, machine);
+      expect(read.cols, `read ${cols}x${rows}`).toBeUndefined();
+      expect(read.rows, `read ${cols}x${rows}`).toBeUndefined();
+    }
+    expect(readFleet({ agents: [{ id: 'a1', cols: 80, rows: 24 }] }, machine)[0]).toMatchObject({ cols: 80, rows: 24 });
   });
 
   it('10. a remote id names one machine and one agent, and nothing local reads as one', () => {

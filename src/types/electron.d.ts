@@ -1001,6 +1001,12 @@ export interface RemoteAgent {
   lastActivity?: string;
   stoppedBy?: string;
   stopReason?: string;
+  /**
+   * The size its terminal draws for: a full-screen CLI places every line by
+   * it, so its pane takes this size, never its own.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 type MachinesResult<T extends object = object> = ({ success: true } & T) | { success: false; error: string };
@@ -1211,7 +1217,7 @@ export interface ElectronAPI {
     /** The other machines' agents (read only), offline ones included with their machine's offlineSince. */
     agents: () => Promise<RemoteAgent[]>;
     /** A remote agent's terminal as it is now, to write into its pane once; null when its machine does not answer. */
-    agentScreen: (id: string) => Promise<{ screen: string; cliRunning: boolean } | null>;
+    agentScreen: (id: string) => Promise<{ screen: string; cliRunning: boolean; cols?: number; rows?: number } | null>;
     /** Its live output, on agent:output under the remote id, until unwatch. Counted: each watch needs its unwatch. */
     watch: (id: string) => Promise<void>;
     unwatch: (id: string) => Promise<void>;

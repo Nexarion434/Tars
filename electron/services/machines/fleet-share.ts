@@ -27,6 +27,13 @@ const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/g;
 const text = (value: unknown, max: number): string | undefined =>
   typeof value === 'string' && value !== '' ? value.replace(CONTROL, '').slice(0, max) : undefined;
 
+const isSize = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 1000;
+
+/** A terminal's size, both numbers a terminal can have, or nothing. */
+export function terminalSize(cols: unknown, rows: unknown): { cols: number; rows: number } | Record<string, never> {
+  return isSize(cols) && isSize(rows) ? { cols, rows } : {};
+}
+
 /** The project's folder name, from a macOS, Linux or Windows path, a trailing separator or not. */
 function folderName(projectPath: string): string {
   const parts = projectPath.split(/[\\/]+/).filter(Boolean);
@@ -51,6 +58,7 @@ function pick(source: Record<string, unknown>, id: string): SharedAgent {
     lastActivity: text(source.lastActivity, 40),
     stoppedBy: text(source.stoppedBy, 80),
     stopReason: text(source.stopReason, 200),
+    ...terminalSize(source.cols, source.rows),
   };
 }
 
@@ -69,6 +77,7 @@ export function shareAgent(agent: AgentStatus & { cliRunning?: unknown; sessionM
     model: source.sessionModel ?? source.model, status: source.status, currentTask: source.currentTask,
     branch: source.branchName, projectPath: source.projectPath, cliRunning: source.cliRunning,
     lastActivity: source.lastActivity, stoppedBy: source.stoppedBy, stopReason: source.stopReason,
+    cols: source.cols, rows: source.rows,
   }, agent.id));
 }
 
