@@ -327,6 +327,12 @@ export function safeEffort(effort: string | undefined): string | undefined {
  * a dash, or the CLI would read it as an option it does not know and refuse to
  * start. It is a title in a list: one plain line, at most 80 characters, never
  * cutting one in two.
+ *
+ * Measured on 2026-10-09 (2.1.284, the Claude app on a phone): it titles a new
+ * remote session only. A resumed conversation that was connected before goes
+ * back to the remote session it had, under the title that session was made
+ * with; neither this name nor `--name` renames it. A rename in the Claude app
+ * does, and stays.
  */
 export function remoteControlFlag(name: string | undefined): string {
   if (name === undefined) return '';
