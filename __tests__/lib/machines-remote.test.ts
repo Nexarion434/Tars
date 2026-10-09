@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentStatus, RemoteAgent } from '../../src/types/electron';
 import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
-  localMachineLabel, machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkMessage, checkReason, MESSAGE_MAX, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
+  localMachineLabel, machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkReason, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
 } from '../../src/lib/machines';
 
 /**
@@ -38,12 +38,12 @@ import {
  *    one of the two sides so the other overflows.
  * 11. A remote agent can be started, stopped or messaged while its machine
  *    is offline or lets this one only see; or cannot be, with Drive given and
- *    the machine connected; start is offered on a running agent, or stop on
+ *    the machine connected; keys are typed into the pane of a machine that is
+ *    offline or lets this one only see, or refused with Drive given; start is offered on a running agent, or stop on
  *    one at rest; a machine with no `drive` reads as allowing it.
  * 12. The see-only sentence names the wrong machine or the wrong local
  *    machine (Mac, PC, machine), or shows on an offline machine.
- * 13. A blank message is sent, or one over 8000 characters; the text sent
- *    carries the padding the field had; a blank reason is sent as a stop reason.
+ * 13. A blank reason is sent as a stop reason.
  */
 
 const remote = (over: Partial<RemoteAgent> = {}): RemoteAgent => ({
@@ -246,16 +246,16 @@ describe('scaleToFit', () => {
 describe('remoteActions', () => {
   const info = (over: object = {}) => ({ machineId: 'm', machineName: 'PC', status: 'connected' as const, drive: true, projectPath: '/x', ...over });
   it('offers stop to a running agent and start to one at rest, where Drive is given (11)', () => {
-    expect(remoteActions(info(), true)).toMatchObject({ start: false, stop: true, message: true, seeOnly: false });
-    expect(remoteActions(info(), false)).toMatchObject({ start: true, stop: false, message: true, seeOnly: false });
+    expect(remoteActions(info(), true)).toMatchObject({ start: false, stop: true, type: true, seeOnly: false });
+    expect(remoteActions(info(), false)).toMatchObject({ start: true, stop: false, type: true, seeOnly: false });
   });
   it('offers nothing to a machine that only lets this one see, and says so (11, 12)', () => {
-    expect(remoteActions(info({ drive: false }), true)).toEqual({ start: false, stop: false, message: false, seeOnly: true });
-    expect(remoteActions(info({ drive: undefined }), false)).toEqual({ start: false, stop: false, message: false, seeOnly: true });
+    expect(remoteActions(info({ drive: false }), true)).toEqual({ start: false, stop: false, type: false, seeOnly: true });
+    expect(remoteActions(info({ drive: undefined }), false)).toEqual({ start: false, stop: false, type: false, seeOnly: true });
   });
   it('offers nothing while the machine is offline, whatever Drive says, and no see-only line (11, 12)', () => {
     for (const status of ['offline', 'unknown', 'unpaired'] as const) {
-      expect(remoteActions(info({ status }), true)).toEqual({ start: false, stop: false, message: false, seeOnly: false });
+      expect(remoteActions(info({ status }), true)).toEqual({ start: false, stop: false, type: false, seeOnly: false });
     }
   });
 });
@@ -268,15 +268,7 @@ describe('seeOnlyLine', () => {
   });
 });
 
-describe('checkMessage and checkReason', () => {
-  it('sends the text without its padding (13)', () => {
-    expect(checkMessage('  run the tests \n')).toBe('run the tests');
-  });
-  it('sends nothing blank, nor more than 8000 characters (13)', () => {
-    expect(checkMessage('   \n ')).toBeNull();
-    expect(checkMessage('a'.repeat(MESSAGE_MAX))).toBe('a'.repeat(MESSAGE_MAX));
-    expect(checkMessage('a'.repeat(MESSAGE_MAX + 1))).toBeNull();
-  });
+describe('checkReason', () => {
   it('wants a stop reason that is not blank (13)', () => {
     expect(checkReason(' done for today ')).toBe('done for today');
     expect(checkReason('  ')).toBeNull();
