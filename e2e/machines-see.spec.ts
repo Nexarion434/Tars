@@ -21,6 +21,14 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 3. Read only: what is typed into A's pane never reaches B's CLI.
  * 4. B quits: within twenty seconds A's pane says B is offline since when,
  *    and its last output stays.
+ *
+ * Driving it (part 3), where B lets A drive:
+ * 5. A's message reaches B's CLI after its sender line, "Message from the
+ *    user on Mac".
+ * 6. A's stop needs a reason, and B files it: stopped by Mac, with that reason.
+ * 7. A's start runs B's agent again.
+ * 8. B takes Drive back: A's pane says it may only see, and an action asked
+ *    anyway comes back refused with B's sentence.
  * Leaves a run directory with each step's picture and the values asserted.
  *   E2E_PORT_OFFSET=70 npx playwright test e2e/machines-see.spec.ts
  */
@@ -32,7 +40,7 @@ const secret = () => crypto.randomBytes(32).toString('base64url');
 const hash = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
 /** Both homes' machines.json, as pairing writes them: each holds the hash of the secret it issued, and the secret it was issued. */
-function pairHomes(aHome: string, bHome: string) {
+function pairHomes(aHome: string, bHome: string, bLetsA: 'see' | 'drive' = 'see') {
   const ids = { a: `m-${crypto.randomBytes(8).toString('hex')}`, b: `m-${crypto.randomBytes(8).toString('hex')}` };
   const aIssued = secret();
   const bIssued = secret();
@@ -42,7 +50,59 @@ function pairHomes(aHome: string, bHome: string) {
     fs.writeFileSync(path.join(home, '.tars-private', 'machines.json'), JSON.stringify(file, null, 2));
   };
   write(aHome, { version: 1, self: { id: ids.a, name: 'Mac' }, peers: [{ id: ids.b, name: 'PC', address: '127.0.0.1', port: Number(B.bridge), inboundSecretHash: hash(aIssued), outboundSecret: bIssued, mayOnMe: 'see', pairedAt: at }] });
-  write(bHome, { version: 1, self: { id: ids.b, name: 'PC' }, peers: [{ id: ids.a, name: 'Mac', address: '127.0.0.1', port: Number(A.bridge), inboundSecretHash: hash(bIssued), outboundSecret: aIssued, mayOnMe: 'see', pairedAt: at }] });
+  write(bHome, { version: 1, self: { id: ids.b, name: 'PC' }, peers: [{ id: ids.a, name: 'Mac', address: '127.0.0.1', port: Number(A.bridge), inboundSecretHash: hash(bIssued), outboundSecret: aIssued, mayOnMe: bLetsA, pairedAt: at }] });
+}
+
+/** B's pairing file, with what it lets A do now: read again at A's next request. */
+function letA(bHome: string, mayOnMe: 'see' | 'drive') {
+  const file = path.join(bHome, '.tars-private', 'machines.json');
+  const machines = JSON.parse(fs.readFileSync(file, 'utf8'));
+  machines.peers = machines.peers.map((p: Record<string, unknown>) => ({ ...p, mayOnMe }));
+  fs.writeFileSync(file, JSON.stringify(machines, null, 2));
+}
+
+/** Two homes paired, and B's agent: a ticker whose CLI records what is typed into it. */
+function twoHomes(name: string, bLetsA: 'see' | 'drive') {
+  const aHome = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-${name}-a-`));
+  const bHome = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-${name}-b-`));
+  pairHomes(aHome, bHome, bLetsA);
+  // B's agent, idle until started, in a project A does not have.
+  const project = path.join(bHome, 'projects', 'demo');
+  fs.mkdirSync(project, { recursive: true });
+  const received = path.join(bHome, 'typed.txt');
+  const cli = writeNodeCli(path.join(bHome, 'ticker.cjs'), [
+    'if (process.stdin.isTTY) process.stdin.setRawMode(true);',
+    `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(received)}, d));`,
+    // A status bar on its terminal's last row, as Claude Code draws one: placed by the size it runs in.
+    "const bar = () => process.stdout.write('\\x1b7\\x1b[' + process.stdout.rows + ';1Hstatus bar ' + process.stdout.columns + 'x' + process.stdout.rows + '\\x1b8');",
+    "let n = 0; process.stdout.write('ticker ready\\r\\n'); bar(); process.stdout.on('resize', bar);",
+    "setInterval(() => { process.stdout.write('tick ' + (++n) + '\\r\\n'); bar(); }, 500);",
+    '',
+  ].join('\n'));
+  fs.mkdirSync(path.join(bHome, '.dorothy'), { recursive: true });
+  fs.writeFileSync(path.join(bHome, '.dorothy', 'agents.json'), JSON.stringify([{
+    id: AGENT.id, name: AGENT.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+    projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-08T08:00:00.000Z', lastActivity: '2026-10-08T08:00:00.000Z',
+  }], null, 2));
+  fs.writeFileSync(path.join(bHome, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }));
+  return { aHome, bHome, received };
+}
+
+type AgentApi = { electronAPI: { agent: {
+  start: (p: { id: string; prompt: string }) => Promise<unknown>;
+  get: (id: string) => Promise<{ status: string; output: string[]; stoppedBy?: string; stopReason?: string; cliRunning?: boolean } | null>;
+} } };
+const agentOn = (page: Page) => page.evaluate((id) => (window as unknown as AgentApi).electronAPI.agent.get(id), AGENT.id);
+
+/** B's Dashboard, and its agent started and ticking. */
+async function startTicker(b: { page: Page }, values: Record<string, unknown>) {
+  await b.page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+  await splashGone(b.page);
+  const started = await b.page.evaluate((id) => (window as unknown as AgentApi).electronAPI.agent.start({ id, prompt: '' }), AGENT.id);
+  values.startOnPc = started;
+  await expect.poll(async () => (await agentOn(b.page))?.output.join('') ?? '', {
+    timeout: 30_000, message: `the PC's agent prints its ticks (start answered ${JSON.stringify(started)})`,
+  }).toContain('tick');
 }
 
 async function launch(home: string, me: typeof A, viewport = { width: 1440, height: 900 }): Promise<{ app: ElectronApplication; page: Page }> {
@@ -70,42 +130,13 @@ const ticksIn = (text: string) => [...text.matchAll(/tick (\d+)/g)].map(m => Num
 
 test('a paired machine\'s agents show on the Dashboard with its badge, live and read only, and say when it goes offline', async () => {
   test.setTimeout(300_000);
-  const aHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-see-a-'));
-  const bHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-see-b-'));
-  pairHomes(aHome, bHome);
-  // B's agent, idle until started, in a project A does not have.
-  const project = path.join(bHome, 'projects', 'demo');
-  fs.mkdirSync(project, { recursive: true });
-  const received = path.join(bHome, 'typed.txt');
-  const cli = writeNodeCli(path.join(bHome, 'ticker.cjs'), [
-    'if (process.stdin.isTTY) process.stdin.setRawMode(true);',
-    `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(received)}, d));`,
-    // A status bar on its terminal's last row, as Claude Code draws one: placed by the size it runs in.
-    "const bar = () => process.stdout.write('\\x1b7\\x1b[' + process.stdout.rows + ';1Hstatus bar ' + process.stdout.columns + 'x' + process.stdout.rows + '\\x1b8');",
-    "let n = 0; process.stdout.write('ticker ready\\r\\n'); bar(); process.stdout.on('resize', bar);",
-    "setInterval(() => { process.stdout.write('tick ' + (++n) + '\\r\\n'); bar(); }, 500);",
-    '',
-  ].join('\n'));
-  fs.mkdirSync(path.join(bHome, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(bHome, '.dorothy', 'agents.json'), JSON.stringify([{
-    id: AGENT.id, name: AGENT.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
-    projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-08T08:00:00.000Z', lastActivity: '2026-10-08T08:00:00.000Z',
-  }], null, 2));
-  fs.writeFileSync(path.join(bHome, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }));
-
+  const { aHome, bHome, received } = twoHomes('see', 'see');
   const values: Record<string, unknown> = {};
   // A smaller window than A's, so B's terminal is not the size A's pane would fit itself to.
   const b = await launch(bHome, B, { width: 1100, height: 680 });
   const a = await launch(aHome, A);
   try {
-    await b.page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
-    await splashGone(b.page);
-    type AgentApi = { electronAPI: { agent: { start: (p: { id: string; prompt: string }) => Promise<unknown>; get: (id: string) => Promise<{ status: string; output: string[] } | null> } } };
-    const started = await b.page.evaluate((id) => (window as unknown as AgentApi).electronAPI.agent.start({ id, prompt: '' }), AGENT.id);
-    values.startOnPc = started;
-    await expect.poll(async () => (await b.page.evaluate((id) => (window as unknown as AgentApi).electronAPI.agent.get(id), AGENT.id))?.output.join('') ?? '', {
-      timeout: 30_000, message: `the PC's agent prints its ticks (start answered ${JSON.stringify(started)})`,
-    }).toContain('tick');
+    await startTicker(b, values);
 
     // 1. A's Dashboard shows B's agent, badged with B's name.
     await a.page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
@@ -158,6 +189,74 @@ test('a paired machine\'s agents show on the Dashboard with its badge, live and 
     expect(ticksIn(await rows.innerText())).toContain(lastSeen);
     values.offlineLine = await offline.textContent();
     await stepShot(a.page, '02-a-says-the-pc-is-offline');
+    recordValues(values);
+  } finally {
+    await a.app.close();
+    await b.app.close().catch(() => {});
+    for (const home of [aHome, bHome]) await fs.promises.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
+  }
+});
+
+test('a paired machine that lets this one drive: a message typed there after its sender line, a stop filed with its reason, a start, and see only refused with its sentence', async () => {
+  test.setTimeout(300_000);
+  const { aHome, bHome, received } = twoHomes('drive', 'drive');
+  const values: Record<string, unknown> = {};
+  const b = await launch(bHome, B, { width: 1100, height: 680 });
+  const a = await launch(aHome, A);
+  try {
+    await startTicker(b, values);
+    await a.page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+    await splashGone(a.page);
+    const terminal = await terminalOf(a.page, AGENT.name);
+    await expect(terminal.locator('.xterm-rows')).toContainText('tick', { timeout: 30_000 });
+
+    // 5. A message, typed in B's CLI after its sender line.
+    const field = a.page.locator('[data-machine-message]');
+    await expect(field).toBeVisible({ timeout: 10_000 });
+    await field.fill('hello from the mac');
+    await a.page.locator('[data-machine-send]').click();
+    await expect.poll(() => (fs.existsSync(received) ? fs.readFileSync(received, 'utf8') : ''), { timeout: 15_000 }).toContain('hello from the mac');
+    const typed = fs.readFileSync(received, 'utf8');
+    expect(typed).toContain('Message from the user on "Mac": ');
+    expect(typed.indexOf('Message from the user on "Mac": ')).toBeLessThan(typed.indexOf('hello from the mac'));
+    await expect(field).toHaveValue('');
+    values.messageTypedOnPc = true;
+    await stepShot(a.page, '03-a-may-drive-and-sends-a-message');
+
+    // 6. A stop needs its reason, and B files it under A's name.
+    await a.page.getByRole('button', { name: 'stop', exact: true }).first().click();
+    const reason = a.page.locator('[data-machine-stop-reason]');
+    await expect(reason).toBeVisible();
+    await reason.fill('night');
+    await reason.press('Enter');
+    await expect.poll(async () => {
+      const agent = await agentOn(b.page);
+      return agent && { status: agent.status, stoppedBy: agent.stoppedBy, stopReason: agent.stopReason };
+    }, { timeout: 15_000 }).toEqual({ status: 'stopped', stoppedBy: 'Mac', stopReason: 'night' });
+    values.stoppedOnPc = { stoppedBy: 'Mac', stopReason: 'night' };
+
+    // 7. A start runs it again.
+    const startButton = a.page.getByRole('button', { name: /^(start|session)$/ }).first();
+    await expect.poll(async () => (await startButton.isEnabled()), { timeout: 10_000 }).toBe(true);
+    await startButton.click();
+    await expect.poll(async () => (await agentOn(b.page))?.status, { timeout: 30_000 }).not.toBe('stopped');
+    values.startedAgainOnPc = true;
+
+    // 8. B takes Drive back: A may only see, and an action asked anyway is refused with B's sentence.
+    letA(bHome, 'see');
+    await expect(a.page.locator('[data-machine-see-only]')).toBeVisible({ timeout: 15_000 });
+    await expect(a.page.locator('[data-machine-message]')).toHaveCount(0);
+    await expect(a.page.getByRole('button', { name: /^(stop|start)$/ }).first()).toBeDisabled();
+    type MachinesApi = { electronAPI: { machines: { messageAgent: (id: string, text: string) => Promise<unknown>; agents: () => Promise<Array<{ id: string; agentId: string }>> } } };
+    const refused = await a.page.evaluate(async (agentId) => {
+      const api = (window as unknown as MachinesApi).electronAPI.machines;
+      const remote = (await api.agents()).find(r => r.agentId === agentId)!;
+      return api.messageAgent(remote.id, 'still there?');
+    }, AGENT.id);
+    expect(refused).toEqual({ success: false, error: 'PC lets Mac see only.' });
+    expect(fs.readFileSync(received, 'utf8')).not.toContain('still there?');
+    values.seeOnlyRefused = refused;
+    await stepShot(a.page, '04-a-may-only-see');
     recordValues(values);
   } finally {
     await a.app.close();
