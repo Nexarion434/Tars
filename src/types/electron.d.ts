@@ -986,7 +986,11 @@ export interface RemoteAgent {
   /** `m:<machineId>:<agentId>`: never an id of this machine's own fleet. */
   id: string;
   agentId: string;
-  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string };
+  /**
+   * Its machine. drive: that machine lets this one start, stop and message
+   * its agents (its own Settings > Machines decides, and checks each action).
+   */
+  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string; drive?: boolean };
   name: string;
   character?: string;
   provider?: string;
@@ -1223,6 +1227,15 @@ export interface ElectronAPI {
     unwatch: (id: string) => Promise<void>;
     /** Pushed whenever the other machines' agents change (every poll that saw a change, a machine going offline or back). */
     onFleet: (callback: (agents: RemoteAgent[]) => void) => () => void;
+    /**
+     * Drive a remote agent, where its machine allows it (agent.machine.drive);
+     * that machine checks each action, and its sentence comes back as error.
+     * A stop needs a reason (filed there as stopped by this machine); a
+     * message is typed there after "Message from the user on <this machine>".
+     */
+    startAgent: (id: string, prompt?: string) => Promise<{ success: true } | { success: false; error: string }>;
+    stopAgent: (id: string, reason: string) => Promise<{ success: true } | { success: false; error: string }>;
+    messageAgent: (id: string, text: string) => Promise<{ success: true } | { success: false; error: string }>;
   };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */

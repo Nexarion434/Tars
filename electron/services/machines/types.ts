@@ -56,7 +56,11 @@ export interface RemoteAgent {
   id: string;
   /** Its id on its own machine. */
   agentId: string;
-  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string };
+  /**
+   * Its machine. drive: that machine lets this one start, stop and message
+   * its agents (its own Settings > Machines decides, and checks each action).
+   */
+  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string; drive?: boolean };
   name: string;
   character?: string;
   provider?: string;
@@ -78,6 +82,9 @@ export interface RemoteAgent {
   cols?: number;
   rows?: number;
 }
+
+/** What driving a remote agent answers: done, or the other machine's sentence why not. */
+export type DriveResult = { success: true } | { success: false; error: string };
 
 /** A remote agent's terminal as it is now (bridge `GET /machines/v1/agents/:id/screen`), and the size it was drawn for. */
 export interface RemoteScreen { screen: string; cliRunning: boolean; cols?: number; rows?: number }
