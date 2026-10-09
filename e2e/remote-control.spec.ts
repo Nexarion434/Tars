@@ -15,9 +15,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 1. The switch is off at first, and an agent started then gets no
  *    `--remote-control`.
  * 2. Turned on in Settings > Providers > Claude Code > configure, it is saved.
- * 3. An agent started after it gets `--remote-control` and its own name, as
- *    one argument (a quote and `$HOME` in it reach the CLI as typed), and its
- *    task is still the prompt.
+ * 3. An agent started after it gets `--remote-control` and its title, its
+ *    project's folder then its own name ("demo · Ana's landing $HOME"), as one
+ *    argument (a quote and `$HOME` reach the CLI as typed), and its task is
+ *    still the prompt.
  * Leaves a run directory with the switch's picture and the argv of each start.
  *   npx playwright test e2e/remote-control.spec.ts
  */
@@ -88,7 +89,7 @@ async function startAgent(page: Page, project: string, cli: string, name: string
   return id;
 }
 
-test('with Remote Control on in Settings, a Claude agent starts with --remote-control and its own name', async () => {
+test('with Remote Control on in Settings, a Claude agent starts with --remote-control under its project and name', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-remote-control-'));
   const dataDir = path.join(home, '.dorothy');
@@ -134,7 +135,7 @@ test('with Remote Control on in Settings, a Claude agent starts with --remote-co
 
     // 3. An agent started now: --remote-control, its own name as one argument, and the task still the prompt.
     const after = await launchOf(log, await startAgent(page, project, cli, NAME));
-    expect(remoteControlOf(after.argv), JSON.stringify(after.argv)).toBe(NAME);
+    expect(remoteControlOf(after.argv), JSON.stringify(after.argv)).toBe(`demo · ${NAME}`);
     expect(after.argv.slice(after.argv.indexOf('--') + 1)).toEqual([TASK]);
     values.argvOn = after.argv;
 

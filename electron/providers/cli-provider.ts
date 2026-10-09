@@ -347,16 +347,23 @@ export function remoteControlFlag(name: string | undefined): string {
  * which the providers that point the claude binary at another API do not use,
  * and a local agent (Tasmania, the Claude provider against a model on this
  * machine) is still signed in to claude.ai, so its session, project code
- * included, would be kept on Anthropic's servers. An agent with no name is
- * asked for under an empty one, which remoteControlFlag titles "Tars agent".
+ * included, would be kept on Anthropic's servers.
+ *
+ * The title says where the agent works: its project's folder name, then its
+ * own, "Allcazz · Revue finale", unless its name says the project already
+ * ("Agent on Allcazz"). With no name, the project's alone, and with neither an
+ * empty one, which remoteControlFlag titles "Tars agent".
  */
 export function remoteControlName(
   settings: Partial<Pick<AppSettings, 'remoteControlEnabled'>> | undefined,
-  agent: { name?: string; provider?: string },
+  agent: { name?: string; provider?: string; projectPath?: string },
 ): string | undefined {
   if (settings?.remoteControlEnabled !== true) return undefined;
   if ((agent.provider ?? 'claude') !== 'claude') return undefined;
-  return agent.name ?? '';
+  const name = (agent.name ?? '').trim();
+  const project = agent.projectPath ? path.basename(agent.projectPath) : '';
+  if (!project || name.toLowerCase().includes(project.toLowerCase())) return name;
+  return name ? `${project} · ${name}` : project;
 }
 
 /**

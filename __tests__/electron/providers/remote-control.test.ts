@@ -36,6 +36,13 @@ import { argvReached, writeArgvPrinter } from './argv-reached';
  *    project code included, would be kept on Anthropic's servers. Never.
  * 11. An agent with no name, switch on: still asked for, under "Tars agent".
  * 12. The switch off, or absent from the settings: never asked for.
+ * The project in the title (Nicolas, 2026-10-09, seeing them on his phone):
+ * 13. "Revue finale" alone says nothing of where it works: the title is the
+ *    project's folder name, then the agent's, "Allcazz · Revue finale".
+ * 14. A name that already says its project ("Agent on Allcazz") is not said
+ *    twice, whatever the case.
+ * 15. An agent with no name: the project's name alone.
+ * 16. A project folder given with a trailing separator still names it.
  */
 
 let tmpDir: string;
@@ -167,6 +174,32 @@ describe('a Claude agent reachable from the Claude apps', () => {
     expect(remoteControlName({ remoteControlEnabled: false }, { name: 'A', provider: 'claude' })).toBeUndefined();
     expect(remoteControlName({}, { name: 'A', provider: 'claude' })).toBeUndefined();
     expect(remoteControlName(undefined, { name: 'A' })).toBeUndefined();
+  });
+
+  describe('the project in the title', () => {
+    const on = { remoteControlEnabled: true };
+    const project = (name: string) => path.join(os.tmpdir(), 'work', name);
+
+    it('13. the project\'s folder name, then the agent\'s', async () => {
+      const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+      expect(remoteControlName(on, { name: 'Revue finale', projectPath: project('Allcazz') })).toBe('Allcazz · Revue finale');
+    });
+
+    it('14. a name that already says its project is not said twice', async () => {
+      const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+      expect(remoteControlName(on, { name: 'Agent on Allcazz', projectPath: project('Allcazz') })).toBe('Agent on Allcazz');
+      expect(remoteControlName(on, { name: 'agent on allcazz', projectPath: project('Allcazz') })).toBe('agent on allcazz');
+    });
+
+    it('15. no name: the project\'s alone', async () => {
+      const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+      expect(remoteControlName(on, { projectPath: project('Allcazz') })).toBe('Allcazz');
+    });
+
+    it('16. a trailing separator still names the folder', async () => {
+      const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+      expect(remoteControlName(on, { name: 'Copywriting', projectPath: project('KarvanDesign') + path.sep })).toBe('KarvanDesign · Copywriting');
+    });
   });
 
   for (const id of OTHER_APIS) {
