@@ -275,6 +275,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startAgent: (id: string) => ipcRenderer.invoke('machines:start-agent', id),
     stopAgent: (id: string, reason: string) => ipcRenderer.invoke('machines:stop-agent', id, reason),
     messageAgent: (id: string, text: string) => ipcRenderer.invoke('machines:message-agent', id, text),
+    /** Keys typed in a remote agent's pane, as they come: that machine types them into its running CLI. */
+    typeKeys: (id: string, data: string) => ipcRenderer.invoke('machines:type-keys', id, data),
   },
 
   // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)

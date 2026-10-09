@@ -1237,6 +1237,13 @@ export interface ElectronAPI {
     startAgent: (id: string) => Promise<{ success: true } | { success: false; error: string }>;
     stopAgent: (id: string, reason: string) => Promise<{ success: true } | { success: false; error: string }>;
     messageAgent: (id: string, text: string) => Promise<{ success: true } | { success: false; error: string }>;
+    /**
+     * Keys typed in a remote agent's pane (xterm's onData, a paste included),
+     * as they come: that machine types them into its CLI, as a person at its
+     * window would, only while that CLI runs and only where it lets this one
+     * drive. Sent in order; the answer says why not when it refused them.
+     */
+    typeKeys: (id: string, data: string) => Promise<{ success: true } | { success: false; error: string }>;
   };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */
