@@ -384,6 +384,15 @@ const AGENTS_SCHEMA_VERSION = 3;
 const OUTPUT_CHUNK_CAP = 600;
 const OUTPUT_RETAIN = 400;
 
+/** Who hears every agent's terminal output as appendAgentOutput takes it: the machines bridge's live outputs. */
+const outputListeners = new Set<(agentId: string, chunk: string) => void>();
+
+/** Hears every agent's terminal output until the returned function is called. */
+export function onAgentOutput(listener: (agentId: string, chunk: string) => void): () => void {
+  outputListeners.add(listener);
+  return () => { outputListeners.delete(listener); };
+}
+
 /**
  * Appends a terminal chunk and keeps the buffer bounded.
  *
@@ -395,6 +404,9 @@ const OUTPUT_RETAIN = 400;
  * chunk. See terminal-modes.ts.
  */
 export function appendAgentOutput(agent: AgentStatus, chunk: string): void {
+  for (const listener of outputListeners) {
+    try { listener(agent.id, chunk); } catch { /* a listener's failure is its own */ }
+  }
   agent.output.push(chunk);
   if (agent.output.length > OUTPUT_CHUNK_CAP) {
     const carried = carriedByTrim(agent.output.splice(0, agent.output.length - OUTPUT_RETAIN));

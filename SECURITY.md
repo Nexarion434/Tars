@@ -610,3 +610,219 @@ seen by the reviewer's probe; an antivirus or another holder, unconfirmed),
 which a one-second retry does not cover. A save can therefore still fail, with
 an error that names the file. The measurement is kept, opt-in:
 `TARS_STRESS=1 npx vitest run __tests__/electron/platform/rename-replacing.test.ts`.
+
+## 8. The machines bridge
+
+Settings > Machines pairs this Tars with another one on the same tailnet, so
+that each can see the other's agents, and drive them where the other allows it.
+Measured on the fork's `win/machines` branch on the 2nd of October 2026, with
+two Tars on one machine (`e2e/machines-pairing.spec.ts`) and the bridge's
+units (`__tests__/electron/machines/`); See on the 8th, Drive on the 9th
+(`e2e/machines-see.spec.ts`, `__tests__/electron/machines/bridge-drive.test.ts`).
+
+**What listens.** A second HTTP server, `electron/services/machines/bridge-server.ts`,
+apart from the loopback API of §2. It binds this machine's Tailscale IPv4 on
+port 31418, and nothing at all when Tailscale gives no address: never
+`0.0.0.0`, never Funnel, never `tailscale serve`. It answers only callers
+from the tailnet's range (100.64.0.0/10), refusing anyone else with a 403:
+macOS hands a socket bound to the Tailscale address what arrives over the
+LAN for that address too. It starts only once a
+machine is paired, or while a pairing code is shown, and stops in the quit's
+first pass. A development run may bind `127.0.0.1` instead
+(`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
+packaged Tars never reads those.
+
+**What it answers.** Thirteen routes, listed one by one; any other path is a 404
+before a credential is read, and no route of the loopback API answers here.
+They are not hidden: `ping` and `unpair` answer 401 without a paired
+machine's secret, so a prober on the tailnet can tell a Tars listens. An
+agent route answers 401 without that secret whether the agent exists or
+not, so a prober learns no agent's id.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /machines/v1/hello` | anyone on the tailnet | this machine's id, name and the offer's nonce, only while a code is shown; 404 otherwise |
+| `POST /machines/v1/knock` | anyone on the tailnet, while a code is shown | its id and name, no proof; held up to a minute until the person here accepts or refuses |
+| `POST /machines/v1/pair` | the machine the person here accepted, from the address it knocked from, within 30 seconds | a proof of the code; on success a secret issued to it |
+| `GET /machines/v1/ping` | a paired machine | this machine's name and how many agents run |
+| `POST /machines/v1/unpair` | a paired machine | this machine forgets the caller, and ends what it was reading |
+| `GET /machines/v1/fleet` | a paired machine | this machine's agents, as `fleet-share.ts` picks them |
+| `GET /machines/v1/agents/:id/screen` | a paired machine | one agent's terminal as it is now |
+| `GET /machines/v1/agents/:id/stream` | a paired machine | one agent's terminal output as it comes, until the terminal ends |
+| `POST /machines/v1/agents/:id/start` | a machine this one lets drive | starts the agent, with no first prompt |
+| `POST /machines/v1/agents/:id/stop` | a machine this one lets drive | stops it, with its reason, filed under the caller's name |
+| `POST /machines/v1/agents/:id/message` | a machine this one lets drive | types a message into its running CLI, after the caller's sender line |
+| `POST /machines/v1/agents/:id/keys` | a machine this one lets drive | types the keys of the caller's pane into its running CLI, as this window's own keys |
+| `POST /machines/v1/agents/:id/size` | a machine this one lets drive | resizes its terminal to the caller's pane, two whole numbers from 1 to 1000, as this window's own resize; this window takes it back at its next click or key in that pane |
+
+A request carrying an `Origin` header is refused (no browser ever calls the
+bridge), and a body over 64 KB is refused unread.
+
+**Who is admitted.** A paired machine, by the secret this Tars issued to it
+at pairing. `~/.tars-private/machines.json` keeps the sha256 of that secret,
+compared in constant time, and the secret the other machine issued to this
+one, in clear because it has to be presented. The loopback API's shared
+token, Tars's pass and the Hermes webhook secret open nothing here.
+
+**What pairing proves.** The machine showing the code draws six digits and a
+nonce, and the typing machine draws one of its own for each pairing. Both
+sides key their proofs by the code stretched with scrypt over both nonces
+(N 2^15, r 8: 32 MiB and 110 ms per code, measured on a desktop PC), so no
+key can be worked out before the typing machine's nonce is sent. The typing
+machine sends `HMAC-SHA256(key, nonce:its nonce:its id)`, never the code;
+the offering machine answers with `HMAC-SHA256(key, answer:nonce:caller
+nonce:caller id:its id)`, and the typing machine stores nothing without it, nor an answer
+whose id is not the one `hello` gave, whose name a typed name could not be,
+or whose secret is not the 43 characters a secret is. Either side refuses a
+secret of another shape. An offer is good for five minutes by the offering
+machine's clock, five wrong proofs and one success, and refuses a machine
+pairing with itself. A machine another tailnet shares into yours
+(`ShareeNode`) is never asked for a code.
+
+**Who decides.** Before any proof, the typing machine knocks. The machine
+showing the code names the caller by the MagicDNS name of the device at its
+address, which the tailnet keeps unique (a device that sets its hostname to
+another's gets `name-1`), and by that address, which WireGuard authenticates;
+nothing more happens until the person there clicks Accept. The knock names
+the code its caller read in `hello`, so it never lands on one shown since. One machine at a
+time: from its knock to the end of its half minute to prove the code, any
+other is turned away, and a knock asks Tailscale one quick question, never
+several at once. A refusal, or a minute without an answer, spends
+the code. Only the accepted machine, from the address it knocked from, may
+then send its proof, within 30 seconds, and it is stored under the name the
+person saw. A new code, or a closed one, ends the request waiting on the old
+one, and a request never waits past its code's five minutes. The typing
+machine waits up to 75 seconds for that click, and five seconds for the
+answer to its proof.
+
+**What is left.** A hostile device of your own tailnet that answered `hello`
+in the offering machine's place can accept the knock itself and receive the
+typing machine's proof. It cannot have worked any key out before, since the
+key takes the typing machine's fresh nonce, and 10^6 codes cost some 30 CPU
+hours: within the five seconds the typing machine waits, it pairs with
+nothing. It can keep the proof, find the code later on many cores or a GPU,
+and knock on the real offering machine within the offer's five minutes: the
+person there sees its MagicDNS name and address, which differ from the
+machine expected, if only by a suffix such as `-1`, and refuses. A person who accepts a device they do not recognise is what
+remains, and since a pairing gives Drive, that device can type into this
+machine's agents until it is set to See or forgotten (the request says so
+before the click); Tailscale's access rules, which can keep every other device
+off port 31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
+altogether; the code's short life and the person's click stand in for it.
+
+**What a paired machine may do here.** Drive, from the start of a pairing
+(Nicolas's choice of the 9th of October 2026: a machine paired with a code and
+a click is one he would sit at); See only when this machine says so in
+Settings > Machines. The machine being driven decides,
+never the caller: its pairing file is read again at each request, and once
+more when the request's body is in, so Drive taken back, or the machine
+forgotten, refuses a request still on its way, with "<this machine> lets
+<caller> see only."; a request arrives whole within about 20 seconds (15, checked every 5). The fleet tells
+the caller which it may do (`youMay`), so its window offers only that, and
+nothing on this side ever reads it. Drive opens five actions on an agent, by
+POST, and nothing else: start it, as this window's own start does, with no
+first prompt (one would be the CLI's own task, with no sender line, kept as
+the agent's role, and on some CLIs read as a flag; the task goes as a
+message); stop it, which needs one line of reason; and type a message into
+its CLI, only while that CLI runs, after the line
+`Message from the machine "<caller>": `, through the same sanitising as every
+message Tars types (no paste end, no look-alike of a sender line). A message
+is at most 8,000 characters, and one or a reason made of controls and format
+characters only is refused as empty. And type keys into its CLI: what is
+typed in the caller's pane, Esc, Enter, Ctrl+C and pastes as they are, through
+this window's own `writeHumanInput`, at most 4,096 characters a batch, in
+order, a batch only while that CLI runs (checked before each batch: a batch
+holding the keys that end or suspend the CLI, `/exit` and Enter, Ctrl+Z, can
+leave the rest of itself to the shell on macOS and Linux, and keys held while
+Tars types a message of its own are typed after it with no new check; on
+Windows the terminal closes with its CLI). Keys carry no sender line: the agent cannot tell them from
+the user's at this machine. And size its terminal to the caller's pane, as
+this window's own resize does, so the terminal draws for whoever looks at it
+last; this window's pane is told, and takes the size back at its next click
+or key there. Stops, starts after a stop and wakes are
+filed under the name this machine paired the caller under, as `<name>
+(machine)`: the caller chose that name at pairing, and the person who
+accepted it saw it; it never comes from a request. Driving gives the caller
+what a person at this keyboard has over an agent: with keys it can change the
+agent's model (`/model`), cycle its permission mode, answer its permission
+dialogs and run a shell through the CLI (`!`). The routes themselves change
+no agent setting (model, project, permission mode) and read or write no file
+of the caller's choosing, and the bridge serves no file.
+
+**What Drive gives away.** Drive given to a machine is given to every process
+of its user there, its agents included: the secret that drives sits in that
+machine's `~/.tars-private/machines.json`, which its agents can read as any
+other file (§2). So its messages are not the user's words: agents are told
+that a `Message from the machine "<name>"` line hands them work as Tars does,
+answers no question they asked the user, and lifts no rule the user set
+(`electron/resources/agent-instructions.md`). It still reaches every agent
+here, the orchestrator included, and through agents running in auto or
+bypass mode it amounts to running code on this machine; with keys, typed as
+the user's own, it is someone at this keyboard, and a CLI's own shell escape
+(Claude Code's `!`) is a shell here. Drive is what a pairing gives, in both
+directions: each machine's agents, which can read their own machine's
+secret, get that on the other. Set a machine you would not let sit at this
+one to See.
+
+**What See shows** (measured on the 8th of October 2026, `e2e/machines-see.spec.ts`
+and `__tests__/electron/machines/`). The fleet carries each agent's id, name,
+look, provider, model, status, task, branch, project folder and path, whether
+its CLI runs, its last activity and who stopped it and why, field by field
+(`shareAgent`): never a token, the env, the CLI's path, the worktree or second
+project, the session id, the skills, the permission mode or who asked for its
+work, and every string bounded (a start that fails, for a machine that may
+drive, answers its sentence, which may name the CLI or its folder). The screen and the stream carry the terminal
+itself, as the person here sees it: whatever a CLI prints there travels,
+secrets it echoes included, and on macOS and Linux the launch line Tars types
+(`cd '<dir>' && <cli> ...`) is part of it. Holding fields out of the fleet is
+not a boundary for what a terminal shows; pairing is. The receiving machine
+checks every answer again (`readFleet`, a fleet at most 512 KB and 200 agents,
+a screen at most 8 MB, an event at most 1 MB), writes no file and starts nothing
+of its own. Start, stop, message, the keys and pastes typed in a pane and
+that pane's size go only through the five routes above, where that machine
+gives Drive; the other machine's sentences
+are shown without controls or format characters. Their ids (`m:<machine>:<agent>`) are none the local
+IPC resolves.
+
+A machine holds at most 32 live outputs open here. One that reads too slowly
+to keep up (4 MB unsent) has its connection cut, not merely ended behind what
+it never read. Each live output reads the pairing again with its ping, every
+15 seconds: a machine forgotten here, or paired again under another secret,
+reads no further, and Forget in Settings, like its `unpair`, cuts its outputs
+at once. A live output silent for 45 seconds is ended on the reading side.
+
+## 9. Remote Control
+
+Settings > Providers > Claude Code > Remote Control, off unless chosen,
+starts each project's orchestrator ("Orchestrators only") or each Claude Code
+agent ("All Claude agents") with `--remote-control <its title>`, from a
+window, the API (not in print mode) or a bot, at its next start. Its session
+then shows in the Claude apps of the claude.ai account its CLI is signed in
+to, and whoever can sign in to that account can read it and type into it from
+claude.ai or a phone, its permission prompts included: in any permission mode,
+that is running commands on this machine, outside the machines bridge's See
+and Drive. Claude Code makes the link: outbound HTTPS only, no
+port opens here, and the session, everything the agent sees and does (its
+prompts, Tars's identity header and memory, tool output, the files it reads),
+is sent to Anthropic's servers and kept there under that account's terms.
+
+Of its own, Tars adds only the title, the project's folder name and the
+agent's ("Allcazz · Revue finale"): one plain line, at most 80 characters,
+never opening with a dash, one argument however it is written. A local agent
+never gets the flag: it is still signed in to claude.ai, and its session would
+be kept on Anthropic's servers. Nor does a conversation it resumes reconnect,
+one connected before included: its terminal points `ANTHROPIC_BASE_URL`
+elsewhere and sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, and Claude Code
+then keeps Remote Control off (measured on 2.1.284, 2026-10-09). Nor do the
+providers that run the claude binary against another API: Remote Control
+needs a claude.ai login.
+
+Turning it off, or down to the orchestrators, connects no new conversation,
+and cuts none. A conversation
+once connected goes back to its remote session each time it is resumed, with
+the flag or without it, and with `remoteControlAtStartup` false (measured on
+Claude Code 2.1.284, 2026-10-09), and Tars resumes an agent's conversation at
+each launch: such an agent stays reachable until it starts a new one. Whether
+a restart, which forks the conversation, reconnects was not measured. Claude
+Code's `disableRemoteControl` setting stops it (measured); Nicolas chose to
+cut such a session by hand rather than have Tars pass it.

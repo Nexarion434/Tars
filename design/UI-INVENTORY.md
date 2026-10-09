@@ -84,16 +84,22 @@ says how the room relates to the chats and what follows the Backend's v2.2.
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
 
-## Settings (6 groups, 19 sections)
+## Settings (7 groups, 20 sections)
 
 | Group | Sections |
 |---|---|
 | General | Preferences, Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
+| Machines | Your machines |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
+
+Your machines names this machine, shows its tailnet address and a one-time
+pairing code (Add a machine), pairs with the code another machine shows, and
+lists the paired machines: connected, offline or unpaired by the other one,
+and what each may do here (See or Drive). Frame: Settings · Machines.
 
 Claude accounts is off until turned on. On, it lists up to five Claude
 subscriptions, each with its 5 h and weekly use, and the two thresholds that

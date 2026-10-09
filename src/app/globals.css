@@ -58,6 +58,9 @@
   --accent: #C77012;
   --accent-foreground: #1E1E1E;
   --accent-dim: #C7701214;
+  /* Another machine's name in its badge: orange where orange can carry text
+     (dark), the text colour here, where it cannot at 10px. */
+  --machine-ink: #1E1E1E;
 
   /* Destructive */
   --destructive: #CF222E;
@@ -144,6 +147,7 @@
   --accent: #FF9E42;
   --accent-foreground: #121212;
   --accent-dim: #FF9E4216;
+  --machine-ink: #FF9E42;
 
   /* Destructive */
   --destructive: #E5534B;
@@ -224,6 +228,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-dim: var(--accent-dim);
+  --color-machine-ink: var(--machine-ink);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);

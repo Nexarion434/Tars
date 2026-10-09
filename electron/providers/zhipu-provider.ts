@@ -108,7 +108,7 @@ export class ZhipuProvider implements CLIProvider {
     return vars;
   }
 
-  getEnvVarsToDelete(): string[] { return ['CLAUDECODE']; }
+  getEnvVarsToDelete(): string[] { return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION']; }
 
   getHookConfig(): HookConfig {
     return { supportsNativeHooks: true, configDir: this.configDir, settingsFile: path.join(this.configDir, 'settings.json') };
@@ -163,7 +163,7 @@ if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 export CLAUDE_PROVIDER="zhipu"
 ${envExports}${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}

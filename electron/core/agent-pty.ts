@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as pty from 'node-pty';
-import { managedCliEnv } from '../providers/cli-provider';
+import { managedCliEnv, withoutNestedSessionMarkers } from '../providers/cli-provider';
 import { mintAgentToken, revokeTerminalToken, tarsInstanceId } from './agent-tokens';
 import { API_PORT } from '../constants';
 import { rememberTerminalOwner, terminalExited } from './pty-manager';
@@ -126,7 +126,11 @@ export function spawnAgentPty(opts: {
   // The Claude account this agent starts on, when the option is on (see
   // core/account-env.ts): here for the reason this module exists, since an
   // account a caller forgot would be a CLI billed to the wrong subscription.
-  const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
+  // No agent is a child of the Claude Code session a Tars may have been
+  // started from: with its markers an interactive claude saved no transcript
+  // (NESTED_SESSION_MARKERS). Here, since every agent terminal starts here.
+  const callerEnv = withoutNestedSessionMarkers(opts.env);
+  const env = withAccountEnv(callerEnv, accountEnvFor(agentId, opts.cwd));
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
@@ -170,7 +174,7 @@ export function spawnAgentPty(opts: {
       ...stateModLaunchEnv(opts.binaryName, env),
     }) as { [key: string]: string },
   });
-  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: opts.env });
+  spawnedAs.set(spawned, { shell: opts.shell, runsCommand: opts.runsCommand, env: callerEnv });
   // Whose terminal this is, so a message that has to wait for a draft in it
   // can name the agent whose panel should say so. Here because this is the
   // one function that spawns an agent's terminal, and a caller that has to

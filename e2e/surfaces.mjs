@@ -55,7 +55,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 18 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 19 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -65,6 +65,7 @@ const SETTINGS_TREE = [
   ['cli-paths', 'AI & Providers', 'CLI Paths'],
   ['permissions', 'AI & Providers', 'Permissions'],
   ['hermes', 'Hermes', 'Connection'],
+  ['machines', 'Machines', 'Your machines'],
   ['notifications', 'General', 'Notifications'],
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],

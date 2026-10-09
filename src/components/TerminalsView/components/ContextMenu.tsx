@@ -8,11 +8,11 @@ import {
   Copy,
 } from 'lucide-react';
 import type { ContextMenuState } from '../types';
-import type { AgentStatus } from '@/types/electron';
+import type { PaneAgent } from '@/lib/machines';
 
 interface ContextMenuProps {
   state: ContextMenuState;
-  agent: AgentStatus | null;
+  agent: PaneAgent | null;
   onClose: () => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
@@ -38,12 +38,13 @@ export default function ContextMenu({
   const isRunning = agent.cliRunning === true;
 
   const items = [
-    {
+    // Another machine's agent is read only: no start, no stop.
+    ...(agent.remote ? [] : [{
       icon: isRunning ? Square : Play,
       label: isRunning ? 'Stop Agent' : 'Start Agent',
       action: () => isRunning ? onStop(agentId) : onStart(agentId),
       danger: isRunning,
-    },
+    }]),
     { icon: RotateCcw, label: 'Clear Terminal', action: () => onClear(agentId) },
     { icon: Maximize2, label: 'Fullscreen', action: () => onFullscreen(agentId) },
     { icon: Copy, label: 'Copy Output', action: () => onCopyOutput(agentId) },

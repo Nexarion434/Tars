@@ -12,7 +12,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, remoteControlFlag, shellQuote } from './cli-provider';
 import { DATA_DIR } from '../constants';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
@@ -53,6 +53,9 @@ export class ClaudeProvider implements CLIProvider {
     }
 
     command += resumeFlags(params.resumeSessionId, params.forkSession);
+
+    // Reachable from the Claude apps, under the agent's name (Settings).
+    command += remoteControlFlag(params.remoteControl);
 
     // Model
     if (params.model) {
@@ -171,7 +174,7 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   getEnvVarsToDelete(): string[] {
-    return ['CLAUDECODE'];
+    return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'];
   }
 
   getHookConfig(): HookConfig {
@@ -440,7 +443,7 @@ fi
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

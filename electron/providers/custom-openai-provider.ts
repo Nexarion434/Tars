@@ -142,7 +142,7 @@ export class CustomOpenAIProvider implements CLIProvider {
   }
 
   getEnvVarsToDelete(): string[] {
-    return ['CLAUDECODE'];
+    return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'];
   }
 
   getHookConfig(): HookConfig {
@@ -210,7 +210,7 @@ if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 export CLAUDE_PROVIDER="custom-openai"
 export ANTHROPIC_BASE_URL="${CUSTOM_BRIDGE_BASE_URL}"
 export ANTHROPIC_API_KEY="$(cat "${DATA_DIR_SHELL}/api-token" 2>/dev/null)"

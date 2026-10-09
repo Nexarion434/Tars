@@ -16,6 +16,7 @@ import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
+import { remoteControlName } from '../../providers/cli-provider';
 import { skillsProblem } from '../../utils/skill-name';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
@@ -272,6 +273,8 @@ async function spawnAgentSession(
       orchestratorMode: isSuperAgentApi,
       verbose: appSettings.verboseModeEnabled,
       chrome: appSettings.chromeEnabled,
+      // Not in print mode: Remote Control is for an interactive session.
+      remoteControl: usePrintMode ? undefined : remoteControlName(appSettings, agent),
     });
   } catch (err) {
     sendJson({ error: err instanceof Error ? err.message : 'Invalid agent configuration' }, 400);
@@ -291,7 +294,7 @@ async function spawnAgentSession(
 
   // Assemble the environment. Identity vars are re-asserted explicitly
   // (MCP project scoping and the hooks depend on them), and provider-specified
-  // vars (e.g. CLAUDECODE) are purged so nested sessions don't inherit them.
+  // vars (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) are purged so nested sessions don't inherit them.
   const spawnEnv: Record<string, string | undefined> = {
     ...withPath(process.env, fullPath, process.platform),
     TERM: 'xterm-256color',

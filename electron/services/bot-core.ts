@@ -16,6 +16,7 @@ import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
+import { remoteControlName } from '../providers/cli-provider';
 import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
 import { cliRunningIn, shellReady, agentPtyEnv } from '../core/agent-pty';
 import { stopAcpRuns } from './acp/delegate';
@@ -359,6 +360,7 @@ export async function startWithTask(
       skills: [...new Set(agent.skills || [])],
       isSuperAgent: isSuperAgent(agent),
       orchestratorMode: isSuperAgent(agent),
+      remoteControl: remoteControlName(fleet.settings(), agent),
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
     const before = markRunning(agent, task);
@@ -470,6 +472,7 @@ export async function forwardToOrchestrator(
       skills: [...new Set(orchestrator.skills || [])],
       isSuperAgent: true,
       orchestratorMode: true,
+      remoteControl: remoteControlName(fleet.settings(), orchestrator),
     });
     const start = launchIn(orchestrator, ptyProcess, workingDir, command);
     const before = markRunning(orchestrator, opts.message);

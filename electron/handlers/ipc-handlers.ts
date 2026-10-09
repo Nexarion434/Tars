@@ -60,7 +60,7 @@ import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSk
 import * as crypto from 'crypto';
 import * as https from 'https';
 import { getTasmaniaStatus, tasmaniaFetch } from '../services/tasmania-client';
-import { enforcesOrchestratorMode } from '../providers/cli-provider';
+import { enforcesOrchestratorMode, remoteControlName } from '../providers/cli-provider';
 import { withSessionTruth } from '../services/agent-truth';
 import { spawnAgentPty, cliRunningIn, agentShell, agentPtyEnv } from '../core/agent-pty';
 import { resolveShell, shellArgs, childEnv, toLaunch, withPath, resolveCliBinary, isFilesystemRoot, isInsideWorktreesDir, samePath, pathKey, isUnderSafeRoot, landsUnderSafeRoot } from '../platform';
@@ -395,8 +395,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Create PTY for this agent
     // Strip nested-session env vars to prevent errors
     const cleanEnv = { ...process.env as { [key: string]: string } };
-    // Each provider may have env vars to delete; always delete CLAUDECODE for Claude
+    // Each provider may have env vars to delete; always the markers of a Claude
+    // Code session (NESTED_SESSION_MARKERS), which spawnAgentPty removes too.
     delete cleanEnv['CLAUDECODE'];
+    delete cleanEnv['CLAUDE_CODE_CHILD_SESSION'];
 
     const allSkills = [...new Set(config.skills)];
 
@@ -635,6 +637,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       const cleanEnvLocal = { ...process.env as { [key: string]: string } };
       delete cleanEnvLocal['CLAUDECODE'];
+      delete cleanEnvLocal['CLAUDE_CODE_CHILD_SESSION'];
 
       const workingDir = agent.worktreePath || agent.projectPath;
       const cwd = fs.existsSync(workingDir) ? workingDir : os.homedir();
@@ -836,6 +839,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       skills: allAgentSkills,
       isSuperAgent: isSuperAgentCheck,
       chrome: appSettingsForCommand.chromeEnabled,
+      remoteControl: remoteControlName(appSettingsForCommand, { ...agent, provider }),
       // BUG 5: an orchestrator cannot edit files.
       orchestratorMode: isSuperAgentCheck,
     });

@@ -162,7 +162,7 @@ export class OpenRouterProvider implements CLIProvider {
   }
 
   getEnvVarsToDelete(): string[] {
-    return ['CLAUDECODE'];
+    return ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'];
   }
 
   getHookConfig(): HookConfig {
@@ -271,7 +271,7 @@ fi
 export PATH=${shellQuote(params.binaryDir)}:"$PATH"
 cd ${shellQuote(params.projectPath)}
 echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
+unset CLAUDECODE CLAUDE_CODE_CHILD_SESSION
 export CLAUDE_PROVIDER="openrouter"
 export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
 export ANTHROPIC_API_KEY="$(jq -r '.openRouterApiKey // empty' "${DATA_DIR_SHELL}/app-settings.json")"

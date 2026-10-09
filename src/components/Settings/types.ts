@@ -89,6 +89,7 @@ export interface AppSettings {
   gwsSkillsInstalled: boolean;
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
+  remoteControl?: 'off' | 'orchestrator' | 'all';
   autoCheckUpdates: boolean;
   /** Error reports to Sentry: off unless the user turns them on. Main reads
    *  it at launch and follows every change, so off stops them at once. */
@@ -161,4 +162,4 @@ export interface AppSettings {
   providerBudgets?: Record<string, number>;
 }
 
-export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'machines' | 'memory' | 'mcp' | 'cli' | 'system';

@@ -1,9 +1,8 @@
-import { app, ipcMain } from 'electron';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
+import { hermesDesktopConfigPath } from '../platform';
+import { detectTailscale } from '../services/tailscale-status';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
@@ -40,7 +39,6 @@ import {
   HERMES_DEFAULT_PORT,
 } from '../types/hermes';
 
-const execFileAsync = promisify(execFile);
 
 /** Where Hermes Desktop keeps its own connection config (per platform: see electron/platform). */
 const HERMES_DESKTOP_CONFIG = hermesDesktopConfigPath(
@@ -244,57 +242,6 @@ function hermesGet(baseUrl: string, pathname: string, token?: string, timeoutMs 
  * - a local dry-run test of the webhook (auth + agent resolution, no dispatch)
  * - a reachability check of the Hermes gateway URL itself
  */
-
-interface TailscaleInfo {
-  installed: boolean;
-  running: boolean;
-  dnsName?: string;
-  ip?: string;
-  serveConfigured: boolean;
-}
-
-/**
- * Where to look for `tailscale`: where this platform installs it
- * (tailscaleCandidates). A development run may name the one binary to ask,
- * or none with an empty value (DOROTHY_TAILSCALE_BIN): the e2e fixture
- * does, since two of the places are absolute paths no sandbox HOME hides, and
- * a sandbox asked the Mac's own Tailscale, whose MagicDNS name ended up in the
- * reference screenshots (QA's note on #222). A packaged Tars never reads it.
- */
-function tailscalePlaces(): string[] {
-  const named = app?.isPackaged ? undefined : process.env.DOROTHY_TAILSCALE_BIN;
-  if (named === undefined) return tailscaleCandidates();
-  return named.trim() ? [named] : [];
-}
-
-async function detectTailscale(): Promise<TailscaleInfo> {
-  const candidates = tailscalePlaces();
-  for (const bin of candidates) {
-    try {
-      const { stdout } = await execFileAsync(bin, ['status', '--json'], { timeout: 4000 });
-      const status = JSON.parse(stdout);
-      const dnsName = typeof status?.Self?.DNSName === 'string'
-        ? status.Self.DNSName.replace(/\.$/, '')
-        : undefined;
-      const ip = Array.isArray(status?.Self?.TailscaleIPs) ? status.Self.TailscaleIPs[0] : undefined;
-
-      let serveConfigured = false;
-      try {
-        const { stdout: serveOut } = await execFileAsync(bin, ['serve', 'status'], { timeout: 4000 });
-        serveConfigured = !/no serve config/i.test(serveOut) && serveOut.trim().length > 0;
-      } catch { /* serve status exits non-zero when unconfigured on some versions */ }
-
-      return {
-        installed: true,
-        running: status?.BackendState === 'Running',
-        dnsName,
-        ip,
-        serveConfigured,
-      };
-    } catch { /* try next candidate */ }
-  }
-  return { installed: false, running: false, serveConfigured: false };
-}
 
 function readApiToken(): string {
   try {

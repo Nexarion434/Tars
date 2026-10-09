@@ -4,12 +4,12 @@ import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ReactGridLayout, { verticalCompactor } from 'react-grid-layout';
 import type { Layout, GridLayoutProps } from 'react-grid-layout';
 import { LoadingPanel } from '@/components/ui';
-import type { AgentStatus } from '@/types/electron';
+import type { PaneAgent } from '@/lib/machines';
 import type { TerminalPanelState } from '../types';
 import TerminalPanel from './TerminalPanel';
 
 interface TerminalGridProps {
-  agents: AgentStatus[];
+  agents: PaneAgent[];
   visiblePanels: TerminalPanelState[];
   rglLayout: Layout;
   cols: number;

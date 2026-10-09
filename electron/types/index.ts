@@ -403,6 +403,10 @@ export interface AppSettings {
   gwsSkillsInstalled: boolean;
   verboseModeEnabled: boolean;
   chromeEnabled: boolean;
+  /** Which Claude Code agents start with --remote-control under their title,
+   *  so the Claude apps can follow and drive them: none, the orchestrators
+   *  only, or all of them. Off unless chosen. */
+  remoteControl?: 'off' | 'orchestrator' | 'all';
   autoCheckUpdates: boolean;
   /** Resume idle agents once, when the app launches. Not on navigation - that
    *  was the old behaviour and it spawned sessions on every visit home. */

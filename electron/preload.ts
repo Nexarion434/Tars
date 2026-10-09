@@ -245,6 +245,48 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // Other machines of the tailnet running Tars (services/machines, Settings > Machines)
+  machines: {
+    view: () => ipcRenderer.invoke('machines:view'),
+    setName: (name: string) => ipcRenderer.invoke('machines:set-name', name),
+    openOffer: () => ipcRenderer.invoke('machines:open-offer'),
+    closeOffer: () => ipcRenderer.invoke('machines:close-offer'),
+    pair: (code: string) => ipcRenderer.invoke('machines:pair', code),
+    accept: () => ipcRenderer.invoke('machines:accept'),
+    refuse: () => ipcRenderer.invoke('machines:refuse'),
+    setPermission: (id: string, mayOnMe: 'see' | 'drive') => ipcRenderer.invoke('machines:set-permission', id, mayOnMe),
+    unpair: (id: string) => ipcRenderer.invoke('machines:unpair', id),
+    onChanged: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('machines:changed', listener);
+      return () => ipcRenderer.removeListener('machines:changed', listener);
+    },
+    /** The other machines' agents, read only; their output comes on agent:output under their own ids. */
+    agents: () => ipcRenderer.invoke('machines:agents'),
+    agentScreen: (id: string) => ipcRenderer.invoke('machines:agent-screen', id),
+    watch: (id: string) => ipcRenderer.invoke('machines:watch', id),
+    unwatch: (id: string) => ipcRenderer.invoke('machines:unwatch', id),
+    onFleet: (callback: (agents: unknown[]) => void) => {
+      const listener = (_: unknown, agents: unknown[]) => callback(agents);
+      ipcRenderer.on('machines:fleet', listener);
+      return () => ipcRenderer.removeListener('machines:fleet', listener);
+    },
+    /** Drive a remote agent, where its machine allows it (machine.drive); that machine checks each action. */
+    startAgent: (id: string) => ipcRenderer.invoke('machines:start-agent', id),
+    stopAgent: (id: string, reason: string) => ipcRenderer.invoke('machines:stop-agent', id, reason),
+    messageAgent: (id: string, text: string) => ipcRenderer.invoke('machines:message-agent', id, text),
+    /** Keys typed in a remote agent's pane, as they come: that machine types them into its running CLI. */
+    typeKeys: (id: string, data: string) => ipcRenderer.invoke('machines:type-keys', id, data),
+    /** A remote pane's size: that agent's terminal draws for whoever looks at it. */
+    resizeAgent: (id: string, cols: number, rows: number) => ipcRenderer.invoke('machines:resize-agent', id, cols, rows),
+    /** This machine's agent whose terminal a paired machine resized: its pane takes the size back at its next click or key. */
+    onSizeTaken: (callback: (agentId: string) => void) => {
+      const listener = (_: unknown, event: { agentId: string }) => callback(event.agentId);
+      ipcRenderer.on('machines:size-taken', listener);
+      return () => ipcRenderer.removeListener('machines:size-taken', listener);
+    },
+  },
+
   // Several Claude subscriptions (DESIGN-COMPTES-CLAUDE.md, B6)
   claudeAccounts: {
     list: () => ipcRenderer.invoke('claude-accounts:list'),

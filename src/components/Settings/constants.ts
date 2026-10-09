@@ -71,6 +71,14 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     ],
   },
   {
+    id: 'machines',
+    label: 'Machines',
+    icon: Monitor,
+    children: [
+      { id: 'machines', label: 'Your machines', description: 'Your other computers running Tars, reached over Tailscale.', icon: Monitor },
+    ],
+  },
+  {
     id: 'integrations',
     label: 'Integrations',
     icon: Plug,
@@ -146,6 +154,7 @@ export const DEFAULT_APP_SETTINGS = {
   gwsSkillsInstalled: false,
   verboseModeEnabled: false,
   chromeEnabled: false,
+  remoteControl: 'off' as const,
   autoCheckUpdates: true,
   errorReportsEnabled: false,
   autoStartAgentsOnLaunch: true,

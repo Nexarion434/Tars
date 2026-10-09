@@ -951,6 +951,70 @@ export interface ClaudeAccountState extends ClaudeAccount {
   error: string | null;
 }
 
+/** What a paired machine may do on this one (Settings > Machines). */
+export type PeerPermission = 'see' | 'drive';
+export type PeerStatus = 'connected' | 'offline' | 'unpaired' | 'unknown';
+
+/** A paired machine as the window sees it: never a secret, never a hash. */
+export interface MachineView {
+  id: string;
+  name: string;
+  address: string;
+  mayOnMe: PeerPermission;
+  status: PeerStatus;
+  lastSeen?: string;
+  agentsRunning?: number;
+}
+
+/** Everything Settings > Machines shows (electron/handlers/machines-handlers.ts). */
+export interface MachinesView {
+  self: { id: string; name: string; address?: string };
+  tailscale: { installed: boolean; running: boolean };
+  bridge: { listening: boolean; reason?: string };
+  offer: { code: string; expiresAt: string } | null;
+  /** A machine that knocked, with no proof yet, and waits for the person here to accept it; device is its MagicDNS name, unique in the tailnet. */
+  request: { name: string; device?: string; address: string; expiresAt: string } | null;
+  peers: MachineView[];
+}
+
+/**
+ * An agent of another machine, read only (electron/services/machines/types.ts).
+ * Never a token, an env, a CLI path, nor its terminal history: its screen and
+ * live output come one agent at a time (agentScreen, watch).
+ */
+export interface RemoteAgent {
+  /** `m:<machineId>:<agentId>`: never an id of this machine's own fleet. */
+  id: string;
+  agentId: string;
+  /**
+   * Its machine. drive: that machine lets this one start, stop and message
+   * its agents (its own Settings > Machines decides, and checks each action).
+   */
+  machine: { id: string; name: string; status: PeerStatus; offlineSince?: string; drive?: boolean };
+  name: string;
+  character?: string;
+  provider?: string;
+  model?: string;
+  status: string;
+  currentTask?: string;
+  branch?: string;
+  projectName: string;
+  /** The project's path on its own machine, shown, never opened here. */
+  projectPath: string;
+  cliRunning: boolean;
+  lastActivity?: string;
+  stoppedBy?: string;
+  stopReason?: string;
+  /**
+   * The size its terminal draws for: a full-screen CLI places every line by
+   * it, so its pane takes this size, never its own.
+   */
+  cols?: number;
+  rows?: number;
+}
+
+type MachinesResult<T extends object = object> = ({ success: true } & T) | { success: false; error: string };
+
 export interface ClaudeAccountsView {
   settings: ClaudeAccountsSettings;
   accounts: ClaudeAccountState[];
@@ -1142,6 +1206,52 @@ export interface ElectronAPI {
   };
 
   // Several Claude subscriptions (Settings). See ClaudeAccountsView.
+  machines?: {
+    view: () => Promise<MachinesView>;
+    setName: (name: string) => Promise<MachinesResult>;
+    openOffer: () => Promise<MachinesResult<{ code: string; expiresAt: string }>>;
+    closeOffer: () => Promise<{ success: true }>;
+    pair: (code: string) => Promise<MachinesResult<{ name: string }>>;
+    /** Answers the machine waiting to pair here (view().request). */
+    accept: () => Promise<MachinesResult>;
+    refuse: () => Promise<MachinesResult>;
+    setPermission: (id: string, mayOnMe: PeerPermission) => Promise<MachinesResult>;
+    unpair: (id: string) => Promise<{ success: true }>;
+    onChanged: (callback: () => void) => () => void;
+    /** The other machines' agents (read only), offline ones included with their machine's offlineSince. */
+    agents: () => Promise<RemoteAgent[]>;
+    /** A remote agent's terminal as it is now, to write into its pane once; null when its machine does not answer. */
+    agentScreen: (id: string) => Promise<{ screen: string; cliRunning: boolean; cols?: number; rows?: number } | null>;
+    /** Its live output, on agent:output under the remote id, until unwatch. Counted: each watch needs its unwatch. */
+    watch: (id: string) => Promise<void>;
+    unwatch: (id: string) => Promise<void>;
+    /** Pushed whenever the other machines' agents change (every poll that saw a change, a machine going offline or back). */
+    onFleet: (callback: (agents: RemoteAgent[]) => void) => () => void;
+    /**
+     * Drive a remote agent, where its machine allows it (agent.machine.drive);
+     * that machine checks each action, and its sentence comes back as error.
+     * A stop needs a reason (filed there as stopped by this machine); a
+     * message is typed there after 'Message from the machine "<this machine>"'.
+     */
+    /** No first prompt: the task goes as a message, which carries its sender line. */
+    startAgent: (id: string) => Promise<{ success: true } | { success: false; error: string }>;
+    stopAgent: (id: string, reason: string) => Promise<{ success: true } | { success: false; error: string }>;
+    messageAgent: (id: string, text: string) => Promise<{ success: true } | { success: false; error: string }>;
+    /**
+     * Keys typed in a remote agent's pane (xterm's onData, a paste included),
+     * as they come: that machine types them into its CLI, as a person at its
+     * window would, only while that CLI runs and only where it lets this one
+     * drive. Sent in order; the answer says why not when it refused them.
+     */
+    typeKeys: (id: string, data: string) => Promise<{ success: true } | { success: false; error: string }>;
+    /**
+     * A remote pane's size, where its machine lets this one drive: that
+     * agent's terminal draws at it, for whoever looks at it last.
+     */
+    resizeAgent: (id: string, cols: number, rows: number) => Promise<{ success: true } | { success: false; error: string }>;
+    /** One of this machine's agents whose terminal a paired machine resized: its pane takes the size back at its next click or key. */
+    onSizeTaken: (callback: (agentId: string) => void) => () => void;
+  };
   claudeAccounts?: {
     /** Answers at once; accounts never checked are asked about behind it, then onChanged. */
     list: () => Promise<ClaudeAccountsResult<ClaudeAccountsView>>;

@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { GripVertical, ShieldOff, Bot, Shield, Gauge, Maximize2, Minimize2 } from 'lucide-react';
-import type { AgentStatus } from '@/types/electron';
-import { AgentMark } from '@/components/ui';
+import { AgentMark, MachineBadge } from '@/components/ui';
+import { readOnlyTitle, remoteActions, type PaneAgent } from '@/lib/machines';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { asleepLine, wakingLine } from '@/lib/asleep-line';
@@ -11,11 +11,13 @@ import AgentStatusWord from '@/components/AgentStatusWord';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
 interface TerminalPanelHeaderProps {
-  agent: AgentStatus;
+  agent: PaneAgent;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   tabType: 'custom' | 'project';
   onStart: () => void;
+  /** A remote action on its way: start and stop wait for its answer. */
+  actionBusy?: boolean;
   onStop: () => void;
   /** An asleep agent's CLI started again on its own conversation (PR 322). */
   onWake: () => void;
@@ -32,6 +34,7 @@ export default function TerminalPanelHeader({
   isBroadcasting,
   tabType,
   onStart,
+  actionBusy = false,
   onStop,
   onWake,
   onFullscreen,
@@ -57,6 +60,14 @@ export default function TerminalPanelHeader({
   // Frame: `Agent asleep · and how it wakes`.
   const waking = wakingLine(agent);
   const sleep = waking ?? asleepLine(agent);
+  // Another machine's agent: shown, never driven from here.
+  // Frame: `Panel · machine offline`.
+  const remote = agent.remote;
+  const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
+  const machineOffline = !!remote && remote.status !== 'connected';
+  // What the machine lets this one do to it: stop while it runs, start at rest.
+  const allowed = remote ? remoteActions(remote, isLive) : null;
+  const blocked = !!allowed && !(isLive ? allowed.stop : allowed.start);
 
   const showDragHandle = tabType === 'custom';
   // Neither kind of tab deletes anything from here any more. A custom tab
@@ -105,6 +116,7 @@ export default function TerminalPanelHeader({
           on the right, as on the agent cards. Frame: `Dashboard · dark`. */}
       <AgentMark name={agent.name || agent.id} orchestrator={agent.role === 'orchestrator'} />
       <span className="text-[11.5px] font-semibold text-foreground truncate max-w-[140px]">{name}</span>
+      {remote && <MachineBadge name={remote.machineName} />}
       {reason ? (
         // In error, why: the reason takes the branch's place and the room the
         // marks below use, one red line cut where the header runs out, the
@@ -176,7 +188,11 @@ export default function TerminalPanelHeader({
           plain words. The provider was only ever implied by the model string,
           so an agent left on its provider default showed nothing at all and
           you could not tell what would launch. */}
-      <AgentStatusWord agent={agent} className="text-[10px] font-mono shrink-0" title={stop ?? sleep ?? undefined} />
+      {machineOffline ? (
+        <span className="text-[10px] font-mono shrink-0 text-status-idle">offline</span>
+      ) : (
+        <AgentStatusWord agent={agent} className="text-[10px] font-mono shrink-0" title={stop ?? sleep ?? undefined} />
+      )}
       {/* It gives way first, then the branch, so the name keeps its width
           in a narrow panel: the mark and the status word took the room. */}
       {(agent.provider || model) && (
@@ -186,7 +202,7 @@ export default function TerminalPanelHeader({
       )}
       {/* The Claude account it runs on, after provider and model, when several
           subscriptions are on. Frame: `Agent · Claude account`. */}
-      <AgentAccountControl agent={agent} stopMouseDown />
+      {!remote && <AgentAccountControl agent={agent} stopMouseDown />}
 
       {/* What the panel shows: its agent's session, as it runs. It named the
           live view while a history view sat beside it, and is a word now,
@@ -194,7 +210,7 @@ export default function TerminalPanelHeader({
           and fullscreen`. */}
       <span
         className="inline-flex items-center h-[26px] px-2.5 mr-0.5 text-xs border bg-secondary border-border-accent text-foreground shrink-0"
-        title="The agent's session, in its terminal"
+        title={(allowed && !allowed.type ? readOnly : undefined) ?? "The agent's session, in its terminal"}
       >
         session
       </span>
@@ -209,9 +225,9 @@ export default function TerminalPanelHeader({
           type="button"
           onMouseDown={e => e.stopPropagation()}
           onClick={onWake}
-          disabled={!!waking}
+          disabled={!!waking || !!remote}
           className="h-[26px] px-2 text-[11px] font-mono lowercase border border-border-accent text-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:border-border-accent disabled:hover:text-foreground"
-          title={waking ? 'Coming back on its conversation' : 'Wake it on its own conversation'}
+          title={readOnly ?? (waking ? 'Coming back on its conversation' : 'Wake it on its own conversation')}
         >
           wake
         </button>
@@ -220,16 +236,19 @@ export default function TerminalPanelHeader({
           type="button"
           onMouseDown={e => e.stopPropagation()}
           onClick={isLive ? onStop : onStart}
+          disabled={blocked || actionBusy}
           // A bordered 26px row action, like every other action in the app. The
           // first version was accent-filled, which put a solid orange block in
           // every pane header at once - the accent is for one primary action on
           // a screen, not for six of them in a row.
-          className={`h-[26px] px-2 text-[11px] font-mono lowercase border transition-colors cursor-pointer ${
-            isLive
-              ? 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
-              : 'border-border-accent text-foreground hover:border-primary hover:text-primary'
+          className={`h-[26px] px-2 text-[11px] font-mono lowercase border transition-colors ${
+            blocked
+              ? 'border-border text-muted-foreground opacity-40 cursor-default'
+              : isLive
+                ? 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer'
+                : 'border-border-accent text-foreground hover:border-primary hover:text-primary cursor-pointer'
           }`}
-          title={isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`}
+          title={(blocked ? readOnly : undefined) ?? (isLive ? 'Stop this agent' : `Start ${agent.provider ?? 'the CLI'} in this terminal`)}
         >
           {isLive ? 'stop' : 'start'}
         </button>

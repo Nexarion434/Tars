@@ -1,8 +1,8 @@
 'use client';
 
-import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import type { AgentStatus } from '@/types/electron';
+import { offlineLine, type PaneAgent } from '@/lib/machines';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
 import PermissionAskNotice from '@/components/PermissionAskNotice';
 import LeftFullscreenNotice from './LeftFullscreenNotice';
@@ -11,9 +11,11 @@ import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { useRestartPending } from '@/hooks/useRestartPending';
 import { asleepHint } from '@/lib/asleep-line';
 import TerminalPanelHeader from './TerminalPanelHeader';
+import RemoteDriveBar from './RemoteDriveBar';
+import { useRemoteDrive } from '@/hooks/useRemoteDrive';
 
 interface TerminalPanelProps {
-  agent: AgentStatus;
+  agent: PaneAgent;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   isFocused: boolean;
@@ -106,13 +108,21 @@ function TerminalPanel({
   const waiting = useMessageWaiting(agent.id);
   const restartPending = useRestartPending(agent.id);
   const hint = asleepHint(agent);
+  // Another machine's agent whose machine does not answer: its last screen
+  // stays, greyed, under a line saying since when. Frame: `Panel · machine offline`.
+  const offline = agent.remote && agent.remote.status !== 'connected' ? offlineLine(agent.remote) : null;
 
   const handleClick = useCallback(() => {
     onFocus(agent.id);
   }, [agent.id, onFocus]);
 
-  const handleStart = useCallback(() => onStart(agent.id), [agent.id, onStart]);
-  const handleStop = useCallback(() => onStop(agent.id), [agent.id, onStop]);
+  // Another machine's agent, where that machine lets this one drive it: start
+  // goes over the bridge, and stop asks why first. Nothing else is writable.
+  const isRemote = !!agent.remote;
+  const drive = useRemoteDrive(agent.id);
+  const [askStop, setAskStop] = useState(false);
+  const handleStart = useCallback(() => { if (isRemote) void drive.start(); else onStart(agent.id); }, [isRemote, drive.start, agent.id, onStart]);
+  const handleStop = useCallback(() => { if (isRemote) setAskStop(true); else onStop(agent.id); }, [isRemote, agent.id, onStop]);
   const handleRestart = useCallback(() => onRestart(agent.id), [agent.id, onRestart]);
   const handleWake = useCallback(() => onWake(agent.id), [agent.id, onWake]);
   const handleRemove = useCallback(() => onRemove(agent.id), [agent.id, onRemove]);
@@ -138,6 +148,7 @@ function TerminalPanel({
         isBroadcasting={isBroadcasting}
         tabType={tabType}
         onStart={handleStart}
+        actionBusy={isRemote && drive.busy}
         onStop={handleStop}
         onWake={handleWake}
         onFullscreen={handleFullscreen}
@@ -167,8 +178,16 @@ function TerminalPanel({
           on the same conversation that opens fullscreen. */}
       {agent.leftFullscreen && <LeftFullscreenNotice onRestart={handleRestart} />}
 
+      {/* Another machine's agent whose machine does not answer: the line is
+          above the terminal, which keeps its last screen, greyed. */}
+      {offline && (
+        <p data-machine-offline className="shrink-0 px-3 py-2 bg-background font-mono text-[11px] text-text-secondary select-none">
+          {offline}
+        </p>
+      )}
+
       {/* Terminal body */}
-      <div className="flex-1 min-h-0 overflow-hidden relative bg-background">
+      <div className={`flex-1 min-h-0 overflow-hidden relative bg-background ${offline ? 'opacity-50' : ''}`}>
         <div ref={containerRef} className="absolute inset-0" />
         {/* Asleep, under the last screen of the CLI it slept in: since when,
             and that a key wakes it; coming back, that its CLI starts again.
@@ -182,6 +201,8 @@ function TerminalPanel({
           </p>
         )}
       </div>
+
+      <RemoteDriveBar agent={agent} drive={drive} askStop={askStop} onCloseStop={() => setAskStop(false)} />
     </div>
   );
 }

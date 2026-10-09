@@ -49,9 +49,15 @@ record('launches.jsonl', { pid: process.pid, sid, resume: resumed === -1 ? null 
 const hookCommand = (name) => (process.platform === 'win32'
   ? [process.execPath, [path.join(HOOKS, 'tars-hook.mjs'), name.replace(/\.sh$/, '')]]
   : ['/bin/bash', [path.join(HOOKS, name)]]);
-const hook = (name, payload) => spawnSync(...hookCommand(name), {
-  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
-});
+const hook = (name, payload) => {
+  const t0 = Date.now();
+  const r = spawnSync(...hookCommand(name), {
+    input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
+  });
+  // What each hook answered, read back when an agent never shows its session.
+  record('hooks.jsonl', { sid, name, status: r.status, signal: r.signal, ms: Date.now() - t0, error: r.error ? String(r.error) : null, stderr: String(r.stderr || '').slice(0, 400) });
+  return r;
+};
 const line = (o) => fs.appendFileSync(transcript, JSON.stringify(o) + '\n');
 const now = () => new Date().toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -135,7 +141,10 @@ test('an agent waiting on its own timer or background agent is not put to sleep;
     for (const id of ids) {
       await page.evaluate((p) => (window as unknown as Api).electronAPI.agent.start(p), { id, prompt: id === 'worker' ? '' : 'GO>> start' });
     }
-    await expect.poll(async () => (await list()).filter((a) => a.cliRunning && a.currentSessionId).length, { timeout: 90_000 }).toBe(ids.length);
+    await expect.poll(async () => (await list()).filter((a) => a.cliRunning && a.currentSessionId).length, { timeout: 90_000 }).toBe(ids.length).catch(async (err: Error) => {
+      const states = (await list()).map((a) => ({ id: a.id, status: a.status, cliRunning: a.cliRunning, session: a.currentSessionId ?? null }));
+      throw new Error(`${err.message}\nagents: ${JSON.stringify(states)}\nlaunches: ${JSON.stringify(lines(launchesFile))}\nhooks: ${JSON.stringify(lines(path.join(home, 'hooks.jsonl')))}`);
+    });
     await expect.poll(() => lines(stopsFile).length, { timeout: 60_000, message: 'the turns of the agents given GO>> ended' }).toBe(ids.length - 1);
     const first = Object.fromEntries(lines(launchesFile).map((l) => [l.id, l]));
     if (ids.includes('delegator-mac')) await expect.poll(() => String(execFileSync('ps', ['-A', '-o', 'ppid=,command='])).split('\n')

@@ -21,6 +21,7 @@ import {
   GoogleWorkspaceSection,
   AIProvidersSection,
   ClaudeAccountsSection,
+  MachinesSection,
   PermissionsSection,
   SkillsSection,
   McpSection,
@@ -47,7 +48,7 @@ import 'xterm/css/xterm.css';
  * body until that section is converted, so they render disabled with a note
  * rather than claiming to do something they do not.
  */
-type HeaderActionKind = 'save' | 'refresh' | 'unwired' | 'none';
+type HeaderActionKind = 'save' | 'refresh' | 'offer' | 'unwired' | 'none';
 
 const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActionKind }> = {
   general: { label: 'Save', kind: 'save' },
@@ -63,6 +64,8 @@ const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActio
   'claude-accounts': { label: '', kind: 'none' },
   cli: { label: 'Detect', kind: 'unwired' },
   hermes: { label: 'Test connection', kind: 'unwired' },
+  // Shows a one-time pairing code, which the section reads from main's view.
+  machines: { label: 'Add a machine', kind: 'offer' },
   telegram: { label: 'Test', kind: 'unwired' },
   slack: { label: 'Test', kind: 'unwired' },
   discord: { label: 'Test', kind: 'unwired' },
@@ -91,6 +94,12 @@ function SettingsPageInner() {
   const searchParams = useSearchParams();
   const sectionParam = searchParams.get('section');
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  // Settings > Machines' header action: the code comes back through the section's view.
+  const [offerError, setOfferError] = useState<string | null>(null);
+  const openMachineOffer = async () => {
+    const r = await window.electronAPI?.machines?.openOffer();
+    setOfferError(r && !r.success ? r.error : null);
+  };
 
   // Deep-link: initialize from URL param
   useEffect(() => {
@@ -192,6 +201,8 @@ function SettingsPageInner() {
         );
       case 'claude-accounts':
         return <ClaudeAccountsSection />;
+      case 'machines':
+        return <MachinesSection />;
       case 'permissions':
         return <PermissionsSection settings={settings} />;
       case 'skills':
@@ -282,6 +293,10 @@ function SettingsPageInner() {
             <Button variant="primary" size="md" onClick={fetchSettings}>
               {action.label}
             </Button>
+          ) : action.kind === 'offer' ? (
+            <Button variant="primary" size="md" onClick={openMachineOffer}>
+              {action.label}
+            </Button>
           ) : (
             <Button
               variant="primary"
@@ -299,6 +314,11 @@ function SettingsPageInner() {
       {error && settings && (
         <div className="p-4 bg-danger/10 border border-danger/30 text-danger text-sm mb-4 shrink-0">
           {error}
+        </div>
+      )}
+      {offerError && activeSection === 'machines' && (
+        <div className="p-4 bg-danger/10 border border-danger/30 text-danger text-sm mb-4 shrink-0">
+          {offerError}
         </div>
       )}
 

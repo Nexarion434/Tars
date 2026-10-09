@@ -35,6 +35,12 @@ export interface InteractiveCommandParams {
   skills?: string[];
   isSuperAgent?: boolean;
   chrome?: boolean;
+  /**
+   * The name to start the session under with Remote Control on (Settings,
+   * Claude Code), so it can be followed and driven from the Claude apps.
+   * Only Claude Code on a claude.ai login acts on it: see remoteControlFlag.
+   */
+  remoteControl?: string;
   /** Orchestrator mode: disable Edit/Write/NotebookEdit/Task so the agent
    *  cannot do implementation work itself and must delegate. See BUG 5. */
   orchestratorMode?: boolean;
@@ -304,6 +310,24 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
  * claude binary get them; codex, gemini, grok, opencode and pi have their own
  * updaters and would silently ignore them.
  */
+/**
+ * What a Claude Code session leaves in the environment of what it starts, and
+ * so of a Tars started from one (`npm run electron:start` run by a Claude Code
+ * session): CLAUDECODE, the nested-session marker, and CLAUDE_CODE_CHILD_SESSION,
+ * with which an interactive claude saves no transcript ("Transcript saving is
+ * off, inherited CLAUDE_CODE_CHILD_SESSION marker", 2.1.284, 2026-10-09). No
+ * agent is that session's child: every agent terminal is spawned without them
+ * (core/agent-pty.ts), and the providers that run claude remove them too.
+ */
+export const NESTED_SESSION_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'] as const;
+
+/** An environment without the markers of a Claude Code session (NESTED_SESSION_MARKERS). */
+export function withoutNestedSessionMarkers<T extends Record<string, string | undefined>>(env: T): T {
+  const out = { ...env };
+  for (const key of NESTED_SESSION_MARKERS) delete out[key];
+  return out;
+}
+
 export function managedCliEnv(binaryName: string): Record<string, string> {
   if (binaryName !== 'claude') return {};
   return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
@@ -312,6 +336,63 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
+}
+
+/**
+ * `--remote-control <name>`: the session shows in the Claude apps under the
+ * agent's name. Verified against `claude --help` (2.1.284): `--remote-control
+ * [name]`, an optional value, so the name is always given and never opens with
+ * a dash, or the CLI would read it as an option it does not know and refuse to
+ * start. It is a title in a list: one plain line, at most 80 characters, never
+ * cutting one in two.
+ *
+ * Measured on 2026-10-09 (2.1.284, the Claude app on a phone): it titles a new
+ * remote session only. A resumed conversation that was connected before goes
+ * back to the remote session it had, under the title that session was made
+ * with; neither this name nor `--name` renames it. A rename in the Claude app
+ * does, and stays.
+ */
+export function remoteControlFlag(name: string | undefined): string {
+  if (name === undefined) return '';
+  const title = Array.from(name
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s-]+/, '')
+    .trim())
+    .slice(0, 80)
+    .join('')
+    .trim();
+  return ` --remote-control ${shellQuote(title || 'Tars agent')}`;
+}
+
+/**
+ * The name a launcher asks Remote Control for (Settings, Claude Code), or
+ * undefined. On "orchestrator", a project's orchestrator only (Nicolas,
+ * 2026-10-09: the workers stay off his phone); on "all", every agent; any
+ * other value, none. Claude Code agents only: Remote Control needs a claude.ai login,
+ * which the providers that point the claude binary at another API do not use,
+ * and a local agent (Tasmania, the Claude provider against a model on this
+ * machine) is still signed in to claude.ai, so its session, project code
+ * included, would be kept on Anthropic's servers.
+ *
+ * The title says where the agent works: its project's folder name, then its
+ * own, "Allcazz · Revue finale", unless its name says the project already
+ * ("Agent on Allcazz"). With no name, the project's alone, and with neither an
+ * empty one, which remoteControlFlag titles "Tars agent".
+ */
+export function remoteControlName(
+  settings: Partial<Pick<AppSettings, 'remoteControl'>> | undefined,
+  agent: { name?: string; provider?: string; projectPath?: string; role?: string },
+): string | undefined {
+  const scope = settings?.remoteControl;
+  if (scope !== 'all' && scope !== 'orchestrator') return undefined;
+  if (scope === 'orchestrator' && agent.role !== 'orchestrator') return undefined;
+  if ((agent.provider ?? 'claude') !== 'claude') return undefined;
+  // The API stores what it is sent: a name or a folder that is not text is none.
+  const name = typeof agent.name === 'string' ? agent.name.trim() : '';
+  const project = typeof agent.projectPath === 'string' && agent.projectPath ? path.basename(agent.projectPath) : '';
+  if (!project || name.toLowerCase().includes(project.toLowerCase())) return name;
+  return name ? `${project} · ${name}` : project;
 }
 
 /**
