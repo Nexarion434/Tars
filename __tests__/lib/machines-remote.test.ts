@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentStatus, RemoteAgent } from '../../src/types/electron';
 import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
-  localMachineLabel, machineFilterOptions, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
+  localMachineLabel, machineFilterOptions, remoteSize, scaleToFit, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
 } from '../../src/lib/machines';
 
 /**
@@ -29,6 +29,13 @@ import {
  * 7. The status bar says an offline or unknown machine is connected.
  * 8. A remote-only project tab does not say which machine it is on, or a tab
  *    with a local agent in it claims to be remote.
+ * 9. A remote pane is drawn at another size than its terminal's: the size the
+ *    screen came with is ignored for the agent's, or the agent's for the
+ *    default; half a size (cols without rows, 0, NaN, a fraction) is used;
+ *    the fallback order is wrong.
+ * 10. The scale to fit goes above 1 (a small terminal blown up), is 0 or NaN
+ *    for a body not laid out yet or a terminal with no size, or follows only
+ *    one of the two sides so the other overflows.
  */
 
 const remote = (over: Partial<RemoteAgent> = {}): RemoteAgent => ({
@@ -195,5 +202,35 @@ describe('tabMachines', () => {
     const tabs = tabMachines(agents);
     expect(tabs.has('/a/tars')).toBe(false);
     expect(tabs.get('C:\\x\\sakartvelo')).toEqual(['PC', 'Mini']);
+  });
+});
+
+describe('remoteSize', () => {
+  it('takes the size of the screen first, then the agent, then 120x30 (9)', () => {
+    expect(remoteSize({ cols: 100, rows: 40 }, { cols: 80, rows: 24 })).toEqual({ cols: 100, rows: 40 });
+    expect(remoteSize(null, { cols: 80, rows: 24 })).toEqual({ cols: 80, rows: 24 });
+    expect(remoteSize({}, { cols: 80, rows: 24 })).toEqual({ cols: 80, rows: 24 });
+    expect(remoteSize(null, undefined)).toEqual({ cols: 120, rows: 30 });
+  });
+  it('never uses half a size or one that is no size (9)', () => {
+    expect(remoteSize({ cols: 100 }, { cols: 80, rows: 24 })).toEqual({ cols: 80, rows: 24 });
+    expect(remoteSize({ cols: 0, rows: 0 }, undefined)).toEqual({ cols: 120, rows: 30 });
+    expect(remoteSize({ cols: Number.NaN, rows: 30 }, undefined)).toEqual({ cols: 120, rows: 30 });
+    expect(remoteSize({ cols: 80.5, rows: 24 }, undefined)).toEqual({ cols: 120, rows: 30 });
+  });
+});
+
+describe('scaleToFit', () => {
+  it('shrinks to the tighter side (10)', () => {
+    expect(scaleToFit({ width: 500, height: 600 }, { width: 1000, height: 400 })).toBe(0.5);
+    expect(scaleToFit({ width: 900, height: 200 }, { width: 600, height: 400 })).toBe(0.5);
+  });
+  it('never grows a terminal that fits (10)', () => {
+    expect(scaleToFit({ width: 2000, height: 2000 }, { width: 600, height: 400 })).toBe(1);
+  });
+  it('is 1, never 0 or NaN, when a size is not known yet (10)', () => {
+    expect(scaleToFit({ width: 0, height: 0 }, { width: 600, height: 400 })).toBe(1);
+    expect(scaleToFit({ width: 500, height: 500 }, { width: 0, height: 0 })).toBe(1);
+    expect(scaleToFit({ width: Number.NaN, height: 500 }, { width: 600, height: 400 })).toBe(1);
   });
 });
