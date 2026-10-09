@@ -795,16 +795,26 @@ at once. A live output silent for 45 seconds is ended on the reading side.
 
 Settings > Providers > Claude Code > Remote Control, off unless turned on,
 starts each Claude Code agent with `--remote-control <its title>`, from a
-window, the API (not in print mode) or a bot, at its next start: turning it
-off leaves a session started with it reachable until that agent stops. Not a
-local agent: it is still signed in to claude.ai, and its session would be
-kept on Anthropic's servers. Its session then shows in the
-Claude apps of the claude.ai account its CLI is signed in to, and whoever can
-sign in to that account can read it and type into it from claude.ai or a
-phone, its permission prompts included. Claude Code makes the link: outbound
-HTTPS only, no port opens here, and the session's transcript is kept on
-Anthropic's servers while it is connected. Tars hands it nothing but the
-title, the project's folder name and the agent's ("Allcazz · Revue finale"):
-one plain line, at most 80 characters, never opening with a dash. The
-providers that run the claude binary against another API never pass it:
-Remote Control needs a claude.ai login.
+window, the API (not in print mode) or a bot, at its next start. Its session
+then shows in the Claude apps of the claude.ai account its CLI is signed in
+to, and whoever can sign in to that account can read it and type into it from
+claude.ai or a phone, its permission prompts included: for an agent in auto or
+bypass mode, that is running commands on this machine, outside the machines
+bridge's See and Drive. Claude Code makes the link: outbound HTTPS only, no
+port opens here, and the session, everything the agent sees and does (its
+prompts, Tars's identity header and memory, tool output, the files it reads),
+is sent to Anthropic's servers and kept there under that account's terms.
+
+Of its own, Tars adds only the title, the project's folder name and the
+agent's ("Allcazz · Revue finale"): one plain line, at most 80 characters,
+never opening with a dash, one argument however it is written. A local agent
+never gets the flag: it is still signed in to claude.ai, and its session would
+be kept on Anthropic's servers. Nor do the providers that run the claude
+binary against another API: Remote Control needs a claude.ai login.
+
+Turning it off opens no new connection, and cuts none. A conversation once
+connected goes back to its remote session each time it is resumed, with the
+flag or without it, and with `remoteControlAtStartup` false (measured on
+Claude Code 2.1.284, 2026-10-09). Claude Code's `disableRemoteControl` setting
+stops that; Nicolas chose to cut such a session by hand rather than have Tars
+pass it.

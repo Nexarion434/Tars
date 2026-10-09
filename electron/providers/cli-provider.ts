@@ -366,8 +366,9 @@ export function remoteControlName(
 ): string | undefined {
   if (settings?.remoteControlEnabled !== true) return undefined;
   if ((agent.provider ?? 'claude') !== 'claude') return undefined;
-  const name = (agent.name ?? '').trim();
-  const project = agent.projectPath ? path.basename(agent.projectPath) : '';
+  // The API stores what it is sent: a name or a folder that is not text is none.
+  const name = typeof agent.name === 'string' ? agent.name.trim() : '';
+  const project = typeof agent.projectPath === 'string' && agent.projectPath ? path.basename(agent.projectPath) : '';
   if (!project || name.toLowerCase().includes(project.toLowerCase())) return name;
   return name ? `${project} · ${name}` : project;
 }

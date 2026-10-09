@@ -43,6 +43,11 @@ import { argvReached, writeArgvPrinter } from './argv-reached';
  *    twice, whatever the case.
  * 15. An agent with no name: the project's name alone.
  * 16. A project folder given with a trailing separator still names it.
+ * Found in the security review:
+ * 17. A name or project that is not text (the API stores what it is sent):
+ *    the agent must still start, under what is left.
+ * 18. A double quote or a backslash in the name (Windows builds its command
+ *    line with them): one argument still, and no option after it.
  */
 
 let tmpDir: string;
@@ -127,12 +132,12 @@ describe('a Claude agent reachable from the Claude apps', () => {
   });
 
   it('5. a line break, controls and format characters leave one plain line', async () => {
-    const argv = await launch('claude', 'first\nsecond\u0007 ‮third​');
+    const argv = await launch('claude', 'first\nsecond\u0007 \u202Ethird\u200B');
     expect(remoteControlOf(argv)).toEqual({ present: true, name: 'first second third' });
   });
 
   it('6. a name with nothing left is still a title', async () => {
-    expect(remoteControlOf(await launch('claude', '  --​  '))).toEqual({ present: true, name: 'Tars agent' });
+    expect(remoteControlOf(await launch('claude', '  --\u200B  '))).toEqual({ present: true, name: 'Tars agent' });
     expect(remoteControlOf(await launch('claude', ''))).toEqual({ present: true, name: 'Tars agent' });
   });
 
@@ -200,6 +205,23 @@ describe('a Claude agent reachable from the Claude apps', () => {
       const { remoteControlName } = await import('../../../electron/providers/cli-provider');
       expect(remoteControlName(on, { name: 'Copywriting', projectPath: project('KarvanDesign') + path.sep })).toBe('KarvanDesign · Copywriting');
     });
+  });
+
+  it('17. a name or a project that is not text never stops the agent from starting', async () => {
+    const { remoteControlName } = await import('../../../electron/providers/cli-provider');
+    const on = { remoteControlEnabled: true };
+    const odd = { name: 42 as unknown as string, projectPath: { x: 1 } as unknown as string, provider: 'claude' };
+    expect(() => remoteControlName(on, odd)).not.toThrow();
+    expect(remoteControlName(on, odd)).toBe('');
+    expect(remoteControlName(on, { name: 'Copywriting', projectPath: 7 as unknown as string })).toBe('Copywriting');
+  });
+
+  it('18. a double quote or a backslash keeps the name one argument, with no option after it', async () => {
+    const name = 'a" --dangerously-skip-permissions "b\\';
+    const argv = await launch('claude', name);
+    expect(remoteControlOf(argv)).toEqual({ present: true, name });
+    expect(argv).not.toContain('--dangerously-skip-permissions');
+    expect(promptOf(argv)).toEqual([TASK]);
   });
 
   for (const id of OTHER_APIS) {

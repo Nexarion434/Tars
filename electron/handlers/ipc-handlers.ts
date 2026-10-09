@@ -836,7 +836,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       skills: allAgentSkills,
       isSuperAgent: isSuperAgentCheck,
       chrome: appSettingsForCommand.chromeEnabled,
-      remoteControl: remoteControlName(appSettingsForCommand, agent),
+      remoteControl: remoteControlName(appSettingsForCommand, { ...agent, provider }),
       // BUG 5: an orchestrator cannot edit files.
       orchestratorMode: isSuperAgentCheck,
     });

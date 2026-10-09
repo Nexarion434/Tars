@@ -94,8 +94,6 @@ const drive: NonNullable<BridgeDeps['drive']> = {
     const outcome = writeProgrammaticInput(terminal, text, true, { agentId, from: by, sender: { kind: 'machine', name: by } });
     return outcome === 'refused' ? { ok: false, status: 409, error: `${nameOf(agent)} did not take the message.` } : done;
   },
-  // As this window's own keys reach an agent (agent:input), and only while its
-  // CLI runs: never into the bare shell of a terminal whose CLI has ended.
   // As this window's own resize (agent:resize): the terminal draws for the
   // machine that looks at it. This window is told, and takes the size back at
   // its next click or key in that pane.
@@ -113,6 +111,8 @@ const drive: NonNullable<BridgeDeps['drive']> = {
     broadcastToAllWindows('machines:size-taken', { agentId });
     return done;
   },
+  // As this window's own keys reach an agent (agent:input), and only while its
+  // CLI runs: never into the bare shell of a terminal whose CLI has ended.
   keys: async (agentId, _by, data) => {
     const agent = agents.get(agentId);
     if (!agent) return notHere();

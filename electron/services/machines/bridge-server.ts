@@ -12,7 +12,7 @@ import { terminalSize, type SharedAgent } from './fleet-share';
  * A server of its own, apart from the loopback API (api-server.ts), which
  * never leaves 127.0.0.1 and whose token, pass and webhook secret are not
  * accepted here. It listens on this machine's Tailscale IPv4 only, never on
- * 0.0.0.0, and not at all without one. Eight routes, listed below and nothing
+ * 0.0.0.0, and not at all without one. Thirteen routes, listed below and nothing
  * else: an unknown path is 404 before any credential is read. A caller is a
  * paired machine when it presents the secret this Tars issued to it at
  * pairing (kept here as a hash). SECURITY.md, "The machines bridge".
@@ -93,7 +93,7 @@ export function isTailnetAddress(address: string | undefined): boolean {
 const usesDevOverride = (env: NodeJS.ProcessEnv, packaged: boolean) => !packaged && env.TARS_MACHINES_BIND !== undefined;
 
 /**
- * Where to listen: the tailnet address on 31416. A development run may name
+ * Where to listen: the tailnet address on 31418. A development run may name
  * the address and the port (TARS_MACHINES_BIND, TARS_MACHINES_PORT, 0 for any
  * free port), as the e2e suite does to run two Tars on one machine; a
  * packaged Tars never reads them.
