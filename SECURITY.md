@@ -632,7 +632,7 @@ first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
 packaged Tars never reads those.
 
-**What it answers.** Eleven routes, listed one by one; any other path is a 404
+**What it answers.** Twelve routes, listed one by one; any other path is a 404
 before a credential is read, and no route of the loopback API answers here.
 They are not hidden: `ping` and `unpair` answer 401 without a paired
 machine's secret, so a prober on the tailnet can tell a Tars listens. An
@@ -652,6 +652,7 @@ not, so a prober learns no agent's id.
 | `POST /machines/v1/agents/:id/start` | a machine this one lets drive | starts the agent, with no first prompt |
 | `POST /machines/v1/agents/:id/stop` | a machine this one lets drive | stops it, with its reason, filed under the caller's name |
 | `POST /machines/v1/agents/:id/message` | a machine this one lets drive | types a message into its running CLI, after the caller's sender line |
+| `POST /machines/v1/agents/:id/keys` | a machine this one lets drive | types the keys of the caller's pane into its running CLI, as this window's own keys |
 
 A request carrying an `Origin` header is refused (no browser ever calls the
 bridge), and a body over 64 KB is refused unread.
@@ -706,14 +707,16 @@ remains; Tailscale's access rules, which can keep every other device off port
 31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
 altogether; the code's short life and the person's click stand in for it.
 
-**What a paired machine may do here.** See, by default; Drive only when this
-machine says so in Settings > Machines. The machine being driven decides,
+**What a paired machine may do here.** Drive, from the start of a pairing
+(Nicolas's choice of the 9th of October 2026: a machine paired with a code and
+a click is one he would sit at); See only when this machine says so in
+Settings > Machines. The machine being driven decides,
 never the caller: its pairing file is read again at each request, and once
 more when the request's body is in, so Drive taken back, or the machine
 forgotten, refuses a request still on its way, with "<this machine> lets
 <caller> see only."; a request arrives whole within 15 seconds. The fleet tells
 the caller which it may do (`youMay`), so its window offers only that, and
-nothing on this side ever reads it. Drive opens three actions on an agent, by
+nothing on this side ever reads it. Drive opens four actions on an agent, by
 POST, and nothing else: start it, as this window's own start does, with no
 first prompt (one would be the CLI's own task, with no sender line, kept as
 the agent's role, and on some CLIs read as a flag; the task goes as a
@@ -722,13 +725,18 @@ its CLI, only while that CLI runs, after the line
 `Message from the machine "<caller>": `, through the same sanitising as every
 message Tars types (no paste end, no look-alike of a sender line). A message
 is at most 8,000 characters, and one or a reason made of controls and format
-characters only is refused as empty. Stops, starts after a stop and wakes are
+characters only is refused as empty. And type keys into its CLI: what is
+typed in the caller's pane, Esc, Enter, Ctrl+C and pastes as they are, through
+this window's own `writeHumanInput`, only while that CLI runs, never into the
+bare shell of a terminal whose CLI has ended, at most 4,096 characters a
+batch, in order. Keys carry no sender line: the agent cannot tell them from
+the user's at this machine. Stops, starts after a stop and wakes are
 filed under the name this machine paired the caller under, as `<name>
 (machine)`: the caller chose that name at pairing, and the person who
 accepted it saw it; it never comes from a request. Driving gives the caller
 what a person at this machine's window has over an agent's work, not more: no
-route changes an agent's model, project or permissions, types raw keys into a
-terminal, or reads or writes a file, and the bridge serves no file.
+route changes an agent's model, project or permissions, or reads or writes a
+file, and the bridge serves no file.
 
 **What Drive gives away.** Drive given to a machine is given to every process
 of its user there, its agents included: the secret that drives sits in that
@@ -738,8 +746,10 @@ that a `Message from the machine "<name>"` line hands them work as Tars does,
 answers no question they asked the user, and lifts no rule the user set
 (`electron/resources/agent-instructions.md`). It still reaches every agent
 here, the orchestrator included, and through agents running in auto or
-bypass mode it amounts to running code on this machine. Give Drive only to a
-machine you would let sit at this one.
+bypass mode it amounts to running code on this machine; with keys, typed as
+the user's own, it is someone at this keyboard, and a CLI's own shell escape
+(Claude Code's `!`) is a shell here. Drive is what a pairing gives; set a
+machine you would not let sit at this one to See.
 
 **What See shows** (measured on the 8th of October 2026, `e2e/machines-see.spec.ts`
 and `__tests__/electron/machines/`). The fleet carries each agent's id, name,
