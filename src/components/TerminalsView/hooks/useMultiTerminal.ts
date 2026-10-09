@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
-import { isRemoteId, remoteActions, remoteSize, scaleToFit, type PaneAgent } from '@/lib/machines';
+import { fleetMatchesSent, isRemoteId, remoteSize, scaleToFit, sharesSize, shouldSendSize, type PaneAgent } from '@/lib/machines';
 import { reportDriveAnswer } from '@/hooks/useRemoteDrive';
 import { isElectron } from '@/hooks/useElectron';
 import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
@@ -23,6 +23,12 @@ interface TerminalEntry {
   typeKeys: (input: string) => void;
   /** Gives back the watch on a remote agent's live output (machines.unwatch), once. */
   release?: () => void;
+  /** A remote pane that takes the size of this pane, where its machine lets this one drive. */
+  shared?: boolean;
+  /** One of this machine's agents whose terminal a paired machine resized: the pane takes the size back at its next focus or key. */
+  taken?: boolean;
+  /** A shared remote pane whose terminal the other machine resized since: the same. */
+  stale?: boolean;
 }
 
 interface UseMultiTerminalOptions {
@@ -38,9 +44,9 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 const DEFAULT_FONT_SIZE = 11;
 
-// A remote pane is drawn at the size of the terminal it shows, which a
-// full-screen CLI places every line by, and scaled down to fit its body. It is
-// never fitted, and never sizes the terminal it shows.
+// A remote pane that does not share its size is drawn at the size of the
+// terminal it shows, which a full-screen CLI places every line by, and scaled
+// down to fit its body. It is not fitted, and does not size the terminal.
 function scaleRemote(entry: TerminalEntry) {
   if (entry.disposed) return;
   const el = entry.terminal.element;
@@ -64,10 +70,36 @@ function sizeRemote(entry: TerminalEntry, size: { cols: number; rows: number }) 
   setTimeout(() => scaleRemote(entry), 50);
 }
 
+// A remote pane that shares its size is fitted like a local one, at its own
+// font and unscaled, and sends the size it gets to the machine it shows.
+function fitShared(agentId: string, entry: TerminalEntry) {
+  try {
+    const el = entry.terminal.element;
+    if (el) el.style.transform = '';
+    entry.fitAddon.fit();
+    const { cols, rows } = entry.terminal;
+    if (shouldSendSize({ cols: entry.lastCols, rows: entry.lastRows }, { cols, rows })) {
+      entry.lastCols = cols;
+      entry.lastRows = rows;
+      window.electronAPI?.machines?.resizeAgent(agentId, cols, rows).catch(() => {});
+    }
+  } catch {}
+}
+
+// A pane takes its size back: what the other machine left it at is not what
+// the pane last sent, so the next fit sends it whatever it was.
+function reclaimSize(agentId: string, entry: TerminalEntry) {
+  entry.taken = false;
+  entry.stale = false;
+  entry.lastCols = 0;
+  entry.lastRows = 0;
+  safeFit(agentId, entry);
+}
+
 // Safely fit a terminal and sync PTY dimensions
 function safeFit(agentId: string, entry: TerminalEntry) {
   if (entry.disposed) return;
-  if (isRemoteId(agentId)) return scaleRemote(entry);
+  if (isRemoteId(agentId)) return entry.shared ? fitShared(agentId, entry) : scaleRemote(entry);
   try {
     entry.fitAddon.fit();
     const { cols, rows } = entry.terminal;
@@ -228,6 +260,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       // one drive; otherwise nothing typed in its pane is sent.
       const remote = isRemoteId(agentId);
       if (remote) term.options.disableStdin = !remoteTypeRef.current.get(agentId);
+      const shared = remote && !!remoteTypeRef.current.get(agentId);
 
       const entry: TerminalEntry = {
         terminal: term,
@@ -237,6 +270,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         disposed: false,
         lastCols: 0,
         lastRows: 0,
+        shared,
         // An idle agent has no terminal since #164: keys typed into its panel
         // are said to go nowhere instead of being dropped. See keySender.
         // Each chunk goes at once, in order, without waiting for the one
@@ -264,7 +298,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         // A remote agent: its live output arrives on agent:output once watched
         // (given back by release), and its screen as it is now is read once.
         const machines = window.electronAPI?.machines;
-        sizeRemote(entry, remoteSize(null, remoteSizeRef.current.get(agentId)));
+        if (!entry.shared) sizeRemote(entry, remoteSize(null, remoteSizeRef.current.get(agentId)));
         machines?.watch(agentId).catch(() => {});
         entry.release = () => {
           entry.release = undefined;
@@ -274,7 +308,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
           const shot = await machines?.agentScreen(agentId);
           if (shot?.screen && !entry.disposed) {
             // Its size first: the screen is placed cell by cell for it.
-            sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
+            if (!entry.shared) sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
             term.write(shot.screen);
             term.scrollToBottom();
           }
@@ -327,6 +361,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       term.onData((data) => {
         const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
+        // A pane whose terminal another machine resized takes it back first.
+        if (entry.taken || entry.stale) reclaimSize(agentId, entry);
         sendOrBroadcast(cleaned);
       });
 
@@ -431,7 +467,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     try {
       const shot = await window.electronAPI?.machines?.agentScreen(agentId);
       if (!shot?.screen || entry.disposed) return;
-      sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
+      // A pane that shares its size keeps its own, and takes it again below.
+      if (!entry.shared || entry.stale) sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
       entry.terminal.reset();
       entry.terminal.write(shot.screen);
       entry.terminal.scrollToBottom();
@@ -441,10 +478,19 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   useEffect(() => {
     for (const agent of agents) {
       if (!agent.remote) continue;
-      const canType = remoteActions(agent.remote, false).type;
+      const canType = sharesSize(agent.remote);
       remoteTypeRef.current.set(agent.id, canType);
       const entry = terminalsRef.current.get(agent.id);
-      if (entry && !entry.disposed) entry.terminal.options.disableStdin = !canType;
+      if (entry && !entry.disposed) {
+        entry.terminal.options.disableStdin = !canType;
+        // Drive given or taken away: the pane is fitted and sends its size, or
+        // is drawn at the remote size again.
+        if (!!entry.shared !== canType) {
+          entry.shared = canType;
+          if (canType) reclaimSize(agent.id, entry);
+          else void resyncRemote(agent.id);
+        }
+      }
       const was = remoteStatusRef.current.get(agent.id);
       remoteStatusRef.current.set(agent.id, agent.remote.status);
       const size = { cols: agent.remote.cols, rows: agent.remote.rows };
@@ -452,7 +498,18 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       remoteSizeRef.current.set(agent.id, size);
       const resized = !!before && (before.cols !== size.cols || before.rows !== size.rows);
       const back = !!was && was !== 'connected' && agent.remote.status === 'connected';
-      if (back || resized) void resyncRemote(agent.id);
+      // A pane that shares its size meets its own size in the fleet's next
+      // report: reading the screen again then would only loop. A different one
+      // is the other machine taking the size back, drawn as it is until this
+      // pane takes it again (its next focus or key).
+      const sent = { cols: entry?.lastCols ?? 0, rows: entry?.lastRows ?? 0 };
+      const taken = !!entry?.shared && resized && !fleetMatchesSent(sent, size);
+      if (taken && entry) entry.stale = true;
+      if (back) {
+        void resyncRemote(agent.id).then(() => { if (entry?.shared) reclaimSize(agent.id, entry); });
+      } else if (resized && (!entry?.shared || taken)) {
+        void resyncRemote(agent.id);
+      }
     }
   }, [agents, resyncRemote]);
 
@@ -504,7 +561,19 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     const entry = terminalsRef.current.get(agentId);
     if (entry && !entry.disposed) {
       entry.terminal.focus();
+      // A shared remote pane sends its size again on focus, and a local one
+      // whose terminal another machine resized takes it back.
+      if (entry.shared || entry.taken) reclaimSize(agentId, entry);
     }
+  }, []);
+
+  // One of this machine's own agents was resized by a paired machine: its pane
+  // takes the size back at its next focus, click or key.
+  useEffect(() => {
+    return window.electronAPI?.machines?.onSizeTaken?.(agentId => {
+      const entry = terminalsRef.current.get(agentId);
+      if (entry && !entry.disposed && !isRemoteId(agentId)) entry.taken = true;
+    });
   }, []);
 
   // Fit a specific terminal

@@ -243,3 +243,16 @@ export function seeOnlyLine(machineName: string, platform: string): string {
 export function checkReason(reason: string): string | null {
   return reason.trim() || null;
 }
+
+/** A remote pane takes the size of the pane that looks at it where its machine lets this one drive; else it draws at the remote size. */
+export const sharesSize = (remote: Pick<RemoteInfo, 'status' | 'drive'>): boolean => remote.status === 'connected' && remote.drive === true;
+
+/** Whether a pane sends its size: it is a size, and not the one it sent last. */
+export function shouldSendSize(last: { cols: number; rows: number }, next: { cols: number; rows: number }): boolean {
+  return isSize(next.cols) && isSize(next.rows) && (next.cols !== last.cols || next.rows !== last.rows);
+}
+
+/** Whether the size the fleet reports is the one this pane sent (or took), so reading the screen again would only loop. */
+export function fleetMatchesSent(sent: { cols: number; rows: number }, fleet: { cols?: number; rows?: number } | undefined): boolean {
+  return !!fleet && isSize(fleet.cols) && isSize(fleet.rows) && fleet.cols === sent.cols && fleet.rows === sent.rows;
+}
