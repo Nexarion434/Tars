@@ -798,9 +798,9 @@ starts each Claude Code agent with `--remote-control <its title>`, from a
 window, the API (not in print mode) or a bot, at its next start. Its session
 then shows in the Claude apps of the claude.ai account its CLI is signed in
 to, and whoever can sign in to that account can read it and type into it from
-claude.ai or a phone, its permission prompts included: for an agent in auto or
-bypass mode, that is running commands on this machine, outside the machines
-bridge's See and Drive. Claude Code makes the link: outbound HTTPS only, no
+claude.ai or a phone, its permission prompts included: in any permission mode,
+that is running commands on this machine, outside the machines bridge's See
+and Drive. Claude Code makes the link: outbound HTTPS only, no
 port opens here, and the session, everything the agent sees and does (its
 prompts, Tars's identity header and memory, tool output, the files it reads),
 is sent to Anthropic's servers and kept there under that account's terms.
@@ -809,12 +809,18 @@ Of its own, Tars adds only the title, the project's folder name and the
 agent's ("Allcazz · Revue finale"): one plain line, at most 80 characters,
 never opening with a dash, one argument however it is written. A local agent
 never gets the flag: it is still signed in to claude.ai, and its session would
-be kept on Anthropic's servers. Nor do the providers that run the claude
-binary against another API: Remote Control needs a claude.ai login.
+be kept on Anthropic's servers. Nor does a conversation it resumes reconnect,
+one connected before included: its terminal points `ANTHROPIC_BASE_URL`
+elsewhere and sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, and Claude Code
+then keeps Remote Control off (measured on 2.1.284, 2026-10-09). Nor do the
+providers that run the claude binary against another API: Remote Control
+needs a claude.ai login.
 
-Turning it off opens no new connection, and cuts none. A conversation once
-connected goes back to its remote session each time it is resumed, with the
-flag or without it, and with `remoteControlAtStartup` false (measured on
-Claude Code 2.1.284, 2026-10-09). Claude Code's `disableRemoteControl` setting
-stops that; Nicolas chose to cut such a session by hand rather than have Tars
-pass it.
+Turning it off connects no new conversation, and cuts none. A conversation
+once connected goes back to its remote session each time it is resumed, with
+the flag or without it, and with `remoteControlAtStartup` false (measured on
+Claude Code 2.1.284, 2026-10-09), and Tars resumes an agent's conversation at
+each launch: such an agent stays reachable until it starts a new one. Whether
+a restart, which forks the conversation, reconnects was not measured. Claude
+Code's `disableRemoteControl` setting stops it (measured); Nicolas chose to
+cut such a session by hand rather than have Tars pass it.
