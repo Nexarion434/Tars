@@ -272,7 +272,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('machines:fleet', listener);
     },
     /** Drive a remote agent, where its machine allows it (machine.drive); that machine checks each action. */
-    startAgent: (id: string, prompt?: string) => ipcRenderer.invoke('machines:start-agent', id, prompt),
+    startAgent: (id: string) => ipcRenderer.invoke('machines:start-agent', id),
     stopAgent: (id: string, reason: string) => ipcRenderer.invoke('machines:stop-agent', id, reason),
     messageAgent: (id: string, text: string) => ipcRenderer.invoke('machines:message-agent', id, text),
   },

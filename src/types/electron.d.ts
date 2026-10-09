@@ -1231,9 +1231,10 @@ export interface ElectronAPI {
      * Drive a remote agent, where its machine allows it (agent.machine.drive);
      * that machine checks each action, and its sentence comes back as error.
      * A stop needs a reason (filed there as stopped by this machine); a
-     * message is typed there after "Message from the user on <this machine>".
+     * message is typed there after 'Message from the machine "<this machine>"'.
      */
-    startAgent: (id: string, prompt?: string) => Promise<{ success: true } | { success: false; error: string }>;
+    /** No first prompt: the task goes as a message, which carries its sender line. */
+    startAgent: (id: string) => Promise<{ success: true } | { success: false; error: string }>;
     stopAgent: (id: string, reason: string) => Promise<{ success: true } | { success: false; error: string }>;
     messageAgent: (id: string, text: string) => Promise<{ success: true } | { success: false; error: string }>;
   };

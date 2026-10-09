@@ -95,8 +95,7 @@ export function registerMachinesHandlers(deps: MachinesHandlerDeps): { startIfPa
     if (result.success) void remote().poll();
     return result;
   };
-  ipcMain.handle('machines:start-agent', (_e, id: unknown, prompt: unknown) =>
-    drive(id, 'start', typeof prompt === 'string' && prompt.trim() ? { prompt } : {}));
+  ipcMain.handle('machines:start-agent', (_e, id: unknown) => drive(id, 'start', {}));
   ipcMain.handle('machines:stop-agent', (_e, id: unknown, reason: unknown) => drive(id, 'stop', { reason }));
   ipcMain.handle('machines:message-agent', (_e, id: unknown, text: unknown) => drive(id, 'message', { text }));
 

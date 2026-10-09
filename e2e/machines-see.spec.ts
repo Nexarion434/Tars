@@ -23,10 +23,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    and its last output stays.
  *
  * Driving it (part 3), where B lets A drive:
- * 5. A's message reaches B's CLI after its sender line, "Message from the
- *    user on Mac".
- * 6. A's stop needs a reason, and B files it: stopped by Mac, with that reason.
- * 7. A's start runs B's agent again.
+ * 5. A's message reaches B's CLI after its sender line, 'Message from the
+ *    machine "Mac"', never one that says the user.
+ * 6. A's stop needs a reason, and B files it: stopped by "Mac (machine)",
+ *    with that reason.
+ * 7. A's start runs B's agent again: its CLI runs.
  * 8. B takes Drive back: A's pane says it may only see, and an action asked
  *    anyway comes back refused with B's sentence.
  * Leaves a run directory with each step's picture and the values asserted.
@@ -217,8 +218,9 @@ test('a paired machine that lets this one drive: a message typed there after its
     await a.page.locator('[data-machine-send]').click();
     await expect.poll(() => (fs.existsSync(received) ? fs.readFileSync(received, 'utf8') : ''), { timeout: 15_000 }).toContain('hello from the mac');
     const typed = fs.readFileSync(received, 'utf8');
-    expect(typed).toContain('Message from the user on "Mac": ');
-    expect(typed.indexOf('Message from the user on "Mac": ')).toBeLessThan(typed.indexOf('hello from the mac'));
+    expect(typed).toContain('Message from the machine "Mac": ');
+    expect(typed.indexOf('Message from the machine "Mac": ')).toBeLessThan(typed.indexOf('hello from the mac'));
+    expect(typed).not.toMatch(/Message from the user/);
     await expect(field).toHaveValue('');
     values.messageTypedOnPc = true;
     await stepShot(a.page, '03-a-may-drive-and-sends-a-message');
@@ -232,14 +234,16 @@ test('a paired machine that lets this one drive: a message typed there after its
     await expect.poll(async () => {
       const agent = await agentOn(b.page);
       return agent && { status: agent.status, stoppedBy: agent.stoppedBy, stopReason: agent.stopReason };
-    }, { timeout: 15_000 }).toEqual({ status: 'stopped', stoppedBy: 'Mac', stopReason: 'night' });
-    values.stoppedOnPc = { stoppedBy: 'Mac', stopReason: 'night' };
+    }, { timeout: 15_000 }).toEqual({ status: 'stopped', stoppedBy: 'Mac (machine)', stopReason: 'night' });
+    values.stoppedOnPc = { stoppedBy: 'Mac (machine)', stopReason: 'night' };
 
     // 7. A start runs it again.
     const startButton = a.page.getByRole('button', { name: /^(start|session)$/ }).first();
     await expect.poll(async () => (await startButton.isEnabled()), { timeout: 10_000 }).toBe(true);
     await startButton.click();
-    await expect.poll(async () => (await agentOn(b.page))?.status, { timeout: 30_000 }).not.toBe('stopped');
+    // Its CLI runs again, and no sentence came back saying why not.
+    await expect.poll(async () => (await agentOn(b.page))?.cliRunning, { timeout: 30_000 }).toBe(true);
+    await expect(a.page.locator('[data-machine-drive-error]')).toHaveCount(0);
     values.startedAgainOnPc = true;
 
     // 8. B takes Drive back: A may only see, and an action asked anyway is refused with B's sentence.

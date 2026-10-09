@@ -1,8 +1,8 @@
 import { agents, onAgentOutput, saveAgents } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
-import { launchAgent } from '../../core/agent-launch';
-import { noteWaker } from '../../core/agent-asleep';
-import { stopAgent } from '../../core/agent-stop';
+import { launchAgent, sessionStarting } from '../../core/agent-launch';
+import { wakeAgent } from '../../core/agent-asleep';
+import { noteRestartAfterStop, stopAgent } from '../../core/agent-stop';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { readMachines } from './store';
@@ -26,23 +26,42 @@ const notHere = (): DriveOutcome => ({ ok: false, status: 404, error: `There is 
 const nameOf = (agent: AgentStatus) => agent.name || agent.id;
 
 /**
+ * Who a machine's action is filed under: its paired name, said to be a
+ * machine, so one named "you" or "Tars" reads as neither.
+ */
+const asMachine = (name: string) => `${name} (machine)`;
+
+/**
  * Driving this machine's agents from a paired machine this one lets drive
  * (bridge-server checks that first): what the window's own start and stop do,
  * filed under that machine's name, and a message typed after its sender line.
  */
 const drive: NonNullable<BridgeDeps['drive']> = {
-  start: async (agentId, by, prompt) => {
+  start: async (agentId, by) => {
     const agent = agents.get(agentId);
     if (!agent) return notHere();
-    // Started while asleep: woken by that machine (core/agent-asleep.ts).
-    if (agent.status === 'asleep') noteWaker(agentId, by, 'start');
-    const result = await launchAgent(agentId, prompt ?? '');
-    return result.success ? done : { ok: false, status: 409, error: result.error };
+    // One launch at a time: a second would type its line into the first CLI. A
+    // stopped agent has none under way: the stop ended it, whatever the record
+    // of a launch begun a few seconds before still says.
+    if (agent.status !== 'stopped' && sessionStarting(agent)) return { ok: false, status: 409, error: `${nameOf(agent)} is starting already.` };
+    // Woken by that machine, as the window's wake does it, its waker undone should the launch fail.
+    if (agent.status === 'asleep') {
+      const woken = await wakeAgent(agent, asMachine(by), 'start');
+      return woken.success ? done : { ok: false, status: 409, error: woken.error };
+    }
+    noteRestartAfterStop(agent, asMachine(by));
+    try {
+      const result = await launchAgent(agentId, '');
+      return result.success ? done : { ok: false, status: 409, error: result.error };
+    } catch (err) {
+      // A missing project folder, a CLI Windows cannot start: the sentence, not a bare 500.
+      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
   },
   stop: async (agentId, by, reason) => {
     const agent = agents.get(agentId);
     if (!agent) return notHere();
-    const stopped = await stopAgent(agent, { by, reason }, {
+    const stopped = await stopAgent(agent, { by: asMachine(by), reason }, {
       save: saveAgents,
       announce: a => {
         broadcastToAllWindows('agent:status', { type: 'status', agentId: a.id, status: a.status, timestamp: a.lastActivity });

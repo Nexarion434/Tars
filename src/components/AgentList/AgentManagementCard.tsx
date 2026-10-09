@@ -139,7 +139,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
               stop
             </Button>
           ) : (
-            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => { void drive.start(); } : onStart} disabled={agent.pathMissing || (!!allowed && !allowed.start)} title={allowed?.start ? undefined : readOnly}>
+            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => { void drive.start(); } : onStart} disabled={agent.pathMissing || (!!allowed && !allowed.start) || (!!remote && drive.busy)} title={allowed?.start ? undefined : readOnly}>
               start
             </Button>
           )}

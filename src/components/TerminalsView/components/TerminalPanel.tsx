@@ -148,6 +148,7 @@ function TerminalPanel({
         isBroadcasting={isBroadcasting}
         tabType={tabType}
         onStart={handleStart}
+        actionBusy={isRemote && drive.busy}
         onStop={handleStop}
         onWake={handleWake}
         onFullscreen={handleFullscreen}

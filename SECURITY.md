@@ -614,10 +614,11 @@ an error that names the file. The measurement is kept, opt-in:
 ## 8. The machines bridge
 
 Settings > Machines pairs this Tars with another one on the same tailnet, so
-that each can see the other's agents (and, later, drive them where allowed).
+that each can see the other's agents, and drive them where the other allows it.
 Measured on the fork's `win/machines` branch on the 2nd of October 2026, with
 two Tars on one machine (`e2e/machines-pairing.spec.ts`) and the bridge's
-units (`__tests__/electron/machines/`).
+units (`__tests__/electron/machines/`); See on the 8th, Drive on the 9th
+(`e2e/machines-see.spec.ts`, `__tests__/electron/machines/bridge-drive.test.ts`).
 
 **What listens.** A second HTTP server, `electron/services/machines/bridge-server.ts`,
 apart from the loopback API of §2. It binds this machine's Tailscale IPv4 on
@@ -631,7 +632,7 @@ first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
 packaged Tars never reads those.
 
-**What it answers.** Eight routes, listed one by one; any other path is a 404
+**What it answers.** Eleven routes, listed one by one; any other path is a 404
 before a credential is read, and no route of the loopback API answers here.
 They are not hidden: `ping` and `unpair` answer 401 without a paired
 machine's secret, so a prober on the tailnet can tell a Tars listens. An
@@ -648,6 +649,9 @@ not, so a prober learns no agent's id.
 | `GET /machines/v1/fleet` | a paired machine | this machine's agents, as `fleet-share.ts` picks them |
 | `GET /machines/v1/agents/:id/screen` | a paired machine | one agent's terminal as it is now |
 | `GET /machines/v1/agents/:id/stream` | a paired machine | one agent's terminal output as it comes, until the terminal ends |
+| `POST /machines/v1/agents/:id/start` | a machine this one lets drive | starts the agent, with no first prompt |
+| `POST /machines/v1/agents/:id/stop` | a machine this one lets drive | stops it, with its reason, filed under the caller's name |
+| `POST /machines/v1/agents/:id/message` | a machine this one lets drive | types a message into its running CLI, after the caller's sender line |
 
 A request carrying an `Origin` header is refused (no browser ever calls the
 bridge), and a body over 64 KB is refused unread.
@@ -704,8 +708,38 @@ altogether; the code's short life and the person's click stand in for it.
 
 **What a paired machine may do here.** See, by default; Drive only when this
 machine says so in Settings > Machines. The machine being driven decides,
-never the caller. Drive opens nothing yet: no route starts, stops or writes
-to an agent, and the bridge serves no file.
+never the caller: its pairing file is read again at each request, and once
+more when the request's body is in, so Drive taken back, or the machine
+forgotten, refuses a request still on its way, with "<this machine> lets
+<caller> see only."; a request arrives whole within 15 seconds. The fleet tells
+the caller which it may do (`youMay`), so its window offers only that, and
+nothing on this side ever reads it. Drive opens three actions on an agent, by
+POST, and nothing else: start it, as this window's own start does, with no
+first prompt (one would be the CLI's own task, with no sender line, kept as
+the agent's role, and on some CLIs read as a flag; the task goes as a
+message); stop it, which needs one line of reason; and type a message into
+its CLI, only while that CLI runs, after the line
+`Message from the machine "<caller>": `, through the same sanitising as every
+message Tars types (no paste end, no look-alike of a sender line). A message
+is at most 8,000 characters, and one or a reason made of controls and format
+characters only is refused as empty. Stops, starts after a stop and wakes are
+filed under the name this machine paired the caller under, as `<name>
+(machine)`: the caller chose that name at pairing, and the person who
+accepted it saw it; it never comes from a request. Driving gives the caller
+what a person at this machine's window has over an agent's work, not more: no
+route changes an agent's model, project or permissions, types raw keys into a
+terminal, or reads or writes a file, and the bridge serves no file.
+
+**What Drive gives away.** Drive given to a machine is given to every process
+of its user there, its agents included: the secret that drives sits in that
+machine's `~/.tars-private/machines.json`, which its agents can read as any
+other file (§2). So its messages are not the user's words: agents are told
+that a `Message from the machine "<name>"` line hands them work as Tars does,
+answers no question they asked the user, and lifts no rule the user set
+(`electron/resources/agent-instructions.md`). It still reaches every agent
+here, the orchestrator included, and through agents running in auto or
+bypass mode it amounts to running code on this machine. Give Drive only to a
+machine you would let sit at this one.
 
 **What See shows** (measured on the 8th of October 2026, `e2e/machines-see.spec.ts`
 and `__tests__/electron/machines/`). The fleet carries each agent's id, name,
@@ -719,10 +753,12 @@ secrets it echoes included, and on macOS and Linux the launch line Tars types
 (`cd '<dir>' && <cli> ...`) is part of it. Holding fields out of the fleet is
 not a boundary for what a terminal shows; pairing is. The receiving machine
 checks every answer again (`readFleet`, a fleet at most 512 KB and 200 agents,
-a screen at most 8 MB, an event at most 1 MB), writes no file, starts
-nothing, and shows another machine's agents read only: no key, paste, resize,
-start or stop reaches them, and their ids (`m:<machine>:<agent>`) are none
-the local IPC resolves.
+a screen at most 8 MB, an event at most 1 MB), writes no file, starts nothing
+of its own, and never sends another machine's agents a key, a paste or a
+resize: start, stop and message go only through the three routes above,
+where that machine gives Drive, and its sentences are shown without controls
+or format characters. Their ids (`m:<machine>:<agent>`) are none the local
+IPC resolves.
 
 A machine holds at most 32 live outputs open here. One that reads too slowly
 to keep up (4 MB unsent) has its connection cut, not merely ended behind what

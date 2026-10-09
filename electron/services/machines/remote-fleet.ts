@@ -150,8 +150,11 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
       if (!parsed || !peer || !deps.driveAgent) return { success: false, error: 'There is no such agent.' };
       const r = await deps.driveAgent(peer, parsed.agentId, action, body).catch(() => ({ status: 0, body: {} as Record<string, unknown> }));
       if (r.status === 200) return { success: true };
-      if (r.status === 0) return { success: false, error: `${peer.name} did not answer.` };
-      const said = typeof r.body.error === 'string' ? r.body.error.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+      if (r.status === 0) {
+        return { success: false, error: action === 'start' ? `${peer.name} did not answer in time. The agent may have started anyway.` : `${peer.name} did not answer.` };
+      }
+      // One line, without controls or format characters (bidi, zero width): it is shown as it is.
+      const said = typeof r.body.error === 'string' ? r.body.error.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
       return { success: false, error: said || `${peer.name} refused it (${r.status}).` };
     },
     screen: async (remoteId) => {

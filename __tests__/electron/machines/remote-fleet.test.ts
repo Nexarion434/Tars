@@ -31,7 +31,9 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  * 12. A machine reads as drivable when its fleet does not say it lets this
  *    one drive, or still does once it stops answering.
  * 13. An action goes to another machine, or for an id that is not remote;
- *    the other machine's sentence is lost; no answer reads as done.
+ *    the other machine's sentence is lost, or shown with characters nobody
+ *    sees (bidi, zero width, controls); no answer reads as done, and a start
+ *    that may have run reads as not run (security review of part 3).
  */
 
 const PC: PairedMachine = { id: 'm-aaaaaaaaaaaaaaaa', name: 'PC', address: '100.88.0.1', port: 31418, inboundSecretHash: 'h', outboundSecret: 's', mayOnMe: 'see', pairedAt: '' };
@@ -255,7 +257,10 @@ describe('live outputs', () => {
     driveAnswer = { status: 403, body: { error: 'NAS lets Mac see only.' } };
     expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'message', { text: 'hi' })).toEqual({ success: false, error: 'NAS lets Mac see only.' });
     driveAnswer = { status: 0, body: {} };
-    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'start', {})).toEqual({ success: false, error: 'NAS did not answer.' });
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'stop', { reason: 'x' })).toEqual({ success: false, error: 'NAS did not answer.' });
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'start', {})).toEqual({ success: false, error: 'NAS did not answer in time. The agent may have started anyway.' });
+    driveAnswer = { status: 409, body: { error: 'QA\u202e is\u200b\u0007 busy\n now' } };
+    expect(await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'stop', { reason: 'x' })).toEqual({ success: false, error: 'QA is busy now' });
     driveAnswer = { status: 500, body: {} };
     expect((await fleet.drive('m:m-bbbbbbbbbbbbbbbb:x9', 'start', {})).success).toBe(false);
     driven = [];

@@ -23,6 +23,13 @@ import { MACHINES_FILE, readMachines, writeMachines, hashSecret } from '../../..
  *    error page with no sentence.
  * 8. The fleet does not tell a machine whether it may drive here, so its
  *    window offers what this one refuses, or hides what it allows.
+ * And from the security review of part 3 (2026-10-09):
+ * 9. A start carries a first prompt: the CLI's own task, with no sender line,
+ *    kept as the agent's role, and on some CLIs read as a flag.
+ * 10. Drive taken back while a request is on its way (headers now, body
+ *    later) lets it act.
+ * 11. A message or a reason made of control or format characters only goes
+ *    through as empty.
  */
 
 let server: http.Server;
@@ -37,7 +44,8 @@ const deps: BridgeDeps = {
   onChanged: () => {},
   fleet: () => [],
   drive: {
-    start: async (agentId, by, prompt) => { calls.push(['start', agentId, by, prompt]); return outcome; },
+    // Whatever it is handed, a third argument included, so a prompt passed on is seen.
+    start: async (...args: unknown[]) => { calls.push(['start', String(args[0]), String(args[1]), args[2] as string | undefined]); return outcome; },
     stop: async (agentId, by, reason) => { calls.push(['stop', agentId, by, reason]); return outcome; },
     message: async (agentId, by, text) => { calls.push(['message', agentId, by, text]); return outcome; },
   },
@@ -123,12 +131,38 @@ describe('driving an agent here', () => {
     expect(calls).toEqual([]);
   });
 
-  it('5. a start takes an optional first prompt, bounded the same way', async () => {
+  it('9. a start takes no first prompt: one sent is never handed on', async () => {
     expect((await call('POST', '/machines/v1/agents/a1/start', {})).status).toBe(200);
-    expect((await call('POST', '/machines/v1/agents/a1/start', { prompt: 'look at DES-142' })).status).toBe(200);
-    expect(calls).toEqual([['start', 'a1', 'PC', undefined], ['start', 'a1', 'PC', 'look at DES-142']]);
-    expect((await call('POST', '/machines/v1/agents/a1/start', { prompt: 'x'.repeat(MAX_DRIVE_TEXT + 1) })).status).toBe(413);
-    expect(calls).toHaveLength(2);
+    expect((await call('POST', '/machines/v1/agents/a1/start', { prompt: '--dangerously-bypass-approvals-and-sandbox' })).status).toBe(200);
+    expect(calls).toEqual([['start', 'a1', 'PC', undefined], ['start', 'a1', 'PC', undefined]]);
+  });
+
+  it('10. drive taken back while a request is on its way refuses it, and nothing runs', async () => {
+    const body = JSON.stringify({ text: 'sent before the change, read after it' });
+    const answer = new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const req = http.request(`${base}/machines/v1/agents/a1/message`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${MINE}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+      }, res => { let text = ''; res.setEncoding('utf8'); res.on('data', c => { text += c; }); res.on('end', () => resolve({ status: res.statusCode ?? 0, text })); });
+      req.on('error', reject);
+      req.flushHeaders();
+      // The person here takes Drive back while the body is still on its way.
+      setTimeout(() => { pair('see'); req.end(body); }, 100);
+    });
+    const r = await answer;
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.text).error).toBe('Mac lets PC see only.');
+    expect(calls).toEqual([]);
+  });
+
+  it('11. a message or a reason of control and format characters only is refused as empty', async () => {
+    for (const text of ['\u0007', '\u001b\u0007', '\u200b\u202e', ' \u0000 ']) {
+      expect((await call('POST', '/machines/v1/agents/a1/message', { text })).status, JSON.stringify(text)).toBe(400);
+    }
+    for (const reason of ['\u0007', '\u202e\u200b', '\u001b']) {
+      expect((await call('POST', '/machines/v1/agents/a1/stop', { reason })).status, JSON.stringify(reason)).toBe(400);
+    }
+    expect(calls).toEqual([]);
   });
 
   it('6. drive taken back here refuses the very next request', async () => {

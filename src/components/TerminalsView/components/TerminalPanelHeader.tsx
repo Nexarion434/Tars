@@ -16,6 +16,8 @@ interface TerminalPanelHeaderProps {
   isBroadcasting: boolean;
   tabType: 'custom' | 'project';
   onStart: () => void;
+  /** A remote action on its way: start and stop wait for its answer. */
+  actionBusy?: boolean;
   onStop: () => void;
   /** An asleep agent's CLI started again on its own conversation (PR 322). */
   onWake: () => void;
@@ -32,6 +34,7 @@ export default function TerminalPanelHeader({
   isBroadcasting,
   tabType,
   onStart,
+  actionBusy = false,
   onStop,
   onWake,
   onFullscreen,
@@ -233,7 +236,7 @@ export default function TerminalPanelHeader({
           type="button"
           onMouseDown={e => e.stopPropagation()}
           onClick={isLive ? onStop : onStart}
-          disabled={blocked}
+          disabled={blocked || actionBusy}
           // A bordered 26px row action, like every other action in the app. The
           // first version was accent-filled, which put a solid orange block in
           // every pane header at once - the accent is for one primary action on

@@ -49,7 +49,7 @@ export interface BridgeDeps {
   streamCheckMs?: number;
   /** This machine's side of driving an agent (fleet-source.ts), for a machine this one lets drive. by: the name it was paired under. */
   drive?: {
-    start: (agentId: string, by: string, prompt?: string) => Promise<DriveOutcome>;
+    start: (agentId: string, by: string) => Promise<DriveOutcome>;
     stop: (agentId: string, by: string, reason: string) => Promise<DriveOutcome>;
     message: (agentId: string, by: string, text: string) => Promise<DriveOutcome>;
   };
@@ -326,34 +326,42 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   return send(404, { error: 'Not found' });
 }
 
+/** What is left of a text once the characters nobody sees are taken out: controls and format characters (bidi, zero width). */
+const visible = (text: string) => text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
+
 /**
  * An action on one of this machine's agents, from a paired machine that this
- * one lets drive (Settings > Machines, read again at each request): start
- * with an optional first prompt, stop with a reason, or a message. Filed under
- * the name this machine paired the caller under, never one it sends.
+ * one lets drive (Settings > Machines): start, stop with a reason, or a
+ * message. Filed under the name this machine paired the caller under, never
+ * one it sends. A start takes no first prompt: that would be the CLI's own
+ * task, with no sender line, kept as the agent's role, and on some CLIs read
+ * as a flag (security review of part 3); the task goes as a message.
  */
 async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message', peer: PairedMachine, req: http.IncomingMessage, deps: BridgeDeps, send: (status: number, body: unknown) => void): Promise<void> {
-  const { self } = readMachines();
-  if (peer.mayOnMe !== 'drive') return send(403, { error: `${self.name} lets ${peer.name} see only.` });
+  const seeOnly = (caller: PairedMachine) => send(403, { error: `${readMachines().self.name} lets ${caller.name} see only.` });
+  if (peer.mayOnMe !== 'drive') return seeOnly(peer);
   const body = await readBody(req);
   if (body === 'too-large') return send(413, { error: 'Too large' });
+  // Asked again once the body is in: Drive taken back, or the machine
+  // forgotten, while the request was on its way refuses it.
+  const now = peerFor(req.headers.authorization);
+  if (!now || now.id !== peer.id) return send(401, { error: 'Unauthorized' });
+  if (now.mayOnMe !== 'drive') return seeOnly(now);
   const tooLong = `A message to an agent is at most ${MAX_DRIVE_TEXT.toLocaleString('en-US')} characters.`;
   if (!deps.drive) return send(404, { error: 'No such agent' });
   let outcome: DriveOutcome;
   if (action === 'stop') {
     // One line of a card: any run of spaces and line breaks reads as one space.
-    const reason = typeof body.reason === 'string' ? body.reason.replace(/\s+/g, ' ').trim() : '';
+    const reason = typeof body.reason === 'string' ? visible(body.reason.replace(/\s+/g, ' ')) : '';
     if (!reason) return send(400, { error: 'A stop needs a reason.' });
-    outcome = await deps.drive.stop(agentId, peer.name, reason.slice(0, 200));
+    outcome = await deps.drive.stop(agentId, now.name, reason.slice(0, 200));
   } else if (action === 'message') {
     const text = typeof body.text === 'string' ? body.text : '';
-    if (!text.trim()) return send(400, { error: 'A message needs some text.' });
+    if (!visible(text)) return send(400, { error: 'A message needs some text.' });
     if (text.length > MAX_DRIVE_TEXT) return send(413, { error: tooLong });
-    outcome = await deps.drive.message(agentId, peer.name, text);
+    outcome = await deps.drive.message(agentId, now.name, text);
   } else {
-    const prompt = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt : undefined;
-    if (prompt && prompt.length > MAX_DRIVE_TEXT) return send(413, { error: tooLong });
-    outcome = await deps.drive.start(agentId, peer.name, prompt);
+    outcome = await deps.drive.start(agentId, now.name);
   }
   return outcome.ok ? send(200, { ok: true }) : send(outcome.status, { error: outcome.error });
 }
@@ -434,6 +442,10 @@ async function listen(deps: BridgeDeps): Promise<{ listening: boolean; reason?: 
       if (!res.headersSent) { res.writeHead(500); res.end(); }
     });
   });
+  // A request arrives whole within fifteen seconds, not Node's five minutes:
+  // its body sent long after its headers is no way around Drive taken back.
+  created.headersTimeout = 15_000;
+  created.requestTimeout = 15_000;
   await new Promise<void>((resolve) => {
     const failed = (err: NodeJS.ErrnoException) => {
       state = { listening: false, reason: `The bridge could not listen on ${target.host}:${target.port} (${err.code}).` };
