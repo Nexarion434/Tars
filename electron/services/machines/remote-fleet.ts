@@ -1,4 +1,5 @@
 import { readFleet, parseRemoteId } from './fleet-share';
+import { MAX_KEYS } from './bridge-server';
 import type { DriveResult, PairedMachine, PeerStatus, RemoteAgent, RemoteScreen } from './types';
 
 /**
@@ -159,20 +160,36 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     return { success: false, error: said || `${peer.name} refused it (${r.status}).` };
   }
 
-  /** Sends what has gathered for one agent, then what gathered meanwhile, until nothing waits. */
+  /**
+   * Sends what has gathered for one agent, in batches the other side takes
+   * (MAX_KEYS, never cutting a character in two), then what gathered
+   * meanwhile, until nothing waits. A batch refused, or one that throws, ends
+   * its burst: the rest of it would land out of context.
+   */
   async function flush(remoteId: string): Promise<void> {
     const t = typing.get(remoteId);
     if (!t || t.sending || !t.pending) return;
     t.sending = true;
-    const data = t.pending;
+    let data = t.pending;
     const waiters = t.waiters;
     t.pending = '';
     t.waiters = [];
-    const result = await drive(remoteId, 'keys', { data });
-    waiters.forEach(w => w(result));
-    t.sending = false;
-    if (t.pending) void flush(remoteId);
-    else typing.delete(remoteId);
+    let result: DriveResult = { success: true };
+    try {
+      while (data && result.success) {
+        let cut = Math.min(data.length, MAX_KEYS);
+        if (cut < data.length && /[\uD800-\uDBFF]/.test(data[cut - 1])) cut -= 1;
+        result = await drive(remoteId, 'keys', { data: data.slice(0, cut) });
+        data = data.slice(cut);
+      }
+    } catch (err) {
+      result = { success: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      waiters.forEach(w => w(result));
+      t.sending = false;
+      if (t.pending) void flush(remoteId);
+      else typing.delete(remoteId);
+    }
   }
 
   return {

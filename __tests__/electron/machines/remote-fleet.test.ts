@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createRemoteFleet, type RemoteFleetDeps } from '../../../electron/services/machines/remote-fleet';
+import { MAX_KEYS } from '../../../electron/services/machines/bridge-server';
 import type { PairedMachine, RemoteAgent } from '../../../electron/services/machines/types';
 
 /**
@@ -33,6 +34,10 @@ import type { PairedMachine, RemoteAgent } from '../../../electron/services/mach
  * 14. Keys typed in a pane reach the other machine out of order, or one POST
  *    per key while one is on its way (a burst of typing becomes a burst of
  *    requests), or a refusal is lost.
+ * 15. Keys gathered past MAX_KEYS (a long paste, typing behind a slow batch)
+ *    go as one batch the other side refuses whole; or a batch that throws
+ *    (the pairing file unreadable) leaves the queue stuck, every later key
+ *    waiting for ever (security review, round 3).
  * 13. An action goes to another machine, or for an id that is not remote;
  *    the other machine's sentence is lost, or shown with characters nobody
  *    sees (bidi, zero width, controls); no answer reads as done, and a start
@@ -289,6 +294,23 @@ describe('live outputs', () => {
     answers.shift()!();
     expect(await second).toEqual({ success: true });
     expect(await third).toEqual({ success: true });
+  });
+
+  it('15. a paste past MAX_KEYS goes in batches of at most MAX_KEYS, in order', async () => {
+    const sent: string[] = [];
+    const fleet = createRemoteFleet({ ...deps(), driveAgent: async (_peer, _agentId, _action, body) => { sent.push(String(body.data)); return { status: 200, body: { ok: true } }; } });
+    const paste = Array.from({ length: MAX_KEYS * 2 + 10 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+    expect(await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', paste)).toEqual({ success: true });
+    expect(sent.every(s => s.length <= MAX_KEYS)).toBe(true);
+    expect(sent.join('')).toBe(paste);
+  });
+
+  it('15. a batch that throws answers its keys and leaves the queue free', async () => {
+    let unreadable = true;
+    const fleet = createRemoteFleet({ ...deps(), peers: () => { if (unreadable) throw new Error('EBUSY'); return peers; } });
+    expect((await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'x')).success).toBe(false);
+    unreadable = false;
+    expect(await fleet.keys('m:m-aaaaaaaaaaaaaaaa:a1', 'y')).toEqual({ success: true });
   });
 
   it('14. a refusal comes back to every key of its batch, and the next keys still go', async () => {

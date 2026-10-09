@@ -703,8 +703,10 @@ nothing. It can keep the proof, find the code later on many cores or a GPU,
 and knock on the real offering machine within the offer's five minutes: the
 person there sees its MagicDNS name and address, which differ from the
 machine expected, if only by a suffix such as `-1`, and refuses. A person who accepts a device they do not recognise is what
-remains; Tailscale's access rules, which can keep every other device off port
-31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
+remains, and since a pairing gives Drive, that device can type into this
+machine's agents until it is set to See or forgotten (the request says so
+before the click); Tailscale's access rules, which can keep every other device
+off port 31418, close that too. A PAKE (CPace, SPAKE2) would remove the offline search
 altogether; the code's short life and the person's click stand in for it.
 
 **What a paired machine may do here.** Drive, from the start of a pairing
@@ -714,7 +716,7 @@ Settings > Machines. The machine being driven decides,
 never the caller: its pairing file is read again at each request, and once
 more when the request's body is in, so Drive taken back, or the machine
 forgotten, refuses a request still on its way, with "<this machine> lets
-<caller> see only."; a request arrives whole within 15 seconds. The fleet tells
+<caller> see only."; a request arrives whole within about 20 seconds (15, checked every 5). The fleet tells
 the caller which it may do (`youMay`), so its window offers only that, and
 nothing on this side ever reads it. Drive opens four actions on an agent, by
 POST, and nothing else: start it, as this window's own start does, with no
@@ -727,16 +729,19 @@ message Tars types (no paste end, no look-alike of a sender line). A message
 is at most 8,000 characters, and one or a reason made of controls and format
 characters only is refused as empty. And type keys into its CLI: what is
 typed in the caller's pane, Esc, Enter, Ctrl+C and pastes as they are, through
-this window's own `writeHumanInput`, only while that CLI runs, never into the
-bare shell of a terminal whose CLI has ended, at most 4,096 characters a
-batch, in order. Keys carry no sender line: the agent cannot tell them from
+this window's own `writeHumanInput`, at most 4,096 characters a batch, in
+order, a batch only while that CLI runs (checked before each batch: a batch
+holding the keys that end or suspend the CLI, `/exit` and Enter, Ctrl+Z, can
+leave the rest of itself to the shell on macOS and Linux; on Windows the
+terminal closes with its CLI). Keys carry no sender line: the agent cannot tell them from
 the user's at this machine. Stops, starts after a stop and wakes are
 filed under the name this machine paired the caller under, as `<name>
 (machine)`: the caller chose that name at pairing, and the person who
 accepted it saw it; it never comes from a request. Driving gives the caller
-what a person at this machine's window has over an agent's work, not more: no
-route changes an agent's model, project or permissions, or reads or writes a
-file, and the bridge serves no file.
+what a person at this keyboard has over an agent: with keys it can change the
+agent's model (`/model`), cycle its permission mode, answer its permission
+dialogs and run a shell through the CLI (`!`). The routes themselves read or
+write no file and change no agent record, and the bridge serves no file.
 
 **What Drive gives away.** Drive given to a machine is given to every process
 of its user there, its agents included: the secret that drives sits in that
@@ -748,8 +753,10 @@ answers no question they asked the user, and lifts no rule the user set
 here, the orchestrator included, and through agents running in auto or
 bypass mode it amounts to running code on this machine; with keys, typed as
 the user's own, it is someone at this keyboard, and a CLI's own shell escape
-(Claude Code's `!`) is a shell here. Drive is what a pairing gives; set a
-machine you would not let sit at this one to See.
+(Claude Code's `!`) is a shell here. Drive is what a pairing gives, in both
+directions: each machine's agents, which can read their own machine's
+secret, get that on the other. Set a machine you would not let sit at this
+one to See.
 
 **What See shows** (measured on the 8th of October 2026, `e2e/machines-see.spec.ts`
 and `__tests__/electron/machines/`). The fleet carries each agent's id, name,
@@ -765,10 +772,10 @@ secrets it echoes included, and on macOS and Linux the launch line Tars types
 not a boundary for what a terminal shows; pairing is. The receiving machine
 checks every answer again (`readFleet`, a fleet at most 512 KB and 200 agents,
 a screen at most 8 MB, an event at most 1 MB), writes no file, starts nothing
-of its own, and never sends another machine's agents a key, a paste or a
-resize: start, stop and message go only through the three routes above,
-where that machine gives Drive, and its sentences are shown without controls
-or format characters. Their ids (`m:<machine>:<agent>`) are none the local
+of its own, and never resizes another machine's terminal. Start, stop,
+message and the keys and pastes typed in a pane go only through the four
+routes above, where that machine gives Drive; the other machine's sentences
+are shown without controls or format characters. Their ids (`m:<machine>:<agent>`) are none the local
 IPC resolves.
 
 A machine holds at most 32 live outputs open here. One that reads too slowly

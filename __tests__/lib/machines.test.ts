@@ -75,10 +75,10 @@ describe('requestLine', () => {
   const ask = { name: 'MacBook-Pro-de-Nicolas-2.local', address: '100.76.84.44', expiresAt: '2026-10-02T15:00:52Z' };
 
   it('names the machine as Tailscale knows it, and the time left to answer (5)', () => {
-    expect(requestLine({ ...ask, device: 'macbook-pro-de-nicolas-2' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine. Tailscale knows it as macbook-pro-de-nicolas-2, 100.76.84.44. Accept only if you just typed this machine's code there. It waits 0:52 for your answer.");
+    expect(requestLine({ ...ask, device: 'macbook-pro-de-nicolas-2' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine. Tailscale knows it as macbook-pro-de-nicolas-2, 100.76.84.44. Accept only if you just typed this machine's code there: it will be able to type into your agents here, unless you set it to See. It waits 0:52 for your answer.");
   });
 
   it('gives only the address of a caller Tailscale does not list, and never a negative time (5)', () => {
-    expect(requestLine({ ...ask, expiresAt: '2026-10-02T14:59:00Z' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine, from 100.76.84.44. Accept only if you just typed this machine's code there. It waits 0:00 for your answer.");
+    expect(requestLine({ ...ask, expiresAt: '2026-10-02T14:59:00Z' }, now)).toBe("MacBook-Pro-de-Nicolas-2.local wants to pair with this machine, from 100.76.84.44. Accept only if you just typed this machine's code there: it will be able to type into your agents here, unless you set it to See. It waits 0:00 for your answer.");
   });
 });

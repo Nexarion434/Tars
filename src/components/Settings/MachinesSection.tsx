@@ -146,7 +146,7 @@ export const MachinesSection = () => {
           />
           <SettingsRow
             label={mayHeading(m.name)}
-            description="See shows your agents and their terminals. Drive also starts, stops and messages them."
+            description="See shows your agents and their terminals. Drive also types into them, starts and stops them."
             control={(
               <SegmentedControl<PeerPermission>
                 ariaLabel={mayHeading(m.name)}

@@ -50,7 +50,8 @@ export function timeLeft(iso: string, now: Date): string {
  */
 export function requestLine(r: NonNullable<MachinesView['request']>, now: Date): string {
   const who = r.device ? `${r.name} wants to pair with this machine. Tailscale knows it as ${r.device}, ${r.address}.` : `${r.name} wants to pair with this machine, from ${r.address}.`;
-  return `${who} Accept only if you just typed this machine's code there. It waits ${timeLeft(r.expiresAt, now)} for your answer.`;
+  // Accepting gives Drive (a pairing's default since 2026-10-09): the person is told what that is.
+  return `${who} Accept only if you just typed this machine's code there: it will be able to type into your agents here, unless you set it to See. It waits ${timeLeft(r.expiresAt, now)} for your answer.`;
 }
 
 /**
