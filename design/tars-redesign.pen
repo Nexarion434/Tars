@@ -275065,7 +275065,7 @@
       "y": 35704,
       "name": "Panel · machine you may drive",
       "width": 720,
-      "height": 400,
+      "height": 360,
       "fill": "#0F0F0F",
       "stroke": "$border",
       "strokeWidth": 1,
@@ -275489,82 +275489,11 @@
               "id": "TY2YPQ",
               "name": "l",
               "fill": "$accent",
-              "content": "❯ ▊",
+              "content": "❯ run the e2e suite again▊",
               "lineHeight": 1.6,
               "fontFamily": "$font-mono",
               "fontSize": 11,
               "fontWeight": "normal"
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "mScmRA",
-          "name": "message bar",
-          "width": "fill_container",
-          "fill": "#1A1A1A",
-          "stroke": "$border",
-          "strokeWidth": {
-            "top": 1
-          },
-          "gap": 8,
-          "padding": [
-            8,
-            11
-          ],
-          "alignItems": "center",
-          "children": [
-            {
-              "type": "frame",
-              "id": "89dqLg",
-              "name": "input",
-              "width": "fill_container",
-              "height": 32,
-              "fill": "#222222",
-              "stroke": "$border",
-              "strokeWidth": 1,
-              "gap": 8,
-              "padding": [
-                7,
-                10
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "9CZO_g",
-                  "name": "placeholder",
-                  "fill": "#727272",
-                  "content": "Message QA Engineer on PC",
-                  "lineHeight": 1.4,
-                  "fontFamily": "$font-mono",
-                  "fontSize": 11.5,
-                  "fontWeight": "normal"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "2KI5Jw",
-              "name": "b",
-              "fill": "$accent",
-              "padding": [
-                6,
-                12
-              ],
-              "children": [
-                {
-                  "type": "text",
-                  "id": "0qN4dA",
-                  "name": "l",
-                  "fill": "#121212",
-                  "content": "Send",
-                  "lineHeight": 1.4,
-                  "fontFamily": "$font-ui",
-                  "fontSize": 11.5,
-                  "fontWeight": "500"
-                }
-              ]
             }
           ]
         }
