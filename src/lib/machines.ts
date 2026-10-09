@@ -67,6 +67,9 @@ export interface RemoteInfo {
   offlineSince?: string;
   /** Its project's path on its own machine, as given. */
   projectPath: string;
+  /** The size its terminal is drawn for there, both or neither. */
+  cols?: number;
+  rows?: number;
 }
 
 /** An agent of this machine, or a remote one (`remote` set) shaped like it. */
@@ -107,7 +110,7 @@ export function remoteToAgent(r: RemoteAgent): PaneAgent {
     stopReason: r.stopReason,
     skills: [],
     output: [],
-    remote: { machineId: r.machine.id, machineName: r.machine.name, status: r.machine.status, offlineSince: r.machine.offlineSince, projectPath: r.projectPath },
+    remote: { machineId: r.machine.id, machineName: r.machine.name, status: r.machine.status, offlineSince: r.machine.offlineSince, projectPath: r.projectPath, cols: r.cols, rows: r.rows },
   };
 }
 
@@ -192,4 +195,25 @@ export function tabMachines(agents: PaneAgent[]): Map<string, string[]> {
   }
   for (const path of local) names.delete(path);
   return names;
+}
+
+const isSize = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0;
+
+/**
+ * The size a remote pane's terminal is drawn at: what the screen came with,
+ * else what the agent says, else 120x30. A full-screen CLI places every line by
+ * its own terminal's size, so the pane never picks one of its own.
+ */
+export function remoteSize(
+  shot: { cols?: number; rows?: number } | null | undefined,
+  agent: { cols?: number; rows?: number } | undefined,
+): { cols: number; rows: number } {
+  for (const s of [shot, agent]) if (s && isSize(s.cols) && isSize(s.rows)) return { cols: s.cols, rows: s.rows };
+  return { cols: 120, rows: 30 };
+}
+
+/** The scale that fits a terminal in its pane body: at most 1, and 1 while either size is not known. */
+export function scaleToFit(body: { width: number; height: number }, term: { width: number; height: number }): number {
+  const ok = [body.width, body.height, term.width, term.height].every(n => Number.isFinite(n) && n > 0);
+  return ok ? Math.min(1, body.width / term.width, body.height / term.height) : 1;
 }

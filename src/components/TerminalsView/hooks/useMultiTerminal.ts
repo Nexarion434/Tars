@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Terminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
-import { isRemoteId, type PaneAgent } from '@/lib/machines';
+import { isRemoteId, remoteSize, scaleToFit, type PaneAgent } from '@/lib/machines';
 import { isElectron } from '@/hooks/useElectron';
 import { onAgentMoveLine } from '@/hooks/useClaudeAccounts';
 import { TERMINAL_CONFIG } from '../constants';
@@ -37,9 +37,36 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 const DEFAULT_FONT_SIZE = 11;
 
+// A remote pane is drawn at the size of the terminal it shows, which a
+// full-screen CLI places every line by, and scaled down to fit its body. It is
+// never fitted, and never sizes the terminal it shows.
+function scaleRemote(entry: TerminalEntry) {
+  if (entry.disposed) return;
+  const el = entry.terminal.element;
+  const screen = el?.querySelector<HTMLElement>('.xterm-screen');
+  if (!el || !screen) return;
+  const scale = scaleToFit(
+    { width: entry.container.clientWidth, height: entry.container.clientHeight },
+    { width: screen.offsetWidth, height: screen.offsetHeight },
+  );
+  el.style.transformOrigin = 'top left';
+  el.style.transform = scale < 1 ? `scale(${scale})` : '';
+}
+
+function sizeRemote(entry: TerminalEntry, size: { cols: number; rows: number }) {
+  if (entry.disposed) return;
+  if (entry.terminal.cols !== size.cols || entry.terminal.rows !== size.rows) entry.terminal.resize(size.cols, size.rows);
+  entry.lastCols = size.cols;
+  entry.lastRows = size.rows;
+  scaleRemote(entry);
+  // Once the renderer has measured the new cells.
+  setTimeout(() => scaleRemote(entry), 50);
+}
+
 // Safely fit a terminal and sync PTY dimensions
 function safeFit(agentId: string, entry: TerminalEntry) {
   if (entry.disposed) return;
+  if (isRemoteId(agentId)) return scaleRemote(entry);
   try {
     entry.fitAddon.fit();
     const { cols, rows } = entry.terminal;
@@ -47,8 +74,7 @@ function safeFit(agentId: string, entry: TerminalEntry) {
     if (cols !== entry.lastCols || rows !== entry.lastRows) {
       entry.lastCols = cols;
       entry.lastRows = rows;
-      // A remote pane is read only: it never sizes the terminal it shows.
-      if (isElectron() && !isRemoteId(agentId)) {
+      if (isElectron()) {
         window.electronAPI!.agent.resize({ id: agentId, cols, rows }).catch(() => {});
       }
     }
@@ -78,6 +104,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
   // after this panel did, so a panel that meets a new PTY resends its own size
   // rather than waiting for its next resize.
   const ptyOfRef = useRef<Map<string, string>>(new Map());
+  // The size each remote agent's terminal is drawn for, as the fleet last said.
+  const remoteSizeRef = useRef<Map<string, { cols?: number; rows?: number }>>(new Map());
   // Written in an effect, not during render: a ref assignment during render
   // is unsafe under concurrent rendering, and every reader of this one runs
   // after commit (a callback, a subscription), so the timing is the same.
@@ -221,6 +249,7 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         // A remote agent: its live output arrives on agent:output once watched
         // (given back by release), and its screen as it is now is read once.
         const machines = window.electronAPI?.machines;
+        sizeRemote(entry, remoteSize(null, remoteSizeRef.current.get(agentId)));
         machines?.watch(agentId).catch(() => {});
         entry.release = () => {
           entry.release = undefined;
@@ -229,6 +258,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
         try {
           const shot = await machines?.agentScreen(agentId);
           if (shot?.screen && !entry.disposed) {
+            // Its size first: the screen is placed cell by cell for it.
+            sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
             term.write(shot.screen);
             term.scrollToBottom();
           }
@@ -373,15 +404,17 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     for (const agent of agents) notePty(agent.id, agent.ptyId);
   }, [agents, notePty]);
 
-  // A remote pane whose machine is back reads its screen again and starts from
-  // it: what the machine did while it was gone never reached this pane. Its
-  // live output resumes by itself, the watch having been kept the whole time.
+  // A remote pane whose machine is back, or whose terminal changed size, reads
+  // its screen again and starts from it: what the machine did while it was gone
+  // never reached this pane, and a screen drawn for another size is wrong at
+  // this one. Its live output resumes by itself, the watch kept the whole time.
   const resyncRemote = useCallback(async (agentId: string) => {
     const entry = terminalsRef.current.get(agentId);
     if (!entry || entry.disposed) return;
     try {
       const shot = await window.electronAPI?.machines?.agentScreen(agentId);
       if (!shot?.screen || entry.disposed) return;
+      sizeRemote(entry, remoteSize(shot, remoteSizeRef.current.get(agentId)));
       entry.terminal.reset();
       entry.terminal.write(shot.screen);
       entry.terminal.scrollToBottom();
@@ -393,7 +426,12 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       if (!agent.remote) continue;
       const was = remoteStatusRef.current.get(agent.id);
       remoteStatusRef.current.set(agent.id, agent.remote.status);
-      if (was && was !== 'connected' && agent.remote.status === 'connected') void resyncRemote(agent.id);
+      const size = { cols: agent.remote.cols, rows: agent.remote.rows };
+      const before = remoteSizeRef.current.get(agent.id);
+      remoteSizeRef.current.set(agent.id, size);
+      const resized = !!before && (before.cols !== size.cols || before.rows !== size.rows);
+      const back = !!was && was !== 'connected' && agent.remote.status === 'connected';
+      if (back || resized) void resyncRemote(agent.id);
     }
   }, [agents, resyncRemote]);
 
