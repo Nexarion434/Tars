@@ -130,7 +130,7 @@ describe('the fleet, a screen and a stream', () => {
   it('3. the fleet is what this machine shares, under its own id and name', async () => {
     const r = await call('/machines/v1/fleet', MINE);
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ id: readMachines().self.id, name: 'Mac', agents: deps.fleet!() });
+    expect(r.body).toEqual({ id: readMachines().self.id, name: 'Mac', youMay: 'see', agents: deps.fleet!() });
   });
 
   it('4. a screen is the agent terminal as it is, and 404 for an agent with none', async () => {

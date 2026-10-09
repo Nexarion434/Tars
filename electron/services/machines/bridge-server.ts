@@ -47,6 +47,12 @@ export interface BridgeDeps {
   onOutput?: (agentId: string, listener: (chunk: string) => void, onEnd: () => void) => (() => void) | null;
   /** How often a live output pings and reads its machine's pairing again (fifteen seconds); a test shortens it. */
   streamCheckMs?: number;
+  /** This machine's side of driving an agent (fleet-source.ts), for a machine this one lets drive. by: the name it was paired under. */
+  drive?: {
+    start: (agentId: string, by: string, prompt?: string) => Promise<DriveOutcome>;
+    stop: (agentId: string, by: string, reason: string) => Promise<DriveOutcome>;
+    message: (agentId: string, by: string, text: string) => Promise<DriveOutcome>;
+  };
   now?: () => number;
 }
 
@@ -160,8 +166,14 @@ const peerFor = (authorization: string | undefined): PairedMachine | undefined =
 };
 
 const ROUTES = new Set(['GET /machines/v1/hello', 'POST /machines/v1/knock', 'POST /machines/v1/pair', 'GET /machines/v1/ping', 'POST /machines/v1/unpair', 'GET /machines/v1/fleet']);
-/** One agent's screen or live output: an id that fleet-share lets travel, and nothing else after it. */
-const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream)$/;
+/** One agent's screen or live output (GET), or an action on it (POST): an id that fleet-share lets travel, and nothing else after it. */
+const AGENT_ROUTE = /^\/machines\/v1\/agents\/([A-Za-z0-9_-]{1,64})\/(screen|stream|start|stop|message)$/;
+const READS = new Set(['screen', 'stream']);
+
+/** What a start's first prompt or a message may hold: a long brief, not a file. */
+export const MAX_DRIVE_TEXT = 8000;
+/** What this machine's side of an action answers: done, or why not, with its status. */
+export type DriveOutcome = { ok: true } | { ok: false; status: 404 | 409; error: string };
 
 /** Live outputs one machine may hold open at once: a Dashboard of every agent, with room to spare. */
 export const MAX_STREAMS_PER_MACHINE = 32;
@@ -180,7 +192,9 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   if (req.headers.origin) return send(403, { error: 'Forbidden' });
   const path = new URL(req.url || '/', 'http://bridge').pathname;
   const key = `${req.method} ${path}`;
-  const agentRoute = req.method === 'GET' ? AGENT_ROUTE.exec(path) : null;
+  const matched = AGENT_ROUTE.exec(path);
+  // A read by GET, an action by POST, and nothing else.
+  const agentRoute = matched && (READS.has(matched[2]) ? req.method === 'GET' : req.method === 'POST') ? matched : null;
   if (!ROUTES.has(key) && !agentRoute) return send(404, { error: 'Not found' });
 
   if (key === 'GET /machines/v1/hello') {
@@ -290,13 +304,15 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   // agent's live output.
   if (key === 'GET /machines/v1/fleet') {
     const { self } = readMachines();
-    return send(200, { id: self.id, name: self.name, agents: deps.fleet?.() ?? [] });
+    // What it may do here, so its window offers what this machine allows, and only that.
+    return send(200, { id: self.id, name: self.name, youMay: peer.mayOnMe, agents: deps.fleet?.() ?? [] });
   }
   if (agentRoute && agentRoute[2] === 'screen') {
     const screen = deps.screenOf?.(agentRoute[1]);
     return screen ? send(200, { screen: screen.screen, cliRunning: screen.cliRunning, ...terminalSize(screen.cols, screen.rows) }) : send(404, { error: 'No such terminal' });
   }
-  if (agentRoute) return streamOutput(agentRoute[1], peer, res, deps, send);
+  if (agentRoute && agentRoute[2] === 'stream') return streamOutput(agentRoute[1], peer, res, deps, send);
+  if (agentRoute) return driveAgent(agentRoute[1], agentRoute[2] as 'start' | 'stop' | 'message', peer, req, deps, send);
 
   // The caller forgets this machine, and this machine forgets the caller, its live outputs with it.
   if (key === 'POST /machines/v1/unpair') {
@@ -308,6 +324,38 @@ export async function handleBridgeRequest(req: http.IncomingMessage, res: http.S
   }
   // A route listed above with no answer here: never a fall-through into another's.
   return send(404, { error: 'Not found' });
+}
+
+/**
+ * An action on one of this machine's agents, from a paired machine that this
+ * one lets drive (Settings > Machines, read again at each request): start
+ * with an optional first prompt, stop with a reason, or a message. Filed under
+ * the name this machine paired the caller under, never one it sends.
+ */
+async function driveAgent(agentId: string, action: 'start' | 'stop' | 'message', peer: PairedMachine, req: http.IncomingMessage, deps: BridgeDeps, send: (status: number, body: unknown) => void): Promise<void> {
+  const { self } = readMachines();
+  if (peer.mayOnMe !== 'drive') return send(403, { error: `${self.name} lets ${peer.name} see only.` });
+  const body = await readBody(req);
+  if (body === 'too-large') return send(413, { error: 'Too large' });
+  const tooLong = `A message to an agent is at most ${MAX_DRIVE_TEXT.toLocaleString('en-US')} characters.`;
+  if (!deps.drive) return send(404, { error: 'No such agent' });
+  let outcome: DriveOutcome;
+  if (action === 'stop') {
+    // One line of a card: any run of spaces and line breaks reads as one space.
+    const reason = typeof body.reason === 'string' ? body.reason.replace(/\s+/g, ' ').trim() : '';
+    if (!reason) return send(400, { error: 'A stop needs a reason.' });
+    outcome = await deps.drive.stop(agentId, peer.name, reason.slice(0, 200));
+  } else if (action === 'message') {
+    const text = typeof body.text === 'string' ? body.text : '';
+    if (!text.trim()) return send(400, { error: 'A message needs some text.' });
+    if (text.length > MAX_DRIVE_TEXT) return send(413, { error: tooLong });
+    outcome = await deps.drive.message(agentId, peer.name, text);
+  } else {
+    const prompt = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt : undefined;
+    if (prompt && prompt.length > MAX_DRIVE_TEXT) return send(413, { error: tooLong });
+    outcome = await deps.drive.start(agentId, peer.name, prompt);
+  }
+  return outcome.ok ? send(200, { ok: true }) : send(outcome.status, { error: outcome.error });
 }
 
 /**
