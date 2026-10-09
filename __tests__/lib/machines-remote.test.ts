@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentStatus, RemoteAgent } from '../../src/types/electron';
 import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
-  localMachineLabel, machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkReason, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
+  localMachineLabel, machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkReason, sharesSize, shouldSendSize, fleetMatchesSent, fleetMachines, offlineLine, readOnlyTitle, machineStatusLabel, tabMachines,
 } from '../../src/lib/machines';
 
 /**
@@ -44,6 +44,16 @@ import {
  * 12. The see-only sentence names the wrong machine or the wrong local
  *    machine (Mac, PC, machine), or shows on an offline machine.
  * 13. A blank reason is sent as a stop reason.
+ * 14. A pane takes the size of the terminal it looks at where it should not
+ *    (offline, or a machine that lets this one see only), or does not where
+ *    it should (connected, Drive given).
+ * 15. A pane sends its size when it did not change (a resize per layout
+ *    tick), does not send it when it did, sends a size that is no size (0,
+ *    NaN, a fraction), or sends nothing the first time (nothing sent yet).
+ * 16. The fleet's size is read as a change when it is what the pane just
+ *    sent (a reset loop: send, the fleet echoes it, the screen is read and
+ *    the pane resized, which sends again), or as a match when the other
+ *    machine took the size back; a fleet with no size is read as a change.
  */
 
 const remote = (over: Partial<RemoteAgent> = {}): RemoteAgent => ({
@@ -272,5 +282,45 @@ describe('checkReason', () => {
   it('wants a stop reason that is not blank (13)', () => {
     expect(checkReason(' done for today ')).toBe('done for today');
     expect(checkReason('  ')).toBeNull();
+  });
+});
+
+describe('sharesSize', () => {
+  it('is true only for a connected machine that lets this one drive (14)', () => {
+    expect(sharesSize({ status: 'connected', drive: true })).toBe(true);
+    expect(sharesSize({ status: 'connected', drive: false })).toBe(false);
+    expect(sharesSize({ status: 'connected' })).toBe(false);
+    expect(sharesSize({ status: 'offline', drive: true })).toBe(false);
+    expect(sharesSize({ status: 'unknown', drive: true })).toBe(false);
+  });
+});
+
+describe('shouldSendSize', () => {
+  it('sends a size that changed, and the first one (15)', () => {
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: 100, rows: 24 })).toBe(true);
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: 80, rows: 30 })).toBe(true);
+    expect(shouldSendSize({ cols: 0, rows: 0 }, { cols: 80, rows: 24 })).toBe(true);
+  });
+  it('does not send the size it sent last (15)', () => {
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: 80, rows: 24 })).toBe(false);
+  });
+  it('never sends a size that is no size (15)', () => {
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: 0, rows: 24 })).toBe(false);
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: Number.NaN, rows: 24 })).toBe(false);
+    expect(shouldSendSize({ cols: 80, rows: 24 }, { cols: 80.5, rows: 24 })).toBe(false);
+  });
+});
+
+describe('fleetMatchesSent', () => {
+  it('matches the size the pane sent, which is no change to read again (16)', () => {
+    expect(fleetMatchesSent({ cols: 80, rows: 24 }, { cols: 80, rows: 24 })).toBe(true);
+  });
+  it('does not match when the other machine took the size back (16)', () => {
+    expect(fleetMatchesSent({ cols: 80, rows: 24 }, { cols: 180, rows: 45 })).toBe(false);
+    expect(fleetMatchesSent({ cols: 0, rows: 0 }, { cols: 180, rows: 45 })).toBe(false);
+  });
+  it('does not match a fleet that says no size (16)', () => {
+    expect(fleetMatchesSent({ cols: 80, rows: 24 }, {})).toBe(false);
+    expect(fleetMatchesSent({ cols: 80, rows: 24 }, undefined)).toBe(false);
   });
 });
