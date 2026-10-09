@@ -632,7 +632,7 @@ first pass. A development run may bind `127.0.0.1` instead
 (`TARS_MACHINES_BIND`, `TARS_MACHINES_PORT`, `TARS_MACHINES_PEERS`); a
 packaged Tars never reads those.
 
-**What it answers.** Twelve routes, listed one by one; any other path is a 404
+**What it answers.** Thirteen routes, listed one by one; any other path is a 404
 before a credential is read, and no route of the loopback API answers here.
 They are not hidden: `ping` and `unpair` answer 401 without a paired
 machine's secret, so a prober on the tailnet can tell a Tars listens. An
@@ -653,6 +653,7 @@ not, so a prober learns no agent's id.
 | `POST /machines/v1/agents/:id/stop` | a machine this one lets drive | stops it, with its reason, filed under the caller's name |
 | `POST /machines/v1/agents/:id/message` | a machine this one lets drive | types a message into its running CLI, after the caller's sender line |
 | `POST /machines/v1/agents/:id/keys` | a machine this one lets drive | types the keys of the caller's pane into its running CLI, as this window's own keys |
+| `POST /machines/v1/agents/:id/size` | a machine this one lets drive | resizes its terminal to the caller's pane, two whole numbers from 1 to 1000, as this window's own resize; this window takes it back at its next click or key in that pane |
 
 A request carrying an `Origin` header is refused (no browser ever calls the
 bridge), and a body over 64 KB is refused unread.
@@ -718,7 +719,7 @@ more when the request's body is in, so Drive taken back, or the machine
 forgotten, refuses a request still on its way, with "<this machine> lets
 <caller> see only."; a request arrives whole within about 20 seconds (15, checked every 5). The fleet tells
 the caller which it may do (`youMay`), so its window offers only that, and
-nothing on this side ever reads it. Drive opens four actions on an agent, by
+nothing on this side ever reads it. Drive opens five actions on an agent, by
 POST, and nothing else: start it, as this window's own start does, with no
 first prompt (one would be the CLI's own task, with no sender line, kept as
 the agent's role, and on some CLIs read as a flag; the task goes as a
@@ -735,7 +736,10 @@ holding the keys that end or suspend the CLI, `/exit` and Enter, Ctrl+Z, can
 leave the rest of itself to the shell on macOS and Linux, and keys held while
 Tars types a message of its own are typed after it with no new check; on
 Windows the terminal closes with its CLI). Keys carry no sender line: the agent cannot tell them from
-the user's at this machine. Stops, starts after a stop and wakes are
+the user's at this machine. And size its terminal to the caller's pane, as
+this window's own resize does, so the terminal draws for whoever looks at it
+last; this window's pane is told, and takes the size back at its next click
+or key there. Stops, starts after a stop and wakes are
 filed under the name this machine paired the caller under, as `<name>
 (machine)`: the caller chose that name at pairing, and the person who
 accepted it saw it; it never comes from a request. Driving gives the caller
@@ -773,10 +777,10 @@ secrets it echoes included, and on macOS and Linux the launch line Tars types
 (`cd '<dir>' && <cli> ...`) is part of it. Holding fields out of the fleet is
 not a boundary for what a terminal shows; pairing is. The receiving machine
 checks every answer again (`readFleet`, a fleet at most 512 KB and 200 agents,
-a screen at most 8 MB, an event at most 1 MB), writes no file, starts nothing
-of its own, and never resizes another machine's terminal. Start, stop,
-message and the keys and pastes typed in a pane go only through the four
-routes above, where that machine gives Drive; the other machine's sentences
+a screen at most 8 MB, an event at most 1 MB), writes no file and starts nothing
+of its own. Start, stop, message, the keys and pastes typed in a pane and
+that pane's size go only through the five routes above, where that machine
+gives Drive; the other machine's sentences
 are shown without controls or format characters. Their ids (`m:<machine>:<agent>`) are none the local
 IPC resolves.
 

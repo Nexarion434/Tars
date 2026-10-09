@@ -25,6 +25,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Driving it (part 3), where B lets A drive:
  * 5. What is typed in A's pane reaches B's CLI as typed, Enter and Esc
  *    included, with no bar to type it in (Nicolas, 2026-10-09).
+ * 5b. B's terminal takes the size of A's pane, which it fills unscaled, and
+ *    B's CLI draws at it; 5c. in fullscreen too, and back; 5d. a click in
+ *    B's own pane takes the size back (Nicolas, 2026-10-09).
  * 6. A's stop needs a reason, and B files it: stopped by "Mac (machine)",
  *    with that reason.
  * 7. A's start runs B's agent again: its CLI runs.
@@ -223,6 +226,53 @@ test('a paired machine that lets this one drive: what is typed in its pane goes 
     expect(readTyped()).not.toContain('Message from');
     values.keysTypedOnPc = JSON.stringify(readTyped());
     await stepShot(a.page, '03-a-types-into-the-pc-agent');
+
+    // 5b. The terminal draws for whoever looks at it (Nicolas, 2026-10-09): B's
+    // terminal takes A's pane's size, which fills its body unscaled, and B's
+    // CLI is told (its status bar says the size on its last row).
+    type Sized = { electronAPI: { machines: { agents: () => Promise<Array<{ agentId: string; cols?: number; rows?: number }>> } } };
+    const fleetSize = async () => {
+      const remote = (await a.page.evaluate(() => (window as unknown as Sized).electronAPI.machines.agents())).find(r => r.agentId === AGENT.id);
+      return { cols: remote?.cols ?? 0, rows: remote?.rows ?? 0 };
+    };
+    const paneOf = (xterm: Locator) => xterm.evaluate((el) => {
+      const screen = (el.querySelector('.xterm-screen') as HTMLElement).getBoundingClientRect();
+      const body = (el.parentElement as HTMLElement).getBoundingClientRect();
+      return { rows: el.querySelectorAll('.xterm-rows > div').length, screenH: screen.height, bodyH: body.height, transform: getComputedStyle(el).transform };
+    });
+    const pcPane = await terminalOf(b.page, AGENT.name);
+    const pcRows = await pcPane.locator('.xterm-rows > div').count();
+    const takesThePane = async (xterm: Locator, step: string) => {
+      await expect.poll(async () => (await fleetSize()).rows, { timeout: 15_000, message: `${step}: the PC terminal takes the pane's rows` }).toBe((await paneOf(xterm)).rows);
+      const pane = await paneOf(xterm);
+      const size = await fleetSize();
+      expect(pane.transform, step).toBe('none');
+      // Filled to within one row: fitted, not drawn small in a corner.
+      expect(pane.screenH, JSON.stringify(pane)).toBeGreaterThan(pane.bodyH - 2 * (pane.screenH / pane.rows));
+      await expect.poll(async () => xterm.locator('.xterm-rows > div').last().innerText(), { timeout: 10_000 }).toContain(`status bar ${size.cols}x${size.rows}`);
+      return { pane, size };
+    };
+    const inGrid = await takesThePane(terminal, '5b');
+    expect(inGrid.size.rows, 'A\'s pane is not the PC\'s own size').not.toBe(pcRows);
+    values.pcPaneRows = pcRows;
+    values.sharedInGrid = inGrid;
+    await stepShot(a.page, '03b-the-pc-terminal-at-the-mac-pane-size');
+
+    // 5c. Fullscreen: the pane grows, and so does B's terminal, text at the same size.
+    await a.page.getByRole('button', { name: 'Fullscreen', exact: true }).first().click();
+    const full = await takesThePane(await terminalOf(a.page, AGENT.name), '5c');
+    expect(full.size.rows).toBeGreaterThanOrEqual(inGrid.size.rows);
+    values.sharedFullscreen = full;
+    await stepShot(a.page, '03c-fullscreen');
+    await a.page.getByRole('button', { name: 'Exit fullscreen', exact: true }).first().click();
+    const back = await takesThePane(await terminalOf(a.page, AGENT.name), '5c restored');
+    values.sharedRestored = back;
+
+    // 5d. B takes it back with a click in its own pane: its terminal is B's size again.
+    await pcPane.locator('.xterm-screen').click();
+    await expect.poll(async () => (await fleetSize()).rows, { timeout: 15_000, message: 'the PC takes its size back' }).toBe(pcRows);
+    values.pcTookItBack = await fleetSize();
+    await stepShot(b.page, '03d-the-pc-takes-its-size-back');
 
     // 6. A stop needs its reason, and B files it under A's name.
     await a.page.getByRole('button', { name: 'stop', exact: true }).first().click();
