@@ -20,7 +20,7 @@ import type { ReactElement, ReactNode } from 'react';
  *   }));
  *
  * Only the hooks those components call are served: useState, useRef, useMemo,
- * useCallback, useEffect, useLayoutEffect. The others throw, so a component
+ * useCallback, useEffect, useLayoutEffect, useSyncExternalStore. The others throw, so a component
  * that starts depending on one fails loudly instead of reading a wrong value.
  * This module must not import from 'react' at run time: under that mock it
  * would import itself while the mock is still being built. Elements are
@@ -164,6 +164,14 @@ function useEffect(effect: () => Cleanup, deps?: Deps): void {
   });
 }
 
+// As React's: the store's value now, read again at each render, and a render
+// when the store says it changed (useRemoteDrive, under every agent card).
+function useSyncExternalStore<T>(subscribe: (onChange: () => void) => () => void, getSnapshot: () => T): T {
+  const [, changed] = useState(0);
+  useEffect(() => subscribe(() => changed(n => n + 1)), [subscribe]);
+  return getSnapshot();
+}
+
 const unsupported = (name: string) => () => {
   throw new Error(`${name} is not served by the hook runtime: add it there before testing a component that calls it`);
 };
@@ -177,7 +185,7 @@ export const hooks = {
   useLayoutEffect: useEffect,
   useContext: unsupported('useContext'),
   useReducer: unsupported('useReducer'),
-  useSyncExternalStore: unsupported('useSyncExternalStore'),
+  useSyncExternalStore,
   useTransition: unsupported('useTransition'),
   useDeferredValue: unsupported('useDeferredValue'),
   useId: unsupported('useId'),
