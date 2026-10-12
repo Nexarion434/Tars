@@ -115,14 +115,18 @@ async function proven($: Engine): Promise<Tars | null> {
   return tars;
 }
 
-function report($: Engine, route: string, body: Record<string, unknown>): void {
+/** A post's body, or how to make it, in the queue, when it needs the engine first. */
+type Body = Record<string, unknown> | (() => Promise<Record<string, unknown>>);
+
+function report($: Engine, route: string, body: Body): void {
   queue = queue.then(async () => {
     const to = await proven($);
     if (!to) return;
+    const fields = typeof body === 'function' ? await body() : body;
     const init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${to.token}` },
-      body: JSON.stringify({ agent_id: to.agentId, ...body, via: 'mod' }),
+      body: JSON.stringify({ agent_id: to.agentId, ...fields, via: 'mod' }),
     };
     // Tried again, in the queue, so the events keep their order; given up
     // after the third try, so one that keeps failing holds nothing back.
@@ -214,6 +218,12 @@ async function askTars($: Engine, e: Check, verdict: Verdict): Promise<Verdict |
   return null;
 }
 
+/** CLAUDE_PID, which Claude Code sets to its own pid for what it starts: digits, or empty. */
+async function cliPid($: Engine): Promise<string> {
+  const pid = await $.env.get('CLAUDE_PID');
+  return pid && /^[0-9]+$/.test(pid) ? pid : '';
+}
+
 function beat($: Engine): void {
   if (!sessionId) return;
   report($, '/api/hooks/mod-beat', { session_id: sessionId, tool: inFlight[inFlight.length - 1] ?? null });
@@ -222,7 +232,10 @@ function beat($: Engine): void {
 export function register(on: On) {
   on<Classic>('classic.SessionStart', ($, e, next) => {
     sessionId = e.session_id ?? null;
-    report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', source: e.source });
+    // This CLI's pid, as the shell hook sends it: Tars registers only the CLI
+    // it launched in the agent's terminal, not one run from inside it, which
+    // loads this mod too (core/terminal-cli.ts).
+    report($, '/api/hooks/status', async () => ({ session_id: e.session_id, status: 'idle', source: e.source, cli_pid: await cliPid($) }));
     if (!beating) {
       beating = true;
       $.clock.every(BEAT_MS, () => beat($));

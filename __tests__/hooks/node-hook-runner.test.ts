@@ -268,7 +268,7 @@ const CASES: Case[] = [
     env: AGENT,
     respond: bootstrapAndMemory,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
@@ -281,7 +281,7 @@ const CASES: Case[] = [
     env: { CLAUDE_MGR_API_TOKEN: 'tok-1' },
     respond: ({ path: p }) => (p === '/api/memory/context' ? { body: JSON.stringify({ context: 'No previous context found for this agent/project.' }) } : {}),
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume', hook: 'SessionStart', cli_pid: '' } },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: S, project_path: PROJECT } },
     ],
     stdout: CONTINUE,
@@ -293,8 +293,8 @@ const CASES: Case[] = [
     env: { ...AGENT, CLAUDE_PROJECT_PATH: '/from/env' },
     respond: ({ n }) => (n === 0 ? { drop: true } : {}),
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: '/from/env' } },
     ],
@@ -310,11 +310,37 @@ const CASES: Case[] = [
       fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok\n');
     },
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: 'Bearer shared-tok' },
       { method: 'GET', path: '/api/memory/context', auth: 'Bearer shared-tok', query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
     stdout: CONTINUE,
+  },
+  {
+    name: "SessionStart names its CLI by CLAUDE_PID, so Tars refuses a CLI run inside the agent's terminal",
+    event: 'session-start',
+    payload: { session_id: S, cwd: PROJECT, source: 'startup' },
+    env: { ...AGENT, CLAUDE_PID: '4242' },
+    respond: bootstrapAndMemory,
+    requests: [
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '4242' } },
+      { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
+      { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: PROJECT } },
+    ],
+    stdout: `${JSON.stringify({ continue: true, suppressOutput: false, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'You are agent-1.\n\nRemember the port.' } })}\n`,
+  },
+  {
+    name: 'SessionStart sends no CLAUDE_PID that is not a pid, and keeps its JSON whole',
+    event: 'session-start',
+    payload: { session_id: S, cwd: PROJECT, source: 'startup' },
+    env: { ...AGENT, CLAUDE_PID: '1", "source": "x' },
+    respond: bootstrapAndMemory,
+    requests: [
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
+      { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
+      { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: PROJECT } },
+    ],
+    stdout: `${JSON.stringify({ continue: true, suppressOutput: false, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'You are agent-1.\n\nRemember the port.' } })}\n`,
   },
   {
     name: 'SessionStart sends a Windows project path with spaces, & and # intact',
@@ -322,7 +348,7 @@ const CASES: Case[] = [
     payload: { session_id: S, cwd: 'C:\\Users\\n\\Claude Project\\a&b #1' },
     env: AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart' } },
+      { method: 'POST', path: '/api/hooks/status', auth: BEARER, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
       { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: BEARER },
       { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: 'agent-1', project_path: 'C:\\Users\\n\\Claude Project\\a&b #1' } },
     ],
