@@ -433,7 +433,39 @@ A project has one orchestrator at most, and only the Agents page makes or unmake
 
 The permission mode is the agent's own on every launch, orchestrator or not. `agent:start` used to put every orchestrator in bypass whatever it was set to, so a permission mode changed in the Agents page never reached one, restart or not, and a worker switched to orchestrator was quietly given bypass. One unattended launch still asks for bypass: a Telegram message that has to start the super agent.
 
-The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
+The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`.
+
+### Chats: `services/chats.ts`, `handlers/chat-handlers.ts`
+
+A chat is one conversation with a project's orchestrator on one topic (ORCHESTRATOR-PER-CHAT.md v2.2; 2.0.0 builds it in steps). The records are in. Nothing in the window reads them yet: the chat pages come behind the "new interface" switch.
+
+- **The record** (`chats.json`, §7):
+  - the project's path as Tars saved it, its orchestrator's;
+  - a number fixed within the project: #1 is Main, then 2, 3... The project's counter only goes up, so a deleted chat's number is never handed out again, and an old reply to "#3" cannot reach a newer chat;
+  - its title: one line, 80 characters at most. It is "New chat" until named (`titleSource: 'auto'`), and `'user'` once named, which nothing replaces;
+  - the agent that runs its conversation (`runnerId`), and every session that conversation went through (`sessionIds`, oldest first). Each session the runner registers is added;
+  - `pinned`, `snoozedUntil`, `settledAt`;
+  - `inbox`: the project's chat the bots, Hermes and Tars's notes will post to, exactly one per project with chats;
+  - its times.
+
+  The conversation itself is not copied: it is the runner's transcripts.
+- **The migration:** each project with an orchestrator gets chat #1, "Main", bound to it.
+  - Main is the project's inbox, named by the user (never retitled), and holds the orchestrator's conversation (its `resumableSessionId`). It is created when the orchestrator was.
+  - It runs once per project: the counter says it ran. A launch with nothing to make writes nothing, and a Main the user deleted stays deleted.
+  - A project whose orchestrator is set later gets its Main at the next `chat:list` or `chat:create`. A project without an orchestrator has no chats (`no_orchestrator`).
+  - Nothing else moves: the orchestrator keeps its record, its sessions, its tokens and its folder.
+- **The channels:**
+  - `chat:list` answers `{ seq, chats, problem }`, by project then number. Each chat comes with its runner as the fleet has it: status, waking, and `live` when its CLI holds a terminal.
+  - `chat:create({ projectPath, title? })`. Another spelling of a project's folder (a link) is filed under the path Tars saved.
+  - `chat:rename`, `chat:pin`, `chat:snooze({ until })` (a time to come, or `null`), `chat:settle`, and `chat:setInbox`, which moves the project's inbox.
+  - `chat:delete` is refused for the inbox (`inbox`), and while the chat's runner has a request out at the team (`chat_has_work`, with each request: worker, id, queued or delivered, from PR A's queue). Otherwise the record goes; the runner and its transcripts stay.
+  - `chat:send` refuses (`chat_send_unavailable`) until chats have runners of their own.
+
+  Every refusal carries a sentence the window shows as it is. `seq` moves at each change written, in memory: a new run is a new snapshot.
+- **The limit:** `system:chatLimit` gives how many chats may have a live CLI at once, across every project, Main counted.
+  - The rule: one per 5 GB of RAM (`os.totalmem()`, a GB being 2^30 bytes), from 1 to 8. 8 GB: 1, 16 GB: 3, 24 GB: 4, 32 GB: 6, 64 GB and more: 8.
+  - With it: `ramGb`; `source`, which is `ram`, or `override` for the E2E's `TARS_CHAT_RAM_GB` (read only when `DOROTHY_E2E=1`); and `working`, the chats whose runner holds a terminal now.
+  - Nothing enforces it yet. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
 
 ### Cross-project scoping
 
@@ -665,6 +697,7 @@ Everything the app owns lives under `~/.dorothy` (`DATA_DIR`), except what its a
 | `kanban-tasks.json` | `KanbanTask[]` | nothing; read at launch by `moveLocalKanbanToHermes` (`main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once at launch, parked, and it stays as the backup |
 | `kanban-moved-to-hermes.json` | `{ [localId]: hermesId }` | `services/kanban-board.ts` | which local tasks moved; atomic |
 | `bus.json` | `{ version: 1, savedAt, memberOverrides, threads[], messages[], deliveries[] }` | `services/bus-store.ts` | **Atomic**: the shared `writeAtomicSync`. Rooms are not stored: they are a view over the fleet, and the global room reads the overseer's own conversation rather than copying it |
+| `chats.json` | `{ version: 1, numbers: { [projectPath]: lastNumber }, chats: Chat[] }`: one record per chat of a project (§4, Chats) | `services/chats.ts`, through `handlers/chat-handlers.ts` | **Atomic** (`writeAtomicSync`), written only when something changed, whole and in one order, so the same chats are the same bytes. A file that is not the chats' is set aside as `chats.json.corrupt-<time>` and reported (`chat:list`'s `problem`), never reset; a record that does not hold is dropped, the file as it was set aside the same way; a newer Tars's file, or one that cannot be read, is left as it is and no chat changes until it can be. `numbers` only goes up. A field this version does not know is not kept: a later Tars that adds one writes version 2 |
 | `vault.db` + `vault/` | SQLite (WAL, FK on) + `vault/attachments/` | better-sqlite3 | transactional |
 | `usage-ledger.jsonl` | one `UsageEntry` per line | `recordUsage()` | append-only, self-trimming at 20 000 → 12 000 |
 | `task-ledger.jsonl` | one line per task opened (`{ t: 'task', task }`, without its text), turn (`{ t: 'turn', id, at, sessionId }`) and end (`{ t: 'end', id, at, outcome }`) | `services/task-ledger.ts` | append-only; past 20 000 lines, rewritten atomically to one `task` line for each of the newest 10 000. Its texts are in `~/.tars-private/task-texts.jsonl` (below); a file with texts inline, written before they moved, is rewritten without them at the first start |
@@ -841,7 +874,7 @@ Registered as standard + secure + fetch-capable. Confined by `isUnderAllowedRoot
 
 ### The IPC boundary
 
-`electron/preload.ts` (868 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 210 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`. Every event subscription returns its own unsubscribe closure.
+`electron/preload.ts` (898 lines) exposes exactly one object, `window.electronAPI`, over `contextBridge`. It is a hand-written façade: no `ipcRenderer` passthrough, no dynamic channel names. 223 `ipcMain.handle` channels sit behind it, grouped `pty:`, `agent:`, `app:`, `settings:`, `fs:`, `project:`, `shell:`, `template:`, `teamTemplate:`, `vault:`, `memory:`, `obsidian:`, `models:`, `usage:`, `review:`, `logs:`, `mcp:`, `skill:`, `plugin:`, `hermes:`, `gws:`, `tasmania:`, `telegram:`, `slack:`, `discord:`, `jira:`, `xapi:`, `socialdata:`, `orchestrator:`, `dialog:`, `cliPaths:`, `tray:`, `bus:`, `overseer:`, `claude:`, `claude-accounts:`, `ollama:`, `provider:`, `system:`, `chat:`. Every event subscription returns its own unsubscribe closure.
 
 ### What is validated where
 
