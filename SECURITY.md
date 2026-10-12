@@ -104,7 +104,11 @@ per run (`tarsInstanceId`, in memory, never written) and hands it to each CLI be
 token (`TARS_INSTANCE_ID`). As it starts, a hook sends a fresh random challenge to
 `/api/health` and sends the token only when the answer is sha256 of the id and the
 challenge; with no id, no answer within 5 s (longer than any post waits: a Tars whose main thread is held a few seconds still gets its token) or a wrong one, it posts without a token.
-The same listener got the challenge and a post with no Authorization. The id is as
+The same listener got the challenge and a post with no Authorization. Until 2026-10-12 the reads
+a hook makes with the token (the agent's bootstrap and its memory context at SessionStart, the memory
+post after a write, in both runners) went out without that check: the squatter got the token there
+(the Audit's Info on #355). They take the same check now (`TARS_READ_TOKEN`, `tokenForReads`); a
+CLI whose port does not prove its instance reads nothing, and not with the shared token either. The id is as
 readable as the token by a process of the same user (`ps -Eww`), and no more: this
 closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
