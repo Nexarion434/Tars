@@ -30,9 +30,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 8. chat B's runner cannot cancel chat C's queued task (not_your_task); Main's orchestrator cannot without a
  *    reason, and can with one, and chat C is told (R6);
  * 9. a chat whose runner was stopped goes on with its conversation, under a new id (--fork-session), not a new one;
- * 10. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
- * 11. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
- * 12. deleting chat B removes its runner and its worktree, its branch kept.
+ * 10. a chat whose runner's CLI ended by itself goes on with the same session (--resume <its id>);
+ * 11. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
+ * 12. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
+ * 13. deleting chat B removes its runner and its worktree, its branch kept.
  * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl and prompts.jsonl.
  */
 
@@ -75,6 +76,8 @@ async function turn(prompt) {
   line({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } });
   await sleep(200);
   hook('on-stop.sh', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'done' });
+  // A turn told to exit ends the CLI after it, as /exit does.
+  if (prompt.includes('EXIT>>')) process.exit(0);
 }
 
 process.stdin.setRawMode(true);
@@ -105,7 +108,7 @@ type Agent = {
   id: string; name?: string; role?: string; kind?: string; chatId?: string; status: string; cliRunning?: boolean;
   worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
 };
-type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null };
+type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null; runner?: { id: string; live: boolean } | null };
 type Answer = Record<string, unknown>;
 type Launch = { id: string; sid: string; resume: string | null; fork: boolean; prompt: string; argv: string[]; cwd: string };
 
@@ -335,7 +338,24 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await atRest(runnerC.id);
     expect((await agentOf(runnerC.id))?.currentSessionId).toBe(againC.sid);
 
-    // 10. R7: under the 2 GB floor, a first send makes no worktree, and says why.
+    // 10. Its CLI ended by itself: no tombstone, the next send resumes the same session.
+    expect(await send(startedChat.id, 'EXIT>> bye')).toMatchObject({ success: true, how: 'typed' });
+    await expect.poll(async () => (await agentOf(runnerC.id))?.cliRunning ?? true, { timeout: 30_000 }).toBe(false);
+    // Back at its shell, it holds no slot: Main alone works.
+    const exitedLimit = await call('system', 'chatLimit');
+    const exitedView = (await chats()).find((c) => c.id === startedChat.id)?.runner;
+    keep({ exitedLimit, exitedView });
+    expect(exitedLimit).toMatchObject({ working: 1 });
+    expect(exitedView).toMatchObject({ id: runnerC.id, live: false });
+    const afterExit = await send(startedChat.id, 'C>> after an exit');
+    keep({ afterExit });
+    expect(afterExit).toMatchObject({ success: true, how: 'launched' });
+    await expect.poll(() => launchesOf(runnerC.id).length, { timeout: 30_000 }).toBe(3);
+    expect(launchesOf(runnerC.id)[2]).toMatchObject({ resume: againC.sid, fork: false, sid: againC.sid });
+    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> after an exit')), { timeout: 30_000 }).toBe(true);
+    await atRest(runnerC.id);
+
+    // 11. R7: under the 2 GB floor, a first send makes no worktree, and says why.
     await app.evaluate((_e, { dist }) => { process.mainModule!.require(`${dist}/core/disk-space.js`).setFreeSpaceReader(() => 1024 ** 3); }, { dist });
     const chatE = await call('chat', 'create', { projectPath: project, title: 'Floor' }) as unknown as ChatRecord;
     const before = worktrees();
@@ -347,7 +367,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(worktrees()).toEqual(before);
     expect(await runnerOf(chatE.id)).toBeUndefined();
 
-    // 11. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
+    // 12. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
     const tool = (...args: string[]) => execFileSync(process.execPath, [WORKTREE_TOOL, ...args], { cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8' });
     const status = tool('status');
     const pruned = tool('prune', '--dry-run', '--no-github', '--older-than', '0');
@@ -358,7 +378,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
       expect(pruned.split('\n').find((l) => l.startsWith(`kept ${name}: `))).toContain(`it is the worktree of the Tars agent ${r.name}`);
     }
 
-    // 12. Deleting chat B: its runner and its worktree go, its branch stays.
+    // 13. Deleting chat B: its runner and its worktree go, its branch stays.
     const deleted = await call('chat', 'delete', { chatId: chatB.id });
     keep({ deleted, worktreesAtEnd: worktrees(), launches: lines(launchesFile) });
     expect(deleted).toMatchObject({ success: true });

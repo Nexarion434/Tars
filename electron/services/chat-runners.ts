@@ -6,7 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
-import { dialogOpen, launchAgent, sessionStarted, setSlotGate, SENDER_WAIT_MS, type SlotGate } from '../core/agent-launch';
+import { dialogOpen, launchAgent, sessionStarted, sessionStarting, setSlotGate, SENDER_WAIT_MS, type SlotGate } from '../core/agent-launch';
+import { cliRunningIn } from '../core/agent-pty';
 import { fallAsleep } from '../core/agent-asleep';
 import { diskRefusal, freeSpace } from '../core/disk-space';
 import { restartForSettings } from '../core/agent-restart';
@@ -79,8 +80,15 @@ function withSlots<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Its CLI runs in its terminal, or a launch of it is on its way: what holds a
+ * slot, and what a send types into. A terminal outlives its CLI (an /exit, a
+ * crash) as a bare shell, which needs no slot and would run a typed line as a
+ * command.
+ */
 export function isLive(agent: AgentStatus): boolean {
-  return !!agent.ptyId && ptyProcesses.has(agent.ptyId);
+  const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  return !!terminal && (cliRunningIn(terminal) || sessionStarting(agent));
 }
 
 /** The project's orchestrator: its role, never a runner (H1). */
@@ -313,9 +321,8 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     // session is a tombstone, whose hooks are dropped as stale: it goes on
     // under a new id, as a restart does (core/agent-restart.ts).
     resumeOnNextStart(runner.id);
-    const options = runner.status !== 'asleep' && runner.lastKilledSessionId
-      ? { resumeSessionId: resolveResumeSessionId(runner) }
-      : undefined;
+    const conversation = runner.status === 'asleep' ? null : resolveResumeSessionId(runner);
+    const options = conversation && conversation === runner.lastKilledSessionId ? { resumeSessionId: conversation } : undefined;
     const note = notesForNextLaunch.get(runner.id);
     notesForNextLaunch.delete(runner.id);
     reserved.add(runner.id);

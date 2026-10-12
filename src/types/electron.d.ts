@@ -1065,7 +1065,7 @@ export interface ChatView extends Chat {
     name: string;
     status: AgentTickItem['status'];
     waking: boolean;
-    /** Its CLI holds a terminal: it counts in the limit. */
+    /** Its CLI runs in its terminal, or is starting there: it counts in the limit. A terminal back at its shell does not. */
     live: boolean;
     lastActivity: string;
     /** A permission its CLI asked Tars: shown in the chat that runs it. */
