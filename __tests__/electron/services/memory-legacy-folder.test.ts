@@ -29,7 +29,9 @@ import * as path from 'node:path';
  *  5. A folder of a project Tars does not know is touched.
  *  6. A copy that fails (Claude's folder cannot be written) breaks the
  *     listing, or loses the old memory from the page.
- *  7. The memory's other files (the topics MEMORY.md points at) stay behind.
+ *  7. The memory's other files (every .md of the old memory folder) stay behind.
+ *  8. A file Claude's folder already holds, other than MEMORY.md (a topic
+ *     Claude wrote), is overwritten by the old folder's file of that name.
  */
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mem-legacy-')));
@@ -58,7 +60,7 @@ const rowsOf = (rows: Awaited<ReturnType<typeof list>>, projectPath = PROJECT) =
 beforeEach(() => { fs.rmSync(projects(), { recursive: true, force: true }); });
 
 describe.skipIf(process.platform === 'win32')('a memory an older Tars made under a folder Claude never reads', () => {
-  it('1, 7. is copied into Claude\'s folder, topics included, and the project is one row, Claude\'s, naming the older copy', async () => {
+  it('1, 7. is copied into Claude\'s folder, its other memory files included, and the project is one row, Claude\'s, naming the older copy', async () => {
     put(memory(LEGACY), '# remembered\n- see [[topic]]\n');
     put(memory(LEGACY, 'topic.md'), 'the topic\n');
     put(path.join(projects(), CLAUDES, '0b0c6a1e-7d7f-4c1e-9b1a-2f3c4d5e6f70.jsonl'), '{}\n');
@@ -83,6 +85,15 @@ describe.skipIf(process.platform === 'win32')('a memory an older Tars made under
     expect(rows).toHaveLength(1);
     expect(path.basename(path.dirname(rows[0].memoryDir))).toBe(CLAUDES);
     expect(rows[0].olderCopy).toBe(path.join(projects(), LEGACY, 'memory'));
+  });
+
+  it('8. never overwrites another file Claude\'s folder holds', async () => {
+    put(memory(LEGACY), 'old\n');
+    put(memory(LEGACY, 'topic.md'), 'the old topic\n');
+    put(memory(CLAUDES, 'topic.md'), 'the topic Claude wrote\n');
+    await list();
+    expect(read(memory(CLAUDES, 'topic.md'))).toBe('the topic Claude wrote\n');
+    expect(read(memory(CLAUDES))).toBe('old\n');
   });
 
   it('3. makes Claude\'s folder when the project has not run since', async () => {
