@@ -169,6 +169,17 @@ export interface AgentStatus {
    *  only, never by the name. See core/agent-role.ts. */
   role?: AgentRole;
   /**
+   * 'chat': this agent runs one chat's conversation with the orchestrator (a
+   * chat runner, services/chat-runners.ts). Stored as a worker, so it is never
+   * its project's orchestrator (the bots' target, the one that never sleeps);
+   * it has the orchestrator's powers through hasOrchestratorPowers().
+   */
+  kind?: 'chat';
+  /** The chat a runner runs (~/.dorothy/chats.json). */
+  chatId?: string;
+  /** The project's orchestrator whose configuration a runner is launched with. */
+  teamOrchestratorId?: string;
+  /**
    * The agent that asked for this one's current work, from the
    * X-Tars-Caller-Id header the MCP client sends on every call.
    *

@@ -467,6 +467,14 @@ export interface AgentStatus {
    *  the fleet's first (getSuperAgent with no project). A project has one at
    *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
+  /** 'chat': this agent runs one chat's conversation (a chat runner). A
+   *  worker with the orchestrator's powers, listed under its chat rather than
+   *  in the team. */
+  kind?: 'chat';
+  /** The chat a runner runs. */
+  chatId?: string;
+  /** The project's orchestrator a runner is launched like. */
+  teamOrchestratorId?: string;
   /** The Claude account this agent's CLI was last launched on. Absent: account 1. */
   claudeAccountId?: ClaudeAccountId;
   /** The account the agent is held to. Absent: chosen automatically. */
