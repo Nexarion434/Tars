@@ -464,7 +464,7 @@ const AGENT_TOOLS: Tool[] = [
     failure: "cancelling the task",
     async run({ taskId, reason }) {
       try {
-        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", reason ? { reason } : {})) as { worker?: { name?: string } };
+        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string } };
         return text(`Cancelled task ${taskId}: it never went into ${data.worker?.name ? `${data.worker.name}'s` : "its agent's"} terminal.`);
       } catch (err) {
         const why = CANCEL_REFUSALS[(err as Error).message];

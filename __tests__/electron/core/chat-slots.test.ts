@@ -66,6 +66,9 @@ describe('a runner', () => {
     // No origin/HEAD recorded: origin/main, then origin/master.
     expect(startPointOf({ originHead: null, refs: ['origin/master', 'feature-x'] })).toBe('origin/master');
     expect(startPointOf({ originHead: null, refs: ['origin/main', 'origin/master'] })).toBe('origin/main');
+    // origin's branch before the local one of the same name, which may be anywhere.
+    expect(startPointOf({ originHead: null, refs: ['main', 'origin/main', 'feature-x'] })).toBe('origin/main');
+    expect(startPointOf({ originHead: null, refs: ['master', 'origin/master'] })).toBe('origin/master');
   });
 
   it('3. with no remote, from the local default branch; with none at all, nowhere', () => {

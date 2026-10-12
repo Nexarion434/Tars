@@ -61,7 +61,10 @@ describe('cancelling what cannot be cancelled', () => {
   it('7. an id that names no task answers not_found; a non-owner learns nothing of its state', () => {
     expect(cancelVerdict('t-ffffffff', 'rA', undefined, fleet())).toMatchObject({ ok: false, error: 'not_found' });
     for (const ref of ['', 'T-0000000A', 't-0000000a; rm', 42, undefined]) {
-      expect(cancelVerdict(ref, 'rA', undefined, fleet())).toMatchObject({ ok: false, error: 'not_found' });
+      const verdict = cancelVerdict(ref, 'rA', undefined, fleet());
+      expect(verdict).toMatchObject({ ok: false, error: 'not_found' });
+      // What a task id looks like, for a caller that sent something else.
+      expect(verdict.ok === false && verdict.reason, String(ref)).toMatch(/t- and 8 hex/);
     }
     expect(cancelVerdict('t-0000000a', 'rB', undefined, fleet('delivered'))).toMatchObject({ ok: false, error: 'not_your_task' });
   });
