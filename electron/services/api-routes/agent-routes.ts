@@ -13,7 +13,7 @@ import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../
 import { diskRefusal, freeSpace } from '../../core/disk-space';
 import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
-import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown, takeSlot } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
 import { buildFullPath } from '../../utils/path-builder';
@@ -136,6 +136,26 @@ async function spawnAgentSession(
     sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
     return false;
   }
+  // A chat's runner starts within the RAM's limit, whoever starts it (core/agent-launch.ts).
+  const slot = await takeSlot(agent.id);
+  if (!slot.ok) {
+    sendJson({ error: slot.error, chatLimit: true }, 409);
+    return false;
+  }
+  try {
+    return await spawnAgentSessionInSlot(agent, prompt, opts, ctx, sendJson);
+  } finally {
+    slot.release();
+  }
+}
+
+async function spawnAgentSessionInSlot(
+  agent: AgentStatus,
+  prompt: string,
+  opts: SpawnOpts,
+  ctx: RouteContext,
+  sendJson: SendJson
+): Promise<boolean> {
   // Raw cwd for pty.spawn, shell-escaped form for the `cd` command. These
   // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.

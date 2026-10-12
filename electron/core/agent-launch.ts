@@ -50,10 +50,35 @@ export function registerAgentLauncher(fn: AgentLauncher): void {
   launcher = fn;
 }
 
+/**
+ * Whether a chat's runner may start now: a slot within the RAM's limit, taken
+ * (services/chat-runners.ts sets it), or why not. Every start of a runner goes
+ * through it, whoever starts it: a send in its chat, a wake by news, a
+ * restart, a worker's message to it (the Audit's M5). An agent that runs no
+ * chat passes at once.
+ */
+export type SlotGate = (agentId: string) => Promise<{ ok: true; release: () => void } | { ok: false; error: string }>;
+let slotGate: SlotGate | undefined;
+
+export function setSlotGate(gate: SlotGate | undefined): void {
+  slotGate = gate;
+}
+
+/** The slot an agent's start takes, or why it may not start now. */
+export function takeSlot(agentId: string): ReturnType<SlotGate> {
+  return slotGate ? slotGate(agentId) : Promise.resolve({ ok: true, release: () => undefined });
+}
+
 /** Launch an agent's CLI the way `agent:start` does. */
-export function launchAgent(agentId: string, prompt: string, options?: AgentLaunchOptions): Promise<AgentLaunchResult> {
-  if (!launcher) return Promise.reject(new Error('No agent launcher registered: the IPC handlers are not set up yet'));
-  return launcher(agentId, prompt, options);
+export async function launchAgent(agentId: string, prompt: string, options?: AgentLaunchOptions): Promise<AgentLaunchResult> {
+  if (!launcher) throw new Error('No agent launcher registered: the IPC handlers are not set up yet');
+  const slot = await takeSlot(agentId);
+  if (!slot.ok) return { success: false, error: slot.error };
+  try {
+    return await launcher(agentId, prompt, options);
+  } finally {
+    slot.release();
+  }
 }
 
 /**
