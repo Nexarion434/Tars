@@ -155,7 +155,7 @@ const SESSION_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const CHAT_ID = /^[A-Za-z0-9-]{1,64}$/;
 const AGENT_ID = /^[A-Za-z0-9._:-]{1,100}$/;
 /** The bidi controls (#186's class): they reorder what a reader sees. */
-const UNSEEN = /[\p{Cc}؜‎‏‪-‮⁦-⁩]/gu;
+const UNSEEN = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && Number.isFinite(Date.parse(v));
