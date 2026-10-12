@@ -73,6 +73,11 @@ export interface TaskRecord {
   /** A delegation over ACP: what the run itself reported. */
   acp?: AcpUsage;
   /**
+   * A delegation over ACP: why its turn ended, as the agent said it
+   * (`end_turn`, `max_tokens`...), or `interrupted` when a quit cut it (PR B).
+   */
+  stopReason?: string;
+  /**
    * What its turns used, per model, as the state mod reported each one from
    * Claude Code's turn.complete (mods step 4). Absent: no turn reported. It
    * prices the task when its transcript is gone (task-cost.ts).
@@ -118,6 +123,27 @@ export interface HandOff {
 }
 
 
+/** A delegation over ACP as it starts: a task from then on, so a quit mid-run leaves one (PR B). */
+export interface AcpStart {
+  agent: TaskAgentView;
+  requesterAgentId?: string;
+  text: string;
+  startedAt: number;
+}
+
+/** How a delegation over ACP ended. */
+export interface AcpEnd {
+  outcome: Exclude<TaskOutcome, 'running'>;
+  stopReason: string;
+  /** What it answered: cut to RESULT_MAX and kept in ~/.tars-private (resultFile). */
+  result?: string;
+  usage: Omit<AcpUsage, 'costUSD'> | null;
+  costUSD: number | null;
+}
+
+/** A task as read by its id: with what its run answered, which the shared file never holds. */
+export type TaskWithResult = TaskRecord & { result?: string };
+
 export interface AcpRun {
   agent: TaskAgentView;
   requesterAgentId?: string;
@@ -132,6 +158,9 @@ export interface AcpRun {
 /** A hand-off not followed by a turn within this long started nothing. */
 const HAND_OFF_TTL_MS = 15 * 60_000;
 const TEXT_MAX = 200;
+/** What a delegated run's answer keeps: as much as an agent's lastCleanOutput. */
+const RESULT_MAX = 8_000;
+const STOP_REASON = /^[A-Za-z_]{1,64}$/;
 const DEFAULT_MAX_LINES = 20_000;
 
 /** One line of text, at most 200 characters, never a character cut in two. */
@@ -185,6 +214,7 @@ function taskOf(v: unknown): TaskRecord | null {
   if (!isTime(t.startedAt) || !isTime(t.lastAt) || !(t.endedAt === null || isTime(t.endedAt))) return null;
   if (!isCount(t.turns)) return null;
   if (!Array.isArray(t.sessionIds) || t.sessionIds.length > 1000 || !t.sessionIds.every((s) => typeof s === 'string' && SESSION_ID.test(s))) return null;
+  if (t.stopReason !== undefined && !(typeof t.stopReason === 'string' && STOP_REASON.test(t.stopReason))) return null;
   let acp: AcpUsage | undefined;
   if (t.acp !== undefined) {
     const a = t.acp as Record<string, unknown> | null;
@@ -237,6 +267,7 @@ function taskOf(v: unknown): TaskRecord | null {
     text: clip(t.text as string | undefined), startedAt: t.startedAt, endedAt: t.endedAt as number | null, lastAt: t.lastAt,
     outcome: t.outcome as TaskOutcome, turns: t.turns, sessionIds: [...t.sessionIds] as string[],
     ...(acp ? { acp } : {}),
+    ...(typeof t.stopReason === 'string' ? { stopReason: t.stopReason } : {}),
     ...(usageByModel ? { usageByModel, usageTurns: t.usageTurns as number } : {}),
     ...(usageBySession ? { usageBySession } : {}),
     ...(isCount(t.sessionedTurns) && usageByModel && t.sessionedTurns <= (t.usageTurns as number) ? { sessionedTurns: t.sessionedTurns } : {}),
@@ -292,6 +323,16 @@ function lineOf(v: unknown): Line | null {
       ? { t: 'usage', id: l.id, at: l.at, ...(typeof l.sessionId === 'string' ? { sessionId: l.sessionId } : {}), model: l.model, ...tokens }
       : null;
   }
+  if (l.t === 'acp' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running'
+    && typeof l.stopReason === 'string' && STOP_REASON.test(l.stopReason)
+    && (l.costUSD === null || (typeof l.costUSD === 'number' && Number.isFinite(l.costUSD)))) {
+    const u = l.usage as Record<string, unknown> | null;
+    if (u !== null && !(u && typeof u === 'object' && [u.inputTokens, u.outputTokens, u.cachedReadTokens, u.cachedWriteTokens].every(isCount))) return null;
+    return {
+      t: 'acp', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'>, stopReason: l.stopReason, costUSD: l.costUSD as number | null,
+      usage: u ? { inputTokens: u.inputTokens as number, outputTokens: u.outputTokens as number, cachedReadTokens: u.cachedReadTokens as number, cachedWriteTokens: u.cachedWriteTokens as number } : null,
+    };
+  }
   if (l.t === 'end' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running') {
     return { t: 'end', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'> };
   }
@@ -302,6 +343,7 @@ type Line =
   | { t: 'task'; task: TaskRecord }
   | { t: 'turn'; id: string; at: number; sessionId?: string }
   | { t: 'end'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'> }
+  | { t: 'acp'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'>; stopReason: string; usage: Omit<AcpUsage, 'costUSD'> | null; costUSD: number | null }
   | ({ t: 'usage'; id: string; at: number; sessionId?: string } & TurnUsage);
 
 /** Tokens added to a per-model record, false when it already holds as many models as it may. */
@@ -333,6 +375,14 @@ export interface TaskLedger {
   turnStarted(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): void;
   stateChanged(agent: TaskAgentView, opts?: { backgroundLeft?: boolean }): void;
   acpRun(run: AcpRun): void;
+  /** A delegation over ACP begins: its task, open, and its id. */
+  acpStarted(run: AcpStart): string;
+  /** That delegation ended: why, what it answered, what it used. */
+  acpEnded(taskId: string, end: AcpEnd): void;
+  /** One task by its id, with its run's answer when it has one. */
+  task(id: string): TaskWithResult | undefined;
+  /** The delegations a quit cut, found open at this start: given once, for their askers to be told. */
+  interruptedAtStart(): TaskRecord[];
   /**
    * A turn's usage, from the state mod: filed under the agent's latest task in
    * that session, ended or not, since Claude Code's turn.complete comes after
@@ -348,6 +398,8 @@ export function createTaskLedger(opts: {
   file: string;
   /** Where each task's text is kept, apart from the ledger: a file only its owner reads. */
   textFile: string;
+  /** Where each delegated run's answer is kept, apart from the ledger: a file only its owner reads. */
+  resultFile?: string;
   now?: () => number;
   maxLines?: number;
   /**
@@ -359,6 +411,9 @@ export function createTaskLedger(opts: {
   leads?: (receiverId: string, senderId: string) => boolean;
 }): TaskLedger {
   const { file, textFile } = opts;
+  const resultFile = opts.resultFile;
+  const results = new Map<string, string>();
+  let interrupted: TaskRecord[] = [];
   const now = opts.now ?? Date.now;
   const maxLines = opts.maxLines ?? DEFAULT_MAX_LINES;
 
@@ -381,6 +436,20 @@ export function createTaskLedger(opts: {
       return;
     }
     if (!task || task.endedAt !== null) return;
+    if (line.t === 'acp') {
+      task.endedAt = line.at;
+      task.lastAt = Math.max(task.lastAt, line.at);
+      task.outcome = line.outcome;
+      task.stopReason = line.stopReason;
+      task.acp = {
+        inputTokens: line.usage?.inputTokens ?? task.acp?.inputTokens ?? 0,
+        outputTokens: line.usage?.outputTokens ?? task.acp?.outputTokens ?? 0,
+        cachedReadTokens: line.usage?.cachedReadTokens ?? task.acp?.cachedReadTokens ?? 0,
+        cachedWriteTokens: line.usage?.cachedWriteTokens ?? task.acp?.cachedWriteTokens ?? 0,
+        costUSD: line.costUSD ?? task.acp?.costUSD ?? null,
+      };
+      return;
+    }
     if (line.t === 'turn') {
       task.turns += 1;
       task.lastAt = Math.max(task.lastAt, line.at);
@@ -418,8 +487,24 @@ export function createTaskLedger(opts: {
     }
   };
 
+  const writeResult = (id: string, result: string): void => {
+    if (!resultFile) return;
+    try {
+      fs.mkdirSync(path.dirname(resultFile), { recursive: true, mode: 0o700 });
+      fs.appendFileSync(resultFile, JSON.stringify({ id, result }) + '\n', { mode: 0o600 });
+    } catch (err) {
+      console.warn('[task-ledger] could not keep a run\'s answer:', (err as Error).message);
+    }
+  };
+
   /** Both files again, one line per task kept: the ledger without texts, the texts apart. */
   const rewrite = (kept: TaskRecord[]): void => {
+    if (resultFile) {
+      const keep = new Set(kept.map((task) => task.id));
+      for (const id of [...results.keys()]) if (!keep.has(id)) results.delete(id);
+      fs.mkdirSync(path.dirname(resultFile), { recursive: true, mode: 0o700 });
+      writeSecretFileSync(resultFile, [...results.entries()].map(([id, result]) => JSON.stringify({ id, result }) + '\n').join(''));
+    }
     writeAtomicSync(file, kept.map((task) => JSON.stringify(shared({ t: 'task', task })) + '\n').join(''));
     fs.mkdirSync(path.dirname(textFile), { recursive: true, mode: 0o700 });
     writeSecretFileSync(textFile, kept.filter((task) => task.text).map((task) => JSON.stringify({ id: task.id, text: task.text }) + '\n').join(''));
@@ -447,6 +532,22 @@ export function createTaskLedger(opts: {
       const v = JSON.parse(text) as { id?: unknown; text?: unknown };
       if (isId(v?.id) && typeof v.text === 'string') texts.set(v.id, clip(v.text));
     } catch { /* damaged: skipped */ }
+  }
+
+  // The runs' answers, each checked as a text line is.
+  if (resultFile) {
+    let rawResults = '';
+    try {
+      rawResults = fs.readFileSync(resultFile, 'utf-8');
+      ensureSecretFileMode(resultFile);
+    } catch { /* none yet */ }
+    for (const line of rawResults.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const v = JSON.parse(line) as { id?: unknown; result?: unknown };
+        if (isId(v?.id) && typeof v.result === 'string') results.set(v.id, Array.from(v.result).slice(0, RESULT_MAX).join(''));
+      } catch { /* damaged: skipped */ }
+    }
   }
 
   // What was written before: a damaged line is skipped, the rest read. A task
@@ -478,7 +579,14 @@ export function createTaskLedger(opts: {
     }
   }
   for (const task of byId.values()) {
-    if (task.endedAt === null) write({ t: 'end', id: task.id, at: task.lastAt, outcome: 'stopped' });
+    if (task.endedAt !== null) continue;
+    // A delegation a quit cut: marked so, and kept for its asker to be told.
+    if (task.source === 'acp') {
+      write({ t: 'acp', id: task.id, at: task.lastAt, outcome: 'stopped', stopReason: 'interrupted', usage: null, costUSD: null });
+      interrupted.push({ ...task, sessionIds: [...task.sessionIds] });
+    } else {
+      write({ t: 'end', id: task.id, at: task.lastAt, outcome: 'stopped' });
+    }
   }
 
   const openTaskOf = (agentId: string): TaskRecord | undefined => {
@@ -592,6 +700,63 @@ export function createTaskLedger(opts: {
           },
         },
       });
+    },
+
+    acpStarted(run) {
+      const requester = run.requesterAgentId && run.requesterAgentId !== run.agent.id
+        ? openTaskOf(run.requesterAgentId) : undefined;
+      const id = randomUUID();
+      write({
+        t: 'task',
+        task: {
+          id,
+          agentId: run.agent.id,
+          projectPath: run.agent.projectPath ?? null,
+          worktreePath: run.agent.worktreePath ?? null,
+          provider: run.agent.provider ?? null,
+          model: run.agent.model ?? null,
+          accountId: run.agent.claudeAccountId ?? null,
+          source: 'acp',
+          requesterAgentId: run.requesterAgentId ?? null,
+          parentTaskId: requester?.id ?? null,
+          text: clip(run.text),
+          startedAt: run.startedAt,
+          endedAt: null,
+          lastAt: run.startedAt,
+          outcome: 'running',
+          turns: 1,
+          sessionIds: [],
+          acp: { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, costUSD: null },
+        },
+      });
+      return id;
+    },
+
+    acpEnded(taskId, end) {
+      const task = byId.get(taskId);
+      if (!task || task.endedAt !== null) return;
+      if (end.result) {
+        const result = Array.from(end.result).slice(0, RESULT_MAX).join('');
+        results.set(taskId, result);
+        writeResult(taskId, result);
+      }
+      write({
+        t: 'acp', id: taskId, at: now(), outcome: end.outcome,
+        stopReason: STOP_REASON.test(end.stopReason) ? end.stopReason : 'unknown', usage: end.usage, costUSD: end.costUSD,
+      });
+    },
+
+    task(id) {
+      const task = byId.get(id);
+      if (!task) return undefined;
+      const result = results.get(id);
+      return { ...task, sessionIds: [...task.sessionIds], ...(result !== undefined ? { result } : {}) };
+    },
+
+    interruptedAtStart() {
+      const given = interrupted;
+      interrupted = [];
+      return given;
     },
 
     turnUsage(agentId, sessionId, usage) {
