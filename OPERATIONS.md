@@ -790,12 +790,28 @@ jq '.numbers' ~/.dorothy/chats.json
 - **`newer`** (a newer Tars wrote it) or **`unreadable`** (its permissions): Tars changes nothing in it,
   and no chat can change until it is fixed.
 
+**Where a runner lives.** Each chat other than Main runs in an agent of its own, made at its first send:
+- **Its record:** in `~/.dorothy/agents.json`, `kind: "chat"`, `chatId`, named `<orchestrator> · <chat title>`:
+  `jq '.agents[] | select(.kind == "chat") | {id, name, chatId, status, worktreePath, branchName}' ~/.dorothy/agents.json`.
+- **Its worktree:** `<project>/.worktrees/chat-<8 hex>` on the branch `chat/<the same>`, started from origin's
+  default branch. `node scripts/worktree.mjs status`, run in the project, lists it with the others; `prune`
+  never removes it, since an agent of Tars owns it.
+- **Its conversation:** the transcripts under `~/.claude/projects/`, in the folder Claude Code names after its
+  worktree's path, one per session in the chat's `sessionIds`.
+- **Asleep:** a runner put to sleep (to free a slot, after 30 minutes, or because its chat was settled) keeps its
+  worktree and its conversation; the chat's next send resumes it.
+- **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
+
+**When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
+counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
+by itself to make room.
+
 **Going back to a Tars without chats (1.9.5 and earlier):**
 - It does not read `chats.json`, and leaves it where it is.
-- Nothing else was moved: Main is the orchestrator's own conversation, so the orchestrator works as
-  before.
-- Chats other than Main do not run anything yet, so there is nothing else to undo.
-- Upgrading again finds the chats as they were.
+- Main is the orchestrator's own conversation, so the orchestrator works as before.
+- The chats' runners show as idle workers named `<orchestrator> · <chat title>`, each in its worktree. Nothing
+  routes to them, and the older Tars never demotes the real orchestrator for them. Delete them from the Agents
+  page (their work is saved on `wip/`), or upgrade again, which finds every chat as it was.
 
 ### Full reset
 
@@ -857,7 +873,8 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 |---|---|
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
-| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` |
+| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
 | POST | `/api/hooks/{output,status,task-completed,agent-stopped,notification}` |
 | GET | `/api/memory/{context,search,status}` · POST `/api/memory/{write,remember}` |

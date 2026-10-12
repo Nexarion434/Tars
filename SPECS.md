@@ -437,7 +437,7 @@ The contract: `role` on `agent:create` and `agent:update`, where anything but th
 
 ### Chats: `services/chats.ts`, `handlers/chat-handlers.ts`
 
-A chat is one conversation with a project's orchestrator on one topic (ORCHESTRATOR-PER-CHAT.md v2.2; 2.0.0 builds it in steps). The records are in. Nothing in the window reads them yet: the chat pages come behind the "new interface" switch.
+A chat is one conversation with a project's orchestrator on one topic (ORCHESTRATOR-PER-CHAT.md v2.2; 2.0.0 builds it in steps). The records and their runners are in. Nothing in the window reads them yet: the chat pages come behind the "new interface" switch.
 
 - **The record** (`chats.json`, §7):
   - the project's path as Tars saved it, its orchestrator's;
@@ -458,14 +458,26 @@ A chat is one conversation with a project's orchestrator on one topic (ORCHESTRA
   - `chat:list` answers `{ seq, chats, problem }`, by project then number. Each chat comes with its runner as the fleet has it: status, waking, and `live` when its CLI holds a terminal.
   - `chat:create({ projectPath, title? })`. Another spelling of a project's folder (a link) is filed under the path Tars saved.
   - `chat:rename`, `chat:pin`, `chat:snooze({ until })` (a time to come, or `null`), `chat:settle`, and `chat:setInbox`, which moves the project's inbox.
-  - `chat:delete` is refused for the inbox (`inbox`), and while the chat's runner has a request out at the team (`chat_has_work`, with each request: worker, id, queued or delivered, from PR A's queue). Otherwise the record goes; the runner and its transcripts stay.
-  - `chat:send` refuses (`chat_send_unavailable`) until chats have runners of their own.
+  - `chat:delete` is refused for the inbox (`inbox`), and while the chat's runner has a request out at the team (`chat_has_work`, with each request: worker, id, queued or delivered, from PR A's queue). Otherwise the chat's own runner is stopped and removed with its worktree, its uncommitted work saved on `wip/` first (`core/agent-remove.ts`, the code `agent:remove` runs), and the record goes. Main's runner, the orchestrator, stays; transcripts stay.
+  - `chat:send({ chatId, text })` answers `{ success, runnerId, how }`, `how` being `typed` (into a runner whose CLI runs), `held` (behind a draft in its field) or `launched`; or a refusal (`chat_limit`, `disk_full`, `provider_unsupported`, `no_orchestrator`, `runner_failed`). `clientRequestId` and the send modes come with PR B's receipts.
+  - `chat:settle` puts the chat's own runner to sleep at once, or as soon as the rule allows it; `chat:rename` renames it.
 
   Every refusal carries a sentence the window shows as it is. `seq` moves at each change written, in memory: a new run is a new snapshot.
 - **The limit:** `system:chatLimit` gives how many chats may have a live CLI at once, across every project, Main counted.
   - The rule: one per 5 GB of RAM (`os.totalmem()`, a GB being 2^30 bytes), from 1 to 8. 8 GB: 1, 16 GB: 3, 24 GB: 4, 32 GB: 6, 64 GB and more: 8.
-  - With it: `ramGb`; `source`, which is `ram`, or `override` for the E2E's `TARS_CHAT_RAM_GB` (read only when `DOROTHY_E2E=1`); and `working`, the chats whose runner holds a terminal now.
-  - Nothing enforces it yet.
+  - With it: `ramGb`; `source`, which is `ram`, or `override` for the E2E's `TARS_CHAT_RAM_GB` (read only when `DOROTHY_E2E=1`); and `working`, the chats whose runner holds a terminal now, or a launch let through.
+  - Enforced at each send that launches a runner (below), never by a silent wait.
+- **The runners** (`services/chat-runners.ts`, PR D):
+  - **What one is:** an agent record of its own, made at the chat's first send: `role: 'worker'`, `kind: 'chat'`, `chatId`, `teamOrchestratorId`, named "<orchestrator> · <chat title>" (a worker's sender line tells the chats apart). Main's runner is the orchestrator itself.
+  - **Its powers, not its place:** `hasOrchestratorPowers()` (`core/agent-role.ts`) gives it the orchestrator's launch instructions, its `--disallowed-tools`, the ACP deny list, the right to write to and ask the user; every check that means "the project's orchestrator" (the bots' target, routing, `assignRole`, the stall fallback, the sleep refusal) reads the role and leaves runners out. A source test classifies each role site.
+  - **Its configuration:** read from the project's orchestrator at each launch, never copied once (provider, model, effort, permission mode, skills, Claude account pin, CLI path). Saving the orchestrator passes it on, a live runner restarted on what changed (#120).
+  - **Its worktree:** `<project>/.worktrees/chat-<8 hex of the chat's id>` on `chat/<the same>`, started from `origin/HEAD` (fetched first), else `origin/main` or `origin/master`, else the local `main` or `master`; never from the root's current branch. Its dependencies are cloned (#325), and the project's `.claude/settings.local.json` is copied once. Under 2 GB free (`core/disk-space.ts`) the first send answers with the reason and makes nothing. `scripts/worktree.mjs` counts and lists it as any worktree of the repository.
+  - **A send:** a runner whose CLI runs gets the words typed as the user's own, with no sender line, once its launch takes keys and never into a dialog. Otherwise it is launched with them as its prompt, its conversation resumed (`resumeOnNextStart`), which a sleep does not lose.
+  - **The slots:** one lock holds the count, the choice, the sleep and the launch together, so two sends cannot both take the last slot. A full limit puts to sleep the least recently active runner the sleep rule allows, its 30 minutes aside, never Main's; when none may sleep, the send answers `chat_limit` with `limit`, `ramGb`, the chats working and the sentence: "2 chats are already working, the most this Mac runs at once (10 GB of RAM, one chat per 5 GB). Wait for one to finish, or stop one: Main, Release."
+  - **After an abrupt stop:** the runners that were working beyond what the limit leaves stay asleep, the least recently active first, and their next launch opens with why.
+  - **Who they work for:** an orchestrator whose CLI cannot resume a conversation (a provider other than claude) gets Main and no other chat (`provider_unsupported`, at creation).
+- **Replies** (the Audit's R5): `/dispatch` and `/message` read the target `requester`, `orchestrator` or the orchestrator's name as whoever asked the caller for its current task when that is a chat's runner (`requester` reaches any asker), else the project's orchestrator, and answer with `deliveredTo`. An agent's id always reaches that agent (`core/reply-target.ts`).
+- **Cancelling** (M1, R6): `POST /api/tasks/:ref/cancel` and the MCP tool `task_cancel` take back a request still queued at a worker, its waiting message withdrawn from the worker's terminal. Its requester may; the project's persistent orchestrator may with a reason, which the asking chat is told; anyone else gets `not_your_task`. A request already typed in answers `already_delivered` (`core/task-cancel.ts`).
 
 ### Cross-project scoping
 
