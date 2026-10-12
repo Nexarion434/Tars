@@ -40,7 +40,7 @@ test('the new interface switch reads off from an older file, which still loads, 
   fs.writeFileSync(file, JSON.stringify(older, null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31456), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31453), DOROTHY_E2E: '1' },
   });
   try {
     const page = await app.firstWindow();
@@ -100,7 +100,7 @@ test('a newInterface that is not the boolean true reads false', async () => {
   fs.writeFileSync(file, JSON.stringify({ newInterface: 'false', terminalFontSize: 17 }, null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31456), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31453), DOROTHY_E2E: '1' },
   });
   try {
     const page = await app.firstWindow();
