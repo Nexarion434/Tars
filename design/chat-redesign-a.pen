@@ -225081,152 +225081,200 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "ELFS6",
-                          "name": "card",
+                          "id": "n0l1m",
+                          "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
-                          "stroke": "$border-strong",
+                          "cornerRadius": "$radius",
+                          "stroke": "$border",
                           "strokeWidth": 1,
                           "layout": "vertical",
-                          "gap": 12,
-                          "padding": [
-                            12,
-                            14
-                          ],
                           "children": [
                             {
-                              "type": "text",
-                              "id": "W9LtZ",
-                              "name": "field",
-                              "fill": "$text-muted",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "Message the orchestrator about this chat",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-ui",
-                              "fontSize": 14,
-                              "fontWeight": "normal"
-                            },
-                            {
                               "type": "frame",
-                              "id": "pDlqs",
-                              "name": "tools",
+                              "id": "NAPvB",
+                              "name": "notice",
                               "width": "fill_container",
+                              "height": 36,
+                              "fill": "$surface-raised",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
                               "gap": 8,
+                              "padding": [
+                                0,
+                                24,
+                                0,
+                                10
+                              ],
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "k50tdT",
-                                  "name": "button plus",
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "icon",
-                                      "id": "BSBpd",
-                                      "name": "plus",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "plus",
-                                      "library": "lucide",
-                                      "fill": "$text-secondary"
-                                    }
-                                  ]
+                                  "type": "rectangle",
+                                  "id": "O3his",
+                                  "name": "status hollow",
+                                  "width": 8,
+                                  "height": 8,
+                                  "stroke": "$status-idle",
+                                  "strokeWidth": 1
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "hqRsP",
+                                  "name": "words",
+                                  "fill": "$text-secondary",
+                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "H0Qjym",
-                                  "name": "chip tars",
-                                  "height": 22,
+                                  "id": "yfCFS",
+                                  "name": "sp",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "i3SfX",
+                                  "name": "button open Tars",
+                                  "height": 26,
                                   "fill": "$surface",
+                                  "cornerRadius": "$radius",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 5,
                                   "padding": [
                                     0,
-                                    7
+                                    10
                                   ],
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "SPfWI",
-                                      "name": "folder-kanban",
-                                      "width": 11,
-                                      "height": 11,
-                                      "icon": "folder-kanban",
-                                      "library": "lucide",
-                                      "fill": "$text-muted"
-                                    },
+                                      "type": "text",
+                                      "id": "t9yUTE",
+                                      "name": "label",
+                                      "fill": "$text-primary",
+                                      "content": "Open Tars, all projects",
+                                      "lineHeight": 1.2,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "dfYt7",
+                              "name": "body",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "padding": [
+                                12,
+                                24,
+                                12,
+                                16
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "RfcC1",
+                                  "name": "field",
+                                  "opacity": 0.6,
+                                  "width": "fill_container",
+                                  "height": 28,
+                                  "padding": [
+                                    4,
+                                    8
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
                                     {
                                       "type": "text",
-                                      "id": "Ra6H3",
-                                      "name": "label",
-                                      "fill": "$text-secondary",
-                                      "content": "tars",
-                                      "lineHeight": 1.35,
-                                      "fontFamily": "$font-mono",
-                                      "fontSize": 10.5,
+                                      "id": "E53OpP",
+                                      "name": "placeholder",
+                                      "fill": "$text-muted",
+                                      "content": "Message the orchestrator about this chat",
+                                      "lineHeight": 1.4285714285714286,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 14,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "vlp8n",
-                                  "name": "spacer",
+                                  "id": "l73SFG",
+                                  "name": "row",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "pG26B",
-                                  "name": "button arrow-up",
-                                  "opacity": 0.4,
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
+                                  "height": 32,
+                                  "gap": 4,
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "G3brhL",
-                                      "name": "arrow-up",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "arrow-up",
-                                      "library": "lucide",
-                                      "fill": "$on-accent"
+                                      "type": "frame",
+                                      "id": "zRnkY",
+                                      "name": "attach",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "cjAAc",
+                                          "name": "plus",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "plus",
+                                          "library": "lucide",
+                                          "fill": "$text-secondary"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "V3ftze",
+                                      "name": "sp",
+                                      "width": "fill_container",
+                                      "height": 1
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "qPvHg",
+                                      "name": "send",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "fill": "$accent",
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "tFUbY",
+                                          "name": "arrow-up",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "arrow-up",
+                                          "library": "lucide",
+                                          "fill": "$on-accent"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
                               ]
                             }
                           ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "XuVbE",
-                          "name": "reason",
-                          "fill": "$text-muted",
-                          "textGrowth": "fixed-width",
-                          "width": "fill_container",
-                          "content": "Sending from a chat comes with the next part of this preview. Meanwhile, talk to the orchestrator in Tars, all projects.",
-                          "lineHeight": 1.45,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 11.5,
-                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -227774,152 +227822,200 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "u3s6ZM",
-                          "name": "card",
+                          "id": "uxAH4",
+                          "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
-                          "stroke": "$border-strong",
+                          "cornerRadius": "$radius",
+                          "stroke": "$border",
                           "strokeWidth": 1,
                           "layout": "vertical",
-                          "gap": 12,
-                          "padding": [
-                            12,
-                            14
-                          ],
                           "children": [
                             {
-                              "type": "text",
-                              "id": "J1otg",
-                              "name": "field",
-                              "fill": "$text-muted",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "Message the orchestrator about this chat",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-ui",
-                              "fontSize": 14,
-                              "fontWeight": "normal"
-                            },
-                            {
                               "type": "frame",
-                              "id": "IwZjH",
-                              "name": "tools",
+                              "id": "UJMlW",
+                              "name": "notice",
                               "width": "fill_container",
+                              "height": 36,
+                              "fill": "$surface-raised",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
                               "gap": 8,
+                              "padding": [
+                                0,
+                                24,
+                                0,
+                                10
+                              ],
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "ySH9P",
-                                  "name": "button plus",
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "icon",
-                                      "id": "svIGu",
-                                      "name": "plus",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "plus",
-                                      "library": "lucide",
-                                      "fill": "$text-secondary"
-                                    }
-                                  ]
+                                  "type": "rectangle",
+                                  "id": "T6Pb4Y",
+                                  "name": "status hollow",
+                                  "width": 8,
+                                  "height": 8,
+                                  "stroke": "$status-idle",
+                                  "strokeWidth": 1
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "X3Z8c",
+                                  "name": "words",
+                                  "fill": "$text-secondary",
+                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "c1ZJ5",
-                                  "name": "chip tars",
-                                  "height": 22,
+                                  "id": "XgxcZ",
+                                  "name": "sp",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "cr0j4",
+                                  "name": "button open Tars",
+                                  "height": 26,
                                   "fill": "$surface",
+                                  "cornerRadius": "$radius",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 5,
                                   "padding": [
                                     0,
-                                    7
+                                    10
                                   ],
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "C2DZP",
-                                      "name": "folder-kanban",
-                                      "width": 11,
-                                      "height": 11,
-                                      "icon": "folder-kanban",
-                                      "library": "lucide",
-                                      "fill": "$text-muted"
-                                    },
+                                      "type": "text",
+                                      "id": "R5SNVi",
+                                      "name": "label",
+                                      "fill": "$text-primary",
+                                      "content": "Open Tars, all projects",
+                                      "lineHeight": 1.2,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "OVyxH",
+                              "name": "body",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "padding": [
+                                12,
+                                24,
+                                12,
+                                16
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "rEG44",
+                                  "name": "field",
+                                  "opacity": 0.6,
+                                  "width": "fill_container",
+                                  "height": 28,
+                                  "padding": [
+                                    4,
+                                    8
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
                                     {
                                       "type": "text",
-                                      "id": "SaDFq",
-                                      "name": "label",
-                                      "fill": "$text-secondary",
-                                      "content": "tars",
-                                      "lineHeight": 1.35,
-                                      "fontFamily": "$font-mono",
-                                      "fontSize": 10.5,
+                                      "id": "cs08r",
+                                      "name": "placeholder",
+                                      "fill": "$text-muted",
+                                      "content": "Message the orchestrator about this chat",
+                                      "lineHeight": 1.4285714285714286,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 14,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "m8Brj9",
-                                  "name": "spacer",
+                                  "id": "Z2sJv",
+                                  "name": "row",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "eCoHb",
-                                  "name": "button arrow-up",
-                                  "opacity": 0.4,
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
+                                  "height": 32,
+                                  "gap": 4,
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "rbDNV",
-                                      "name": "arrow-up",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "arrow-up",
-                                      "library": "lucide",
-                                      "fill": "$on-accent"
+                                      "type": "frame",
+                                      "id": "r4wDV",
+                                      "name": "attach",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "uOuxF",
+                                          "name": "plus",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "plus",
+                                          "library": "lucide",
+                                          "fill": "$text-secondary"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "eHL7E",
+                                      "name": "sp",
+                                      "width": "fill_container",
+                                      "height": 1
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "thnOi",
+                                      "name": "send",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "fill": "$accent",
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "TLYKE",
+                                          "name": "arrow-up",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "arrow-up",
+                                          "library": "lucide",
+                                          "fill": "$on-accent"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
                               ]
                             }
                           ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "p6i9j",
-                          "name": "reason",
-                          "fill": "$text-muted",
-                          "textGrowth": "fixed-width",
-                          "width": "fill_container",
-                          "content": "Sending from a chat comes with the next part of this preview. Meanwhile, talk to the orchestrator in Tars, all projects.",
-                          "lineHeight": 1.45,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 11.5,
-                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -230607,152 +230703,200 @@
                         },
                         {
                           "type": "frame",
-                          "id": "ASrHV",
-                          "name": "card",
+                          "id": "m4McbX",
+                          "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
-                          "stroke": "$border-strong",
+                          "cornerRadius": "$radius",
+                          "stroke": "$border",
                           "strokeWidth": 1,
                           "layout": "vertical",
-                          "gap": 12,
-                          "padding": [
-                            12,
-                            14
-                          ],
                           "children": [
                             {
-                              "type": "text",
-                              "id": "Il1SI",
-                              "name": "field",
-                              "fill": "$text-muted",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "Message the orchestrator about this chat",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-ui",
-                              "fontSize": 14,
-                              "fontWeight": "normal"
-                            },
-                            {
                               "type": "frame",
-                              "id": "xjg8i",
-                              "name": "tools",
+                              "id": "ObUi0",
+                              "name": "notice",
                               "width": "fill_container",
+                              "height": 36,
+                              "fill": "$surface-raised",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
                               "gap": 8,
+                              "padding": [
+                                0,
+                                24,
+                                0,
+                                10
+                              ],
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "z8dE8",
-                                  "name": "button plus",
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "icon",
-                                      "id": "St8Xr",
-                                      "name": "plus",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "plus",
-                                      "library": "lucide",
-                                      "fill": "$text-secondary"
-                                    }
-                                  ]
+                                  "type": "rectangle",
+                                  "id": "n2EGDY",
+                                  "name": "status hollow",
+                                  "width": 8,
+                                  "height": 8,
+                                  "stroke": "$status-idle",
+                                  "strokeWidth": 1
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Yh46J",
+                                  "name": "words",
+                                  "fill": "$text-secondary",
+                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "K6br9",
-                                  "name": "chip tars",
-                                  "height": 22,
+                                  "id": "X1hx3e",
+                                  "name": "sp",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "E5hRp",
+                                  "name": "button open Tars",
+                                  "height": 26,
                                   "fill": "$surface",
+                                  "cornerRadius": "$radius",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 5,
                                   "padding": [
                                     0,
-                                    7
+                                    10
                                   ],
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "u4q27M",
-                                      "name": "folder-kanban",
-                                      "width": 11,
-                                      "height": 11,
-                                      "icon": "folder-kanban",
-                                      "library": "lucide",
-                                      "fill": "$text-muted"
-                                    },
+                                      "type": "text",
+                                      "id": "wYhKc",
+                                      "name": "label",
+                                      "fill": "$text-primary",
+                                      "content": "Open Tars, all projects",
+                                      "lineHeight": 1.2,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "QbXSY",
+                              "name": "body",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "padding": [
+                                12,
+                                24,
+                                12,
+                                16
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "cOGVN",
+                                  "name": "field",
+                                  "opacity": 0.6,
+                                  "width": "fill_container",
+                                  "height": 28,
+                                  "padding": [
+                                    4,
+                                    8
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
                                     {
                                       "type": "text",
-                                      "id": "xZbXE",
-                                      "name": "label",
-                                      "fill": "$text-secondary",
-                                      "content": "tars",
-                                      "lineHeight": 1.35,
-                                      "fontFamily": "$font-mono",
-                                      "fontSize": 10.5,
+                                      "id": "VxQbq",
+                                      "name": "placeholder",
+                                      "fill": "$text-muted",
+                                      "content": "Message the orchestrator about this chat",
+                                      "lineHeight": 1.4285714285714286,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 14,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "dS4MM",
-                                  "name": "spacer",
+                                  "id": "Hreos",
+                                  "name": "row",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "TlMUS",
-                                  "name": "button arrow-up",
-                                  "opacity": 0.4,
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
+                                  "height": 32,
+                                  "gap": 4,
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "k5jMKW",
-                                      "name": "arrow-up",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "arrow-up",
-                                      "library": "lucide",
-                                      "fill": "$on-accent"
+                                      "type": "frame",
+                                      "id": "qmN3m",
+                                      "name": "attach",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "dezou",
+                                          "name": "plus",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "plus",
+                                          "library": "lucide",
+                                          "fill": "$text-secondary"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "LTIvW",
+                                      "name": "sp",
+                                      "width": "fill_container",
+                                      "height": 1
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "jQvOk",
+                                      "name": "send",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "fill": "$accent",
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "SiWu2",
+                                          "name": "arrow-up",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "arrow-up",
+                                          "library": "lucide",
+                                          "fill": "$on-accent"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
                               ]
                             }
                           ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "w569g",
-                          "name": "reason",
-                          "fill": "$text-muted",
-                          "textGrowth": "fixed-width",
-                          "width": "fill_container",
-                          "content": "Sending from a chat comes with the next part of this preview. Meanwhile, talk to the orchestrator in Tars, all projects.",
-                          "lineHeight": 1.45,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 11.5,
-                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -233440,152 +233584,200 @@
                         },
                         {
                           "type": "frame",
-                          "id": "r3odWA",
-                          "name": "card",
+                          "id": "XPvmZ",
+                          "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
-                          "stroke": "$border-strong",
+                          "cornerRadius": "$radius",
+                          "stroke": "$border",
                           "strokeWidth": 1,
                           "layout": "vertical",
-                          "gap": 12,
-                          "padding": [
-                            12,
-                            14
-                          ],
                           "children": [
                             {
-                              "type": "text",
-                              "id": "g15Yk",
-                              "name": "field",
-                              "fill": "$text-muted",
-                              "textGrowth": "fixed-width",
-                              "width": "fill_container",
-                              "content": "Message the orchestrator about this chat",
-                              "lineHeight": 1.4,
-                              "fontFamily": "$font-ui",
-                              "fontSize": 14,
-                              "fontWeight": "normal"
-                            },
-                            {
                               "type": "frame",
-                              "id": "dln5H",
-                              "name": "tools",
+                              "id": "iYXmi",
+                              "name": "notice",
                               "width": "fill_container",
+                              "height": 36,
+                              "fill": "$surface-raised",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
                               "gap": 8,
+                              "padding": [
+                                0,
+                                24,
+                                0,
+                                10
+                              ],
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "RS9sL",
-                                  "name": "button plus",
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "icon",
-                                      "id": "aCiTu",
-                                      "name": "plus",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "plus",
-                                      "library": "lucide",
-                                      "fill": "$text-secondary"
-                                    }
-                                  ]
+                                  "type": "rectangle",
+                                  "id": "STDRw",
+                                  "name": "status hollow",
+                                  "width": 8,
+                                  "height": 8,
+                                  "stroke": "$status-idle",
+                                  "strokeWidth": 1
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "XRP9Z",
+                                  "name": "words",
+                                  "fill": "$text-secondary",
+                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "lineHeight": 1.3333333333333333,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "FiZnL",
-                                  "name": "chip tars",
-                                  "height": 22,
+                                  "id": "pubB5",
+                                  "name": "sp",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "TEPNW",
+                                  "name": "button open Tars",
+                                  "height": 26,
                                   "fill": "$surface",
+                                  "cornerRadius": "$radius",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 5,
                                   "padding": [
                                     0,
-                                    7
+                                    10
                                   ],
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "k577B",
-                                      "name": "folder-kanban",
-                                      "width": 11,
-                                      "height": 11,
-                                      "icon": "folder-kanban",
-                                      "library": "lucide",
-                                      "fill": "$text-muted"
-                                    },
+                                      "type": "text",
+                                      "id": "cmyyU",
+                                      "name": "label",
+                                      "fill": "$text-primary",
+                                      "content": "Open Tars, all projects",
+                                      "lineHeight": 1.2,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "500"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "CKPbW",
+                              "name": "body",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 8,
+                              "padding": [
+                                12,
+                                24,
+                                12,
+                                16
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "chhmo",
+                                  "name": "field",
+                                  "opacity": 0.6,
+                                  "width": "fill_container",
+                                  "height": 28,
+                                  "padding": [
+                                    4,
+                                    8
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
                                     {
                                       "type": "text",
-                                      "id": "gpMBa",
-                                      "name": "label",
-                                      "fill": "$text-secondary",
-                                      "content": "tars",
-                                      "lineHeight": 1.35,
-                                      "fontFamily": "$font-mono",
-                                      "fontSize": 10.5,
+                                      "id": "C9DGhx",
+                                      "name": "placeholder",
+                                      "fill": "$text-muted",
+                                      "content": "Message the orchestrator about this chat",
+                                      "lineHeight": 1.4285714285714286,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 14,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "gPfvi",
-                                  "name": "spacer",
+                                  "id": "Y4Shb6",
+                                  "name": "row",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "KpPmp",
-                                  "name": "button arrow-up",
-                                  "opacity": 0.4,
-                                  "width": 26,
-                                  "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
-                                  "strokeWidth": 1,
-                                  "gap": 6,
-                                  "justifyContent": "center",
+                                  "height": 32,
+                                  "gap": 4,
                                   "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "icon",
-                                      "id": "CIici",
-                                      "name": "arrow-up",
-                                      "width": 12,
-                                      "height": 12,
-                                      "icon": "arrow-up",
-                                      "library": "lucide",
-                                      "fill": "$on-accent"
+                                      "type": "frame",
+                                      "id": "q4cWro",
+                                      "name": "attach",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "f4FZt",
+                                          "name": "plus",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "plus",
+                                          "library": "lucide",
+                                          "fill": "$text-secondary"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "FiH3w",
+                                      "name": "sp",
+                                      "width": "fill_container",
+                                      "height": 1
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "l0nms",
+                                      "name": "send",
+                                      "opacity": 0.4,
+                                      "width": 32,
+                                      "height": 32,
+                                      "fill": "$accent",
+                                      "cornerRadius": "$radius",
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "icon",
+                                          "id": "N8AUu",
+                                          "name": "arrow-up",
+                                          "width": 16,
+                                          "height": 16,
+                                          "icon": "arrow-up",
+                                          "library": "lucide",
+                                          "fill": "$on-accent"
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
                               ]
                             }
                           ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "fUeaW",
-                          "name": "reason",
-                          "fill": "$text-muted",
-                          "textGrowth": "fixed-width",
-                          "width": "fill_container",
-                          "content": "Sending from a chat comes with the next part of this preview. Meanwhile, talk to the orchestrator in Tars, all projects.",
-                          "lineHeight": 1.45,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 11.5,
-                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -233881,7 +234073,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "Sending from a chat comes with chat:send: the composer is drawn, its send dimmed, and the line under it says where to talk meanwhile. What a chat delegated shows on the right once each chat has its own runner and a task names its chat; until then the panel says so, never that nothing was delegated. The sidebar is drawn as the design wants it; its unread and how many chats work come with the runners too.",
+              "content": "Sending from a chat comes with chat:send: the composer is the Chat's, with nobody to receive yet, as its states draw it; its strip says sending comes with the next part, and opens Tars, all projects meanwhile. What a chat delegated shows on the right once each chat has its own runner and a task names its chat; until then the panel says so, never that nothing was delegated. A chat without a runner yet keeps its page from the list. The sidebar is drawn as the design wants it; its unread and how many chats work come with the runners too.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
