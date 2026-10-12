@@ -824,6 +824,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('system:orphanFolders:progress', listener);
       return () => ipcRenderer.removeListener('system:orphanFolders:progress', listener);
     },
+    // How many chats may work at once: one per 5 GB of RAM, from 1 to 8.
+    chatLimit: () => ipcRenderer.invoke('system:chatLimit'),
+  },
+
+  // The chats of each project (handlers/chat-handlers.ts): their records,
+  // kept in ~/.dorothy/chats.json. `send` refuses until the chats have
+  // orchestrators of their own.
+  chat: {
+    list: () => ipcRenderer.invoke('chat:list'),
+    create: (params: { projectPath: string; title?: string }) => ipcRenderer.invoke('chat:create', params),
+    rename: (params: { chatId: string; title: string }) => ipcRenderer.invoke('chat:rename', params),
+    pin: (params: { chatId: string; pinned: boolean }) => ipcRenderer.invoke('chat:pin', params),
+    snooze: (params: { chatId: string; until: string | null }) => ipcRenderer.invoke('chat:snooze', params),
+    settle: (params: { chatId: string; settled: boolean }) => ipcRenderer.invoke('chat:settle', params),
+    delete: (params: { chatId: string }) => ipcRenderer.invoke('chat:delete', params),
+    setInbox: (params: { chatId: string }) => ipcRenderer.invoke('chat:setInbox', params),
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: string }) => ipcRenderer.invoke('chat:send', params),
   },
 
   // Tray menu events

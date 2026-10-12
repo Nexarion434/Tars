@@ -56,7 +56,11 @@ async function chat(page: Page, name: string, arg?: unknown): Promise<Answer> {
 }
 const list = async (page: Page) => (await chat(page, 'list')) as unknown as Listing;
 /** A chat's record as chats.json keeps it: what the window also learns of its runner left out. */
-const recordOf = ({ runner: _runner, ...rest }: Chat) => rest;
+const recordOf = (chat: Chat): Omit<Chat, 'runner'> => {
+  const rest = { ...chat };
+  delete rest.runner;
+  return rest;
+};
 
 test("chats: Main made once from the project's orchestrator, and every change kept across a relaunch", async () => {
   test.setTimeout(300_000);
