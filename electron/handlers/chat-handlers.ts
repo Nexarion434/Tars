@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { agentStatusEmitter } from '../services/agent-events';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
-import { chatsWorking, isLive, renameRunner, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
+import { chatsWorking, isLive, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
 import { getProvider } from '../providers';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
@@ -64,7 +64,8 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     resumable: getProvider(a.provider).binaryName === 'claude',
   }));
   const view = (chat: Chat): ChatView => {
-    const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
+    // Only an agent the fleet confirms as the chat's runner (runnerOf): chats.json is agents' to write.
+    const runner = runnerOf(chat);
     return {
       ...chat,
       runner: runner ? {
@@ -117,7 +118,7 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
   // orchestrator, stays.
   ipcMain.handle('chat:delete', async (_e, raw: unknown) => {
     const chatId = argsOf(raw).chatId;
-    const workOut = (chat: Chat) => workOutOf(chat.runnerId, agents.values());
+    const workOut = (chat: Chat) => workOutOf(runnerOf(chat)?.id ?? null, agents.values());
     const refused = store.removalRefusal(chatId, workOut);
     if (refused) return refused;
     const torn = await tearDownRunner(store.get(chatId)!);

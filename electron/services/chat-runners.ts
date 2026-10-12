@@ -13,7 +13,7 @@ import { diskRefusal, freeSpace } from '../core/disk-space';
 import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
-import { chatLimitSentence, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
+import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
@@ -53,7 +53,7 @@ export type SendAnswer =
 
 export interface SendError {
   error: 'not_found' | 'invalid_request' | 'no_orchestrator' | 'provider_unsupported' | 'disk_full'
-    | 'chat_limit' | 'runner_failed' | 'chats_unavailable';
+    | 'chat_limit' | 'runner_failed' | 'runner_mismatch' | 'chats_unavailable';
   reason: string;
   /** chat_limit: the limit, the RAM it comes from, and the chats working. */
   limit?: number;
@@ -89,6 +89,16 @@ function withSlots<T>(fn: () => Promise<T>): Promise<T> {
 export function isLive(agent: AgentStatus): boolean {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   return !!terminal && (cliRunningIn(terminal) || sessionStarting(agent));
+}
+
+/**
+ * The agent a chat runs on, when the fleet confirms its record: chats.json is
+ * in ~/.dorothy, which every agent may write (core/chat-slots.ts, recordedRunner).
+ * Nothing is typed, launched, counted, put to sleep or renamed for any other.
+ */
+export function runnerOf(chat: Chat): AgentStatus | undefined {
+  const found = recordedRunner(chat, agents);
+  return 'agent' in found ? found.agent : undefined;
 }
 
 /** The project's orchestrator: its role, never a runner (H1). */
@@ -208,7 +218,7 @@ function slotHolders(): Array<{ chat: Chat; agent: AgentStatus }> {
   const seen = new Set<string>();
   const out: Array<{ chat: Chat; agent: AgentStatus }> = [];
   for (const chat of store!.list().chats) {
-    const agent = chat.runnerId ? agents.get(chat.runnerId) : undefined;
+    const agent = runnerOf(chat);
     if (!agent || seen.has(agent.id)) continue;
     if (!isLive(agent) && !reserved.has(agent.id)) continue;
     seen.add(agent.id);
@@ -290,12 +300,21 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     const chat = store!.get(chatId);
     if (!chat) return { error: 'not_found', reason: 'No chat has this id.' };
     const lead = leadOf(chat.projectPath);
-    let runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
-    if (chat.runnerId && !runner) {
+    const recorded = recordedRunner(chat, agents);
+    if ('why' in recorded && recorded.why === 'gone') {
       return failed(chat.number === 1
         ? "This chat's orchestrator was deleted: set an orchestrator for the project on the Agents page."
         : "This chat's agent was deleted. Start a new chat.");
     }
+    if ('why' in recorded && recorded.why === 'not_its_own') {
+      return {
+        error: 'runner_mismatch',
+        reason: chat.number === 1
+          ? "Main is the conversation of the project's orchestrator, and the agent this chat names is not it (the orchestrator changed, or chats.json was edited): nothing was sent."
+          : 'The agent this chat names is not the one made for it (chats.json was edited): nothing was sent. Start a new chat.',
+      };
+    }
+    let runner = 'agent' in recorded ? recorded.agent : undefined;
     if (runner && isLive(runner)) return { typeInto: runner, chat };
     const full = diskRefusal(freeSpace());
     if (full) return { error: 'disk_full', reason: full };
@@ -340,8 +359,8 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
 
 /** Whether a chat may lose its runner: Main's is the orchestrator, never removed by a chat (4.1). */
 function ownRunnerOf(chat: Chat): AgentStatus | undefined {
-  const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
-  return runner?.kind === 'chat' && runner.chatId === chat.id ? runner : undefined;
+  const runner = runnerOf(chat);
+  return runner?.kind === 'chat' ? runner : undefined;
 }
 
 /**
@@ -363,8 +382,8 @@ const settling = new Set<string>();
 async function sleepIfSettled(runnerId: string, triesLeft: number): Promise<void> {
   if (!store || settling.has(runnerId)) return;
   const runner = agents.get(runnerId);
-  const chat = runner ? store.chatOfRunner(runner.id) : undefined;
-  if (!runner || !chat || !chat.settledAt || runner.kind !== 'chat' || !isLive(runner)) return;
+  const chat = runner?.kind === 'chat' && runner.chatId ? store.get(runner.chatId) : undefined;
+  if (!runner || !chat || runnerOf(chat) !== runner || !chat.settledAt || !isLive(runner)) return;
   settling.add(runnerId);
   try {
     const procs = await readProcesses();
@@ -409,7 +428,7 @@ export function restartRunnersOf(leadId: string, changed: string[]): void {
   for (const runner of agents.values()) {
     if (runner.kind !== 'chat' || runner.projectPath !== lead.projectPath) continue;
     const chat = runner.chatId ? store.get(runner.chatId) : undefined;
-    if (!chat) continue;
+    if (!chat || runnerOf(chat) !== runner) continue;
     syncWithLead(runner, lead, chat);
     if (changed.length && isLive(runner)) restartForSettings(runner.id, changed);
   }
@@ -429,7 +448,8 @@ export function leaveRunnersAsleep(working: Array<{ agentId: string }>, now = Da
   // The others working that run a chat (Main's orchestrator) take their slot first.
   const mains = working.filter((w) => {
     const agent = agents.get(w.agentId);
-    return !!agent && agent.kind !== 'chat' && !!store!.chatOfRunner(agent.id);
+    const chat = agent && agent.kind !== 'chat' ? store!.chatOfRunner(agent.id) : undefined;
+    return !!chat && runnerOf(chat) === agent;
   }).length;
   const { leave } = runnersToResume(runners.map((r) => ({ agentId: r.id, lastActivity: Date.parse(r.lastActivity) || 0 })), limit.limit - mains);
   const stoppedAt = new Date(now).toTimeString().slice(0, 5);

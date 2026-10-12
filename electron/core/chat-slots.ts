@@ -75,3 +75,35 @@ export function chatLimitSentence(limit: number, ramGb: number, perChatGb: numbe
     + `(${ramGb} GB of RAM, one chat per ${perChatGb} GB). `
     + `Wait for ${one ? 'it' : 'one'} to finish, or stop ${one ? 'it' : 'one'}: ${working.join(', ')}.`;
 }
+
+/** What the fleet says of an agent a chat's record names. */
+export interface RecordedRunnerFacts {
+  id: string;
+  role?: string;
+  kind?: string;
+  chatId?: string;
+  projectPath: string;
+}
+
+/**
+ * The agent a chat's record names as its runner, as the fleet confirms it
+ * (the Audit's Info on #361). chats.json sits in ~/.dorothy, which every agent
+ * may write, so a record's runnerId is a claim: nothing is typed into,
+ * launched, counted in a slot, put to sleep or renamed for it until this
+ * agrees. Main's runner is the project's orchestrator; any other chat's is the
+ * runner made for that chat, in its project. `none`: no runner yet; `gone`: no
+ * agent has that id; `not_its_own`: one does, and it is not this chat's.
+ */
+export function recordedRunner<A extends RecordedRunnerFacts>(
+  chat: { id: string; number: number; projectPath: string; runnerId: string | null },
+  fleet: ReadonlyMap<string, A>,
+): { agent: A } | { why: 'none' | 'gone' | 'not_its_own' } {
+  if (!chat.runnerId) return { why: 'none' };
+  const agent = fleet.get(chat.runnerId);
+  if (!agent) return { why: 'gone' };
+  if (agent.projectPath !== chat.projectPath) return { why: 'not_its_own' };
+  const own = chat.number === 1
+    ? agent.role === 'orchestrator' && agent.kind !== 'chat'
+    : agent.kind === 'chat' && agent.chatId === chat.id;
+  return own ? { agent } : { why: 'not_its_own' };
+}
