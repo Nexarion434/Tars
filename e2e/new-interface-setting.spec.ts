@@ -79,7 +79,9 @@ test('the new interface switch reads off from an older file, which still loads, 
     expect(Object.fromEntries(Object.keys(older).map(k => [k, onDisk[k]]))).toEqual(older);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // Something of claude's (.claude.json and its lock) is still written into
+    // the sandbox's HOME up to a few seconds after the app closes.
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 });
 
@@ -111,6 +113,8 @@ test('a newInterface that is not the boolean true reads false', async () => {
     expect(read.terminalFontSize).toBe(17);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // Something of claude's (.claude.json and its lock) is still written into
+    // the sandbox's HOME up to a few seconds after the app closes.
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 });
