@@ -14,9 +14,9 @@ import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
+import { setChatLookup } from '../core/chat-identity';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
-import { envelopeValue } from '../utils/envelope-value';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { agentStatusEmitter, emitAgentStatus } from './agent-events';
@@ -108,6 +108,7 @@ function syncWithLead(runner: AgentStatus, lead: AgentStatus, chat: Chat): void 
   runner.teamOrchestratorId = lead.id;
   runner.provider = lead.provider;
   runner.model = lead.model;
+  runner.savedPrompt = lead.savedPrompt;
   runner.localModel = lead.localModel;
   runner.effort = lead.effort;
   runner.permissionMode = lead.permissionMode;
@@ -322,7 +323,7 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     // under a new id, as a restart does (core/agent-restart.ts).
     resumeOnNextStart(runner.id);
     const conversation = runner.status === 'asleep' ? null : resolveResumeSessionId(runner);
-    const options = conversation && conversation === runner.lastKilledSessionId ? { resumeSessionId: conversation } : undefined;
+    const options = { message: true, ...(conversation && conversation === runner.lastKilledSessionId ? { resumeSessionId: conversation } : {}) };
     const note = notesForNextLaunch.get(runner.id);
     notesForNextLaunch.delete(runner.id);
     reserved.add(runner.id);
@@ -335,19 +336,6 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     }
   });
   return 'typeInto' in decided ? typeInto(decided.typeInto, decided.chat, text) : decided;
-}
-
-/**
- * What a runner is told of itself, in its bootstrap and its launch's header:
- * the orchestrator of one chat among several, and how its workers answer it.
- * Undefined for an agent that runs no chat of its own.
- */
-export function chatIdentityOf(agent: Pick<AgentStatus, 'kind' | 'chatId'>): string | undefined {
-  if (agent.kind !== 'chat') return undefined;
-  const chat = agent.chatId ? store?.get(agent.chatId) : undefined;
-  const which = chat ? `the chat ${envelopeValue(chat.title)} (#${chat.number})` : "one of the project's chats";
-  return `You are the orchestrator in ${which}: the project's other chats may be running at once, each its own conversation with the same team. `
-    + 'Your workers answer you with send_message to "requester".';
 }
 
 /** Whether a chat may lose its runner: Main's is the orchestrator, never removed by a chat (4.1). */
@@ -486,5 +474,6 @@ export function startChatRunners(chatStore: ChatStore): void {
   if (store) return;
   store = chatStore;
   setSlotGate(slotGate);
+  setChatLookup((chatId) => chatStore.get(chatId));
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }

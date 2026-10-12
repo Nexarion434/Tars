@@ -17,10 +17,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * prompt says HOLD until told to end it. The RAM figure is the E2E's: 10 GB, so two chats work at once.
  *
  * Asserted, in order:
- * 1. a send in Main starts the orchestrator, with its model, its instructions and its tool block;
+ * 1. a send in Main starts the orchestrator, with its model, its instructions and its tool block, its brief kept;
  * 2. a first send in chat A makes its runner: "Lead · Release", a worker of kind chat, in .worktrees/chat-<id> on
  *    chat/<id>, started from origin/main and not from the root's branch, launched like the orchestrator (model,
- *    instructions, --disallowed-tools), in its worktree;
+ *    instructions, --disallowed-tools), in its worktree, and told it is the orchestrator in that chat, its role the
+ *    orchestrator's brief;
  * 3. with both slots taken, a send in chat B puts A, idle, to sleep and starts B: two runners, two sessions, two
  *    worktrees;
  * 4. the next send in A puts B to sleep and resumes A's session (--resume <its id>);
@@ -34,10 +35,13 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 11. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
  * 12. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
  * 13. deleting chat B removes its runner and its worktree, its branch kept.
- * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl and prompts.jsonl.
+ * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl, prompts.jsonl and sessions.jsonl
+ * (what each SessionStart handed its CLI).
  */
 
 const HOOKS = path.resolve('hooks');
+/** The orchestrator's brief: its role in its bootstrap, and its runners'. */
+const BRIEF = 'Lead the demo team: plan, delegate, review.';
 const WORKTREE_TOOL = path.resolve('scripts', 'worktree.mjs');
 
 const STAND_IN = String.raw`
@@ -81,7 +85,11 @@ async function turn(prompt) {
 }
 
 process.stdin.setRawMode(true);
-hook('session-start.sh', { hook_event_name: 'SessionStart', source: resumed === -1 ? 'startup' : 'resume' });
+// What SessionStart hands the CLI: Tars's bootstrap, as Claude Code would read it.
+const started = hook('session-start.sh', { hook_event_name: 'SessionStart', source: resumed === -1 ? 'startup' : 'resume' });
+let context = null;
+try { context = JSON.parse(String(started.stdout || '{}')).hookSpecificOutput?.additionalContext ?? null; } catch {}
+record('sessions.jsonl', { sid, context });
 process.stdout.write('SCREEN-OF-' + id + ' session ' + sid + '\r\n> ');
 let buffer = '';
 let pasting = false;
@@ -106,7 +114,7 @@ process.stdin.resume();
 
 type Agent = {
   id: string; name?: string; role?: string; kind?: string; chatId?: string; status: string; cliRunning?: boolean;
-  worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
+  worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; savedPrompt?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
 };
 type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null; runner?: { id: string; live: boolean } | null };
 type Answer = Record<string, unknown>;
@@ -148,13 +156,14 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-12T08:00:00.000Z', lastActivity: '2026-10-12T08:00:00.000Z', ...extra,
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
-    agent('o1', 'Lead', 'orchestrator', { model: 'opus-test' }), agent('w1', 'Worker', 'worker'),
+    agent('o1', 'Lead', 'orchestrator', { model: 'opus-test', savedPrompt: BRIEF }), agent('w1', 'Worker', 'worker'),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
   const launchesFile = path.join(home, 'launches.jsonl');
   const promptsFile = path.join(home, 'prompts.jsonl');
+  const sessionsFile = path.join(home, 'sessions.jsonl');
   const port = apiPort(31455);
   const dist = path.resolve('electron', 'dist');
   const values: Record<string, unknown> = { home, project, originMain, rootHead };
@@ -178,6 +187,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const runnerOf = async (chatId: string) => (await fleet()).find((a) => a.kind === 'chat' && a.chatId === chatId);
     const launchesOf = (id: string) => lines<Launch>(launchesFile).filter((l) => l.id === id);
     const promptsOf = (id: string) => lines<{ id: string; prompt: string }>(promptsFile).filter((l) => l.id === id).map((l) => l.prompt);
+    const contextOf = (id: string) => lines<{ id: string; context: string | null }>(sessionsFile).find((l) => l.id === id)?.context ?? '';
     const atRest = (id: string) => expect.poll(async () => (await agentOf(id))?.status, { timeout: 30_000 }).toMatch(/^(idle|completed)$/);
     const release = (id: string) => fs.writeFileSync(path.join(home, `release-${id}`), '');
     // Each in one spelling: git may print a temporary folder as /var/... or /private/var/....
@@ -193,6 +203,11 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await atRest('o1');
     const leadArgv = launchesOf('o1')[0].argv;
     expect(leadArgv).toEqual(expect.arrayContaining(['--model', 'opus-test', '--append-system-prompt-file', '--disallowed-tools']));
+    expect(contextOf('o1')).toContain('orchestrator of project');
+    expect(contextOf('o1')).not.toContain('You are the orchestrator in');
+    // A chat's message is a turn, never the orchestrator's brief.
+    expect((await agentOf('o1'))?.savedPrompt).toBe(BRIEF);
+    expect(contextOf('o1')).toContain(`## Your role\n${BRIEF}`);
 
     // 2. Chat A's runner, made by its first send.
     const chatA = await call('chat', 'create', { projectPath: project, title: 'Release' }) as unknown as ChatRecord;
@@ -213,6 +228,14 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const launchA = launchesOf(runnerA.id)[0];
     expect(launchA.argv).toEqual(expect.arrayContaining(['--model', 'opus-test', '--append-system-prompt-file', '--disallowed-tools']));
     expect(fs.realpathSync(launchA.cwd)).toBe(fs.realpathSync(runnerA.worktreePath!));
+    // Told, through its SessionStart, that it is the orchestrator in this chat, one of several.
+    const contextA = contextOf(runnerA.id);
+    keep({ contextA });
+    expect(contextA).toContain(`(agent id: ${runnerA.id}), orchestrator of project ${project}.`);
+    expect(contextA).toContain(`You are the orchestrator in the chat "Release" (#${chatA.number}): the project's other chats may be running at once`);
+    // Its role is the orchestrator's brief, not its chat's first message.
+    expect(contextA).toContain(`## Your role\n${BRIEF}`);
+    expect(contextA).not.toContain('A>> first');
     expect(await call('system', 'chatLimit')).toMatchObject({ limit: 2, working: 2 });
 
     // 3. Both slots taken: B's first send puts A, idle, to sleep.
@@ -388,6 +411,6 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   } finally {
     for (const id of ['o1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();
-    for (const file of [launchesFile, promptsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
+    for (const file of [launchesFile, promptsFile, sessionsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
   }
 });
