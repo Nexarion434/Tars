@@ -48,14 +48,19 @@ PROJECT_PATH="${CLAUDE_PROJECT_PATH:-$CWD}"
 # touching status — the status lifecycle belongs to UserPromptSubmit/Stop.
 # Retry once: if registration is lost, the stale-session guard would ignore
 # every later status post from this session.
+# cli_pid: the CLI whose session this is (Claude Code's CLAUDE_PID, its own
+# pid). Tars registers only the CLI it launched in the agent's terminal, not a
+# `claude -p` run from inside it, which inherits all the rest. Digits or empty.
+CLI_PID="${CLAUDE_PID:-}"
+[[ "$CLI_PID" =~ ^[0-9]+$ ]] || CLI_PID=""
 RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
   -H "Content-Type: application/json" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\", \"hook\": \"SessionStart\"}" 2>&1)
+  -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\", \"hook\": \"SessionStart\", \"cli_pid\": \"$CLI_PID\"}" 2>&1)
 if [ -z "$RESULT" ]; then
   sleep 1
   RESULT=$(curl -s --max-time 3 -X POST "$API_URL/api/hooks/status" -H @<(tars_auth) \
     -H "Content-Type: application/json" \
-    -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\", \"hook\": \"SessionStart\"}" 2>&1)
+    -d "{\"agent_id\": \"$AGENT_ID\", \"session_id\": \"$SESSION_ID\", \"status\": \"idle\", \"source\": \"$SOURCE\", \"hook\": \"SessionStart\", \"cli_pid\": \"$CLI_PID\"}" 2>&1)
 fi
 echo "[$(date)] SESSION_START curl result: $RESULT" >> "$HOOK_LOG"
 

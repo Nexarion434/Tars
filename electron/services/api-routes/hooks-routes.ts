@@ -13,6 +13,7 @@ import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 import { restPendingOf } from '../../core/agent-asleep';
 import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
 import { dropPermissionAsks, holdPermissionAsk } from '../permission-asks';
+import { isTerminalsOwnCli, ownCliAtOnce } from '../../core/terminal-cli';
 
 /**
  * The four shell hooks whose posts the state mod makes instead, for a session
@@ -256,7 +257,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
-      tool_name, tool_input, pending,
+      tool_name, tool_input, pending, cli_pid,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -277,6 +278,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       /** PermissionRequest only: the tool the dialog asks about, and its input. */
       tool_name?: string;
       tool_input?: unknown;
+      /** SessionStart only: the pid of the CLI whose session this is (Claude Code's CLAUDE_PID). */
+      cli_pid?: unknown;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -322,6 +325,35 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // hooks): record which session now owns this agent, but never touch
     // status: the agent was just dispatched a task and is about to work.
     if (source) {
+      // Only the CLI Tars launched in this agent's terminal: one run from
+      // inside it (a `claude -p` from its Bash tool) inherits the agent's id,
+      // token and hooks, and took the agent's session (core/terminal-cli.ts).
+      const terminalPid = agent.ptyId ? ptyProcesses.get(agent.ptyId)?.pid : undefined;
+      const refuse = () => {
+        console.log(`[hooks] Refused session ${session_id} for ${agent.id}: its CLI (pid ${String(cli_pid)}) is not its terminal's (pid ${terminalPid})`);
+        sendJson({ success: false, stale: true, foreign: true, agent: { id: agent.id, status: agent.status } });
+      };
+      const atOnce = ownCliAtOnce(terminalPid, cli_pid);
+      if (atOnce === false) { refuse(); return; }
+      if (atOnce === undefined) {
+        // A CLI the terminal's shell started: `ps` says whose child it is.
+        void isTerminalsOwnCli(terminalPid, cli_pid).then((own) => {
+          if (!own) { refuse(); return; }
+          // Asked while `ps` ran: the session may have been killed meanwhile.
+          if (isTombstonedSession(agent, session_id)) {
+            sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
+            return;
+          }
+          registerSession();
+        });
+        return;
+      }
+      registerSession();
+      return;
+    }
+
+    function registerSession(): void {
+      if (!agent) return;
       agent.currentSessionId = session_id;
       // What the task-start watch reads, instead of an emptied ownership field.
       agent.sessionRegisteredAt = new Date().toISOString();
@@ -346,7 +378,6 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // while its launch was on its way can go in now (agent-watch flush).
       agentStatusEmitter.emit('fleet-change', agent.id);
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
-      return;
     }
 
     // Stale-session guard: only the registered session may drive status.
