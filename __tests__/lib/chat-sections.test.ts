@@ -21,7 +21,10 @@ import type { ChatView } from '../../src/types/electron';
  * 9. a date that does not parse snoozes a chat for ever, or settles it;
  * 10. the state word: a chat with no runner, or an idle one, says something;
  *     a runner in a turn does not read working, one waiting does not read
- *     waiting on you, one in error says nothing.
+ *     waiting on you, one in error says nothing;
+ * 11. a chat pinned and still snoozed shows under Pinned: the snooze wins until
+ *     it ends (added after the code, at the Audit's L2 on #365, and shown to
+ *     bite by its mutant S1, the pin read before the snooze).
  */
 
 const NOW = Date.UTC(2026, 9, 12, 11, 0);
@@ -95,6 +98,10 @@ describe('chatSections', () => {
 
   it('reads a snooze whose date does not parse as no snooze (9)', () => {
     expect(names([chat({ id: 'a', snoozedUntil: 'not a date' })])).toEqual([['Active', ['a']]]);
+  });
+
+  it('keeps a pinned chat under Snoozed while its snooze runs (11)', () => {
+    expect(names([chat({ id: 'a', pinned: true, snoozedUntil: new Date(NOW + 60_000).toISOString() })])).toEqual([['Snoozed', ['a']]]);
   });
 
   it('gives Pinned, Active, Working, Snoozed, Settled in that order', () => {
