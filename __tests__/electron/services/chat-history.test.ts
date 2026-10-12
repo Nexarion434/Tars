@@ -1,0 +1,222 @@
+/**
+ * Reading and following a chat's transcripts (electron/services/chat-history.ts),
+ * from the Audit's gate of #371 (2026-10-13).
+ *
+ * Measured there: the follower re-read and re-parsed a live chat's whole
+ * transcripts, synchronously, every second while they changed, from launch,
+ * for every orchestrator's Main, whether a window asked or not. A 159 MB
+ * transcript cost 2.35 s to read and 2.34 s to parse (339 MB of heap): the
+ * main thread, so the API, the hooks' posts and the terminals, waited that
+ * long every second.
+ *
+ * How it fails, written before the code:
+ *  1. A tick reads a transcript whole when it grew: its cost follows the
+ *     file, not what was appended.
+ *  2. A line split across two reads (a write landing mid-line, a character of
+ *     several bytes cut at a read's end) is lost, doubled or garbled.
+ *  3. A file that shrank, or was replaced by another, is not read again from
+ *     its start: the old file's items stay, or the new file is read from the
+ *     old offset.
+ *  4. The first read of a large transcript holds the main thread from its
+ *     first byte to its last: nothing else runs until it is parsed.
+ *  5. A chat no window asked chat:history for is read at every tick.
+ *  6. With the new interface off (no window shows chats), anything is read
+ *     or sent.
+ *  7. (M1) A session whose transcript does not exist yet (Claude Code writes
+ *     it lazily) reads as "gone"; once written, the items shift and the
+ *     follower, counting by position, never sends one of them.
+ *  8. (L1) The runner's session ids, taken from agents.json unchecked, put
+ *     another path into the file read: `../../x` reads ~/.claude/x.jsonl.
+ *  9. Two ticks at once (a slow read) send an item twice.
+ * 10. A session in the middle whose transcript is gone no longer says so.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+const sent: Array<{ seq: number; type: string; chatId: string; item?: { id: string; n: number; text: string } }> = [];
+vi.mock('../../../electron/utils/broadcast', () => ({
+  broadcastToAllWindows: (_channel: string, payload: never) => { sent.push(payload); },
+}));
+
+import { readTranscript, readChatItems, followChats, noteChatSnapshot, resetChatHistory } from '../../../electron/services/chat-history';
+import { encodeProjectDirName } from '../../../electron/utils/resume-session';
+import type { Chat } from '../../../electron/services/chats';
+import type { AgentStatus } from '../../../electron/types';
+
+let home: string;
+let project: string;
+let n = 0;
+const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+const S = (k: string) => `${k.repeat(8)}-${k.repeat(4)}-4${k.repeat(3)}-8${k.repeat(3)}-${k.repeat(12)}`;
+const userLine = (text: string) => JSON.stringify({ type: 'user', uuid: uuid(), timestamp: '2026-10-13T08:00:00.000Z', message: { role: 'user', content: text } }) + '\n';
+const fileOf = (sessionId: string) => path.join(home, '.claude', 'projects', encodeProjectDirName(project), `${sessionId}.jsonl`);
+const write = (sessionId: string, text: string) => { fs.mkdirSync(path.dirname(fileOf(sessionId)), { recursive: true }); fs.writeFileSync(fileOf(sessionId), text); };
+const append = (sessionId: string, text: string) => fs.appendFileSync(fileOf(sessionId), text);
+const chatOf = (over: Partial<Chat> = {}): Chat => ({
+  id: 'c1', projectPath: project, number: 1, title: 'Main', titleSource: 'user', runnerId: 'orch', sessionIds: [S('a')], pinned: false,
+  snoozedUntil: null, settledAt: null, inbox: true, createdAt: '2026-10-13T08:00:00.000Z', updatedAt: '2026-10-13T08:00:00.000Z',
+  ...over,
+} as Chat);
+const runnerOf = (over: Partial<AgentStatus> = {}) => ({ id: 'orch', status: 'running', ...over }) as AgentStatus;
+const texts = (items: Array<{ text: string }>) => items.map((i) => i.text);
+
+beforeEach(() => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-chat-history-'));
+  project = path.join(home, 'proj');
+  fs.mkdirSync(project);
+  sent.length = 0;
+  resetChatHistory();
+});
+afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+
+describe('one transcript, read as it grows', () => {
+  it('1. reads only what was appended, however large the file', async () => {
+    const big = Array.from({ length: 20_000 }, (_, i) => userLine(`line ${i} ${'x'.repeat(900)}`)).join('');
+    write(S('a'), big);
+    const first = { bytes: 0, slices: 0 };
+    const t0 = performance.now();
+    expect((await readTranscript(fileOf(S('a')), S('a'), { stats: first }))!.length).toBe(20_000);
+    const firstMs = performance.now() - t0;
+    const added = userLine('one more') + userLine('and another');
+    append(S('a'), added);
+    const next = { bytes: 0, slices: 0 };
+    const t1 = performance.now();
+    const items = (await readTranscript(fileOf(S('a')), S('a'), { stats: next }))!;
+    const nextMs = performance.now() - t1;
+    expect(first.bytes).toBe(Buffer.byteLength(big));
+    expect(next.bytes, 'the second read reads what was appended').toBe(Buffer.byteLength(added));
+    expect(texts(items.slice(-2))).toEqual(['one more', 'and another']);
+    // The bench, for the run log: a tick costs what was appended.
+    console.log(`[bench] first read ${(first.bytes / 1e6).toFixed(1)} MB in ${firstMs.toFixed(0)} ms; next ${next.bytes} B in ${nextMs.toFixed(1)} ms`);
+    // Unchanged: nothing read.
+    const none = { bytes: 0, slices: 0 };
+    await readTranscript(fileOf(S('a')), S('a'), { stats: none });
+    expect(none.bytes).toBe(0);
+  }, 60_000);
+
+  it('2. keeps a line written in two halves, and characters cut at a read\'s end', async () => {
+    const line = userLine('déjà vu 🎉 ünïcödé');
+    write(S('a'), line.slice(0, 25));
+    expect(await readTranscript(fileOf(S('a')), S('a'))).toEqual([]);
+    append(S('a'), line.slice(25));
+    // A read of 7 bytes at a time cuts the accents and the emoji in two.
+    const items = (await readTranscript(fileOf(S('a')), S('a'), { chunkBytes: 7 }))!;
+    expect(texts(items)).toEqual(['déjà vu 🎉 ünïcödé']);
+    const again = await readTranscript(fileOf(S('a')), S('a'), { chunkBytes: 7 });
+    expect(texts(again!)).toEqual(['déjà vu 🎉 ünïcödé']);
+  });
+
+  it('3. reads a file that shrank, or was replaced, from its start', async () => {
+    write(S('a'), userLine('one') + userLine('two') + userLine('three'));
+    expect(texts((await readTranscript(fileOf(S('a')), S('a')))!)).toEqual(['one', 'two', 'three']);
+    fs.truncateSync(fileOf(S('a')), 0);
+    append(S('a'), userLine('fresh'));
+    expect(texts((await readTranscript(fileOf(S('a')), S('a')))!)).toEqual(['fresh']);
+    const other = `${fileOf(S('a'))}.new`;
+    fs.writeFileSync(other, userLine('replaced') + userLine('by') + userLine('another file'));
+    fs.renameSync(other, fileOf(S('a')));
+    expect(texts((await readTranscript(fileOf(S('a')), S('a')))!)).toEqual(['replaced', 'by', 'another file']);
+  });
+
+  it('4. lets the main thread run while a large transcript is read the first time', async () => {
+    write(S('a'), Array.from({ length: 4_000 }, (_, i) => userLine(`line ${i} ${'y'.repeat(200)}`)).join(''));
+    let ran = 0;
+    let on = true;
+    const ticker = () => { ran += 1; if (on) setImmediate(ticker); };
+    setImmediate(ticker);
+    const stats = { bytes: 0, slices: 0 };
+    await readTranscript(fileOf(S('a')), S('a'), { chunkBytes: 64 * 1024, stats });
+    on = false;
+    expect(stats.slices).toBeGreaterThan(10);
+    expect(ran, 'other work ran between the slices').toBeGreaterThanOrEqual(stats.slices - 1);
+  });
+
+  it('says null for a file that does not exist', async () => {
+    expect(await readTranscript(fileOf(S('z')), S('z'))).toBeNull();
+  });
+});
+
+describe('a chat, followed', () => {
+  const follow = (over: { enabled?: () => boolean; chats?: Chat[]; runner?: AgentStatus } = {}) => {
+    const chats = over.chats ?? [chatOf()];
+    const runner = over.runner ?? runnerOf();
+    return followChats({
+      chats: () => chats, runnerOf: () => runner, isLive: () => true, nameOf: () => undefined, homeDir: home,
+      enabled: over.enabled ?? (() => true), everyMs: 3_600_000,
+    });
+  };
+  const itemsSent = () => sent.filter((e) => e.type === 'item').map((e) => e.item!.text);
+
+  it('5. reads no chat a window has not asked for', async () => {
+    write(S('a'), userLine('hello'));
+    const spy = vi.spyOn(fs.promises, 'open');
+    const f = follow();
+    await f.tick();
+    append(S('a'), userLine('more'));
+    await f.tick();
+    f.stop();
+    expect(spy).not.toHaveBeenCalled();
+    expect(itemsSent()).toEqual([]);
+    spy.mockRestore();
+  });
+
+  it('6. reads and sends nothing while the new interface is off', async () => {
+    write(S('a'), userLine('hello'));
+    const chat = chatOf();
+    noteChatSnapshot(chat.id, await readChatItems(chat, { runner: runnerOf(), homeDir: home }));
+    const spy = vi.spyOn(fs.promises, 'open');
+    let on = false;
+    const f = follow({ enabled: () => on, chats: [chat] });
+    append(S('a'), userLine('while off'));
+    await f.tick();
+    expect(spy).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+    on = true;
+    await f.tick();
+    f.stop();
+    expect(itemsSent()).toEqual(['while off']);
+    spy.mockRestore();
+  });
+
+  it('7. sends every item of a session whose transcript is written after the snapshot', async () => {
+    write(S('a'), userLine('hello'));
+    const chat = chatOf();
+    const runner = runnerOf({ currentSessionId: S('b'), resumableSessionId: S('b') });
+    const snapshot = await readChatItems(chat, { runner, homeDir: home });
+    expect(texts(snapshot)).toEqual(['hello', 'session']);
+    noteChatSnapshot(chat.id, snapshot);
+    write(S('b'), userLine('first of B') + userLine('second of B'));
+    const f = follow({ chats: [chat], runner });
+    await f.tick();
+    f.stop();
+    expect(itemsSent()).toEqual(['first of B', 'second of B']);
+  });
+
+  it('8. never reads a runner\'s session id that is not one', async () => {
+    write(S('a'), userLine('hello'));
+    const outside = path.join(home, '.claude', 'x.jsonl');
+    fs.writeFileSync(outside, userLine('SECRET'));
+    const items = await readChatItems(chatOf(), { runner: runnerOf({ resumableSessionId: '../../x', currentSessionId: '../../x' }), homeDir: home });
+    expect(texts(items)).toEqual(['hello']);
+  });
+
+  it('9. sends an item once when two ticks run at once', async () => {
+    write(S('a'), userLine('hello'));
+    const chat = chatOf();
+    noteChatSnapshot(chat.id, await readChatItems(chat, { runner: runnerOf(), homeDir: home }));
+    append(S('a'), userLine('once'));
+    const f = follow({ chats: [chat] });
+    await Promise.all([f.tick(), f.tick()]);
+    f.stop();
+    expect(itemsSent()).toEqual(['once']);
+  });
+
+  it('10. says so for a session in the middle whose transcript is gone', async () => {
+    write(S('a'), userLine('hello'));
+    write(S('c'), userLine('later'));
+    const items = await readChatItems(chatOf({ sessionIds: [S('a'), S('b'), S('c')] }), { runner: runnerOf({ currentSessionId: S('c') }), homeDir: home });
+    expect(texts(items)).toEqual(['hello', 'session', `session ${S('b')}: its transcript is gone`, 'session', 'later']);
+  });
+});
