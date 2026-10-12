@@ -249,7 +249,10 @@ function loadAppSettings(): AppSettings {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
       // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
-      return { ...defaults, ...sentryTokenOutOf(saved) };
+      // The switch is on only for the boolean true: the file is in ~/.dorothy,
+      // which every agent can write, and "false" or 1 would read as on to a
+      // page that tests it for truth (the Audit's L1 on #360).
+      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
