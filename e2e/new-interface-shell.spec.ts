@@ -24,7 +24,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * longer. In light, the chats page as its light frame draws it. Then the
  * switch, turned off from the card: the shell before comes back at once, the
  * card goes with the new shell, and app-settings.json says newInterface:
- * false.
+ * false. Settings, opened then, has no New interface row: until 2.0.0 the row
+ * shows only to whoever turned the preview on, through the settings file.
  *
  * The artefact: a screenshot per state and values.json with what each read.
  */
@@ -145,6 +146,16 @@ test('with the new interface on, the shell of the frames: the main menu, Tars fi
     seen.savedOff = saved.newInterface;
     expect(saved.newInterface).toBe(false);
     await stepShot(page, '07-switched-off');
+
+    // Off, Settings shows no New interface row: until 2.0.0 the preview is turned
+    // on through the settings file, and only whoever did sees the row (JeanBrasse, 12/10).
+    await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator(SPLASH)).toHaveCount(0, { timeout: 30_000 });
+    const rowsOff = page.locator('[data-settings-row]');
+    await expect(rowsOff.filter({ hasText: 'Default provider' })).toBeVisible({ timeout: 60_000 });
+    await expect(rowsOff.filter({ hasText: 'New interface' })).toHaveCount(0);
+    seen.rowWhenOff = await rowsOff.filter({ hasText: 'New interface' }).count();
+    await stepShot(page, '08-settings-off-no-row');
 
     recordValues(seen);
     expect(pageErrors, 'no uncaught page error').toEqual([]);
