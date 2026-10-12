@@ -190,12 +190,29 @@ export class GeminiProvider implements CLIProvider {
       { type: 'SessionStart', file: 'session-start.sh', matcher: '*' },
       { type: 'SessionEnd', file: 'session-end.sh', matcher: '*' },
       { type: 'Notification', file: 'notification.sh', matcher: '*' },
-      { type: 'UserPromptSubmit', file: 'user-prompt-submit.sh', matcher: undefined },
+      // BeforeAgent: Gemini CLI fires no UserPromptSubmit
+      // (https://geminicli.com/docs/hooks/), and a Gemini agent read idle while
+      // it worked. win32 had moved already (utils/gemini-node-hooks.ts).
+      { type: 'BeforeAgent', file: 'user-prompt-submit.sh', matcher: undefined },
     ];
 
     let updated = false;
 
     type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
+
+    // The entry an older Tars wrote on UserPromptSubmit goes; the user's own
+    // entries in that event stay.
+    const former = settings.hooks.UserPromptSubmit;
+    if (Array.isArray(former)) {
+      const kept = former
+        .map((entry: HookEntry) => ({ ...entry, hooks: (entry.hooks ?? []).filter((hh) => !hh.command?.includes('gemini/user-prompt-submit.sh')) }))
+        .filter((entry: HookEntry) => entry.hooks.length > 0);
+      if (kept.length !== former.length || kept.some((entry: HookEntry, i: number) => entry.hooks.length !== former[i].hooks?.length)) {
+        if (kept.length) settings.hooks.UserPromptSubmit = kept;
+        else delete settings.hooks.UserPromptSubmit;
+        updated = true;
+      }
+    }
 
     for (const { type, file, matcher } of hookFiles) {
       const commandPath = path.join(geminiHooksDir, file);
