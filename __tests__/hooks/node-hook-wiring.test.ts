@@ -31,7 +31,8 @@ import { moveTestHome } from '../setup/test-home';
  *  6. The agent token cannot reach a Gemini hook once the user turns on
  *     environment redaction (`CLAUDE_MGR_API_TOKEN` matches /TOKEN/): it is
  *     not in `security.environmentVariableRedaction.allowed`; or adding it
- *     drops the user's own entries or flips `enabled`.
+ *     drops the user's own entries or flips `enabled`. On every platform since
+ *     2026-10-12 (it was win32's alone): Gemini redacts the same way on macOS.
  *  7. The user's own hooks, in the same event, are removed or rewritten.
  *  8. The command is quoted so that Git Bash, or PowerShell (Claude without
  *     Git Bash, and Gemini always on Windows), splits the path at a space
@@ -166,8 +167,22 @@ describe('on darwin and linux the .sh wiring stays, Gemini on the event it fires
           Notification: [{ hooks: [{ type: 'command', command: g('notification.sh'), timeout: 10000 }], matcher: '*' }],
           BeforeAgent: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }],
         },
+        security: { environmentVariableRedaction: { allowed: ['CLAUDE_MGR_API_TOKEN'] } },
       };
       expect(fs.readFileSync(geminiSettingsFile(), 'utf-8')).toBe(JSON.stringify(expected, null, 2));
+    });
+
+    it(`6. Gemini lets the agent token through its redaction, the user's own settings kept (${platform})`, async () => {
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({
+        security: { environmentVariableRedaction: { enabled: true, allowed: ['MY_KEY'] }, folderTrust: { enabled: true } },
+      }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      expect(read(geminiSettingsFile()).security).toEqual({
+        environmentVariableRedaction: { enabled: true, allowed: ['MY_KEY', 'CLAUDE_MGR_API_TOKEN'] }, folderTrust: { enabled: true },
+      });
     });
 
     it(`5. Gemini moves an older Tars's UserPromptSubmit entry to BeforeAgent, and keeps the user's own (${platform})`, async () => {
