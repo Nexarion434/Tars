@@ -1024,6 +1024,87 @@ export interface OrphanRemovalReport {
 /** What the claude-accounts channels answer: the result, or a sentence. */
 export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
 
+/* ── The chats of each project (electron/services/chats.ts, handlers/chat-handlers.ts) ── */
+
+/** A chat's record, as ~/.dorothy/chats.json keeps it. */
+export interface Chat {
+  id: string;
+  /** The project's path as Tars saved it (its orchestrator's). */
+  projectPath: string;
+  /** Fixed within its project: 1 is Main, then 2, 3...; never handed out again after a delete. */
+  number: number;
+  title: string;
+  /** auto: "New chat" until its first message names it; user: named, never replaced. */
+  titleSource: 'user' | 'auto';
+  /** The agent that runs its conversation: Main's is the project's orchestrator; null until the chat's first send. */
+  runnerId: string | null;
+  /** Every session its conversation went through, oldest first. */
+  sessionIds: string[];
+  pinned: boolean;
+  snoozedUntil: string | null;
+  settledAt: string | null;
+  /** The project's chat the bots, Hermes and Tars's notes post to: one per project. */
+  inbox: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt: string;
+}
+
+/** A chat, with its runner as the fleet has it now. */
+export interface ChatView extends Chat {
+  runner: {
+    id: string;
+    name: string;
+    status: AgentTickItem['status'];
+    waking: boolean;
+    /** Its CLI holds a terminal: it counts in the limit. */
+    live: boolean;
+    lastActivity: string;
+  } | null;
+}
+
+/** A request a chat's runner has out at another agent: what keeps the chat from being deleted. */
+export interface ChatWorkItem {
+  workerId: string;
+  workerName: string | null;
+  /** The request's id as Tars typed it; null for a link an older Tars left. */
+  ref: string | null;
+  state: 'queued' | 'delivered';
+  queuedAt: string | null;
+}
+
+/** Why a chat channel did nothing, in a sentence the window can show as it is. */
+export interface ChatError {
+  error:
+    | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
+    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'chat_send_unavailable';
+  reason: string;
+  /** chat_has_work: the work the chat's runner has out. */
+  tasks?: ChatWorkItem[];
+}
+
+/** chats.json could not be read as it was: what was done, and where the file as it was is kept. */
+export interface ChatsProblem {
+  kind: 'corrupt' | 'repaired' | 'newer' | 'unreadable' | 'write_failed';
+  detail: string;
+  file?: string;
+  dropped?: number;
+  at: string;
+}
+
+/** How many chats may have a live CLI at once, across every project, Main counted: one per 5 GB of RAM, from 1 to 8. */
+export interface ChatLimit {
+  limit: number;
+  ramGb: number;
+  perChatGb: number;
+  min: number;
+  max: number;
+  /** ram: this machine's memory; override: the E2E's figure. */
+  source: 'ram' | 'override';
+  /** Chats whose runner holds a terminal now. */
+  working: number;
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -2088,6 +2169,27 @@ export interface ElectronAPI {
     /** Removes the folders named (the OrphanFolder.path of the rows shown), each only if it is still an orphan, and nothing else; one at a time, asking nothing itself (the window confirms first). A folder a process works in is kept. */
     removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>;
     onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
+    /** How many chats may work at once, and where that figure came from. */
+    chatLimit: () => Promise<ChatLimit>;
+  };
+
+  /** The chats of each project. Mirror of the `chat` namespace in electron/preload.ts. */
+  chat: {
+    /** Every chat, by project then number; `seq` moves at each change. A project's orchestrator's conversation is its chat #1, Main. */
+    list: () => Promise<{ seq: number; chats: ChatView[]; problem: ChatsProblem | null }>;
+    /** title omitted: "New chat", named by its first message. no_orchestrator for a project without one. */
+    create: (params: { projectPath: string; title?: string }) => Promise<ChatView | ChatError>;
+    rename: (params: { chatId: string; title: string }) => Promise<ChatView | ChatError>;
+    pin: (params: { chatId: string; pinned: boolean }) => Promise<ChatView | ChatError>;
+    /** until: a time to come, or null to end the snooze. */
+    snooze: (params: { chatId: string; until: string | null }) => Promise<ChatView | ChatError>;
+    settle: (params: { chatId: string; settled: boolean }) => Promise<ChatView | ChatError>;
+    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). */
+    delete: (params: { chatId: string }) => Promise<{ success: true } | ChatError>;
+    /** The project's inbox moves to this chat. */
+    setInbox: (params: { chatId: string }) => Promise<ChatView | ChatError>;
+    /** Refused (chat_send_unavailable) until the chats have orchestrators of their own. */
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatError>;
   };
 
   // Obsidian vault browsing & editing

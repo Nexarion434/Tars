@@ -684,6 +684,8 @@ work.
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
+| `~/.dorothy/chats.json` | `electron/services/chats.ts` | the chats of each project: one record per chat (its number, title, runner and sessions, pinned, snoozed, settled, the inbox), and each project's last number (`numbers`). Not the conversations: those are the runners' transcripts (A chat's record, below) |
+| `~/.dorothy/chats.json.corrupt-<time>` | same | a `chats.json` that could not be read as one, set aside byte for byte; never written over or removed by Tars |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
@@ -756,6 +758,44 @@ cp ~/.dorothy/agents.backup.json ~/.dorothy/agents.json
 
 `parseAgentsFile()` accepts both shapes: a bare array (v1) and `{version, savedAt, agents}`
 (v2). A hand-written array will load.
+
+### A chat's record
+
+**Where a chat lives.**
+- **The records:** each project's chats are in `~/.dorothy/chats.json` (`electron/services/chats.ts`).
+- **The conversation:** what a chat says is not in that file. It is the transcripts of the agent that runs
+  it (`runnerId`), one per session in `sessionIds`, under `~/.claude/projects/`, in the folder Claude Code
+  names after the project's path, or after its real path when the project was saved through a link.
+- **Main:** chat #1 is the project's orchestrator's own conversation. Its runner is the orchestrator. It
+  is made by the first launch that finds the project with an orchestrator and no chat ever
+  (`registerChatHandlers`, after `loadAgents()`), or by the next `chat:list` when the orchestrator is
+  set later; a launch with nothing to make writes nothing.
+
+```bash
+# every chat, by project
+jq -r '.chats[] | "\(.projectPath)  #\(.number)  \(.title)  runner=\(.runnerId // "-")  inbox=\(.inbox)  sessions=\(.sessionIds | length)"' ~/.dorothy/chats.json
+
+# each project's last number: a deleted chat's number is never handed out again
+jq '.numbers' ~/.dorothy/chats.json
+```
+
+**When `chat:list` reports a `problem`:**
+- **`corrupt`:** the file could not be read as a chats file. It is kept byte for byte as
+  `chats.json.corrupt-<time>`, and Tars started a new `chats.json` from each orchestrator: Main again, and
+  each project's numbers from 1 again. To put the old one back, quit Tars, repair the copy so it parses
+  (`jq . <copy>` says where it breaks), and move it over `chats.json`.
+- **`repaired`:** records that did not hold were dropped (`problem.dropped` says how many), or a rule was
+  put right (a number in use above the project's counter, one inbox per project). The file as it was is
+  the `.corrupt-<time>` copy.
+- **`newer`** (a newer Tars wrote it) or **`unreadable`** (its permissions): Tars changes nothing in it,
+  and no chat can change until it is fixed.
+
+**Going back to a Tars without chats (1.9.5 and earlier):**
+- It does not read `chats.json`, and leaves it where it is.
+- Nothing else was moved: Main is the orchestrator's own conversation, so the orchestrator works as
+  before.
+- Chats other than Main do not run anything yet, so there is nothing else to undo.
+- Upgrading again finds the chats as they were.
 
 ### Full reset
 
