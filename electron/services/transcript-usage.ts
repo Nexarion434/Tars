@@ -812,6 +812,13 @@ async function scanTranscripts(
   return value;
 }
 
+/** Test seam: the 60 s memo runs out, what is known of each file stays (as after a minute). */
+export function expireTranscriptUsageMemo(): void {
+  generation += 1;
+  cache = null;
+  inFlight.clear();
+}
+
 /**
  * Drops both memos so a test or a refresh sees fresh numbers.
  *
