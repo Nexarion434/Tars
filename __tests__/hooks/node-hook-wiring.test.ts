@@ -59,6 +59,10 @@ import { moveTestHome } from '../setup/test-home';
  *     `~/.claude/hooks/`, say), and deletes it at every launch while Tars's is
  *     off. It is Tars's only in this app's hooks folder, or in one that holds
  *     Tars's runner beside it, and never under a .claude or .gemini folder.
+ * 14. On darwin and linux, removing an older Tars's Gemini UserPromptSubmit
+ *     entry (5) by the name in its command takes a user's own
+ *     `.../gemini/user-prompt-submit.sh`, or an installed Dorothy's, for
+ *     Tars's and deletes it. The same rule as 10 and 12 decides.
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
@@ -198,6 +202,23 @@ describe('on darwin and linux the .sh wiring stays, Gemini on the event it fires
       const hooks = read(geminiSettingsFile()).hooks;
       expect(hooks.UserPromptSubmit).toEqual([mine]);
       expect(hooks.BeforeAgent).toEqual([{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }]);
+    });
+
+    it(`14. Gemini leaves a user's own and Dorothy's user-prompt-submit.sh on UserPromptSubmit, and removes an older Tars's (${platform})`, async () => {
+      const entry = (command: string) => ({ hooks: [{ type: 'command', command, timeout: 10000 }] });
+      const userOwn = entry(path.join(home, '.gemini', 'hooks', 'gemini', 'user-prompt-submit.sh'));
+      const elsewhere = path.join(fs.mkdtempSync(path.join(tmp, 'me-')), 'hooks', 'gemini');
+      fs.mkdirSync(elsewhere, { recursive: true });
+      const userElsewhere = entry(path.join(elsewhere, 'user-prompt-submit.sh'));
+      const dorothy = entry(path.join(dorothyInstall(), 'gemini', 'user-prompt-submit.sh'));
+      const olderTars = entry(path.join(oldCheckout(), 'gemini', 'user-prompt-submit.sh'));
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({ hooks: {
+        UserPromptSubmit: [userOwn, userElsewhere, dorothy, olderTars],
+      } }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      expect(read(geminiSettingsFile()).hooks.UserPromptSubmit).toEqual([userOwn, userElsewhere, dorothy]);
     });
   }
 });
