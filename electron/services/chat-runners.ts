@@ -65,6 +65,9 @@ const TEXT_MAX = 100_000;
 /** A settled chat's runner that cannot sleep at once is tried again, this often and this many times. */
 const SETTLE_RETRY_MS = 3_500;
 const SETTLE_TRIES = 10;
+/** How many times a full limit looks at a runner whose turn has just ended, and how far apart (freeSlot). */
+const EVICTION_LOOKS = 6;
+const EVICTION_PAUSE_MS = 500;
 
 let store: ChatStore | null = null;
 /** Launches the allocator let through, which hold no terminal yet: they count against the limit. */
@@ -235,33 +238,45 @@ export function chatsWorking(): number {
 /** A slot for `forAgentId`, freed by a sleep when none is; or the refusal the user sees. */
 async function freeSlot(forAgentId?: string): Promise<SendError | null> {
   const limit = chatLimitOf(os.totalmem(), process.env);
-  const holders = slotHolders().filter(({ agent }) => agent.id !== forAgentId);
-  if (holders.length < limit.limit) return null;
-  const procs = await readProcesses();
-  const now = Date.now();
-  const candidates = holders.map(({ chat, agent }) => ({
-    agentId: agent.id,
-    isMain: chat.number === 1 || agent.kind !== 'chat',
-    lastActivity: Date.parse(agent.lastActivity) || 0,
-    refusal: reserved.has(agent.id) ? 'starting' : sleepRefusal(factsOf(agent, procs, now), { anyAge: true }),
-  }));
-  const victimId = victimOf(candidates);
-  const victim = victimId ? agents.get(victimId) : undefined;
-  // Read again with nothing awaited since, then put to sleep: a message on its
-  // way to it is in its field (fieldInUse), and the sleep is synchronous up to
-  // the end of its terminal's tree.
-  if (victim && isLive(victim) && sleepRefusal(factsOf(victim, procs, Date.now()), { anyAge: true }) === null) {
-    await sleepNow(victim, 'to free a slot for another chat');
-    return null;
+  for (let look = 1; ; look += 1) {
+    const holders = slotHolders().filter(({ agent }) => agent.id !== forAgentId);
+    if (holders.length < limit.limit) return null;
+    const procs = await readProcesses();
+    const now = Date.now();
+    const candidates = holders.map(({ chat, agent }) => ({
+      agentId: agent.id,
+      isMain: chat.number === 1 || agent.kind !== 'chat',
+      lastActivity: Date.parse(agent.lastActivity) || 0,
+      refusal: reserved.has(agent.id) ? 'starting' : sleepRefusal(factsOf(agent, procs, now), { anyAge: true }),
+    }));
+    const victimId = victimOf(candidates);
+    const victim = victimId ? agents.get(victimId) : undefined;
+    // Read again with nothing awaited since, then put to sleep: a message on its
+    // way to it is in its field (fieldInUse), and the sleep is synchronous up to
+    // the end of its terminal's tree.
+    if (victim && isLive(victim) && sleepRefusal(factsOf(victim, procs, Date.now()), { anyAge: true }) === null) {
+      await sleepNow(victim, 'to free a slot for another chat');
+      return null;
+    }
+    // A turn's end reaches Tars from its Stop hook, whose process is still
+    // under the CLI for a moment after (busy), and the process table may not
+    // come at all under load: such a runner is looked at again, a little later.
+    const passing = candidates.some((c) => !c.isMain && (c.refusal === 'busy' || c.refusal === 'no-process-table'));
+    if (passing && look < EVICTION_LOOKS) {
+      await new Promise((resolve) => setTimeout(resolve, EVICTION_PAUSE_MS));
+      continue;
+    }
+    const why = candidates.map((c) => `${agents.get(c.agentId)?.name || c.agentId}: ${c.isMain ? 'main' : c.refusal ?? 'free'}`).join(', ');
+    console.log(`[chat-runners] chat_limit (${limit.limit} working): ${why}`);
+    const working = holders.map(({ chat, agent }) => ({ chatId: chat.id, title: chat.title, since: agent.statusSince ?? agent.lastActivity }));
+    return {
+      error: 'chat_limit',
+      reason: chatLimitSentence(limit.limit, limit.ramGb, limit.perChatGb, working.map((w) => w.title)),
+      limit: limit.limit,
+      ramGb: limit.ramGb,
+      working,
+    };
   }
-  const working = holders.map(({ chat, agent }) => ({ chatId: chat.id, title: chat.title, since: agent.statusSince ?? agent.lastActivity }));
-  return {
-    error: 'chat_limit',
-    reason: chatLimitSentence(limit.limit, limit.ramGb, limit.perChatGb, working.map((w) => w.title)),
-    limit: limit.limit,
-    ramGb: limit.ramGb,
-    working,
-  };
 }
 
 /**

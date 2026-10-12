@@ -25,7 +25,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    instructions, --disallowed-tools), in its worktree, and told it is the orchestrator in that chat, its role the
  *    orchestrator's brief;
  * 3. with both slots taken, a send in chat B puts A, idle, to sleep and starts B: two runners, two sessions, two
- *    worktrees;
+ *    worktrees, though each turn's Stop hook leaves a process under the CLI for a second after it;
  * 4. the next send in A puts B to sleep and resumes A's session (--resume <its id>);
  * 5. with Main and A both in a turn, a send in B answers chat_limit, with its sentence and who works;
  * 6. two sends in one tick for one free slot: one runner starts, the other answers chat_limit;
@@ -48,7 +48,7 @@ const WORKTREE_TOOL = path.resolve('scripts', 'worktree.mjs');
 
 const STAND_IN = String.raw`
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const id = process.env.CLAUDE_AGENT_ID;
 const args = process.argv.slice(2);
 // As Claude Code: --resume <id> continues that session, in its own transcript; with --fork-session, under a new id.
@@ -82,6 +82,9 @@ async function turn(prompt) {
   line({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } });
   await sleep(200);
   hook('on-stop.sh', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'done' });
+  // The Stop hook's tail: a process still under the CLI for a second after the turn's end reached Tars, as a
+  // hook's exit takes on a loaded machine. A full limit must look again rather than call the chat working.
+  spawn('/bin/sleep', ['1'], { stdio: 'ignore' });
   // A turn told to exit ends the CLI after it, as /exit does.
   if (prompt.includes('EXIT>>')) process.exit(0);
 }
