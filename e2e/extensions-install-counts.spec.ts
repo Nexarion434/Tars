@@ -26,6 +26,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The artefact: a screenshot of the list and values.json with each row's count.
  */
 
+/** The launch splash, over the page on every document load until its checks answer (4 s at most). */
+const SPLASH = 'div.fixed.inset-0.z-\\[200\\]';
+
 const ROWS: Array<[name: string, repo: string, installs: number, shown: string]> = [
   ['find-skills', 'vercel-labs/skills', 3_731_100, '3.7M'],
   ['grill-me', 'mattpocock/skills', 1_300_100, '1.3M'],
@@ -79,6 +82,7 @@ test('the Extensions page writes every install count with one decimal, in K or M
       const row = rows.filter({ has: page.getByText(name, { exact: true }) });
       shown[name] = (await row.locator('td').nth(3).innerText()).trim();
     }
+    await expect(page.locator(SPLASH)).toHaveCount(0, { timeout: 15_000 });
     recordValues({ shown, expected: Object.fromEntries(ROWS.map(([name, , , label]) => [name, label])) });
     await stepShot(page, '01-install-counts');
 
