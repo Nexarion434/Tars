@@ -9,7 +9,7 @@ import { ptyProcesses } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getClaudeStats } from './claude-service';
 import {
-  findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusDot, statusReport, stopNow,
+  findAgent, forwardToOrchestrator, listedAgents, priceUsage, projectsReport, startWithTask, statusDot, statusReport, stopNow,
   type BotFleet, type ClaudeUsageStats, type StatusGroup,
 } from './bot-core';
 
@@ -275,12 +275,12 @@ async function stopCommand(text: string, say: Say, appSettings: AppSettings): Pr
 const COMMANDS: Array<[(lowerText: string) => boolean, (text: string, say: Say, appSettings: AppSettings) => Promise<unknown>]> = [
   [lowerText => lowerText === 'help' || lowerText === '', (_text, say) => say(HELP)],
   [lowerText => lowerText === 'status', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say('📭 No agents created yet.');
     return say(statusReport(list, { title: `📊 **Agents Status**\n\n`, dot: DOTS, item: agentLine, orchestratorFirst: true, strong: '**' }));
   }],
   [lowerText => lowerText === 'agents', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say('📭 No agents created yet.');
     return say(`🤖 **All Agents**\n\n` + list.map(a => agentLine(a) + '\n').join(''));
   }],

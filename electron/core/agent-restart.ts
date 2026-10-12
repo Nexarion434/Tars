@@ -8,7 +8,7 @@ import { holdsFor } from '../services/agent-watch';
 import { pendingBackgroundWork } from '../services/agent-truth';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
-import { isSuperAgent } from '../utils';
+import { hasOrchestratorPowers } from './agent-role';
 import type { AgentStatus } from '../types';
 
 /**
@@ -70,8 +70,9 @@ export function launchSettings(agent: AgentStatus): LaunchSettings {
     model: agent.model && agent.model !== 'default' ? agent.model : undefined,
     effort: agent.effort || undefined,
     permissionMode: agent.permissionMode,
-    // The role, which the Orchestrator toggle sets (core/agent-role.ts).
-    orchestrator: isSuperAgent(agent),
+    // The orchestrator's powers: its project's orchestrator, which the toggle
+    // makes, or a chat's runner (core/agent-role.ts).
+    orchestrator: hasOrchestratorPowers(agent),
     secondaryProjectPath: agent.secondaryProjectPath || undefined,
     obsidianVaultPaths: [...(agent.obsidianVaultPaths ?? [])],
     localModel: agent.localModel || undefined,

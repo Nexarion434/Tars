@@ -3,19 +3,20 @@ import { randomUUID } from 'crypto';
 import { isSafeTelegramPath } from './utils';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { agents } from '../../core/agent-manager';
-import { isSuperAgent } from '../../utils';
+import { hasOrchestratorPowers } from '../../core/agent-role';
 import { redactSecrets } from '../../utils/redact-secrets';
 import { relaySend } from '../hermes-relay';
 
 /**
  * With the relay on (services/hermes-relay.ts), send_telegram is the one way left to write to the user, and goes
- * through their Hermes: from a project's orchestrator only (JeanBrasse's rule of 2026-10-01), under its project, so that
- * the user's reply reaches it, with its secrets masked and in plain text. The chat it names is not read: the relay
- * writes to one person. A file goes nowhere: the relay carries text.
+ * through their Hermes: from a project's orchestrator only (JeanBrasse's rule of 2026-10-01), or a chat's runner, which has
+ * its powers (core/agent-role.ts), under its project, so that the user's reply reaches it, with its secrets masked and
+ * in plain text. The chat it names is not read: the relay writes to one person. A file goes nowhere: the relay
+ * carries text.
  */
 async function sendThroughRelay(req: RouteRequest, sendJson: SendJson, message: string): Promise<void> {
   const caller = req.callerAgentId ? agents.get(req.callerAgentId) : undefined;
-  if (!caller || !isSuperAgent(caller)) {
+  if (!caller || !hasOrchestratorPowers(caller)) {
     sendJson({ error: 'Only a project\'s orchestrator writes to the user. Tell your orchestrator: it decides what reaches them.' }, 403);
     return;
   }

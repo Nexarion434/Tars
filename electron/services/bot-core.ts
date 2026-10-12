@@ -14,6 +14,7 @@ import * as os from 'os';
 import type * as pty from 'node-pty';
 import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
+import { hasOrchestratorPowers } from '../core/agent-role';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
@@ -37,6 +38,16 @@ export interface BotFleet {
 
 /** The chat a message came from, as Tars names it on the line it types before it. */
 export type BotChannel = 'Telegram' | 'Slack' | 'Discord';
+
+/**
+ * The fleet as the bots list it. A chat's runner runs one chat's conversation
+ * with the orchestrator and is no member of the team (ORCHESTRATOR-PER-CHAT.md,
+ * 4.2): listed, it read as one more worker, named after the orchestrator, and
+ * every chat opened added one.
+ */
+export function listedAgents(agents: Iterable<AgentStatus>): AgentStatus[] {
+  return [...agents].filter(a => a.kind !== 'chat');
+}
 
 /** An agent named in a command: a part of its name, or its id. */
 export function findAgent(agents: Map<string, AgentStatus>, name: string): AgentStatus | undefined {
@@ -79,7 +90,7 @@ export function statusDot(a: AgentStatus, dot: Record<StatusGroup, string>): str
   return a.status === 'running' ? dot.running : a.status === 'waiting' ? dot.waiting : a.status === 'error' ? dot.error : dot.idle;
 }
 
-/** The projects that have agents, each with its agents, the orchestrators left out. Null when there are none. */
+/** The projects that have agents, each with its agents, the orchestrators and the chats' runners left out. Null when there are none. */
 export function projectsReport(
   agents: Map<string, AgentStatus>,
   words: {
@@ -88,7 +99,7 @@ export function projectsReport(
   },
 ): string | null {
   const byProject = new Map<string, AgentStatus[]>();
-  for (const agent of agents.values()) {
+  for (const agent of listedAgents(agents.values())) {
     if (isSuperAgent(agent)) continue;
     byProject.set(agent.projectPath, [...(byProject.get(agent.projectPath) ?? []), agent]);
   }
@@ -324,13 +335,14 @@ export async function startWithTask(
       obsidianVaultPaths: agent.obsidianVaultPaths,
       mcpConfigPath,
       // An orchestrator starts with its instructions from a chat too, as from
-      // the Dashboard and the API: without them it does the work itself.
-      systemPromptFile: isSuperAgent(agent) && fs.existsSync(getSuperAgentInstructionsPath())
+      // the Dashboard and the API: without them it does the work itself. The
+      // orchestrator's powers, a chat's runner's too (core/agent-role.ts).
+      systemPromptFile: hasOrchestratorPowers(agent) && fs.existsSync(getSuperAgentInstructionsPath())
         ? getSuperAgentInstructionsPath()
         : undefined,
       skills: [...new Set(agent.skills || [])],
-      isSuperAgent: isSuperAgent(agent),
-      orchestratorMode: isSuperAgent(agent),
+      isSuperAgent: hasOrchestratorPowers(agent),
+      orchestratorMode: hasOrchestratorPowers(agent),
     });
     markRunning(agent, task);
     await typeLaunch(fleet, agent, ptyProcess, workingPath, command, task, from, task);

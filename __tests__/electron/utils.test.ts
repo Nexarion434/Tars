@@ -57,6 +57,12 @@ describe('isSuperAgent', () => {
     // Always equal to the role on a record Tars wrote; the role is what counts.
     expect(isSuperAgent(makeAgent({ role: 'worker', orchestratorMode: true }))).toBe(false);
   });
+
+  it("is false for a chat's runner: it has the orchestrator's powers, not its place", () => {
+    // ORCHESTRATOR-PER-CHAT.md 4.2: a runner is stored as a worker, and every
+    // site that means THE project's orchestrator reads this.
+    expect(isSuperAgent(makeAgent({ role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'lead' }))).toBe(false);
+  });
 });
 
 describe('getSuperAgent', () => {
@@ -93,6 +99,21 @@ describe('getSuperAgent', () => {
     expect(getSuperAgent(agents, '/proj/unknown')).toBeUndefined();
     // Without a project (Telegram/Slack context), first orchestrator wins.
     expect(getSuperAgent(agents)?.id).toBe('1');
+  });
+
+  it("never returns a chat's runner, even one whose record says orchestrator", () => {
+    // Tars stores a runner as a worker (ORCHESTRATOR-PER-CHAT.md 4.2); this
+    // holds if a record ever says both, since the bots write to what it returns.
+    const agents = new Map<string, AgentStatus>();
+    agents.set('r', makeAgent({ id: 'r', role: 'orchestrator', kind: 'chat', projectPath: '/proj/alpha' }));
+    agents.set('w', makeAgent({ id: 'w', role: 'worker', kind: 'chat', projectPath: '/proj/alpha' }));
+    agents.set('lead', makeAgent({ id: 'lead', role: 'orchestrator', projectPath: '/proj/alpha' }));
+
+    expect(getSuperAgent(agents)?.id).toBe('lead');
+    expect(getSuperAgent(agents, '/proj/alpha')?.id).toBe('lead');
+    agents.delete('lead');
+    expect(getSuperAgent(agents)).toBeUndefined();
+    expect(getSuperAgent(agents, '/proj/alpha')).toBeUndefined();
   });
 });
 
