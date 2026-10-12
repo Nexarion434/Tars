@@ -1,6 +1,45 @@
 'use client';
 
-import type { AgentStatus } from '@/types/electron';
+import Link from 'next/link';
+import { FolderKanban, Users } from 'lucide-react';
+import { PanelCaption } from '@/components/ui';
+import { projectNameOf } from '@/hooks/useChats';
+import type { AgentStatus, Chat } from '@/types/electron';
+
+/**
+ * An open chat's head (`Shell · chats · list, a chat open`, and the chat page's
+ * frames): its title, its project and number, a line under them, its team and
+ * the room.
+ */
+export function ChatHead({ chat, meta, team }: { chat: Chat; meta: string; team: AgentStatus[] }) {
+  return (
+    <div className="flex items-center justify-between gap-4 pl-[26px] pr-5 pt-4 pb-3.5 border-b border-border shrink-0">
+      <div className="min-w-0 flex flex-col gap-[7px]">
+        <h1 className="font-serif text-[22px] leading-[1.15] text-foreground truncate">{chat.title}</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-[22px] px-[7px] flex items-center gap-[5px] border border-border bg-card shrink-0">
+            <FolderKanban className="w-[11px] h-[11px] text-status-idle" />
+            <span className="font-mono text-[10.5px] text-text-secondary">{projectNameOf(chat.projectPath)} #{chat.number}</span>
+          </span>
+          <span className="font-mono text-[11px] text-status-idle truncate">{meta}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2.5 shrink-0">
+        <PanelCaption>Team</PanelCaption>
+        <span className="flex items-center gap-1.5">
+          {team.map(agent => <AgentSquare key={agent.id} agent={agent} />)}
+        </span>
+        <Link
+          href="/chat"
+          className="h-[26px] px-2.5 flex items-center gap-1.5 border border-border bg-card text-xs text-text-secondary hover:bg-secondary transition-colors"
+        >
+          <Users className="w-3 h-3" />
+          Room
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 /** The state word of an agent or a chat's runner, as the frames write it beside a name. */
 export function StateWord({ status }: { status: AgentStatus['status'] | undefined }) {
