@@ -260567,6 +260567,1840 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "EO1Bg",
+      "x": 24000,
+      "y": 3000,
+      "name": "Shell · chats · empty",
+      "theme": {
+        "mode": "dark"
+      },
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "$bg",
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "FLj2t",
+          "x": 0,
+          "y": 0,
+          "name": "Sidebar",
+          "clip": true,
+          "width": 240,
+          "height": 900,
+          "fill": "$surface",
+          "stroke": "$border",
+          "strokeWidth": {
+            "right": 1
+          },
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "MG0rv",
+              "name": "Logo",
+              "width": "fill_container",
+              "gap": 10,
+              "padding": [
+                16,
+                18,
+                12,
+                18
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "Z1uVGX",
+                  "name": "logo mark",
+                  "fill": "$accent",
+                  "width": 13,
+                  "height": 13
+                },
+                {
+                  "type": "text",
+                  "id": "nyscs",
+                  "name": "Wordmark",
+                  "fill": "$text-primary",
+                  "content": "Tars",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-display",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "A4L8CZ",
+              "name": "Main menu",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 1,
+              "padding": [
+                4,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "K0XMVT",
+                  "name": "nav Chat",
+                  "width": "fill_container",
+                  "height": 32,
+                  "fill": "$accent-dim",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "h5HN2U",
+                      "name": "message-square",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "message-square",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "B7HQu",
+                      "name": "label",
+                      "fill": "$text-primary",
+                      "content": "Chat",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Y2YIc",
+                  "name": "nav Projects",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "p9z0J",
+                      "name": "folder-kanban",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "d5XM2",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Projects",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "xmzRC",
+                  "name": "divider",
+                  "width": "fill_container",
+                  "padding": [
+                    4,
+                    10
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "apzV3",
+                      "name": "line",
+                      "fill": "$border",
+                      "width": "fill_container",
+                      "height": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "j7jFq",
+                  "name": "nav Dashboard",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "P97h3",
+                      "name": "layout-dashboard",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "layout-dashboard",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "M9Azkz",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "EnjZy",
+                  "name": "nav Kanban",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "e7cs2",
+                      "name": "columns-2",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "columns-2",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "LoQoZ",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Kanban",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NKO5u",
+                  "name": "nav Schedules",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "hZcrm",
+                      "name": "calendar-clock",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "calendar-clock",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "A4OTUT",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Schedules",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "y3yOQV",
+              "name": "New chat",
+              "opacity": 0.4,
+              "width": "fill_container",
+              "padding": [
+                8,
+                8,
+                2,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "SrmqV",
+                  "name": "button New chat",
+                  "width": "fill_container",
+                  "height": 32,
+                  "fill": "$surface-raised",
+                  "stroke": "$border-strong",
+                  "strokeWidth": 1,
+                  "gap": 6,
+                  "padding": [
+                    0,
+                    13
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "uDFWS",
+                      "name": "plus",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "plus",
+                      "library": "lucide",
+                      "fill": "$text-primary"
+                    },
+                    {
+                      "type": "text",
+                      "id": "N8HPm",
+                      "name": "label",
+                      "fill": "$text-primary",
+                      "content": "New chat",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "wu4Wk",
+              "name": "Super orchestrator",
+              "width": "fill_container",
+              "padding": [
+                8,
+                8,
+                0,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "q2d6aY",
+                  "name": "Tars, all projects",
+                  "width": "fill_container",
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "gap": 10,
+                  "padding": [
+                    7,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Gapoc",
+                      "name": "mark",
+                      "width": 10,
+                      "height": 10,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "NEg88",
+                          "x": 0,
+                          "y": 0,
+                          "name": "a",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "GiCJu",
+                          "x": 6,
+                          "y": 0,
+                          "name": "b",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "MFbfl",
+                          "x": 0,
+                          "y": 6,
+                          "name": "c",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "c1RipE",
+                          "x": 6,
+                          "y": 6,
+                          "name": "d",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Y1jTO",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "CKCP8",
+                          "name": "title",
+                          "fill": "$text-primary",
+                          "content": "Tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "vIjQN",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ngB7w",
+                              "name": "sub",
+                              "fill": "$text-muted",
+                              "content": "all projects",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "LtjYz",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "SD8TW",
+              "name": "Chats head",
+              "width": "fill_container",
+              "gap": 8,
+              "padding": [
+                12,
+                8,
+                2,
+                18
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QAW0H",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "CHATS",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "Sl1Oi",
+                  "name": "Project filter",
+                  "opacity": 0.4,
+                  "height": 26,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "gap": 6,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Q6qlMy",
+                      "name": "folder-kanban",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Nm44t",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "All projects",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "Aym0Z",
+                      "name": "chevron-down",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "chevron-down",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "S46lT",
+              "name": "Chats empty",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                10,
+                18,
+                0,
+                18
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "EvUpE",
+                  "name": "t",
+                  "fill": "$text-secondary",
+                  "content": "No chats yet",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "R2dWMO",
+                  "name": "h",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "This preview cannot open a chat yet. Talk to Tars, all projects meanwhile.",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "p9sJ2",
+              "name": "spacer",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "fIdwk",
+              "name": "Bottom",
+              "width": "fill_container",
+              "stroke": "$border",
+              "strokeWidth": {
+                "top": 1
+              },
+              "layout": "vertical",
+              "padding": [
+                8,
+                8,
+                2,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "XiZUX",
+                  "name": "More",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "W6clF",
+                      "name": "ellipsis",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "ellipsis",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "b2JZti",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "More",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kjCjr",
+                      "name": "spacer",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "icon",
+                      "id": "L2Ee8",
+                      "name": "chevron-up",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "chevron-up",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Pztrb",
+              "name": "Status",
+              "width": "fill_container",
+              "gap": 8,
+              "padding": [
+                8,
+                18,
+                14,
+                18
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "hpuq3",
+                  "name": "square",
+                  "fill": "$status-running",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "pu7tF",
+                  "name": "conn",
+                  "fill": "$text-muted",
+                  "content": "connected · :31415",
+                  "lineHeight": 1.35,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Myza0",
+          "x": 240,
+          "y": 0,
+          "name": "Main",
+          "clip": true,
+          "width": 1200,
+          "height": 900,
+          "fill": "$bg",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "kWHSh",
+              "name": "Header",
+              "width": "fill_container",
+              "padding": [
+                22,
+                26,
+                14,
+                26
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "RKDbP",
+                  "name": "Titles",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zcTPw",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Chats",
+                      "lineHeight": 1.15,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Q3nvyg",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "A conversation with the orchestrator of a project, on one topic.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "a9yu3e",
+              "name": "Content",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "padding": [
+                0,
+                26,
+                22,
+                26
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "W38hz",
+                  "name": "Empty",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": [
+                    0,
+                    0,
+                    60,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "wUZUg",
+                      "name": "mark",
+                      "width": 10,
+                      "height": 10,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "PwIgm",
+                          "x": 0,
+                          "y": 0,
+                          "name": "a",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "XlgSk",
+                          "x": 6,
+                          "y": 0,
+                          "name": "b",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "RE3OE",
+                          "x": 0,
+                          "y": 6,
+                          "name": "c",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "MOVoK",
+                          "x": 6,
+                          "y": 6,
+                          "name": "d",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "OR6Em",
+                      "name": "t",
+                      "fill": "$text-primary",
+                      "content": "No chats yet",
+                      "lineHeight": 1.15,
+                      "fontFamily": "$font-display",
+                      "fontSize": 22,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "k97S7",
+                      "name": "h",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 460,
+                      "content": "Chats per project come with the next part of this preview. Until then, Tars, all projects is where you talk to every orchestrator.",
+                      "lineHeight": 1.5,
+                      "textAlign": "center",
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "iUm4G",
+                      "name": "button Open Tars, all projects",
+                      "height": 32,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        13
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "Q2x5ak",
+                          "name": "message-square",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "message-square",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "qJiuJ",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "Open Tars, all projects",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "KivIn",
+      "x": 25540,
+      "y": 3000,
+      "name": "Shell · chats · empty · light",
+      "theme": {
+        "mode": "light"
+      },
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "$bg",
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "qPrPH",
+          "x": 0,
+          "y": 0,
+          "name": "Sidebar",
+          "clip": true,
+          "width": 240,
+          "height": 900,
+          "fill": "$surface",
+          "stroke": "$border",
+          "strokeWidth": {
+            "right": 1
+          },
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "VMjy6",
+              "name": "Logo",
+              "width": "fill_container",
+              "gap": 10,
+              "padding": [
+                16,
+                18,
+                12,
+                18
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "p1XD0",
+                  "name": "logo mark",
+                  "fill": "$accent",
+                  "width": 13,
+                  "height": 13
+                },
+                {
+                  "type": "text",
+                  "id": "ErjvF",
+                  "name": "Wordmark",
+                  "fill": "$text-primary",
+                  "content": "Tars",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-display",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "iGjiH",
+              "name": "Main menu",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 1,
+              "padding": [
+                4,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Sx7VT",
+                  "name": "nav Chat",
+                  "width": "fill_container",
+                  "height": 32,
+                  "fill": "$accent-dim",
+                  "stroke": "$accent",
+                  "strokeWidth": 1,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "dWpPb",
+                      "name": "message-square",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "message-square",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "gWvcD",
+                      "name": "label",
+                      "fill": "$text-primary",
+                      "content": "Chat",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "A6I9F",
+                  "name": "nav Projects",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "cQv6V",
+                      "name": "folder-kanban",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "dLUy7",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Projects",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "kTrtn",
+                  "name": "divider",
+                  "width": "fill_container",
+                  "padding": [
+                    4,
+                    10
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "YHfWq",
+                      "name": "line",
+                      "fill": "$border",
+                      "width": "fill_container",
+                      "height": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "cfyJR",
+                  "name": "nav Dashboard",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "VHdN8",
+                      "name": "layout-dashboard",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "layout-dashboard",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "eo0DZ",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "CVFbD",
+                  "name": "nav Kanban",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "f3TNK",
+                      "name": "columns-2",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "columns-2",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "hsqOK",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Kanban",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "iU1oX",
+                  "name": "nav Schedules",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "hSShY",
+                      "name": "calendar-clock",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "calendar-clock",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Z531PU",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "Schedules",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "r8Q0fO",
+              "name": "New chat",
+              "opacity": 0.4,
+              "width": "fill_container",
+              "padding": [
+                8,
+                8,
+                2,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "pF2BT",
+                  "name": "button New chat",
+                  "width": "fill_container",
+                  "height": 32,
+                  "fill": "$surface-raised",
+                  "stroke": "$border-strong",
+                  "strokeWidth": 1,
+                  "gap": 6,
+                  "padding": [
+                    0,
+                    13
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "D7pSQ",
+                      "name": "plus",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "plus",
+                      "library": "lucide",
+                      "fill": "$text-primary"
+                    },
+                    {
+                      "type": "text",
+                      "id": "lqHnt",
+                      "name": "label",
+                      "fill": "$text-primary",
+                      "content": "New chat",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "kF8Na",
+              "name": "Super orchestrator",
+              "width": "fill_container",
+              "padding": [
+                8,
+                8,
+                0,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "pPrNg",
+                  "name": "Tars, all projects",
+                  "width": "fill_container",
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "gap": 10,
+                  "padding": [
+                    7,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "KN3f0",
+                      "name": "mark",
+                      "width": 10,
+                      "height": 10,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "j9AJOs",
+                          "x": 0,
+                          "y": 0,
+                          "name": "a",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "JtCnN",
+                          "x": 6,
+                          "y": 0,
+                          "name": "b",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "TKE3N",
+                          "x": 0,
+                          "y": 6,
+                          "name": "c",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "ADXXt",
+                          "x": 6,
+                          "y": 6,
+                          "name": "d",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rpEaY",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "pFYed",
+                          "name": "title",
+                          "fill": "$text-primary",
+                          "content": "Tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "EASLu",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "q3G8zd",
+                              "name": "sub",
+                              "fill": "$text-muted",
+                              "content": "all projects",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "NEl5F",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aX3UR",
+              "name": "Chats head",
+              "width": "fill_container",
+              "gap": 8,
+              "padding": [
+                12,
+                8,
+                2,
+                18
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "i6cQg",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "content": "CHATS",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "p2FwT",
+                  "name": "Project filter",
+                  "opacity": 0.4,
+                  "height": 26,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "gap": 6,
+                  "padding": [
+                    0,
+                    8
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Vrt8Q",
+                      "name": "folder-kanban",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "pnZhP",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "All projects",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "sWYXr",
+                      "name": "chevron-down",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "chevron-down",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "hEABt",
+              "name": "Chats empty",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                10,
+                18,
+                0,
+                18
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "J8zFTV",
+                  "name": "t",
+                  "fill": "$text-secondary",
+                  "content": "No chats yet",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 12.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Lkmtb",
+                  "name": "h",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "This preview cannot open a chat yet. Talk to Tars, all projects meanwhile.",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "bi5ko",
+              "name": "spacer",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "n18lBA",
+              "name": "Bottom",
+              "width": "fill_container",
+              "stroke": "$border",
+              "strokeWidth": {
+                "top": 1
+              },
+              "layout": "vertical",
+              "padding": [
+                8,
+                8,
+                2,
+                8
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "IPb8H",
+                  "name": "More",
+                  "width": "fill_container",
+                  "height": 32,
+                  "gap": 10,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "PLLbF",
+                      "name": "ellipsis",
+                      "width": 14,
+                      "height": 14,
+                      "icon": "ellipsis",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "OL7UD",
+                      "name": "label",
+                      "fill": "$text-secondary",
+                      "content": "More",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "EJ4Lj",
+                      "name": "spacer",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "icon",
+                      "id": "Q9aN8u",
+                      "name": "chevron-up",
+                      "width": 12,
+                      "height": 12,
+                      "icon": "chevron-up",
+                      "library": "lucide",
+                      "fill": "$text-muted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "T2kRaM",
+              "name": "Status",
+              "width": "fill_container",
+              "gap": 8,
+              "padding": [
+                8,
+                18,
+                14,
+                18
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "BkniF",
+                  "name": "square",
+                  "fill": "$status-running",
+                  "width": 6,
+                  "height": 6
+                },
+                {
+                  "type": "text",
+                  "id": "dLP9X",
+                  "name": "conn",
+                  "fill": "$text-muted",
+                  "content": "connected · :31415",
+                  "lineHeight": 1.35,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ib58a",
+          "x": 240,
+          "y": 0,
+          "name": "Main",
+          "clip": true,
+          "width": 1200,
+          "height": 900,
+          "fill": "$bg",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "I8Sush",
+              "name": "Header",
+              "width": "fill_container",
+              "padding": [
+                22,
+                26,
+                14,
+                26
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "end",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "y4iFYd",
+                  "name": "Titles",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ytyyu",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Chats",
+                      "lineHeight": 1.15,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "GaNUm",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "A conversation with the orchestrator of a project, on one topic.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "i4UbeE",
+              "name": "Content",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "padding": [
+                0,
+                26,
+                22,
+                26
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "aGO9s",
+                  "name": "Empty",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 12,
+                  "padding": [
+                    0,
+                    0,
+                    60,
+                    0
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZgOFv",
+                      "name": "mark",
+                      "width": 10,
+                      "height": 10,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "N838A",
+                          "x": 0,
+                          "y": 0,
+                          "name": "a",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "e7GUo",
+                          "x": 6,
+                          "y": 0,
+                          "name": "b",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "WEn9X",
+                          "x": 0,
+                          "y": 6,
+                          "name": "c",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        },
+                        {
+                          "type": "rectangle",
+                          "id": "E4YSGJ",
+                          "x": 6,
+                          "y": 6,
+                          "name": "d",
+                          "fill": "$accent",
+                          "width": 4,
+                          "height": 4
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "LoKis",
+                      "name": "t",
+                      "fill": "$text-primary",
+                      "content": "No chats yet",
+                      "lineHeight": 1.15,
+                      "fontFamily": "$font-display",
+                      "fontSize": 22,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "xBLNY",
+                      "name": "h",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 460,
+                      "content": "Chats per project come with the next part of this preview. Until then, Tars, all projects is where you talk to every orchestrator.",
+                      "lineHeight": 1.5,
+                      "textAlign": "center",
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "D0Hl7X",
+                      "name": "button Open Tars, all projects",
+                      "height": 32,
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 6,
+                      "padding": [
+                        0,
+                        13
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "c4FxL",
+                          "name": "message-square",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "message-square",
+                          "library": "lucide",
+                          "fill": "$text-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Gq9lr",
+                          "name": "label",
+                          "fill": "$text-secondary",
+                          "content": "Open Tars, all projects",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "themes": {
