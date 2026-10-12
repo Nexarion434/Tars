@@ -142,7 +142,7 @@ describe('a request sent with a clientRequestId', () => {
     expect(clientRequestIdOf(undefined)).toBeNull();
     expect(clientRequestIdOf('cr-e2e-0001')).toBe('cr-e2e-0001');
     expect(clientRequestIdOf('7f0c1b9e-3a5d-4c1e-9f7a-2b8d6e4c0a11')).toBe('7f0c1b9e-3a5d-4c1e-9f7a-2b8d6e4c0a11');
-    for (const bad of ['', 'short', 'x'.repeat(129), 'has space1', 'line\nbreak1', 'bidi‮id1', 42, {}]) {
+    for (const bad of ['', 'short', 'x'.repeat(129), 'has space1', 'line\nbreak1', 'bidi\u202eid1', 42, {}]) {
       expect(clientRequestIdOf(bad)).toBe('invalid');
     }
   });
