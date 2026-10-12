@@ -69,9 +69,11 @@ export function AgentSquare({ agent }: { agent: AgentStatus }) {
   );
 }
 
-/** "10:42" in the person's own time; an empty string for a date that does not parse. */
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** "09:42" in the person's own time, as every time in the app; an empty string for a date that does not parse. */
 export function clockOf(iso: string | null | undefined): string {
   if (!iso) return '';
   const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? '' : `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return Number.isNaN(at.getTime()) ? '' : `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
