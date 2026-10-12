@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { lastPathPart } from '@/lib/display-path';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
@@ -109,7 +110,7 @@ export default function TerminalsView() {
       byPath.get(a.projectPath)!.push(a.id);
     }
     return Array.from(byPath.entries()).map(([path, agentIds]) => ({
-      name: path.split('/').pop() || path,
+      name: lastPathPart(path) || path,
       path,
       agentIds,
     }));
@@ -273,6 +274,11 @@ export default function TerminalsView() {
   // Broadcast must be initialized before multiTerminal so we can pass broadcastMode
   const broadcast = useBroadcast();
 
+  // The panels on screen, for Windows' Alt+digit inside a terminal: a panel
+  // that exists takes it, any other stays the program's (set below, once known).
+  const panelIdsRef = useRef<string[]>([]);
+  const hasPanel = useCallback((index: number) => index < panelIdsRef.current.length, []);
+
   // Core hooks - delay terminal init until settings are loaded to avoid wrong font size
   const multiTerminal = useMultiTerminal({
     agents: terminalSettingsLoaded ? visibleAgents : [],
@@ -286,6 +292,7 @@ export default function TerminalsView() {
     theme: terminalTheme,
     onTerminalReady: handleTerminalReady,
     broadcastMode: broadcast.broadcastMode,
+    hasPanel,
   });
   // Expose focusTerminal to handleTerminalReady via a ref to break the cycle.
   // Written in an effect, not during render: a ref assignment during render is
@@ -359,12 +366,11 @@ export default function TerminalsView() {
     await stopAgent(agentId);
   }, [stopAgent]);
 
-  // The way back offered to a panel whose claude left fullscreen: the header's
-  // stop, then its start, so the new session opens fullscreen and the wheel
-  // scrolls again. A start that fails says why, as it does from the header.
-  // A panel's `restart` (the left-fullscreen notice) continues the agent's
-  // conversation (#138). A stop then a start began a new one, since a start
-  // resumes only once per app run.
+  // The way back offered to a panel whose claude left fullscreen (its notice's
+  // `restart`): one agent:restart, which continues the agent's conversation in
+  // a new session that opens fullscreen, so the wheel scrolls again (#138). A
+  // stop then a start began a new conversation, since a start resumes only once
+  // per app run. A restart that fails says why, on the line a failed start uses.
   const handleRestartAgent = useCallback(async (agentId: string) => {
     setStartError(null);
     try {
@@ -475,6 +481,7 @@ export default function TerminalsView() {
     () => grid.visiblePanels.map(p => p.agentId),
     [grid.visiblePanels]
   );
+  useEffect(() => { panelIdsRef.current = visibleAgentIds; }, [visibleAgentIds]);
 
   useTerminalKeyboard({
     panelAgentIds: visibleAgentIds,
