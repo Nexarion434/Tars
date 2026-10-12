@@ -57,7 +57,12 @@ export function liveChatStore(): ChatStore | null {
 
 const argsOf = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {});
 
-export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; file?: string }): ChatStore {
+export function registerChatHandlers(deps: {
+  agents: Map<string, AgentStatus>;
+  file?: string;
+  /** Whether a window can show chats (the new interface): the follower reads nothing otherwise. */
+  chatsShown?: () => boolean;
+}): ChatStore {
   const { agents } = deps;
   const store = createChatStore({ file: deps.file ?? CHATS_FILE });
   live = store;
@@ -121,6 +126,7 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     runnerOf: (chat) => (chat.runnerId ? agents.get(chat.runnerId) : undefined),
     isLive: (agent) => isLive(agent),
     nameOf,
+    enabled: deps.chatsShown ?? (() => true),
   });
 
   ipcMain.handle('chat:list', () => {
@@ -147,13 +153,13 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     return result;
   });
   // A chat's conversation, from its runner's transcripts, and the seq it is a snapshot at.
-  ipcMain.handle('chat:history', (_e, raw: unknown) => {
+  ipcMain.handle('chat:history', async (_e, raw: unknown) => {
     const args = argsOf(raw);
     const chat = store.get(args.chatId);
     if (!chat) return { error: 'not_found', reason: 'No chat has this id.', seq: chatSeq() };
     const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
-    const items = readChatItems(chat, { runner, nameOf });
-    noteChatSnapshot(chat.id, items.length);
+    const items = await readChatItems(chat, { runner, nameOf });
+    noteChatSnapshot(chat.id, items);
     return historyOf(items, { before: args.before, limit: args.limit });
   });
   // A worker's work in hand and its queue (core/task-requests.ts).
