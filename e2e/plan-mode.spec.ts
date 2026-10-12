@@ -65,7 +65,11 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
     cliPaths: { claude, codex },
     openRouterEnabled: true, openRouterApiKey: 'sk-e2e-not-a-key',
   }));
-  const onDisk = () => JSON.parse(fs.readFileSync(path.join(dir, 'agents.json'), 'utf8')) as Array<Record<string, unknown>>;
+  // The seed writes a bare array; the app saves { version, savedAt, agents }.
+  const onDisk = () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, 'agents.json'), 'utf8')) as unknown;
+    return (Array.isArray(raw) ? raw : (raw as { agents: unknown[] }).agents) as Array<Record<string, unknown>>;
+  };
   const startedWith = () => (fs.existsSync(argsFile) ? fs.readFileSync(argsFile, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l) as string[]) : []);
 
   const app = await launchSandboxed(electron, home, {
@@ -84,7 +88,7 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
     const windowModes = async (name: string) => {
       await page.getByText(name, { exact: true }).first().click();
       const dialog = page.getByRole('dialog').last();
-      await dialog.getByRole('radiogroup', { name: 'Rail section' }).getByRole('radio', { name: 'Skills', exact: true }).click();
+      await dialog.getByRole('radiogroup', { name: 'Agent rail' }).getByRole('radio', { name: 'Skills', exact: true }).click();
       return { dialog, group: modes(dialog) };
     };
 
@@ -94,7 +98,7 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
       await expect(group.getByRole('radio', { name: 'Plan', exact: true })).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
       seen.windowPlanner = await group.getByRole('radio').evaluateAll(els => els.map(e => `${e.textContent}${e.getAttribute('aria-checked') === 'true' ? '*' : ''}`));
       await stepShot(page, '01-window-planner');
-      await page.keyboard.press('Escape');
+      await dialog.getByRole('button', { name: 'close', exact: true }).click();
       await expect(dialog).toHaveCount(0);
     }
 
@@ -107,13 +111,13 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
       await expect(group.getByRole('radio', { name: 'Manual', exact: true })).toHaveAttribute('aria-checked', 'true');
       seen.windowCodex = await plan.getAttribute('title');
       await stepShot(page, '02-window-codex');
-      await page.keyboard.press('Escape');
+      await dialog.getByRole('button', { name: 'close', exact: true }).click();
       await expect(dialog).toHaveCount(0);
     }
 
     // New agent: Options offers plan first.
     await page.getByRole('button', { name: '+ Agent', exact: true }).click();
-    const modal = page.getByRole('dialog', { name: 'New agent' });
+    const modal = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'New agent', exact: true }) });
     await expect(modal).toBeVisible();
     await modal.getByRole('button', { name: 'Project', exact: true }).click();
     await page.getByRole('option').filter({ hasText: 'demo' }).first().click();
@@ -139,24 +143,29 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
     await modal.getByRole('button').filter({ hasText: 'Claude' }).first().click();
     await group.getByRole('radio', { name: 'plan', exact: true }).click();
     await expect(group.getByRole('radio', { name: 'plan', exact: true })).toHaveAttribute('aria-checked', 'true');
+    // The Agents page starts a new agent only with a task (an empty one is created and left to start by hand).
+    await modal.getByPlaceholder('Describe what you want done.').fill('Read the project and say what you would change.');
     const before = startedWith().length;
     await modal.getByRole('button', { name: 'Create and start', exact: true }).click();
     await expect.poll(() => onDisk().length, { timeout: 30_000 }).toBe(3);
     const created = onDisk().find(a => a.id !== 'p1' && a.id !== 'c1');
     seen.created = { provider: created?.provider, permissionMode: created?.permissionMode };
     expect(created).toMatchObject({ provider: 'claude', permissionMode: 'plan' });
-    await expect.poll(() => startedWith().length, { timeout: 60_000, message: 'the stand-in was started' }).toBeGreaterThan(before);
-    const argv = startedWith()[startedWith().length - 1];
-    seen.startedWith = argv;
-    const at = argv.indexOf('--permission-mode');
-    expect(at, 'a permission mode is passed').toBeGreaterThanOrEqual(0);
-    expect(argv[at + 1]).toBe('plan');
+    // The app also runs the CLI for its own probes (a version, and so on), which
+    // the stand-in records too: the launch is the run given a permission mode.
+    const launch = () => startedWith().slice(before).find(args => args.includes('--permission-mode'));
+    await expect.poll(() => !!launch(), { timeout: 60_000, message: 'the stand-in was launched as the agent' }).toBe(true);
+    seen.startedWith = startedWith().slice(before);
+    const argv = launch()!;
+    expect(argv[argv.indexOf('--permission-mode') + 1]).toBe('plan');
     await stepShot(page, '05-created');
 
     recordValues(seen);
     expect(pageErrors, 'no uncaught page error').toEqual([]);
   } finally {
     await app.close().catch(() => {});
+    // What the stand-ins were started with, kept beside the screenshots.
+    if (fs.existsSync(argsFile)) fs.copyFileSync(argsFile, test.info().outputPath('stand-in-args.jsonl'));
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
