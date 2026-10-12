@@ -47,6 +47,8 @@ export interface DelegationResult {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
   costUSD?: number;
   error?: string;
+  /** `permission_escalation_denied`: held to a mode the agent does not offer, it did not run. */
+  code?: string;
 }
 
 /** This Tars, for the child to call back on. The constant, not the live
@@ -152,6 +154,13 @@ export async function delegateOverAcp(opts: {
   task: string;
   appSettings: AppSettings;
   timeoutMs?: number;
+  /**
+   * The mode the run takes, when its asker holds it to a narrower one than the
+   * agent's own (core/permission-ceiling.ts). Absent: the agent's own.
+   */
+  permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
+  /** Called once the run has started, before its turn: the moment it is a task (task-ledger.ts acpStarted). */
+  onStarted?: () => void;
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
   const { agent, task, appSettings, onEvent } = opts;
@@ -210,8 +219,8 @@ export async function delegateOverAcp(opts: {
     },
     unsetEnv: account?.unset,
     mcpServers: mcpServersFor(agent, apiToken),
-    permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
-      : agent.permissionMode === 'auto' ? 'auto' : 'normal',
+    permissionMode: opts.permissionMode ?? (agent.permissionMode === 'bypass' ? 'bypass'
+      : agent.permissionMode === 'auto' ? 'auto' : agent.permissionMode === 'plan' ? 'plan' : 'normal'),
     // An orchestrator delegates; it does not edit. Enforced here by the
     // protocol rather than by a flag only one CLI understands. The role, as
     // every launch reads it (core/agent-role.ts).
@@ -231,6 +240,20 @@ export async function delegateOverAcp(opts: {
   own.add(run);
   runs.set(agent.id, own);
 
+  // Held to plan and out of it (client.ts, 'breach'): the run is cut at once,
+  // its processes ended before the edit leaving plan was for (the Audit's B1
+  // on #364), and its asker answered permission_escalation_denied.
+  let breach: string | undefined;
+  session.on('breach', (mode: string) => {
+    if (breach) return;
+    breach = mode;
+    run.stoppedWhy = `it left plan mode (to ${mode}), and its asker holds it to plan`;
+    console.warn(`[acp] ${agent.name || agent.id}: a run held to plan left it for ${mode}: cut`);
+    void session.cancel();
+    session.stop();
+  });
+  const escaped = () => (breach ? { ok: false, code: 'permission_escalation_denied', stopReason: 'permission_escalation_denied' } : {});
+
   let started = false;
   try {
     await session.start();
@@ -248,6 +271,11 @@ export async function delegateOverAcp(opts: {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
     }
     started = true;
+    try {
+      opts.onStarted?.();
+    } catch (err) {
+      console.warn('[acp] the start of a run was not recorded:', (err as Error).message);
+    }
     let turn: TurnResult;
     try {
       turn = await session.prompt(task, opts.timeoutMs);
@@ -299,6 +327,7 @@ export async function delegateOverAcp(opts: {
       usage: turn.usage,
       costUSD: turn.costUSD,
       ...(run.stoppedWhy ? { error: `the run was stopped: ${run.stoppedWhy}` } : {}),
+      ...escaped(),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -310,6 +339,8 @@ export async function delegateOverAcp(opts: {
       toolCalls: run.stoppedWhy ? session.partialTurn().toolCalls.map(t => t.title) : [],
       // Said as what happened, not as the crash it looks like from inside.
       error: run.stoppedWhy ? `the run was stopped: ${run.stoppedWhy}` : message,
+      ...(/^permission_escalation_denied/.test(message) ? { code: 'permission_escalation_denied' } : {}),
+      ...escaped(),
     };
   } finally {
     own.delete(run);

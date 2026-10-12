@@ -72,7 +72,8 @@ That is `concurrently` over two things:
 
 1. `npm run dev`: `next dev` on 127.0.0.1, port 3000.
 2. `npm run electron:start`: `wait-on http://localhost:3000`, then
-   `tsc -p electron/tsconfig.json`, then `NODE_ENV=development electron .`.
+   `tsc -p electron/tsconfig.json`, then `node scripts/electron-dev.mjs .`, which sets
+   `NODE_ENV=development` in a way every shell runs, cmd.exe included, and starts `electron .`.
 
 `main` is `electron/dist/main.js`, so **the main process is compiled every launch** by that
 `tsc` step. If you edit anything under `electron/` you must restart: there is no watch.
@@ -322,10 +323,10 @@ that number is non-zero.
 ### Design lint: `npm run lint:design`
 
 ```bash
-bash scripts/design-lint.sh
+node scripts/design-lint.mjs
 ```
 
-Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
+Reads the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components/ui/` and
 `src/app/icon.tsx`, for six banned patterns. Exits 1 on any hit:
 
 | check | pattern |
@@ -339,10 +340,12 @@ Greps the `.ts`, `.tsx` and `.css` files under `src/`, excluding `src/components
 
 The rule it enforces: `src/components/ui/` is the only place allowed to define raw appearance.
 
-It also exits 1 when grep could not search, instead of reading that as a clean tree: a file
-it cannot open, a pattern it cannot parse, or no file read at all. It prints how many files it
-read first. That count is the check for a missing `src/`: grep on macOS answers one that does
-not exist with the same silent 1 as a tree with nothing to report.
+It also exits 1 when it could not search, instead of reading that as a clean tree: a file
+it cannot open, a pattern it cannot parse, a missing `src/`, or no file read at all. It prints
+how many files it read first. It is the Node port of the grep script it replaced
+(`scripts/design-lint.sh`, which needed bash), with the same checks, lines and exit codes.
+It reads letters, digits and spaces as ASCII only, so it is stricter than grep in a UTF-8
+locale on macOS or Linux: it can flag a line grep let through, never the other way round.
 
 The hex rule excludes two more places, each because writing a colour out is their job:
 `src/app/globals.css`, where every colour the app uses is named once, and comment lines in
@@ -394,22 +397,25 @@ Run `npm run build:renderer` first if the renderer changed.
 npm run build:renderer
 ```
 
-This is the tricky one. Expanded:
+This is the tricky one. It runs `scripts/build-renderer.mjs`, which does, in this order:
 
 ```bash
 rm -rf .next out
 mv src/app/api src/app/_api_backup
-mv src/app/icon.tsx src/app/_icon_backup.tsx
-trap "mv src/app/_api_backup src/app/api; mv src/app/_icon_backup.tsx src/app/icon.tsx" EXIT
+mv src/app/icon.tsx src/app/_icon_backup.tsx      # when there is one
 ELECTRON_BUILD=1 next build
+mv src/app/_api_backup src/app/api                # always, once next build has stopped
+mv src/app/_icon_backup.tsx src/app/icon.tsx
 ```
 
 `next.config.ts` switches to `output: 'export'` when `ELECTRON_BUILD=1`, and a static export
 cannot contain route handlers or a dynamic `icon.tsx`: hence the move-and-restore dance. The
-`trap … EXIT` puts them back even on failure.
+script puts them back even on failure or on Ctrl+C, and exits with next build's code. A
+restore that fails is reported and fails the build.
 
-**If a build is killed with `SIGKILL` the trap does not run.** Symptom: `src/app/api` is gone
-and the dev server 404s every renderer API route. Recover manually:
+**If a build is killed with `SIGKILL` nothing can put them back.** Symptom: `src/app/api` is
+gone and the dev server 404s every renderer API route. The next `build:renderer` refuses to
+start while a `_backup` is left, and says so. Recover manually:
 
 ```bash
 ls src/app | grep _backup
@@ -716,6 +722,8 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 | `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: JeanBrasse's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
@@ -1944,6 +1952,9 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # status line sessions
 jq -c 'select(.t == "task") | .task | [.id, .agentId, .source, .outcome]' ~/.dorothy/task-ledger.jsonl | tail  # last tasks opened
 tail ~/.tars-private/task-texts.jsonl                        # what they said, by task id
+jq -c 'select(.t == "acp") | [.id, .outcome, .stopReason]' ~/.dorothy/task-ledger.jsonl | tail  # delegated runs, how they ended (interrupted: a quit cut it)
+tail -c 2000 ~/.tars-private/task-results.jsonl              # what they answered, by task id
+jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.status]' ~/.tars-private/request-receipts.jsonl | tail  # sends answered once
 ```
 
 | Symptom | Cause |
@@ -1951,6 +1962,8 @@ tail ~/.tars-private/task-texts.jsonl                        # what they said, b
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
+| an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
+| a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 

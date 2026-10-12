@@ -11,7 +11,7 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
@@ -89,6 +89,8 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
   });
+  // What a message sent in `queue` mode waits out: the agent's turn.
+  setTurnProbe(agentId => agents.get(agentId)?.status === 'running');
 }
 
 /**
@@ -235,6 +237,23 @@ const pendingStatusChanges: Map<string, {
   timeoutId: NodeJS.Timeout;
 }> = new Map();
 
+/** Set by the quit: the terminals it ends must announce nothing while it runs. */
+let statusNotificationsStopped = false;
+
+/**
+ * The quit's step, before it ends the terminals. On Windows the quit then waits
+ * for their exits, up to 5 s more (holdExitUntilTerminalsExit, pty-kill.ts), and
+ * each exit is a status change whose announcement could go out during that
+ * wait: from here on none is made, and none still pending goes out. darwin and
+ * linux end without that wait and keep today's announcements.
+ */
+export function stopStatusNotifications(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== 'win32') return;
+  statusNotificationsStopped = true;
+  for (const pending of pendingStatusChanges.values()) clearTimeout(pending.timeoutId);
+  pendingStatusChanges.clear();
+}
+
 export function handleStatusChangeNotification(
   agent: AgentStatus,
   newStatus: string,
@@ -243,6 +262,7 @@ export function handleStatusChangeNotification(
   sendTelegramMessage?: (text: string) => void,
   sendSuperAgentResponseToTelegram?: (agent: AgentStatus) => void
 ) {
+  if (statusNotificationsStopped) return;
   const prevStatus = previousAgentStatus.get(agent.id);
 
   // Out of error: its next error is news for JeanBrasse's reports again.

@@ -33,7 +33,7 @@
 
 import {
   apiUrl, appendLog, authHeader, codePoints, curl, echoHead, finish, headBytes, isFile, jqRaw, jqToString,
-  lastAssistantMessage, logPaths, parseInput, postJson, postWithRetry, stamp, subst, tarsProvesInstance, tokenWithFileFallback,
+  lastAssistantMessage, logPaths, parseInput, postJson, postWithRetry, stamp, subst, tarsProvesInstance, tokenForReads,
 } from './tars-hook-lib.mjs';
 
 const CONTINUE = '{"continue":true,"suppressOutput":true}\n';
@@ -72,7 +72,7 @@ async function sessionStart(input) {
     JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle', source, hook: 'SessionStart' }));
   appendLog(hookLog, `[${stamp()}] SESSION_START curl result: ${result}`);
 
-  const apiToken = tokenWithFileFallback();
+  const apiToken = tokenForReads(env, tokenOk);
   let bootstrap = '';
   if (env.CLAUDE_AGENT_ID && apiToken) {
     const text = await curl({
@@ -83,10 +83,11 @@ async function sessionStart(input) {
   }
 
   const query = new URLSearchParams({ agent_id: agentId, project_path: projectPath });
-  const context = subst(await curl({
+  // No token to present: the port did not prove it is this CLI's Tars.
+  const context = apiToken ? subst(await curl({
     url: `${api}/api/memory/context?${query}`,
     headers: { Authorization: `Bearer ${apiToken}` },
-  }));
+  })) : '';
   let memory = '';
   if (context !== '' && context !== 'null' && context !== '{}') {
     memory = jqRaw(parseInput(context), ['context']);
@@ -119,6 +120,8 @@ async function userPromptSubmit(input) {
 
 /** store_observation of post-tool-use.sh (both providers). */
 function storeObservation(url, apiToken, agentId, projectPath, content, type) {
+  // No token to present: the port did not prove it is this CLI's Tars.
+  if (!apiToken) return Promise.resolve('');
   return postJson(url, apiToken, JSON.stringify({ agent_id: agentId, project_path: projectPath, content, type }));
 }
 
@@ -140,7 +143,7 @@ async function postToolUse(input) {
     body: JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'running' }),
   });
 
-  const apiToken = tokenWithFileFallback();
+  const apiToken = tokenForReads(env, tokenOk);
   const store = (content, type) => storeObservation(remember, apiToken, agentId, projectPath, content, type);
   const field = key => jqRaw(input, ['tool_input', key]);
 
@@ -387,7 +390,7 @@ async function geminiPostToolUse(input) {
   const remember = `${apiUrl()}/api/memory/remember`;
   const agentId = geminiAgent(sessionId);
   const projectPath = env.DOROTHY_PROJECT_PATH || cwd;
-  const apiToken = tokenWithFileFallback();
+  const apiToken = tokenForReads(env, tokenOk);
   const store = (content, type) => storeObservation(remember, apiToken, agentId, projectPath, content, type);
   const field = key => jqRaw(input, ['tool_input', key]);
   switch (toolName) {

@@ -62,23 +62,31 @@ describe('the agent mark', () => {
     expect(legend.children!.map(drawn)).toEqual(FLEET.map(agentMarkCells));
   });
 
+  // The names that fail are listed, then asserted once: an expect per name and
+  // per row, some 44,000 of them, took these two past the 5 s default under
+  // load (QA, the gate of #358, 2026-10-12).
   it('lights 3 to 6 of the 8 squares of its left half, for any name', () => {
+    const wrong: string[] = [];
     for (const name of MANY) {
       const lit = agentMarkBits(name).filter(Boolean).length;
-      expect(lit, JSON.stringify(name)).toBeGreaterThanOrEqual(3);
-      expect(lit, JSON.stringify(name)).toBeLessThanOrEqual(6);
+      if (lit < 3 || lit > 6) wrong.push(`${JSON.stringify(name)} lights ${lit}`);
     }
+    expect(wrong).toEqual([]);
   });
 
   it('mirrors each row: the right half is the left one turned over', () => {
+    const lopsided: string[] = [];
     for (const name of MANY) {
       const cells = agentMarkCells(name);
-      expect(cells).toHaveLength(16);
+      if (cells.length !== 16) {
+        lopsided.push(`${JSON.stringify(name)} has ${cells.length} squares`);
+        continue;
+      }
       for (let r = 0; r < 4; r++) {
-        expect(cells[r * 4 + 3], `${name} row ${r}`).toBe(cells[r * 4]);
-        expect(cells[r * 4 + 2], `${name} row ${r}`).toBe(cells[r * 4 + 1]);
+        if (cells[r * 4 + 3] !== cells[r * 4] || cells[r * 4 + 2] !== cells[r * 4 + 1]) lopsided.push(`${JSON.stringify(name)} row ${r}`);
       }
     }
+    expect(lopsided).toEqual([]);
   });
 
   it('draws an empty name and names beyond the Basic Multilingual Plane as the pen CLI draws them', () => {
