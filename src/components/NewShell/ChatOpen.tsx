@@ -1,13 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { FolderKanban, MessageSquare, Users } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { BrandMark } from '@/components/Brand';
 import { PanelCaption } from '@/components/ui';
 import { useElectronAgents } from '@/hooks/useElectron';
-import { projectNameOf } from '@/hooks/useChats';
 import type { ChatView } from '@/types/electron';
-import { AgentSquare, clockOf } from './chat-bits';
+import { ChatHead, clockOf } from './chat-bits';
 
 /**
  * A chat opened from the list, while its conversation cannot be read yet
@@ -19,39 +18,12 @@ import { AgentSquare, clockOf } from './chat-bits';
 export function ChatOpen({ chat }: { chat: ChatView }) {
   const { agents } = useElectronAgents();
   const team = agents.filter(agent => agent.projectPath === chat.projectPath);
-  const name = projectNameOf(chat.projectPath);
   const created = clockOf(chat.createdAt);
+  const meta = `${created ? `created ${created}` : ''}${chat.runner ? `${created ? ' · ' : ''}${chat.runner.name} answers here` : ''}`;
 
   return (
     <div className="-mx-[26px] -mt-[22px] -mb-[22px] h-screen flex flex-col">
-      <div className="flex items-center justify-between gap-4 pl-[26px] pr-5 pt-4 pb-3.5 border-b border-border shrink-0">
-        <div className="min-w-0 flex flex-col gap-[7px]">
-          <h1 className="font-serif text-[22px] leading-[1.15] text-foreground truncate">{chat.title}</h1>
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="h-[22px] px-[7px] flex items-center gap-[5px] border border-border bg-card shrink-0">
-              <FolderKanban className="w-[11px] h-[11px] text-status-idle" />
-              <span className="font-mono text-[10.5px] text-text-secondary">{name} #{chat.number}</span>
-            </span>
-            <span className="font-mono text-[11px] text-status-idle truncate">
-              {created ? `created ${created}` : ''}
-              {chat.runner ? `${created ? ' · ' : ''}${chat.runner.name} answers here` : ''}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 shrink-0">
-          <PanelCaption>Team</PanelCaption>
-          <span className="flex items-center gap-1.5">
-            {team.map(agent => <AgentSquare key={agent.id} agent={agent} />)}
-          </span>
-          <Link
-            href="/chat"
-            className="h-[26px] px-2.5 flex items-center gap-1.5 border border-border bg-card text-xs text-text-secondary hover:bg-secondary transition-colors"
-          >
-            <Users className="w-3 h-3" />
-            Room
-          </Link>
-        </div>
-      </div>
+      <ChatHead chat={chat} meta={meta} team={team} />
 
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 flex flex-col items-center justify-center gap-3 px-10 pb-20">
