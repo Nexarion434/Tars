@@ -1060,6 +1060,7 @@ export interface Chat {
 
 /** A chat, with its runner as the fleet has it now. */
 export interface ChatView extends Chat {
+  /** The agent the chat runs on, as the fleet confirms its record; null before its first send, or when the record names another agent. */
   runner: {
     id: string;
     name: string;
@@ -1105,7 +1106,7 @@ export type ChatSendAnswer =
   }
   | {
     error: 'not_found' | 'invalid_request' | 'no_orchestrator' | 'provider_unsupported' | 'disk_full'
-      | 'chat_limit' | 'runner_failed' | 'chats_unavailable';
+      | 'chat_limit' | 'runner_failed' | 'runner_mismatch' | 'chats_unavailable';
     /** A sentence the window shows as it is. */
     reason: string;
     /** chat_limit: the limit, the RAM it comes from, and the chats working. */

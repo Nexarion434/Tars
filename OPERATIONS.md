@@ -808,6 +808,12 @@ jq '.numbers' ~/.dorothy/chats.json
   worktree and its conversation; the chat's next send resumes it.
 - **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
 
+**When a send answers `runner_mismatch`:** the chat's record names an agent the fleet does not confirm as its
+runner: for Main, an agent that is not the project's orchestrator (the orchestrator was changed, or the file
+edited); for another chat, an agent that is not the runner made for it. Tars sends, launches and counts nothing
+for it. Compare the record (the `jq` above) with `agents.json`. A chat other than Main can be deleted and started
+again; for Main after a change of orchestrator, quit Tars and set Main's `runnerId` to the new orchestrator's id.
+
 **When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
 counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
 by itself to make room.

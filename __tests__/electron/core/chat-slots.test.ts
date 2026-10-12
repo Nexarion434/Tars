@@ -28,11 +28,22 @@
  * The refusal
  * 9. The sentence of a full limit does not say how many, the RAM and the rule,
  *    and who works: the user cannot act on it.
+ * The record's runner (the Audit's Info on #361, written before the code, 2026-10-13)
+ * chats.json sits in ~/.dorothy, which every agent may write: a record's
+ * runnerId is a claim, which the fleet confirms or not.
+ * 10. A chat other than Main names an agent that is not its runner (a worker,
+ *     the orchestrator, another chat's runner), and Tars types into it,
+ *     launches it, counts it in a slot or puts it to sleep.
+ * 11. Main names an agent that is not the project's orchestrator (a worker, a
+ *     chat's runner, another project's orchestrator), and is treated as Main.
+ * 12. A runner of this chat's id but of another project passes.
+ * 13. A chat with no runner yet, or whose agent was deleted, reads as a forged
+ *     one: the first must make its runner, the second say it is gone.
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
-  runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence,
+  runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -128,5 +139,45 @@ describe('the sentence of a full limit', () => {
       '1 chat is already working, the most this Mac runs at once (8 GB of RAM, one chat per 5 GB). '
       + 'Wait for it to finish, or stop it: Main.',
     );
+  });
+});
+
+describe("a record's runner, as the fleet confirms it", () => {
+  const project = '/Users/me/projects/demo';
+  const other = '/Users/me/projects/other';
+  const fleet = new Map([
+    ['lead', { id: 'lead', role: 'orchestrator', projectPath: project }],
+    ['worker', { id: 'worker', role: 'worker', projectPath: project }],
+    ['runner-a', { id: 'runner-a', role: 'worker', kind: 'chat', chatId: 'chat-a', projectPath: project }],
+    ['runner-b', { id: 'runner-b', role: 'worker', kind: 'chat', chatId: 'chat-b', projectPath: project }],
+    ['elsewhere', { id: 'elsewhere', role: 'worker', kind: 'chat', chatId: 'chat-a', projectPath: other }],
+    ['other-lead', { id: 'other-lead', role: 'orchestrator', projectPath: other }],
+  ]);
+  const main = (runnerId: string | null) => ({ id: 'chat-main', number: 1, projectPath: project, runnerId });
+  const chatA = (runnerId: string | null) => ({ id: 'chat-a', number: 2, projectPath: project, runnerId });
+
+  it("10. a chat other than Main runs on the runner made for it, and on no other agent", () => {
+    expect(recordedRunner(chatA('runner-a'), fleet)).toEqual({ agent: fleet.get('runner-a') });
+    for (const forged of ['worker', 'lead', 'runner-b']) {
+      expect(recordedRunner(chatA(forged), fleet), forged).toEqual({ why: 'not_its_own' });
+    }
+  });
+
+  it("11. Main runs on the project's orchestrator, and on no other agent", () => {
+    expect(recordedRunner(main('lead'), fleet)).toEqual({ agent: fleet.get('lead') });
+    for (const forged of ['worker', 'runner-a', 'other-lead']) {
+      expect(recordedRunner(main(forged), fleet), forged).toEqual({ why: 'not_its_own' });
+    }
+  });
+
+  it("12. a runner made for this chat's id in another project is not its runner", () => {
+    expect(recordedRunner(chatA('elsewhere'), fleet)).toEqual({ why: 'not_its_own' });
+  });
+
+  it('13. no runner yet, and a runner deleted since, each say so', () => {
+    expect(recordedRunner(chatA(null), fleet)).toEqual({ why: 'none' });
+    expect(recordedRunner(main(null), fleet)).toEqual({ why: 'none' });
+    expect(recordedRunner(chatA('deleted'), fleet)).toEqual({ why: 'gone' });
+    expect(recordedRunner(main('deleted'), fleet)).toEqual({ why: 'gone' });
   });
 });

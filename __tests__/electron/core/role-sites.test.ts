@@ -96,6 +96,7 @@ const SITES: Site[] = [
   { file: 'electron/core/agent-role.ts', line: 'if (…) continue;', is: 'identity', why: 'rolesOnLoad: one orchestrator per project' },
   { file: 'electron/core/agent-role.ts', line: 'export function hasOrchestratorPowers(agent: { role?: string; kind?: string }): boolean {', is: 'definition', why: 'the powers' },
   { file: 'electron/core/agent-role.ts', line: 'return agent.role === \'orchestrator\' || agent.kind === \'chat\';', is: 'definition', why: 'the powers: the orchestrator and a chat\'s runner' },
+  { file: 'electron/core/chat-slots.ts', line: '? … && agent.kind !== \'chat\'', is: 'identity', why: 'the Audit\'s Info on #361: Main\'s record runs on the project\'s orchestrator, never on another agent it names' },
   { file: 'electron/core/reply-target.ts', line: 'const lead = [...fleet.values()].find((a) => … && a.kind !== \'chat\' && a.projectPath === caller.projectPath);', is: 'identity', why: 'R5: the project\'s orchestrator a reply to "orchestrator" falls back to' },
   { file: 'electron/core/reply-target.ts', line: 'if (asker && asker.projectPath === caller.projectPath && (toRequester || …)) {', is: 'powers', why: 'R5: an asker with the orchestrator\'s powers takes a reply to "orchestrator", a chat\'s runner included' },
   { file: 'electron/core/task-cancel.ts', line: '} else if (caller && … && caller.kind !== \'chat\' && caller.projectPath === worker.projectPath) {', is: 'identity', why: 'R6: the project\'s persistent orchestrator may cancel any chat\'s task, with a reason' },

@@ -17,6 +17,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * prompt says HOLD until told to end it. The RAM figure is the E2E's: 10 GB, so two chats work at once.
  *
  * Asserted, in order:
+ * 0. a chat whose record an agent edited to name the worker shows no runner, answers runner_mismatch, and never
+ *    launches, types into or counts that worker, before it runs or after;
  * 1. a send in Main starts the orchestrator, with its model, its instructions and its tool block, its brief kept;
  * 2. a first send in chat A makes its runner: "Lead · Release", a worker of kind chat, in .worktrees/chat-<id> on
  *    chat/<id>, started from origin/main and not from the root's branch, launched like the orchestrator (model,
@@ -159,6 +161,17 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     agent('o1', 'Lead', 'orchestrator', { model: 'opus-test', savedPrompt: BRIEF }), agent('w1', 'Worker', 'worker'),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  // chats.json as Tars writes it, with one record an agent edited (the file is in ~/.dorothy, which agents may
+  // write): chat #2 names the worker as its runner.
+  const at = '2026-10-12T08:00:00.000Z';
+  const record = (id: string, number: number, title: string, runnerId: string, inbox: boolean) => ({
+    id, projectPath: project, number, title, titleSource: 'user', runnerId, sessionIds: [], pinned: false,
+    snoozedUntil: null, settledAt: null, inbox, createdAt: at, updatedAt: at, lastActivityAt: at,
+  });
+  fs.writeFileSync(path.join(dir, 'chats.json'), JSON.stringify({ version: 1, numbers: { [project]: 2 }, chats: [
+    record('c0ffee00-0000-4000-8000-000000000001', 1, 'Main', 'o1', true),
+    record('ed17ed00-0000-4000-8000-000000000002', 2, 'Edited', 'w1', false),
+  ] }, null, 2));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
   const launchesFile = path.join(home, 'launches.jsonl');
@@ -193,6 +206,13 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     // Each in one spelling: git may print a temporary folder as /var/... or /private/var/....
     const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.join(fs.realpathSync(path.dirname(p)), path.basename(p)));
     const worktrees = () => git(project, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).map((l) => real(l.slice(9)));
+
+    // 0. The edited record: no runner shown, nothing sent, the worker it names never launched for it.
+    const edited = (await chats()).find((c) => c.number === 2)!;
+    expect(edited).toMatchObject({ title: 'Edited', runner: null });
+    const toEdited = await send(edited.id, 'EDITED>> hello');
+    keep({ toEdited });
+    expect(toEdited).toMatchObject({ error: 'runner_mismatch' });
 
     // 1. Main: the orchestrator, started by the first send, as the orchestrator.
     const main = (await chats()).find((c) => c.number === 1)!;
@@ -293,6 +313,12 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await page.evaluate(() => (window as unknown as { electronAPI: { agent: { start(p: { id: string; prompt: string }): Promise<unknown> } } }).electronAPI.agent.start({ id: 'w1', prompt: '' }));
     await expect.poll(async () => (await agentOf('w1'))?.currentSessionId ?? null, { timeout: 30_000 }).not.toBeNull();
     await atRest('w1');
+    // The edited record's agent runs now: it holds no slot (Main and C do), and the edited chat still reaches it not.
+    const withWorker = await call('system', 'chatLimit');
+    const toEditedAgain = await send(edited.id, 'EDITED>> again');
+    keep({ withWorker, toEditedAgain });
+    expect(withWorker).toMatchObject({ working: 2 });
+    expect(toEditedAgain).toMatchObject({ error: 'runner_mismatch' });
 
     // A token naming each agent, as its MCP servers present one. A run's token, held beside the terminal's: a
     // terminal's own token minted again would void the one its CLI holds, and its hooks would be refused.
@@ -408,6 +434,9 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(await agentOf(runnerB.id)).toBeUndefined();
     expect(worktrees()).not.toContain(real(runnerB.worktreePath!));
     expect(git(project, 'branch', '--list', runnerB.branchName!)).toContain(runnerB.branchName!);
+    // The worker the edited record named: launched once, by the test, and never given its words.
+    expect(launchesOf('w1')).toHaveLength(1);
+    expect(promptsOf('w1').some((p) => p.includes('EDITED>>'))).toBe(false);
   } finally {
     for (const id of ['o1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();
