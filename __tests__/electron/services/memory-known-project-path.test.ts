@@ -21,6 +21,9 @@ import * as path from 'node:path';
  * 4. darwin/linux: anything changes: the folder stays under the decoder's guess,
  *    and the known project is listed beside it, empty, its memory folder named
  *    by `/` and `.` to `-` as Memory always named it there.
+ *    Replaced on 2026-10-13 (the transcript folder bug): that was the bug on
+ *    macOS and Linux too. Claude names `/Users/demo/My Project` the same there,
+ *    so the known project is listed once, under its own path, as on win32.
  */
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mem-known-')));
@@ -57,25 +60,13 @@ async function listAs(platform: NodeJS.Platform) {
     .map(p => ({ projectPath: p.projectPath, name: p.projectName, hasMemory: p.hasMemory, folder: path.basename(path.dirname(p.memoryDir)) }));
 }
 
-describe('Brain on win32', () => {
-  it('1, 2, 3. lists the known project once, under its own path, with its memory', async () => {
-    const listed = await listAs('win32');
+describe.each(['win32', 'darwin', 'linux'] as const)('Brain on %s', (platform) => {
+  it('1, 2, 3, 4. lists the known project once, under its own path, with its memory', async () => {
+    const listed = await listAs(platform);
     expect(listed).toEqual(expect.arrayContaining([
       { projectPath: '/Users/demo/My Project', name: 'My Project', hasMemory: true, folder: '-Users-demo-My-Project' },
       { projectPath: '/Users/demo/other', name: 'other', hasMemory: true, folder: '-Users-demo-other' },
     ]));
     expect(listed).toHaveLength(2);
-  });
-});
-
-describe.each(['darwin', 'linux'] as const)('Brain on %s', (platform) => {
-  it('3, 4. lists each folder as decoded, and the known project beside it, as it always has', async () => {
-    const listed = await listAs(platform);
-    expect(listed).toEqual(expect.arrayContaining([
-      { projectPath: '/Users/demo/My/Project', name: 'Project', hasMemory: true, folder: '-Users-demo-My-Project' },
-      { projectPath: '/Users/demo/other', name: 'other', hasMemory: true, folder: '-Users-demo-other' },
-      { projectPath: '/Users/demo/My Project', name: 'My Project', hasMemory: false, folder: '-Users-demo-My Project' },
-    ]));
-    expect(listed).toHaveLength(3);
   });
 });
