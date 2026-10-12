@@ -272,7 +272,7 @@ test('a delegated run takes the narrower mode of its asker, a narrower sender is
   let opened = await open(s.home, port, ['p1', 'by', 'wb']);
   let taskId = '';
   try {
-    let tokens = await opened.tokensFor(['p1', 'by', 'wb', 'oc']);
+    const tokens = await opened.tokensFor(['p1', 'by', 'wb', 'oc']);
     const { post } = client(port, () => tokens);
 
     // 7. Asked from plan mode: the run is in plan.
