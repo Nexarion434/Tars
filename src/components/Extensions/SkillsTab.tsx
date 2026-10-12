@@ -14,6 +14,7 @@ import {
 import { useClaude } from '@/hooks/useClaude';
 import { useElectronSkills } from '@/hooks/useElectron';
 import { SKILLS_DATABASE, fetchSkillsPaginated, type Skill } from '@/lib/skills-database';
+import { installsLabel } from '@/lib/install-count';
 import { PROVIDER_REGISTRY } from '@/lib/providers';
 import TerminalDialog from '@/components/TerminalDialog';
 import ProviderBadge from '@/components/ui/ProviderBadge';
@@ -432,7 +433,7 @@ export default function SkillsTab() {
                         <span className="text-xs text-muted-foreground font-mono truncate block">{skill.repo}</span>
                       </td>
                       <td style={COL_STYLES.installs} className="px-4 py-3 hidden lg:table-cell">
-                        <span className="text-xs text-muted-foreground">{skill.installs}</span>
+                        <span className="text-xs text-muted-foreground">{installsLabel(skill)}</span>
                       </td>
                       <td style={COL_STYLES.status} className="px-4 py-3 text-right">
                         {installed ? (
