@@ -168,6 +168,8 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     const refusedWork = sidebar.getByRole('alert');
     await expect(refusedWork).toContainText('This chat has work out at the team');
     await expect(refusedWork).toContainText('Backend');
+    // The list takes the sidebar's height down to its foot: under the refusal, the last section is still in sight.
+    await expect(section('Settled').getByRole('button', { name: /Settled/ })).toBeInViewport();
     seen.refusedWork = (await refusedWork.innerText()).replace(/\s+/g, ' ').trim();
     await stepShot(page, '06-refused-work');
     expect(onDisk().some(c => c.title === 'Main' && c.projectPath === tars)).toBe(true);
@@ -201,7 +203,7 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
 
     // Projects: tars-demo's page, its chats by number, its team.
     await sidebar.getByRole('navigation', { name: 'Main menu' }).getByRole('link', { name: 'Projects', exact: true }).click();
-    await expect(page).toHaveURL(/\/project\?path=/);
+    await expect(page).toHaveURL(/\/project\/?\?path=/);
     await expect(main.getByRole('heading', { name: 'tars-demo', exact: true })).toBeVisible({ timeout: 30_000 });
     const chatsPanel = main.getByRole('region', { name: 'Chats in tars-demo', exact: true });
     seen.projectChats = await texts(chatsPanel.locator('[data-project-chat]'));
