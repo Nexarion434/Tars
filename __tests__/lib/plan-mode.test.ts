@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasPlanMode, modeForProvider, noPlanReason } from '../../src/lib/plan-mode';
+import { hasPlanMode, modeForProvider, noPlanReason, templateModeOf } from '../../src/lib/plan-mode';
 
 /**
  * Where an agent's permission selectors offer plan (src/lib/plan-mode.ts).
@@ -17,7 +17,11 @@ import { hasPlanMode, modeForProvider, noPlanReason } from '../../src/lib/plan-m
  * 5. choosing a provider without plan while plan is chosen keeps plan;
  * 6. choosing a provider changes manual, auto or bypass, or turns plan into
  *    something other than manual;
- * 7. a dimmed plan's reason names no provider, or another one than chosen.
+ * 7. a dimmed plan's reason names no provider, or another one than chosen;
+ * 8. an agent in plan saved as a template hands the template plan, which a
+ *    template cannot keep, or a template's manual, auto or bypass changes
+ *    (added with the template caller tsc found, after the first seven; shown
+ *    to bite by its mutant, plan handed through).
  */
 
 describe('hasPlanMode', () => {
@@ -61,5 +65,12 @@ describe('noPlanReason (7)', () => {
   it('names the provider chosen', () => {
     expect(noPlanReason('codex')).toBe('Codex has no plan mode here: plan would run as manual.');
     expect(noPlanReason('openrouter')).toBe('OpenRouter has no plan mode here: plan would run as manual.');
+  });
+});
+
+describe('templateModeOf (8)', () => {
+  it('saves plan as manual, and keeps the three modes a template has', () => {
+    expect(templateModeOf('plan')).toBe('normal');
+    for (const mode of ['normal', 'auto', 'bypass'] as const) expect(templateModeOf(mode)).toBe(mode);
   });
 });
