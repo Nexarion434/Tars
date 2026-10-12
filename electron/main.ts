@@ -111,6 +111,7 @@ import {
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
+import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
@@ -548,6 +549,9 @@ app.whenReady().then(async () => {
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerOverseerHandlers();
   registerBusHandlers();
+  // The chats' records, and the migration that makes each project's
+  // orchestrator's conversation its chat #1, Main (handlers/chat-handlers.ts).
+  registerChatHandlers({ agents });
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.
