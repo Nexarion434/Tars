@@ -20,9 +20,9 @@ import type { AgentStatus } from '../types';
  * - **Items are numbered** by their place in the chat (`n`), the same in an
  *   answer and in an event, so the window can tell what it already shows.
  * - **Followed live** while the runner's CLI holds a terminal: each second its
- *   files are looked at again (a size and a time), and what they gained is
- *   sent as `item` events. A chat seen for the first time is a baseline, sent
- *   nothing.
+ *   files are looked at again (a size and a time), and what they gained
+ *   since the windows' first snapshot of it (noteChatSnapshot) is sent as
+ *   `item` events.
  */
 
 export type NumberedItem = ChatItem & { n: number };
