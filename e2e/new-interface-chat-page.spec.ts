@@ -18,12 +18,15 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * transcript gains a line), then asks a permission and records the answer.
  *
  * The person opens the chats: Main's page shows each line as what it is, the
- * last 200 of 206; Show earlier reads the six before. Lead starts and works:
- * the line at the end says so, and the line its
- * transcript gained arrives in the thread. Lead asks to run a command: the ask
- * sits above the composer; allow answers it. The composer is the Chat's with
+ * last 200 of 206. Lead starts and works: the line at the end says so, and
+ * the line its transcript gained arrives in the thread, in view. Lead asks to
+ * run a command: the ask sits above the composer, the head says since when;
+ * allow answers it. The composer is the Chat's with
  * nobody to receive yet: send dimmed, its strip saying why and opening Tars,
  * all projects. The panel says when what the chat delegates shows there.
+ * Last, Show earlier reads the six lines before, the first line held staying
+ * where it was (last, so the shots before it show the end of the thread,
+ * which the thread follows).
  *
  * The artefact: a screenshot per state, values.json, and the stand-in's
  * answers beside them.
@@ -135,22 +138,13 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     seen.speakers = (await thread.locator('[data-chat-speaker]').allInnerTexts()).slice(-5);
     await stepShot(page, '01-history');
 
-    // The six lines before those 200: Show earlier reads them, and the count said how many.
-    const earlier = thread.getByRole('button', { name: 'Show earlier', exact: true });
-    await expect(thread.getByText('6 earlier lines', { exact: true })).toBeVisible();
-    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(0);
-    await earlier.click();
-    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(1);
-    await expect(earlier).toHaveCount(0);
-    seen.afterEarlier = await thread.locator('[data-chat-item]').count();
-    expect(seen.afterEarlier).toBe(206);
-
     // The send waits for the next part, its strip opens Tars, all projects meanwhile; the panel says when it fills.
     const composer = main.getByRole('group', { name: 'Message composer' });
     await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
     await expect(composer.getByRole('textbox', { name: 'Message' })).toBeDisabled();
     await expect(composer.getByText('Sending from a chat comes with the next part of this preview.')).toBeVisible();
-    await expect(composer.getByRole('link', { name: 'Open Tars, all projects', exact: true })).toHaveAttribute('href', '/chat');
+    // Next writes the route with its trailing slash (trailingSlash in next.config.ts).
+    await expect(composer.getByRole('link', { name: 'Open Tars, all projects', exact: true })).toHaveAttribute('href', /^\/chat\/?$/);
     await expect(main.getByText('What this chat delegates shows here once each chat has its own runner')).toBeVisible();
 
     // Lead starts, registers its session, then works: the line at the end, and the line its transcript gains.
@@ -158,7 +152,10 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     await expect.poll(() => fs.existsSync(path.join(home, 'registered')), { timeout: 60_000, message: 'the stand-in registered its session' }).toBe(true);
     signal('go-working');
     await expect(thread.getByText('The orchestrator is working')).toBeVisible({ timeout: 60_000 });
-    await expect(row('text').filter({ hasText: 'Reading the scroll hook now.' })).toHaveCount(1, { timeout: 60_000 });
+    const live = row('text').filter({ hasText: 'Reading the scroll hook now.' });
+    await expect(live).toHaveCount(1, { timeout: 60_000 });
+    // At the end of the thread, the thread follows what arrives.
+    await expect(live).toBeInViewport();
     seen.liveArrived = true;
     await stepShot(page, '02-working-live');
 
@@ -168,12 +165,32 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     await expect(ask).toBeVisible({ timeout: 60_000 });
     await expect(ask).toContainText('gh pr create --fill');
     seen.ask = (await ask.innerText()).replace(/\s+/g, ' ').trim();
+    // The head says since when, at the time the ask says it was asked.
+    const asked = /asked at (\d{2}:\d{2})/.exec(seen.ask as string)?.[1];
+    await expect(main.getByText(`waiting on you since ${asked}`)).toBeVisible();
     await stepShot(page, '03-waiting-on-you');
     await ask.getByRole('button', { name: 'allow', exact: true }).click();
     await expect.poll(() => (fs.existsSync(answersFile) ? fs.readFileSync(answersFile, 'utf8') : ''), { timeout: 30_000 }).toContain('"allow"');
     seen.answer = JSON.parse(fs.readFileSync(answersFile, 'utf8').trim().split('\n').pop()!);
     await expect(ask).toHaveCount(0, { timeout: 30_000 });
     await stepShot(page, '04-answered');
+
+    // The six lines before the first 200: Show earlier reads them, the count said how many, and the
+    // line that was first stays where it was.
+    const earlier = thread.getByRole('button', { name: 'Show earlier', exact: true });
+    const first = row('user').filter({ hasText: /^Earlier question 4$/ });
+    await expect(thread.getByText('6 earlier lines', { exact: true })).toBeVisible();
+    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(0);
+    await earlier.scrollIntoViewIfNeeded();
+    const firstWas = (await first.boundingBox())!.y;
+    await earlier.click();
+    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(1);
+    await expect(earlier).toHaveCount(0);
+    seen.afterEarlier = await thread.locator('[data-chat-item]').count();
+    expect(seen.afterEarlier).toBe(207);
+    seen.firstMoved = (await first.boundingBox())!.y - firstWas;
+    expect(Math.abs(seen.firstMoved as number), 'the line that was first moved').toBeLessThan(4);
+    await stepShot(page, '05-earlier');
 
     recordValues(seen);
     expect(pageErrors, 'no uncaught page error').toEqual([]);
