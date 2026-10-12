@@ -17,8 +17,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * registers that session through the hooks, then, when told, works (and its
  * transcript gains a line), then asks a permission and records the answer.
  *
- * The person opens the chats: Main's page shows each line as what it is.
- * Lead starts and works: the line at the end says so, and the line its
+ * The person opens the chats: Main's page shows each line as what it is, the
+ * last 200 of 206; Show earlier reads the six before. Lead starts and works:
+ * the line at the end says so, and the line its
  * transcript gained arrives in the thread. Lead asks to run a command: the ask
  * sits above the composer; allow answers it. The composer is the Chat's with
  * nobody to receive yet: send dimmed, its strip saying why and opening Tars,
@@ -48,7 +49,10 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
   const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[/.]/g, '-'));
   fs.mkdirSync(transcripts, { recursive: true });
   const transcript = path.join(transcripts, `${S1}.jsonl`);
+  // A hundred exchanges before it: 206 lines, of which the page opens on the last 200.
+  const before = Array.from({ length: 100 }, (_, i) => [user(`Earlier question ${i + 1}`), said([{ type: 'text', text: `Earlier answer ${i + 1}` }])]).flat();
   fs.writeFileSync(transcript, jsonl([
+    ...before,
     user('The terminal jumps to the bottom when an agent writes while I scroll up. Fix it.'),
     said([{ type: 'text', text: 'Worker takes the fix; I check it after.' }, { type: 'tool_use', id: 't1', name: 'mcp__claude-mgr-orchestrator__delegate_task', input: { id: 'w1', prompt: 'fix the scroll lock' } }]),
     { type: 'user', uuid: uuid(), sessionId: S1, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'NOT SHOWN' }] }, toolUseResult: {} },
@@ -125,9 +129,21 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     await expect(row('message').filter({ hasText: 'Done: the view keeps its place' })).toHaveCount(1);
     await expect(row('note').filter({ hasText: 'has finished its turn' })).toHaveCount(1);
     await expect(thread.getByText('NOT SHOWN')).toHaveCount(0);
-    seen.kinds = await thread.locator('[data-chat-item]').evaluateAll(els => els.map(e => e.getAttribute('data-kind')));
-    seen.speakers = await thread.locator('[data-chat-speaker]').allInnerTexts();
+    const kinds = await thread.locator('[data-chat-item]').evaluateAll(els => els.map(e => e.getAttribute('data-kind')));
+    seen.opened = { lines: kinds.length, lastKinds: kinds.slice(-6) };
+    expect(kinds.length).toBe(200);
+    seen.speakers = (await thread.locator('[data-chat-speaker]').allInnerTexts()).slice(-5);
     await stepShot(page, '01-history');
+
+    // The six lines before those 200: Show earlier reads them, and the count said how many.
+    const earlier = thread.getByRole('button', { name: 'Show earlier', exact: true });
+    await expect(thread.getByText('6 earlier lines', { exact: true })).toBeVisible();
+    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(0);
+    await earlier.click();
+    await expect(row('user').filter({ hasText: /^Earlier question 1$/ })).toHaveCount(1);
+    await expect(earlier).toHaveCount(0);
+    seen.afterEarlier = await thread.locator('[data-chat-item]').count();
+    expect(seen.afterEarlier).toBe(206);
 
     // The send waits for the next part, its strip opens Tars, all projects meanwhile; the panel says when it fills.
     const composer = main.getByRole('group', { name: 'Message composer' });
