@@ -683,6 +683,7 @@ describe('a delegated run over ACP, from its start (PR B)', () => {
     const second = open();
     expect(second.task(id)).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
     expect(second.interruptedAtStart().map((t) => [t.id, t.requesterAgentId, t.text])).toEqual([[id, 'p1', 'review the notes']]);
+    expect(second.interruptedAtStart()).toEqual([]);
     expect(open().interruptedAtStart()).toEqual([]);
   });
 
