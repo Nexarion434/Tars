@@ -25,6 +25,11 @@ import { shHooksNotShipped } from '../setup/platform-limits';
  *    on these reads, and the agent starts without its name and its memory.
  * 4. A CLI Tars did not start (no token in its environment) loses the shared
  *    token it read the bootstrap with until now.
+ * 5. The memory post goes out anyway, with an empty Bearer, when the port did
+ *    not prove itself: no token leaks, but what the agent did ('Created/wrote
+ *    file: <path>', 'Ran command: <command>', its id and project) reaches the
+ *    squatter. Gemini's post-tool-use.sh and the Node runner (Claude's and
+ *    Gemini's post-tool-use, the hooks on win32) each hold their own guard.
  *
  * The real hook scripts and their helper, with only the port pointed at a
  * server here that plays Tars, or plays the squatter.
@@ -78,9 +83,16 @@ afterAll(async () => {
 beforeEach(() => { received.length = 0; });
 
 function run(hook: string, env: Record<string, string>, input: unknown): Promise<string> {
+  return spawnHook('/bin/bash', [path.join(tmp, hook)], env, input);
+}
+/** A hook of the repo as shipped, pointed at this server by CLAUDE_MGR_API_URL, as Tars points a terminal's. */
+function runShipped(command: string, args: string[], env: Record<string, string>, input: unknown): Promise<string> {
+  return spawnHook(command, args, { ...env, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}` }, input);
+}
+function spawnHook(command: string, args: string[], env: Record<string, string>, input: unknown): Promise<string> {
   return new Promise((resolve, reject) => {
     let out = '';
-    const child = spawn('/bin/bash', [path.join(tmp, hook)], { env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: home, ...env } });
+    const child = spawn(command, args, { env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: home, ...env } });
     child.stdout.on('data', (d) => { out += d; });
     child.on('error', reject);
     child.on('close', () => resolve(out));
@@ -91,6 +103,16 @@ const START = { session_id: '5b0c6a1e-7d7f-4c1e-9b1a-2f3c4d5e6f70', source: 'sta
 const WROTE = { session_id: '5b0c6a1e-7d7f-4c1e-9b1a-2f3c4d5e6f70', cwd: '/work/demo', tool_name: 'Write', tool_input: { file_path: '/work/demo/x.ts' } };
 const env = { CLAUDE_AGENT_ID: 'a1', CLAUDE_PROJECT_PATH: '/work/demo', CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE };
 const reads = () => received.filter((r) => r.path.endsWith('/bootstrap') || r.path.startsWith('/api/memory'));
+const remembered = () => received.filter((r) => r.path === '/api/memory/remember');
+// The .sh posts the memory in the background (curl &): what it sends lands after the script ends.
+const settle = () => new Promise((r) => setTimeout(r, 1500));
+const GEMINI_SH: [string, string[]] = ['/bin/bash', [path.join(HOOKS, 'gemini', 'post-tool-use.sh')]];
+const RUNNER = (event: string): [string, string[]] => [process.execPath, [path.join(HOOKS, 'tars-hook.mjs'), event]];
+const MEMORY_POSTERS: Array<[string, [string, string[]]]> = [
+  ["Gemini's post-tool-use.sh", GEMINI_SH],
+  ["the Node runner's post-tool-use (Claude)", RUNNER('post-tool-use')],
+  ["the Node runner's post-tool-use (Gemini)", RUNNER('gemini/post-tool-use')],
+];
 
 describe.skipIf(shHooksNotShipped())("a hook's reads, before they carry its token", () => {
   it('1, 2. a squatter gets neither the terminal\'s token nor the shared one', async () => {
@@ -113,6 +135,29 @@ describe.skipIf(shHooksNotShipped())("a hook's reads, before they carry its toke
     ]));
     expect(out).toContain('You are a1.');
   }, 60_000);
+
+  it("5. a squatter gets no memory post at all from Claude's post-tool-use.sh", async () => {
+    mode = 'squatter';
+    await run('post-tool-use.sh', env, WROTE);
+    await settle();
+    expect(remembered()).toEqual([]);
+  }, 60_000);
+
+  for (const [name, [command, args]] of MEMORY_POSTERS) {
+    it(`5. a squatter gets no memory post at all from ${name}`, async () => {
+      mode = 'squatter';
+      await runShipped(command, args, env, WROTE);
+      await settle();
+      expect(remembered()).toEqual([]);
+    }, 60_000);
+
+    it(`3. the Tars that spawned the CLI gets ${name}'s memory post, with the token`, async () => {
+      mode = 'tars';
+      await runShipped(command, args, env, WROTE);
+      await settle();
+      expect(remembered().map((r) => r.authorization)).toEqual([`Bearer ${TOKEN}`]);
+    }, 60_000);
+  }
 
   it('4. a CLI Tars did not start reads with the shared token, as before', async () => {
     mode = 'tars';
