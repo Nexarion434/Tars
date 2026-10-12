@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-12',
     updates: [
       'On the Extensions page, every install count reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
+      'A Gemini agent on macOS and Linux reads as working while it works: its turns\' start now reaches Tars, which waited for an event Gemini never sends and showed the agent idle until it finished.',
     ],
   },
   {
