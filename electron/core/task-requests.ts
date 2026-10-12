@@ -190,6 +190,17 @@ export function mayInterrupt(worker: RequestWorker, callerId: string | undefined
 }
 
 /**
+ * Whether a send may restart this worker: as for an interrupt, and not while
+ * another asker's request waits in its queue either. The stop ends every
+ * request the worker holds, so it would cut that work too (the Audit's L1 on
+ * #364). The caller's own queued requests and Tars do not stop it.
+ */
+export function mayRestart(worker: RequestWorker, callerId: string | undefined): boolean {
+  if (!mayInterrupt(worker, callerId)) return false;
+  return !callerId || !(worker.taskQueue ?? []).some((r) => r.requesterAgentId !== callerId);
+}
+
+/**
  * Once the resume after an abrupt stop has run: the work in hand of each
  * worker it did not relaunch (deleted, stopped or whose folder is gone since,
  * or whose launch failed) is ended and told; a worker launched again, or whose

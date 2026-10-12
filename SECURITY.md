@@ -130,20 +130,34 @@ opening Settings > Hermes, which mints a new one, and giving Hermes that.
 **What the ceiling for delegated runs is, and is not** (1.9.6, `core/permission-ceiling.ts`).
 A run over ACP (`delegate_task`, `/run-task`) takes the narrower of its asker's
 permission mode and the target agent's own, in the order plan < normal < auto <
-bypass: an agent in plan mode delegating to an agent in bypass gets a run in plan,
-and a run held to plan on an agent that offers no plan mode does not run
-(`permission_escalation_denied`; `delegate_task` does not then type the task into the
-terminal, where it would run in bypass). This binds one thing: the run, which the
-asker starts and which ends with its turn.
+bypass. What that binds, measured:
 
-It is **not a boundary**. A persistent worker keeps the mode JeanBrasse gave it, which is its
+- **plan binds.** The session is set to plan, and every permission request of the run
+  is refused, the request to leave plan included (Claude leaves it through
+  `ExitPlanMode`, which claude-agent-acp 0.70.0 sends as a permission request whose
+  options switch the mode: Tars answers "No, keep planning"). A session that leaves plan
+  anyway is cut at once and its asker answered `permission_escalation_denied`; so is a run
+  held to plan on an agent that offers no plan mode. Until the Audit's gate of #364, Tars
+  approved that request itself, and a plan-held run left plan and edited.
+- **normal, auto and bypass differ little.** Tars answers an ACP run's permission requests
+  itself, so a run in normal has what it asks for approved, once at a time, short of the
+  deny list. Below plan, the order narrows the session's starting mode and little else.
+- **A target with no ACP mode** is not a run: `delegate_task` types the task into its
+  terminal, where it works in its own mode, whatever its asker's.
+
+And it is **not a boundary**. A persistent worker keeps the mode JeanBrasse gave it, which is its
 configuration and not the asker's grant: `send_message` and `/dispatch` to a worker in
 bypass have it do anything a worker in bypass may do, whatever mode the sender runs in.
 The message only carries a mark after its sender line, "(sender in plan mode, you in
-bypass mode)", so the worker and the transcript show the gap. And an agent in plan mode
-can still write files by other ways its CLI leaves open (§1, §4). The ceiling stops a
-delegation from silently widening what its asker could do in that run; it does not
-confine the asker.
+bypass mode)", so the worker and the transcript show the gap. The ceiling keeps a
+delegated run from working in a broader mode than plan when its asker is in plan; it does
+not confine the asker.
+
+**What steer and restart respect, and what they do not.** An agent may interrupt
+(`steer`) or restart a worker only when the work in hand is its own or there is none, and
+may restart it only when no other asker's request waits in its queue (a stop ends them
+all). A turn JeanBrasse typed into the worker's terminal has no asker Tars knows of: any agent
+of the project may interrupt or restart it, as it could already stop the agent.
 
 **What the receipts hold** (1.9.6, `services/request-receipts.ts`). A send with a
 `clientRequestId` leaves a receipt in `~/.tars-private/request-receipts.jsonl` (0600,

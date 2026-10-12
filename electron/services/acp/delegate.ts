@@ -240,6 +240,20 @@ export async function delegateOverAcp(opts: {
   own.add(run);
   runs.set(agent.id, own);
 
+  // Held to plan and out of it (client.ts, 'breach'): the run is cut at once,
+  // its processes ended before the edit leaving plan was for (the Audit's B1
+  // on #364), and its asker answered permission_escalation_denied.
+  let breach: string | undefined;
+  session.on('breach', (mode: string) => {
+    if (breach) return;
+    breach = mode;
+    run.stoppedWhy = `it left plan mode (to ${mode}), and its asker holds it to plan`;
+    console.warn(`[acp] ${agent.name || agent.id}: a run held to plan left it for ${mode}: cut`);
+    void session.cancel();
+    session.stop();
+  });
+  const escaped = () => (breach ? { ok: false, code: 'permission_escalation_denied', stopReason: 'permission_escalation_denied' } : {});
+
   let started = false;
   try {
     await session.start();
@@ -313,6 +327,7 @@ export async function delegateOverAcp(opts: {
       usage: turn.usage,
       costUSD: turn.costUSD,
       ...(run.stoppedWhy ? { error: `the run was stopped: ${run.stoppedWhy}` } : {}),
+      ...escaped(),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -325,6 +340,7 @@ export async function delegateOverAcp(opts: {
       // Said as what happened, not as the crash it looks like from inside.
       error: run.stoppedWhy ? `the run was stopped: ${run.stoppedWhy}` : message,
       ...(/^permission_escalation_denied/.test(message) ? { code: 'permission_escalation_denied' } : {}),
+      ...escaped(),
     };
   } finally {
     own.delete(run);

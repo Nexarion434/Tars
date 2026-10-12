@@ -28,7 +28,7 @@ import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff } from '../task-ledger';
-import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt } from '../../core/task-requests';
+import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
 import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
@@ -1416,9 +1416,9 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         return;
       }
       // Never across another asker's work: it would cut it (core/task-requests.ts).
-      if ((mode === 'steer' || mode === 'restart') && !mayInterrupt(agent, asker)) {
+      if ((mode === 'steer' && !mayInterrupt(agent, asker)) || (mode === 'restart' && !mayRestart(agent, asker))) {
         send({
-          error: `${name} is working on a task another agent asked for: a ${mode} would cut it. Send it with mode 'queue', or ask that agent.`,
+          error: `${name} is working on, or holds, a task another agent asked for: a ${mode} would cut it. Send it with mode 'queue', or ask that agent.`,
           code: 'worker_busy_for_other_requester',
         }, 409);
         return;
