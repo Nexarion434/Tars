@@ -65,6 +65,8 @@ type News = {
   kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled' | 'not_delivered';
   status: AgentStatus['status'];
   reason?: string;
+  /** For a `not_delivered` request `cancelled` by another agent: who, and why, already quoted as data. */
+  detail?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
   /**
@@ -307,6 +309,21 @@ export function startAgentWatch(): void {
   listening = true;
   agentStatusEmitter.on('fleet-change', onFleetChange);
   setRequestsEndedHook(tellRequestsEnded);
+}
+
+/**
+ * A request cancelled before it went in (core/task-cancel.ts) by the project's
+ * orchestrator rather than its requester: the requester is told who and why
+ * (the Audit's R6). Its own requester cancelling it needs no note.
+ */
+export function tellCancelled(requesterId: string, workerId: string, by: string, reason: string): void {
+  const worker = agents.get(workerId);
+  if (!worker || requesterId === workerId) return;
+  handToRequester(requesterId, worker, {
+    kind: 'not_delivered', status: worker.status, reason: 'cancelled',
+    detail: `from ${by}: ${envelopeValue(reason.replace(/\s+/g, ' ').trim().slice(0, 300))}`,
+    handedAt: worker.workHandedAt,
+  });
 }
 
 /** Each request a worker will never run, told to whoever asked (the Audit's R2, R3). */
@@ -830,6 +847,7 @@ function describeNews(news: News): string {
       + 'Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done';
   }
   if (news.kind === 'not_delivered') {
+    if (news.reason === 'cancelled') return `never ran what you asked of it: it was cancelled before it went in, ${news.detail ?? 'by another agent'}. Nothing was retried; ask again if it is still needed`;
     if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
     if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';
     const why = news.reason === 'stopped' ? 'it was stopped before it ran it'

@@ -37,6 +37,7 @@ import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '.
 import { assignRole, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
+import { replyTargetOf } from '../../core/reply-target';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -889,6 +890,8 @@ async function performDispatchLocked(
       // caller hears it went in or was given up (#292).
       onWritten: () => { handedOver(delivered(agent, taskRef)); opts.onWritten?.(); },
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
+      // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
+      onWithdrawn: () => cancelRetell?.(),
       taskRef,
     });
     if (outcome === 'refused') dropped(agent, taskRef);
@@ -915,6 +918,26 @@ async function performDispatchLocked(
     return;
   }
   sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), agent: { id: agent.id, name: agent.name, status: agent.status } });
+}
+
+/**
+ * The agent a message names (the Audit's R5): an id reaches that agent; the
+ * words "requester" and "orchestrator", or the orchestrator's name, reach
+ * whoever asked the caller for its current task when that is a chat's runner,
+ * else the project's orchestrator (core/reply-target.ts). Answers 404 itself
+ * when it names nobody. A message sent by those words is answered with where
+ * it went, `deliveredTo`.
+ */
+function messageTarget(req: RouteRequest, sendJson: SendJson): { agent: AgentStatus; reply: SendJson } | undefined {
+  const found = replyTargetOf(req.params.id, req.callerAgentId, agents);
+  const agent = found ? agents.get(found.agentId) : undefined;
+  if (!found || !agent) {
+    sendJson({ error: 'Agent not found' }, 404);
+    return undefined;
+  }
+  if (found.how === 'id') return { agent, reply: sendJson };
+  const deliveredTo = { id: agent.id, name: agent.name || agent.id, how: found.how };
+  return { agent, reply: (data, status) => sendJson(status && status >= 400 ? data : { ...(data as object), deliveredTo }, status) };
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
@@ -1280,12 +1303,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   // Decides message-vs-spawn server-side, under the single-threaded event
   // loop, eliminating the GET-status-then-POST race that MCP tools had when
   // they made that decision client-side on stale status.
-  app_.post(/^\/api\/agents\/([^/]+)\/dispatch$/, async (req, sendJson) => {
-    const agent = agents.get(req.params.id);
-    if (!agent) {
-      sendJson({ error: 'Agent not found' }, 404);
-      return;
-    }
+  app_.post(/^\/api\/agents\/([^/]+)\/dispatch$/, async (req, sendJsonToCaller) => {
+    const target = messageTarget(req, sendJsonToCaller);
+    if (!target) return;
+    const { agent, reply: sendJson } = target;
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message, model, permissionMode } = req.body as {
@@ -1420,12 +1441,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/agents/:id/message
-  app_.post(/^\/api\/agents\/([^/]+)\/message$/, async (req, sendJson) => {
-    const agent = agents.get(req.params.id);
-    if (!agent) {
-      sendJson({ error: 'Agent not found' }, 404);
-      return;
-    }
+  app_.post(/^\/api\/agents\/([^/]+)\/message$/, async (req, sendJsonToCaller) => {
+    const target = messageTarget(req, sendJsonToCaller);
+    if (!target) return;
+    const { agent, reply: sendJson } = target;
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message } = req.body as { message: string };
@@ -1499,6 +1518,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           sender,
           onWritten: () => handedOver(delivered(agent, taskRef)),
           onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); },
+          onWithdrawn: () => cancelRetell?.(),
           taskRef,
         });
         if (outcome === 'refused') dropped(agent, taskRef);

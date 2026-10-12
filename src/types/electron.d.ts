@@ -1068,6 +1068,8 @@ export interface ChatView extends Chat {
     /** Its CLI holds a terminal: it counts in the limit. */
     live: boolean;
     lastActivity: string;
+    /** A permission its CLI asked Tars: shown in the chat that runs it. */
+    permissionAsk: AgentStatus['permissionAsk'] | null;
   } | null;
 }
 
@@ -1085,11 +1087,32 @@ export interface ChatWorkItem {
 export interface ChatError {
   error:
     | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
-    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'chat_send_unavailable';
+    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'provider_unsupported' | 'runner_set';
   reason: string;
   /** chat_has_work: the work the chat's runner has out. */
   tasks?: ChatWorkItem[];
 }
+
+/** What chat:send answers: how the words went in, or why they did not. */
+export type ChatSendAnswer =
+  | {
+    success: true;
+    chatId: string;
+    /** The agent that runs the chat: Main's is the project's orchestrator. */
+    runnerId: string;
+    /** typed into its running CLI; held behind a draft in its field; launched, its conversation resumed. */
+    how: 'typed' | 'held' | 'launched';
+  }
+  | {
+    error: 'not_found' | 'invalid_request' | 'no_orchestrator' | 'provider_unsupported' | 'disk_full'
+      | 'chat_limit' | 'runner_failed' | 'chats_unavailable';
+    /** A sentence the window shows as it is. */
+    reason: string;
+    /** chat_limit: the limit, the RAM it comes from, and the chats working. */
+    limit?: number;
+    ramGb?: number;
+    working?: Array<{ chatId: string; title: string; since: string }>;
+  };
 
 /** chats.json could not be read as it was: what was done, and where the file as it was is kept. */
 export interface ChatsProblem {
@@ -2188,12 +2211,12 @@ export interface ElectronAPI {
     /** until: a time to come, or null to end the snooze. */
     snooze: (params: { chatId: string; until: string | null }) => Promise<ChatView | ChatError>;
     settle: (params: { chatId: string; settled: boolean }) => Promise<ChatView | ChatError>;
-    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). */
-    delete: (params: { chatId: string }) => Promise<{ success: true } | ChatError>;
+    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). Its own runner goes with it, its worktree's work saved first. */
+    delete: (params: { chatId: string }) => Promise<{ success: true; savedTo?: string; worktreeKept?: string } | ChatError>;
     /** The project's inbox moves to this chat. */
     setInbox: (params: { chatId: string }) => Promise<ChatView | ChatError>;
-    /** Refused (chat_send_unavailable) until the chats have orchestrators of their own. */
-    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatError>;
+    /** The user's words into the chat: typed into its runner, or launched with them, within the RAM's limit (chat_limit). */
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatSendAnswer>;
   };
 
   // Obsidian vault browsing & editing

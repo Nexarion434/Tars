@@ -1,0 +1,104 @@
+import * as fs from 'fs';
+import { execFileSync } from 'child_process';
+import { agents, saveAgents } from './agent-manager';
+import { ptyProcesses } from './pty-manager';
+import { endWorkerRequests } from './task-requests';
+import { forgetRestart } from './agent-restart';
+import { stopAcpRuns } from '../services/acp/delegate';
+import { dropPermissionAsks } from '../services/permission-asks';
+import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
+
+export interface RemovedAgent {
+  success: true;
+  /** The branch its uncommitted work was saved on. */
+  savedTo?: string;
+  /** Why its worktree was kept, when it was. */
+  worktreeKept?: string;
+}
+
+/**
+ * An agent deleted, with its worktree: what `agent:remove` does from the
+ * window, and what deleting a chat does to the chat's runner
+ * (services/chat-runners.ts). Moved here from the handler so both go the
+ * same way.
+ *
+ * Its delegated runs and permission questions end with it; its terminal is
+ * killed; its uncommitted work is saved on wip/<name> first, without asking
+ * (JeanBrasse, 05/10), since `--force` below removes whatever was not committed. A
+ * save that fails keeps the worktree where it is, and says so, as do files git
+ * ignores that are not caches, a repository of its own inside it, and a
+ * submodule holding work no remote has (#312, #335). What it was asked and
+ * will never finish is told to each requester (the Audit's R3).
+ */
+export async function removeAgent(id: string): Promise<RemovedAgent> {
+  const agent = agents.get(id);
+  if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
+  dropPermissionAsks(id);
+  if (agent?.ptyId) {
+    const ptyProcess = ptyProcesses.get(agent.ptyId);
+    if (ptyProcess) {
+      ptyProcess.kill();
+      ptyProcesses.delete(agent.ptyId);
+    }
+    // Nullify so pending onExit callbacks won't mutate state
+    agent.ptyId = undefined;
+  }
+
+  let savedTo: string | undefined;
+  let worktreeKept: string | undefined;
+  if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
+    try {
+      const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
+      savedTo = saved?.branch;
+      if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
+      // What git ignores, a .env or an e2e run, no commit keeps: the
+      // worktree stays, rebuildable caches aside (the Audit's gate of #312).
+      // And a git repository of its own, which the save could only point at.
+      if (saved?.nestedRepos.length) {
+        worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+      // A submodule's commits and changes live in the worktree's own git
+      // store, which the removal deletes, and no remote may have them.
+      const submodules = worktreeKept ? [] : await submodulesWithWork(agent.worktreePath);
+      if (submodules.length) {
+        worktreeKept = `its submodules hold work no remote has (${submodules.slice(0, 5).join(', ')}), which removing the worktree would lose, so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+      const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
+      if (ignored.length) {
+        const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
+        worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
+        console.warn(`[agent:remove] ${worktreeKept}`);
+      }
+    } catch (err) {
+      worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
+      console.warn(`[agent:remove] ${worktreeKept}`);
+    }
+  }
+
+  // Clean up worktree if it exists
+  if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
+    try {
+      // argv, not a shell string: an apostrophe in the project path used to
+      // make this fail silently and leak a stale worktree behind the deleted
+      // agent. See the same fix in agent:create.
+      console.log(`Removing worktree at ${agent.worktreePath}`);
+      execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe' });
+      console.log(`Worktree removed successfully`);
+    } catch (err) {
+      console.warn(`Failed to remove worktree:`, err);
+      // Continue even if worktree removal fails
+    }
+  }
+
+  // What it was asked and will never finish, each requester told (the Audit's R3).
+  if (agent) endWorkerRequests(agent, 'deleted', { withLinked: true });
+  agents.delete(id);
+  forgetRestart(id);
+
+  // Save agents to disk
+  saveAgents();
+
+  return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
+}

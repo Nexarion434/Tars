@@ -7,6 +7,14 @@ import { z } from "zod";
 import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
 
+/** What each refusal of POST /api/tasks/:ref/cancel means, for the agent that asked (core/task-cancel.ts). */
+const CANCEL_REFUSALS: Record<string, string> = {
+  not_found: "no agent holds a task with that id: it ended, or was never asked",
+  not_your_task: "another chat asked for it, and only that chat, or the project's orchestrator with a reason, may cancel it",
+  reason_required: "cancelling a task another chat asked for needs a reason, which that chat is told",
+  already_delivered: "it is already in the agent's terminal, where it cannot be taken back: stop the agent to end it",
+};
+
 type WaitResult = {
   status: string;
   lastCleanOutput?: string;
@@ -412,9 +420,9 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "send_message",
-    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status.",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent.",
     schema: {
-      id: z.string().describe("The agent ID"),
+      id: z.string().describe("The agent ID, or \"requester\" for whoever asked you for your current task"),
       message: z.string().optional().describe("The message to send to the agent"),
       prompt: z.string().optional().describe("Alias for 'message', use either one"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
@@ -443,6 +451,26 @@ const AGENT_TOOLS: Tool[] = [
       }
 
       return text(`Sent message to agent "${agentName}" (${previousStatus}): "${resolvedMessage}"`);
+    },
+  }),
+
+  tool({
+    name: "task_cancel",
+    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal. Its id is the t-xxxxxxxx Tars named in the line it typed before your message. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
+    schema: {
+      taskId: z.string().describe("The task's id: t- and 8 hex characters"),
+      reason: z.string().optional().describe("Why. Required when the task was asked for by another chat: that chat is told it."),
+    },
+    failure: "cancelling the task",
+    async run({ taskId, reason }) {
+      try {
+        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", reason ? { reason } : {})) as { worker?: { name?: string } };
+        return text(`Cancelled task ${taskId}: it never went into ${data.worker?.name ? `${data.worker.name}'s` : "its agent's"} terminal.`);
+      } catch (err) {
+        const why = CANCEL_REFUSALS[(err as Error).message];
+        if (why) return problem(`Task ${taskId} was not cancelled: ${why}.`);
+        throw err;
+      }
     },
   }),
 
