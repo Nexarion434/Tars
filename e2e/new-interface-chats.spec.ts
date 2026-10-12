@@ -148,7 +148,7 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     await expect(rows('Snoozed')).toHaveCount(0);
     await snoozedHead.click();
     await expect(rows('Snoozed')).toHaveCount(1);
-    await expect(rows('Snoozed')).toContainText(/until \d{1,2}:\d{2}/);
+    await expect(rows('Snoozed')).toContainText(/until (\w{3} )?\d{1,2}:\d{2}/);
     const snoozed = onDisk().find(c => c.title === 'Release notes for 1.9.6');
     seen.snoozedUntil = snoozed?.snoozedUntil;
     expect(Date.parse(String(snoozed?.snoozedUntil)) - Date.now()).toBeGreaterThan(50 * 60_000);
