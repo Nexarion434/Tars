@@ -350,7 +350,15 @@ interface TurnEntry {
  */
 type FileContribution = TurnEntry[];
 
-const fileCache = new Map<string, { mtimeMs: number; size: number; value: FileContribution }>();
+/**
+ * And read by what it gained: a live transcript only grows, and it was read
+ * again whole whenever its size changed, every live session's each time the
+ * 60 s memo ran out while a page asked claude:getData every 10 s (830 MB of
+ * live transcripts on the night of the 2026-10-13 crash). `offset` is where
+ * its last whole line ends; a file that shrank or was replaced (another inode)
+ * is read from its start.
+ */
+const fileCache = new Map<string, { ino: number; offset: number; lines: number; mtimeMs: number; size: number; value: FileContribution }>();
 
 /**
  * `YYYY-MM-DD` in the machine's own timezone.
@@ -454,67 +462,70 @@ export async function readUsageLines(file: string): Promise<UsageLine[] | null> 
     const line = newline === -1 ? content.slice(start) : content.slice(start, newline);
     start = newline === -1 ? content.length : newline + 1;
     if ((++lines & 1023) === 0) await breatheIfDue();
-    if (!line.includes('"usage"')) continue;
-
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (entry.type !== 'assistant') continue;
-
-    const message = entry.message as Record<string, unknown> | undefined;
-    const usage = message?.usage as Record<string, unknown> | undefined;
-    if (!message || !usage) continue;
-
-    const model = typeof message.model === 'string' ? message.model : null;
-    if (!model || model === '<synthetic>') continue;
-    // A transcript's model id is attacker-influenceable and is used as an object
-    // key downstream, so the three that would reach Object.prototype are dropped.
-    if (model === '__proto__' || model === 'constructor' || model === 'prototype') continue;
-
-    const split = usage.cache_creation as Record<string, unknown> | undefined;
-    const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
-    out.push({
-      key: `${message.id ?? ''}:${entry.requestId ?? ''}`,
-      model,
-      timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
-      counts: {
-        input: Number(usage.input_tokens) || 0,
-        output: Number(usage.output_tokens) || 0,
-        cacheRead: Number(usage.cache_read_input_tokens) || 0,
-        cacheWrite,
-        write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
-        write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
-        searches: Number(
-          (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
-        ) || 0,
-      },
-    });
+    const usage = usageLineOf(line);
+    if (usage) out.push(usage);
   }
   return out;
 }
 
-async function readTranscript(file: string): Promise<FileContribution | null> {
-  const lines = await readUsageLines(file);
-  if (lines === null) return null;
-  return lines.map(({ key, model, timestamp, counts }) => {
-    const at = timestamp ? Date.parse(timestamp) : NaN;
-    return {
-      key,
-      model: shared(model),
-      // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
-      // the first ten characters gave the UTC date while the chart labelled its
-      // bars with the local one, putting every bar a day out east of Greenwich.
-      date: timestamp ? shared(localDateKey(timestamp)) : null,
-      minute: Number.isNaN(at) ? null : Math.floor(at / 60_000),
-      counts,
-    };
-  });
+/** One transcript line's usage, or null when it holds none. */
+function usageLineOf(line: string): UsageLine | null {
+  if (!line.includes('"usage"')) return null;
+
+  let entry: Record<string, unknown>;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (entry.type !== 'assistant') return null;
+
+  const message = entry.message as Record<string, unknown> | undefined;
+  const usage = message?.usage as Record<string, unknown> | undefined;
+  if (!message || !usage) return null;
+
+  const model = typeof message.model === 'string' ? message.model : null;
+  if (!model || model === '<synthetic>') return null;
+  // A transcript's model id is attacker-influenceable and is used as an object
+  // key downstream, so the three that would reach Object.prototype are dropped.
+  if (model === '__proto__' || model === 'constructor' || model === 'prototype') return null;
+
+  const split = usage.cache_creation as Record<string, unknown> | undefined;
+  const cacheWrite = Number(usage.cache_creation_input_tokens) || 0;
+  return {
+    key: `${message.id ?? ''}:${entry.requestId ?? ''}`,
+    model,
+    timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+    counts: {
+      input: Number(usage.input_tokens) || 0,
+      output: Number(usage.output_tokens) || 0,
+      cacheRead: Number(usage.cache_read_input_tokens) || 0,
+      cacheWrite,
+      write1h: Number(split?.ephemeral_1h_input_tokens) || 0,
+      write5m: Number(split?.ephemeral_5m_input_tokens) || (split ? 0 : cacheWrite),
+      searches: Number(
+        (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
+      ) || 0,
+    },
+  };
 }
 
-/** The file's contribution, parsed only if it has changed since last time. */
+/** A usage line as a file's contribution holds it. */
+function contributionOf({ key, model, timestamp, counts }: UsageLine): FileContribution[number] {
+  const at = timestamp ? Date.parse(timestamp) : NaN;
+  return {
+    key,
+    model: shared(model),
+    // The user's day, not UTC's. Transcript timestamps are ISO/Z, so slicing
+    // the first ten characters gave the UTC date while the chart labelled its
+    // bars with the local one, putting every bar a day out east of Greenwich.
+    date: timestamp ? shared(localDateKey(timestamp)) : null,
+    minute: Number.isNaN(at) ? null : Math.floor(at / 60_000),
+    counts,
+  };
+}
+
+/** The file's contribution, reading only what it gained since last time. */
 async function contributionFor(file: string): Promise<FileContribution | null> {
   let stat: fs.Stats;
   try {
@@ -524,12 +535,74 @@ async function contributionFor(file: string): Promise<FileContribution | null> {
   }
   const hit = fileCache.get(file);
   if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.value;
-
-  const value = await readTranscript(file);
-  // Only a real parse is remembered. Caching a failure would turn one bad read
+  // Grown, the same file: read from where it was. Anything else (shrunk,
+  // replaced, rewritten to the same size with a new date) is read whole.
+  const from = hit && hit.ino === stat.ino && stat.size > hit.size && hit.size >= hit.offset
+    ? hit
+    : { ino: stat.ino, offset: 0, lines: 0, mtimeMs: 0, size: 0, value: [] as FileContribution };
+  const gained = await readGainedTurns(file, from.offset, stat.size);
+  // Only a real read is remembered. Caching a failure would turn one bad read
   // into a permanently missing file.
-  if (value) fileCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+  if (!gained) return null;
+  const value = gained.turns.length ? [...from.value, ...gained.turns] : from.value;
+  fileCache.set(file, { ino: stat.ino, offset: from.offset + gained.consumed, lines: from.lines + gained.lines, mtimeMs: stat.mtimeMs, size: stat.size, value });
   return value;
+}
+
+/**
+ * The turns of a transcript's bytes from `from` to `to`, by slices of four
+ * megabytes with breaths, as readFileInSlices reads, and how many bytes of
+ * whole lines that was. A line still being written waits for its end; a last
+ * line with no newline after it is taken when it parses whole.
+ */
+async function readGainedTurns(file: string, from: number, to: number): Promise<{ turns: FileContribution; consumed: number; lines: number } | null> {
+  const CHUNK = 4 * 1024 * 1024;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch {
+    return null;
+  }
+  const turns: FileContribution = [];
+  let consumed = 0;
+  let lines = 0;
+  const take = (text: string) => {
+    for (const line of text.split('\n')) {
+      lines += 1;
+      const usage = usageLineOf(line);
+      if (usage) turns.push(contributionOf(usage));
+    }
+  };
+  try {
+    let position = from;
+    let pending = Buffer.alloc(0);
+    while (position < to) {
+      const buffer = Buffer.allocUnsafe(Math.min(CHUNK, to - position));
+      const read = fs.readSync(fd, buffer, 0, buffer.length, position);
+      if (read <= 0) break;
+      position += read;
+      pending = pending.length ? Buffer.concat([pending, buffer.subarray(0, read)]) : buffer.subarray(0, read);
+      // A newline byte is never inside a character of several bytes.
+      const end = pending.lastIndexOf(0x0a);
+      if (end !== -1) {
+        take(pending.toString('utf8', 0, end));
+        consumed += end + 1;
+        pending = pending.subarray(end + 1);
+      }
+      await breatheIfDue();
+    }
+    if (pending.length) {
+      const last = pending.toString('utf8');
+      let whole = false;
+      try { JSON.parse(last); whole = true; } catch { /* still being written */ }
+      if (whole) { take(last); consumed += pending.length; }
+    }
+    return { turns, consumed, lines };
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /**
