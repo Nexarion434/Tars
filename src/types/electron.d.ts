@@ -1074,6 +1074,53 @@ export interface ChatWorkItem {
 }
 
 /** Why a chat channel did nothing, in a sentence the window can show as it is. */
+/** One item of a chat's conversation, read from its runner's transcripts (services/chat-transcript.ts). */
+export interface ChatItem {
+  /** The transcript line's uuid (`:n` for a later part of the same line). */
+  id: string;
+  /** Its place in the chat, the same in chat:history and in chat:events. */
+  n: number;
+  sessionId: string;
+  at: string | null;
+  /** user: the user's words; message: from an agent or a channel; note: from Tars or Claude Code;
+   *  text: the runner's; tool: one of its tool calls, folded; divider: a compaction or a new session;
+   *  raw: a line Tars does not know or cannot read, shown as one line. */
+  kind: 'user' | 'message' | 'note' | 'text' | 'tool' | 'divider' | 'raw';
+  text: string;
+  from?: string;
+}
+
+/** chat:history: the items before `before`, the last `limit` of them, and the seq they are a snapshot at. */
+export interface ChatHistory {
+  seq: number;
+  total: number;
+  items: ChatItem[];
+}
+
+/** chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again. */
+export type ChatEvent = { seq: number; chatId: string } & (
+  | { type: 'item'; item: ChatItem }
+  | { type: 'meta'; chat: ChatView }
+  | { type: 'deleted' }
+  | { type: 'state'; runner: { id: string; status: AgentStatus['status']; live: boolean } | null }
+);
+
+/** agent:queue: a worker's work in hand and the requests waiting behind it. */
+export interface AgentQueueEntry {
+  ref: string | null;
+  requesterAgentId: string;
+  requesterName: string;
+  state: 'queued' | 'delivered';
+  queuedAt: string | null;
+  /** The chat it was asked from: null until chats have their own runners. */
+  chatId: string | null;
+}
+export interface AgentQueueView {
+  agentId: string;
+  current: AgentQueueEntry | null;
+  queue: AgentQueueEntry[];
+}
+
 export interface ChatError {
   error:
     | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
@@ -1178,6 +1225,8 @@ export interface ElectronAPI {
     onError: (callback: (event: AgentEvent) => void) => () => void;
     onComplete: (callback: (event: AgentEvent) => void) => () => void;
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
+    queue: (agentId: string) => Promise<AgentQueueView | { error: 'not_found'; reason: string }>;
+    onQueue: (callback: (view: AgentQueueView) => void) => () => void;
     onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
@@ -2186,6 +2235,8 @@ export interface ElectronAPI {
     setInbox: (params: { chatId: string }) => Promise<ChatView | ChatError>;
     /** Refused (chat_send_unavailable) until the chats have orchestrators of their own. */
     send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatError>;
+    history: (params: { chatId: string; before?: number; limit?: number }) => Promise<ChatHistory | (ChatError & { seq: number })>;
+    onEvent: (callback: (event: ChatEvent) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

@@ -4,6 +4,8 @@ import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { ptyProcesses } from '../core/pty-manager';
 import { agentStatusEmitter } from '../services/agent-events';
+import { chatSeq, followChats, historyOf, publishChatEvent, queueOf, readChatItems } from '../services/chat-history';
+import { broadcastToAllWindows } from '../utils/broadcast';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
@@ -25,7 +27,7 @@ export const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
 
 export const CHAT_CHANNELS = [
   'chat:list', 'chat:create', 'chat:rename', 'chat:pin', 'chat:snooze', 'chat:settle', 'chat:delete', 'chat:setInbox', 'chat:send',
-  'system:chatLimit',
+  'system:chatLimit', 'chat:history', 'agent:queue',
 ] as const;
 
 /** What the window learns of a chat's runner: the agent as it is now. */
@@ -74,18 +76,52 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
       } : null,
     };
   };
-  const answer = (result: Chat | ChatError): ChatView | ChatError => ('error' in result ? result : view(result));
+  /** A chat changed: answered, and told to every window as a `meta` event (services/chat-history.ts). */
+  const answer = (result: Chat | ChatError): ChatView | ChatError => {
+    if ('error' in result) return result;
+    const shown = view(result);
+    publishChatEvent({ type: 'meta', chatId: result.id, chat: shown });
+    return shown;
+  };
+  const nameOf = (agentId: string): string | undefined => agents.get(agentId)?.name;
   /** The session a runner registered, added to its chats (hooks-routes.ts records it as resumableSessionId). */
   const mirror = (agentId: string): void => {
     const agent = agents.get(agentId);
-    if (agent?.resumableSessionId) store.noteSession(agent.id, agent.resumableSessionId);
+    if (agent?.resumableSessionId && store.noteSession(agent.id, agent.resumableSessionId)) {
+      for (const chat of store.list().chats.filter((c) => c.runnerId === agent.id)) publishChatEvent({ type: 'meta', chatId: chat.id, chat: view(chat) });
+    }
+  };
+  /** Each worker's queue, as last told: a change is told as an `agent:queue` event. */
+  const queues = new Map<string, string>();
+  const tellQueue = (agentId: string): void => {
+    const agent = agents.get(agentId);
+    if (!agent) { queues.delete(agentId); return; }
+    const shown = queueOf(agent, nameOf);
+    const key = JSON.stringify(shown);
+    const before = queues.get(agentId);
+    if (before === key) return;
+    queues.set(agentId, key);
+    // An agent seen for the first time (the fleet may load after this) is told
+    // when it holds anything: an empty queue is no change.
+    if (before !== undefined || shown.current || shown.queue.length) broadcastToAllWindows('agent:queue', shown);
   };
 
   // The migration, at the launch (4.6), then any session registered while
   // Tars was not running to see it: both write only what is new.
   store.ensureMains(orchestrators());
-  for (const id of agents.keys()) mirror(id);
+  for (const id of agents.keys()) { mirror(id); tellQueue(id); }
   agentStatusEmitter.on('fleet-change', mirror);
+  agentStatusEmitter.on('fleet-change', tellQueue);
+  // A request queued or delivered is saved, not announced as a fleet change:
+  // every queue is looked at each second as well.
+  const queueTimer = setInterval(() => { for (const id of agents.keys()) tellQueue(id); }, 1_000);
+  queueTimer.unref?.();
+  followChats({
+    chats: () => store.list().chats,
+    runnerOf: (chat) => (chat.runnerId ? agents.get(chat.runnerId) : undefined),
+    isLive: (agent) => isLive(agent),
+    nameOf,
+  });
 
   ipcMain.handle('chat:list', () => {
     // A project whose orchestrator was set since the launch gets its Main now.
@@ -103,7 +139,25 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
   ipcMain.handle('chat:settle', (_e, raw: unknown) => answer(store.settle(argsOf(raw).chatId, argsOf(raw).settled)));
   ipcMain.handle('chat:setInbox', (_e, raw: unknown) => answer(store.setInbox(argsOf(raw).chatId)));
   // Refused while the chat's runner has a request out at the team (PR A's queue).
-  ipcMain.handle('chat:delete', (_e, raw: unknown) => store.remove(argsOf(raw).chatId, (chat) => workOutOf(chat.runnerId, agents.values())));
+  ipcMain.handle('chat:delete', (_e, raw: unknown) => {
+    const chatId = argsOf(raw).chatId;
+    const result = store.remove(chatId, (chat) => workOutOf(chat.runnerId, agents.values()));
+    if (!('error' in result) && typeof chatId === 'string') publishChatEvent({ type: 'deleted', chatId });
+    return result;
+  });
+  // A chat's conversation, from its runner's transcripts, and the seq it is a snapshot at.
+  ipcMain.handle('chat:history', (_e, raw: unknown) => {
+    const args = argsOf(raw);
+    const chat = store.get(args.chatId);
+    if (!chat) return { error: 'not_found', reason: 'No chat has this id.', seq: chatSeq() };
+    const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
+    return historyOf(readChatItems(chat, { runner, nameOf }), { before: args.before, limit: args.limit });
+  });
+  // A worker's work in hand and its queue (core/task-requests.ts).
+  ipcMain.handle('agent:queue', (_e, agentId: unknown) => {
+    const agent = typeof agentId === 'string' ? agents.get(agentId) : undefined;
+    return agent ? queueOf(agent, nameOf) : { error: 'not_found', reason: 'No agent has this id.' };
+  });
   ipcMain.handle('chat:send', (_e, raw: unknown) => (store.get(argsOf(raw).chatId) ? SEND_REFUSED : { error: 'not_found', reason: 'No chat has this id.' }));
 
   ipcMain.handle('system:chatLimit', (): ChatLimit & { working: number } => {

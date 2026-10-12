@@ -157,8 +157,10 @@ test("a chat's conversation is read across its sessions, then followed live, and
 
     // 4. A rename, after it.
     await call('chat', 'rename', { chatId: main.id, title: 'Release' });
-    await expect.poll(async () => (await heard()).some((e) => e.channel === 'chat:events' && e.type === 'meta'), { timeout: 10_000 }).toBe(true);
-    const meta = (await heard()).find((e) => e.channel === 'chat:events' && e.type === 'meta') as { seq: number; chatId: string; chat: { title: string } };
+    // The rename's own event: the session mirror tells its own before it.
+    const renamed = (e: Record<string, unknown>) => e.channel === 'chat:events' && e.type === 'meta' && (e.chat as { title?: string } | undefined)?.title === 'Release';
+    await expect.poll(async () => (await heard()).some(renamed), { timeout: 10_000 }).toBe(true);
+    const meta = (await heard()).find(renamed) as unknown as { seq: number; chatId: string; chat: { title: string } };
     values.metaEvent = meta;
     expect(meta.chatId).toBe(main.id);
     expect(meta.chat.title).toBe('Release');
