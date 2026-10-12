@@ -18,6 +18,23 @@ import { sessionModel, withSessionTruth, clearAgentTruthCache, pendingBackground
  * a new model back on the one their previous session had used. What has to be
  * right is the "only ever fills in" part: a reading that fails must leave the
  * record alone rather than blanking a model the user did choose.
+ *
+ * And what reading it costs (the crash of 2026-10-13 00:26: Tars's main process
+ * died at its heap's limit, its live heap measured at 2.8 to 3.2 GB). The
+ * agent list is built about twice a second, and the model is read for every
+ * agent once the 5 s cache runs out: the whole transcript, read and split into
+ * lines, to find its last assistant line. The fleet's live transcripts were
+ * 136 MB, 114 MB, 104 MB... 830 MB together. How it fails, written before the
+ * code:
+ * 1. The read follows the file's size: megabytes of strings made, every 5 s,
+ *    for each agent, where the last assistant line is a few kilobytes from
+ *    the end.
+ * 2. Reading only the end misses a last assistant line further back (a long
+ *    tool output after it): the model reads as none.
+ * 3. A line cut at the start of what is read is taken for a whole one.
+ * 4. A file that has not changed is read again when the 5 s run out.
+ * 5. A character of several bytes cut at the start of what is read garbles
+ *    the model's name.
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-truth-'));
@@ -180,5 +197,61 @@ describe('work a session left running in the background', () => {
   it('reports nothing without a session or a transcript', () => {
     expect(pendingBackgroundWork({ projectPath: PROJECT }, SINCE, home)).toEqual([]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+  });
+});
+
+describe('what reading the model costs', () => {
+  const fileOf = () => path.join(home, '.claude', 'projects', encodeProjectDirName(PROJECT), `${SESSION}.jsonl`);
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => JSON.stringify({ type: 'user', message: { content: `${i} ${'x'.repeat(1000)}` } }));
+  const readBytes = () => {
+    const opened: string[] = [];
+    let bytes = 0;
+    const read = vi.spyOn(fs, 'readSync').mockImplementation(((real) => (...args: Parameters<typeof fs.readSync>) => {
+      const n = (real as (...a: Parameters<typeof fs.readSync>) => number)(...args);
+      bytes += n;
+      return n;
+    })(fs.readSync.bind(fs)) as typeof fs.readSync);
+    const whole = vi.spyOn(fs, 'readFileSync').mockImplementation(((real) => (...args: Parameters<typeof fs.readFileSync>) => {
+      opened.push(String(args[0]));
+      const out = (real as (...a: Parameters<typeof fs.readFileSync>) => string | Buffer)(...args);
+      bytes += typeof out === 'string' ? Buffer.byteLength(out) : out.length;
+      return out;
+    })(fs.readFileSync.bind(fs)) as typeof fs.readFileSync);
+    return { bytes: () => bytes, opened, restore: () => { read.mockRestore(); whole.mockRestore(); } };
+  };
+
+  it('1. reads the end of a large transcript, not the whole of it', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-sonnet-5'), ...filler(20_000), assistant('claude-opus-5')]);
+    const size = fs.statSync(fileOf()).size;
+    const spy = readBytes();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      expect(spy.bytes(), `read ${spy.bytes()} of ${size} bytes`).toBeLessThanOrEqual(1024 * 1024);
+    } finally { spy.restore(); }
+  });
+
+  it('2. still finds a last assistant line further back than the first read', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(2_000)]);
+    expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+  });
+
+  it('3, 5. takes no cut line for a whole one, and keeps a name of several-byte characters whole', () => {
+    const named = 'claude-öpus-5-ünïcode';
+    writeTranscript(PROJECT, SESSION, [assistant(named), ...filler(600)]);
+    expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe(named);
+  });
+
+  it('4. reads nothing again while the transcript has not changed', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(100)]);
+    vi.useFakeTimers();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      vi.advanceTimersByTime(60_000);
+      const spy = readBytes();
+      try {
+        expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+        expect(spy.bytes()).toBe(0);
+      } finally { spy.restore(); }
+    } finally { vi.useRealTimers(); }
   });
 });
