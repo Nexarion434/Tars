@@ -1,0 +1,119 @@
+import { describe, it, expect } from 'vitest';
+import { emptyFeed, applySnapshot, applyEvent, applyEarlier } from '../../src/lib/chat-feed';
+import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types/electron';
+
+/**
+ * A chat's conversation as the page holds it (src/lib/chat-feed.ts): the
+ * snapshot chat:history answers, then the chat:events after its seq (#371).
+ * Frames: `Chat · chats · from its transcripts, working`. Written before the
+ * code. How it can fail:
+ * 1. an event already in the snapshot (its seq at or under the snapshot's) is
+ *    applied again, and a line shows twice;
+ * 2. another chat's event changes this chat's lines, record or runner;
+ * 3. another chat's events, which take seq numbers from the same counter, are
+ *    read as a gap, and the page reads its conversation again for nothing;
+ * 4. a seq skipped (an event missed) is not noticed, and the page shows a
+ *    conversation with a hole as if it were whole;
+ * 5. a line told again with the same id (a transcript read again, the
+ *    Backend's fix for live items) shows twice instead of being replaced;
+ * 6. a line arriving with a place (n) before the last one ends up after it;
+ * 7. events that arrive while the snapshot is being read are lost, or one
+ *    older than the snapshot is applied on top of it;
+ * 8. an earlier page shows a line twice, or moves the seq;
+ * 9. a deleted chat, a renamed one or a runner's new state is not kept;
+ * 10. reading the snapshot again after a gap keeps the old lines or the gap.
+ */
+
+const VIEW = (id: string, title = 'Main'): ChatView => ({
+  id, projectPath: '/p/tars', number: 1, title, titleSource: 'user', runnerId: 'lead', sessionIds: [],
+  pinned: false, snoozedUntil: null, settledAt: null, inbox: true,
+  createdAt: '2026-10-13T08:00:00.000Z', updatedAt: '2026-10-13T08:00:00.000Z', lastActivityAt: '2026-10-13T08:00:00.000Z', runner: null,
+});
+const item = (n: number, text = `line ${n}`, id = `u${n}`): ChatItem => ({ id, n, sessionId: 's1', at: null, kind: 'text', text });
+const history = (seq: number, items: ChatItem[], total = items.length): ChatHistory => ({ seq, total, items });
+const ev = (seq: number, chatId: string, rest: Record<string, unknown>) => ({ seq, chatId, ...rest }) as ChatEvent;
+const texts = (s: ReturnType<typeof emptyFeed>) => s.items.map(i => i.text);
+
+describe('chat feed', () => {
+  it('ignores an event already in the snapshot (1)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1)]));
+    s = applyEvent(s, ev(10, 'c1', { type: 'item', item: item(1) }));
+    s = applyEvent(s, ev(9, 'c1', { type: 'item', item: item(5, 'stale') }));
+    expect(texts(s)).toEqual(['line 0', 'line 1']);
+    expect(s.seq).toBe(10);
+  });
+
+  it('keeps another chat\'s events out of this one (2), and reads its seq as no gap (3)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0)]));
+    s = applyEvent(s, ev(11, 'c2', { type: 'item', item: item(1, 'not mine') }));
+    s = applyEvent(s, ev(12, 'c2', { type: 'meta', chat: VIEW('c2', 'Other') }));
+    s = applyEvent(s, ev(13, 'c2', { type: 'state', runner: { id: 'x', status: 'running', live: true } }));
+    s = applyEvent(s, ev(14, 'c1', { type: 'item', item: item(1, 'mine') }));
+    expect(texts(s)).toEqual(['line 0', 'mine']);
+    expect(s.chat).toBeNull();
+    expect(s.runner).toBeUndefined();
+    expect(s.stale).toBe(false);
+    expect(s.seq).toBe(14);
+  });
+
+  it('notices a seq skipped, and applies nothing after it until the snapshot is read again (4)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0)]));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2, 'after a hole') }));
+    expect(s.stale).toBe(true);
+    expect(texts(s)).toEqual(['line 0']);
+    s = applyEvent(s, ev(13, 'c1', { type: 'item', item: item(3) }));
+    expect(texts(s)).toEqual(['line 0']);
+  });
+
+  it('replaces a line told again with the same id (5)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1, 'first telling', 'u1')]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(1, 'told again', 'u1') }));
+    expect(texts(s)).toEqual(['line 0', 'told again']);
+  });
+
+  it('puts a line in its place by n (6)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0), item(2)]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(1) }));
+    expect(s.items.map(i => i.n)).toEqual([0, 1, 2]);
+  });
+
+  it('applies what arrived while the snapshot was read, and only what is newer than it (7)', () => {
+    const buffered = [ev(9, 'c1', { type: 'item', item: item(1, 'old') }), ev(11, 'c1', { type: 'item', item: item(2, 'new') })];
+    const s = applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1)]), buffered);
+    expect(texts(s)).toEqual(['line 0', 'line 1', 'new']);
+    expect(s.seq).toBe(11);
+  });
+
+  it('adds an earlier page before the first line, once, and keeps the seq (8)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(2), item(3)], 4));
+    s = applyEarlier(s, history(10, [item(0), item(1), item(2)], 4));
+    expect(s.items.map(i => i.n)).toEqual([0, 1, 2, 3]);
+    expect(s.seq).toBe(10);
+    expect(s.hasEarlier).toBe(false);
+  });
+
+  it('keeps a deletion, a new record and the runner\'s state (9)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0)]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'meta', chat: VIEW('c1', 'Renamed') }));
+    s = applyEvent(s, ev(12, 'c1', { type: 'state', runner: { id: 'lead', status: 'waiting', live: true } }));
+    expect(s.chat?.title).toBe('Renamed');
+    expect(s.runner).toEqual({ id: 'lead', status: 'waiting', live: true });
+    s = applyEvent(s, ev(13, 'c1', { type: 'deleted' }));
+    expect(s.deleted).toBe(true);
+  });
+
+  it('starts over from a snapshot read again after a gap (10)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1, 'kept before')]));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2) }));
+    expect(s.stale).toBe(true);
+    s = applySnapshot(s, history(14, [item(0), item(1, 'as it is now'), item(2)]));
+    expect(s.stale).toBe(false);
+    expect(texts(s)).toEqual(['line 0', 'as it is now', 'line 2']);
+    expect(s.seq).toBe(14);
+  });
+
+  it('says whether there is more before the first line', () => {
+    expect(applySnapshot(emptyFeed('c1'), history(10, [item(5), item(6)], 7)).hasEarlier).toBe(true);
+    expect(applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1)], 2)).hasEarlier).toBe(false);
+  });
+});
