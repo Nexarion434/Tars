@@ -206,7 +206,7 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
           className={`block px-2.5 py-[5px] border transition-colors ${current ? 'bg-secondary border-border-accent' : 'border-transparent hover:bg-secondary'}`}
         >
           {/* The spaces between the parts are not drawn (white space between flex items is not), but the link's name and its text read "Release notes tars-demo #2", not "Release notestars-demo#2". */}
-          <span className="block pr-6 text-[12.5px] leading-[1.4] truncate text-foreground">{chat.title}</span>{' '}
+          <span className="block pr-7 text-[12.5px] leading-[1.4] truncate text-foreground">{chat.title}</span>{' '}
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="font-mono text-[10.5px] text-status-idle truncate">{name}</span>{' '}
             <span className="font-mono text-[10.5px] text-status-idle shrink-0">#{chat.number}</span>
@@ -235,7 +235,7 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
             setRefused(null);
             setMenuOpen(open => !open);
           }}
-          className={`absolute right-2 top-[5px] w-[22px] h-[22px] flex items-center justify-center border border-border bg-card text-text-secondary transition-opacity ${
+          className={`absolute right-2 top-[3px] w-[26px] h-[26px] flex items-center justify-center border border-border bg-card text-text-secondary transition-opacity ${
             menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
           }`}
         >
