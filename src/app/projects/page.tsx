@@ -14,6 +14,7 @@ import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { wakingLine } from '@/lib/asleep-line';
 import { lastActiveLabel } from '@/lib/last-active';
 import { openPtyHeard, type PtyBacklog } from '@/lib/pty-backlog';
+import type { AgentPermissionMode } from '@/types/agent';
 
 // xterm touches `window` at import time, so the terminal only ever loads in the
 // browser - same reason Dashboard loads TerminalsView this way.
@@ -315,7 +316,7 @@ export default function ProjectsPage() {
     character?: AgentCharacter,
     name?: string,
     secondaryProjectPath?: string,
-    permissionMode?: 'normal' | 'auto' | 'bypass',
+    permissionMode?: AgentPermissionMode,
     provider?: import('@/types/electron').AgentProvider,
     localModel?: string,
     obsidianVaultPaths?: string[],
