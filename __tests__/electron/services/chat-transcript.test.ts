@@ -108,8 +108,10 @@ describe('a transcript read as a chat', () => {
       { type: 'tool_use', id: 't1', name: 'mcp__claude-mgr-orchestrator__delegate_task', input: { id: 'w1', prompt: 'a long brief\n'.repeat(500) } },
       { type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'echo one\necho two' } },
       { type: 'tool_use', id: 't3', name: 'Read', input: { file_path: '/work/demo/src/x.ts' } },
+      { type: 'tool_use', id: 't4', name: 'Read', input: { file_path: `/work/${'deep/'.repeat(60)}x.ts` } },
     ])]), 's1', { nameOf: (id) => (id === 'w1' ? 'Backend' : undefined) });
-    expect(items.map((i) => i.text)).toEqual(['delegate_task -> Backend', 'Bash: echo one', 'Read /work/demo/src/x.ts']);
+    expect(items.map((i) => i.text).slice(0, 3)).toEqual(['delegate_task -> Backend', 'Bash: echo one', 'Read /work/demo/src/x.ts']);
+    expect(items[3].text.startsWith('Read /work/deep/')).toBe(true);
     for (const i of items) expect(i.text.length).toBeLessThanOrEqual(120);
   });
 
