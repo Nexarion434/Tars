@@ -41,11 +41,24 @@
  *     the follow-up's, and the follow-up's own result reaches nobody (the
  *     Audit's M2 on #351, which withdrew the takeover written for QA's gate).
  *     It waits like any other request.
+ * And for PR B, written before the code (2026-10-12):
+ * 12. A send that interrupts (steer) or restarts a worker is let through while
+ *     the work in hand was asked by somebody else: it cuts another asker's
+ *     work. It must be refused then, and only then: the work's own asker, a
+ *     worker with no work in hand, and Tars itself may.
+ * 13. At a launch after an abrupt stop, the work in hand of a worker the
+ *     resume did not relaunch (deleted, stopped or whose folder is gone since,
+ *     or whose launch failed) is kept: its asker waits for an end that never
+ *     comes (the Audit's Low on #351). Only a worker relaunched, or one whose
+ *     session took the note, keeps it.
+ * 14. The note that a task ended cannot say which: a request's first line is
+ *     not kept, or is kept on the request, which agents.json carries to every
+ *     agent. Kept in memory, by its id, cut to one line.
  */
 import { describe, it, expect } from 'vitest';
 import {
   newTaskRef, enqueueRequest, requestDelivered, bindTurn, linkSpent, requestDropped, takeAllRequests, isOwedByRequests,
-  endRequestsAtLaunch, setRequestsEndedHook, type RequestWorker, type TaskRequest,
+  endRequestsAtLaunch, setRequestsEndedHook, mayInterrupt, endUnresumed, requestTitle, type RequestWorker, type TaskRequest,
 } from '../../../electron/core/task-requests';
 import { envelopeValue } from '../../../electron/utils/envelope-value';
 
@@ -219,3 +232,58 @@ describe('a newer request from the same asker (the Audit\'s M2 on #351)', () => 
   });
 });
 
+describe('a send that interrupts or restarts the worker (PR B)', () => {
+  it("12. is refused while the work in hand is another asker's, and only then", () => {
+    const w = worker();
+    expect(mayInterrupt(w, 'b1')).toBe(true);
+    const a = enqueueRequest(w, 'o1');
+    requestDelivered(w, a);
+    expect(mayInterrupt(w, 'b1')).toBe(false);
+    expect(mayInterrupt(w, 'o1')).toBe(true);
+    expect(mayInterrupt(w, undefined)).toBe(true);
+    linkSpent(w);
+    expect(mayInterrupt(w, 'b1')).toBe(true);
+  });
+});
+
+describe('a launch after an abrupt stop, once the resume has run (the Audit\'s Low on #351)', () => {
+  it('13. ends the work in hand of every worker it did not relaunch, and keeps the rest', () => {
+    const told: Array<[string, string]> = [];
+    setRequestsEndedHook((_w, requests: TaskRequest[], why) => { for (const r of requests) told.push([r.requesterAgentId, why]); });
+    try {
+      const make = (id: string, asker: string): RequestWorker => {
+        const w: RequestWorker = { id, ptyId: `pty-${id}`, taskQueue: [] };
+        requestDelivered(w, enqueueRequest(w, asker));
+        return w;
+      };
+      const launched = make('l', 'lead');
+      const typed = make('t', 'lead');
+      const failed = make('f', 'bot');
+      const skipped = make('s', 'qa');
+
+      endUnresumed([launched, typed, failed, skipped], [
+        { agentId: 'l', how: 'launched' }, { agentId: 't', how: 'typed' },
+        { agentId: 'f', how: 'failed' }, { agentId: 's', how: 'skipped' },
+      ]);
+
+      expect(launched.requestedBy).toMatchObject({ agentId: 'lead' });
+      expect(typed.requestedBy).toMatchObject({ agentId: 'lead' });
+      expect(failed.requestedBy).toBeUndefined();
+      expect(skipped.requestedBy).toBeUndefined();
+      expect(failed.taskQueue).toEqual([]);
+      expect(told.sort()).toEqual([['bot', 'cut'], ['qa', 'cut']]);
+    } finally {
+      setRequestsEndedHook(undefined);
+    }
+  });
+});
+
+describe('the first line of a request (the Audit\'s Low after 1.9.5)', () => {
+  it('14. is kept in memory by its id, one line, and never on the request', () => {
+    const w = worker();
+    const ref = enqueueRequest(w, 'o1', { title: '  review #280\nthen the changelog, and ' + 'x'.repeat(200) });
+    expect(requestTitle(ref)).toBe('review #280');
+    expect(JSON.stringify(w)).not.toContain('review #280');
+    expect(requestTitle('t-00000000')).toBeUndefined();
+  });
+});

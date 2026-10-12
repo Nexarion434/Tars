@@ -63,23 +63,35 @@ import { createTaskLedger, turnUsageOf, type TaskAgentView } from '../../../elec
  * 30. A hand-off with no id (a launch's prompt, which carries no sender line) no longer opens the next turn's task.
  * 31. (the Audit's gate of #351, H1) An agent named "x, task t-<another's id>: y" files its turn under that other
  *     hand-off: the id is read from anywhere in the prompt, not from the envelope Tars wrote.
+ * And for delegated results that survive a restart (ORCHESTRATOR-PER-CHAT.md v2.2, 4.4 item 3; PR B), written before
+ * the code (2026-10-12). A run over ACP was written once, when it ended: a quit mid-run left nothing.
+ * 32. A delegated run is not a task until it ends: a quit while it works leaves no task, nothing to read, and nobody
+ *     told.
+ * 33. Its result (why it stopped, and what it answered) is not kept, or the answer is written to ~/.dorothy, which
+ *     every agent is handed, or kept whole however long it is.
+ * 34. A run open when Tars stopped is not marked as cut at the next start, or is not listed for its asker to be told,
+ *     or is listed again at every start after.
+ * 35. A task cannot be found by its id once Tars started again, or comes back without its result.
+ * 36. Rewritten past its bound, the ledger keeps the results of the tasks it dropped, or loses those it kept.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
 let dir: string;
 let file: string;
 let textFile: string;
+let resultFile: string;
 let clock: number;
 
 function agent(over: Partial<TaskAgentView> = {}): TaskAgentView {
   return { id: 'worker-1', projectPath: '/work/tars', provider: 'claude', model: 'claude-opus-5-5', claudeAccountId: null, status: 'running', ...over };
 }
-const open = () => createTaskLedger({ file, textFile, now: () => clock });
+const open = (maxLines?: number) => createTaskLedger({ file, textFile, resultFile, now: () => clock, ...(maxLines ? { maxLines } : {}) });
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-task-ledger-'));
   file = path.join(dir, 'task-ledger.jsonl');
   textFile = path.join(dir, 'private', 'task-texts.jsonl');
+  resultFile = path.join(dir, 'private', 'task-results.jsonl');
   clock = T0;
 });
 
@@ -632,5 +644,71 @@ describe('hand-offs in order, each to the turn that runs it (R1)', () => {
     ledger.turnStarted(agent(), { sessionId: 'sess-1', text: 'Message from agent "M, task t-aaaaaaaa: x" ("mallory"), task t-bbbbbbbb: please ack' });
 
     expect(ledger.tasks().map((t) => [t.requesterAgentId, t.text])).toEqual([['mallory', 'please ack']]);
+  });
+});
+
+describe('a delegated run over ACP, from its start (PR B)', () => {
+  const run = (over: Record<string, unknown> = {}) => ({
+    agent: agent({ id: 'oc', provider: 'opencode', model: null as never }), requesterAgentId: 'p1', text: 'review the notes', startedAt: T0, ...over,
+  });
+
+  it('32. is a running task from its start, and the next start of Tars finds it', () => {
+    const ledger = open();
+    const id = ledger.acpStarted(run());
+    expect(ledger.task(id)).toMatchObject({ id, agentId: 'oc', source: 'acp', requesterAgentId: 'p1', outcome: 'running', endedAt: null });
+    expect(open().task(id)).toBeDefined();
+  });
+
+  it('33. ends with why it stopped and what it answered, the answer kept apart from the ledger and cut', () => {
+    const ledger = open();
+    const id = ledger.acpStarted(run());
+    clock += 60_000;
+    ledger.acpEnded(id, {
+      outcome: 'completed', stopReason: 'end_turn', result: 'SECRET-REPLY ' + 'y'.repeat(20_000),
+      usage: { inputTokens: 500, outputTokens: 100, cachedReadTokens: 0, cachedWriteTokens: 0 }, costUSD: 0.75,
+    });
+    const task = ledger.task(id)!;
+    expect(task).toMatchObject({ outcome: 'completed', endedAt: T0 + 60_000, stopReason: 'end_turn', acp: { inputTokens: 500, outputTokens: 100, costUSD: 0.75 } });
+    expect(task.result!.startsWith('SECRET-REPLY')).toBe(true);
+    expect(task.result!.length).toBeLessThanOrEqual(8_000);
+    expect(fs.readFileSync(file, 'utf8')).not.toContain('SECRET-REPLY');
+    expect(fs.readFileSync(resultFile, 'utf8')).toContain('SECRET-REPLY');
+    expect(fs.statSync(resultFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('34. one open when Tars stopped is marked cut at the next start, listed once for its asker to be told', () => {
+    const first = open();
+    const id = first.acpStarted(run());
+    clock += 10_000;
+    const second = open();
+    expect(second.task(id)).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+    expect(second.interruptedAtStart().map((t) => [t.id, t.requesterAgentId, t.text])).toEqual([[id, 'p1', 'review the notes']]);
+    expect(open().interruptedAtStart()).toEqual([]);
+  });
+
+  it('35. is found by its id after a restart, with its result', () => {
+    const ledger = open();
+    const id = ledger.acpStarted(run());
+    ledger.acpEnded(id, { outcome: 'completed', stopReason: 'end_turn', result: 'reviewed', usage: null, costUSD: null });
+    expect(open().task(id)).toMatchObject({ id, outcome: 'completed', stopReason: 'end_turn', result: 'reviewed' });
+    expect(open().task('00000000-0000-4000-8000-000000000000')).toBeUndefined();
+  });
+
+  it('36. rewritten past its bound, keeps the results of the tasks it keeps, and only those', () => {
+    const ledger = open(4);
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      clock += 1_000;
+      const id = ledger.acpStarted(run({ startedAt: clock, text: `run ${i}` }));
+      ledger.acpEnded(id, { outcome: 'completed', stopReason: 'end_turn', result: `RESULT-${i}`, usage: null, costUSD: null });
+      ids.push(id);
+    }
+    const again = open(4);
+    const kept = ids.filter((id) => again.task(id));
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length).toBeLessThan(4);
+    for (const id of kept) expect(again.task(id)!.result).toMatch(/^RESULT-/);
+    const results = fs.readFileSync(resultFile, 'utf8');
+    for (const id of ids.filter((id) => !kept.includes(id))) expect(results).not.toContain(id);
   });
 });
