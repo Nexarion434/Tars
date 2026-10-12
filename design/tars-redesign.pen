@@ -261146,7 +261146,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "This preview cannot open a chat yet. Talk to Tars, all projects meanwhile.",
+                  "content": "A project gets its chat Main once it has an orchestrator. Talk to Tars, all projects meanwhile.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ui",
                   "fontSize": 11,
@@ -261431,7 +261431,7 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 460,
-                      "content": "Chats per project come with the next part of this preview. Until then, Tars, all projects is where you talk to every orchestrator.",
+                      "content": "A project gets its chat Main once it has an orchestrator. Meanwhile, talk to Tars, all projects.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
@@ -262063,7 +262063,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "This preview cannot open a chat yet. Talk to Tars, all projects meanwhile.",
+                  "content": "A project gets its chat Main once it has an orchestrator. Talk to Tars, all projects meanwhile.",
                   "lineHeight": 1.45,
                   "fontFamily": "$font-ui",
                   "fontSize": 11,
@@ -262348,7 +262348,7 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 460,
-                      "content": "Chats per project come with the next part of this preview. Until then, Tars, all projects is where you talk to every orchestrator.",
+                      "content": "A project gets its chat Main once it has an orchestrator. Meanwhile, talk to Tars, all projects.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
@@ -263941,31 +263941,6 @@
                           "fontFamily": "$font-ui",
                           "fontSize": 11.5,
                           "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "RGLeg",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "XmLEs",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
                         }
                       ]
                     }
@@ -269817,31 +269792,6 @@
                           "fontFamily": "$font-ui",
                           "fontSize": 11.5,
                           "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "tGld2",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "vHIzS",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
                         }
                       ]
                     }
@@ -278056,7 +278006,7 @@
     },
     {
       "type": "frame",
-      "id": "o7Hfw",
+      "id": "I4jyA",
       "x": 27080,
       "y": 4000,
       "name": "Chats · the list from the records · notes",
@@ -278073,7 +278023,7 @@
       "children": [
         {
           "type": "text",
-          "id": "BgnFa",
+          "id": "qqMq6",
           "name": "title",
           "fill": "$text-primary",
           "textGrowth": "fixed-width",
@@ -278086,7 +278036,7 @@
         },
         {
           "type": "frame",
-          "id": "mDGBB",
+          "id": "U4YyO",
           "name": "Parti pris",
           "width": "fill_container",
           "layout": "vertical",
@@ -278100,7 +278050,7 @@
           "children": [
             {
               "type": "text",
-              "id": "T1FTmf",
+              "id": "i92de",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "PARTI PRIS",
@@ -278112,7 +278062,7 @@
             },
             {
               "type": "text",
-              "id": "g06XLJ",
+              "id": "h16I3",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
@@ -278127,7 +278077,7 @@
         },
         {
           "type": "frame",
-          "id": "dH8sm",
+          "id": "Yt4rl",
           "name": "Sections",
           "width": "fill_container",
           "layout": "vertical",
@@ -278141,7 +278091,7 @@
           "children": [
             {
               "type": "text",
-              "id": "BfaS4",
+              "id": "zoMWb",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "SECTIONS",
@@ -278153,7 +278103,7 @@
             },
             {
               "type": "text",
-              "id": "y8672c",
+              "id": "L9T2z",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
@@ -278168,7 +278118,7 @@
         },
         {
           "type": "frame",
-          "id": "i6WlqJ",
+          "id": "didnj",
           "name": "Shell · chats · list, a chat open",
           "width": "fill_container",
           "layout": "vertical",
@@ -278182,7 +278132,7 @@
           "children": [
             {
               "type": "text",
-              "id": "j2SVi",
+              "id": "Fmg8U",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "SHELL · CHATS · LIST, A CHAT OPEN",
@@ -278194,12 +278144,12 @@
             },
             {
               "type": "text",
-              "id": "tRrcK",
+              "id": "r51ldt",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "A chat opened from the list: its head as the chat page draws it, and in place of the conversation the sentence that it opens with the next part of the preview, with a way to Tars, all projects. Nothing delegated yet.",
+              "content": "A chat opened from the list: its head as the chat page draws it, its actions aside, and in place of the conversation the sentence that it opens with the next part of the preview, with a way to Tars, all projects. Nothing delegated yet. Until the chat page comes (PR E), a chat's actions are on its row in the list, behind the dots that show on the row the pointer is on.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -278209,7 +278159,7 @@
         },
         {
           "type": "frame",
-          "id": "eOokZ",
+          "id": "HbZfF",
           "name": "Shell · chats · new chat, its record",
           "width": "fill_container",
           "layout": "vertical",
@@ -278223,7 +278173,7 @@
           "children": [
             {
               "type": "text",
-              "id": "fBwzR",
+              "id": "hkHlo",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "SHELL · CHATS · NEW CHAT, ITS RECORD",
@@ -278235,7 +278185,7 @@
             },
             {
               "type": "text",
-              "id": "SQHuT",
+              "id": "V9uyj",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
@@ -278250,7 +278200,7 @@
         },
         {
           "type": "frame",
-          "id": "iLx5g",
+          "id": "zFEYR",
           "name": "Shell · chats · project page, from the records",
           "width": "fill_container",
           "layout": "vertical",
@@ -278264,7 +278214,7 @@
           "children": [
             {
               "type": "text",
-              "id": "iEUE3",
+              "id": "n28EUO",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "SHELL · CHATS · PROJECT PAGE, FROM THE RECORDS",
@@ -278276,7 +278226,7 @@
             },
             {
               "type": "text",
-              "id": "Vo3eX",
+              "id": "FNqvS",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
@@ -278291,7 +278241,7 @@
         },
         {
           "type": "frame",
-          "id": "xlyAG",
+          "id": "qAoIK",
           "name": "Shell · chats · a chat's actions · states",
           "width": "fill_container",
           "layout": "vertical",
@@ -278305,7 +278255,7 @@
           "children": [
             {
               "type": "text",
-              "id": "FpH3Q",
+              "id": "f7qOD",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "SHELL · CHATS · A CHAT'S ACTIONS · STATES",
@@ -278317,7 +278267,7 @@
             },
             {
               "type": "text",
-              "id": "a7NG5",
+              "id": "b0o6Z",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
@@ -278332,7 +278282,7 @@
         },
         {
           "type": "frame",
-          "id": "EJRh2",
+          "id": "WNnHZ",
           "name": "Waiting for PR D and E",
           "width": "fill_container",
           "layout": "vertical",
@@ -278346,7 +278296,7 @@
           "children": [
             {
               "type": "text",
-              "id": "rlpFl",
+              "id": "P1460U",
               "name": "caption",
               "fill": "$text-secondary",
               "content": "WAITING FOR PR D AND E",
@@ -278358,7 +278308,7 @@
             },
             {
               "type": "text",
-              "id": "N4pEc2",
+              "id": "EWE5c",
               "name": "line",
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
