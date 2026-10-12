@@ -16,7 +16,9 @@ import { shellPlaceFor } from '../../src/lib/new-shell';
  * 5. Schedules, whose page is /crons, lights nothing;
  * 6. a page of More reached by its address (/usage, /settings), or a path no
  *    entry owns, lights a main entry;
- * 7. a path that only starts like an entry's (/chatter, /projectsX) lights it.
+ * 7. a path that only starts like an entry's (/chatter, /projectsX) lights it;
+ * 8. a project's page, /project (the chat list's PR), lights nothing, where
+ *    the frame keeps Projects lit under it. Added before that code.
  */
 
 describe('shellPlaceFor', () => {
@@ -52,6 +54,12 @@ describe('shellPlaceFor', () => {
     for (const path of ['/usage', '/settings', '/agents', '/skills', '/whats-new', '/nowhere']) {
       expect(shellPlaceFor(path)).toBeNull();
     }
+  });
+
+  it('gives a project\'s page, /project, to Projects as well (8, added with the chat list)', () => {
+    expect(shellPlaceFor('/project')).toBe('projects');
+    expect(shellPlaceFor('/project?path=%2Fp%2Ftars')).toBe('projects');
+    expect(shellPlaceFor('/project/')).toBe('projects');
   });
 
   it('does not light an entry for a path that only starts like it (7)', () => {
