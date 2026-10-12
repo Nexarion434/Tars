@@ -193,6 +193,24 @@ describe('the role, on the launches the bots make', () => {
     expect(named).not.toContain('--disallowed-tools');
   });
 
+  // A chat's runner is a worker with the orchestrator's powers
+  // (ORCHESTRATOR-PER-CHAT.md 4.2, PR D). Written before the code (2026-10-12):
+  // started from a bot, it was launched as a worker, without the instructions
+  // and with its editing tools.
+  it("Telegram /start_agent launches a chat's runner with the orchestrator's instructions", async () => {
+    agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });
+    agent({ id: 'agent-r', name: 'Lead · Release 1.9.4', role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'agent-o' });
+    const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+    const text = '/start_agent release Ship it';
+
+    const runner = await typedAfter(async () => {
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+    });
+
+    expect(runner).toContain(INSTRUCTIONS());
+    expect(runner).toContain(TOOL_BLOCK);
+  });
+
   it('a message goes to the agent whose role is orchestrator, not to one named like it', async () => {
     agent({ id: 'agent-w', name: 'Super Agent', role: 'worker' });
     agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });

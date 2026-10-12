@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { DATA_DIR, privatePath } from '../constants';
 import { agents } from '../core/agent-manager';
+import { hasOrchestratorPowers } from '../core/agent-role';
 import { agentStatusEmitter } from './agent-events';
 import { pendingBackgroundWork } from './agent-truth';
 import { createTaskLedger, endingOf, setLiveTaskLedger, liveTaskLedger, type TaskRecord } from './task-ledger';
@@ -40,13 +41,14 @@ export function startTaskWatch(file = TASK_LEDGER_FILE, textFile = TASK_TEXT_FIL
     file,
     textFile,
     // As recordRequester has it (#302): a sender writing to the agent that
-    // handed it its work, or to its project's orchestrator, reports.
+    // handed it its work, or to one of its project's with the orchestrator's
+    // powers (the orchestrator, a chat's runner: core/agent-role.ts), reports.
     leads: (receiverId, senderId) => {
       const receiver = agents.get(receiverId);
       const sender = agents.get(senderId);
       if (!receiver || !sender) return false;
       return sender.requestedBy?.agentId === receiverId
-        || (receiver.role === 'orchestrator' && receiver.projectPath === sender.projectPath);
+        || (hasOrchestratorPowers(receiver) && receiver.projectPath === sender.projectPath);
     },
   }));
   agentStatusEmitter.on('fleet-change', onFleetChange);

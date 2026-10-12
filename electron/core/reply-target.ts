@@ -1,3 +1,5 @@
+import { hasOrchestratorPowers } from './agent-role';
+
 /**
  * Who a message reaches when a worker names its orchestrator rather than an id
  * (ORCHESTRATOR-PER-CHAT.md v2.2, 4.3 "Replies"; the Audit's R5; PR D of 2.0.0).
@@ -21,8 +23,6 @@ export interface ReplyAgent {
 
 export type ReplyTarget = { agentId: string; how: 'id' | 'requester' | 'orchestrator' };
 
-const hasPowers = (a: ReplyAgent): boolean => a.role === 'orchestrator' || a.kind === 'chat';
-
 /** The agent `raw` names for `callerId`, or null when it names none (the route then answers as before). */
 export function replyTargetOf(raw: string, callerId: string | undefined, fleet: ReadonlyMap<string, ReplyAgent>): ReplyTarget | null {
   if (fleet.has(raw)) return { agentId: raw, how: 'id' };
@@ -37,7 +37,7 @@ export function replyTargetOf(raw: string, callerId: string | undefined, fleet: 
   if (!toRequester && !toOrchestrator) return null;
   const askerId = caller.requestedBy?.agentId;
   const asker = askerId && askerId !== caller.id ? fleet.get(askerId) : undefined;
-  if (asker && asker.projectPath === caller.projectPath && (toRequester || hasPowers(asker))) {
+  if (asker && asker.projectPath === caller.projectPath && (toRequester || hasOrchestratorPowers(asker))) {
     return { agentId: asker.id, how: 'requester' };
   }
   return lead ? { agentId: lead.id, how: 'orchestrator' } : null;
