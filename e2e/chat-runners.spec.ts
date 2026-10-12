@@ -30,7 +30,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 8. chat B's runner cannot cancel chat C's queued task (not_your_task); Main's orchestrator cannot without a
  *    reason, and can with one, and chat C is told (R6);
  * 9. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
- * 10. scripts/worktree.mjs status lists the runners' worktrees;
+ * 10. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
  * 11. deleting chat B removes its runner and its worktree, its branch kept.
  * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl and prompts.jsonl.
  */
@@ -101,7 +101,7 @@ process.stdin.resume();
 
 type Agent = {
   id: string; name?: string; role?: string; kind?: string; chatId?: string; status: string; cliRunning?: boolean;
-  worktreePath?: string; branchName?: string; projectPath: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
+  worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
 };
 type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null };
 type Answer = Record<string, unknown>;
@@ -261,11 +261,17 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const runnerC = (await runnerOf(startedChat.id))!;
     await atRest(runnerC.id);
 
-    // Tokens, as each agent's hooks and MCP servers have them.
+    // The worker's terminal, registered: a message waits for its CLI's first session.
+    await page.evaluate(() => (window as unknown as { electronAPI: { agent: { start(p: { id: string; prompt: string }): Promise<unknown> } } }).electronAPI.agent.start({ id: 'w1', prompt: '' }));
+    await expect.poll(async () => (await agentOf('w1'))?.currentSessionId ?? null, { timeout: 30_000 }).not.toBeNull();
+    await atRest('w1');
+
+    // A token naming each agent, as its MCP servers present one. A run's token, held beside the terminal's: a
+    // terminal's own token minted again would void the one its CLI holds, and its hooks would be refused.
     const tokens = await app.evaluate((_e, { dist, ids }) => {
       const req = process.mainModule!.require;
       const out: Record<string, string> = {};
-      for (const id of ids) out[id] = req(`${dist}/core/agent-tokens.js`).mintAgentToken(id);
+      for (const id of ids) out[id] = req(`${dist}/core/agent-tokens.js`).mintRunToken(id).token;
       return out;
     }, { dist, ids: ['o1', 'w1', runnerB.id, runnerC.id] });
     const api = (route: string, as: string, body: Record<string, unknown>) => fetch(`http://127.0.0.1:${port}${route}`, {
@@ -276,10 +282,9 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     }).then(async (r) => ({ status: r.status, body: await r.json() as Answer }));
 
     // 7. R5: the worker answers whoever asked for its current task, unless it names an id.
-    await page.evaluate(() => (window as unknown as { electronAPI: { agent: { start(p: { id: string; prompt: string }): Promise<unknown> } } }).electronAPI.agent.start({ id: 'w1', prompt: '' }));
-    await expect.poll(async () => (await agentOf('w1'))?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
-    await atRest('w1');
     const asked = await api('/api/agents/w1/message', runnerC.id, { message: 'R5>> report to me' });
+    keep({ asked });
+    expect(asked.status).toBe(200);
     await expect.poll(() => promptsOf('w1').some((p) => p.includes('R5>> report to me')), { timeout: 30_000 }).toBe(true);
     const toRequester = await api('/api/agents/requester/message', 'w1', { message: 'REPLY>> for my asker' });
     const toLeadById = await api('/api/agents/o1/message', 'w1', { message: 'ID>> for the lead' });
@@ -324,10 +329,16 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(worktrees()).toEqual(before);
     expect(await runnerOf(chatE.id)).toBeUndefined();
 
-    // 10. The worktree tool sees the runners' worktrees.
-    const status = execFileSync(process.execPath, [WORKTREE_TOOL, 'status'], { cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8' });
-    keep({ status });
-    for (const r of [runnerA, runnerB, runnerC]) expect(status).toContain(path.basename(r.worktreePath!));
+    // 10. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
+    const tool = (...args: string[]) => execFileSync(process.execPath, [WORKTREE_TOOL, ...args], { cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8' });
+    const status = tool('status');
+    const pruned = tool('prune', '--dry-run', '--no-github', '--older-than', '0');
+    keep({ status, pruned });
+    for (const r of [runnerA, runnerB, runnerC]) {
+      const name = path.basename(r.worktreePath!);
+      expect(status).toContain(name);
+      expect(pruned.split('\n').find((l) => l.startsWith(`kept ${name}: `))).toContain(`it is the worktree of the Tars agent ${r.name}`);
+    }
 
     // 11. Deleting chat B: its runner and its worktree go, its branch stays.
     const deleted = await call('chat', 'delete', { chatId: chatB.id });
