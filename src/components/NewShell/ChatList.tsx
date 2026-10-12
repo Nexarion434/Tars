@@ -236,7 +236,7 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
             setMenuOpen(open => !open);
           }}
           className={`absolute right-2 top-[5px] w-[22px] h-[22px] flex items-center justify-center border border-border bg-card text-text-secondary transition-opacity ${
-            menuOpen || current ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+            menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
           }`}
         >
           <Ellipsis className="w-3 h-3" />

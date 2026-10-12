@@ -43,8 +43,7 @@ function ChatsPageInner() {
         <BrandMark className="w-2.5 h-2.5" />
         <h2 className="font-serif text-[22px] leading-[1.15] text-foreground">No chats yet</h2>
         <p className="max-w-[460px] text-center text-[12.5px] leading-[1.5] text-text-secondary">
-          Chats per project come with the next part of this preview. Until then, Tars, all projects is where you talk
-          to every orchestrator.
+          A project gets its chat Main once it has an orchestrator. Meanwhile, talk to Tars, all projects.
         </p>
         <Link
           href="/chat"
