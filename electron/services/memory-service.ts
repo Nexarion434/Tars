@@ -216,8 +216,9 @@ async function readProjectRow(provider: string, folderName: string, memoryDir: s
  * `-Users-me-my-proj`. The project was listed twice, the old memory in one row
  * and an empty one where Claude reads.
  *
- * Once, when Claude's folder holds no MEMORY.md, the old folder's files are
- * copied in, none overwritten, the old ones kept. Then the old row goes and
+ * Once, when Claude's folder holds no MEMORY.md, its memory files (every .md
+ * of the old memory folder) are copied in, none over a file Claude's folder
+ * holds, the old ones kept. Then the old row goes and
  * Claude's stays, naming the old folder (`olderCopy`). A copy that fails
  * leaves Claude's row as it is, the old folder still named on it.
  */
