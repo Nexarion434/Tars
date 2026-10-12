@@ -14,7 +14,7 @@ import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
 import { getProvider } from '../providers';
-import { resumeOnNextStart } from '../utils/resume-session';
+import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
 import { envelopeValue } from '../utils/envelope-value';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
@@ -309,12 +309,18 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
       saveAgents();
     }
     // A chat's conversation goes on, whatever this run of Tars started before.
+    // Asleep, it wakes on its own session (core/agent-asleep.ts). Stopped, that
+    // session is a tombstone, whose hooks are dropped as stale: it goes on
+    // under a new id, as a restart does (core/agent-restart.ts).
     resumeOnNextStart(runner.id);
+    const options = runner.status !== 'asleep' && runner.lastKilledSessionId
+      ? { resumeSessionId: resolveResumeSessionId(runner) }
+      : undefined;
     const note = notesForNextLaunch.get(runner.id);
     notesForNextLaunch.delete(runner.id);
     reserved.add(runner.id);
     try {
-      const result = await launchAgent(runner.id, note ? `${note}\n\n${text}` : text);
+      const result = await launchAgent(runner.id, note ? `${note}\n\n${text}` : text, options);
       if (!result.success) return failed(result.error);
       return { success: true, chatId: chat.id, runnerId: runner.id, how: 'launched' };
     } finally {
