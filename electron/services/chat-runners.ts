@@ -15,6 +15,7 @@ import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
 import { getProvider } from '../providers';
 import { resumeOnNextStart } from '../utils/resume-session';
+import { envelopeValue } from '../utils/envelope-value';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { agentStatusEmitter, emitAgentStatus } from './agent-events';
@@ -321,6 +322,19 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     }
   });
   return 'typeInto' in decided ? typeInto(decided.typeInto, decided.chat, text) : decided;
+}
+
+/**
+ * What a runner is told of itself, in its bootstrap and its launch's header:
+ * the orchestrator of one chat among several, and how its workers answer it.
+ * Undefined for an agent that runs no chat of its own.
+ */
+export function chatIdentityOf(agent: Pick<AgentStatus, 'kind' | 'chatId'>): string | undefined {
+  if (agent.kind !== 'chat') return undefined;
+  const chat = agent.chatId ? store?.get(agent.chatId) : undefined;
+  const which = chat ? `the chat ${envelopeValue(chat.title)} (#${chat.number})` : "one of the project's chats";
+  return `You are the orchestrator in ${which}: the project's other chats may be running at once, each its own conversation with the same team. `
+    + 'Your workers answer you with send_message to "requester".';
 }
 
 /** Whether a chat may lose its runner: Main's is the orchestrator, never removed by a chat (4.1). */

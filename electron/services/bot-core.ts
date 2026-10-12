@@ -51,7 +51,9 @@ export function listedAgents(agents: Iterable<AgentStatus>): AgentStatus[] {
 
 /** An agent named in a command: a part of its name, or its id. */
 export function findAgent(agents: Map<string, AgentStatus>, name: string): AgentStatus | undefined {
-  return Array.from(agents.values()).find(a => a.name?.toLowerCase().includes(name) || a.id === name);
+  // A chat's runner is named "<orchestrator> · <title>": a part of a name finds
+  // the orchestrator, never one of its chats; an exact id still finds one.
+  return Array.from(agents.values()).find(a => (a.kind !== 'chat' && a.name?.toLowerCase().includes(name)) || a.id === name);
 }
 
 export type StatusGroup = 'running' | 'waiting' | 'error' | 'stopped' | 'idle' | 'asleep';

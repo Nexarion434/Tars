@@ -38,6 +38,7 @@ import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/age
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
+import { chatIdentityOf } from '../chat-runners';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -222,13 +223,13 @@ async function spawnAgentSessionInSlot(
   // (The provider builder handles the skills prefix itself.)
   const identityHeader =
     `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ` +
-    `${agent.role || 'worker'} of project ${agent.projectPath}` +
+    `${agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker'} of project ${agent.projectPath}` +
     (agent.worktreePath
       ? `, working in worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory`
       : '') +
     `. Work autonomously without asking for confirmation and end with a clear report of your results` +
     (isSuperAgentApi ? '' : ': an orchestrator reads your final message') +
-    `.]`;
+    `.` + (chatIdentityOf(agent) ? ` ${chatIdentityOf(agent)}` : '') + `]`;
 
   // MCP config for flag-strategy providers (all claude-based ones).
   let mcpConfigPath: string | undefined;
@@ -1054,10 +1055,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   app_.get('/api/agents', (req, sendJson) => {
     const caller = callerProject(req);
     const showAll = req.url.searchParams.get('all') === 'true';
-    let agentValues = Array.from(agents.values());
+    // The team: a chat's runner is a conversation with the orchestrator, listed
+    // only as the asker of the work it handed out (ORCHESTRATOR-PER-CHAT.md, 4.2).
+    let agentValues = Array.from(agents.values()).filter(a => a.kind !== 'chat');
     if (caller && !showAll) {
       agentValues = agentValues.filter(a => a.projectPath === caller);
     }
+    const askerOf = (a: AgentStatus) => {
+      const asker = a.requestedBy ? agents.get(a.requestedBy.agentId) : undefined;
+      return asker ? { id: asker.id, name: asker.name || asker.id, ...(asker.kind === 'chat' ? { chat: true } : {}) } : undefined;
+    };
     const agentList = agentValues.map(withSessionTruth).map(a => ({
       id: a.id,
       name: a.name,
@@ -1071,6 +1078,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       branchName: a.branchName,
       role: a.role,
       error: a.error,
+      askedBy: askerOf(a),
     }));
     sendJson({ agents: agentList, scopedToProject: caller && !showAll ? caller : undefined });
   });
@@ -1111,11 +1119,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const lines = [
       `# Tars agent identity`,
       ``,
-      `You are "${agent.name || agent.id}" (agent id: ${agent.id}), ${agent.role || 'worker'} of project ${agent.projectPath}.`,
+      `You are "${agent.name || agent.id}" (agent id: ${agent.id}), ${agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker'} of project ${agent.projectPath}.`,
     ];
     if (agent.worktreePath) {
       lines.push(`You work in the worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory.`);
     }
+    // A chat's runner: which chat, and that others may run beside it (services/chat-runners.ts).
+    const inChat = chatIdentityOf(agent);
+    if (inChat) lines.push(inChat);
     if (agent.savedPrompt) {
       lines.push(``, `## Your role`, agent.savedPrompt);
     }
@@ -1134,6 +1145,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         ``,
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
+        `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
         `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
