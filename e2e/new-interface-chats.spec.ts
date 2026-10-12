@@ -19,9 +19,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * project's chat #1, Main.
  *
  * The person reads the list: both Mains, under Active, the more recent first,
- * each with its project and number. New chat: docs-demo cannot be chosen, it
- * has no orchestrator; a chat "Release notes" made in tars-demo is #2, opens,
- * and its page says its conversation opens with the next part of the preview.
+ * each with its project and number; tars-demo's Main, which has a runner,
+ * opens on its conversation (e2e/new-interface-chat-page.spec.ts reads one).
+ * New chat: docs-demo cannot be chosen, it has no orchestrator; a chat
+ * "Release notes" made in tars-demo is #2, opens, and its page, with no runner
+ * yet, says its conversation opens with the next part of the preview.
  * Renamed in place, then pinned, then snoozed for an hour (folded under
  * Snoozed, unfolded with its time), each kept in chats.json. harbor-demo's
  * Main is settled. "Triage", made next, becomes tars-demo's inbox; Main,
@@ -103,7 +105,11 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     await expect(rows('Active')).toHaveCount(2, { timeout: 90_000 });
     seen.list = await texts(rows('Active'));
     expect(seen.list).toEqual(['Main tars-demo #1', 'Main harbor-demo #1']);
-    await expect(main.getByText('Its conversation opens with the next part of this preview')).toBeVisible();
+    // Main has a runner, Lead: it opens on its conversation (empty here, Lead
+    // has written none), its composer waiting for sending from a chat.
+    await expect(main.getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
+    await expect(main.getByRole('log', { name: 'Conversation' })).toBeVisible();
+    await expect(main.getByText('Sending from a chat comes with the next part of this preview.')).toBeVisible();
     await stepShot(page, '01-list');
 
     // New chat: a project without an orchestrator cannot be chosen.
