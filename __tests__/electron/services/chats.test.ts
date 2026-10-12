@@ -69,6 +69,13 @@
  *     32 GB 6, 64 GB and more 8, below 10 GB 1), or a GB read as 10^9 bytes.
  * 32. The E2E's RAM figure (TARS_CHAT_RAM_GB) is read outside an E2E run, or
  *     one that is not a positive number is taken.
+ * And for the runners (PR D, written before their code, 2026-10-12):
+ * 33. A chat gets a second runner over the one it has, or Main gets another
+ *     than the orchestrator, or an unknown chat gets one.
+ * 34. A chat is made for a project whose orchestrator's CLI cannot resume a
+ *     conversation (a provider other than claude): each send would start a
+ *     new one, so it is refused at creation, with the reason. Main stays.
+ * 35. A runner's chat cannot be found from the runner.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -635,5 +642,40 @@ describe('the limit on chats working at once', () => {
     for (const bad of ['abc', '0', '-5', '', 'Infinity']) {
       expect(chatLimitOf(16 * GB, { DOROTHY_E2E: '1', TARS_CHAT_RAM_GB: bad }), bad).toMatchObject({ limit: 3, source: 'ram' });
     }
+  });
+});
+
+describe("the chats' runners (PR D)", () => {
+  it('33. a chat gets its runner once; Main keeps the orchestrator; an unknown chat gets none', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    const made = ok(store.create({ projectPath: projA, title: 'Two' }, [orch()]));
+    expect(ok(store.setRunner(made.id, 'run-2')).runnerId).toBe('run-2');
+    expect(errorOf(store.setRunner(made.id, 'run-3'))).toBe('runner_set');
+    expect(errorOf(store.setRunner(main(store).id, 'run-4'))).toBe('runner_set');
+    expect(errorOf(store.setRunner('nope', 'run-5'))).toBe('not_found');
+    expect(errorOf(store.setRunner(made.id, '../x'))).toBe('invalid_request');
+    expect(open().get(made.id)?.runnerId).toBe('run-2');
+  });
+
+  it("34. refuses a chat for a project whose orchestrator cannot resume a conversation, and keeps its Main", () => {
+    const store = open();
+    const codex = orch({ resumable: false });
+    store.ensureMains([codex]);
+    expect(main(store).runnerId).toBe('o1');
+    const answer = store.create({ projectPath: projA, title: 'Two' }, [codex]);
+    expect(errorOf(answer)).toBe('provider_unsupported');
+    expect((answer as ChatError).reason).toMatch(/claude/);
+    expect(chats(store)).toHaveLength(1);
+  });
+
+  it("35. finds the chat a runner runs, Main's included", () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    const made = ok(store.create({ projectPath: projA, title: 'Two' }, [orch()]));
+    ok(store.setRunner(made.id, 'run-2'));
+    expect(store.chatOfRunner('run-2')?.id).toBe(made.id);
+    expect(store.chatOfRunner('o1')?.number).toBe(1);
+    expect(store.chatOfRunner('nobody')).toBeUndefined();
   });
 });
