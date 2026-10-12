@@ -1,13 +1,15 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDownToLine, CalendarClock, ChevronDown, ChevronUp, Columns, Ellipsis, FolderKanban,
   LayoutDashboard, MessageSquare, Plus,
 } from 'lucide-react';
+import { ChatList } from './ChatList';
 import { Brand, BrandMark } from '@/components/Brand';
-import { Button, PanelCaption } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useWhatsNewBadge } from '@/components/Sidebar';
 import { useAppPathname } from '@/hooks/useAppPathname';
 import { shellPlaceFor, type ShellPlace } from '@/lib/new-shell';
@@ -31,11 +33,28 @@ const rowClass = (current: boolean) =>
 const iconClass = (current: boolean) => `w-3.5 h-3.5 shrink-0 ${current ? 'text-primary' : 'text-status-idle'}`;
 const labelClass = (current: boolean) => `text-[13px] flex-1 truncate text-left ${current ? 'text-foreground' : 'text-text-secondary'}`;
 
+/** Where the sidebar keeps its project filter, for this window only. */
+const FILTER_KEY = 'tars-chats-filter';
+
+function readFilter(): string | null {
+  try {
+    return localStorage.getItem(FILTER_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The chat list, with the chat the page shows as its current row. */
+function ListOfChats({ filter, onFilter }: { filter: string | null; onFilter: (path: string | null) => void }) {
+  const selectedId = useSearchParams().get('chat');
+  return <ChatList filter={filter} onFilter={onFilter} selectedId={selectedId} />;
+}
+
 /**
- * The new shell's sidebar (`Shell · chats · empty`, `· More open`). The chat
- * list waits for the chat channels: until then it says so, and New chat and
- * the project filter are drawn without anything to act on. Nothing is made up
- * where the chats will be.
+ * The new shell's sidebar (`Shell · chats · empty`, `· More open`, `· list, a
+ * chat open`). The chats are their records (#361): the list, its project
+ * filter, New chat making a chat's record. Nothing is made up of what a chat
+ * says: that comes with PR D and E.
  */
 export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId) => void }) {
   const place = shellPlaceFor(useAppPathname());
@@ -43,6 +62,20 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
   const { vaultUnreadCount, pendingUpdateVersion, setUpdateBannerDismissed } = useStore();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreArea = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [filter, setFilter] = useState<string | null>(null);
+  useEffect(() => setFilter(readFilter()), []);
+  const chooseFilter = (path: string | null) => {
+    setFilter(path);
+    try {
+      if (path) localStorage.setItem(FILTER_KEY, path);
+      else localStorage.removeItem(FILTER_KEY);
+    } catch { /* storage blocked: the filter lasts the page */ }
+    // On a project's page, the filter chooses the project.
+    if (path && place === 'projects') router.push(`/project?path=${encodeURIComponent(path)}`);
+  };
+  const hrefOf = (item: (typeof MAIN)[number]) =>
+    item.place === 'projects' && filter ? `/project?path=${encodeURIComponent(filter)}` : item.href;
 
   // A click anywhere else, or Escape, puts the menu away.
   useEffect(() => {
@@ -84,7 +117,7 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
                   <div className="h-px bg-border" />
                 </div>
               )}
-              <Link href={item.href} aria-current={current ? 'page' : undefined} className={rowClass(current)}>
+              <Link href={hrefOf(item)} aria-current={current ? 'page' : undefined} className={rowClass(current)}>
                 <item.icon className={iconClass(current)} />
                 <span className={labelClass(current)}>{item.label}</span>
               </Link>
@@ -94,7 +127,10 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
       </nav>
 
       <div className="px-2 pt-2 pb-0.5 shrink-0">
-        <Button disabled className="w-full" title="Chats per project come with the next part of this preview.">
+        <Button
+          className="w-full"
+          onClick={() => router.push(`/chats?new=1${filter ? `&project=${encodeURIComponent(filter)}` : ''}`)}
+        >
           <Plus className="w-3.5 h-3.5" />
           New chat
         </Button>
@@ -117,26 +153,9 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
         </Link>
       </div>
 
-      <div className="flex items-center justify-between gap-2 pl-[18px] pr-2 pt-3 pb-0.5 shrink-0">
-        <PanelCaption>Chats</PanelCaption>
-        <button
-          type="button"
-          disabled
-          aria-label="Project filter"
-          className="h-[26px] px-2 flex items-center gap-1.5 border border-border bg-card text-[11.5px] text-text-secondary opacity-40 cursor-not-allowed"
-        >
-          <FolderKanban className="w-3 h-3 text-status-idle" />
-          All projects
-          <ChevronDown className="w-3 h-3 text-status-idle" />
-        </button>
-      </div>
-
-      <div className="px-[18px] pt-2.5 shrink-0">
-        <p className="text-[12.5px] leading-[1.4] text-text-secondary">No chats yet</p>
-        <p className="mt-1 text-[11px] leading-[1.45] text-status-idle">
-          This preview cannot open a chat yet. Talk to Tars, all projects meanwhile.
-        </p>
-      </div>
+      <Suspense fallback={null}>
+        <ListOfChats filter={filter} onFilter={chooseFilter} />
+      </Suspense>
 
       <div className="flex-1" />
 

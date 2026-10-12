@@ -13,6 +13,8 @@ const OWNERS: Array<[ShellPlace, string]> = [
   ['tars', '/chat'],
   ['chat', '/chats'],
   ['projects', '/projects'],
+  // A project's page, under Projects (`Shell · chats · project page, from the records`).
+  ['projects', '/project'],
   ['kanban', '/kanban'],
   ['schedules', '/crons'],
 ];
