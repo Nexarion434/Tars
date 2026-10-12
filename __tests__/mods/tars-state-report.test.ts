@@ -30,6 +30,11 @@
  *    ahead of the Stop's posts that came before it.
  * 8. The event is not handed on unchanged, or a turn.complete with no usage
  *    posts one.
+ * And from the nested session of 13/10: a `claude -p` run inside an agent's
+ * terminal loads this mod too, and its SessionStart took the agent's session.
+ * Tars registers only the CLI it launched there, by its pid.
+ * 9. The SessionStart names no CLI pid, so Tars cannot tell the agent's CLI
+ *    from a nested one; or it sends something that is not a pid.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -165,6 +170,18 @@ describe("a turn's usage (mods step 4)", () => {
     expect(await drained()).toEqual(['/api/hooks/output', '/api/hooks/status idle', '/api/hooks/agent-stopped', '/api/hooks/turn-usage']);
     expect(sent[3].body).toMatchObject({ agent_id: 'a1', session_id: SESSION, usage, via: 'mod' });
     expect(handed, '8. handed on unchanged').toBe(e);
+  });
+
+  it("9. the SessionStart names this CLI's pid, CLAUDE_PID, and nothing that is not one", async () => {
+    for (const [pid, sentAs] of [['4242', '4242'], [undefined, ''], ['42 && rm', '']] as const) {
+      if (pid === undefined) delete ENV.CLAUDE_PID; else ENV.CLAUDE_PID = pid;
+      sent = [];
+      await load();
+      await fire('classic.SessionStart', { session_id: SESSION, source: 'startup' });
+      await drained();
+      expect(sent[0].body, String(pid)).toMatchObject({ session_id: SESSION, source: 'startup', cli_pid: sentAs, via: 'mod' });
+    }
+    delete ENV.CLAUDE_PID;
   });
 
   it('8. posts nothing for a turn.complete with no usage', async () => {
