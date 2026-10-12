@@ -165,6 +165,10 @@ test("a chat's conversation is read across its sessions, then followed live, and
     expect(meta.chatId).toBe(main.id);
     expect(meta.chat.title).toBe('Release');
     expect(meta.seq).toBeGreaterThan(item.seq);
+    // chat:list is a snapshot on the same counter: at or after the rename's event.
+    const relisted = await call('chat', 'list') as { seq: number };
+    values.relistedSeq = relisted.seq;
+    expect(relisted.seq).toBeGreaterThanOrEqual(meta.seq);
 
     // 5. A worker's queue: a request from Lead, read and heard.
     const token = await app.evaluate((_e, { dist }) => process.mainModule!.require(`${dist}/core/agent-tokens.js`).mintAgentToken('lead'), { dist });
