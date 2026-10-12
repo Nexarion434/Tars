@@ -7,6 +7,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 55,
+    version: '1.9.6',
+    date: '2026-10-12',
+    updates: [
+      'An orchestrator\'s message or delegation is sent once, even when its call to Tars timed out and was made again: each one now carries an id, and a send Tars already made is answered as it was the first time, with nothing typed or started twice. The same id with another message is refused. Tars keeps these receipts for 24 hours in ~/.tars-private, with ids and outcomes only, never what the message said.',
+      'An orchestrator can choose how its message goes in: at once as before, after the agent\'s current turn, by interrupting that turn first (Claude agents only), or by restarting the agent with it. Interrupting or restarting an agent while it works on another agent\'s request is refused.',
+      'A task delegated over ACP runs in the narrower of the two agents\' permission modes, so an agent in plan mode can no longer have a delegated run work in bypass mode. Plan mode is new to Tars, for agents set through the API for now. A message from an agent in a narrower mode to one working in a broader mode says so before the message. An agent that keeps working on its own keeps its own mode: this is a guard against a delegation widening what its asker may do, not a boundary.',
+      'A delegated task\'s result outlives a restart of Tars: an orchestrator reads it again with task_status, by the task or by the id it was sent with. A delegation that a quit cut is told to whoever asked for it at the next launch.',
+      'When an agent\'s work ends, the note to whoever asked for it names the task, by its id and its first line, now that a request typed in during a turn gets a report of its own. After Tars stops abruptly, an agent that could not be resumed tells whoever was waiting on its work, where they waited for an end that never came.',
+    ],
+  },
+  {
     id: 54,
     version: '1.9.5',
     date: '2026-10-07',
