@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 55,
+    version: '1.9.6',
+    date: '2026-10-12',
+    updates: [
+      'On the Extensions page, every install count reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
+    ],
+  },
+  {
     id: 54,
     version: '1.9.5',
     date: '2026-10-07',
