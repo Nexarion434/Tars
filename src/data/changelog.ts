@@ -17,6 +17,7 @@ export const CHANGELOG: Release[] = [
       'A task an agent in plan mode delegates over ACP stays in plan mode: the run is refused every permission it asks for, leaving plan included, and is stopped if it leaves plan anyway. Plan mode is new to Tars, for agents set through the API for now. Between the other modes a delegated run differs little, since Tars approves its requests itself, and an agent with no ACP mode gets the task in its terminal, in its own mode. A message from an agent in a narrower mode to one working in a broader mode says so before the message. This is a guard on delegated runs, not a boundary: an agent working on its own keeps its own mode.',
       'A delegated task\'s result outlives a restart of Tars: an orchestrator reads it again with task_status, by the task or by the id it was sent with. A delegation that a quit cut is told to whoever asked for it at the next launch.',
       'When an agent\'s work ends, the note to whoever asked for it names the task, by its id and its first line, now that a request typed in during a turn gets a report of its own. After Tars stops abruptly, an agent that could not be resumed tells whoever was waiting on its work, where they waited for an end that never came.',
+      'A Gemini agent on macOS and Linux reads as working while it works: its turns\' start now reaches Tars, which waited for an event Gemini never sends and showed the agent idle until it finished. Its hooks keep reaching Tars when Gemini\'s environment redaction is on, as they did on Windows.',
     ],
   },
   {

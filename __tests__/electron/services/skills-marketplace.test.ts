@@ -178,3 +178,27 @@ describe('a listing nobody vouches for', () => {
     expect(names(await marketplaceListing()), 'the 503 dropped the listing').toEqual(['first']);
   });
 });
+
+describe('the install count main writes beside the number (QA, after #359)', () => {
+  // The page writes each count from installsNum (src/lib/install-count.ts), and
+  // falls back to this text when a count cannot be vouched for. Main wrote it
+  // in thousands alone, a ".0" dropped: "1113K" beside the page's "1.3M".
+  //
+  // How it fails, written before the code (2026-10-13):
+  // 1. A count of a million or more is written in thousands ("1113K").
+  // 2. A count on a round thousand loses its decimal ("2K" for "2.0K").
+  // 3. A count that rounds up to the next unit stays in the one below
+  //    ("1000.0K" for 999,950).
+  // 4. A count under a thousand is changed.
+  it('is written as the page writes it: one decimal, in K, M or B', async () => {
+    serve = async () => new Response(page([
+      { source: 'a/b', name: 'm', installs: 1_113_000 },
+      { source: 'a/c', name: 'k', installs: 2_000 },
+      { source: 'a/d', name: 'edge', installs: 999_950 },
+      { source: 'a/e', name: 'small', installs: 999 },
+      { source: 'a/f', name: 'b', installs: 2_400_000_000 },
+    ]));
+    const listing = await marketplaceListing();
+    expect(listing.skills!.map((s) => s.installs)).toEqual(['1.1M', '2.0K', '1.0M', '999', '2.4B']);
+  });
+});
