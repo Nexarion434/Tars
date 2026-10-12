@@ -64,7 +64,7 @@ test('with the new interface on, the shell of the frames: the main menu, Tars fi
     expect(seen.menu).toEqual(MAIN);
     const chat = menu.getByRole('link', { name: 'Chat', exact: true });
     await expect(chat).toHaveAttribute('aria-current', 'page');
-    const tars = sidebar.getByRole('link', { name: 'Tars, all projects' });
+    const tars = sidebar.getByRole('link', { name: 'Tars, all projects', exact: true });
     await expect(tars).toBeVisible();
     await expect(sidebar.getByRole('button', { name: 'New chat' })).toBeDisabled();
     await expect(sidebar.getByText('No chats yet')).toBeVisible();
@@ -95,6 +95,7 @@ test('with the new interface on, the shell of the frames: the main menu, Tars fi
     const row = settings.locator('[data-settings-row]', { hasText: 'New interface' });
     const toggle = row.getByRole('switch', { name: 'New interface' });
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(settings.getByText('Opening the page')).toHaveCount(0, { timeout: 60_000 });
     seen.switchHint = (await row.locator('[data-settings-hint]').innerText()).replace(/\s+/g, ' ').trim();
     await expect(main.getByRole('heading', { name: 'No chats yet' })).toBeVisible();
     await stepShot(page, '03-settings-card');
@@ -108,6 +109,7 @@ test('with the new interface on, the shell of the frames: the main menu, Tars fi
     const usage = page.getByRole('dialog', { name: 'Usage' });
     await expect(usage).toBeVisible();
     await expect(page).toHaveURL(/\/chats\/?$/);
+    await expect(usage.getByText('Opening the page')).toHaveCount(0, { timeout: 60_000 });
     await stepShot(page, '04-usage-card');
     await usage.getByRole('button', { name: 'Close' }).click();
     await expect(usage).toHaveCount(0);
@@ -138,7 +140,7 @@ test('with the new interface on, the shell of the frames: the main menu, Tars fi
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Agents', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Tars, all projects' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Tars, all projects', exact: true })).toHaveCount(0);
     const saved = JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8'));
     seen.savedOff = saved.newInterface;
     expect(saved.newInterface).toBe(false);
