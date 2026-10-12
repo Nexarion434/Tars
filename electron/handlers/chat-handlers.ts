@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { ptyProcesses } from '../core/pty-manager';
 import { agentStatusEmitter } from '../services/agent-events';
-import { chatSeq, followChats, historyOf, publishChatEvent, queueOf, readChatItems } from '../services/chat-history';
+import { chatSeq, followChats, historyOf, noteChatSnapshot, publishChatEvent, queueOf, readChatItems } from '../services/chat-history';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
 import type { AgentStatus } from '../types';
@@ -152,7 +152,9 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     const chat = store.get(args.chatId);
     if (!chat) return { error: 'not_found', reason: 'No chat has this id.', seq: chatSeq() };
     const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
-    return historyOf(readChatItems(chat, { runner, nameOf }), { before: args.before, limit: args.limit });
+    const items = readChatItems(chat, { runner, nameOf });
+    noteChatSnapshot(chat.id, items.length);
+    return historyOf(items, { before: args.before, limit: args.limit });
   });
   // A worker's work in hand and its queue (core/task-requests.ts).
   ipcMain.handle('agent:queue', (_e, agentId: unknown) => {
