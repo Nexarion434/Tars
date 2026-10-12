@@ -222,9 +222,11 @@ export function isSuperAgent(agent: AgentStatus): boolean {
 
 /** Find an orchestrator agent. Pass projectPath to get the orchestrator OF
  *  THAT PROJECT. Without it, callers with no project context (Telegram,
- *  Slack) get the first orchestrator found, all projects considered. */
+ *  Slack) get the first orchestrator found, all projects considered. Never a
+ *  chat's runner, which Tars stores as a worker: should a record ever say
+ *  both, the bots still write to the project's own orchestrator. */
 export function getSuperAgent(agents: Map<string, AgentStatus>, projectPath?: string): AgentStatus | undefined {
-  const orchestrators = Array.from(agents.values()).filter(a => isSuperAgent(a));
+  const orchestrators = Array.from(agents.values()).filter(a => isSuperAgent(a) && a.kind !== 'chat');
   if (projectPath) {
     return orchestrators.find(a => a.projectPath === projectPath);
   }

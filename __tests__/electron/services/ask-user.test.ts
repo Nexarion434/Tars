@@ -40,6 +40,8 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  * 14. (the gate of #231) The expiry notice types the agent's own question back to it, as Tars's words.
  * 15. (JeanBrasse's answer 24 of 2026-10-05) The user's receipt is long, or says the answer went in while it waits, without
  *     saying for what.
+ * 16. (ORCHESTRATOR-PER-CHAT.md 4.2, PR D, written before the code on 2026-10-12) A chat's runner, a worker with
+ *     `kind: 'chat'` and the orchestrator's powers, is refused as a worker.
  */
 
 /** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
@@ -174,6 +176,15 @@ describe('asking', () => {
     const r = await q.askUser({ agentId: 'w1', question: 'May I?' }, T0);
     expect(r).toMatchObject({ ok: false, status: 403, error: expect.stringMatching(/orchestrator/) });
     expect(fake.sends).toEqual([]);
+  });
+
+  it("16. a chat's runner asks the user: it has the orchestrator's powers", async () => {
+    const runner = agent('r1', 'Tars-Orchestrator · Release 1.9.4', { role: 'worker', withCli: false });
+    runner.role = 'worker';
+    runner.kind = 'chat';
+    const r = await q.askUser({ agentId: 'r1', question: 'Ship 1.9.4 tonight?' }, T0);
+    expect(r).toMatchObject({ ok: true });
+    expect(questions()).toHaveLength(1);
   });
 
   it('12. with the relay off, nothing leaves, and the agent is told why', async () => {

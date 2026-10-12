@@ -16,6 +16,8 @@ import { startFakeRelay, type FakeRelay } from '../../../fixtures/fake-tars-rela
  * 3. A secret an orchestrator put in its text goes out in clear.
  * 4. The send goes under another project than its orchestrator's: the user's reply would reach someone else.
  * 5. With the relay on, a photo, a video or a document goes out: the relay carries text only.
+ * 6. (ORCHESTRATOR-PER-CHAT.md 4.2, PR D, written before the code on 2026-10-12) A chat's runner, a worker with
+ *    `kind: 'chat'` and the orchestrator's powers, is refused as a worker.
  */
 
 vi.mock('electron', () => ({
@@ -113,6 +115,16 @@ describe('send_telegram with the relay on', () => {
       expect(answer.status, String(caller)).toBe(403);
     }
     expect(fake.sends).toEqual([]);
+    expect(botSends).toBe(0);
+  });
+
+  it("6. is open to a chat's runner, under its project: it has the orchestrator's powers", async () => {
+    agents.set('runner', { id: 'runner', name: 'Tars-Orchestrator · Release 1.9.4', role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'orch', projectPath: TARS, status: 'running', provider: 'claude' } as unknown as AgentStatus);
+
+    const answer = await post('/api/telegram/send', { message: 'Release 1.9.4 is out' }, 'runner');
+
+    expect(answer.status ?? 200).toBe(200);
+    expect(fake.sends).toEqual([expect.objectContaining({ kind: 'report', project: 'tars', text: expect.stringContaining('Release 1.9.4 is out') })]);
     expect(botSends).toBe(0);
   });
 

@@ -12,7 +12,7 @@ import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { mcpNodeCommand } from '../../utils/mcp-node';
 import { API_PORT } from '../../constants';
-import { isSuperAgent } from '../../utils';
+import { hasOrchestratorPowers } from '../../core/agent-role';
 import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 import { agentTmpEnvOrNone } from '../agent-tmp';
@@ -213,9 +213,10 @@ export async function delegateOverAcp(opts: {
     permissionMode: agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : 'normal',
     // An orchestrator delegates; it does not edit. Enforced here by the
-    // protocol rather than by a flag only one CLI understands. The role, as
-    // every launch reads it (core/agent-role.ts).
-    denyTools: isSuperAgent(agent) ? ORCHESTRATOR_DENY : undefined,
+    // protocol rather than by a flag only one CLI understands. The
+    // orchestrator's powers, as every launch reads them: its project's
+    // orchestrator, or a chat's runner (core/agent-role.ts).
+    denyTools: hasOrchestratorPowers(agent) ? ORCHESTRATOR_DENY : undefined,
   });
 
   if (onEvent) {

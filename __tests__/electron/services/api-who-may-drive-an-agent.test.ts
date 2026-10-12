@@ -637,6 +637,10 @@ describe('an agent reporting to the agent that leads it', () => {
   // 1. a worker messaging the orchestrator that delegated to it becomes its requester;
   // 2. a worker messaging its project's orchestrator, with no link, does too;
   // 3. over-correction: a message to a peer, which is delegation, records no link.
+  // And for the chats' runners (ORCHESTRATOR-PER-CHAT.md 4.2, PR D), written
+  // before the code (2026-10-12):
+  // 4. a worker messaging a chat's runner, which has the orchestrator's powers
+  //    while stored as a worker, becomes its requester.
   function team() {
     const orchestrator = putAgent({ id: 'agent-alpha-lead', projectPath: ALPHA.projectPath });
     orchestrator.role = 'orchestrator';
@@ -679,6 +683,19 @@ describe('an agent reporting to the agent that leads it', () => {
 
     expect(status, JSON.stringify(body)).toBe(200);
     expect(peer.requestedBy).toMatchObject({ agentId: 'agent-alpha-worker', ptyId: peer.ptyId, taskRef: expect.stringMatching(/^t-/) });
+  });
+
+  it("4. answering a chat's runner of its project, with no link, makes none", async () => {
+    const { workerToken } = team();
+    const runner = putAgent({ id: 'agent-alpha-runner', projectPath: ALPHA.projectPath });
+    runner.role = 'worker';
+    runner.kind = 'chat';
+    liveTerminal(runner);
+
+    const { status, body } = await call('POST', `/api/agents/${runner.id}/message`, bearer(workerToken), { message: 'done, PR #360 is up' });
+
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(runner.requestedBy, 'the worker became the requester of the chat it reports to').toBeUndefined();
   });
 });
 

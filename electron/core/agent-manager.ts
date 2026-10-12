@@ -10,7 +10,7 @@ import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
-import { rolesOnLoad } from './agent-role';
+import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
 import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import { cliStoppedIn, spawnAgentPty } from './agent-pty';
@@ -288,10 +288,15 @@ export function handleStatusChangeNotification(
     previousAgentStatus.set(agent.id, newStatus);
 
     const agentName = currentAgent.name || `Agent ${currentAgent.id.slice(0, 6)}`;
+    // Its project's orchestrator and a chat's runner converse with the user,
+    // who reads their turns where they happen: no desktop notification for them.
+    const conversing = hasOrchestratorPowers(currentAgent);
+    // The reply sent back to Telegram is the project's orchestrator's alone,
+    // the one the bots write to: never a runner's.
     const isSuper = isSuperAgent(currentAgent);
 
     if (newStatus === 'waiting') {
-      if (!isSuper && appSettings.notifyOnWaiting) {
+      if (!conversing && appSettings.notifyOnWaiting) {
         sendNotification(
           `${agentName} needs your attention`,
           'The agent is waiting for your input.',
@@ -304,7 +309,7 @@ export function handleStatusChangeNotification(
         superAgentTelegramTask = false;
       }
     } else if (newStatus === 'completed' && appSettings.notifyOnComplete) {
-      if (!isSuper) {
+      if (!conversing) {
         sendNotification(
           `${agentName} completed`,
           currentAgent.currentTask ? `Finished: ${currentAgent.currentTask.slice(0, 50)}...` : 'Task completed successfully.',
@@ -329,7 +334,7 @@ export function handleStatusChangeNotification(
       });
     }
     if (newStatus === 'error' && appSettings.notifyOnError) {
-      if (!isSuper) {
+      if (!conversing) {
         sendNotification(
           `${agentName} encountered an error`,
           currentAgent.error || 'An error occurred while running.',
