@@ -6,6 +6,7 @@ import { SettingsRow } from './SettingsRow';
 import type { ClaudeInfo, AppSettings } from './types';
 import { PRIVACY_POLICY_URL } from './constants';
 import { PROVIDER_REGISTRY, computeProviderAvailability } from '@/lib/providers';
+import { errorReportsOffered } from '@/lib/error-reports';
 
 interface GeneralSectionProps {
   info: ClaudeInfo | null;
@@ -15,6 +16,9 @@ interface GeneralSectionProps {
 
 export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectionProps) => {
   const [installedProviders, setInstalledProviders] = useState<Record<string, boolean>>({ claude: true, codex: true, gemini: true });
+  // Not on a Windows build (lib/error-reports.ts): read after hydration, as the bridge is.
+  const [reportsOffered, setReportsOffered] = useState(true);
+  useEffect(() => setReportsOffered(errorReportsOffered()), []);
 
   useEffect(() => {
     Promise.all([
@@ -51,7 +55,7 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
 
       {/* Off unless turned on, including in a settings file older than the
           key: main sends nothing to Sentry while it reads anything but true. */}
-      <SettingsRow
+      {reportsOffered && <SettingsRow
         wrap
         label="Send error reports"
         description={
@@ -72,7 +76,7 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
             onChange={() => onSaveAppSettings({ errorReportsEnabled: appSettings.errorReportsEnabled !== true })}
           />
         }
-      />
+      />}
 
       <SettingsRow
         label="Start agents when Tars opens"
@@ -129,19 +133,22 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
         }
       />
 
-      {/* Settings · Preferences: the last row, off unless turned on. */}
-      <SettingsRow
-        label="New interface"
-        description="Turns on the new shell and chats per project, a preview: the sidebar lists your chats, and Agents, Usage, Settings and the other pages open from More as cards above the app."
-        wrap
-        control={
-          <Toggle
-            label="New interface"
-            enabled={appSettings.newInterface === true}
-            onChange={() => onSaveAppSettings({ newInterface: appSettings.newInterface !== true })}
-          />
-        }
-      />
+      {/* Settings · Preferences: the last row. Until 2.0.0 it shows only once the preview is on, which the
+          settings file does meanwhile, so that whoever turned it on can turn it off (JeanBrasse, 12/10). */}
+      {appSettings.newInterface === true && (
+        <SettingsRow
+          label="New interface"
+          description="Turns on the new shell and chats per project, a preview: the sidebar lists your chats, and Agents, Usage, Settings and the other pages open from More as cards above the app."
+          wrap
+          control={
+            <Toggle
+              label="New interface"
+              enabled
+              onChange={() => onSaveAppSettings({ newInterface: false })}
+            />
+          }
+        />
+      )}
     </SettingsCard>
   );
 };

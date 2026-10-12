@@ -11,6 +11,7 @@ import NewShell from '@/components/NewShell/NewShell';
 import { useNewInterface } from '@/hooks/useNewInterface';
 import { Splash } from '@/components/Splash';
 import { Button, BrandSpinner } from '@/components/ui';
+import { WindowsCaption } from '@/components/WindowsCaption';
 import { followErrorReportsSetting } from '@/lib/error-reports';
 
 function useIsMobile() {
@@ -260,6 +261,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
             z-[60] across every page header and swallowed the clicks on the
             actions that live there; the traffic lights only need this column. */}
         <div className="window-drag hidden lg:block fixed top-0 left-0 h-7 z-[60]" style={{ width: 'var(--sidebar-w)' }} />
+        <WindowsCaption />
 
         {/* Mobile Header */}
         <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-bg-secondary border-b border-border-primary z-40 flex items-center px-4">

@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 145 root frames.
-`design/chat-design.pen` holds 72 of those, the other seventy-three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 150 root frames.
+`design/chat-design.pen` holds 72 of those, the other seventy-eight being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -48,7 +48,9 @@ on one topic, all served by the same team, several at once. The current Chat sta
 it is, as the super orchestrator's space, and the chats are added beside it.
 
 **Built, behind Settings, Preferences, "New interface"** (off unless turned on; plan
-2.0.0, frontend brief of 12/10). Off, the app draws exactly as before. On:
+2.0.0, frontend brief of 12/10). Until 2.0.0 that row shows only once the preview is on,
+which `"newInterface": true` in `~/.dorothy/app-settings.json` does meanwhile, so that
+whoever turned it on can turn it off (JeanBrasse, 12/10). Off, the app draws exactly as before. On:
 
 | Surface | Frames |
 |---|---|
@@ -106,7 +108,7 @@ the Backend's v2.2.
 
 | Group | Sections |
 |---|---|
-| General | Preferences (with the New interface switch, last: Settings · Preferences and its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
+| General | Preferences (with the New interface switch last, shown only once it is on until 2.0.0: Settings · Preferences and its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
