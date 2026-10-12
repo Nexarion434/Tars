@@ -33,7 +33,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * made a real one; red on 2ee8c416 and 34c1a7e9): a request typed in during
  * another request's turn moved the worker's `workHandedAt`, so the turn in
  * hand no longer counted as handed work: its end told nobody, its link stayed,
- * and JeanBrasse's next turn was reported to the first asker as its result.
+ * and JeanBrasse's next turn was reported to the first asker as its result. The
+ * second asker is held to the same once (QA, 2026-10-12): a link kept after
+ * B's end reported JeanBrasse's turn to Bot, and only Lead's count was asserted.
  */
 
 type Agent = { id: string; cliRunning?: boolean };
@@ -302,6 +304,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
     recordValues({ steps, received: { w1: read('w1'), o1: read('o1'), b1: read('b1') } });
     expect(leadToldOfA, 'Lead is told when turn A ends').toBe(true);
     expect(told('o1'), 'Lead is told once, of A, and not of JeanBrasse\'s turn').toBe(1);
+    expect(told('b1'), 'Bot is told once, of B, and not of JeanBrasse\'s turn').toBe(1);
     expect((await worker()).queue, 'nothing left queued').toEqual([]);
   } finally {
     await app.close().catch(() => {});
