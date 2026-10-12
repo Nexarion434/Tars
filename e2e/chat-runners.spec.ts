@@ -29,9 +29,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 7. a worker's reply to "requester" reaches the chat that asked; one to the orchestrator's id reaches it (R5);
  * 8. chat B's runner cannot cancel chat C's queued task (not_your_task); Main's orchestrator cannot without a
  *    reason, and can with one, and chat C is told (R6);
- * 9. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
- * 10. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
- * 11. deleting chat B removes its runner and its worktree, its branch kept.
+ * 9. a chat whose runner was stopped goes on with its conversation, under a new id (--fork-session), not a new one;
+ * 10. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
+ * 11. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
+ * 12. deleting chat B removes its runner and its worktree, its branch kept.
  * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl and prompts.jsonl.
  */
 
@@ -43,9 +44,10 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const id = process.env.CLAUDE_AGENT_ID;
 const args = process.argv.slice(2);
-// As Claude Code: --resume <id> continues that session, in its own transcript.
+// As Claude Code: --resume <id> continues that session, in its own transcript; with --fork-session, under a new id.
 const resumed = args.indexOf('--resume');
-const sid = resumed === -1 ? crypto.randomUUID() : args[resumed + 1];
+const forked = args.includes('--fork-session');
+const sid = resumed === -1 || forked ? crypto.randomUUID() : args[resumed + 1];
 const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[/.]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
@@ -53,7 +55,7 @@ if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
 const record = (file, o) => fs.appendFileSync(path.join(process.env.HOME, file), JSON.stringify({ at: new Date().toISOString(), id, ...o }) + '\n');
 const dashes = args.indexOf('--');
 const launchPrompt = dashes === -1 ? '' : args.slice(dashes + 1).join(' ');
-record('launches.jsonl', { pid: process.pid, sid, resume: resumed === -1 ? null : args[resumed + 1], prompt: launchPrompt, argv: args, cwd: process.cwd() });
+record('launches.jsonl', { pid: process.pid, sid, resume: resumed === -1 ? null : args[resumed + 1], fork: forked, prompt: launchPrompt, argv: args, cwd: process.cwd() });
 const hook = (name, payload) => spawnSync('/bin/bash', [path.join(HOOKS, name)], {
   input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
 });
@@ -105,7 +107,7 @@ type Agent = {
 };
 type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null };
 type Answer = Record<string, unknown>;
-type Launch = { id: string; sid: string; resume: string | null; prompt: string; argv: string[]; cwd: string };
+type Launch = { id: string; sid: string; resume: string | null; fork: boolean; prompt: string; argv: string[]; cwd: string };
 
 const lines = <T>(file: string): T[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -229,7 +231,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(toA2).toMatchObject({ success: true, how: 'launched' });
     await expect.poll(async () => (await agentOf(runnerB.id))?.status, { timeout: 15_000 }).toBe('asleep');
     await expect.poll(() => launchesOf(runnerA.id).length, { timeout: 30_000 }).toBe(2);
-    expect(launchesOf(runnerA.id)[1].resume).toBe(launchA.sid);
+    expect(launchesOf(runnerA.id)[1]).toMatchObject({ resume: launchA.sid, fork: false, sid: launchA.sid });
     await expect.poll(() => promptsOf(runnerA.id), { timeout: 30_000 }).toContain('A>> second');
     await atRest(runnerA.id);
 
@@ -317,7 +319,23 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await page.waitForTimeout(1_500);
     expect(promptsOf('w1').some((p) => p.includes('QUEUED>> later'))).toBe(false);
 
-    // 9. R7: under the 2 GB floor, a first send makes no worktree, and says why.
+    // 9. Stopped, not asleep: the chat's next send still goes on with its conversation.
+    await atRest(runnerC.id);
+    await page.evaluate((id) => (window as unknown as { electronAPI: { agent: { stop(id: string): Promise<unknown> } } }).electronAPI.agent.stop(id), runnerC.id);
+    await expect.poll(async () => (await agentOf(runnerC.id))?.cliRunning ?? false, { timeout: 15_000 }).toBe(false);
+    const afterStop = await send(startedChat.id, 'C>> after a stop');
+    keep({ afterStop });
+    expect(afterStop).toMatchObject({ success: true, how: 'launched' });
+    await expect.poll(() => launchesOf(runnerC.id).length, { timeout: 30_000 }).toBe(2);
+    // The stopped session is a tombstone: continued under a new id, whose hooks count.
+    const [firstC, againC] = launchesOf(runnerC.id);
+    expect(againC).toMatchObject({ resume: firstC.sid, fork: true });
+    expect(againC.sid).not.toBe(firstC.sid);
+    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> after a stop')), { timeout: 30_000 }).toBe(true);
+    await atRest(runnerC.id);
+    expect((await agentOf(runnerC.id))?.currentSessionId).toBe(againC.sid);
+
+    // 10. R7: under the 2 GB floor, a first send makes no worktree, and says why.
     await app.evaluate((_e, { dist }) => { process.mainModule!.require(`${dist}/core/disk-space.js`).setFreeSpaceReader(() => 1024 ** 3); }, { dist });
     const chatE = await call('chat', 'create', { projectPath: project, title: 'Floor' }) as unknown as ChatRecord;
     const before = worktrees();
@@ -329,7 +347,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(worktrees()).toEqual(before);
     expect(await runnerOf(chatE.id)).toBeUndefined();
 
-    // 10. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
+    // 11. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
     const tool = (...args: string[]) => execFileSync(process.execPath, [WORKTREE_TOOL, ...args], { cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8' });
     const status = tool('status');
     const pruned = tool('prune', '--dry-run', '--no-github', '--older-than', '0');
@@ -340,7 +358,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
       expect(pruned.split('\n').find((l) => l.startsWith(`kept ${name}: `))).toContain(`it is the worktree of the Tars agent ${r.name}`);
     }
 
-    // 11. Deleting chat B: its runner and its worktree go, its branch stays.
+    // 12. Deleting chat B: its runner and its worktree go, its branch stays.
     const deleted = await call('chat', 'delete', { chatId: chatB.id });
     keep({ deleted, worktreesAtEnd: worktrees(), launches: lines(launchesFile) });
     expect(deleted).toMatchObject({ success: true });
