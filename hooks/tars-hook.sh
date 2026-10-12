@@ -47,3 +47,16 @@ fi
 tars_auth() {
   if [ "$TARS_TOKEN_OK" = yes ]; then printf "Authorization: Bearer %s" "$CLAUDE_MGR_API_TOKEN"; fi
 }
+
+# The token a hook's reads present (the bootstrap, the memory context, the
+# memory post), on the same rule as its posts: the terminal's token only once
+# the port proved it is this CLI's Tars. A CLI with a token whose port did not
+# prove it gets none, the shared one neither: a squatter would get that
+# instead (the Audit's Info on #355). A CLI Tars did not start has no token and
+# no instance to prove: it reads with the shared file, as before.
+TARS_READ_TOKEN=""
+if [ "$TARS_TOKEN_OK" = yes ]; then
+  TARS_READ_TOKEN="$CLAUDE_MGR_API_TOKEN"
+elif [ -z "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -f "$HOME/.dorothy/api-token" ]; then
+  TARS_READ_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
+fi
