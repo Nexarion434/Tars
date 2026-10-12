@@ -289,6 +289,8 @@ export interface ProjectMemory {
   lastModified: string;
   hasMemory: boolean;
   provider: string;    // 'claude' | 'codex' | 'gemini'
+  /** The memory folder an older Tars made under a name Claude never reads; its files were copied into `memoryDir` once, and kept. */
+  olderCopy?: string;
 }
 
 export interface ObsidianFile {
