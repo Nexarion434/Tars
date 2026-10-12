@@ -24,9 +24,26 @@ import { mergeNodeHooks, legacyShCommand, type HookTable } from './hook-command'
  * - Written through updateSharedJsonSync: a file that is not JSON is left
  *   as it is rather than replaced by the hooks alone.
  */
+/**
+ * The agent token let through Gemini's environment redaction (above): added
+ * to `security.environmentVariableRedaction.allowed`, the user's own entries
+ * and `enabled` kept. On every platform: Gemini redacts on macOS and Linux
+ * as on Windows. Returns whether it changed the settings.
+ */
+export function allowAgentToken(settings: { security?: Record<string, unknown>; [key: string]: unknown }): boolean {
+  const TOKEN_VAR = 'CLAUDE_MGR_API_TOKEN';
+  const security = (settings.security && typeof settings.security === 'object') ? settings.security : {};
+  const redaction = (security.environmentVariableRedaction && typeof security.environmentVariableRedaction === 'object')
+    ? security.environmentVariableRedaction as { allowed?: unknown; [key: string]: unknown }
+    : {};
+  const allowed = Array.isArray(redaction.allowed) ? redaction.allowed : [];
+  if (allowed.includes(TOKEN_VAR)) return false;
+  settings.security = { ...security, environmentVariableRedaction: { ...redaction, allowed: [...allowed, TOKEN_VAR] } };
+  return true;
+}
+
 export function configureGeminiNodeHooks(configDir: string, hooksDir: string): void {
   const settingsPath = path.join(configDir, 'settings.json');
-  const TOKEN_VAR = 'CLAUDE_MGR_API_TOKEN';
   const specs = [
     { type: 'AfterTool', file: 'post-tool-use.sh', matcher: '*' },
     { type: 'AfterAgent', file: 'on-stop.sh', matcher: undefined },
@@ -43,16 +60,7 @@ export function configureGeminiNodeHooks(configDir: string, hooksDir: string): v
     const settings: Settings = current ?? {};
     if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
     let updated = mergeNodeHooks(settings.hooks, specs, hooksDir, 10000);
-
-    const security = (settings.security && typeof settings.security === 'object') ? settings.security : {};
-    const redaction = (security.environmentVariableRedaction && typeof security.environmentVariableRedaction === 'object')
-      ? security.environmentVariableRedaction as { allowed?: unknown; [key: string]: unknown }
-      : {};
-    const allowed = Array.isArray(redaction.allowed) ? redaction.allowed : [];
-    if (!allowed.includes(TOKEN_VAR)) {
-      settings.security = { ...security, environmentVariableRedaction: { ...redaction, allowed: [...allowed, TOKEN_VAR] } };
-      updated = true;
-    }
+    if (allowAgentToken(settings)) updated = true;
     return updated ? settings : undefined;
   }, { createMode: 0o644 });
 

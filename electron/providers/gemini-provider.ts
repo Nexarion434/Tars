@@ -5,7 +5,7 @@ import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
 import { usesNodeHooks } from '../utils/hook-command';
-import { configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
+import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -239,6 +239,9 @@ export class GeminiProvider implements CLIProvider {
         updated = true;
       }
     }
+
+    // The agent token through Gemini's environment redaction, as on win32.
+    if (allowAgentToken(settings)) updated = true;
 
     if (updated) {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
