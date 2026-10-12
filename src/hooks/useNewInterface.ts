@@ -20,7 +20,7 @@ export function useNewInterface(): boolean {
     let alive = true;
     api?.get()
       .then(settings => {
-        if (alive) setOn((settings as { newInterface?: unknown } | null)?.newInterface === true);
+        if (alive) setOn(settings?.newInterface === true);
       })
       .catch(() => { /* no settings: the shell before */ });
 
