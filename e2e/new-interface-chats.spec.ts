@@ -122,6 +122,10 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     await expect(made.getByRole('link')).toHaveAttribute('aria-current', 'page');
     seen.created = onDisk().find(c => c.title === 'Release notes');
     expect(seen.created).toMatchObject({ number: 2, projectPath: tars, titleSource: 'user' });
+    // A row's actions button is a small control, 26 px (DESIGN.md), as its frame draws it.
+    const dots = await made.getByRole('button', { name: 'Actions for Release notes', exact: true }).boundingBox();
+    seen.actionsButton = dots && { width: Math.round(dots.width), height: Math.round(dots.height) };
+    expect(seen.actionsButton).toEqual({ width: 26, height: 26 });
     await stepShot(page, '03-created');
 
     // Rename, in place.
