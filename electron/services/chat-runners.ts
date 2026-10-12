@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
-import { dialogOpen, launchAgent, sessionStarted, SENDER_WAIT_MS } from '../core/agent-launch';
+import { dialogOpen, launchAgent, sessionStarted, setSlotGate, SENDER_WAIT_MS, type SlotGate } from '../core/agent-launch';
 import { fallAsleep } from '../core/agent-asleep';
 import { diskRefusal, freeSpace } from '../core/disk-space';
 import { restartForSettings } from '../core/agent-restart';
@@ -434,9 +434,30 @@ function onFleetChange(agentId: string): void {
   if (agent?.kind === 'chat' && (agent.status === 'idle' || agent.status === 'completed')) void sleepIfSettled(agentId, 0);
 }
 
+/**
+ * The slot a runner's start takes, whoever starts it: a wake by news, a
+ * restart, a worker's message to it (core/agent-launch.ts). A launch a send
+ * already let through (reserved) passes, as does a runner that runs, and an
+ * agent that runs no chat of its own (Main's orchestrator is never refused a
+ * start: a full limit puts a runner to sleep at its chat's next send).
+ */
+const slotGate: SlotGate = async (agentId) => {
+  const passes = { ok: true as const, release: () => undefined };
+  const agent = agents.get(agentId);
+  if (!store || !agent || agent.kind !== 'chat' || isLive(agent) || reserved.has(agentId)) return passes;
+  return withSlots(async () => {
+    if (isLive(agent) || reserved.has(agentId)) return passes;
+    const refused = await freeSlot(agentId);
+    if (refused) return { ok: false as const, error: refused.reason };
+    reserved.add(agentId);
+    return { ok: true as const, release: () => { reserved.delete(agentId); } };
+  });
+};
+
 /** Called once by handlers/chat-handlers.ts, with the store it made. */
 export function startChatRunners(chatStore: ChatStore): void {
   if (store) return;
   store = chatStore;
+  setSlotGate(slotGate);
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }
