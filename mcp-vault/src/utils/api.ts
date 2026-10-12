@@ -1,6 +1,6 @@
 import * as http from "http";
 import { send, TARS_WAIT_MS } from "../../../mcp-shared/src/http.js";
-import { API_URL, readApiToken } from "../../../mcp-shared/src/tars-api.js";
+import { API_URL, tokenToPresent } from "../../../mcp-shared/src/tars-api.js";
 
 // The Tars that spawned this agent, read as mcp-orchestrator and mcp-memory
 // read it. It was 127.0.0.1:31415 whatever the environment said, so the agents
@@ -16,7 +16,7 @@ export async function apiRequest(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const token = readApiToken();
+  const token = await tokenToPresent();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }

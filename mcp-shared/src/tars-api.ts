@@ -9,9 +9,11 @@
  */
 
 import * as fs from "fs";
+import * as http from "http";
 import * as path from "path";
 import * as os from "os";
-import { noAnswerWithin, TARS_WAIT_MS } from "./http.js";
+import { createHash, randomBytes } from "crypto";
+import { noAnswerWithin, send, TARS_WAIT_MS } from "./http.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
 const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
@@ -34,8 +36,49 @@ export function getCallerIdentity(): { agentId: string; projectPath: string } {
 // remains for the sessions that started before Tars minted any.
 export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
 
-export function readApiToken(): string | null {
-  if (AGENT_API_TOKEN) return AGENT_API_TOKEN;
+/** What the Tars that started this CLI proves it is with (tars-hook.sh): never sent. */
+const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
+/** How long the port has to prove it, as the hooks wait: a Tars whose main thread is held still answers. */
+export const PROOF_WAIT_MS = 5_000;
+let proven = false;
+
+/**
+ * Whether the port at API_URL is the Tars that started this CLI: a fresh
+ * challenge to /api/health, whose answer must be sha256("<id>:<challenge>"),
+ * as the hooks ask it (tars-hook.sh, the Audit's table #11). While Tars is
+ * down, or after a quit this CLI outlived, any process may hold the port, and
+ * got the agent's token with the next call. Asked again until it holds, then
+ * once for the life of this server.
+ */
+async function portIsThisCliTars(): Promise<boolean> {
+  if (proven) return true;
+  if (!INSTANCE_ID) return false;
+  const challenge = randomBytes(16).toString("hex");
+  const tars = new URL(API_URL);
+  try {
+    const { data } = await send(http, {
+      hostname: tars.hostname,
+      port: Number(tars.port) || 80,
+      path: `/api/health?challenge=${challenge}`,
+      method: "GET",
+      timeout: PROOF_WAIT_MS,
+    }, undefined, (err) => err);
+    const proof = (JSON.parse(data) as { proof?: unknown }).proof;
+    proven = proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex");
+  } catch {
+    return false;
+  }
+  return proven;
+}
+
+/**
+ * The token a call presents: this agent's own, once the port proved it is the
+ * Tars that started this CLI, and none when it did not (the shared file
+ * neither: a squatter would get that instead). A CLI Tars did not start has no
+ * token and no instance to prove: it presents the shared file, as before.
+ */
+export async function tokenToPresent(): Promise<string | null> {
+  if (AGENT_API_TOKEN) return (await portIsThisCliTars()) ? AGENT_API_TOKEN : null;
   try {
     if (fs.existsSync(API_TOKEN_FILE)) {
       return fs.readFileSync(API_TOKEN_FILE, "utf-8").trim();
@@ -57,7 +100,7 @@ export async function apiRequest(
     // when the caller turns out to have no identity to scope it by.
     "X-Tars-Client": "mcp",
   };
-  const token = readApiToken();
+  const token = await tokenToPresent();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
