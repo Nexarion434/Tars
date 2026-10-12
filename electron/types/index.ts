@@ -407,6 +407,9 @@ export interface AppSettings {
   /** Resume idle agents once, when the app launches. Not on navigation - that
    *  was the old behaviour and it spawned sessions on every visit home. */
   autoStartAgentsOnLaunch?: boolean;
+  /** The 2.0 interface (PLAN-2.0.0). Off unless chosen: a file written before
+   *  the switch existed reads false. */
+  newInterface: boolean;
   cliPaths: CLIPaths;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;

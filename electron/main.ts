@@ -222,6 +222,7 @@ function loadAppSettings(): AppSettings {
     chromeEnabled: false,
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
+    newInterface: false,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     ampEnabled: false,

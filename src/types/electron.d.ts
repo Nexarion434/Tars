@@ -1464,6 +1464,8 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -1541,6 +1543,8 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
