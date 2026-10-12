@@ -2,10 +2,9 @@ import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
-import { ptyProcesses } from '../core/pty-manager';
 import { agentStatusEmitter } from '../services/agent-events';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
-import { chatsWorking, renameRunner, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
+import { chatsWorking, isLive, renameRunner, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
 import { getProvider } from '../providers';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
@@ -64,7 +63,6 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     // A chat other than Main resumes its conversation at each launch: claude only, for now.
     resumable: getProvider(a.provider).binaryName === 'claude',
   }));
-  const isLive = (agent: AgentStatus): boolean => !!agent.ptyId && ptyProcesses.has(agent.ptyId);
   const view = (chat: Chat): ChatView => {
     const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
     return {
