@@ -125,9 +125,10 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
 
   ipcMain.handle('chat:list', () => {
     // A project whose orchestrator was set since the launch gets its Main now.
-    store.ensureMains(orchestrators());
-    const { seq, chats } = store.list();
-    return { seq, chats: chats.map(view), problem: store.problem() };
+    for (const made of store.ensureMains(orchestrators())) publishChatEvent({ type: 'meta', chatId: made.id, chat: view(made) });
+    const { chats } = store.list();
+    // The seq of chat:events (services/chat-history.ts): this list is a snapshot at it.
+    return { seq: chatSeq(), chats: chats.map(view), problem: store.problem() };
   });
   ipcMain.handle('chat:create', (_e, raw: unknown) => {
     const args = argsOf(raw);
