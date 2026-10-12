@@ -350,7 +350,6 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   } finally {
     for (const id of ['o1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();
-    fs.copyFileSync(launchesFile, test.info().outputPath('launches.jsonl'));
-    if (fs.existsSync(promptsFile)) fs.copyFileSync(promptsFile, test.info().outputPath('prompts.jsonl'));
+    for (const file of [launchesFile, promptsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
   }
 });
