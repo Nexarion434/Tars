@@ -24,7 +24,10 @@ import { moveTestHome } from '../setup/test-home';
  *  4. Gemini's probe looks for `gemini/<file>` in a backslash path and appends
  *     a copy of every hook at each start; those copies are kept.
  *  5. Gemini is wired on `UserPromptSubmit`, which it does not fire;
- *     `BeforeAgent` is its event.
+ *     `BeforeAgent` is its event. On every platform since 2026-10-12 (it was
+ *     win32's alone): on darwin and linux the turn's start never reached
+ *     Tars, and a Gemini agent read idle while it worked. The entry an older
+ *     Tars wrote there goes; the user's own entries in that event stay.
  *  6. The agent token cannot reach a Gemini hook once the user turns on
  *     environment redaction (`CLAUDE_MGR_API_TOKEN` matches /TOKEN/): it is
  *     not in `security.environmentVariableRedaction.allowed`; or adding it
@@ -134,7 +137,7 @@ const claudeSettingsFile = () => path.join(home, '.claude', 'settings.json');
 const geminiSettingsFile = () => path.join(home, '.gemini', 'settings.json');
 const read = (f: string) => JSON.parse(fs.readFileSync(f, 'utf-8'));
 
-describe('on darwin and linux nothing changes', () => {
+describe('on darwin and linux the .sh wiring stays, Gemini on the event it fires', () => {
   for (const platform of ['darwin', 'linux'] as const) {
     it(`Claude writes the bare .sh path, timeout 30, the same matchers (${platform})`, async () => {
       const p = await claude();
@@ -150,7 +153,7 @@ describe('on darwin and linux nothing changes', () => {
       );
     });
 
-    it(`Gemini writes the .sh paths, UserPromptSubmit, timeout 10000, the same file text (${platform})`, async () => {
+    it(`Gemini writes the .sh paths, BeforeAgent, timeout 10000, the same file text (${platform})`, async () => {
       const p = await gemini();
       await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
       const g = (f: string) => path.join(HOOKS_DIR, 'gemini', f);
@@ -161,10 +164,25 @@ describe('on darwin and linux nothing changes', () => {
           SessionStart: [{ hooks: [{ type: 'command', command: g('session-start.sh'), timeout: 10000 }], matcher: '*' }],
           SessionEnd: [{ hooks: [{ type: 'command', command: g('session-end.sh'), timeout: 10000 }], matcher: '*' }],
           Notification: [{ hooks: [{ type: 'command', command: g('notification.sh'), timeout: 10000 }], matcher: '*' }],
-          UserPromptSubmit: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }],
+          BeforeAgent: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }],
         },
       };
       expect(fs.readFileSync(geminiSettingsFile(), 'utf-8')).toBe(JSON.stringify(expected, null, 2));
+    });
+
+    it(`5. Gemini moves an older Tars's UserPromptSubmit entry to BeforeAgent, and keeps the user's own (${platform})`, async () => {
+      const g = (f: string) => path.join(HOOKS_DIR, 'gemini', f);
+      const mine = { hooks: [{ type: 'command', command: '/Users/me/bin/log-prompt.sh', timeout: 5000 }] };
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({ hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }, mine],
+      } }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      const hooks = read(geminiSettingsFile()).hooks;
+      expect(hooks.UserPromptSubmit).toEqual([mine]);
+      expect(hooks.BeforeAgent).toEqual([{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }]);
     });
   }
 });
