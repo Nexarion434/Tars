@@ -20,8 +20,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The person opens the chats: Main's page shows each line as what it is.
  * Lead starts and works: the line at the end says so, and the line its
  * transcript gained arrives in the thread. Lead asks to run a command: the ask
- * sits above the composer; allow answers it. The send stays dimmed with its
- * reason, and the panel says when what the chat delegates shows there.
+ * sits above the composer; allow answers it. The composer is the Chat's with
+ * nobody to receive yet: send dimmed, its strip saying why and opening Tars,
+ * all projects. The panel says when what the chat delegates shows there.
  *
  * The artefact: a screenshot per state, values.json, and the stand-in's
  * answers beside them.
@@ -128,10 +129,12 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     seen.speakers = await thread.locator('[data-chat-speaker]').allInnerTexts();
     await stepShot(page, '01-history');
 
-    // The send waits for the next part, and says where to talk meanwhile; the panel says when it fills.
-    const send = main.getByRole('button', { name: 'Send', exact: true });
-    await expect(send).toBeDisabled();
-    await expect(main.getByText('Sending from a chat comes with the next part of this preview')).toBeVisible();
+    // The send waits for the next part, its strip opens Tars, all projects meanwhile; the panel says when it fills.
+    const composer = main.getByRole('group', { name: 'Message composer' });
+    await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+    await expect(composer.getByRole('textbox', { name: 'Message' })).toBeDisabled();
+    await expect(composer.getByText('Sending from a chat comes with the next part of this preview.')).toBeVisible();
+    await expect(composer.getByRole('link', { name: 'Open Tars, all projects', exact: true })).toHaveAttribute('href', '/chat');
     await expect(main.getByText('What this chat delegates shows here once each chat has its own runner')).toBeVisible();
 
     // Lead starts, registers its session, then works: the line at the end, and the line its transcript gains.
