@@ -433,7 +433,7 @@ A project has one orchestrator at most, and only the Agents page makes or unmake
 
 The permission mode is the agent's own on every launch, orchestrator or not. `agent:start` used to put every orchestrator in bypass whatever it was set to, so a permission mode changed in the Agents page never reached one, restart or not, and a worker switched to orchestrator was quietly given bypass. One unattended launch still asks for bypass: a Telegram message that has to start the super agent.
 
-The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`.
+The contract: `role` on `agent:create` and `agent:update`, where anything but the two values is refused; `POST /api/agents` takes `worker` and refuses `orchestrator` with a `403`. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
 
 ### Chats: `services/chats.ts`, `handlers/chat-handlers.ts`
 
@@ -465,7 +465,7 @@ A chat is one conversation with a project's orchestrator on one topic (ORCHESTRA
 - **The limit:** `system:chatLimit` gives how many chats may have a live CLI at once, across every project, Main counted.
   - The rule: one per 5 GB of RAM (`os.totalmem()`, a GB being 2^30 bytes), from 1 to 8. 8 GB: 1, 16 GB: 3, 24 GB: 4, 32 GB: 6, 64 GB and more: 8.
   - With it: `ramGb`; `source`, which is `ram`, or `override` for the E2E's `TARS_CHAT_RAM_GB` (read only when `DOROTHY_E2E=1`); and `working`, the chats whose runner holds a terminal now.
-  - Nothing enforces it yet. `orchestratorMode`, the toggle's old field, is read as the same toggle when `role` is absent, and kept equal to `role` on every record, for the renderer until it reads `role`. `agents.json` is at version 3 since: a file below it is migrated once on load, `role` = toggle on, or the role stored from the name, or the name itself on a record older than the role field, so no orchestrator of that day changes. After that the name is never read. A team template member saved without a role gets the same migration.
+  - Nothing enforces it yet.
 
 ### Cross-project scoping
 
