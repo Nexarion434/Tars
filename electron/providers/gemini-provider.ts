@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
-import { usesNodeHooks } from '../utils/hook-command';
+import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
 import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
   CLIProvider,
@@ -201,11 +201,13 @@ export class GeminiProvider implements CLIProvider {
     type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
 
     // The entry an older Tars wrote on UserPromptSubmit goes; the user's own
-    // entries in that event stay.
+    // entries in that event stay, and so do another app's of the same name
+    // (isTarsHooksFile decides, as on win32).
     const former = settings.hooks.UserPromptSubmit;
     if (Array.isArray(former)) {
+      const isOlderTars = legacyShCommand('gemini/user-prompt-submit.sh', this.configDir, hooksDir);
       const kept = former
-        .map((entry: HookEntry) => ({ ...entry, hooks: (entry.hooks ?? []).filter((hh) => !hh.command?.includes('gemini/user-prompt-submit.sh')) }))
+        .map((entry: HookEntry) => ({ ...entry, hooks: (entry.hooks ?? []).filter((hh) => !(typeof hh.command === 'string' && isOlderTars(hh.command))) }))
         .filter((entry: HookEntry) => entry.hooks.length > 0);
       if (kept.length !== former.length || kept.some((entry: HookEntry, i: number) => entry.hooks.length !== former[i].hooks?.length)) {
         if (kept.length) settings.hooks.UserPromptSubmit = kept;
