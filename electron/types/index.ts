@@ -34,7 +34,10 @@ export type AgentProvider =
  * - auto: agent runs fully autonomously (--dangerously-skip-permissions)
  * - bypass: same as auto, explicit intent to bypass all checks
  */
-export type AgentPermissionMode = 'normal' | 'auto' | 'bypass';
+/** `plan`: the narrowest, where Claude Code plans and edits nothing (PR B, the ceiling for delegated
+ *  runs, core/permission-ceiling.ts). Set by the API and agents.json for now; the window's selector
+ *  offers the other three. The other CLIs read it as `normal`, the narrowest they have. */
+export type AgentPermissionMode = 'plan' | 'normal' | 'auto' | 'bypass';
 
 /** Effort level for agent reasoning:
  * - low: fast, minimal thinking
@@ -407,7 +410,20 @@ export interface AppSettings {
   /** Resume idle agents once, when the app launches. Not on navigation - that
    *  was the old behaviour and it spawned sessions on every visit home. */
   autoStartAgentsOnLaunch?: boolean;
+  /** The 2.0 interface (PLAN-2.0.0). Off unless chosen: a file written before
+   *  the switch existed reads false. */
+  newInterface: boolean;
   cliPaths: CLIPaths;
+  /**
+   * The shell a terminal runs on Windows: a path (Git Bash is
+   * `C:\Program Files\Git\bin\bash.exe`; a bare `bash` finds WSL's first), or a
+   * name on the PATH such as `pwsh`. Unset: pwsh.exe, else Windows PowerShell,
+   * else cmd.exe. Read on Windows only, where Settings > Terminal sets it (the
+   * Shell row: a shell it found, or a path typed in).
+   */
+  terminalShell?: string;
+  /** Windows: the first close has explained that Tars keeps running in the tray. */
+  closeToTrayExplained?: boolean;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   ampEnabled?: boolean;

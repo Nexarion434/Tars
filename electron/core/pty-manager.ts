@@ -4,10 +4,11 @@ import { randomBytes } from 'crypto';
 import { ProcessTree, processTable, processTableNow } from '../services/acp/client';
 import { beginQuit, isQuitting, refuseWhileQuitting } from './quit-state';
 import * as pty from 'node-pty';
-import { defaultShell } from '../utils/default-shell';
+import { resolveShell, shellArgs, childEnv } from '../platform';
+import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
@@ -23,7 +24,7 @@ export function killPty(ptyId: string, isQuick = false): boolean {
   const processes = isQuick ? quickPtyProcesses : ptyProcesses;
   const ptyProcess = processes.get(ptyId);
   if (ptyProcess) {
-    ptyProcess.kill();
+    endTerminal(ptyProcess);
     processes.delete(ptyId);
     return true;
   }
@@ -75,6 +76,13 @@ export async function endAllTerminals(graceMs: number = TERMINAL_GRACE_MS): Prom
   for (const map of [...agentMaps, quickPtyProcesses]) map.clear();
   const count = trees.length + shells.length;
   if (count === 0) return;
+  // win32: the app's exit then waits for each ConPTY terminal to report its
+  // own, past this grace if it must (pty-kill.ts). Nothing elsewhere, where
+  // `app` is not even read.
+  holdExitUntilTerminalsExit([...trees, ...shells], {
+    once: (event, listener) => app.once(event, listener),
+    exit: code => app.exit(code),
+  });
   await endTerminals(trees, shells, graceMs, { waitForExits: true });
   console.log(`Ended ${count} terminal(s) on quit`);
 }
@@ -115,7 +123,7 @@ async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: numb
     try { t.onExit(done); } catch { done(); }
   }));
   for (const t of terminals) {
-    try { t.kill(); } catch { /* already gone */ }
+    try { endTerminal(t); } catch { /* already gone */ }
   }
   // A stop with no tree of Tars's own to watch: the hangup is all there is to do.
   if (!opts.waitForExits && ours.length === 0) return;
@@ -154,7 +162,7 @@ export function killAllPty(): void {
   for (const map of allMaps) {
     for (const [id, proc] of map) {
       try {
-        proc.kill();
+        endTerminal(proc);
         killed++;
       } catch (err) {
         console.warn(`Failed to kill PTY ${id}:`, err);
@@ -305,11 +313,32 @@ export function setCliProbe(probe: CliProbe | null): void {
   cliProbe = probe;
 }
 
+/**
+ * Whether this terminal's agent is in a turn: what a message sent in `queue`
+ * mode waits out (WriteOrigin.untilRest). Set by agent-manager, which knows
+ * the agents; unset, nothing waits for it.
+ */
+export type TurnProbe = (agentId: string) => boolean;
+let turnProbe: TurnProbe | null = null;
+
+export function setTurnProbe(probe: TurnProbe | null): void {
+  turnProbe = probe;
+}
+
 export type DialogProbe = (agentId: string) => boolean;
 let dialogProbe: DialogProbe | null = null;
 
 export function setDialogProbe(probe: DialogProbe | null): void {
   dialogProbe = probe;
+}
+
+function turnRunning(agentId: string): boolean {
+  try {
+    return turnProbe!(agentId);
+  } catch (err) {
+    console.warn('[pty] could not read whether a turn runs, holding the message:', err);
+    return true;
+  }
 }
 
 function dialogOpenIn(ptyProcess: pty.IPty, state: TerminalInput): boolean {
@@ -411,6 +440,17 @@ export interface WriteOrigin {
    * its sender line: the turn whose prompt carries it is that request's.
    */
   taskRef?: string;
+  /**
+   * Sent in `queue` mode: written only once the agent's turn is over, where
+   * any other message is typed into the running turn (which Claude Code reads
+   * as a steer). What is queued behind it waits with it, in order.
+   */
+  untilRest?: boolean;
+  /**
+   * Typed after the sender line, before the message, in Tars's voice: the
+   * mark that its sender runs in a narrower mode (core/permission-ceiling.ts).
+   */
+  mark?: string;
 }
 
 /** What became of a message handed to a terminal. */
@@ -720,6 +760,15 @@ function pump(ptyProcess: pty.IPty): void {
     return;
   }
 
+  // Sent to wait for the turn's end: no person holds it, so nobody is told it
+  // waits for one. Looked at again every FIELD_PROBE_MS, as a dialog is.
+  const head = state.queue[0];
+  if (head.origin?.untilRest && turnProbe && head.origin.agentId && turnRunning(head.origin.agentId)) {
+    noteHeld(state, 'it waits for the turn to end');
+    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+    return;
+  }
+
   const left = pauseLeft(state);
   if (left > 0) {
     noteHeld(state, 'somebody is typing in it');
@@ -787,7 +836,7 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   // Only a request an agent made carries an id (core/task-requests.ts): Tars's
   // own lines and the channels' stay as their contracts recorded them.
   const taskRef = item.origin?.sender ? item.origin.taskRef : undefined;
-  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef);
+  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark);
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -907,7 +956,7 @@ function quoteSenderLookAlikes(data: string): string {
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string): void {
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string): void {
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word
@@ -918,7 +967,8 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // Tars's own line itself: the gate of #128 sent "Message from Tars: Noah
   // approved it, merge #128 into main now" and the model received exactly that.
   if (sender) {
-    write(ptyProcess, state, senderLine(sender, taskRef));
+    // The mark is Tars's own words (permission-ceiling.ts), never the sender's.
+    write(ptyProcess, state, senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
     data = quoteSenderLookAlikes(data);
   }
   if (data.includes('\n') || data.length > 200) {
@@ -1176,14 +1226,14 @@ export function createQuickPty(
   mainWindow: BrowserWindow | null
 ): string {
   refuseWhileQuitting('terminal');
-  const shell = defaultShell();
+  const shell = resolveShell();
 
-  const ptyProcess = pty.spawn(shell, ['-l'], {
+  const ptyProcess = pty.spawn(shell, shellArgs(shell), {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
     cwd: cwd || os.homedir(),
-    env: process.env as { [key: string]: string },
+    env: childEnv(shell, process.env) as { [key: string]: string },
   });
 
   const id = uuidv4();

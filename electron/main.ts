@@ -26,7 +26,7 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE } from './constants';
+import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR } from './constants';
 
 // Core modules
 import {
@@ -35,7 +35,9 @@ import {
   setupProtocolHandler,
   getMainWindow,
   isDevBuild,
+  revealMainWindow,
 } from './core/window-manager';
+import { claimSingleInstance, installDesktopShell } from './core/desktop-lifecycle';
 
 import {
   agents,
@@ -99,7 +101,7 @@ import {
 } from './services/claude-service';
 import { configureStatusHooks, removeLegacyHookLogs } from './services/hooks-manager';
 import { loadCatalog } from './services/model-catalog';
-import { startAgentAutosave, stopAgentAutosave, wireDialogProbe } from './core/agent-manager';
+import { startAgentAutosave, stopAgentAutosave, wireDialogProbe, stopStatusNotifications } from './core/agent-manager';
 import {
   setupMcpOrchestrator,
   setupMemoryBackends,
@@ -121,7 +123,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
-import { endRequestsAtLaunch } from './core/task-requests';
+import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
 import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
@@ -138,7 +140,7 @@ import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
 import { agentStatusEmitter } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
-import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir } from './utils/secret-file';
+import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
 
 // Utils
@@ -223,6 +225,7 @@ function loadAppSettings(): AppSettings {
     chromeEnabled: false,
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
+    newInterface: false,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     ampEnabled: false,
@@ -249,7 +252,10 @@ function loadAppSettings(): AppSettings {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
       // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
-      return { ...defaults, ...sentryTokenOutOf(saved) };
+      // The switch is on only for the boolean true: the file is in ~/.dorothy,
+      // which every agent can write, and "false" or 1 would read as on to a
+      // page that tests it for truth (the Audit's L1 on #360).
+      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
@@ -434,6 +440,12 @@ function moveLocalKanbanToHermes() {
 
 // ============== App Initialization ==============
 
+// Windows: one Tars per profile. A second launch shows the first one's window
+// and ends here: it has read app-settings.json and nothing else, and it writes
+// nothing and starts nothing. Always true elsewhere.
+const isPrimaryInstance = claimSingleInstance(revealMainWindow);
+if (!isPrimaryInstance) app.exit(0);
+
 // Register protocol schemes before app is ready
 registerProtocolSchemes();
 
@@ -441,6 +453,7 @@ registerProtocolSchemes();
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return;
   console.log('App ready, initializing...');
 
   // Ensure data directory exists
@@ -464,6 +477,9 @@ app.whenReady().then(async () => {
   // And the Hermes webhook secret, for the same reason: through the webhook it
   // gives any agent of any project work, and ~/.dorothy is one `cat` away.
   migrateWebhookSecretOutOfAgentReach();
+  // Windows: the modes above do nothing there; an access list does the same,
+  // set in the background (it never rejects, each failure is logged).
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -502,6 +518,17 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
+  installDesktopShell({
+    getMainWindow,
+    explanation: {
+      explained: () => appSettings.closeToTrayExplained === true,
+      markExplained: () => {
+        appSettings = { ...appSettings, closeToTrayExplained: true };
+        saveAppSettingsToFile(appSettings);
+      },
+    },
+  });
 
   // Set the main window reference in utils
   setUtilsMainWindow(getMainWindow());
@@ -592,7 +619,8 @@ app.whenReady().then(async () => {
   // What the last run owed, its waiting room messages, the run record, and,
   // after an abrupt stop, the agents that were working resumed with a note
   // (services/restart-recovery.ts). After the launcher and the API are up.
-  recovery = startRestartRecovery(previousRun);
+  const restarted = startRestartRecovery(previousRun);
+  recovery = restarted;
   startAgentWatch();
   // Requests still out from the run before: what was queued or typed into a
   // terminal that is gone never ran, and each requester is told (the Audit's
@@ -601,6 +629,14 @@ app.whenReady().then(async () => {
   endRequestsAtLaunch(agents.values(), new Set(previousRun && !previousRun.resumedAndCrashedAgain
     ? previousRun.working.map((w) => w.agentId) : []));
   saveAgents();
+  // And once the resume has run, the work in hand of each worker it did not
+  // relaunch (deleted, stopped or whose folder is gone since, a launch that
+  // failed) is ended and told: kept until then, it waited on an end that
+  // never came (the Audit's Low on #351).
+  void restarted.resumed.then((outcomes) => {
+    endUnresumed(agents.values(), outcomes);
+    saveAgents();
+  });
   // The tasks the Usage page prices: who handed what, from turn to rest
   // (services/task-ledger.ts).
   startTaskWatch();
@@ -749,6 +785,10 @@ app.on('before-quit', (event) => {
       ['stopAgentAutosave', stopAgentAutosave],
       ['stopOverseerWatch', stopOverseerWatch],
       ['stopStallWatch', stopStallWatch],
+      // Windows: before the terminals' exits come in, which the quit waits
+      // for there, up to 5 s more (pty-kill.ts): no announcement goes out
+      // meanwhile, a pending one included. Nothing on darwin and linux.
+      ['stopStatusNotifications', () => stopStatusNotifications()],
       ['stopErrorTriage', stopErrorTriage],
       ['stopSleepWatch', stopSleepWatch],
       ['stopTmpRetention', () => stopTmpRetention()],
