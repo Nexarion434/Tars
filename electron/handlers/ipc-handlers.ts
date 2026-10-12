@@ -55,7 +55,7 @@ import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
-import { assignRole, requestedRole } from '../core/agent-role';
+import { assignRole, hasOrchestratorPowers, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
@@ -737,8 +737,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
 
-    // Its project's orchestrator: the toggle, never the name.
-    const isSuperAgentCheck = isSuperAgent(agent);
+    // The orchestrator's powers: its project's orchestrator (the toggle, never
+    // the name) or a chat's runner (core/agent-role.ts).
+    const isSuperAgentCheck = hasOrchestratorPowers(agent);
 
     // Resolve MCP config path: pass for ALL agents using flag strategy (Claude)
     let mcpConfigPath: string | undefined;

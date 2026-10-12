@@ -20,7 +20,7 @@ import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
-import { getSuperAgentInstructionsPath, isSuperAgent } from '../../utils';
+import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
@@ -34,7 +34,7 @@ import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
-import { assignRole, requestedRole } from '../../core/agent-role';
+import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 
@@ -150,8 +150,9 @@ async function spawnAgentSession(
 
   const usePrintMode = opts.printMode;
 
-  // Its project's orchestrator: the toggle, never the name (core/agent-role.ts).
-  const isSuperAgentApi = isSuperAgent(agent);
+  // The orchestrator's powers: its project's orchestrator (the toggle, never
+  // the name) or a chat's runner (core/agent-role.ts).
+  const isSuperAgentApi = hasOrchestratorPowers(agent);
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
@@ -602,13 +603,14 @@ function requestFor(agent: AgentStatus, req: RouteRequest): string | undefined {
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
   // A worker writing to the agent that leads it (the orchestrator that handed
-  // it the work, or its project's orchestrator) is reporting, not delegating:
-  // as a link, the orchestrator's next outcome was typed into the worker's
-  // terminal as news of work it had never handed over. The orchestrator's own
-  // link, if it has one, stays as it is.
+  // it the work, or one of its project's with the orchestrator's powers: the
+  // orchestrator, a chat's runner) is reporting, not delegating: as a link,
+  // the orchestrator's next outcome was typed into the worker's terminal as
+  // news of work it had never handed over. The orchestrator's own link, if it
+  // has one, stays as it is.
   const caller = agentId ? agents.get(agentId) : undefined;
   if (caller && (caller.requestedBy?.agentId === agent.id
-      || (agent.role === 'orchestrator' && agent.projectPath === caller.projectPath))) return undefined;
+      || (hasOrchestratorPowers(agent) && agent.projectPath === caller.projectPath))) return undefined;
   if (!agentId) return undefined;
   const ref = enqueueRequest(agent, agentId);
   saveAgents();
@@ -1052,10 +1054,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    const isOrchestrator = isSuperAgent(agent);
+    // The orchestration rules go with the orchestrator's powers (core/agent-role.ts).
+    const isOrchestrator = hasOrchestratorPowers(agent);
 
+    // A chat's runner is a conversation with the orchestrator, not a teammate
+    // (ORCHESTRATOR-PER-CHAT.md, 4.2): left out of every team listed here.
     const teammates = Array.from(agents.values())
-      .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
+      .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id && a.kind !== 'chat')
       .map(a => `- "${a.name || a.id}" (id: ${a.id}): ${a.role || 'worker'}, status: ${a.status}` +
                 (a.branchName ? `, branch: ${a.branchName}` : '') +
                 (a.skills?.length ? `, skills: ${a.skills.join(', ')}` : ''));

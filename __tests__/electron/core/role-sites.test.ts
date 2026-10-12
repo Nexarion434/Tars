@@ -286,7 +286,7 @@ describe('the sites that read the role (ORCHESTRATOR-PER-CHAT.md 4.2)', () => {
         return [`${where(o)}: a powers site (${site.why}) reads ${read}, where it reads hasOrchestratorPowers alone`];
       }
       if ((site.is === 'identity' || site.is === 'team-list') && o.reads.some(r => r.predicate === 'hasOrchestratorPowers')) {
-        return [`${where(o)}: a ${site.is} site (${site.why}) reads ${read}: a chat's runner is not its project's orchestrator`];
+        return [`${where(o)}: ${site.is === 'identity' ? 'an' : 'a'} ${site.is} site (${site.why}) reads ${read}: a chat's runner is not its project's orchestrator`];
       }
       return [];
     });
