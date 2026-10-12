@@ -110,7 +110,7 @@ test("a CLI run inside an agent's terminal does not take the agent's session", a
     await expect.poll(async () => (await worker()).currentSessionId ?? null, { timeout: 60_000 }).toBe(own);
     values.before = { own, agent: await worker() };
 
-    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'w', input: 'NEST' }));
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'w', input: 'NEST\r' }));
     await expect.poll(() => events().some((e) => e.event === 'nested-done'), { timeout: 90_000 }).toBe(true);
     const nestedSid = events().find((e) => e.nested && e.event === 'started')?.sid as string | undefined;
     expect(nestedSid, 'the nested CLI started a session of its own').toBeTruthy();
