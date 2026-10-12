@@ -9,8 +9,8 @@ import { mergeNodeHooks, legacyShCommand, type HookTable } from './hook-command'
  *
  * - `BeforeAgent`, where the .sh wiring says `UserPromptSubmit`, which Gemini
  *   CLI does not fire (https://geminicli.com/docs/hooks/). The old entry is
- *   removed. On darwin and linux the .sh wiring, and its `UserPromptSubmit`,
- *   stay as they are: both fixes here are win32's only.
+ *   removed. The .sh wiring on darwin and linux does the same
+ *   (GeminiProvider.configureHooks).
  * - The token. Gemini runs a hook with `sanitizeEnvironment(process.env)`
  *   (packages/core/src/hooks/hookRunner.ts). Redaction is off by default, but
  *   once a user turns on `security.environmentVariableRedaction.enabled`,
@@ -20,28 +20,11 @@ import { mergeNodeHooks, legacyShCommand, type HookTable } from './hook-command'
  *   reads, google-gemini/gemini-cli#29007, the docs' flat
  *   `security.allowedEnvironmentVariables` does not exist). Without it every
  *   hook post is refused (403). A per-hook `env` cannot carry it: this file
- *   is shared by every agent and the token is per terminal.
+ *   is shared by every agent and the token is per terminal. allowAgentToken,
+ *   below, which the .sh wiring calls too: Gemini redacts on every platform.
  * - Written through updateSharedJsonSync: a file that is not JSON is left
  *   as it is rather than replaced by the hooks alone.
  */
-/**
- * The agent token let through Gemini's environment redaction (above): added
- * to `security.environmentVariableRedaction.allowed`, the user's own entries
- * and `enabled` kept. On every platform: Gemini redacts on macOS and Linux
- * as on Windows. Returns whether it changed the settings.
- */
-export function allowAgentToken(settings: { security?: Record<string, unknown>; [key: string]: unknown }): boolean {
-  const TOKEN_VAR = 'CLAUDE_MGR_API_TOKEN';
-  const security = (settings.security && typeof settings.security === 'object') ? settings.security : {};
-  const redaction = (security.environmentVariableRedaction && typeof security.environmentVariableRedaction === 'object')
-    ? security.environmentVariableRedaction as { allowed?: unknown; [key: string]: unknown }
-    : {};
-  const allowed = Array.isArray(redaction.allowed) ? redaction.allowed : [];
-  if (allowed.includes(TOKEN_VAR)) return false;
-  settings.security = { ...security, environmentVariableRedaction: { ...redaction, allowed: [...allowed, TOKEN_VAR] } };
-  return true;
-}
-
 export function configureGeminiNodeHooks(configDir: string, hooksDir: string): void {
   const settingsPath = path.join(configDir, 'settings.json');
   const specs = [
@@ -68,4 +51,22 @@ export function configureGeminiNodeHooks(configDir: string, hooksDir: string): v
   else if (outcome === 'unchanged') console.log('Gemini hooks already configured');
   else if (outcome === 'unreadable') console.warn(`Gemini hooks not configured: ${settingsPath} is not valid JSON, left untouched`);
   else console.warn(`Gemini hooks not configured: ${settingsPath} kept changing`);
+}
+
+/**
+ * The agent token let through Gemini's environment redaction (see above):
+ * added to `security.environmentVariableRedaction.allowed`, the user's own
+ * entries and `enabled` kept. On every platform: Gemini redacts on macOS and Linux
+ * as on Windows. Returns whether it changed the settings.
+ */
+export function allowAgentToken(settings: { security?: Record<string, unknown>; [key: string]: unknown }): boolean {
+  const TOKEN_VAR = 'CLAUDE_MGR_API_TOKEN';
+  const security = (settings.security && typeof settings.security === 'object') ? settings.security : {};
+  const redaction = (security.environmentVariableRedaction && typeof security.environmentVariableRedaction === 'object')
+    ? security.environmentVariableRedaction as { allowed?: unknown; [key: string]: unknown }
+    : {};
+  const allowed = Array.isArray(redaction.allowed) ? redaction.allowed : [];
+  if (allowed.includes(TOKEN_VAR)) return false;
+  settings.security = { ...security, environmentVariableRedaction: { ...redaction, allowed: [...allowed, TOKEN_VAR] } };
+  return true;
 }
