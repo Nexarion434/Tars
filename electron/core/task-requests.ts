@@ -67,9 +67,32 @@ export function newTaskRef(): string {
   return `t-${randomBytes(4).toString('hex')}`;
 }
 
+/**
+ * Each request's first line, by its id, for the note that says which task
+ * ended (the Audit's Low after 1.9.5). In memory only: a request is saved with
+ * its worker in agents.json, which every agent is handed. Lost at a restart,
+ * when the note then names the id alone.
+ */
+const titles = new Map<string, string>();
+const TITLE_MAX = 80;
+const TITLES_KEPT = 2_000;
+
+/** The first line of what a request asked, cut to 80 characters; undefined when unknown. */
+export function requestTitle(ref: string): string | undefined {
+  return titles.get(ref);
+}
+
+function keepTitle(ref: string, text: string | undefined): void {
+  const line = (text ?? '').trim().split(/\r?\n|\r/)[0]?.trim() ?? '';
+  if (!line) return;
+  titles.set(ref, Array.from(line).slice(0, TITLE_MAX).join(''));
+  if (titles.size > TITLES_KEPT) titles.delete(titles.keys().next().value!);
+}
+
 /** Queued on the worker when it is sent. Returns its id, for the sender line. */
-export function enqueueRequest(worker: RequestWorker, requesterAgentId: string, opts: { newSession?: boolean; ref?: string } = {}): string {
+export function enqueueRequest(worker: RequestWorker, requesterAgentId: string, opts: { newSession?: boolean; ref?: string; title?: string } = {}): string {
   const ref = opts.ref ?? newTaskRef();
+  keepTitle(ref, opts.title);
   worker.taskQueue = [...(worker.taskQueue ?? []), {
     ref, requesterAgentId, queuedAt: new Date().toISOString(), state: 'queued', ...(opts.newSession ? { newSession: true } : {}),
   }];
@@ -153,6 +176,32 @@ export function takeAllRequests(worker: RequestWorker): TaskRequest[] {
  */
 export function endRequestsAtLaunch(workers: Iterable<RequestWorker>, resumed: ReadonlySet<string>): void {
   for (const worker of workers) endWorkerRequests(worker, 'restart', { withLinked: !resumed.has(worker.id) });
+}
+
+/**
+ * Whether a send may interrupt this worker (steer) or restart it: not while
+ * the work in hand was asked by somebody else, whose work it would cut. The
+ * work's own asker, Tars (no caller), and a worker with no work in hand may.
+ * PR D adds the chat: across chats, never.
+ */
+export function mayInterrupt(worker: RequestWorker, callerId: string | undefined): boolean {
+  const holder = worker.requestedBy?.agentId;
+  return !holder || !callerId || holder === callerId;
+}
+
+/**
+ * Once the resume after an abrupt stop has run: the work in hand of each
+ * worker it did not relaunch (deleted, stopped or whose folder is gone since,
+ * or whose launch failed) is ended and told; a worker launched again, or whose
+ * running session took the note, keeps it (the Audit's Low on #351: the set
+ * was the workers that had been working, whatever became of their resume).
+ */
+export function endUnresumed(workers: Iterable<RequestWorker>, outcomes: ReadonlyArray<{ agentId: string; how: string }>): void {
+  const resumed = new Set(outcomes.filter((o) => o.how === 'launched' || o.how === 'typed').map((o) => o.agentId));
+  const tried = new Set(outcomes.map((o) => o.agentId));
+  for (const worker of workers) {
+    if (tried.has(worker.id) && !resumed.has(worker.id)) endWorkerRequests(worker, 'restart', { withLinked: true });
+  }
 }
 
 /** Whether a request of this requester is still out at any worker of the fleet. */

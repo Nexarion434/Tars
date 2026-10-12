@@ -66,7 +66,9 @@ export class ClaudeProvider implements CLIProvider {
     }
 
     // Permission mode
-    if (params.permissionMode === 'normal') {
+    if (params.permissionMode === 'plan') {
+      command += ' --permission-mode plan';
+    } else if (params.permissionMode === 'normal') {
       command += ' --permission-mode default';
     } else if (params.permissionMode === 'auto') {
       command += ' --permission-mode auto';

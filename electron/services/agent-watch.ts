@@ -10,7 +10,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { carriedSince, type CarriedNote } from './carry-over';
 import { wakeAgent } from '../core/agent-asleep';
-import { linkSpent, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
+import { linkSpent, requestTitle, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -77,6 +77,14 @@ type News = {
   since?: string;
   /** Owed by a run of Tars before this one, and carried across its restart. */
   carried?: boolean;
+  /**
+   * The request this is about (core/task-requests.ts): the note names it, by
+   * its id and its first line, since a follow-up typed in mid-turn gets a
+   * report of its own (the Audit's Low after 1.9.5).
+   */
+  taskRef?: string;
+  /** The first line of a task that has no request id (a delegated run over ACP), for the note to name it. */
+  title?: string;
 };
 
 /**
@@ -128,11 +136,13 @@ function ranHandedWork(agent: AgentStatus): boolean {
 
 function newsOf(agent: AgentStatus): News | undefined {
   const handedAt = agent.workHandedAt;
+  const taskRef = agent.requestedBy?.taskRef;
+  const task = taskRef ? { taskRef } : {};
   if (agent.status === 'completed' || agent.status === 'error') {
-    return { kind: 'outcome', status: agent.status, handedAt };
+    return { kind: 'outcome', status: agent.status, handedAt, ...task };
   }
   if (isAtRest(agent)) {
-    return ranHandedWork(agent) ? { kind: 'ended', status: agent.status, handedAt } : undefined;
+    return ranHandedWork(agent) ? { kind: 'ended', status: agent.status, handedAt, ...task } : undefined;
   }
   if (agent.status === 'waiting') {
     return { kind: 'wait', status: agent.status, reason: agent.waitingReason, handedAt };
@@ -315,7 +325,7 @@ function tellRequestsEnded(worker: RequestWorker, requests: TaskRequest[], why: 
   if (!child) return;
   for (const request of requests) {
     if (request.requesterAgentId === child.id) continue;
-    handToRequester(request.requesterAgentId, child, { kind: 'not_delivered', status: child.status, reason: why, handedAt: child.workHandedAt });
+    handToRequester(request.requesterAgentId, child, { kind: 'not_delivered', status: child.status, reason: why, handedAt: child.workHandedAt, taskRef: request.ref });
   }
 }
 
@@ -529,6 +539,18 @@ export function reportStall(child: AgentStatus, silentMinutes: number): void {
     : [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === child.projectPath && a.id !== child.id)?.id;
   if (!requesterId) return;
   handToRequester(requesterId, child, { kind: 'stalled', status: child.status, reason: String(silentMinutes), handedAt: child.workHandedAt });
+}
+
+/**
+ * A delegated run over ACP that a quit cut, found open at this launch
+ * (task-ledger.ts interruptedAtStart): its asker is told, as for any work
+ * that never finished (4.4 item 3).
+ */
+export function tellDelegationCut(requesterId: string, workerId: string, firstLine: string): void {
+  const child = agents.get(workerId);
+  if (!child || requesterId === workerId) return;
+  const title = Array.from(firstLine.trim().split(/\r?\n|\r/)[0] ?? '').slice(0, 80).join('');
+  handToRequester(requesterId, child, { kind: 'not_delivered', status: child.status, reason: 'interrupted', ...(title ? { title } : {}) });
 }
 
 /** What a requester is owed about a child: held for it, and typed in when it is free. */
@@ -831,6 +853,7 @@ function describeNews(news: News): string {
   }
   if (news.kind === 'not_delivered') {
     if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
+    if (news.reason === 'interrupted') return 'was running a task you delegated to it when Tars stopped: the run was cut, and nothing was retried; ask again if it is still needed';
     if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';
     const why = news.reason === 'stopped' ? 'it was stopped before it ran it'
       : news.reason === 'restart' ? 'Tars stopped before it ran it'
@@ -842,9 +865,17 @@ function describeNews(news: News): string {
   return `is now ${news.status}`;
 }
 
+/** Which task the news is about: its id and, while Tars remembers it, its first line, quoted as data. */
+function taskNamed(news: News): string {
+  if (!news.taskRef && news.title) return ` (task ${envelopeValue(news.title)})`;
+  if (!news.taskRef || !/^t-[0-9a-f]{8}$/.test(news.taskRef)) return '';
+  const title = requestTitle(news.taskRef);
+  return ` (task ${news.taskRef}${title ? `, ${envelopeValue(title)}` : ''})`;
+}
+
 /** What the note says, and, for news carried across a restart, since when it was owed. */
 function describeOwed(news: News): string {
-  const said = describeNews(news);
+  const said = describeNews(news) + (news.kind === 'ended' || news.kind === 'outcome' || news.kind === 'not_delivered' ? taskNamed(news) : '');
   return news.carried && news.since ? `${said} (${carriedSince(news.since)})` : said;
 }
 

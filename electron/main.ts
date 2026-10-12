@@ -120,7 +120,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
-import { endRequestsAtLaunch } from './core/task-requests';
+import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
 import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
@@ -588,7 +588,8 @@ app.whenReady().then(async () => {
   // What the last run owed, its waiting room messages, the run record, and,
   // after an abrupt stop, the agents that were working resumed with a note
   // (services/restart-recovery.ts). After the launcher and the API are up.
-  recovery = startRestartRecovery(previousRun);
+  const restarted = startRestartRecovery(previousRun);
+  recovery = restarted;
   startAgentWatch();
   // Requests still out from the run before: what was queued or typed into a
   // terminal that is gone never ran, and each requester is told (the Audit's
@@ -597,6 +598,14 @@ app.whenReady().then(async () => {
   endRequestsAtLaunch(agents.values(), new Set(previousRun && !previousRun.resumedAndCrashedAgain
     ? previousRun.working.map((w) => w.agentId) : []));
   saveAgents();
+  // And once the resume has run, the work in hand of each worker it did not
+  // relaunch (deleted, stopped or whose folder is gone since, a launch that
+  // failed) is ended and told: kept until then, it waited on an end that
+  // never came (the Audit's Low on #351).
+  void restarted.resumed.then((outcomes) => {
+    endUnresumed(agents.values(), outcomes);
+    saveAgents();
+  });
   // The tasks the Usage page prices: who handed what, from turn to rest
   // (services/task-ledger.ts).
   startTaskWatch();

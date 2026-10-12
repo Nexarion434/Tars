@@ -11,7 +11,7 @@ import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { rolesOnLoad } from './agent-role';
-import { ptyProcesses, setDialogProbe, setCliProbe, writeProgrammaticInput } from './pty-manager';
+import { ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import { cliStoppedIn, spawnAgentPty } from './agent-pty';
 import { buildFullPath } from '../utils/path-builder';
@@ -85,6 +85,8 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
   });
+  // What a message sent in `queue` mode waits out: the agent's turn.
+  setTurnProbe(agentId => agents.get(agentId)?.status === 'running');
 }
 
 /**
