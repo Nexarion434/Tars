@@ -7,6 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 55,
+    version: '1.9.6',
+    date: '2026-10-12',
+    updates: [
+      'On the Extensions page, every install count reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
+      'An orchestrator\'s message or delegation is sent once, even when its call to Tars timed out and was made again: each one now carries an id, and a send Tars already made is answered as it was the first time, with nothing typed or started twice. The same id with another message is refused. Tars keeps these receipts for 24 hours in ~/.tars-private, with ids and outcomes only, never what the message said.',
+      'An orchestrator can choose how its message goes in: at once as before, after the agent\'s current turn, by interrupting that turn first (Claude agents only), or by restarting the agent with it. Interrupting or restarting an agent while it works on another agent\'s request is refused, and so is restarting one that holds another agent\'s request in its queue.',
+      'A task an agent in plan mode delegates over ACP stays in plan mode: the run is refused every permission it asks for, leaving plan included, and is stopped if it leaves plan anyway. Plan mode is new to Tars, for agents set through the API for now. Between the other modes a delegated run differs little, since Tars approves its requests itself, and an agent with no ACP mode gets the task in its terminal, in its own mode. A message from an agent in a narrower mode to one working in a broader mode says so before the message. This is a guard on delegated runs, not a boundary: an agent working on its own keeps its own mode.',
+      'A delegated task\'s result outlives a restart of Tars: an orchestrator reads it again with task_status, by the task or by the id it was sent with. A delegation that a quit cut is told to whoever asked for it at the next launch.',
+      'When an agent\'s work ends, the note to whoever asked for it names the task, by its id and its first line, now that a request typed in during a turn gets a report of its own. After Tars stops abruptly, an agent that could not be resumed tells whoever was waiting on its work, where they waited for an end that never came.',
+    ],
+  },
+  {
     id: 54,
     version: '1.9.5',
     date: '2026-10-07',

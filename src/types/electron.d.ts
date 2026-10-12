@@ -1464,6 +1464,8 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -1541,6 +1543,8 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -2122,6 +2126,16 @@ export interface ElectronAPI {
 
   // Get home path helper
   getHomePath?: () => string;
+
+  // The Windows desktop shell: its title bar and its shells. detectShells is null on
+  // darwin and linux; setTitleBarOverlay only acts on Windows.
+  desktopShell?: {
+    detectShells: () => Promise<{
+      defaultPath: string;
+      choices: { id: 'pwsh' | 'powershell' | 'cmd' | 'git-bash'; path: string | null }[];
+    } | null>;
+    setTitleBarOverlay: (colours: { color: string; symbolColor: string }) => Promise<{ success: boolean; error?: string }>;
+  };
 
   // Platform info
   platform: string;
