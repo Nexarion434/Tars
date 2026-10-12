@@ -78,14 +78,17 @@ function ProjectPageInner() {
           {open.map(chat => (
             <Link key={chat.id} href={`/chats?chat=${encodeURIComponent(chat.id)}`} data-project-chat className="block px-4 py-[11px] border-t border-border hover:bg-secondary transition-colors">
               <span className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-text-secondary">#{chat.number}</span>
+                <span className="font-mono text-[11px] text-text-secondary">#{chat.number}</span>{' '}
                 <span className="text-[13.5px] font-semibold text-foreground truncate">{chat.title}</span>
                 <span className="flex-1" />
-                {chat.runner && chat.runner.status !== 'idle' && <StateWord status={chat.runner.status} />}
+                {chat.runner && chat.runner.status !== 'idle' && <>{' '}<StateWord status={chat.runner.status} /></>}{' '}
                 <span className="font-mono text-[10.5px] text-status-idle">{clockOf(chat.lastActivityAt)}</span>
               </span>
               {chat.inbox && (
-                <span className="block mt-1 text-xs text-text-secondary">The project&apos;s inbox: the bots, Hermes and Tars&apos;s notes arrive here.</span>
+                <>
+                  {' '}
+                  <span className="block mt-1 text-xs text-text-secondary">The project&apos;s inbox: the bots, Hermes and Tars&apos;s notes arrive here.</span>
+                </>
               )}
             </Link>
           ))}

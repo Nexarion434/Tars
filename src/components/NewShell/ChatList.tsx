@@ -137,22 +137,29 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
   const snooze = snoozeLabel(chat.snoozedUntil, new Date(at));
   const name = projectNameOf(chat.projectPath);
 
-  // A click elsewhere, or Escape, puts the menu away.
+  // A click elsewhere, or Escape, puts away the menu and a refusal: a refusal answers the last action, and trying it again shows it again.
+  // On the click, not the press: a refusal gone at the press moves the rows under the pointer, and the click lands on another.
+  // Inside or not is read from the click's path, fixed when it started: Snooze swaps the menu, and its button has left the page when the click gets here.
+  const showing = menuOpen || refused !== null;
   useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (event: MouseEvent) => {
-      if (!area.current?.contains(event.target as Node)) setMenuOpen(false);
+    if (!showing) return;
+    const away = () => {
+      setMenuOpen(false);
+      setRefused(null);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (area.current && !event.composedPath().includes(area.current)) away();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') away();
     };
-    window.addEventListener('mousedown', onDown);
+    window.addEventListener('click', onClick);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('click', onClick);
       window.removeEventListener('keydown', onKey);
     };
-  }, [menuOpen]);
+  }, [showing]);
 
   const keepTitle = async () => {
     const title = draft.trim();
@@ -198,18 +205,22 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
           aria-current={current ? 'page' : undefined}
           className={`block px-2.5 py-[5px] border transition-colors ${current ? 'bg-secondary border-border-accent' : 'border-transparent hover:bg-secondary'}`}
         >
-          <span className="block pr-6 text-[12.5px] leading-[1.4] truncate text-foreground">{chat.title}</span>
+          {/* The spaces between the parts are not drawn (white space between flex items is not), but the link's name and its text read "Release notes tars-demo #2", not "Release notestars-demo#2". */}
+          <span className="block pr-6 text-[12.5px] leading-[1.4] truncate text-foreground">{chat.title}</span>{' '}
           <span className="flex items-center gap-1.5 min-w-0">
-            <span className="font-mono text-[10.5px] text-status-idle truncate">{name}</span>
+            <span className="font-mono text-[10.5px] text-status-idle truncate">{name}</span>{' '}
             <span className="font-mono text-[10.5px] text-status-idle shrink-0">#{chat.number}</span>
             <span className="flex-1" />
             {words && (
-              <span className="flex items-center gap-1.5 shrink-0">
-                <span className={`w-1.5 h-1.5 ${words.mark}`} />
-                <span className={`font-mono text-[10.5px] ${words.ink}`}>{words.word}</span>
-              </span>
+              <>
+                {' '}
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span className={`w-1.5 h-1.5 ${words.mark}`} />
+                  <span className={`font-mono text-[10.5px] ${words.ink}`}>{words.word}</span>
+                </span>
+              </>
             )}
-            {snooze && <span className="font-mono text-[10.5px] text-status-idle shrink-0">{snooze}</span>}
+            {snooze && <>{' '}<span className="font-mono text-[10.5px] text-status-idle shrink-0">{snooze}</span></>}
           </span>
         </Link>
       )}

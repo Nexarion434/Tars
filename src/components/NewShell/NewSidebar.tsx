@@ -153,11 +153,12 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
         </Link>
       </div>
 
-      <Suspense fallback={null}>
-        <ListOfChats filter={filter} onFilter={chooseFilter} />
-      </Suspense>
-
-      <div className="flex-1" />
+      {/* The list takes the height left, and scrolls in it; without one, it is the gap above the foot. */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <Suspense fallback={null}>
+          <ListOfChats filter={filter} onFilter={chooseFilter} />
+        </Suspense>
+      </div>
 
       {/* Only while there is one to install, as in the sidebar before. */}
       {pendingUpdateVersion && (
