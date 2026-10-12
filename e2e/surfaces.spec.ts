@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -27,8 +28,22 @@ let page: Page;
 let sandboxHome: string;
 const pageErrors: string[] = [];
 
+/** macOS's own temp folder for this user, whatever TMPDIR the run inherited; elsewhere, os.tmpdir(). */
+function osTempFolder(): string {
+  if (process.platform !== 'darwin') return os.tmpdir();
+  return execFileSync('getconf', ['DARWIN_USER_TEMP_DIR'], { encoding: 'utf8' }).trim();
+}
+
 test.beforeAll(async () => {
-  sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-'));
+  // In macOS's own temp folder, not os.tmpdir(): the /agents surfaces print
+  // the seeded projects' paths, and the sandbox-paths mask covers that text's
+  // own box, so the picture follows the length of TMPDIR. Measured on
+  // 2026-10-12 (QA): an agent's own TMPDIR (services/agent-tmp.ts), 37
+  // characters against the system's 48, turned the four /agents references
+  // red by 4,370 to 4,514 px each, and a folder of 48 characters under /tmp
+  // kept them green. The references were recorded under this folder. The chat
+  // suite left TMPDIR for /tmp for the same reason (d08e4559).
+  sandboxHome = fs.mkdtempSync(path.join(osTempFolder(), 'dorothy-e2e-'));
   // Photograph a populated app, not an empty one. Every surface used to render
   // its own empty state, which cannot show a status colour, a row rhythm, a
   // truncation or a full column - so the screenshots guarded almost nothing.

@@ -436,7 +436,7 @@ describe('the title', () => {
   it('20. refuses a title that is not one line of 1 to 80 characters', () => {
     const store = open();
     store.ensureMains([orch()]);
-    for (const title of ['', '   ', 42, null, 'x'.repeat(81), '‮⁦']) {
+    for (const title of ['', '   ', 42, null, 'x'.repeat(81), '\u202E\u2066']) {
       expect(errorOf(store.rename(main(store).id, title)), JSON.stringify(title)).toBe('invalid_title');
     }
     expect(errorOf(store.create({ projectPath: projA, title: '' }, [orch()]))).toBe('invalid_title');
@@ -447,7 +447,7 @@ describe('the title', () => {
     const store = open();
     store.ensureMains([orch()]);
     expect(ok(store.rename(main(store).id, '  Release\n1.9.4\t\tnow  ')).title).toBe('Release 1.9.4 now');
-    expect(ok(store.rename(main(store).id, 'a‮b\u0007c⁦d')).title).toBe('abcd');
+    expect(ok(store.rename(main(store).id, 'a\u202Eb\u0007c\u2066d')).title).toBe('abcd');
   });
 
   it("21. a rename is the user's: the automatic summary never replaces it", () => {

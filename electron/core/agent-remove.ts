@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses } from './pty-manager';
+import { killPty } from './pty-kill';
 import { endWorkerRequests } from './task-requests';
 import { forgetRestart } from './agent-restart';
 import { stopAcpRuns } from '../services/acp/delegate';
@@ -37,7 +38,7 @@ export async function removeAgent(id: string): Promise<RemovedAgent> {
   if (agent?.ptyId) {
     const ptyProcess = ptyProcesses.get(agent.ptyId);
     if (ptyProcess) {
-      ptyProcess.kill();
+      killPty(ptyProcess);
       ptyProcesses.delete(agent.ptyId);
     }
     // Nullify so pending onExit callbacks won't mutate state
