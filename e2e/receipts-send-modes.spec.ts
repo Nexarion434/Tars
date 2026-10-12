@@ -159,8 +159,12 @@ test('a retried request is sent once, a reused id with another text is refused, 
     s.agent('cx', 'Codex Worker', { provider: 'codex' }),
   ]);
   const port = apiPort(31455);
+  const t0 = Date.now();
+  const times: Record<string, number> = {};
+  const step = (name: string) => { times[name] = Date.now() - t0; };
   const { app, tokensFor, tasks } = await open(s.home, port, ['w1', 'o1', 'b1', 'cx']);
-  const values: Record<string, unknown> = {};
+  step('opened');
+  const values: Record<string, unknown> = { times };
   try {
     const tokens = await tokensFor(['w1', 'o1', 'b1', 'cx']);
     const { post } = client(port, () => tokens);
@@ -172,6 +176,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
     const send = { message: 'RCPT-ALPHA review #280', clientRequestId: 'cr-e2e-0001' };
     const [first, second] = await Promise.all([post('/api/agents/w1/dispatch', 'o1', send), post('/api/agents/w1/dispatch', 'o1', send)]);
     const third = await post('/api/agents/w1/dispatch', 'o1', send);
+    step('sent3');
     await expect.poll(() => s.read('w1').includes('RCPT-ALPHA'), { timeout: 20_000 }).toBe(true);
     // Time for a second batch to land, were one on its way.
     await new Promise(r => setTimeout(r, 3_000));
@@ -193,10 +198,12 @@ test('a retried request is sent once, a reused id with another text is refused, 
     // Its turn: one task in the ledger, asked by o1.
     await hook({ status: 'running', event: 'UserPromptSubmit', current_task: typed });
     await expect.poll(async () => (await tasks()).filter(t => t.agentId === 'w1').length, { timeout: 10_000 }).toBe(1);
+    step('ledger');
 
     // 5. Steer into a worker busy with another asker's work.
     const busy = await post('/api/agents/w1/dispatch', 'b1', { message: 'RCPT-STEER-OTHER stop that', mode: 'steer' });
     values.steerOther = busy;
+    step('steerOther');
     expect(busy.status).toBe(409);
     expect(busy.body.code).toBe('worker_busy_for_other_requester');
 
@@ -206,6 +213,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
     const gammaDuringTurn = count(s.read('w1'), 'RCPT-GAMMA');
     await hook({ status: 'idle', hook: 'Stop' });
     await expect.poll(() => count(s.read('w1'), 'RCPT-GAMMA'), { timeout: 15_000 }).toBe(1);
+    step('queued');
     values.queued = { answer: queued, gammaDuringTurn };
     expect(queued.status).toBe(200);
     expect(queued.body.queued).toBe(true);
@@ -215,6 +223,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
     const conflict = await post('/api/agents/w1/dispatch', 'o1', { message: 'RCPT-BETA something else', clientRequestId: 'cr-e2e-0001' });
     await new Promise(r => setTimeout(r, 1_500));
     values.conflict = conflict;
+    step('conflict');
     expect(conflict.status).toBe(409);
     expect(conflict.body.code).toBe('clientRequestId_conflict');
     expect(s.read('w1')).not.toContain('RCPT-BETA');
@@ -223,6 +232,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
     const steer = await post('/api/agents/cx/dispatch', 'o1', { message: 'RCPT-STEER-CODEX now', mode: 'steer' });
     await new Promise(r => setTimeout(r, 1_500));
     values.steerCodex = steer;
+    step('steerCodex');
     expect(steer.status).toBe(409);
     expect(steer.body.code).toBe('not_steerable');
     expect(s.read('cx')).not.toContain('RCPT-STEER-CODEX');
