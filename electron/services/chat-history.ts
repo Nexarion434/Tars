@@ -118,6 +118,20 @@ export function historyOf(items: NumberedItem[], query: { before?: unknown; limi
 }
 
 /**
+ * How many items of each chat the windows have been told of, by snapshot or
+ * by event: the follower sends what comes after. The first chat:history
+ * answer for a chat sets it, so a line written before the follower first sees
+ * its runner live is still sent; a chat nobody asked for starts where it is
+ * when its runner is first seen live.
+ */
+const told = new Map<string, number>();
+
+/** A chat:history answer is a snapshot: what it held needs no event. */
+export function noteChatSnapshot(chatId: string, count: number): void {
+  if (!told.has(chatId)) told.set(chatId, count);
+}
+
+/**
  * Following the chats whose runner's CLI is live: the items each gained, and
  * a runner whose state changed, as events. Returns what stops it.
  */
@@ -129,7 +143,6 @@ export function followChats(deps: {
   homeDir?: string;
   everyMs?: number;
 }): () => void {
-  const known = new Map<string, number>();
   const states = new Map<string, string>();
   const tick = () => {
     for (const chat of deps.chats()) {
@@ -147,8 +160,8 @@ export function followChats(deps: {
         console.warn(`[chats] could not read chat ${chat.id}:`, (err as Error).message);
         continue;
       }
-      const before = known.get(chat.id);
-      known.set(chat.id, items.length);
+      const before = told.get(chat.id);
+      told.set(chat.id, items.length);
       if (before === undefined) continue;
       for (const item of items.slice(before)) publishChatEvent({ type: 'item', chatId: chat.id, item });
     }
