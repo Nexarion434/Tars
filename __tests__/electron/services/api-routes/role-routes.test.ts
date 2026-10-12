@@ -22,6 +22,9 @@ import * as path from 'node:path';
  * 2. Its bootstrap gives it a worker's rules instead of the orchestration rules.
  * 3. The team a bootstrap lists, any agent's, has a runner in it, so the
  *    orchestrator and its workers take a conversation for a teammate.
+ * And written with their code (PR D, shown to bite by mutants):
+ * 4. A runner is not told it is one chat among several, nor how its workers
+ *    answer it; a worker is not told to answer "requester".
  */
 
 const mockPtyProcess = { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn() };
@@ -192,6 +195,25 @@ describe('the bootstrap a session reads at start', () => {
     expect(runner).not.toContain('## Working rules');
   });
 
+  it("4. tells a runner it is one chat among several, and a worker how to answer whoever asked it", async () => {
+    agent('lead', { name: 'Tars-Lead', role: 'orchestrator', orchestratorMode: true });
+    agent('backend', { name: 'Backend' });
+    agent('runner', { name: 'Tars-Lead · Release 1.9.4', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'lead' });
+
+    const [lead, backend, runner] = [await bootstrap('lead'), await bootstrap('backend'), await bootstrap('runner')];
+
+    expect(runner).toContain("You are the orchestrator in one of the project's chats");
+    expect(runner).toContain('orchestrator of project');
+    expect(runner).not.toContain('worker of project');
+    expect(runner).toContain('send_message to "requester"');
+    expect(backend).toContain('send_message to "requester"');
+    expect(lead).not.toContain('You are the orchestrator in');
+    // A runner no test launched before (a launch on its way would hold the dispatch),
+    // and shell-quoted in the command, where the apostrophe is escaped.
+    agent('runner-4', { name: 'Tars-Lead · Docs', kind: 'chat', chatId: 'c-4', teamOrchestratorId: 'lead' });
+    expect(await dispatchedCommand('runner-4')).toContain('You are the orchestrator in one of the project');
+  });
+
   it("3. leaves the chats' runners out of the team it lists, whoever reads it", async () => {
     agent('lead', { name: 'Tars-Lead', role: 'orchestrator', orchestratorMode: true });
     agent('backend', { name: 'Backend' });
@@ -207,6 +229,21 @@ describe('the bootstrap a session reads at start', () => {
       expect(context).not.toContain('Release 1.9.4" (id');
       expect(context).not.toContain('Tars-Lead · Docs');
     }
+  });
+});
+
+describe('GET /api/agents, what list_agents reads', () => {
+  // PR D, written with its code and shown to bite by a mutant (4.2: runners are
+  // not the team; list_agents shows them as the asker of a worker's task).
+  it("lists the team without the chats' runners, and each worker's asker, a chat's runner included", async () => {
+    agent('lead', { name: 'Tars-Lead', role: 'orchestrator', orchestratorMode: true });
+    agent('runner', { name: 'Tars-Lead · Release 1.9.4', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'lead' });
+    agent('backend', { name: 'Backend', requestedBy: { agentId: 'runner', ptyId: 'pty-x' } });
+    const answer = await call('GET', p => p === '/api/agents', '/api/agents', {}, {}, 'lead');
+    const listed = (answer!.body.agents as Array<{ id: string; askedBy?: { id: string; name: string; chat?: boolean } }>);
+    expect(listed.map(a => a.id).sort()).toEqual(['backend', 'lead']);
+    expect(listed.find(a => a.id === 'backend')?.askedBy).toEqual({ id: 'runner', name: 'Tars-Lead · Release 1.9.4', chat: true });
+    expect(listed.find(a => a.id === 'lead')?.askedBy).toBeUndefined();
   });
 });
 

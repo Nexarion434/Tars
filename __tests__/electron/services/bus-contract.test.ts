@@ -151,6 +151,14 @@ describe('the bounds, applied where an agent cannot get around them', () => {
     }).thread;
   }
 
+  // PR D, written with its code and shown to bite by a mutant (ORCHESTRATOR-PER-CHAT.md, 4.6).
+  it("leaves a chat's runner out of its project's room: what crosses the room reaches Main", () => {
+    putAgent({ id: 'lead', role: 'orchestrator' });
+    putAgent({ id: 'runner', role: 'worker', kind: 'chat', chatId: 'c-2' });
+    expect(room().memberIds).toContain('lead');
+    expect(room().memberIds).not.toContain('runner');
+  });
+
   it('closes a thread on the tenth agent message', () => {
     // Four voices in rotation: three rounds hold ten messages, so the count is
     // what closes this one and the round bound is not in the way.

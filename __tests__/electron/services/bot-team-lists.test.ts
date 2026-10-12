@@ -129,3 +129,14 @@ describe("3. Discord's lists", () => {
     expectTheTeamOnly(await discord(command), command);
   });
 });
+
+// PR D, written with its code and shown to bite by a mutant: a command that
+// names part of a name reaches the team, never a chat (the sub-agent's note).
+describe('4. a command naming an agent', () => {
+  it("finds the orchestrator by part of its name, never one of its chats; a chat's runner only by its exact id", async () => {
+    const { findAgent } = await import('../../../electron/services/bot-core');
+    expect(findAgent(agents, 'atlas-lead')?.id).toBe('lead');
+    expect(findAgent(agents, 'release')).toBeUndefined();
+    expect(findAgent(agents, 'runner')?.id).toBe('runner');
+  });
+});
