@@ -224248,7 +224248,7 @@
                           "id": "o6BBdf",
                           "name": "since",
                           "fill": "$text-muted",
-                          "content": "started 10:42 · working",
+                          "content": "created 10:42 · working",
                           "lineHeight": 1.35,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -224492,6 +224492,72 @@
                         40
                       ],
                       "children": [
+                        {
+                          "type": "frame",
+                          "id": "jxvi3",
+                          "name": "earlier",
+                          "width": "fill_container",
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            0,
+                            0,
+                            32
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "DZ1Bn",
+                              "name": "button Show earlier",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "TNtYU",
+                                  "name": "arrow-up",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "arrow-up",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "kEYHV",
+                                  "name": "label",
+                                  "fill": "$text-secondary",
+                                  "content": "Show earlier",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "C07NCj",
+                              "name": "count",
+                              "fill": "$text-muted",
+                              "content": "312 earlier lines",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
                         {
                           "type": "frame",
                           "id": "r3Lx1",
@@ -226989,7 +227055,7 @@
                           "id": "q10go",
                           "name": "since",
                           "fill": "$text-muted",
-                          "content": "started 10:42 · working",
+                          "content": "created 10:42 · working",
                           "lineHeight": 1.35,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -227233,6 +227299,72 @@
                         40
                       ],
                       "children": [
+                        {
+                          "type": "frame",
+                          "id": "M3vKa",
+                          "name": "earlier",
+                          "width": "fill_container",
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            0,
+                            0,
+                            32
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "z2MLq",
+                              "name": "button Show earlier",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "a8fzI",
+                                  "name": "arrow-up",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "arrow-up",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "FSpjl",
+                                  "name": "label",
+                                  "fill": "$text-secondary",
+                                  "content": "Show earlier",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "u6kC2j",
+                              "name": "count",
+                              "fill": "$text-muted",
+                              "content": "312 earlier lines",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
                         {
                           "type": "frame",
                           "id": "YYbGn",
@@ -229730,7 +229862,7 @@
                           "id": "sBWTP",
                           "name": "since",
                           "fill": "$text-muted",
-                          "content": "started 10:42 · waiting on you since 12:58",
+                          "content": "created 10:42 · waiting on you since 12:58",
                           "lineHeight": 1.35,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -229974,6 +230106,72 @@
                         40
                       ],
                       "children": [
+                        {
+                          "type": "frame",
+                          "id": "u2cCpg",
+                          "name": "earlier",
+                          "width": "fill_container",
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            0,
+                            0,
+                            32
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "xcgy0",
+                              "name": "button Show earlier",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "wRP0x",
+                                  "name": "arrow-up",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "arrow-up",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Sg4Rc",
+                                  "name": "label",
+                                  "fill": "$text-secondary",
+                                  "content": "Show earlier",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "krMst",
+                              "name": "count",
+                              "fill": "$text-muted",
+                              "content": "312 earlier lines",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
                         {
                           "type": "frame",
                           "id": "CAhj0",
@@ -232611,7 +232809,7 @@
                           "id": "fgm1K",
                           "name": "since",
                           "fill": "$text-muted",
-                          "content": "started 10:42 · waiting on you since 12:58",
+                          "content": "created 10:42 · waiting on you since 12:58",
                           "lineHeight": 1.35,
                           "fontFamily": "$font-mono",
                           "fontSize": 11,
@@ -232855,6 +233053,72 @@
                         40
                       ],
                       "children": [
+                        {
+                          "type": "frame",
+                          "id": "vVkMf",
+                          "name": "earlier",
+                          "width": "fill_container",
+                          "gap": 10,
+                          "padding": [
+                            0,
+                            0,
+                            0,
+                            32
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "miN43",
+                              "name": "button Show earlier",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "tLemz",
+                                  "name": "arrow-up",
+                                  "width": 12,
+                                  "height": 12,
+                                  "icon": "arrow-up",
+                                  "library": "lucide",
+                                  "fill": "$text-secondary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "ASTcR",
+                                  "name": "label",
+                                  "fill": "$text-secondary",
+                                  "content": "Show earlier",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "L9MDGo",
+                              "name": "count",
+                              "fill": "$text-muted",
+                              "content": "312 earlier lines",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
                         {
                           "type": "frame",
                           "id": "NBd91",
@@ -233950,7 +234214,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "A chat's page reads its conversation from its runner's transcripts (chat:history, #371) and follows it live from the seq it was read at (chat:events). Each line is shown as what it is: your words, the orchestrator's, its tool calls folded to a line, an agent's or a channel's message, a note from Tars or Claude Code, a divider where the conversation was compacted or a new session began, and a line Tars cannot read, as one muted line.",
+              "content": "A chat's page reads its conversation from its runner's transcripts (chat:history, #371) and follows it live from the seq it was read at (chat:events). Each line is shown as what it is: your words, the orchestrator's, its tool calls folded to a line, an agent's or a channel's message, a note from Tars or Claude Code, a divider where the conversation was compacted or a new session began, and a line Tars cannot read, as one muted line. It opens on the last 200 lines; Show earlier, above the first, reads the 200 before, and says how many lines are left.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
