@@ -230496,12 +230496,14 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "Z37M4",
-                          "name": "Waiting on you",
+                          "id": "W5O3q",
+                          "name": "ask",
                           "width": "fill_container",
                           "fill": "$surface-raised",
-                          "stroke": "$border-strong",
-                          "strokeWidth": 1,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
                           "layout": "vertical",
                           "gap": 8,
                           "padding": [
@@ -230511,121 +230513,168 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "A8S4Ou",
-                              "name": "l1",
+                              "id": "j4bgx",
+                              "name": "head",
                               "width": "fill_container",
-                              "gap": 10,
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "rectangle",
-                                  "id": "smkRg",
-                                  "name": "square",
-                                  "fill": "$status-waiting",
-                                  "width": 6,
-                                  "height": 6
+                                  "type": "frame",
+                                  "id": "hnyea",
+                                  "name": "l",
+                                  "gap": 8,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "yRjfQ",
+                                      "name": "d",
+                                      "fill": "$status-waiting",
+                                      "width": 6,
+                                      "height": 6
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "eRopR",
+                                      "name": "who",
+                                      "fill": "$text-primary",
+                                      "content": "Asks to use Bash",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
                                 },
                                 {
                                   "type": "text",
-                                  "id": "KMuI6",
-                                  "name": "t",
-                                  "fill": "$text-primary",
-                                  "content": "The orchestrator asks to run a command: it waits on you.",
+                                  "id": "N6ABvc",
+                                  "name": "at",
+                                  "fill": "$text-muted",
+                                  "content": "asked at 12:58",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12.5,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
                                   "fontWeight": "normal"
-                                },
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "VKC7K",
+                              "name": "subject",
+                              "width": "fill_container",
+                              "fill": "$term-bg",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                7,
+                                10
+                              ],
+                              "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "MLzKd",
-                                  "name": "spacer",
+                                  "type": "text",
+                                  "id": "VH8SH",
+                                  "name": "cmd",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
+                                  "content": "gh pr create --title \"Keep the terminal in place while output arrives\" --fill",
+                                  "lineHeight": 1.5,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "saowh",
+                              "name": "answers",
+                              "gap": 6,
+                              "alignItems": "center",
+                              "children": [
                                 {
                                   "type": "frame",
-                                  "id": "BajmG",
-                                  "name": "button Deny",
+                                  "id": "SdCEV",
+                                  "name": "b allow",
                                   "height": 26,
-                                  "fill": "$surface",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 6,
                                   "padding": [
-                                    0,
-                                    10
+                                    6,
+                                    12
                                   ],
                                   "justifyContent": "center",
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "ihsYz",
-                                      "name": "label",
+                                      "id": "yfbMB",
+                                      "name": "l",
                                       "fill": "$text-secondary",
-                                      "content": "Deny",
+                                      "content": "allow",
                                       "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "c2QGW",
-                                  "name": "button Allow",
+                                  "id": "yc3FJ",
+                                  "name": "b deny",
                                   "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
+                                  "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 6,
                                   "padding": [
-                                    0,
-                                    10
+                                    6,
+                                    12
                                   ],
                                   "justifyContent": "center",
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "t0vIF",
-                                      "name": "label",
-                                      "fill": "$on-accent",
-                                      "content": "Allow",
+                                      "id": "G6NDqJ",
+                                      "name": "l",
+                                      "fill": "$text-secondary",
+                                      "content": "deny",
                                       "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "600"
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
                                     }
                                   ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "SWU7b",
-                              "name": "cmd",
-                              "width": "fill_container",
-                              "fill": "$term-bg",
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                10
-                              ],
-                              "children": [
+                                },
                                 {
-                                  "type": "text",
-                                  "id": "R0Hub",
-                                  "name": "c",
-                                  "fill": "$text-primary",
-                                  "content": "gh pr create --title \"Keep the terminal in place while output arrives\" --fill",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
+                                  "type": "frame",
+                                  "id": "qY7IQ",
+                                  "name": "b ask in terminal",
+                                  "height": 26,
+                                  "stroke": "$border",
+                                  "strokeWidth": 1,
+                                  "padding": [
+                                    6,
+                                    12
+                                  ],
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "cXhPf",
+                                      "name": "l",
+                                      "fill": "$text-secondary",
+                                      "content": "ask in terminal",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -233305,12 +233354,14 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "j2aIA5",
-                          "name": "Waiting on you",
+                          "id": "mr1Zs",
+                          "name": "ask",
                           "width": "fill_container",
                           "fill": "$surface-raised",
-                          "stroke": "$border-strong",
-                          "strokeWidth": 1,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "bottom": 1
+                          },
                           "layout": "vertical",
                           "gap": 8,
                           "padding": [
@@ -233320,121 +233371,168 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "J0x7n",
-                              "name": "l1",
+                              "id": "eo2Xf",
+                              "name": "head",
                               "width": "fill_container",
-                              "gap": 10,
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "rectangle",
-                                  "id": "Gx4Cm",
-                                  "name": "square",
-                                  "fill": "$status-waiting",
-                                  "width": 6,
-                                  "height": 6
+                                  "type": "frame",
+                                  "id": "cs62W",
+                                  "name": "l",
+                                  "gap": 8,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "R4Kzc",
+                                      "name": "d",
+                                      "fill": "$status-waiting",
+                                      "width": 6,
+                                      "height": 6
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "OAWNg",
+                                      "name": "who",
+                                      "fill": "$text-primary",
+                                      "content": "Asks to use Bash",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
                                 },
                                 {
                                   "type": "text",
-                                  "id": "s532y7",
-                                  "name": "t",
-                                  "fill": "$text-primary",
-                                  "content": "The orchestrator asks to run a command: it waits on you.",
+                                  "id": "E7uwyO",
+                                  "name": "at",
+                                  "fill": "$text-muted",
+                                  "content": "asked at 12:58",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12.5,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
                                   "fontWeight": "normal"
-                                },
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "z5q87O",
+                              "name": "subject",
+                              "width": "fill_container",
+                              "fill": "$term-bg",
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                7,
+                                10
+                              ],
+                              "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "I22mpR",
-                                  "name": "spacer",
+                                  "type": "text",
+                                  "id": "V6eid",
+                                  "name": "cmd",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
                                   "width": "fill_container",
-                                  "height": 1
-                                },
+                                  "content": "gh pr create --title \"Keep the terminal in place while output arrives\" --fill",
+                                  "lineHeight": 1.5,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "aQdDp",
+                              "name": "answers",
+                              "gap": 6,
+                              "alignItems": "center",
+                              "children": [
                                 {
                                   "type": "frame",
-                                  "id": "OQQiz",
-                                  "name": "button Deny",
+                                  "id": "BICd9",
+                                  "name": "b allow",
                                   "height": 26,
-                                  "fill": "$surface",
                                   "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 6,
                                   "padding": [
-                                    0,
-                                    10
+                                    6,
+                                    12
                                   ],
                                   "justifyContent": "center",
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "vXDji",
-                                      "name": "label",
+                                      "id": "C4pAU3",
+                                      "name": "l",
                                       "fill": "$text-secondary",
-                                      "content": "Deny",
+                                      "content": "allow",
                                       "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
                                       "fontWeight": "normal"
                                     }
                                   ]
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "DpZgD",
-                                  "name": "button Allow",
+                                  "id": "GYAOn",
+                                  "name": "b deny",
                                   "height": 26,
-                                  "fill": "$accent",
-                                  "stroke": "$accent",
+                                  "stroke": "$border",
                                   "strokeWidth": 1,
-                                  "gap": 6,
                                   "padding": [
-                                    0,
-                                    10
+                                    6,
+                                    12
                                   ],
                                   "justifyContent": "center",
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "GeEHb",
-                                      "name": "label",
-                                      "fill": "$on-accent",
-                                      "content": "Allow",
+                                      "id": "LGnaI",
+                                      "name": "l",
+                                      "fill": "$text-secondary",
+                                      "content": "deny",
                                       "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "600"
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
                                     }
                                   ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "UBj2m",
-                              "name": "cmd",
-                              "width": "fill_container",
-                              "fill": "$term-bg",
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                10
-                              ],
-                              "children": [
+                                },
                                 {
-                                  "type": "text",
-                                  "id": "N4jDy",
-                                  "name": "c",
-                                  "fill": "$text-primary",
-                                  "content": "gh pr create --title \"Keep the terminal in place while output arrives\" --fill",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
+                                  "type": "frame",
+                                  "id": "nwNA7",
+                                  "name": "b ask in terminal",
+                                  "height": 26,
+                                  "stroke": "$border",
+                                  "strokeWidth": 1,
+                                  "padding": [
+                                    6,
+                                    12
+                                  ],
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "wkJfA",
+                                      "name": "l",
+                                      "fill": "$text-secondary",
+                                      "content": "ask in terminal",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-mono",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -233842,7 +233940,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "The runner asks a permission: the ask sits above the composer, as an agent's window shows it, and Allow or Deny answers it there.",
+              "content": "The runner asks a permission: the ask sits above the composer as an agent's window shows it, and allow, deny or ask in terminal answers it there.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
