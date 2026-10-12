@@ -1,17 +1,41 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { MessageSquare } from 'lucide-react';
 import { BrandMark } from '@/components/Brand';
-import { PageHeader } from '@/components/ui';
+import { LoadingPanel, PageHeader } from '@/components/ui';
+import { ChatOpen } from '@/components/NewShell/ChatOpen';
+import { NewChatRecord } from '@/components/NewShell/NewChatRecord';
+import { chatSections } from '@/lib/chat-sections';
+import { useChats } from '@/hooks/useChats';
 
 /**
- * The chats page of the new shell, in the state `Shell · chats · empty` draws
- * until the chat channels exist: a conversation with a project's orchestrator
- * cannot be opened yet, so the page says so and points at Tars, all projects,
- * where every orchestrator can be talked to today. No chat is made up.
+ * The chats page of the new shell. `?new=1`: a new chat's record. `?chat=`: that
+ * chat, opened. Neither: the first chat of the list opened, or, with none at
+ * all, the state `Shell · chats · empty` draws. No chat is made up.
  */
 export default function ChatsPage() {
+  return (
+    <Suspense>
+      <ChatsPageInner />
+    </Suspense>
+  );
+}
+
+function ChatsPageInner() {
+  const params = useSearchParams();
+  const { chats, at } = useChats();
+
+  if (params.get('new') === '1') return <NewChatRecord initialProject={params.get('project')} />;
+  if (chats === null) return <LoadingPanel what="Reading the chats" />;
+
+  const asked = params.get('chat');
+  const open = (asked && chats.find(chat => chat.id === asked))
+    || chatSections(chats, { now: at }).flatMap(section => section.chats)[0];
+  if (open) return <ChatOpen chat={open} />;
+
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col">
       <PageHeader title="Chats" subtitle="A conversation with the orchestrator of a project, on one topic." />
