@@ -73,12 +73,43 @@ function handle(msg) {
     fs.appendFileSync(${JSON.stringify(modesFile)}, msg.params.modeId + '\n');
     return send({ jsonrpc: '2.0', id: msg.id, result: {} });
   }
+  const say = (text) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });
+  const toMode = (modeId) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'current_mode_update', currentModeId: modeId } } });
+  const written = (name) => fs.writeFileSync(${JSON.stringify(path.dirname(modesFile))} + '/' + name + '.written', 'out of plan');
+  // The answer to the permission request below (claude-agent-acp 0.70.0's ExitPlanMode).
+  if (msg.id === 900 && msg.result) {
+    const chosen = msg.result.outcome && msg.result.outcome.optionId;
+    if (chosen && chosen !== 'plan') { toMode(chosen); written('EXIT-ASK'); say('left plan'); }
+    else say('kept planning');
+    return send({ jsonrpc: '2.0', id: pending, result: { stopReason: 'end_turn' } });
+  }
+  if (msg.method === 'session/cancel') { cancelled = true; if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} }); return; }
   if (msg.method === 'session/prompt') {
-    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewed' } } } });
+    const text = JSON.stringify(msg.params.prompt);
+    if (text.includes('EXIT-ASK')) {
+      pending = msg.id;
+      return send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: 'acp-1', toolCall: { title: 'ExitPlanMode', kind: 'switch_mode' }, options: [
+        { kind: 'allow_always', name: 'Yes, and use "auto" mode', optionId: 'auto' },
+        { kind: 'allow_always', name: 'Yes, and auto-accept edits', optionId: 'acceptEdits' },
+        { kind: 'allow_once', name: 'Yes, and manually approve edits', optionId: 'default' },
+        { kind: 'reject_once', name: 'No, keep planning', optionId: 'plan' },
+      ] } });
+    }
+    if (text.includes('EXIT-FORCE')) {
+      // Out of plan without asking, then an edit a moment later, unless cancelled.
+      toMode('acceptEdits');
+      return setTimeout(() => {
+        if (!cancelled) written('EXIT-FORCE');
+        send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: cancelled ? 'cancelled' : 'end_turn' } });
+      }, 1500);
+    }
+    say('reviewed');
     return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 500, outputTokens: 100 } } });
   }
-  if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, result: {} });
 }
+let pending = null;
+let cancelled = false;
 process.stdin.resume();
 `;
 
@@ -281,7 +312,19 @@ test('a delegated run takes the narrower mode of its asker, a narrower sender is
     // Asked from bypass mode: the run is in bypass.
     const bypassed = await post('/api/agents/oc/run-task', 'by', { task: 'ACP-BYPASS review the notes', timeoutSeconds: 60 });
     const afterBypass = modesSet();
-    values.runs = { planned, bypassed, afterPlan, afterBypass };
+    // The Audit's B1 on #364: held to plan, the run asks to leave it, and is told to keep planning.
+    const asked = await post('/api/agents/oc/run-task', 'p1', { task: 'EXIT-ASK plan only', timeoutSeconds: 60 });
+    // And one that leaves plan without asking is cut, before its edit.
+    const forced = await post('/api/agents/oc/run-task', 'p1', { task: 'EXIT-FORCE plan only', timeoutSeconds: 60 });
+    await new Promise(r => setTimeout(r, 2_500));
+    const out = (name: string) => fs.existsSync(path.join(s.home, `${name}.written`));
+    values.runs = { planned, bypassed, afterPlan, afterBypass, asked, forced, askWrote: out('EXIT-ASK'), forceWrote: out('EXIT-FORCE') };
+    expect(asked.status).toBe(200);
+    expect(asked.body.text).toBe('kept planning');
+    expect(out('EXIT-ASK')).toBe(false);
+    expect(forced.status).toBe(409);
+    expect(forced.body.code).toBe('permission_escalation_denied');
+    expect(out('EXIT-FORCE')).toBe(false);
     expect(planned.status).toBe(200);
     expect(planned.body.ok).toBe(true);
     expect(afterPlan.at(-1)).toBe('plan');

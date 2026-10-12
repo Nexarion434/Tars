@@ -54,11 +54,16 @@
  * 14. The note that a task ended cannot say which: a request's first line is
  *     not kept, or is kept on the request, which agents.json carries to every
  *     agent. Kept in memory, by its id, cut to one line.
+ * And from the Audit's L1 on #364, written before the fix (2026-10-12):
+ * 15. A restart is let through while another asker's request waits in the
+ *     queue: the stop ends every queued request, so it cuts that asker's work
+ *     as surely as the work in hand. Refused then; the caller's own queued
+ *     requests, and Tars, do not stop it.
  */
 import { describe, it, expect } from 'vitest';
 import {
   newTaskRef, enqueueRequest, requestDelivered, bindTurn, linkSpent, requestDropped, takeAllRequests, isOwedByRequests,
-  endRequestsAtLaunch, setRequestsEndedHook, mayInterrupt, endUnresumed, requestTitle, type RequestWorker, type TaskRequest,
+  endRequestsAtLaunch, setRequestsEndedHook, mayInterrupt, mayRestart, endUnresumed, requestTitle, type RequestWorker, type TaskRequest,
 } from '../../../electron/core/task-requests';
 import { envelopeValue } from '../../../electron/utils/envelope-value';
 
@@ -285,5 +290,20 @@ describe('the first line of a request (the Audit\'s Low after 1.9.5)', () => {
     expect(requestTitle(ref)).toBe('review #280');
     expect(JSON.stringify(w)).not.toContain('review #280');
     expect(requestTitle('t-00000000')).toBeUndefined();
+  });
+});
+
+describe('a restart (the Audit\'s L1 on #364)', () => {
+  it("15. is refused while another asker's request waits in the queue, and only then", () => {
+    const w = worker();
+    const own = enqueueRequest(w, 'o1');
+    requestDelivered(w, own);
+    expect(mayRestart(w, 'o1')).toBe(true);
+    enqueueRequest(w, 'o1');
+    expect(mayRestart(w, 'o1')).toBe(true);
+    enqueueRequest(w, 'b1');
+    expect(mayRestart(w, 'o1')).toBe(false);
+    expect(mayRestart(w, undefined)).toBe(true);
+    expect(mayRestart(w, 'b1')).toBe(false);
   });
 });
