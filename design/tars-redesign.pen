@@ -238368,48 +238368,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "sP5vv",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "umcEB",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "gtfXJ",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "Mjhq7",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -241430,48 +241389,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "Bhjb9",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "XDvvC",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "cWK7W",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "DmBwX",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -244888,48 +244806,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "jA4jN",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "FWFtp",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "nOotT",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "y9YkTt",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -249495,48 +249372,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "AYoLH",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "lhjoA",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "BhDsI",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "r0WBN",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -252557,48 +252393,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "YwbrE",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "BDs7F",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "reeYZ",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "dn4tr",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -256015,48 +255810,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "ZEyMm",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "LeZF1",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "RAaJO",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "TInjn",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -267723,48 +267477,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "NEg88",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "GiCJu",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "MFbfl",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "c1RipE",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -268153,48 +267866,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "PwIgm",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "XlgSk",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "RE3OE",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "MOVoK",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "text",
@@ -268640,48 +268312,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "j9AJOs",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "JtCnN",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "TKE3N",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "ADXXt",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -269070,48 +268701,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "N838A",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "e7GUo",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "WEn9X",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "E4YSGJ",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "text",
@@ -269556,48 +269146,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "orS8H",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "xnook",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "FAC0q",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "mRmnK",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -270762,48 +270311,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "qntMV",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "YfoUn",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "Ej06n",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "XWGy4",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "text",
@@ -271330,48 +270838,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "Q0CDB1",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "J2HKF",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "n2U73",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "AhegV",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -272911,48 +272378,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "pcNUo",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "W0z7M",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "IJoQV",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "kamfA",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -275407,48 +274833,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "XyfsH",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "MVq56",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "S8zVQ",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "NzM5h",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -276613,48 +275998,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "NV6La",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "xPVaj",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "BnuDA",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "Nd4zP",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "text",
@@ -277181,48 +276525,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "AXALO",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "EXxwm",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "c4z46",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "U8JRT",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
@@ -278762,48 +278065,7 @@
                       "width": 10,
                       "height": 10,
                       "layout": "none",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "id": "d2YOAL",
-                          "x": 0,
-                          "y": 0,
-                          "name": "a",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "g3jPU",
-                          "x": 6,
-                          "y": 0,
-                          "name": "b",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "jXajz",
-                          "x": 0,
-                          "y": 6,
-                          "name": "c",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        },
-                        {
-                          "type": "rectangle",
-                          "id": "yj1vH",
-                          "x": 6,
-                          "y": 6,
-                          "name": "d",
-                          "fill": "$accent",
-                          "width": 4,
-                          "height": 4
-                        }
-                      ]
+                      "fill": "$accent"
                     },
                     {
                       "type": "frame",
