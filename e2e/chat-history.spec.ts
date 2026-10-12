@@ -144,10 +144,12 @@ test("a chat's conversation is read across its sessions, then followed live, and
     expect(page1.items.map((i) => i.n)).toEqual([4, 5, 6]);
     expect(page2.items.map((i) => i.n)).toEqual([1, 2, 3]);
 
-    // 3. Followed live: Lead's CLI up, its transcript grows.
+    // 3. Followed live. The line lands before Lead's CLI is first seen live,
+    // after the window's snapshot: it is still sent (a race the full suite
+    // lost under load when the follower counted from its first live sight).
+    fs.appendFileSync(s2File, jsonl([said(S2, [{ type: 'text', text: 'Docs updated.' }])]));
     await call('agent', 'start', { id: 'lead', prompt: '' });
     await expect.poll(async () => ((await call('agent', 'list')) as unknown as Array<{ id: string; cliRunning?: boolean }>).find((a) => a.id === 'lead')?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
-    fs.appendFileSync(s2File, jsonl([said(S2, [{ type: 'text', text: 'Docs updated.' }])]));
     await expect.poll(async () => (await heard()).some((e) => e.channel === 'chat:events' && e.type === 'item'), { timeout: 15_000 }).toBe(true);
     const item = (await heard()).find((e) => e.channel === 'chat:events' && e.type === 'item') as { seq: number; chatId: string; item: { kind: string; text: string; n: number } };
     values.itemEvent = item;
