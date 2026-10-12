@@ -201,7 +201,8 @@ describe('the role, on the launches the bots make', () => {
     agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });
     agent({ id: 'agent-r', name: 'Lead · Release 1.9.4', role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'agent-o' });
     const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
-    const text = '/start_agent release Ship it';
+    // By its id: a part of a name finds the orchestrator, never one of its chats (bot-core's findAgent).
+    const text = '/start_agent agent-r Ship it';
 
     const runner = await typedAfter(async () => {
       await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));

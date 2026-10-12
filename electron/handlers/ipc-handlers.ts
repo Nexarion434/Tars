@@ -849,7 +849,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // to an agent that is `running`, so a note owed to one of them waited on a
     // turn that was not coming.
     if (prompt.trim()) {
-      agent.savedPrompt = prompt;
+      // A chat's message is a turn, not the agent's brief (AgentLaunchOptions.message).
+      if (!options?.message) agent.savedPrompt = prompt;
       agent.status = 'running';
       agent.currentTask = prompt.slice(0, 100);
     } else {

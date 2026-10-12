@@ -38,7 +38,7 @@ import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/age
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
-import { chatIdentityOf } from '../chat-runners';
+import { chatIdentityOf } from '../../core/chat-identity';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -1124,7 +1124,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (agent.worktreePath) {
       lines.push(`You work in the worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory.`);
     }
-    // A chat's runner: which chat, and that others may run beside it (services/chat-runners.ts).
+    // A chat's runner: which chat, and that others may run beside it (core/chat-identity.ts).
     const inChat = chatIdentityOf(agent);
     if (inChat) lines.push(inChat);
     if (agent.savedPrompt) {

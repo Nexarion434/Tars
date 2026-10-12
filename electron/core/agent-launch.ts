@@ -31,6 +31,13 @@ export interface AgentLaunchOptions {
    * continued under a new id, which is what a restart does. Null: none.
    */
   resumeSessionId?: string | null;
+  /**
+   * The prompt is a message of a chat (services/chat-runners.ts): the CLI's
+   * first turn, never kept as the agent's saved prompt, which is its brief
+   * (the agent's form, a template, a team's brief) and its role in its
+   * bootstrap.
+   */
+  message?: boolean;
 }
 
 export type AgentLaunchResult =
