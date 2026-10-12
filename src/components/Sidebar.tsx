@@ -83,7 +83,8 @@ interface SidebarProps {
   isMobile?: boolean;
 }
 
-function useWhatsNewBadge() {
+/** Whether What's New has a release the person has not opened yet. The new shell's More reads it too. */
+export function useWhatsNewBadge() {
   const [hasNew, setHasNew] = useState(false);
 
   useEffect(() => {

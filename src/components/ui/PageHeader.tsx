@@ -1,5 +1,7 @@
 'use client';
 
+import { useCardTitle } from './CardTitle';
+
 /**
  * The band at the top of every screen.
  *
@@ -30,10 +32,14 @@ export function PageHeader({
   actions?: React.ReactNode;
   className?: string;
 }) {
+  // In a card of the new shell, the card's head already says the page's name.
+  const cardTitle = useCardTitle();
+  const repeatsCard = cardTitle !== null && typeof title === 'string' && title.toLowerCase() === cardTitle.toLowerCase();
+  if (repeatsCard && !subtitle && !actions) return null;
   return (
     <header className={`flex items-end justify-between gap-4 pb-3.5 shrink-0 ${className}`}>
       <div className="min-w-0">
-        <h1 className="font-serif text-2xl leading-[1.15] text-foreground truncate">{title}</h1>
+        {!repeatsCard && <h1 className="font-serif text-2xl leading-[1.15] text-foreground truncate">{title}</h1>}
         {subtitle && (
           <p className="mt-0.5 text-[12.5px] leading-[1.4] text-muted-foreground">{subtitle}</p>
         )}

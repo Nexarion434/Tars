@@ -95,6 +95,8 @@ export interface AppSettings {
   errorReportsEnabled: boolean;
   /** Resume idle agents once at launch (not on navigation). */
   autoStartAgentsOnLaunch?: boolean;
+  /** Settings, Preferences, "New interface": the new shell and chats per project, a preview (plan 2.0.0). Off when absent. */
+  newInterface?: boolean;
   cliPaths: CLIPaths;
   defaultProvider?: string;
   obsidianVaultPaths?: string[];
