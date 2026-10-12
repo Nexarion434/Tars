@@ -224456,31 +224456,6 @@
                           "fontWeight": "normal"
                         }
                       ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "SfU7I",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "e324Z",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        }
-                      ]
                     }
                   ]
                 }
@@ -227174,31 +227149,6 @@
                           "fontWeight": "normal"
                         }
                       ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ckryf",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "K0swO2",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        }
-                      ]
                     }
                   ]
                 }
@@ -229890,31 +229840,6 @@
                           "fontFamily": "$font-ui",
                           "fontSize": 11.5,
                           "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "gDJMv",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "BMjqr",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
                         }
                       ]
                     }
@@ -232748,31 +232673,6 @@
                           "fontFamily": "$font-ui",
                           "fontSize": 11.5,
                           "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "n4UXb5",
-                      "name": "button ellipsis",
-                      "width": 26,
-                      "height": 26,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "DQo1A",
-                          "name": "ellipsis",
-                          "width": 12,
-                          "height": 12,
-                          "icon": "ellipsis",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
                         }
                       ]
                     }
