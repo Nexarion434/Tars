@@ -184,6 +184,15 @@ describe("the migration: each project's orchestrator's conversation is its chat 
     expect(chats(again).map(c => c.number)).toEqual([2]);
   });
 
+  it('13, 17. makes no Main for a project whose counter says it had chats, though none is left: #1 is not handed out again', () => {
+    writeFile({ version: 1, numbers: { [projA]: 3 }, chats: [] });
+    const store = open();
+    expect(store.problem()).toBeNull();
+    expect(store.ensureMains([orch()])).toEqual([]);
+    expect(chats(store)).toEqual([]);
+    expect(ok(store.create({ projectPath: projA, title: 'Again' }, [orch()]))).toMatchObject({ number: 4, inbox: true });
+  });
+
   it('18. makes Main for a project whose orchestrator was set after the migration', () => {
     const store = open();
     expect(store.ensureMains([])).toEqual([]);
@@ -302,6 +311,9 @@ describe('the file', () => {
     writeFile({ version: 1, numbers: { [projA]: 1 }, chats: [record(), record({ id: 'r3', number: 3, title: 'Three', inbox: false })] });
     const store = open();
     expect(store.problem()?.kind).toBe('repaired');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).numbers[projA]).toBe(3);
+    // #3 deleted: the next is #4, not #3 again (nor #2, which the counter's own say would give).
+    expect(store.remove('r3', () => [])).toEqual({ success: true });
     expect(ok(store.create({ projectPath: projA, title: 'Next' }, [orch()])).number).toBe(4);
   });
 
@@ -565,6 +577,17 @@ describe("the sessions: each one the runner's conversation goes through", () => 
     expect(bytes().equals(before)).toBe(true);
     expect(main(open()).sessionIds).toEqual([SESSION_A, SESSION_B]);
   });
+
+  it('29. adds it only to the chats of that runner that lack it', () => {
+    writeFile({
+      version: 1,
+      numbers: { [projA]: 2 },
+      chats: [record({ sessionIds: [SESSION_A, SESSION_B] }), record({ id: 'r2', number: 2, title: 'Two', inbox: false, sessionIds: [SESSION_A] })],
+    });
+    const store = open();
+    expect(store.noteSession('o1', SESSION_B)).toBe(true);
+    expect(chats(store).map(c => c.sessionIds)).toEqual([[SESSION_A, SESSION_B], [SESSION_A, SESSION_B]]);
+  });
 });
 
 describe('work out at the team (chat_has_work)', () => {
@@ -578,7 +601,11 @@ describe('work out at the team (chat_has_work)', () => {
       { id: 'w2', name: 'Other', taskQueue: [{ ref: 't-00000003', requesterAgentId: 'o1', queuedAt, state: 'delivered' as const }],
         requestedBy: { agentId: 'o1', ptyId: 'p2', taskRef: 't-00000003' } },
       { id: 'w3', name: 'Legacy', requestedBy: { agentId: 'o1', ptyId: 'p3' } },
-      { id: 'o1', name: 'Lead', taskQueue: [{ ref: 't-00000004', requesterAgentId: 'w1', queuedAt, state: 'queued' as const }] },
+      // Work asked of the runner, by others or by itself, is not the chat's work out.
+      { id: 'o1', name: 'Lead', taskQueue: [
+        { ref: 't-00000004', requesterAgentId: 'w1', queuedAt, state: 'queued' as const },
+        { ref: 't-00000005', requesterAgentId: 'o1', queuedAt, state: 'queued' as const },
+      ], requestedBy: { agentId: 'o1', ptyId: 'p0' } },
     ];
     expect(workOutOf('o1', fleet)).toEqual([
       { workerId: 'w1', workerName: 'Worker', ref: 't-00000001', state: 'queued', queuedAt },
