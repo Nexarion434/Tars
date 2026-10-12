@@ -1,5 +1,22 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
+
+/** Bytes read from files while `on`, through either way of reading one. */
+const counted = vi.hoisted(() => ({ on: false, bytes: 0 }));
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const readSync = ((...args: Parameters<typeof actual.readSync>) => {
+    const n = (actual.readSync as (...a: Parameters<typeof actual.readSync>) => number)(...args);
+    if (counted.on) counted.bytes += n;
+    return n;
+  }) as typeof actual.readSync;
+  const readFileSync = ((...args: Parameters<typeof actual.readFileSync>) => {
+    const out = (actual.readFileSync as (...a: Parameters<typeof actual.readFileSync>) => string | Buffer)(...args);
+    if (counted.on) counted.bytes += typeof out === 'string' ? Buffer.byteLength(out) : out.length;
+    return out;
+  }) as typeof actual.readFileSync;
+  return { ...actual, readSync, readFileSync, default: { ...actual, readSync, readFileSync } };
+});
 import * as os from 'os';
 import * as path from 'path';
 import { encodeProjectDirName } from '../../../electron/utils/resume-session';
@@ -204,20 +221,9 @@ describe('what reading the model costs', () => {
   const fileOf = () => path.join(home, '.claude', 'projects', encodeProjectDirName(PROJECT), `${SESSION}.jsonl`);
   const filler = (n: number) => Array.from({ length: n }, (_, i) => JSON.stringify({ type: 'user', message: { content: `${i} ${'x'.repeat(1000)}` } }));
   const readBytes = () => {
-    const opened: string[] = [];
-    let bytes = 0;
-    const read = vi.spyOn(fs, 'readSync').mockImplementation(((real) => (...args: Parameters<typeof fs.readSync>) => {
-      const n = (real as (...a: Parameters<typeof fs.readSync>) => number)(...args);
-      bytes += n;
-      return n;
-    })(fs.readSync.bind(fs)) as typeof fs.readSync);
-    const whole = vi.spyOn(fs, 'readFileSync').mockImplementation(((real) => (...args: Parameters<typeof fs.readFileSync>) => {
-      opened.push(String(args[0]));
-      const out = (real as (...a: Parameters<typeof fs.readFileSync>) => string | Buffer)(...args);
-      bytes += typeof out === 'string' ? Buffer.byteLength(out) : out.length;
-      return out;
-    })(fs.readFileSync.bind(fs)) as typeof fs.readFileSync);
-    return { bytes: () => bytes, opened, restore: () => { read.mockRestore(); whole.mockRestore(); } };
+    counted.bytes = 0;
+    counted.on = true;
+    return { bytes: () => counted.bytes, restore: () => { counted.on = false; } };
   };
 
   it('1. reads the end of a large transcript, not the whole of it', () => {
