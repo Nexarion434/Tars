@@ -128,6 +128,20 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
           />
         }
       />
+
+      {/* Settings · Preferences: the last row, off unless turned on. */}
+      <SettingsRow
+        label="New interface"
+        description="Turns on the new shell and chats per project, a preview: the sidebar lists your chats, and Agents, Usage, Settings and the other pages open from More as cards above the app."
+        wrap
+        control={
+          <Toggle
+            label="New interface"
+            enabled={appSettings.newInterface === true}
+            onChange={() => onSaveAppSettings({ newInterface: appSettings.newInterface !== true })}
+          />
+        }
+      />
     </SettingsCard>
   );
 };
