@@ -23,6 +23,11 @@
  * - a failed logout reported as done: removing the account would then leave a
  *   signed-in item behind with nobody able to see it;
  * - the command given as a string to a shell.
+ * - a check still running when Tars quits goes on without it: measured by QA
+ *   on 2026-10-12, a `claude auth status` the accounts list had started wrote
+ *   .claude.json into the home after the quit. The quit's first pass ends it
+ *   and whatever it started (endAuthCommands), the check fails rather than
+ *   reading as signed out, and one asked for during the quit is not started.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { claudeAccountsNotPorted } from '../../setup/platform-limits';
@@ -32,7 +37,7 @@ vi.setConfig({ testTimeout: 30_000 });
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { accountEnv, claudeAuthStatus, claudeAuthLogout, loginCommand } from '../../../electron/services/claude-accounts/auth';
+import { accountEnv, claudeAuthStatus, claudeAuthLogout, loginCommand, endAuthCommands } from '../../../electron/services/claude-accounts/auth';
 import { makeFakeClaude, signIn, type FakeClaude } from './fake-claude';
 
 let fake: FakeClaude;
@@ -132,5 +137,24 @@ describe.skipIf(claudeAccountsNotPorted())('the login command', () => {
     expect(c.args).toEqual(['auth', 'login', '--claudeai']);
     expect(c.env.CLAUDE_CONFIG_DIR).toBe(dirA);
     expect('CLAUDE_CONFIG_DIR' in loginCommand(fake.bin, null, { CLAUDE_CONFIG_DIR: '/other' }).env).toBe(false);
+  });
+});
+
+describe.skipIf(claudeAccountsNotPorted() || process.platform === 'win32')('a check the quit ends', () => {
+  it('ends a running status check and what it started, and the check fails', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-auth-quit-'));
+    const pids = path.join(dir, 'pids');
+    const bin = path.join(dir, 'claude');
+    // Records its pid and its child's, then waits: a check the quit comes in the middle of.
+    fs.writeFileSync(bin, `#!/bin/bash\nsleep 30 &\necho "$$ $!" > ${JSON.stringify(pids)}\nwait\n`, { mode: 0o755 });
+    const check = claudeAuthStatus(bin, dirA);
+    for (let i = 0; i < 100 && !fs.existsSync(pids); i++) await new Promise(r => setTimeout(r, 50));
+    const [cli, child] = fs.readFileSync(pids, 'utf8').trim().split(' ').map(Number);
+    endAuthCommands();
+    await expect(check).rejects.toThrow(/ended by the quit/);
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    for (let i = 0; i < 40 && (alive(cli) || alive(child)); i++) await new Promise(r => setTimeout(r, 50));
+    expect([alive(cli), alive(child)]).toEqual([false, false]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
