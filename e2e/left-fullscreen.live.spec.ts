@@ -150,7 +150,7 @@ test('a panel whose claude left fullscreen', async () => {
 
     // ---- Recorders in the sandbox's main: every input, resize, start and stop the renderer sends.
     const wrapped = await app.evaluate(({ ipcMain }) => {
-      globalThis.__rec = { input: [], resize: [], start: [], stop: [] };
+      globalThis.__rec = { input: [], resize: [], start: [], stop: [], restart: [] };
       const wrap = (channel, note) => {
         const h = ipcMain._invokeHandlers && ipcMain._invokeHandlers.get(channel);
         if (!h) return false;
@@ -162,6 +162,9 @@ test('a panel whose claude left fullscreen', async () => {
         wrap('agent:resize', ([p]) => globalThis.__rec.resize.push({ at: Date.now(), id: p && p.id, cols: p && p.cols, rows: p && p.rows })),
         wrap('agent:start', ([p]) => globalThis.__rec.start.push({ at: Date.now(), id: p && p.id, options: p && p.options })),
         wrap('agent:stop', ([id]) => globalThis.__rec.stop.push({ at: Date.now(), id })),
+        // The notice's restart is one call since #138 (38b01c02), which keeps
+        // the conversation: a stop then a start began a new one.
+        wrap('agent:restart', ([id]) => globalThis.__rec.restart.push({ at: Date.now(), id })),
       ];
     });
     fact('recorders', { wrapped });
@@ -385,6 +388,7 @@ test('a panel whose claude left fullscreen', async () => {
       values.restart = {
         stops: r.stop.filter(x => x.id === 'left' && x.at >= clickAt).length,
         starts: r.start.filter(x => x.id === 'left' && x.at >= clickAt).map(x => x.options),
+        restarts: r.restart.filter(x => x.id === 'left' && x.at >= clickAt).length,
         list: (await list()).find(a => a.id === 'left'),
         alternateScreen: screen.includes('\x1b[?1049h'),
         panel: (({ notice, noticeButtons }) => ({ notice, noticeButtons }))((await panels())['Left agent']),
@@ -415,7 +419,7 @@ test('a panel whose claude left fullscreen', async () => {
       'Inline scrolls its own history': w['Inline agent'].reportsSent === 0 && w['Inline agent'].viewportTop[1] < w['Inline agent'].viewportTop[0],
       'Copy Output is the text on screen': values.copy.hasEscape === false && values.copy.hasTheAnswer === true,
       'a new PTY ends at its panel\'s size': values.sizeResend.newPty.cols === values.sizeResend.panelSize.cols && values.sizeResend.newPty.rows === values.sizeResend.panelSize.rows,
-      'restart gives a fullscreen session and the wheel back': !!(values.restart && values.restart.stops === 1 && values.restart.starts.length === 1
+      'restart gives a fullscreen session and the wheel back': !!(values.restart && values.restart.restarts === 1 && values.restart.stops === 0 && values.restart.starts.length === 0
         && values.restart.alternateScreen && values.restart.list.leftFullscreen === false && values.restart.panel.notice === null && values.restart.wheel.reportsSent > 0),
       'no page error': pageErrors.length === 0,
     };
