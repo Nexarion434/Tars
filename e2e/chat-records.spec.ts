@@ -27,12 +27,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. a new session of Lead's is added to Main's sessions;
  * 5. Main cannot be deleted while Lead has a request out at the worker:
  *    `chat_has_work`, naming it;
- * 6. chat:send refuses, and says why;
- * 7. quit, launch again: every chat as it was, and chats.json byte for byte
+ * 6. quit, launch again: every chat as it was, and chats.json byte for byte
  *    what the first run left, after the launch and a while later: the
  *    migration ran once.
  * The artefact: values.json with each answer and the file's sha256 at each
  * step, and the file itself after each run (chats-run1.json, chats-run2.json).
+ * Sending in a chat is e2e/chat-runners.spec.ts's.
  */
 
 const SESSION_A = 'e2e00000-0000-4000-8000-0000000000aa';
@@ -224,12 +224,6 @@ test("chats: Main made once from the project's orchestrator, and every change ke
     expect(typeof hasWork.reason).toBe('string');
     expect((await list(page)).chats.some(c => c.id === main.id)).toBe(true);
 
-    // 6. A chat cannot be written to before the runners: refused, with the reason.
-    const sent = await chat(page, 'send', { chatId: two.id, text: 'hello', clientRequestId: 'e2e-1' });
-    keep({ sent });
-    expect(sent).toMatchObject({ error: 'chat_send_unavailable' });
-    expect(String(sent.reason).length).toBeGreaterThan(20);
-
     finalRun1 = (await list(page)).chats;
     keep({ finalRun1 });
   } finally {
@@ -239,7 +233,7 @@ test("chats: Main made once from the project's orchestrator, and every change ke
   fs.copyFileSync(chatsFile, test.info().outputPath('chats-run1.json'));
   keep({ shaAtQuit });
 
-  // ---- 7. Second run: the same chats, and the file untouched.
+  // ---- 6. Second run: the same chats, and the file untouched.
   ({ app, page } = await launch());
   try {
     const again = await list(page);

@@ -407,6 +407,12 @@ export interface WriteOrigin {
    */
   onDropped?: () => void;
   /**
+   * Called if the message is taken back before it was written: its request
+   * was cancelled (withdrawWaiting). Not onDropped: whoever cancelled it tells
+   * the asker why.
+   */
+  onWithdrawn?: () => void;
+  /**
    * The request this message hands over (core/task-requests.ts), typed in
    * its sender line: the turn whose prompt carries it is that request's.
    */
@@ -1078,6 +1084,28 @@ export function writeProgrammaticInput(
   // The pump runs synchronously as far as the write, so the item has left the
   // queue exactly when it went into the terminal.
   return state.queue.includes(item) ? 'held' : 'written';
+}
+
+/**
+ * Takes back the messages waiting for this terminal that hand over the request
+ * `taskRef`: it was cancelled before they went in (core/task-cancel.ts). Each
+ * one's onWithdrawn is called, never its onDropped. Returns how many.
+ */
+export function withdrawWaiting(ptyProcess: pty.IPty, taskRef: string): number {
+  const state = inputs.get(ptyProcess);
+  if (!state) return 0;
+  const taken = state.queue.filter(item => item.origin?.taskRef === taskRef);
+  if (!taken.length) return 0;
+  state.queue = state.queue.filter(item => !taken.includes(item));
+  for (const item of taken) {
+    try {
+      item.origin?.onWithdrawn?.();
+    } catch (err) {
+      console.error('[pty] a withdrawn message\'s hook failed:', err);
+    }
+  }
+  announce(ptyProcess, state);
+  return taken.length;
 }
 
 /**
