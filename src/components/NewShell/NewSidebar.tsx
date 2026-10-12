@@ -12,6 +12,7 @@ import { Brand, BrandMark } from '@/components/Brand';
 import { Button } from '@/components/ui';
 import { useWhatsNewBadge } from '@/components/Sidebar';
 import { useAppPathname } from '@/hooks/useAppPathname';
+import { useElectronAgents } from '@/hooks/useElectron';
 import { shellPlaceFor, type ShellPlace } from '@/lib/new-shell';
 import { useStore } from '@/store';
 import { MORE_PAGES, type MorePageId } from './more-pages';
@@ -74,6 +75,9 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
     // On a project's page, the filter chooses the project.
     if (path && place === 'projects') router.push(`/project?path=${encodeURIComponent(path)}`);
   };
+  // A chat is with a project's orchestrator: with none in any project, New chat has nothing to make (Shell · chats · empty draws it dimmed).
+  const { agents } = useElectronAgents();
+  const canMakeChat = agents.some(agent => agent.role === 'orchestrator' && !!agent.projectPath);
   const hrefOf = (item: (typeof MAIN)[number]) =>
     item.place === 'projects' && filter ? `/project?path=${encodeURIComponent(filter)}` : item.href;
 
@@ -129,6 +133,8 @@ export default function NewSidebar({ onOpenPage }: { onOpenPage: (id: MorePageId
       <div className="px-2 pt-2 pb-0.5 shrink-0">
         <Button
           className="w-full"
+          disabled={!canMakeChat}
+          title={canMakeChat ? undefined : 'A chat is with the orchestrator of a project, and no project has one yet.'}
           onClick={() => router.push(`/chats?new=1${filter ? `&project=${encodeURIComponent(filter)}` : ''}`)}
         >
           <Plus className="w-3.5 h-3.5" />
