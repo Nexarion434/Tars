@@ -119,8 +119,8 @@ describe('the landing\'s preview of 2.0.0', () => {
     expect(element).toMatch(/alt="[^"]{20,}"/);
 
     // The section shows what it is handed, between its head and its points.
-    const markup = renderToStaticMarkup(<PreviewSection picture={<img src="x.png" alt="A chat's page" />} />);
-    const at = markup.indexOf('<img');
+    const markup = renderToStaticMarkup(<PreviewSection picture={<span data-picture="">A chat&apos;s page</span>} />);
+    const at = markup.indexOf('data-picture');
     expect(at).toBeGreaterThan(markup.indexOf('Projects and chats'));
     expect(at).toBeLessThan(markup.indexOf('Every chat, in one list'));
   });
