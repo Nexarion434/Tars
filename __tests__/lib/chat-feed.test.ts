@@ -66,6 +66,15 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  *     1, later, in b 2, where the transcripts say hello, gone line, later;
  * 22. a removal drops lines it does not name, lines of another chat, or
  *     moves nothing when it names lines the page never read.
+ *
+ * Written before the fix, from the Audit's gate of #378's third delta (L1):
+ * 23. a re-read after a gap keeps the earlier pages by their old places though
+ *     a removal moved every line after it: a removed line stays, no line says
+ *     its transcript is gone, and Show earlier goes, so nothing repairs it
+ *     until the page is opened again (the Audit's probe P3).
+ *
+ * Added after the code, for a mutant of the Audit's that survived (its Info):
+ * 24. a removal that names the first line held keeps it.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -270,5 +279,27 @@ describe('chat feed', () => {
     expect(s.stale).toBe(false);
     s = applyEvent(s, ev(13, 'c1', { type: 'removed', itemIds: ['u6'] }));
     expect(texts(s)).toEqual(['five']);
+  });
+
+  // The Audit's probe P3: an earlier page read, then b's transcript gone, its
+  // removal missed in a gap, and the last four read again where they now are.
+  it('starts over from a re-read whose lines moved, rather than keep earlier pages by their old places (23)', () => {
+    const at = (n: number, id: string) => item(n, id, id);
+    let s = applySnapshot(emptyFeed('c1'), history(10, [at(3, 'x3'), at(4, 'x4'), at(5, 'x5'), at(6, 'x6')], 7));
+    s = applyEarlier(s, history(10, [at(0, 'h'), at(1, 'b1'), at(2, 'b2')], 7), 3);
+    expect(places(s)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: at(2, 'x3') }));
+    expect(s.stale).toBe(true);
+    s = applySnapshot(s, history(20, [at(2, 'x3'), at(3, 'x4'), at(4, 'x5'), at(5, 'x6')], 6));
+    expect(texts(s)).toEqual(['x3', 'x4', 'x5', 'x6']);
+    expect(places(s)).toEqual([2, 3, 4, 5]);
+    expect(s.hasEarlier, 'Show earlier reads the rest again').toBe(true);
+  });
+
+  it('drops the first line held when a removal names it (24)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0, 'b0', 'b0'), item(1, 'h', 'h')]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'removed', itemIds: ['b0'] }));
+    expect(texts(s)).toEqual(['h']);
+    expect(places(s)).toEqual([1]);
   });
 });
