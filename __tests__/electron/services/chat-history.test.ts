@@ -314,7 +314,7 @@ describe('a chat, followed', () => {
     fs.mkdirSync(path.dirname(inWorktree), { recursive: true });
     fs.writeFileSync(inWorktree, userLine('ran in the old lead\'s worktree'));
     write(S('b'), userLine('the new lead'));
-    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: worktree } });
+    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [worktree] } });
     const before = await readChatItems(chat, { runner: runnerOf({ id: 'old', worktreePath: worktree, currentSessionId: S('a') }), homeDir: home });
     expect(texts(before)).toContain("ran in the old lead's worktree");
     noteChatSnapshot(chat.id, before);
@@ -326,6 +326,20 @@ describe('a chat, followed', () => {
     expect(texts(fresh)).toContain("ran in the old lead's worktree");
     expect(texts(fresh)).not.toContain(`session ${S('a')}: its transcript is gone`);
     expect(sent.filter((e) => e.type === 'removed')).toEqual([]);
+  });
+
+  it('15. reads a session from the real spelling recorded for it, its folder gone (GATE-PR391, L2)', async () => {
+    const real = path.join(home, 'real-worktree');
+    const link = path.join(home, 'linked-worktree');
+    // As Claude Code files it: under the real path of where its CLI ran.
+    const filed = path.join(home, '.claude', 'projects', encodeProjectDirName(real), `${S('a')}.jsonl`);
+    fs.mkdirSync(path.dirname(filed), { recursive: true });
+    fs.writeFileSync(filed, userLine('filed under the real path'));
+    write(S('b'), userLine('the new lead'));
+    // Neither folder exists any more: no spelling can be found from the link.
+    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [link, real] } });
+    const items = await readChatItems(chat, { runner: runnerOf({ id: 'new', currentSessionId: S('b') }), homeDir: home });
+    expect(texts(items)).toContain('filed under the real path');
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
