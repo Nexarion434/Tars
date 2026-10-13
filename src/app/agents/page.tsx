@@ -20,6 +20,8 @@ import {
 } from '@/components/AgentList';
 import { Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
 import { statusWord } from './constants';
+import type { AgentPermissionMode } from '@/types/agent';
+import { templateModeOf } from '@/lib/plan-mode';
 
 // The words the cards print, in the frames' order: stopped sits between idle
 // and error (`Agent stopped · who and why`), asleep between idle and stopped
@@ -140,7 +142,7 @@ export default function AgentsPage() {
     character?: AgentCharacter,
     name?: string,
     secondaryProjectPath?: string,
-    permissionMode?: 'normal' | 'auto' | 'bypass',
+    permissionMode?: AgentPermissionMode,
     provider?: AgentProvider,
     localModel?: string,
     obsidianVaultPaths?: string[],
@@ -168,7 +170,7 @@ export default function AgentsPage() {
     projectPath?: string;
     skills?: string[];
     secondaryProjectPath?: string | null;
-    permissionMode?: 'normal' | 'auto' | 'bypass';
+    permissionMode?: AgentPermissionMode;
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     name?: string;
     character?: AgentCharacter;
@@ -248,7 +250,8 @@ export default function AgentsPage() {
       provider: agent.provider,
       model: agent.model,
       localModel: agent.localModel,
-      permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'),
+      // A template keeps three modes: an agent in plan is saved as manual, the narrowest of them.
+      permissionMode: templateModeOf(agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal')),
       effort: agent.effort,
       skills: agent.skills,
       obsidianVaultPaths: agent.obsidianVaultPaths,

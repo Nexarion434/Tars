@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -68,5 +68,5 @@ test('names how many transcripts it could not read, and prices the rest', async 
 
   await app.close();
   fs.chmodSync(blocked, 0o600);
-  fs.rmSync(home, { recursive: true, force: true });
+  await removeHome(home);
 });

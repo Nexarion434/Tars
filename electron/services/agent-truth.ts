@@ -60,16 +60,64 @@ export function currentBranch(cwd: string | undefined): string | null {
 
 /* ── The model ───────────────────────────────────────────────────────── */
 
-/** The last line of a file, without reading the whole thing into memory twice.
- *  Transcripts run to megabytes and this is called per agent per refresh. */
+/**
+ * How far back from a transcript's end the model is looked for: the end first,
+ * then further only when its last assistant line is not there (a long tool
+ * output after it). Past the last, the reading is none, which leaves the
+ * record's model alone (withSessionTruth only fills in).
+ */
+const MODEL_TAILS = [64 * 1024, 1024 * 1024, 8 * 1024 * 1024];
+
+/** What lastAssistantModel last read in each transcript, while it is unchanged. */
+const modelReadOf = new Map<string, { size: number; mtimeMs: number; model: string | null }>();
+const MODEL_READS_KEPT = 64;
+
+/**
+ * The model of a transcript's last assistant line, read from its end.
+ *
+ * It read the whole file and split it into lines, for every agent, each time
+ * the 5 s cache ran out, while the agent list is built twice a second: with
+ * the fleet's live transcripts at 136, 114, 104 MB... (830 MB together on
+ * 2026-10-13), hundreds of megabytes of strings every few seconds on the main
+ * thread, whose heap reached its limit and crashed Tars at 00:26. It reads
+ * 64 KB from the end now, more only when the line is further back, and nothing
+ * while the file is unchanged (size and modification time).
+ */
 function lastAssistantModel(file: string): string | null {
-  let raw: string;
+  let fd: number;
   try {
-    raw = fs.readFileSync(file, 'utf-8');
+    fd = fs.openSync(file, 'r');
   } catch {
     return null;
   }
-  const lines = raw.split('\n');
+  try {
+    const { size, mtimeMs } = fs.fstatSync(fd);
+    const known = modelReadOf.get(file);
+    if (known && known.size === size && known.mtimeMs === mtimeMs) return known.model;
+    let model: string | null = null;
+    for (const tail of MODEL_TAILS) {
+      const length = Math.min(size, tail);
+      const buffer = Buffer.alloc(length);
+      fs.readSync(fd, buffer, 0, length, size - length);
+      const lines = buffer.toString('utf-8').split('\n');
+      // The first line of a tail is cut in two, a character of several bytes
+      // with it: it is not read.
+      if (length < size) lines.shift();
+      model = lastModelIn(lines);
+      if (model || length === size) break;
+    }
+    modelReadOf.delete(file);
+    modelReadOf.set(file, { size, mtimeMs, model });
+    while (modelReadOf.size > MODEL_READS_KEPT) modelReadOf.delete(modelReadOf.keys().next().value as string);
+    return model;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function lastModelIn(lines: string[]): string | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -362,6 +410,7 @@ export function withSessionTruth<T extends {
 export function clearAgentTruthCache(): void {
   branchCache.clear();
   modelCache.clear();
+  modelReadOf.clear();
 }
 
 

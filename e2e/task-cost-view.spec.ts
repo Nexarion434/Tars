@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -92,7 +92,7 @@ test('the usage page lists each task with its own cost and its total, the averag
       turns: t.replies?.length || 1, sessionIds: t.session ? [t.session] : [],
     } }));
     if (!t.session) return;
-    const file = path.join(home, '.claude', 'projects', t.project.replace(/[/.]/g, '-'), `${t.session}.jsonl`);
+    const file = path.join(home, '.claude', 'projects', t.project.replace(/[^a-zA-Z0-9]/g, '-'), `${t.session}.jsonl`);
     const list = transcripts.get(file) ?? [];
     (t.replies ?? []).forEach(([input, output], i) => {
       reply += 1;
@@ -241,6 +241,6 @@ test('the usage page lists each task with its own cost and its total, the averag
     expect(errors, errors.join('\n')).toEqual([]);
   } finally {
     await app.close().catch(() => { /* gone */ });
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
