@@ -312,9 +312,10 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     await atRest(inboxRunner);
 
     // 4. Through the Hermes relay.
-    const switched = await call('settings', 'save', { hermesRelayEnabled: true });
+    const switched = await call('appSettings', 'save', { hermesRelayEnabled: true });
     keep({ switched });
-    await expect.poll(() => hermes.calls.some((c) => c.startsWith('GET /api/plugins/tars-relay/status')), { timeout: 30_000 }).toBe(true);
+    const relayStatus = () => page.evaluate(() => (window as unknown as { electronAPI: { hermes: { relayStatus(): Promise<Record<string, unknown>> } } }).electronAPI.hermes.relayStatus());
+    await expect.poll(async () => { const st = await relayStatus(); keep({ relayStatus: st, hermesCalls: hermes.calls.slice(-5) }); return st.state; }, { timeout: 30_000 }).toBe('ready');
     const relayed = await api(releaseRunner, '/api/telegram/send', { message: 'RELAY news from the release chat' });
     keep({ relayed });
     expect(relayed.status).toBeLessThan(300);
