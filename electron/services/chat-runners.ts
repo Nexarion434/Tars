@@ -462,7 +462,7 @@ export async function stopRunnerOf(chat: Chat): Promise<void> {
 export async function removeRunnerOf(chat: Chat): Promise<{ savedTo?: string; worktreeKept?: string }> {
   const runner = ownRunnerOf(chat);
   if (!runner) return {};
-  dropRunnerGrants(runner.worktreePath, runnerPlaceOf(runner.projectPath, chat.id)?.worktreePath);
+  dropRunnerGrants(runner.projectPath, runner.worktreePath, runnerPlaceOf(runner.projectPath, chat.id)?.worktreePath);
   const removed = await removeAgent(runner.id);
   announce(runner);
   return { ...(removed.savedTo ? { savedTo: removed.savedTo } : {}), ...(removed.worktreeKept ? { worktreeKept: removed.worktreeKept } : {}) };

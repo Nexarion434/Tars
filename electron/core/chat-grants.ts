@@ -10,7 +10,7 @@ import * as path from 'path';
  * only a regular file in a .claude that is no link: any other ignored file
  * still keeps the worktree.
  */
-export function dropRunnerGrants(worktreePath: string | undefined, ownWorktreePath: string | undefined): void {
+export function dropRunnerGrants(projectPath: string, worktreePath: string | undefined, ownWorktreePath: string | undefined): void {
   if (!ownWorktreePath || !worktreePath || path.resolve(worktreePath) !== path.resolve(ownWorktreePath)) return;
   const dir = path.join(ownWorktreePath, '.claude');
   const grants = path.join(dir, 'settings.local.json');

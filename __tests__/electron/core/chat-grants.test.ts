@@ -21,6 +21,10 @@ import { dropRunnerGrants } from '../../../electron/core/chat-grants';
  *    file there is deleted.
  * 6. `.claude` holds more than the file: the rest goes with it.
  * 7. A worktree with no `.claude`, or none at all, throws.
+ * 8. (the delta gate's L1) Above the worktree: the chat's folder is itself a link to the project
+ *    (`.worktrees/chat-x -> ..`). lstat follows it, `.claude` is the project's real folder and its file a regular one:
+ *    the project's own grants are deleted. Whatever the layout, the file the worktree reaches must never be the
+ *    project's own.
  */
 
 let root: string;
@@ -44,7 +48,7 @@ afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 describe('dropRunnerGrants', () => {
   it('1. removes the runner\'s copy, and .claude once empty', () => {
     write(grantsOf(worktree));
-    dropRunnerGrants(worktree, worktree);
+    dropRunnerGrants(project, worktree, worktree);
     expect(fs.existsSync(path.join(worktree, '.claude'))).toBe(false);
     expect(fs.existsSync(grantsOf(project))).toBe(true);
   });
@@ -52,7 +56,7 @@ describe('dropRunnerGrants', () => {
   it('2. never removes the project\'s own file through a linked .claude', () => {
     fs.symlinkSync('../../.claude', path.join(worktree, '.claude'));
     expect(fs.existsSync(grantsOf(worktree)), 'the link reaches the project\'s file').toBe(true);
-    dropRunnerGrants(worktree, worktree);
+    dropRunnerGrants(project, worktree, worktree);
     expect(fs.existsSync(grantsOf(project))).toBe(true);
     expect(fs.lstatSync(path.join(worktree, '.claude')).isSymbolicLink()).toBe(true);
   });
@@ -61,38 +65,46 @@ describe('dropRunnerGrants', () => {
     write(grantsOf(worktree));
     const linked = path.join(root, 'linked-worktree');
     fs.symlinkSync(worktree, linked);
-    dropRunnerGrants(linked, linked);
+    dropRunnerGrants(project, linked, linked);
     expect(fs.existsSync(grantsOf(worktree))).toBe(false);
   });
 
   it('4. leaves a settings.local.json that is a link', () => {
     fs.mkdirSync(path.join(worktree, '.claude'));
     fs.symlinkSync(grantsOf(project), grantsOf(worktree));
-    dropRunnerGrants(worktree, worktree);
+    dropRunnerGrants(project, worktree, worktree);
     expect(fs.lstatSync(grantsOf(worktree)).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(grantsOf(project))).toBe(true);
   });
 
   it('5. touches nothing when the runner works elsewhere than its own worktree', () => {
     write(grantsOf(worktree));
-    dropRunnerGrants(project, worktree);
+    dropRunnerGrants(project, project, worktree);
     expect(fs.existsSync(grantsOf(project))).toBe(true);
-    dropRunnerGrants(undefined, worktree);
-    dropRunnerGrants(worktree, undefined);
+    dropRunnerGrants(project, undefined, worktree);
+    dropRunnerGrants(project, worktree, undefined);
     expect(fs.existsSync(grantsOf(worktree))).toBe(true);
   });
 
   it('6. keeps what else .claude holds', () => {
     write(grantsOf(worktree));
     write(path.join(worktree, '.claude', 'agents', 'reviewer.md'), 'mine');
-    dropRunnerGrants(worktree, worktree);
+    dropRunnerGrants(project, worktree, worktree);
     expect(fs.existsSync(grantsOf(worktree))).toBe(false);
     expect(fs.readFileSync(path.join(worktree, '.claude', 'agents', 'reviewer.md'), 'utf8')).toBe('mine');
   });
 
   it('7. does not throw without .claude, or without the worktree', () => {
-    expect(() => dropRunnerGrants(worktree, worktree)).not.toThrow();
+    expect(() => dropRunnerGrants(project, worktree, worktree)).not.toThrow();
     const gone = path.join(project, '.worktrees', 'chat-gone');
-    expect(() => dropRunnerGrants(gone, gone)).not.toThrow();
+    expect(() => dropRunnerGrants(project, gone, gone)).not.toThrow();
+  });
+
+  it('8. never removes the project\'s own file when the worktree is a link to the project', () => {
+    fs.rmSync(worktree, { recursive: true });
+    fs.symlinkSync('..', worktree);
+    expect(fs.existsSync(grantsOf(worktree)), 'the link reaches the project\'s file').toBe(true);
+    dropRunnerGrants(project, worktree, worktree);
+    expect(fs.existsSync(grantsOf(project))).toBe(true);
   });
 });
