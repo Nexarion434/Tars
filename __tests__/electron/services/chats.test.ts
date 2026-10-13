@@ -84,6 +84,15 @@
  *     last), or adds a session it already has.
  * 38. It rebinds a chat other than Main, another project's Main, or brings back a Main the user deleted.
  * 39. It writes when Main already runs on the orchestrator, or does not say what it rebound.
+ * 40. (GATE-PR371-DELTA5, Info) A session is recorded without the folder its CLI ran in: after Main follows a new
+ *     orchestrator, a session the former one ran in its own worktree is looked for in the new one's folders only,
+ *     and reads as gone while its file is there. The folder is recorded with the session when it is taken, and
+ *     never replaced by a later note of it.
+ * 41. A session the record already holds, from before folders were recorded, never gets its folder.
+ * 42. A folder outside the project (another project's, a relative one, one climbing out with "..") is recorded:
+ *     chats.json is agents' to write, and the folder chooses which transcripts a chat shows.
+ * 43. The folders do not survive a launch, or a folder in the file for a session the chat does not hold is kept.
+ * 44. A file whose folders are malformed loses the chat, where only its folders should go.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -730,5 +739,54 @@ describe("Main follows the project's orchestrator (the orchestrator's decision, 
     const before = bytes();
     expect(store.followOrchestrators([orch()])).toEqual([]);
     expect(bytes()).toEqual(before);
+  });
+});
+
+describe("the folder each session's CLI ran in", () => {
+  const worktree = () => path.join(projA, '.worktrees', 'lead-old');
+
+  it('40. is recorded with the session when it is taken, and never replaced', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    expect(store.noteSession('o1', SESSION_B, worktree())).toBe(true);
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: worktree() });
+    expect(store.noteSession('o1', SESSION_B, projA)).toBe(false);
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: worktree() });
+  });
+
+  it('41. is filled in for a session the record already holds without one', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    expect(main(store).sessionIds).toEqual([SESSION_A]);
+    expect(store.noteSession('o1', SESSION_A, projA)).toBe(true);
+    expect(main(store).sessionFolders).toEqual({ [SESSION_A]: projA });
+    expect(main(store).sessionIds).toEqual([SESSION_A]);
+  });
+
+  it('42. is the project or a folder inside it, and nothing else', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    for (const outside of [projB, 'relative/folder', path.join(projA, '..', 'b'), `${projA}-sibling`, '']) {
+      store.noteSession('o1', SESSION_B, outside);
+      expect(main(store).sessionFolders?.[SESSION_B], outside).toBeUndefined();
+    }
+    expect(main(store).sessionIds).toContain(SESSION_B);
+  });
+
+  it('43. survives a launch, for the sessions the chat holds only', () => {
+    writeFile({
+      version: 1, numbers: { [projA]: 1 },
+      chats: [record({ sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: worktree(), [SESSION_B]: projA } })],
+    });
+    expect(main(open()).sessionFolders).toEqual({ [SESSION_A]: worktree() });
+  });
+
+  it('44. a malformed one is dropped, the chat kept', () => {
+    for (const bad of [{ [SESSION_A]: 7 }, 'x', [worktree()], { [SESSION_A]: projB }]) {
+      writeFile({ version: 1, numbers: { [projA]: 1 }, chats: [record({ sessionFolders: bad as never })] });
+      const chat = main(open());
+      expect(chat, JSON.stringify(bad)).toBeDefined();
+      expect(chat.sessionFolders ?? {}).toEqual({});
+    }
   });
 });
