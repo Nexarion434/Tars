@@ -58,6 +58,13 @@ export interface Chat {
   runnerId: string | null;
   /** Every session the runner's conversation went through, oldest first. */
   sessionIds: string[];
+  /**
+   * The folder each session's CLI ran in, by session id, recorded when the
+   * session was taken: Main follows a new orchestrator, and a session the
+   * former one ran in its own worktree is found there (GATE-PR371-DELTA5).
+   * The project or a folder inside it; absent for a session from before.
+   */
+  sessionFolders?: Record<string, string>;
   pinned: boolean;
   /** Hidden from the active chats until then (ISO), or until something arrives for it. */
   snoozedUntil: string | null;
@@ -154,7 +161,7 @@ export interface ChatStore {
   /** The chat an agent runs, Main's included. */
   chatOfRunner(agentId: string): Chat | undefined;
   /** A session the agent registered: added to each chat it runs that lacks it. Returns whether anything changed. */
-  noteSession(runnerId: string, sessionId: unknown): boolean;
+  noteSession(runnerId: string, sessionId: unknown, folder?: unknown): boolean;
 }
 
 const REASONS = {
@@ -179,7 +186,20 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && Number.isFinite(Date.parse(v));
 export const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
 const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work'>): ChatError => ({ error, reason: REASONS[error] });
-const copy = (chat: Chat): Chat => ({ ...chat, sessionIds: [...chat.sessionIds] });
+const copy = (chat: Chat): Chat => ({
+  ...chat, sessionIds: [...chat.sessionIds], ...(chat.sessionFolders ? { sessionFolders: { ...chat.sessionFolders } } : {}),
+});
+
+/**
+ * A folder a session's CLI may have run in: the project's own, or one inside
+ * it (its worktrees). chats.json is agents' to write, and the folder chooses
+ * which transcripts a chat shows.
+ */
+export function isSessionFolder(folder: unknown, projectPath: string): folder is string {
+  if (typeof folder !== 'string' || folder.length > 4096 || folder.includes('\0') || !path.isAbsolute(folder)) return false;
+  if (path.resolve(folder) !== folder) return false;
+  return folder === projectPath || folder.startsWith(projectPath.endsWith(path.sep) ? projectPath : projectPath + path.sep);
+}
 
 /** One line of at most TITLE_MAX characters, or null: breaks become spaces, control and bidi characters go. */
 export function titleOf(raw: unknown): string | null {
@@ -203,7 +223,11 @@ function serialize(state: State): string {
   for (const key of Object.keys(state.numbers).sort()) numbers[key] = state.numbers[key];
   const chats = [...state.chats].sort(byProjectThenNumber).map((c) => ({
     id: c.id, projectPath: c.projectPath, number: c.number, title: c.title, titleSource: c.titleSource,
-    runnerId: c.runnerId, sessionIds: c.sessionIds, pinned: c.pinned, snoozedUntil: c.snoozedUntil, settledAt: c.settledAt,
+    runnerId: c.runnerId, sessionIds: c.sessionIds,
+    ...(c.sessionFolders && Object.keys(c.sessionFolders).length
+      ? { sessionFolders: Object.fromEntries(Object.keys(c.sessionFolders).sort().map((k) => [k, c.sessionFolders![k]])) }
+      : {}),
+    pinned: c.pinned, snoozedUntil: c.snoozedUntil, settledAt: c.settledAt,
     inbox: c.inbox, createdAt: c.createdAt, updatedAt: c.updatedAt, lastActivityAt: c.lastActivityAt,
   }));
   return JSON.stringify({ version: CHATS_VERSION, numbers, chats }, null, 2) + '\n';
@@ -212,7 +236,7 @@ function serialize(state: State): string {
 /** A record as the file holds it, or null when it does not hold. A title is put on one line (`fixed`). */
 function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   if (!isObject(raw)) return null;
-  const { id, projectPath, number, title, titleSource, runnerId, sessionIds, pinned, snoozedUntil, settledAt, inbox, createdAt, updatedAt, lastActivityAt } = raw;
+  const { id, projectPath, number, title, titleSource, runnerId, sessionIds, sessionFolders, pinned, snoozedUntil, settledAt, inbox, createdAt, updatedAt, lastActivityAt } = raw;
   if (typeof id !== 'string' || !CHAT_ID.test(id)) return null;
   if (typeof projectPath !== 'string' || !path.isAbsolute(projectPath) || projectPath.includes('\0') || projectPath.length > 4096) return null;
   if (!Number.isInteger(number) || (number as number) < 1 || (number as number) > 1_000_000) return null;
@@ -226,12 +250,21 @@ function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   if (settledAt !== null && !isTime(settledAt)) return null;
   if (!isTime(createdAt) || !isTime(updatedAt) || !isTime(lastActivityAt)) return null;
   const sessions = [...new Set(sessionIds as string[])];
+  // The folders of the sessions it holds, each inside its project; what does not hold is dropped, the chat kept.
+  const folders: Record<string, string> = {};
+  if (isObject(sessionFolders)) {
+    for (const [sessionId, folder] of Object.entries(sessionFolders)) {
+      if (sessions.includes(sessionId) && isSessionFolder(folder, projectPath)) folders[sessionId] = folder;
+    }
+  }
+  const foldersFixed = sessionFolders !== undefined && (!isObject(sessionFolders) || Object.keys(folders).length !== Object.keys(sessionFolders).length);
   return {
     chat: {
       id, projectPath, number: number as number, title: flat, titleSource, runnerId: runnerId as string | null, sessionIds: sessions,
+      ...(Object.keys(folders).length ? { sessionFolders: folders } : {}),
       pinned, snoozedUntil: snoozedUntil as string | null, settledAt: settledAt as string | null, inbox, createdAt, updatedAt, lastActivityAt,
     },
-    fixed: flat !== title || sessions.length !== sessionIds.length,
+    fixed: flat !== title || sessions.length !== sessionIds.length || foldersFixed,
   };
 }
 
@@ -583,15 +616,23 @@ export function createChatStore(opts: {
       return chat ? copy(chat) : undefined;
     },
 
-    noteSession(runnerId, sessionId) {
+    noteSession(runnerId, sessionId, folder) {
       if (!writable || !isSessionId(sessionId)) return false;
-      if (!state.chats.some((c) => c.runnerId === runnerId && !c.sessionIds.includes(sessionId))) return false;
+      // What a chat of this runner lacks: the session, or the folder its CLI ran in, recorded once.
+      const lacks = (c: Chat) => c.runnerId === runnerId
+        && (!c.sessionIds.includes(sessionId) || (!c.sessionFolders?.[sessionId] && isSessionFolder(folder, c.projectPath)));
+      if (!state.chats.some(lacks)) return false;
       const next = clone();
       const at = iso();
       for (const chat of next.chats) {
-        if (chat.runnerId !== runnerId || chat.sessionIds.includes(sessionId)) continue;
-        chat.sessionIds.push(sessionId);
-        chat.lastActivityAt = at;
+        if (!lacks(chat)) continue;
+        if (!chat.sessionIds.includes(sessionId)) {
+          chat.sessionIds.push(sessionId);
+          chat.lastActivityAt = at;
+        }
+        if (!chat.sessionFolders?.[sessionId] && isSessionFolder(folder, chat.projectPath)) {
+          chat.sessionFolders = { ...(chat.sessionFolders ?? {}), [sessionId]: folder };
+        }
         chat.updatedAt = at;
       }
       return commit(next) === null;

@@ -194,7 +194,8 @@ export async function readChatItems(chat: Chat, deps: {
   const sessions: Array<{ sessionId: string; items: ChatItem[] | null; mayBeWritten: boolean }> = [];
   const key: string[] = [];
   for (const sessionId of ids) {
-    const file = sessionFile(sessionId, [deps.runner?.worktreePath, chat.projectPath], homeDir);
+    // Where it ran first, as recorded when it was taken: a former runner's worktree (GATE-PR371-DELTA5).
+    const file = sessionFile(sessionId, [chat.sessionFolders?.[sessionId], deps.runner?.worktreePath, chat.projectPath], homeDir);
     const items = file ? await readTranscript(file, sessionId, { nameOf: deps.nameOf }) : null;
     sessions.push({ sessionId, items, mayBeWritten: live.has(sessionId) });
     key.push(`${file ?? '-'}:${items?.length ?? -1}:${items?.[items.length - 1]?.id ?? ''}:${live.has(sessionId)}`);
