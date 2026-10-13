@@ -81,6 +81,9 @@ function project(name: string): string {
 }
 
 describe("the window's calls", () => {
+  // The removal reads the working folder of every process on the machine (lsof) before it touches a folder, which
+  // is what this case proves: 2.4 s of the case at a load of 70, past 5 s at 130 (QA's runs of 2.0.1). Its own 30 s,
+  // then. Case 7 failed after it there only because this removal was still under way.
   it("1, 2. list and remove the orphans of Tars's projects, never an agent's worktree, telling each step", async () => {
     const added = project('added');
     const agentsOnly = project('agents-only');
@@ -111,7 +114,7 @@ describe("the window's calls", () => {
     expect(fs.existsSync(owned)).toBe(true);
     const steps = pushed.filter(p => p.channel === 'system:orphanFolders:progress').map(p => p.payload as { done: number; total: number });
     expect(steps.map(s => [s.done, s.total])).toEqual([[1, 2], [2, 2]]);
-  });
+  }, 30_000);
 
   it("5. never offers an agent's own project folder inside a .worktrees", async () => {
     const host = project('host');
