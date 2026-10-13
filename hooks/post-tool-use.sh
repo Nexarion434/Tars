@@ -38,16 +38,15 @@ curl -s --connect-timeout 1 --max-time 3 -X POST "$BASE_URL/api/hooks/status" -H
 # input routinely contains quotes/newlines/backslashes, and naive string
 # interpolation would produce invalid JSON (observation silently dropped)
 # or let agent-controlled text inject extra JSON fields.
-# The CLI's own token: it names this agent. The shared file only when Tars
-# did not start this CLI and gave it none.
-API_TOKEN="${CLAUDE_MGR_API_TOKEN:-}"
-if [ -z "$API_TOKEN" ] && [ -f "$HOME/.dorothy/api-token" ]; then
-  API_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
-fi
+# The CLI's own token, once its port proved it is this CLI's Tars; the shared
+# file only when Tars did not start this CLI and gave it none (tars-hook.sh).
+API_TOKEN="$TARS_READ_TOKEN"
 
 store_observation() {
   local content="$1"
   local type="$2"
+  # No token to present: the port did not prove it is this CLI's Tars.
+  [ -n "$API_TOKEN" ] || return 0
 
   local payload
   payload=$(jq -n \

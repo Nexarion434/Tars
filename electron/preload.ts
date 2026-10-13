@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       character?: string;
       name?: string;
       secondaryProjectPath?: string;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider?: string;
       model?: string;
@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       projectPath?: string;
       skills?: string[];
       secondaryProjectPath?: string | null;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
       name?: string;
       character?: string;
@@ -874,6 +874,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('bus:thread', listener);
       return () => ipcRenderer.removeListener('bus:thread', listener);
     },
+  },
+
+  // The Windows desktop shell: the shells Settings > Terminal offers, and the
+  // title bar's colours when the theme changes.
+  desktopShell: {
+    detectShells: () => ipcRenderer.invoke('desktop:detectShells'),
+    setTitleBarOverlay: (colours: { color: string; symbolColor: string }) =>
+      ipcRenderer.invoke('desktop:setTitleBarOverlay', colours),
   },
 
   // Platform info

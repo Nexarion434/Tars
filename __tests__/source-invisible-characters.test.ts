@@ -79,11 +79,19 @@ function sourceFiles(): string[] {
   return [...rootFiles, ...[...SOURCE_DIRS, ...mcp].flatMap(dir => walk(path.join(ROOT, dir)))];
 }
 
+/** Any of them, written as escapes: the test holds none of the characters themselves. */
+const ANY_FORBIDDEN = new RegExp(`[${[...FORBIDDEN.keys()].map(code => `\\u{${code.toString(16)}}`).join('')}]`, 'u');
+
 /** Every forbidden character in these files, as `file:line:column U+XXXX NAME`, the column counted in characters. */
 function invisibleCharacters(files: string[], base = ROOT): string[] {
   const found: string[] = [];
   for (const file of files) {
-    const chars = Array.from(fs.readFileSync(file).toString('utf8'));
+    const text = fs.readFileSync(file).toString('utf8');
+    // One pass of a regex says whether a file holds any; only one that does is
+    // walked character by character. Walking every file took the whole-source
+    // scan past the 5 s default under load (QA, 2026-10-13).
+    if (!ANY_FORBIDDEN.test(text)) continue;
+    const chars = Array.from(text);
     let line = 1;
     let column = 0;
     for (let i = 0; i < chars.length; i++) {
@@ -128,7 +136,8 @@ describe('the source holds no invisible direction or zero-width character', () =
 
   it('reads the whole source, and finds none there', () => {
     const files = sourceFiles();
-    const rel = new Set(files.map(f => path.relative(ROOT, f)));
+    // Spelled with `/` whatever the platform's separator, as the names below are.
+    const rel = new Set(files.map(f => path.relative(ROOT, f).split(path.sep).join('/')));
     // A scan that reads nothing passes: the file where they were found must be in it, and the tree must be all there.
     for (const known of ['electron/utils/waiting-on.ts', 'src/app/chat/page.tsx', 'hooks/session-start.sh', 'e2e/surfaces.mjs', '__tests__/source-invisible-characters.test.ts', 'CLAUDE.md']) {
       expect(rel.has(known), `${known} was not read`).toBe(true);

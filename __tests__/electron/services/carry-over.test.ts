@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * What Tars owes its agents, carried across a restart (RD-REDEMARRAGE.md, 2.3; JeanBrasse's yes of 2026-10-05). The note
@@ -22,6 +23,9 @@ import * as path from 'path';
  * 20. (the Audit's gate of #310) The file sits where an agent can write it, and what it says is typed in Tars's voice:
  *     a note whose kind or status Tars never writes, or whose reason or background carries words of its own,
  *     or a field Tars never writes riding along with a good note.
+ * 21. (after #351, written before the fix, 2026-10-13) The news that a request never ran (`not_delivered`: its
+ *     worker stopped, deleted or cut by a restart, its message given up) is dropped from the file: owed to an asker
+ *     with no terminal, it is lost if Tars restarts before the asker's next session.
  */
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
@@ -176,7 +180,7 @@ describe('the file', () => {
     const constants = await import('../../../electron/constants');
     expect(carry.CARRY_OVER_FILE).toBe(path.join(constants.PRIVATE_DIR, 'carry-over.json'));
     writer.flush();
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (hasPosixModes()) expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('20. a note is taken back only as Tars writes one: a known kind and status, a reason of minutes, background ids', () => {
@@ -194,6 +198,18 @@ describe('the file', () => {
       { kind: 'ended', status: 'idle' },
       { kind: 'stalled', status: 'running', reason: '45' },
       { kind: 'outcome', status: 'completed', handedAt: '2026-10-05T01:00:00.000Z' },
+    ]);
+  });
+
+  it('21. the news that a request never ran is carried, its reason with it', () => {
+    const note = (news: Record<string, unknown>) => ({ requesterId: 'a', childId: 'b', news, at: 'x' });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, kanban: [], notes: [
+      note({ kind: 'not_delivered', status: 'stopped', reason: 'given-up', handedAt: '2026-10-07T01:00:00.000Z' }),
+      note({ kind: 'not_delivered', status: 'idle', reason: 'cut' }),
+    ] }));
+    expect(carry.readCarryOver(file).notes.map((n) => n.news)).toEqual([
+      { kind: 'not_delivered', status: 'stopped', reason: 'given-up', handedAt: '2026-10-07T01:00:00.000Z' },
+      { kind: 'not_delivered', status: 'idle', reason: 'cut' },
     ]);
   });
 

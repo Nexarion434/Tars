@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { diskUsage } from '../platform/disk-usage';
 
 /**
  * The folders no agent owns (JeanBrasse's choice 16 of 05/10; the frames merged in
@@ -141,7 +142,7 @@ function packageRepository(nodeModules: string): 'none' | 'some' | 'unknown' {
  * depth, links not followed: 'unknown' when a folder cannot be read or there
  * is more than SEARCH_LIMIT entries to look through.
  */
-function gitBelow(dir: string): 'none' | 'some' | 'unknown' {
+function gitBelow(dir: string, limit = SEARCH_LIMIT): 'none' | 'some' | 'unknown' {
   const stack = [dir];
   let seen = 0;
   while (stack.length) {
@@ -149,7 +150,7 @@ function gitBelow(dir: string): 'none' | 'some' | 'unknown' {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return 'unknown'; }
     for (const entry of entries) {
-      if (++seen > SEARCH_LIMIT) return 'unknown';
+      if (++seen > limit) return 'unknown';
       if (current !== dir && entry.name === '.git') return 'some';
       if (entry.isDirectory() && entry.name === 'node_modules') {
         // Not searched through, but a package checked out as a repository
@@ -173,8 +174,9 @@ function orphanReason(dir: string): OrphanReason | null {
   return mark === 'forgotten' ? 'git-forgot' : 'no-git';
 }
 
-/** Size on disk, in bytes, as du counts it. */
+/** Size on disk, in bytes, as du counts it. Windows has no du: there the folder is added up in Node (platform/disk-usage.ts). */
 async function sizeOf(p: string): Promise<number> {
+  if (process.platform === 'win32') return diskUsage(p);
   const r = await run('du', ['-sk', p]);
   const kb = Number(r.stdout.split(/\s/)[0]);
   return Number.isFinite(kb) ? kb * 1024 : 0;
@@ -209,7 +211,7 @@ function lastChangeOf(dir: string): string | null {
  * worktree git knows nor an agent's, walked into when it holds one (a branch
  * name with a slash nests its worktree), never through a link.
  */
-async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>> | null> {
+async function orphansOf(project: string, owned: Set<string>, searchLimit = SEARCH_LIMIT): Promise<Array<Omit<OrphanFolder, 'sizeBytes' | 'lastChangedAt'>> | null> {
   const base = path.join(project, '.worktrees');
   if (!isRealDir(base)) return [];
   const known = await knownWorktrees(project);
@@ -230,7 +232,7 @@ async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omi
       // A repository, a live worktree of any repository, or a .git that
       // cannot be read: never offered.
       if (mark !== 'none' && mark !== 'forgotten') continue;
-      const below = gitBelow(p);
+      const below = gitBelow(p, searchLimit);
       if (below === 'unknown') continue;
       // Something with a .git below, at any depth: each folder around it is
       // looked at for itself.
@@ -242,12 +244,13 @@ async function orphansOf(project: string, owned: Set<string>): Promise<Array<Omi
   return found;
 }
 
-export async function listOrphanFolders(opts: { projects: string[]; owned: string[] }): Promise<OrphanListing> {
+/** `searchLimit`: how many entries below a folder are looked through for a `.git` (SEARCH_LIMIT); a test crosses a small one. */
+export async function listOrphanFolders(opts: { projects: string[]; owned: string[]; searchLimit?: number }): Promise<OrphanListing> {
   const owned = new Set(opts.owned.map(real));
   const folders: OrphanFolder[] = [];
   const unreadProjects: string[] = [];
   for (const project of [...new Set(opts.projects)]) {
-    const orphans = await orphansOf(project, owned);
+    const orphans = await orphansOf(project, owned, opts.searchLimit);
     if (!orphans) { unreadProjects.push(project); continue; }
     for (const orphan of orphans) {
       folders.push({ ...orphan, sizeBytes: await sizeOf(orphan.path), lastChangedAt: lastChangeOf(orphan.path) });
