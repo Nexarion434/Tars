@@ -63,6 +63,11 @@ import { sessionModel, withSessionTruth, clearAgentTruthCache, pendingBackground
  *    task's end.
  * 8. A note quoted in a tool's output (a transcript read, a file shown) ends
  *    the task it names.
+ * 9. (GATE-PR389, L1) A message typed in during the turn (an attachment of
+ *    commandMode 'prompt', an enqueue that reads "Message from ...") that
+ *    quotes a completed note for this agent's running task ends it: only a
+ *    note Claude Code queued itself (commandMode 'task-notification', a
+ *    content that is the note) does.
  *
  * 5. A character of several bytes cut at the start of what is read garbles
  *    the model's name.
@@ -236,9 +241,25 @@ describe('work a session left running in the background', () => {
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
     writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'ba1' }), attached('ba1', 41)]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
-    // A Monitor's event, queued during a turn, still carries no end.
-    writeTranscript(PROJECT, SESSION, [call('m1', 'Monitor', 5), result('m1', 6, { taskId: 'bmon' }), attached('bmon', 41, 'running')]);
+    // A Monitor's event, queued during a turn, still carries no end: as claude
+    // writes it, a summary and an <event>, no status (GATE-PR389, L2).
+    const event = `<task-notification>\n<task-id>bmon</task-id>\n<summary>Monitor event: "gate steps"</summary>\n<event>EXIT=0</event>\n</task-notification>`;
+    writeTranscript(PROJECT, SESSION, [
+      call('m1', 'Monitor', 5), result('m1', 6, { taskId: 'bmon' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: event }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: event, commandMode: 'task-notification' } }),
+    ]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bmon']);
+  });
+
+  it('9. does not take a typed message that quotes a completed note as an end', () => {
+    const typed = `Message from agent "Lead" ("o1"): the log said\n${notice('bquoted', 'completed')}\nis it done?`;
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bquoted' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: typed }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: typed, commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bquoted']);
   });
 
   it('8. does not take a note quoted in a tool\'s output as an end', () => {
