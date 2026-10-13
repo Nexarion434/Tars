@@ -24,9 +24,15 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * allow answers it. The composer is the Chat's with
  * nobody to receive yet: send dimmed, its strip saying why and opening Tars,
  * all projects. The panel says when what the chat delegates shows there.
- * Last, Show earlier reads the six lines before, the first line held staying
- * where it was (last, so the shots before it show the end of the thread,
- * which the thread follows).
+ * Then Show earlier reads the six lines before, the first line held staying
+ * where it was (after the shots of the end of the thread, which the thread
+ * follows).
+ *
+ * Last, Lead starts a new session, as /clear does: Main mirrors it, and its
+ * lines arrive after a new session divider. The first session's transcript
+ * disappears, as Claude Code's cleanup removes an old one: #371 names its
+ * lines in one removed event, and they leave the thread, the line saying the
+ * transcript is gone in their place.
  *
  * The artefact: a screenshot per state, values.json, and the stand-in's
  * answers beside them.
@@ -193,6 +199,32 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
     seen.firstMoved = (await first.boundingBox())!.y - firstWas;
     expect(Math.abs(seen.firstMoved as number), 'the line that was first moved').toBeLessThan(4);
     await stepShot(page, '05-earlier');
+
+    // Lead starts a new session, as /clear does, registered as hooks-routes would: Main mirrors it,
+    // and its lines arrive after a new session divider.
+    const S2 = 'e2e00000-0000-4000-8000-00000000d002';
+    fs.writeFileSync(path.join(transcripts, `${S2}.jsonl`), jsonl([
+      { ...user('Now the docs, in a new session.'), sessionId: S2 },
+      { ...said([{ type: 'text', text: 'Starting on the docs.' }]), sessionId: S2 },
+    ]));
+    const dist = path.resolve('electron', 'dist');
+    await app.evaluate((_e, { dist, S2 }) => {
+      const req = process.mainModule!.require;
+      const lead = req(`${dist}/core/agent-manager.js`).agents.get('lead');
+      lead.currentSessionId = S2;
+      lead.resumableSessionId = S2;
+      req(`${dist}/services/agent-events.js`).agentStatusEmitter.emit('fleet-change', 'lead');
+    }, { dist, S2 });
+    await expect(row('user').filter({ hasText: 'Now the docs, in a new session.' })).toHaveCount(1, { timeout: 30_000 });
+    await expect(row('divider').filter({ hasText: 'new session' })).toHaveCount(1);
+
+    // The first session's transcript disappears: its lines leave the thread, the line saying so in their place.
+    fs.rmSync(transcript);
+    await expect(row('raw').filter({ hasText: 'its transcript is gone' })).toHaveCount(1, { timeout: 30_000 });
+    await expect(row('user').filter({ hasText: /^Earlier question/ })).toHaveCount(0, { timeout: 15_000 });
+    seen.afterRemoval = await thread.locator('[data-chat-item]').evaluateAll(els => els.map(e => `${e.getAttribute('data-kind')} ${(e.textContent ?? '').trim().slice(0, 60)}`));
+    expect((seen.afterRemoval as string[]).map(s => s.split(' ')[0])).toEqual(['raw', 'divider', 'user', 'text']);
+    await stepShot(page, '06-older-session-gone');
 
     recordValues(seen);
     expect(pageErrors, 'no uncaught page error').toEqual([]);
