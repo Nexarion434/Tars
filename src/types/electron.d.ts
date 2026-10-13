@@ -1073,7 +1073,6 @@ export interface ChatWorkItem {
   queuedAt: string | null;
 }
 
-/** Why a chat channel did nothing, in a sentence the window can show as it is. */
 /** One item of a chat's conversation, read from its runner's transcripts (services/chat-transcript.ts). */
 export interface ChatItem {
   /** The transcript line's uuid (`:n` for a later part of the same line). */
@@ -1121,6 +1120,7 @@ export interface AgentQueueView {
   queue: AgentQueueEntry[];
 }
 
+/** Why a chat channel did nothing, in a sentence the window can show as it is. */
 export interface ChatError {
   error:
     | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
