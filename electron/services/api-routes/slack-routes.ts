@@ -1,4 +1,5 @@
 import { RouteApp, RouteContext } from './types';
+import { chatHeadOf } from '../chat-senders';
 
 export function registerSlackRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/slack/send
@@ -20,7 +21,8 @@ export function registerSlackRoutes(app: RouteApp, ctx: RouteContext): void {
     try {
       const postParams: { channel: string; text: string; mrkdwn: boolean; thread_ts?: string } = {
         channel: ctx.slackResponseChannel || settings.slackChannelId,
-        text: `:crown: ${message}`,
+        // Headed by the chat it comes from: Slack's way to name it (PR F).
+        text: `${chatHeadOf(req.callerAgentId)}:crown: ${message}`,
         mrkdwn: true,
       };
       if (ctx.slackResponseThreadTs) {
