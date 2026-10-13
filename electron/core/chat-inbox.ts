@@ -40,11 +40,12 @@ export function leadOf(projectPath: string, fleet: Iterable<AgentStatus>): Agent
 /**
  * Who a note for "the project's orchestrator" is typed into: the inbox chat's
  * runner, Main's being the orchestrator; the orchestrator when the project has
- * no chats. Undefined when the inbox has no runner yet: a note never starts one.
+ * no chats, and while the inbox chat has no runner yet (a note never makes one,
+ * and went to the orchestrator before the chat was made the inbox: the
+ * Audit's L3 on #386). A runner that exists, asleep or not, takes its notes.
  */
 export function inboxAgentOf(projectPath: string, fleet: Iterable<AgentStatus>): AgentStatus | undefined {
-  const found = lookups?.inbox(projectPath);
-  return found ? found.agent : leadOf(projectPath, fleet);
+  return lookups?.inbox(projectPath)?.agent ?? leadOf(projectPath, fleet);
 }
 
 /** The chat an agent runs, when the fleet confirms it. */
