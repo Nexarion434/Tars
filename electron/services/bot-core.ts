@@ -14,6 +14,7 @@ import * as os from 'os';
 import type * as pty from 'node-pty';
 import type { AgentPermissionMode, AgentStatus, AppSettings } from '../types';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
+import { hasOrchestratorPowers } from '../core/agent-role';
 import { getProvider } from '../providers';
 import type { CLIProvider } from '../providers/cli-provider';
 import { writeProgrammaticInput, type MessageSender } from '../core/pty-manager';
@@ -24,7 +25,7 @@ import { toLaunch, projectName, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteWaker } from '../core/agent-asleep';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
-import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown } from '../core/agent-launch';
+import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown, takeSlot } from '../core/agent-launch';
 import { handOffFrom, noteHandOff } from './task-ledger';
 
 /** What a bot needs from the rest of Tars. */
@@ -39,9 +40,21 @@ export interface BotFleet {
 /** The chat a message came from, as Tars names it on the line it types before it. */
 export type BotChannel = 'Telegram' | 'Slack' | 'Discord';
 
+/**
+ * The fleet as the bots list it. A chat's runner runs one chat's conversation
+ * with the orchestrator and is no member of the team (ORCHESTRATOR-PER-CHAT.md,
+ * 4.2): listed, it read as one more worker, named after the orchestrator, and
+ * every chat opened added one.
+ */
+export function listedAgents(agents: Iterable<AgentStatus>): AgentStatus[] {
+  return [...agents].filter(a => a.kind !== 'chat');
+}
+
 /** An agent named in a command: a part of its name, or its id. */
 export function findAgent(agents: Map<string, AgentStatus>, name: string): AgentStatus | undefined {
-  return Array.from(agents.values()).find(a => a.name?.toLowerCase().includes(name) || a.id === name);
+  // A chat's runner is named "<orchestrator> · <title>": a part of a name finds
+  // the orchestrator, never one of its chats; an exact id still finds one.
+  return Array.from(agents.values()).find(a => (a.kind !== 'chat' && a.name?.toLowerCase().includes(name)) || a.id === name);
 }
 
 export type StatusGroup = 'running' | 'waiting' | 'error' | 'stopped' | 'idle' | 'asleep';
@@ -80,7 +93,7 @@ export function statusDot(a: AgentStatus, dot: Record<StatusGroup, string>): str
   return a.status === 'running' ? dot.running : a.status === 'waiting' ? dot.waiting : a.status === 'error' ? dot.error : dot.idle;
 }
 
-/** The projects that have agents, each with its agents, the orchestrators left out. Null when there are none. */
+/** The projects that have agents, each with its agents, the orchestrators and the chats' runners left out. Null when there are none. */
 export function projectsReport(
   agents: Map<string, AgentStatus>,
   words: {
@@ -89,7 +102,7 @@ export function projectsReport(
   },
 ): string | null {
   const byProject = new Map<string, AgentStatus[]>();
-  for (const agent of agents.values()) {
+  for (const agent of listedAgents(agents.values())) {
     if (isSuperAgent(agent)) continue;
     byProject.set(agent.projectPath, [...(byProject.get(agent.projectPath) ?? []), agent]);
   }
@@ -310,6 +323,11 @@ export async function startWithTask(
   opts: { resume: boolean; reply: Reply<StartOutcome> },
 ): Promise<void> {
   let launch: object | null = null;
+  // A chat's runner starts within the RAM's limit, whoever starts it: refused,
+  // nothing is opened and the bot says why (core/agent-launch.ts; the Audit's
+  // L2 on #379). Any other agent, or a runner whose CLI runs, passes at once.
+  const slot = await takeSlot(agent.id);
+  if (!slot.ok) throw new Error(slot.error);
   // Asleep, it wakes on its own conversation whatever this chat resumes, and
   // reads woken by the chat (core/agent-asleep.ts).
   const asleep = agent.status === 'asleep';
@@ -357,13 +375,14 @@ export async function startWithTask(
       obsidianVaultPaths: agent.obsidianVaultPaths,
       mcpConfigPath,
       // An orchestrator starts with its instructions from a chat too, as from
-      // the Dashboard and the API: without them it does the work itself.
-      systemPromptFile: isSuperAgent(agent) && fs.existsSync(getSuperAgentInstructionsPath())
+      // the Dashboard and the API: without them it does the work itself. The
+      // orchestrator's powers, a chat's runner's too (core/agent-role.ts).
+      systemPromptFile: hasOrchestratorPowers(agent) && fs.existsSync(getSuperAgentInstructionsPath())
         ? getSuperAgentInstructionsPath()
         : undefined,
       skills: [...new Set(agent.skills || [])],
-      isSuperAgent: isSuperAgent(agent),
-      orchestratorMode: isSuperAgent(agent),
+      isSuperAgent: hasOrchestratorPowers(agent),
+      orchestratorMode: hasOrchestratorPowers(agent),
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
     const before = markRunning(agent, task);
@@ -372,6 +391,8 @@ export async function startWithTask(
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
     throw err;
+  } finally {
+    slot.release();
   }
 }
 

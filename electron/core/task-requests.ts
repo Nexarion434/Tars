@@ -182,7 +182,7 @@ export function endRequestsAtLaunch(workers: Iterable<RequestWorker>, resumed: R
  * Whether a send may interrupt this worker (steer) or restart it: not while
  * the work in hand was asked by somebody else, whose work it would cut. The
  * work's own asker, Tars (no caller), and a worker with no work in hand may.
- * PR D adds the chat: across chats, never.
+ * Across chats, never: the refusal then names the other chat (cutWorkOf).
  */
 export function mayInterrupt(worker: RequestWorker, callerId: string | undefined): boolean {
   const holder = worker.requestedBy?.agentId;
@@ -198,6 +198,20 @@ export function mayInterrupt(worker: RequestWorker, callerId: string | undefined
 export function mayRestart(worker: RequestWorker, callerId: string | undefined): boolean {
   if (!mayInterrupt(worker, callerId)) return false;
   return !callerId || !(worker.taskQueue ?? []).some((r) => r.requesterAgentId !== callerId);
+}
+
+/**
+ * Whose work a steer or a restart would cut, which mayInterrupt or mayRestart
+ * refuses it for: the asker of the work in hand, or, for a restart, the first
+ * other asker still waiting in the queue. Undefined when the send may go. The
+ * refusal names it: another chat's work, in a chat (PR D).
+ */
+export function cutWorkOf(worker: RequestWorker, callerId: string | undefined, mode: 'steer' | 'restart'): string | undefined {
+  if (!callerId) return undefined;
+  const holder = worker.requestedBy?.agentId;
+  if (holder && holder !== callerId) return holder;
+  if (mode !== 'restart') return undefined;
+  return (worker.taskQueue ?? []).find((r) => r.requesterAgentId !== callerId)?.requesterAgentId;
 }
 
 /**
