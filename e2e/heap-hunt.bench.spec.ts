@@ -17,10 +17,14 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * terminal's output reaches a panel. The main process's heap is sampled every
  * 30 s and snapshotted (v8.writeHeapSnapshot) at three points.
  * HEAP_HUNT_MINUTES sets the length (default 16).
+ *
+ * Out of every suite (playwright.config.ts): run on purpose with
+ * `HEAP_HUNT_OUT=<dir> TARS_HEAP_BENCH=1 npx playwright test --project=bench e2e/heap-hunt.bench.spec.ts`.
  */
 
 const HOOKS = path.resolve('hooks');
-const OUT = process.env.HEAP_HUNT_OUT ?? path.join(os.homedir(), 'Documents', 'Tars-revue-2026-09-24', 'runs', 'heap-hunt-1313');
+/** Where the samples and snapshots go: HEAP_HUNT_OUT, else this run's own output folder. */
+const outDir = () => process.env.HEAP_HUNT_OUT ?? test.info().outputPath();
 const MINUTES = Number(process.env.HEAP_HUNT_MINUTES ?? 16);
 /** Megabytes each stand-in's transcript starts with, as a long Claude session's does (0: none). */
 const SEED_MB = Number(process.env.HEAP_HUNT_SEED_MB ?? 0);
@@ -90,7 +94,9 @@ process.stdin.resume();
 `;
 
 test('the main process heap under a working fleet', async () => {
+  test.skip(process.env.TARS_HEAP_BENCH !== '1', 'a bench: TARS_HEAP_BENCH=1 and --project=bench');
   test.setTimeout((MINUTES + 6) * 60_000);
+  const OUT = outDir();
   fs.mkdirSync(OUT, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-heap-hunt-'));
   const project = path.join(home, 'projects', 'fleet');
