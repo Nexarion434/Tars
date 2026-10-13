@@ -12,7 +12,7 @@ import { buildFullPath } from '../../utils/path-builder';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { mcpNodeCommand } from '../../utils/mcp-node';
 import { API_PORT } from '../../constants';
-import { isSuperAgent } from '../../utils';
+import { hasOrchestratorPowers } from '../../core/agent-role';
 import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 import { agentTmpEnvOrNone } from '../agent-tmp';
@@ -68,6 +68,11 @@ function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; co
     { name: 'CLAUDE_AGENT_ID', value: agent.id },
     { name: 'CLAUDE_PROJECT_PATH', value: agent.projectPath },
     { name: 'CLAUDE_MGR_API_TOKEN', value: apiToken },
+    // What the servers prove the port with before they send that token
+    // (mcp-shared tokenToPresent). Codex hands a server this list and nothing
+    // of its own environment (measured by QA on codex 0.148.0): without it,
+    // every Tars tool of a Codex run went without a token, a 401.
+    { name: 'TARS_INSTANCE_ID', value: tarsInstanceId() },
     // Which Tars to call back. These servers get the list below and nothing
     // else, and mcp-orchestrator falls back to 31415 without it.
     { name: 'CLAUDE_MGR_API_URL', value: apiUrl() },
@@ -222,9 +227,10 @@ export async function delegateOverAcp(opts: {
     permissionMode: opts.permissionMode ?? (agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : agent.permissionMode === 'plan' ? 'plan' : 'normal'),
     // An orchestrator delegates; it does not edit. Enforced here by the
-    // protocol rather than by a flag only one CLI understands. The role, as
-    // every launch reads it (core/agent-role.ts).
-    denyTools: isSuperAgent(agent) ? ORCHESTRATOR_DENY : undefined,
+    // protocol rather than by a flag only one CLI understands. The
+    // orchestrator's powers, as every launch reads them: its project's
+    // orchestrator, or a chat's runner (core/agent-role.ts).
+    denyTools: hasOrchestratorPowers(agent) ? ORCHESTRATOR_DENY : undefined,
   });
 
   if (onEvent) {

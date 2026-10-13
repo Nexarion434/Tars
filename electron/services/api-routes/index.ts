@@ -11,6 +11,7 @@ import { registerMemoryRoutes } from './memory-routes';
 import { registerWebhookRoutes } from './webhook-routes';
 import { registerBusRoutes } from './bus-routes';
 import { registerAskUserRoutes } from './ask-user-routes';
+import { registerTaskRoutes } from './task-routes';
 
 export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerBusRoutes(app);
@@ -25,6 +26,7 @@ export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerMemoryRoutes(app, ctx);
   registerWebhookRoutes(app, ctx);
   registerAskUserRoutes(app, ctx);
+  registerTaskRoutes(app);
 }
 
 export type { RouteApp, RouteContext, RouteRequest, SendJson, RouteHandler, RouteDefinition } from './types';

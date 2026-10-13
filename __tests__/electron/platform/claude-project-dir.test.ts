@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,
+  encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, transcriptProjectDirName, knownProjectsByFolder,
 } from '../../../electron/platform';
 import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
@@ -43,6 +43,14 @@ import golden from './posix-golden.json';
  *     win32, or is anything but `/` and `.` to `-` on darwin/linux;
  * 12. win32: a folder a known project's names give is not mapped back to that
  *     project; darwin/linux: any folder is.
+ * And from the transcript folder bug, written before the fix (2026-10-13):
+ * 13. darwin/linux name a project's transcript folder, or create its Memory
+ *     folder, under anything but Claude Code's own rule (every character that
+ *     is not an ASCII letter or digit to `-`, measured on claude 2.1.296): a
+ *     project whose path holds an underscore, a space or a tilde never resumed
+ *     its conversation, and its MEMORY.md was created where Claude never reads.
+ * 14. A folder Claude named for a known project is not mapped back to that
+ *     project on darwin/linux, so Memory lists it under a path that is not it.
  */
 
 describe('1. the encoder is Claude Code\'s', () => {
@@ -128,12 +136,14 @@ describe('11, 12. what Memory names and reads back', () => {
     expect(memoryProjectDirName('/Users/demo/my_proj.v2', 'win32')).toBe('-Users-demo-my-proj-v2');
   });
 
-  it('11. darwin/linux: `/` and `.` to `-`, as Memory always named it there', () => {
+  it('13. darwin/linux: Claude\'s own name, for Memory and for transcripts', () => {
     for (const platform of ['darwin', 'linux'] as const) {
-      expect(memoryProjectDirName('/Users/demo/My Project', platform)).toBe('-Users-demo-My Project');
-      expect(memoryProjectDirName('/Users/demo/my_proj.v2', platform)).toBe('-Users-demo-my_proj-v2');
+      expect(memoryProjectDirName('/Users/demo/My Project', platform)).toBe('-Users-demo-My-Project');
+      expect(memoryProjectDirName('/Users/demo/my_proj.v2', platform)).toBe('-Users-demo-my-proj-v2');
+      expect(transcriptProjectDirName('/private/tmp/tars naming_~probe', platform)).toBe('-private-tmp-tars-naming--probe');
       const long = '/Users/demo/' + 'a'.repeat(300);
-      expect(memoryProjectDirName(long, platform)).toBe(long.replace(/[/.]/g, '-'));
+      expect(memoryProjectDirName(long, platform)).toBe(encodeClaudeProjectDir(long));
+      expect(transcriptProjectDirName(long, platform)).toBe(encodeClaudeProjectDir(long));
     }
   });
 
@@ -145,9 +155,11 @@ describe('11, 12. what Memory names and reads back', () => {
     expect([...known.values()]).not.toContain('');
   });
 
-  it('12. darwin/linux: none, every folder is decoded as before', () => {
+  it('14. darwin/linux: a folder Claude named for a known project is that project', () => {
     for (const platform of ['darwin', 'linux'] as const) {
-      expect(knownProjectsByFolder(['/Users/demo/My Project', '/Users/demo/tars'], platform).size).toBe(0);
+      const known = knownProjectsByFolder(['/Users/demo/My Project', '/Users/demo/my_proj'], platform);
+      expect(known.get('-Users-demo-My-Project')).toBe('/Users/demo/My Project');
+      expect(known.get('-Users-demo-my-proj')).toBe('/Users/demo/my_proj');
     }
   });
 });

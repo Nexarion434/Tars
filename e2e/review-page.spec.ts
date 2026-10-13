@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -105,7 +105,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(home, { recursive: true, force: true });
+  await removeHome(home);
 });
 
 test('review: a project with no agent, the files without their patches, a patch cut short, refresh, a patch that cannot be read, and the code panel', async () => {

@@ -1,5 +1,7 @@
-import { execFile } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { buildFullPath } from '../../utils/path-builder';
+import { refuseWhileQuitting } from '../../core/quit-state';
+import { endProbe } from '../../core/version-probe';
 
 /**
  * Asking Claude Code about an account, never its credential.
@@ -52,17 +54,61 @@ function withPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, PATH: buildFullPath() };
 }
 
+/**
+ * The `claude auth` commands still running, so that the quit ends them.
+ *
+ * Listing the accounts checks every account whose sign-in is not known yet in
+ * the background (claude-accounts:list, at page load), with a 20 s timeout.
+ * Those were plain execFile calls the quit knew nothing of: one started just
+ * before a quit went on and wrote .claude.json and its lock into the home
+ * after Tars was gone (measured by QA after app.close() on 2026-10-12, orphaned
+ * 1 ms after the quit). Each now runs in a process group of its own, as the
+ * version probes do (core/version-probe.ts), and the quit's first pass ends
+ * every one still running (endAuthCommands, main.ts). One asked for during the
+ * quit is refused.
+ */
+const running = new Set<ChildProcess>();
+
+/** Ends every `claude auth` command still running and what it started. For the quit. */
+export function endAuthCommands(): void {
+  for (const child of running) endProbe(child);
+  running.clear();
+}
+
 function run(binary: string, args: string[], configDir: string | null): Promise<{ code: number; stdout: string; stderr: string; spawnError?: Error }> {
+  try {
+    refuseWhileQuitting('claude auth');
+  } catch (err) {
+    return Promise.resolve({ code: -1, stdout: '', stderr: '', spawnError: err as Error });
+  }
   return new Promise(resolve => {
-    execFile(binary, args, { env: withPath(accountEnv(configDir)), timeout: TIMEOUT_MS, windowsHide: true }, (err, stdout, stderr) => {
-      // A number is the exit code; anything else (ENOENT, a timeout's kill) means it did not run to the end.
-      const code: unknown = err ? (err as { code?: unknown }).code : 0;
-      if (typeof code !== 'number') {
-        resolve({ code: -1, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), spawnError: err as Error });
-        return;
-      }
-      resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
+    // detached: a group of its own, which endProbe can signal whole. Not on
+    // Windows, where it would open a console of its own and taskkill ends the tree.
+    const child = spawn(binary, args, {
+      env: withPath(accountEnv(configDir)), detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
+    running.add(child);
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', d => { stdout += String(d); });
+    child.stderr?.on('data', d => { stderr += String(d); });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; endProbe(child); }, TIMEOUT_MS);
+    let settled = false;
+    // An exit code is an answer; anything else (ENOENT, the timeout, the quit) means it did not run to the end.
+    const settle = (code: number | null, spawnError?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const endedByQuit = !running.delete(child);
+      endProbe(child);
+      if (spawnError) resolve({ code: -1, stdout, stderr, spawnError });
+      else if (timedOut) resolve({ code: -1, stdout, stderr, spawnError: new Error(`claude ${args.join(' ')} did not answer in ${TIMEOUT_MS} ms`) });
+      else if (endedByQuit || code === null) resolve({ code: -1, stdout, stderr, spawnError: new Error(`claude ${args.join(' ')} was ended${endedByQuit ? ' by the quit' : ''}`) });
+      else resolve({ code, stdout, stderr });
+    };
+    child.on('error', err => settle(null, err));
+    child.on('close', code => settle(code));
   });
 }
 
