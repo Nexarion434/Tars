@@ -32,6 +32,10 @@ import * as path from 'node:path';
  *  7. The memory's other files (every .md of the old memory folder) stay behind.
  *  8. A file Claude's folder already holds, other than MEMORY.md (a topic
  *     Claude wrote), is overwritten by the old folder's file of that name.
+ *  9. Claude's folder already holds a MEMORY.md, and the old folder's other
+ *     files are copied in anyway, beside an index that never names them (QA's
+ *     gate of #375: lifting the guard on Claude's MEMORY.md kept every case
+ *     above green, case 2's old folder holding a MEMORY.md alone).
  */
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mem-legacy-')));
@@ -84,6 +88,18 @@ describe.skipIf(process.platform === 'win32')('a memory an older Tars made under
     expect(read(memory(LEGACY))).toBe('old\n');
     expect(rows).toHaveLength(1);
     expect(path.basename(path.dirname(rows[0].memoryDir))).toBe(CLAUDES);
+    expect(rows[0].olderCopy).toBe(path.join(projects(), LEGACY, 'memory'));
+  });
+
+  it('9. copies nothing in when Claude\'s folder already holds a MEMORY.md, the old topic files included', async () => {
+    put(memory(LEGACY), 'old\n- see [[topic]]\n');
+    put(memory(LEGACY, 'topic.md'), 'the old topic\n');
+    put(memory(CLAUDES), 'what Claude reads\n');
+    const rows = rowsOf(await list());
+    expect(fs.readdirSync(path.join(projects(), CLAUDES, 'memory'))).toEqual(['MEMORY.md']);
+    expect(read(memory(CLAUDES))).toBe('what Claude reads\n');
+    expect(read(memory(LEGACY, 'topic.md'))).toBe('the old topic\n');
+    expect(rows).toHaveLength(1);
     expect(rows[0].olderCopy).toBe(path.join(projects(), LEGACY, 'memory'));
   });
 
