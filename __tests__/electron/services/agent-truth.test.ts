@@ -260,6 +260,12 @@ describe('work a session left running in the background', () => {
       JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: typed, commandMode: 'prompt' } }),
     ]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bquoted']);
+    // A note pasted as the whole message: its mode alone says it was typed.
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bpasted' }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: notice('bpasted', 'completed'), commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bpasted']);
   });
 
   it('8. does not take a note quoted in a tool\'s output as an end', () => {
