@@ -459,7 +459,7 @@ export interface AgentStatus {
   pathMissing?: boolean; // True if project path no longer exists
   /** @deprecated Use permissionMode instead */
   skipPermissions?: boolean;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;

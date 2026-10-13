@@ -3,7 +3,10 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { moveTestHome } from '../setup/test-home';
+
+const INSTANCE = 'instance-of-the-tars-that-started-this-cli';
 
 /**
  * mcp-vault presents the agent's own token when it has one.
@@ -20,14 +23,17 @@ vi.mock('http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('http')>();
   return {
     ...actual,
-    request: vi.fn((options: { hostname?: string; port?: number; headers: Record<string, string> }, onResponse: (res: EventEmitter) => void) => {
-      sent.push({ hostname: options.hostname, port: options.port, headers: options.headers });
+    request: vi.fn((options: { hostname?: string; port?: number; path?: string; headers: Record<string, string> }, onResponse: (res: EventEmitter) => void) => {
+      // The Tars this agent's CLI was started by, proving it before the token goes out (tars-api.ts).
+      const health = (options.path ?? '').startsWith('/api/health?challenge=');
+      if (!health) sent.push({ hostname: options.hostname, port: options.port, headers: options.headers ?? {} });
       const req = new EventEmitter() as EventEmitter & { write: () => void; end: () => void };
       req.write = () => {};
       req.end = () => {
         const res = Object.assign(new EventEmitter(), { statusCode: 200 });
         onResponse(res);
-        res.emit('data', '{}');
+        const challenge = health ? new URL(options.path!, 'http://x').searchParams.get('challenge') : null;
+        res.emit('data', health ? JSON.stringify({ proof: createHash('sha256').update(`${INSTANCE}:${challenge}`).digest('hex') }) : '{}');
         res.emit('end');
       };
       return req;
@@ -41,7 +47,9 @@ let restoreHome: () => void;
 
 beforeEach(() => {
   sent.length = 0;
-  saved = { CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL: process.env.CLAUDE_MGR_API_URL };
+  saved = { CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL: process.env.CLAUDE_MGR_API_URL, TARS_INSTANCE_ID: process.env.TARS_INSTANCE_ID };
+  delete process.env.CLAUDE_MGR_API_TOKEN;
+  process.env.TARS_INSTANCE_ID = INSTANCE;
   // The shared file an agent without a token of its own falls back to.
   fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
   fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
