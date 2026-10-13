@@ -1,9 +1,11 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
+import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
+import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -147,10 +149,15 @@ export class GeminiProvider implements CLIProvider {
     };
   }
 
-  async configureHooks(hooksDir: string): Promise<void> {
+  async configureHooks(hooksDir: string, platform: NodeJS.Platform = process.platform): Promise<void> {
     const geminiHooksDir = path.join(hooksDir, 'gemini');
     if (!fs.existsSync(geminiHooksDir)) {
       console.log('Gemini hooks directory not found at', geminiHooksDir);
+      return;
+    }
+    // Windows: the Node runner, not the .sh, which cannot run there (see hook-command.ts).
+    if (usesNodeHooks(platform)) {
+      configureGeminiNodeHooks(this.configDir, hooksDir);
       return;
     }
 
@@ -183,12 +190,31 @@ export class GeminiProvider implements CLIProvider {
       { type: 'SessionStart', file: 'session-start.sh', matcher: '*' },
       { type: 'SessionEnd', file: 'session-end.sh', matcher: '*' },
       { type: 'Notification', file: 'notification.sh', matcher: '*' },
-      { type: 'UserPromptSubmit', file: 'user-prompt-submit.sh', matcher: undefined },
+      // BeforeAgent: Gemini CLI fires no UserPromptSubmit
+      // (https://geminicli.com/docs/hooks/), and a Gemini agent read idle while
+      // it worked. win32 had moved already (utils/gemini-node-hooks.ts).
+      { type: 'BeforeAgent', file: 'user-prompt-submit.sh', matcher: undefined },
     ];
 
     let updated = false;
 
     type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
+
+    // The entry an older Tars wrote on UserPromptSubmit goes; the user's own
+    // entries in that event stay, and so do another app's of the same name
+    // (isTarsHooksFile decides, as on win32).
+    const former = settings.hooks.UserPromptSubmit;
+    if (Array.isArray(former)) {
+      const isOlderTars = legacyShCommand('gemini/user-prompt-submit.sh', this.configDir, hooksDir);
+      const kept = former
+        .map((entry: HookEntry) => ({ ...entry, hooks: (entry.hooks ?? []).filter((hh) => !(typeof hh.command === 'string' && isOlderTars(hh.command))) }))
+        .filter((entry: HookEntry) => entry.hooks.length > 0);
+      if (kept.length !== former.length || kept.some((entry: HookEntry, i: number) => entry.hooks.length !== former[i].hooks?.length)) {
+        if (kept.length) settings.hooks.UserPromptSubmit = kept;
+        else delete settings.hooks.UserPromptSubmit;
+        updated = true;
+      }
+    }
 
     for (const { type, file, matcher } of hookFiles) {
       const commandPath = path.join(geminiHooksDir, file);
@@ -216,6 +242,9 @@ export class GeminiProvider implements CLIProvider {
       }
     }
 
+    // The agent token through Gemini's environment redaction, as on win32.
+    if (allowAgentToken(settings)) updated = true;
+
     if (updated) {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
       console.log('Gemini hooks configured/updated in', settingsPath);
@@ -232,14 +261,17 @@ export class GeminiProvider implements CLIProvider {
       // quotes and handed the whole line to execSync (/bin/sh -c), where
       // $(...) and backticks inside an argument are still expanded - and one of
       // those args is `tasmaniaServerPath` straight out of app-settings.json.
-      execFileSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
+      // execCliSync resolves the name first: on Windows gemini is an npm
+      // gemini.cmd, which a bare name never finds.
+      execCliSync('gemini', ['mcp', 'add', '-s', 'user', name, command, ...args], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
       console.log(`[gemini] Registered MCP server ${name} via gemini mcp add`);
       return;
-    } catch {
-      // Fallback: write to settings.json manually
+    } catch (err) {
+      // Fallback: write to settings.json manually, and say why.
+      console.warn(`[gemini] gemini mcp add failed (${cliFailureText(err)}), writing settings.json instead`);
     }
 
     const settingsPath = path.join(this.configDir, 'settings.json');
@@ -273,12 +305,13 @@ export class GeminiProvider implements CLIProvider {
       // string here would expand $(...) and backticks inside the name. The add
       // path was fixed and its sibling a few lines below was not, which is the
       // whole shape of this bug class.
-      execFileSync('gemini', ['mcp', 'remove', '-s', 'user', name], {
+      execCliSync('gemini', ['mcp', 'remove', '-s', 'user', name], {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch {
-      // Ignore if doesn't exist
+    } catch (err) {
+      // Not registered is fine; a gemini that cannot be started is said.
+      if (err instanceof CliNotRunnableError) console.warn(`[gemini] gemini mcp remove not run: ${err.message}`);
     }
 
     // Also clean settings.json fallback
