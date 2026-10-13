@@ -1,3 +1,4 @@
+import { chatNameOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { ptyProcesses } from '../core/pty-manager';
@@ -354,7 +355,7 @@ export async function sendNow(params: {
   const agent = agents.get(agentId);
   // A member, or a chat's runner of this room's project: JeanBrasse's answer to what
   // that chat said in the room goes back to it (PR F).
-  const runsAChatHere = !!agent && agent.kind === 'chat' && room.kind === 'project' && agent.projectPath === room.projectPath;
+  const runsAChatHere = !!agent && room.kind === 'project' && agent.projectPath === room.projectPath && !!chatNameOf(agent);
   if (!agent || (!room.memberIds.includes(agentId) && !runsAChatHere)) {
     return { success: false, interrupted: false, error: 'That agent is not a member of this room.' };
   }
