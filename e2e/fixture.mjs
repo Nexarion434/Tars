@@ -588,6 +588,29 @@ function writeFakeTailscale(home) {
 export const SWEEP_STATUSES = { a1: 'running', a2: 'running', a3: 'running', a4: 'running', a5: 'idle', a6: 'idle' };
 
 /**
+ * Removes a spec's sandbox HOME once its app has closed. A process the app
+ * started can still be writing there: `amp --version`'s log, a hook's, and
+ * until #383 a `claude auth status` that outlived the quit and wrote
+ * .claude.json and its lock (QA, 2026-10-12). rmSync then meets ENOTEMPTY,
+ * and its maxRetries do not help, since Node lists the folder once. This
+ * removes again from a fresh listing, for up to 5 s, and says so on the run's
+ * output when it had to: a writer that outlives the app is still a finding,
+ * only no longer a red cleanup. The loop two specs and #382 each had a copy of.
+ */
+export async function removeHome(dir) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (attempt > 1) console.warn(`[removeHome] ${dir} was written after its app closed: removed at try ${attempt}`);
+      return;
+    } catch (error) {
+      if ((error.code !== 'ENOTEMPTY' && error.code !== 'EBUSY') || attempt === 20) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
+/**
  * Waits until every agent to be shown running has its CLI in its terminal,
  * which is when autostart has done writing its status, then sets the
  * statuses on the app's own agent map and pushes a tick, as a hook would.
