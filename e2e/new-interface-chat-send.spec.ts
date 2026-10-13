@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type Page } from '@playwright/test';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
@@ -29,6 +30,15 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    limit's sentence and the two chats working, each with its Stop, and the words stay in the field.
  * 5. Stop on Release: the next send of those words starts the new chat's runner, and its first
  *    message names it.
+ * 6. A launch left on its way (the Audit's L1 on this PR): a new chat's first message while its
+ *    runner is made, its git fetch held by a remote that never answers (as chat-runners.spec.ts holds
+ *    one). The person opens Main and comes back: the page still says the orchestrator is starting with
+ *    the words, which wait in the shut field. They open Main again; meanwhile the branch the runner
+ *    would take appears, so its worktree cannot be made, and the send is refused while no page of the
+ *    chat is open. Back on the chat: Not sent, why, and the words in the field.
+ * 7. Release deleted, its runner's worktree holding a file it never committed and a .env git ignores
+ *    (the Audit's read of the bullets): the list says its work went to wip/lead-release and its worktree
+ *    stays, why and where, until ok puts it away; on disk, the branch and the folder are there.
  *
  * The artefact: a screenshot per state, values.json, launches.jsonl and prompts.jsonl.
  */
@@ -97,7 +107,7 @@ process.stdin.resume();
 `;
 
 type Launch = { id: string; sid: string; prompt: string; cwd: string };
-type Agent = { id: string; kind?: string; chatId?: string; status: string };
+type Agent = { id: string; kind?: string; chatId?: string; status: string; worktreePath?: string };
 type ChatRecord = { id: string; number: number; title: string; titleSource: string; runnerId: string | null };
 
 const lines = <T>(file: string): T[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
@@ -248,6 +258,79 @@ test("a chat's page sends: Main and a new chat start with the words written ther
     await expect.poll(() => promptsOf('o1'), { timeout: 60_000 }).toContain('Also the changelog.');
     seen.leadPrompts = promptsOf('o1');
     seen.launches = lines<Launch>(launchesFile).map((l) => ({ id: l.id, prompt: l.prompt }));
+
+    // 6. A launch left on its way, then refused while no page of its chat is open (the Audit's L1 on this PR).
+    // The app's links end with a slash before their query (trailingSlash): /chats/?chat=<id>.
+    const linkTo = (id: string) => `a[href$="?chat=${encodeURIComponent(id)}"]`;
+    const rowLink = (id: string) => sidebar.locator(`[data-chat-row] ${linkTo(id)}`);
+    const mainId = (await chats()).find((c) => c.number === 1)!.id;
+    await call('agent', 'stop', docsRunner);
+    await expect(count).toHaveText('1 of 2 working', { timeout: 30_000 });
+    const sockets = new Set<net.Socket>();
+    const silent = net.createServer((socket) => { sockets.add(socket); });
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    gitSeed(project, 'remote', 'set-url', 'origin', `http://127.0.0.1:${(silent.address() as net.AddressInfo).port}/demo.git`);
+    await sidebar.getByRole('button', { name: 'New chat' }).click();
+    await main.getByRole('button', { name: 'Create chat' }).click();
+    await expect(main.getByText('Its conversation starts with your first message')).toBeVisible({ timeout: 30_000 });
+    const leftChat = (await chats()).find((c) => c.number === 4)!;
+    const short = leftChat.id.replace(/[^0-9a-f]/gi, '').slice(0, 8).toLowerCase();
+    await field.fill('Patch the login timeout.');
+    await send.click();
+    // Its runner is being made: past the check of its branch, its fetch is held.
+    await expect.poll(() => sockets.size, { timeout: 30_000 }).toBeGreaterThan(0);
+    const starting = composer.getByText('Starting the orchestrator with your message.');
+    await expect(starting).toBeVisible();
+    await rowLink(mainId).click();
+    await expect(said('Look at the release script.')).toHaveCount(1, { timeout: 30_000 });
+    await rowLink(leftChat.id).click();
+    await expect(starting).toBeVisible({ timeout: 30_000 });
+    await expect(field).toHaveValue('Patch the login timeout.');
+    await expect(field).toBeDisabled();
+    await stepShot(page, '06-launch-on-its-way');
+    // Away again. The branch its runner would take appears, and the fetch ends: its worktree cannot be made.
+    await rowLink(mainId).click();
+    await expect(said('Look at the release script.')).toHaveCount(1, { timeout: 30_000 });
+    gitSeed(project, 'branch', `chat/${short}`);
+    for (const socket of sockets) socket.destroy();
+    silent.close();
+    // A send behind it in the slots' lock answers once the launch has: it was refused while the chat was away.
+    seen.afterTheLaunch = await call('chat', 'send', { chatId: 'no-such-chat', text: 'after the launch' });
+    expect(seen.afterTheLaunch).toMatchObject({ error: 'not_found' });
+    gitSeed(project, 'remote', 'set-url', 'origin', origin);
+    expect(await runnerOf(leftChat.id), 'a refused launch makes no runner').toBeUndefined();
+    await rowLink(leftChat.id).click();
+    const notSent = composer.getByText(/^Not sent: Its worktree could not be made/);
+    await expect(notSent).toBeVisible({ timeout: 30_000 });
+    await expect(notSent).toContainText(`chat/${short}`);
+    await expect(field).toHaveValue('Patch the login timeout.');
+    await expect(field).toBeEnabled();
+    seen.notSentWhileAway = (await notSent.innerText()).replace(/\s+/g, ' ').trim();
+    await stepShot(page, '07-refused-while-away');
+
+    // 7. Release deleted: its runner's worktree holds a file it never committed and a .env git ignores.
+    const releaseWorktree = (await runnerOf(releaseChat.id))!.worktreePath!;
+    fs.writeFileSync(path.join(releaseWorktree, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(releaseWorktree, '.env'), 'TOKEN=e2e\n');
+    const releaseRow = sidebar.locator('[data-chat-row]').filter({ has: page.locator(linkTo(releaseChat.id)) });
+    await releaseRow.hover();
+    await releaseRow.getByRole('button', { name: 'Actions for Release', exact: true }).click();
+    await page.getByRole('menu', { name: 'Actions for Release', exact: true }).getByRole('menuitem', { name: 'Delete', exact: true }).click();
+    await sidebar.getByRole('alertdialog').getByRole('button', { name: 'delete', exact: true }).click();
+    await expect(releaseRow).toHaveCount(0, { timeout: 30_000 });
+    const deleted = sidebar.locator('[data-chat-deleted]');
+    await expect(deleted).toBeVisible({ timeout: 30_000 });
+    await expect(deleted).toContainText(
+      `Deleted demo #2, Release, but not its worktree: it holds files git ignores, which no commit keeps (.env), so its worktree was kept at ${releaseWorktree}.`,
+    );
+    await expect(deleted).toContainText('Its uncommitted work is on the branch wip/lead-release.');
+    seen.deleted = (await deleted.innerText()).replace(/\s+/g, ' ').trim();
+    expect(fs.existsSync(path.join(releaseWorktree, '.env')), 'the folder it names is there').toBe(true);
+    expect(execFileSync('git', ['show', '--name-only', '--format=', 'wip/lead-release'], { cwd: project, encoding: 'utf8' }), 'the branch it names holds the work').toContain('.gitignore');
+    expect((await chats()).some((c) => c.id === releaseChat.id), 'the chat is gone').toBe(false);
+    await stepShot(page, '08-deleted-what-stays');
+    await deleted.getByRole('button', { name: 'ok', exact: true }).click();
+    await expect(deleted).toHaveCount(0);
 
     recordValues(seen);
     expect(pageErrors, 'no uncaught page error').toEqual([]);
