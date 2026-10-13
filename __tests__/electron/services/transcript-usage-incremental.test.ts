@@ -20,6 +20,8 @@ import * as path from 'path';
  * 3. A transcript that shrank, or was replaced by another file, keeps the old
  *    file's turns, or is read from the old offset.
  * 4. A transcript that has not changed is read again.
+ * 5. A last line with no newline after it (a file a writer ended so) is never
+ *    counted, or counted twice once the next line comes.
  */
 
 const counted = vi.hoisted(() => ({ on: false, bytes: 0 }));
@@ -113,10 +115,23 @@ describe('the usage scan, as a live transcript grows', () => {
     expect(inputOf((await pass(mod)).usage)).toBe(300);
     fs.writeFileSync(FILE(), turn());
     expect(inputOf((await pass(mod)).usage)).toBe(100);
+    // Another file, of another model and of longer lines: read from the old
+    // offset, it would start mid-line, miss a turn, and keep the old file's.
     const other = `${FILE()}.new`;
-    fs.writeFileSync(other, turn() + turn() + turn() + turn());
+    const sonnet = 'claude-sonnet-5';
+    fs.writeFileSync(other, turn(sonnet, 'a longer line '.repeat(20)) + turn(sonnet) + turn(sonnet) + turn(sonnet));
     fs.renameSync(other, FILE());
-    expect(inputOf((await pass(mod)).usage)).toBe(400);
+    const { usage } = await pass(mod);
+    expect(inputOf(usage, sonnet)).toBe(400);
+    expect(inputOf(usage)).toBe(0);
+  });
+
+  it('5. counts a last line with no newline after it once, when it parses whole', async () => {
+    fs.writeFileSync(FILE(), turn().trimEnd());
+    const mod = await load();
+    expect(inputOf((await pass(mod)).usage)).toBe(100);
+    fs.appendFileSync(FILE(), '\n' + turn());
+    expect(inputOf((await pass(mod)).usage)).toBe(200);
   });
 
   it('4. reads nothing of a transcript that has not changed', async () => {
