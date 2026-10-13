@@ -18,10 +18,11 @@ import {
   AgentListHeader,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
+import { Button, Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
 import { statusWord } from './constants';
 import type { AgentPermissionMode } from '@/types/agent';
 import { templateModeOf } from '@/lib/plan-mode';
+import { agentDeletedNotice, type DeletedNotice } from '@/lib/chat-deleted';
 
 // The words the cards print, in the frames' order: stopped sits between idle
 // and error (`Agent stopped · who and why`), asleep between idle and stopped
@@ -62,6 +63,8 @@ export default function AgentsPage() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  // What stayed of the last agent deleted, until ok puts it away.
+  const [deleted, setDeleted] = useState<DeletedNotice | null>(null);
 
 
   // Custom hooks
@@ -208,11 +211,12 @@ export default function AgentsPage() {
   }, [startAgent]);
 
   // The only place an agent can be permanently deleted from. It kills the PTY,
-  // drops agents.json's only record of it, AND runs `git worktree remove
-  // --force`, which throws away anything uncommitted in that checkout. So the
-  // confirmation names the worktree and counts what is in it rather than saying
-  // "cannot be undone" and leaving the one real consequence unmentioned.
-  // Committed work survives: the branch is left behind, only the checkout goes.
+  // drops agents.json's only record of it, and removes its worktree, after
+  // saving what it never committed on a wip/ branch (#312); a worktree holding
+  // what no branch can carry, such as a .env, is kept. So the confirmation names
+  // the worktree and counts what is in it, and once the agent is gone the page
+  // says what stayed and where, from agent:remove's answer, as the chat list
+  // does (frame: `Agents · an agent deleted, what stays and where`).
   const handleRemoveAgent = useCallback(async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     const agentName = agent?.name || 'this agent';
@@ -226,13 +230,15 @@ export default function AgentsPage() {
       } catch {
         // Best effort: a worktree we cannot read still gets the generic warning.
       }
+      const kept = `Commits on ${agent.branchName} are kept. A worktree holding what no branch can carry, such as a .env, is kept where it is.`;
       worktreeNote = dirtyCount
-        ? `\n\nIts worktree ${agent.worktreePath} will be deleted, along with ${dirtyCount} uncommitted change${dirtyCount === 1 ? '' : 's'}. Commits on ${agent.branchName} are kept.`
-        : `\n\nIts worktree ${agent.worktreePath} will be deleted. Commits on ${agent.branchName} are kept.`;
+        ? `\n\nIts ${dirtyCount} uncommitted change${dirtyCount === 1 ? ' is' : 's are'} saved on a wip/ branch first, then its worktree ${agent.worktreePath} is removed. ${kept}`
+        : `\n\nIts worktree ${agent.worktreePath} is removed. ${kept}`;
     }
 
     if (!window.confirm(`Delete "${agentName}"? This stops it and cannot be undone.${worktreeNote}`)) return;
-    await removeAgent(agentId);
+    const notice = agentDeletedNotice(await removeAgent(agentId), agentName);
+    if (notice) setDeleted(notice);
   }, [agents, removeAgent]);
 
   const handleSaveAsTemplate = useCallback(async (agentId: string) => {
@@ -325,6 +331,18 @@ export default function AgentsPage() {
           />
         </div>
       </div>
+
+      {/* An agent deleted whose worktree or work stays: what, and where, until ok. */}
+      {deleted && (
+        <div data-agent-deleted role="status" className="shrink-0 mb-4 px-3 py-2.5 bg-secondary border border-border flex items-start gap-2.5">
+          <span className="mt-1.5 w-1.5 h-1.5 shrink-0 bg-status-waiting" />
+          <div className="flex-1 min-w-0 flex flex-col gap-1 text-[12.5px] leading-[1.45] text-foreground">
+            <p className="break-words">{deleted.text}</p>
+            {deleted.saved && <p className="break-words">{deleted.saved}</p>}
+          </div>
+          <Button size="sm" onClick={() => setDeleted(null)}>ok</Button>
+        </div>
+      )}
 
       {/* The grid, one section per project in the Dashboard's tab order: its
           name, its path and how many of its agents are shown, then its cards.
