@@ -40,18 +40,20 @@ export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
 const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
 /** How long the port has to prove it, as the hooks wait: a Tars whose main thread is held still answers. */
 export const PROOF_WAIT_MS = 5_000;
-let proven = false;
-
 /**
  * Whether the port at API_URL is the Tars that started this CLI: a fresh
  * challenge to /api/health, whose answer must be sha256("<id>:<challenge>"),
  * as the hooks ask it (tars-hook.sh, the Audit's table #11). While Tars is
  * down, or after a quit this CLI outlived, any process may hold the port, and
- * got the agent's token with the next call. Asked again until it holds, then
- * once for the life of this server.
+ * got the agent's token with the next call.
+ *
+ * Asked before every call, never remembered: a proof kept for the server's
+ * life (as it first was) let a squatter that took the port after the first
+ * call get the token with the next one, which is how a CLI that outlived a
+ * quit would meet it (the Audit's M1 on #376). One loopback request per tool
+ * call.
  */
 async function portIsThisCliTars(): Promise<boolean> {
-  if (proven) return true;
   if (!INSTANCE_ID) return false;
   const challenge = randomBytes(16).toString("hex");
   const tars = new URL(API_URL);
@@ -64,11 +66,10 @@ async function portIsThisCliTars(): Promise<boolean> {
       timeout: PROOF_WAIT_MS,
     }, undefined, (err) => err);
     const proof = (JSON.parse(data) as { proof?: unknown }).proof;
-    proven = proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex");
+    return proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex");
   } catch {
     return false;
   }
-  return proven;
 }
 
 /**

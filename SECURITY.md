@@ -111,8 +111,9 @@ post after a write, in both runners) went out without that check: the squatter g
 CLI whose port does not prove its instance reads nothing, and not with the shared token either. The bundled
 MCP servers the CLI starts (orchestrator, memory, kanban, vault) presented the same token to the same port
 with no check until 2026-10-13, so a CLI that outlived a quit handed it to whatever held the port with its
-next tool call (the Audit's Info on #370). They ask the same challenge before the first call, and once it
-holds, not again (`tokenToPresent`, mcp-shared); unproven, they call without a token. The id is as
+next tool call (the Audit's Info on #370). They ask the same challenge before every call (`tokenToPresent`,
+mcp-shared), never keeping a proof, so a squatter that takes the port after a call gets nothing with the
+next one; unproven, they call without a token, and never with the shared file instead. The id is as
 readable as the token by a process of the same user (`ps -Eww`), and no more: this
 closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
