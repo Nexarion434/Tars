@@ -9,7 +9,9 @@ export interface AgentConfig {
 
 export type AgentCharacter = 'robot' | 'ninja' | 'wizard' | 'astronaut' | 'knight' | 'pirate' | 'alien' | 'viking' | 'frog';
 
-export type AgentPermissionMode = 'normal' | 'auto' | 'bypass';
+export type AgentPermissionMode = 'plan' | 'normal' | 'auto' | 'bypass';
+/** A team's members and its templates keep three modes: plan is chosen per agent, for Claude Code only. */
+export type TeamPermissionMode = Exclude<AgentPermissionMode, 'plan'>;
 export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface AgentStatus {
