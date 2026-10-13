@@ -177,7 +177,7 @@ const UNSEEN = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && Number.isFinite(Date.parse(v));
-const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
+export const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
 const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work'>): ChatError => ({ error, reason: REASONS[error] });
 const copy = (chat: Chat): Chat => ({ ...chat, sessionIds: [...chat.sessionIds] });
 
