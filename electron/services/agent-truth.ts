@@ -361,13 +361,17 @@ export function pendingBackgroundWork(
     // queued_command), and writes no user line for it. Read only from user
     // lines, such a task stayed running for ever, and every rest told its
     // requester so (the Low after the 2.0.0 chain).
+    // Only a note Claude Code queued itself: a message typed in during the turn
+    // is queued the same way (commandMode 'prompt', "Message from ..."), and
+    // one quoting a note must end nothing (GATE-PR389, L1).
+    const attachment = entry.attachment as { type?: unknown; commandMode?: unknown; prompt?: unknown } | undefined;
     const queued = entry.type === 'queue-operation' && entry.operation === 'enqueue'
       ? entry.content
-      : entry.type === 'attachment' && (entry.attachment as { type?: unknown } | undefined)?.type === 'queued_command'
-        ? (entry.attachment as { prompt?: unknown }).prompt
+      : entry.type === 'attachment' && attachment?.type === 'queued_command' && attachment.commandMode === 'task-notification'
+        ? attachment.prompt
         : undefined;
-    if (typeof queued === 'string') {
-      noteEnds(queued, finished);
+    if (entry.type === 'queue-operation' || entry.type === 'attachment') {
+      if (typeof queued === 'string' && queued.trimStart().startsWith('<task-notification>')) noteEnds(queued, finished);
       continue;
     }
     if (entry.type !== 'user') continue;
