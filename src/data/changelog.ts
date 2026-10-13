@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-13',
     updates: [
       'Tars\'s own tools in an agent (its orchestrator, memory, kanban and vault servers) now check, before every call, that the port they call answers as the Tars that started the agent, and send the agent\'s token only then, a delegated run\'s included: a program that took Tars\'s port after a quit no longer receives it.',
+      'An agent\'s permissions offer plan, in New agent, Edit agent and the agent\'s window: Claude Code reads and plans, and edits nothing until you approve its plan. Another CLI, and Claude Code through an API-key provider, has no plan mode here, so plan is dimmed there and says why; choosing one while plan is chosen falls back to manual.',
     ],
   },
   {
