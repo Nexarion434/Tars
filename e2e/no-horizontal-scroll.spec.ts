@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ALL } from './surfaces.mjs';
-import { launchSandboxed, seedSandbox, stubSkillsSh } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, stubSkillsSh, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -66,7 +66,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(sandboxHome, { recursive: true, force: true });
+  await removeHome(sandboxHome);
 });
 
 for (const surface of ALL as Array<{ name: string; route: string; clickText?: string; clickText2?: string; clickRole?: 'radio'; settle?: number }>) {
