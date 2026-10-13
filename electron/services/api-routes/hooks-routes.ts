@@ -1,4 +1,4 @@
-import { agents, saveAgents, noteSessionRegistered, noteTurnStarted } from '../../core/agent-manager';
+import { agents, saveAgents, noteSessionRegistered, noteTurnStarted, appendAgentOutput } from '../../core/agent-manager';
 import { bindTurn } from '../../core/task-requests';
 import { liveTaskLedger, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
@@ -13,6 +13,8 @@ import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 import { restPendingOf } from '../../core/agent-asleep';
 import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
 import { dropPermissionAsks, holdPermissionAsk } from '../permission-asks';
+import { isTerminalsOwnCli, ownCliAtOnce } from '../../core/terminal-cli';
+import { terminalIsTheCli } from '../../core/agent-pty';
 
 /**
  * The four shell hooks whose posts the state mod makes instead, for a session
@@ -256,7 +258,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   app.post('/api/hooks/status', (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
-      tool_name, tool_input, pending,
+      tool_name, tool_input, pending, cli_pid,
     } = req.body as {
       agent_id: string;
       session_id: string;
@@ -277,6 +279,8 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       /** PermissionRequest only: the tool the dialog asks about, and its input. */
       tool_name?: string;
       tool_input?: unknown;
+      /** SessionStart only: the pid of the CLI whose session this is (Claude Code's CLAUDE_PID). */
+      cli_pid?: unknown;
     };
 
     console.log(`[hooks] POST /api/hooks/status: agent_id=${agent_id}, status=${status}, session_id=${session_id}, source=${source ?? '-'}`);
@@ -322,6 +326,40 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // hooks): record which session now owns this agent, but never touch
     // status: the agent was just dispatched a task and is about to work.
     if (source) {
+      // Only the CLI Tars launched in this agent's terminal: one run from
+      // inside it (a `claude -p` from its Bash tool) inherits the agent's id,
+      // token and hooks, and took the agent's session (core/terminal-cli.ts).
+      const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      const terminalPid = terminal?.pid;
+      const execLaunch = terminalIsTheCli(terminal) === true;
+      const refuse = () => {
+        console.log(`[hooks] Refused session ${session_id} for ${agent.id}: its CLI (pid ${String(cli_pid)}) is not its terminal's (pid ${terminalPid})`);
+        // Where a person can find it (Logs reads the kept output): a refusal
+        // that should not have been reads as an agent stuck in its last status.
+        appendAgentOutput(agent, `\r\n[Tars] Refused a session (${session_id}): its CLI (pid ${String(cli_pid)}) is not this terminal's (pid ${terminalPid}). A Claude Code run from inside this agent does not take its session.\r\n`);
+        sendJson({ success: false, stale: true, foreign: true, agent: { id: agent.id, status: agent.status } });
+      };
+      const atOnce = ownCliAtOnce(terminalPid, cli_pid, process.platform, execLaunch);
+      if (atOnce === false) { refuse(); return; }
+      if (atOnce === undefined) {
+        // A CLI the terminal's shell started: `ps` says whose child it is.
+        void isTerminalsOwnCli(terminalPid, cli_pid, { execLaunch }).then((own) => {
+          if (!own) { refuse(); return; }
+          // Asked while `ps` ran: the session may have been killed meanwhile.
+          if (isTombstonedSession(agent, session_id)) {
+            sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
+            return;
+          }
+          registerSession();
+        });
+        return;
+      }
+      registerSession();
+      return;
+    }
+
+    function registerSession(): void {
+      if (!agent) return;
       agent.currentSessionId = session_id;
       // What the task-start watch reads, instead of an emptied ownership field.
       agent.sessionRegisteredAt = new Date().toISOString();
@@ -346,7 +384,6 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // while its launch was on its way can go in now (agent-watch flush).
       agentStatusEmitter.emit('fleet-change', agent.id);
       sendJson({ success: true, registered: true, agent: { id: agent.id, status: agent.status } });
-      return;
     }
 
     // Stale-session guard: only the registered session may drive status.
@@ -370,9 +407,30 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // down at boot), adopt the first non-tombstoned session that reports in.
     // An agent whose id was emptied on disk by the old bug reads as unowned
     // here, so the next real session adopts it and the damage heals itself.
+    // Only from the terminal's own CLI, named by the hooks' X-Tars-Cli-Pid
+    // (tars_auth, authHeader): a nested claude's hooks carry the agent's id
+    // and token, and its first post adopted an agent whose own SessionStart
+    // was lost or refused (the Audit's L4 on #380). A post that names no CLI
+    // adopts as before.
     if (!usableSessionId(agent.currentSessionId)) {
-      agent.currentSessionId = session_id;
-      agent.resumableSessionId = session_id;
+      const header = (req.raw as { headers?: Record<string, unknown> } | undefined)?.headers?.['x-tars-cli-pid'];
+      const postedBy = typeof header === 'string' ? header : undefined;
+      const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      const execLaunch = terminalIsTheCli(terminal) === true;
+      const adopt = () => {
+        if (usableSessionId(agent.currentSessionId) || isTombstonedSession(agent, session_id)) return;
+        agent.currentSessionId = session_id;
+        agent.resumableSessionId = session_id;
+      };
+      const atOnce = ownCliAtOnce(terminal?.pid, postedBy, process.platform, execLaunch);
+      if (atOnce === true) adopt();
+      else if (atOnce === undefined) {
+        void isTerminalsOwnCli(terminal?.pid, postedBy, { execLaunch }).then((own) => {
+          if (!own) return;
+          adopt();
+          saveAgents();
+        });
+      }
     }
 
     // The one post that proves a task reached the CLI. It cannot be read off
