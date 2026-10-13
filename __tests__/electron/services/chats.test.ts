@@ -835,4 +835,16 @@ describe('a linked project whose target is away at a launch', () => {
     fs.renameSync(away, real);
     expect(main(open(), link).sessionFolders?.[SESSION_B]).toEqual(recorded);
   });
+
+  it('46. drops a relative or climbing spelling written while the target is away (GATE-PR391-DELTA2, Info)', () => {
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(real);
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    fs.renameSync(real, path.join(dir, 'real-project-away'));
+    writeFile({ version: 1, numbers: { [link]: 1 }, chats: [record({
+      projectPath: link, sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: ['relative/folder', `${link}/../escape`] },
+    })] });
+    expect(main(open(), link).sessionFolders ?? {}).toEqual({});
+  });
 });
