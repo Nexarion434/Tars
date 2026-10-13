@@ -961,7 +961,9 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
 /**
  * A message about a chat, or from it: headed "[<project> #N <title>]", and
  * logged, so that a reply to it reaches that chat (PR F). Without a chat, as
- * it always went. Only to a chat Settings authorizes.
+ * it always went. It checks no authorization itself: its callers send only to
+ * a chat Settings authorizes (the send route's authorizedChats, the bot's
+ * answer to a chat isAuthorized let in).
  */
 export async function sendForChat(
   bot: Pick<TelegramBot, 'sendMessage'> | null, telegramChatId: string, text: string, chat?: Chat, options: TelegramBot.SendMessageOptions = {},
