@@ -108,7 +108,12 @@ The same listener got the challenge and a post with no Authorization. Until 2026
 a hook makes with the token (the agent's bootstrap and its memory context at SessionStart, the memory
 post after a write, in both runners) went out without that check: the squatter got the token there
 (the Audit's Info on #355). They take the same check now (`TARS_READ_TOKEN`, `tokenForReads`); a
-CLI whose port does not prove its instance reads nothing, and not with the shared token either. The id is as
+CLI whose port does not prove its instance reads nothing, and not with the shared token either. The bundled
+MCP servers the CLI starts (orchestrator, memory, kanban, vault) presented the same token to the same port
+with no check until 2026-10-13, so a CLI that outlived a quit handed it to whatever held the port with its
+next tool call (the Audit's Info on #370). They ask the same challenge before every call (`tokenToPresent`,
+mcp-shared), never keeping a proof, so a squatter that takes the port after a call gets nothing with the
+next one; unproven, they call without a token, and never with the shared file instead. The id is as
 readable as the token by a process of the same user (`ps -Eww`), and no more: this
 closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
