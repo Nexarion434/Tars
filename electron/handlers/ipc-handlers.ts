@@ -69,6 +69,7 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
+import { gitCommand } from '../platform/git-command';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -359,12 +360,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
           // Check if branch already exists
           try {
-            execFileSync('git', ['rev-parse', '--verify', branchName], { cwd, stdio: 'pipe' });
+            execFileSync(gitCommand(), ['rev-parse', '--verify', branchName], { cwd, stdio: 'pipe' });
             // Branch exists, create worktree using existing branch
-            execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd, stdio: 'pipe' });
+            execFileSync(gitCommand(), ['worktree', 'add', worktreePath, branchName], { cwd, stdio: 'pipe' });
           } catch {
             // Branch doesn't exist, create worktree with new branch
-            execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
+            execFileSync(gitCommand(), ['worktree', 'add', '-b', branchName, worktreePath], { cwd, stdio: 'pipe' });
           }
         }
         // Its dependencies, cloned from the project's where they were installed
@@ -1181,10 +1182,10 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             // run its own). See the same fix in agent:create.
             const { execFileSync } = await import('child_process');
             try {
-              execFileSync('git', ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
-              execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync(gitCommand(), ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync(gitCommand(), ['worktree', 'add', worktreePath, branchName], { cwd: agent.projectPath, stdio: 'pipe' });
             } catch {
-              execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
+              execFileSync(gitCommand(), ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
             }
           }
           await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
@@ -3054,7 +3055,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
     try {
       const { execFile } = await import('child_process');
       const { promisify } = await import('util');
-      const { stdout } = await promisify(execFile)('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      const { stdout } = await promisify(execFile)(gitCommand(), ['rev-parse', '--abbrev-ref', 'HEAD'], {
         cwd, timeout: 8000,
       });
       return { success: true, output: stdout.trim() };
