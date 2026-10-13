@@ -50,6 +50,12 @@
  *     read as gone while its file was there, its items declared removed. Its
  *     folder is recorded with it (chats.ts, sessionFolders): it stays
  *     readable, in a fresh read and live, and nothing of it is removed.
+ * 16. (GATE-PR391-DELTA2, probe PC) A spelling kept unchecked while a linked
+ *     project's target is away (chats.json is agents' to write) is read: a
+ *     folder outside the project, holding another project's transcript, shows
+ *     in the chat while the target is away, and for the rest of the run after
+ *     it comes back. A recorded spelling is read only when the project's real
+ *     path reads and the spelling is inside the project.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -340,6 +346,28 @@ describe('a chat, followed', () => {
     const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [link, real] } });
     const items = await readChatItems(chat, { runner: runnerOf({ id: 'new', currentSessionId: S('b') }), homeDir: home });
     expect(texts(items)).toContain('filed under the real path');
+  });
+
+  it('16. never reads a recorded spelling outside the project, the target away or back', async () => {
+    const real = path.join(home, 'real-project');
+    fs.mkdirSync(real);
+    const link = path.join(home, 'linked-project');
+    fs.symlinkSync(real, link);
+    // Another project's session, filed where Claude Code files it.
+    const elsewhere = path.join(home, 'other-project');
+    const theirs = path.join(home, '.claude', 'projects', encodeProjectDirName(elsewhere), `${S('a')}.jsonl`);
+    fs.mkdirSync(path.dirname(theirs), { recursive: true });
+    fs.writeFileSync(theirs, userLine('another project\'s words'));
+    const mine = path.join(home, '.claude', 'projects', encodeProjectDirName(fs.realpathSync(real)), `${S('b')}.jsonl`);
+    fs.mkdirSync(path.dirname(mine), { recursive: true });
+    fs.writeFileSync(mine, userLine('the new lead'));
+    const chat = chatOf({ projectPath: link, sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [elsewhere] } });
+    const read = async () => texts(await readChatItems(chat, { runner: runnerOf({ id: 'new', currentSessionId: S('b') }), homeDir: home }));
+    const away = path.join(home, 'real-project-away');
+    fs.renameSync(real, away);
+    expect(await read()).not.toContain("another project's words");
+    fs.renameSync(away, real);
+    expect(await read()).not.toContain("another project's words");
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
