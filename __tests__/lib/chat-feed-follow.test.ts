@@ -23,6 +23,10 @@ import type { ChatEvent, ChatHistory, ChatItem } from '../../src/types/electron'
  * 8. an earlier page asked from a first line that a re-read has since moved
  *    is merged, leaving a hole (L3);
  * 9. the waits between reads after failures do not grow, or grow forever.
+ *
+ * Written before the fix, from the mutation bench of L2 and L3:
+ * 10. after a re-read that failed, each event reads again at once, past
+ *     the wait, and a read may start beside the one the wait starts.
  */
 
 type Call = { params: { chatId: string; before?: number; limit?: number }; listening: number; resolve: (v: unknown) => void; reject: (e: unknown) => void };
@@ -171,5 +175,24 @@ describe('followChatFeed', () => {
     src.calls[1].resolve(history(30, range(0, 4)));
     await earlier;
     expect(lines()).toEqual(range(12, 20).map(i => i.n));
+  });
+
+  it('waits after a re-read that failed, whatever events come meanwhile (10)', async () => {
+    const { src, clock, lines } = follow();
+    src.calls[0].resolve(history(10, range(0, 1)));
+    await settle();
+    src.emit(said(12, item(3)));
+    expect(src.calls).toHaveLength(2);
+    src.calls[1].reject(new Error('no'));
+    await settle();
+    src.emit(said(13, item(4)));
+    src.emit(said(14, item(5)));
+    expect(src.calls).toHaveLength(2);
+    expect(clock.waits()).toEqual([RETRY_MS[0]]);
+    clock.run();
+    expect(src.calls).toHaveLength(3);
+    src.calls[2].resolve(history(14, range(0, 5)));
+    await settle();
+    expect(lines()).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });
