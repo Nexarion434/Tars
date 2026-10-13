@@ -888,6 +888,7 @@ stat -f '%Sp %N' ~/.dorothy/api-token      # expect -rw-------
 | `403 Forbidden origin` | called from a browser page or a tool that sets `Origin` | drop the header; `curl` sends none |
 | every call `ECONNREFUSED` | port taken at boot, API never started | `lsof -nP -iTCP:31415`, kill the squatter, restart Tars |
 | `413 Request body too large` | >4 MiB payload | it is a hard cap; chunk the prompt |
+| An agent stuck in its last status, and its Logs say `[Tars] Refused a session (...): its CLI (pid N) is not this terminal's` | Tars takes a session only from the CLI it launched in the agent's terminal: the terminal's own process, or, when the terminal runs a shell the CLI was typed into, that shell's child (`core/terminal-cli.ts`). A `claude -p` run from inside the agent is refused, as meant. So is a CLI further down: a `cliPath` wrapper script that does not `exec` the CLI, or a shell rc that starts tmux (its shells are children of the tmux server) | `exec` the CLI in the wrapper; no tmux in the agent's shell rc. On Linux the parent is read from `/proc/<pid>/stat`, so `ps` is not needed |
 
 ---
 
