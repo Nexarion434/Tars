@@ -37,6 +37,12 @@ export interface ChatItem {
 export interface ParseOptions {
   /** An agent's name, by id, for a tool line that names one (delegate_task -> Backend). */
   nameOf?: (agentId: string) => string | undefined;
+  /**
+   * The index in its file of the text's first line, for a text that is the
+   * rest of a file read before (chat-history.ts reads what a transcript
+   * gained): a line with no uuid is named by its index in the file.
+   */
+  firstLine?: number;
 }
 
 /** Lines Claude Code keeps for itself, by `type`. Anything else unknown is raw. */
@@ -122,7 +128,9 @@ export function transcriptItems(text: string, sessionId: string, opts: ParseOpti
   const lines = text.split('\n');
   // The last line, unterminated, may still be being written: it waits.
   if (!text.endsWith('\n')) lines.pop();
-  lines.forEach((line, index) => {
+  const first = opts.firstLine ?? 0;
+  lines.forEach((line, i) => {
+    const index = first + i;
     if (!line.trim()) return;
     let o: Record<string, unknown>;
     try {
@@ -194,15 +202,27 @@ export function transcriptItems(text: string, sessionId: string, opts: ParseOpti
  * gone says so, and the others are read.
  */
 export function chatItems(sessions: Array<{ sessionId: string; text: string | null }>, opts: ParseOptions = {}): ChatItem[] {
+  return joinSessions(sessions.map(({ sessionId, text }) => ({ sessionId, items: text === null ? null : transcriptItems(text, sessionId, opts) })));
+}
+
+/**
+ * The same, from each session's items as already read. `items` null: no
+ * transcript. That says "gone", unless the session may still be written:
+ * Claude Code creates a session's file lazily, so the runner's newest session
+ * is in the chat before its file is, and reading it as gone, then as its
+ * lines, shifted the items after it (the gate of #371, M1). Such a session
+ * reads as empty until its file appears.
+ */
+export function joinSessions(sessions: Array<{ sessionId: string; items: ChatItem[] | null; mayBeWritten?: boolean }>): ChatItem[] {
   const seen = new Set<string>();
   const out: ChatItem[] = [];
-  sessions.forEach(({ sessionId, text }, index) => {
+  sessions.forEach(({ sessionId, items, mayBeWritten }, index) => {
     if (index > 0) out.push({ id: `${sessionId}:start`, sessionId, at: null, kind: 'divider', text: 'session' });
-    if (text === null) {
-      out.push({ id: `${sessionId}:gone`, sessionId, at: null, kind: 'raw', text: `session ${sessionId}: its transcript is gone` });
+    if (items === null) {
+      if (!mayBeWritten) out.push({ id: `${sessionId}:gone`, sessionId, at: null, kind: 'raw', text: `session ${sessionId}: its transcript is gone` });
       return;
     }
-    for (const item of transcriptItems(text, sessionId, opts)) {
+    for (const item of items) {
       if (seen.has(item.id)) continue;
       seen.add(item.id);
       out.push(item);

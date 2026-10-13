@@ -469,6 +469,14 @@ export interface AgentStatus {
    *  the fleet's first (getSuperAgent with no project). A project has one at
    *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
+  /** 'chat': this agent runs one chat's conversation (a chat runner). A
+   *  worker with the orchestrator's powers, listed under its chat rather than
+   *  in the team. */
+  kind?: 'chat';
+  /** The chat a runner runs. */
+  chatId?: string;
+  /** The project's orchestrator a runner is launched like. */
+  teamOrchestratorId?: string;
   /** The Claude account this agent's CLI was last launched on. Absent: account 1. */
   claudeAccountId?: ClaudeAccountId;
   /** The account the agent is held to. Absent: chosen automatically. */
@@ -1054,14 +1062,17 @@ export interface Chat {
 
 /** A chat, with its runner as the fleet has it now. */
 export interface ChatView extends Chat {
+  /** The agent the chat runs on, as the fleet confirms its record; null before its first send, or when the record names another agent. */
   runner: {
     id: string;
     name: string;
     status: AgentTickItem['status'];
     waking: boolean;
-    /** Its CLI holds a terminal: it counts in the limit. */
+    /** Its CLI runs in its terminal, or is starting there: it counts in the limit. A terminal back at its shell does not. */
     live: boolean;
     lastActivity: string;
+    /** A permission its CLI asked Tars: shown in the chat that runs it. */
+    permissionAsk: AgentStatus['permissionAsk'] | null;
   } | null;
 }
 
@@ -1075,7 +1086,6 @@ export interface ChatWorkItem {
   queuedAt: string | null;
 }
 
-/** Why a chat channel did nothing, in a sentence the window can show as it is. */
 /** One item of a chat's conversation, read from its runner's transcripts (services/chat-transcript.ts). */
 export interface ChatItem {
   /** The transcript line's uuid (`:n` for a later part of the same line). */
@@ -1099,11 +1109,17 @@ export interface ChatHistory {
   items: ChatItem[];
 }
 
-/** chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again. */
+/**
+ * chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again.
+ * An `item` whose id the window already holds replaces it: an item is sent again when its place `n`
+ * changed (a line that landed in an earlier session moves every item after it one place on).
+ */
 export type ChatEvent = { seq: number; chatId: string } & (
   | { type: 'item'; item: ChatItem }
   | { type: 'meta'; chat: ChatView }
   | { type: 'deleted' }
+  /** Items told before that the chat no longer holds (a session's transcript disappeared): drop them. */
+  | { type: 'removed'; itemIds: string[] }
   | { type: 'state'; runner: { id: string; status: AgentStatus['status']; live: boolean } | null }
 );
 
@@ -1123,14 +1139,36 @@ export interface AgentQueueView {
   queue: AgentQueueEntry[];
 }
 
+/** Why a chat channel did nothing, in a sentence the window can show as it is. */
 export interface ChatError {
   error:
     | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
-    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'chat_send_unavailable';
+    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'provider_unsupported' | 'runner_set';
   reason: string;
   /** chat_has_work: the work the chat's runner has out. */
   tasks?: ChatWorkItem[];
 }
+
+/** What chat:send answers: how the words went in, or why they did not. */
+export type ChatSendAnswer =
+  | {
+    success: true;
+    chatId: string;
+    /** The agent that runs the chat: Main's is the project's orchestrator. */
+    runnerId: string;
+    /** typed into its running CLI; held behind a draft in its field; launched, its conversation resumed. */
+    how: 'typed' | 'held' | 'launched';
+  }
+  | {
+    error: 'not_found' | 'invalid_request' | 'no_orchestrator' | 'provider_unsupported' | 'disk_full'
+      | 'chat_limit' | 'runner_failed' | 'runner_mismatch' | 'chats_unavailable';
+    /** A sentence the window shows as it is. */
+    reason: string;
+    /** chat_limit: the limit, the RAM it comes from, and the chats working. */
+    limit?: number;
+    ramGb?: number;
+    working?: Array<{ chatId: string; title: string; since: string }>;
+  };
 
 /** chats.json could not be read as it was: what was done, and where the file as it was is kept. */
 export interface ChatsProblem {
@@ -2235,12 +2273,12 @@ export interface ElectronAPI {
     /** until: a time to come, or null to end the snooze. */
     snooze: (params: { chatId: string; until: string | null }) => Promise<ChatView | ChatError>;
     settle: (params: { chatId: string; settled: boolean }) => Promise<ChatView | ChatError>;
-    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). */
-    delete: (params: { chatId: string }) => Promise<{ success: true } | ChatError>;
+    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). Its own runner goes with it, its worktree's work saved first. */
+    delete: (params: { chatId: string }) => Promise<{ success: true; savedTo?: string; worktreeKept?: string } | ChatError>;
     /** The project's inbox moves to this chat. */
     setInbox: (params: { chatId: string }) => Promise<ChatView | ChatError>;
-    /** Refused (chat_send_unavailable) until the chats have orchestrators of their own. */
-    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatError>;
+    /** The user's words into the chat: typed into its runner, or launched with them, within the RAM's limit (chat_limit). */
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatSendAnswer>;
     history: (params: { chatId: string; before?: number; limit?: number }) => Promise<ChatHistory | (ChatError & { seq: number })>;
     onEvent: (callback: (event: ChatEvent) => void) => () => void;
   };

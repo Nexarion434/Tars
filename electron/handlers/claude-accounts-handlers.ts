@@ -466,6 +466,8 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
       const { agentId, accountId } = (p ?? {}) as { agentId?: unknown; accountId?: unknown };
       const agent = typeof agentId === 'string' ? agents.get(agentId) : undefined;
       if (!agent) throw new Error('There is no such agent.');
+      // A chat's runner starts on its orchestrator's account, read at each launch (the Audit's L3 on #379).
+      if (agent.kind === 'chat') throw new Error(`${agent.name || agent.id} runs a chat: its account is the project's orchestrator's. Change it there.`);
       const before = agent.claudeAccountPin;
       if (accountId === null) {
         delete agent.claudeAccountPin;
