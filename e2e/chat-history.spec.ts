@@ -28,6 +28,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 6. (2.0.0 follow-up) a session's transcript that disappears (Claude Code's
  *    cleanup, a delete) has the items the window was told of declared in one
  *    `removed` event: that session's own, none of the other's.
+ * And, in a second test (GATE-PR371-DELTA5, Info): the project's orchestrator
+ * ran its session in a worktree of its own; the role moves to another agent,
+ * and Main follows it. The former one's session stays readable in Main, found
+ * in the folder recorded with it, where it read as gone.
  * The artefact: values.json with every answer and every event.
  */
 
@@ -211,3 +215,60 @@ test("a chat's conversation is read across its sessions, then followed live, and
     await app.close();
   }
 });
+
+test("Main reads a former orchestrator's session where it ran, after the role moves", async () => {
+  test.setTimeout(240_000);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-chat-folder-'));
+  const project = path.join(home, 'projects', 'demo');
+  const worktree = path.join(project, '.worktrees', 'old-lead');
+  const dir = path.join(home, '.dorothy');
+  for (const d of [worktree, dir]) fs.mkdirSync(d, { recursive: true });
+  const SOLD = 'e2e00000-0000-4000-8000-00000000f001';
+  const agent = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+    id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker', projectPath: project, skills: [],
+    createdAt: '2026-10-12T08:00:00.000Z', lastActivity: '2026-10-12T08:00:00.000Z', ...extra,
+  });
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
+    agent('old', 'Old lead', { role: 'orchestrator', orchestratorMode: true, worktreePath: worktree, branchName: 'old-lead', resumableSessionId: SOLD }),
+    agent('new', 'New lead'),
+  ], null, 2));
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface: true }));
+  // The old lead's session, where Claude Code files it: under its worktree's real path.
+  const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(worktree).replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.mkdirSync(transcripts, { recursive: true });
+  fs.writeFileSync(path.join(transcripts, `${SOLD}.jsonl`), jsonl([user(SOLD, 'planned in the old worktree')]));
+
+  const values: Record<string, unknown> = {};
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31442), DOROTHY_E2E: '1' },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+    const call = (group: string, name: string, arg?: unknown) => page.evaluate(([g, c, a]) =>
+      (window as unknown as Api).electronAPI[g as string][c as string](a), [group, name, arg] as const) as Promise<Record<string, unknown>>;
+    const mainOf = async () => ((await call('chat', 'list')) as unknown as { chats: Array<{ id: string; number: number; runnerId: string; sessionIds: string[] }> }).chats.find((c) => c.number === 1)!;
+    const texts = async (chatId: string) => ((await call('chat', 'history', { chatId })) as unknown as { items: Array<{ text: string }> }).items.map((i) => i.text);
+
+    const before = await mainOf();
+    values.before = { main: before, texts: await texts(before.id) };
+    expect(before).toMatchObject({ runnerId: 'old', sessionIds: [SOLD] });
+    expect(await texts(before.id)).toContain('planned in the old worktree');
+
+    // The role moves: Main follows the new orchestrator.
+    expect(await call('agent', 'update', { id: 'new', role: 'orchestrator' })).toMatchObject({ success: true });
+    await expect.poll(async () => (await mainOf()).runnerId, { timeout: 15_000 }).toBe('new');
+    const after = await mainOf();
+    const read = await texts(after.id);
+    values.after = { main: after, texts: read };
+    expect(read).toContain('planned in the old worktree');
+    expect(read.join('\n')).not.toContain('its transcript is gone');
+  } finally {
+    recordValues(values);
+    await app.close();
+  }
+});
+

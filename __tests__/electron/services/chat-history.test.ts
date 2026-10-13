@@ -44,12 +44,18 @@
  *     window keeps them, mixed with the moved ones, until it reads again. Or
  *     they are declared at every tick, or one still there is declared, or
  *     after the items that moved back (GATE-PR371-DELTA4, L1).
- * 14. (GATE-PR371-DELTA4, Info; a case of what the code does, written after
- *     it) Main follows a change of orchestrator; a session the former one ran
- *     in a worktree of its own is looked for under the new runner's folders
- *     and the project's only, and reads as gone. A live window must then hold
- *     what a fresh chat:history answers: the same gone line, its items
- *     declared removed, not kept as if they were still there.
+ * 14. (GATE-PR371-DELTA4 and DELTA5, Info) Main follows a change of
+ *     orchestrator; a session the former one ran in a worktree of its own was
+ *     looked for under the new runner's folders and the project's only, and
+ *     read as gone while its file was there, its items declared removed. Its
+ *     folder is recorded with it (chats.ts, sessionFolders): it stays
+ *     readable, in a fresh read and live, and nothing of it is removed.
+ * 16. (GATE-PR391-DELTA2, probe PC) A spelling kept unchecked while a linked
+ *     project's target is away (chats.json is agents' to write) is read: a
+ *     folder outside the project, holding another project's transcript, shows
+ *     in the chat while the target is away, and for the rest of the run after
+ *     it comes back. A recorded spelling is read only when the project's real
+ *     path reads and the spelling is inside the project.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -307,14 +313,15 @@ describe('a chat, followed', () => {
     expect(sent).toEqual([]);
   });
 
-  it('14. after a change of orchestrator, a live window holds what a fresh read answers', async () => {
-    const worktree = path.join(home, 'old-lead-worktree');
-    fs.mkdirSync(worktree);
+  it("14. after a change of orchestrator, the former one's session stays readable where it ran", async () => {
+    // Where Tars makes an agent's worktree: inside its project.
+    const worktree = path.join(project, '.worktrees', 'old-lead');
+    fs.mkdirSync(worktree, { recursive: true });
     const inWorktree = path.join(home, '.claude', 'projects', encodeProjectDirName(worktree), `${S('a')}.jsonl`);
     fs.mkdirSync(path.dirname(inWorktree), { recursive: true });
     fs.writeFileSync(inWorktree, userLine('ran in the old lead\'s worktree'));
     write(S('b'), userLine('the new lead'));
-    const chat = chatOf({ sessionIds: [S('a'), S('b')] });
+    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [worktree] } });
     const before = await readChatItems(chat, { runner: runnerOf({ id: 'old', worktreePath: worktree, currentSessionId: S('a') }), homeDir: home });
     expect(texts(before)).toContain("ran in the old lead's worktree");
     noteChatSnapshot(chat.id, before);
@@ -323,10 +330,45 @@ describe('a chat, followed', () => {
     await f.tick();
     f.stop();
     const fresh = await readChatItems(chat, { runner: newLead, homeDir: home });
-    expect(texts(fresh)).toContain(`session ${S('a')}: its transcript is gone`);
-    const removed = sent.filter((e) => e.type === 'removed').flatMap((e) => e.itemIds!);
-    expect(removed).toEqual(before.filter((i) => i.text === "ran in the old lead's worktree").map((i) => i.id));
-    expect(fs.existsSync(inWorktree), 'nothing is deleted: the file is only not looked for there').toBe(true);
+    expect(texts(fresh)).toContain("ran in the old lead's worktree");
+    expect(texts(fresh)).not.toContain(`session ${S('a')}: its transcript is gone`);
+    expect(sent.filter((e) => e.type === 'removed')).toEqual([]);
+  });
+
+  it('15. reads a session from the real spelling recorded for it, its folder gone (GATE-PR391, L2)', async () => {
+    const real = path.join(fs.realpathSync(project), '.worktrees', 'old-lead');
+    const link = path.join(project, '.worktrees', 'old-lead');
+    // As Claude Code files it: under the real path of where its CLI ran.
+    const filed = path.join(home, '.claude', 'projects', encodeProjectDirName(real), `${S('a')}.jsonl`);
+    fs.mkdirSync(path.dirname(filed), { recursive: true });
+    fs.writeFileSync(filed, userLine('filed under the real path'));
+    write(S('b'), userLine('the new lead'));
+    // Neither folder exists any more: no spelling can be found from the link.
+    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [link, real] } });
+    const items = await readChatItems(chat, { runner: runnerOf({ id: 'new', currentSessionId: S('b') }), homeDir: home });
+    expect(texts(items)).toContain('filed under the real path');
+  });
+
+  it('16. never reads a recorded spelling outside the project, the target away or back', async () => {
+    const real = path.join(home, 'real-project');
+    fs.mkdirSync(real);
+    const link = path.join(home, 'linked-project');
+    fs.symlinkSync(real, link);
+    // Another project's session, filed where Claude Code files it.
+    const elsewhere = path.join(home, 'other-project');
+    const theirs = path.join(home, '.claude', 'projects', encodeProjectDirName(elsewhere), `${S('a')}.jsonl`);
+    fs.mkdirSync(path.dirname(theirs), { recursive: true });
+    fs.writeFileSync(theirs, userLine('another project\'s words'));
+    const mine = path.join(home, '.claude', 'projects', encodeProjectDirName(fs.realpathSync(real)), `${S('b')}.jsonl`);
+    fs.mkdirSync(path.dirname(mine), { recursive: true });
+    fs.writeFileSync(mine, userLine('the new lead'));
+    const chat = chatOf({ projectPath: link, sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: [elsewhere] } });
+    const read = async () => texts(await readChatItems(chat, { runner: runnerOf({ id: 'new', currentSessionId: S('b') }), homeDir: home }));
+    const away = path.join(home, 'real-project-away');
+    fs.renameSync(real, away);
+    expect(await read()).not.toContain("another project's words");
+    fs.renameSync(away, real);
+    expect(await read()).not.toContain("another project's words");
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {

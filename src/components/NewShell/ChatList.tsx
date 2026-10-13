@@ -5,10 +5,12 @@ import Link from 'next/link';
 import {
   CalendarClock, Check, ChevronDown, ChevronRight, Ellipsis, FolderKanban, Inbox, Pencil, Pin, Trash2,
 } from 'lucide-react';
-import { Button, PanelCaption } from '@/components/ui';
+import { Button, PanelCaption, StatusSquare } from '@/components/ui';
 import type { ChatError, ChatView, ChatWorkItem } from '@/types/electron';
 import { chatSections, chatStateWord, sectionOf, type ChatSectionName } from '@/lib/chat-sections';
 import { snoozeLabel, snoozeUntil, type SnoozeChoice } from '@/lib/chat-snooze';
+import { workingLine } from '@/lib/chat-send';
+import { deletedNotice, type DeletedNotice } from '@/lib/chat-deleted';
 import { changeChat, isChatError, projectNameOf, useChats } from '@/hooks/useChats';
 
 /**
@@ -17,7 +19,9 @@ import { changeChat, isChatError, projectNameOf, useChats } from '@/hooks/useCha
  * actions · states`. Each row is its title, its project and number, and its
  * runner's state; its actions sit behind the dots on the row. Delete asks
  * first, and a refusal is shown in the store's own words, the work out named.
- * What a chat says is not here: it comes with PR D and E.
+ * A deletion that leaves its runner's worktree on disk, or its uncommitted work
+ * on a wip/ branch, says what stays and where above the list, until ok puts it
+ * away (src/lib/chat-deleted.ts). What a chat says is on its page.
  */
 
 const STATE_WORDS = {
@@ -125,7 +129,7 @@ function ChatMenu({ chat, at, onClose, onRename, onAskDelete, onRefused }: {
   );
 }
 
-function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: number }) {
+function ChatRow({ chat, current, at, onDeleted }: { chat: ChatView; current: boolean; at: number; onDeleted: (notice: DeletedNotice) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(chat.title);
@@ -172,7 +176,13 @@ function ChatRow({ chat, current, at }: { chat: ChatView; current: boolean; at: 
   const remove = async () => {
     setAsking(false);
     const answer = await changeChat(api => api.delete({ chatId: chat.id }));
-    if (isChatError(answer)) setRefused(answer);
+    if (isChatError(answer)) {
+      setRefused(answer);
+      return;
+    }
+    // The row goes with the chat: what stays of its runner is said by the list.
+    const notice = deletedNotice(answer, { project: name, number: chat.number, title: chat.title });
+    if (notice) onDeleted(notice);
   };
 
   return (
@@ -306,10 +316,12 @@ export function ChatList({ filter, onFilter, selectedId }: {
   onFilter: (projectPath: string | null) => void;
   selectedId: string | null;
 }) {
-  const { chats, at } = useChats();
+  const { chats, at, limit } = useChats();
+  const working = workingLine(limit);
   const [folded, setFolded] = useState<Set<ChatSectionName>>(() => new Set(FOLDED_FIRST));
   const [filterOpen, setFilterOpen] = useState(false);
   const filterArea = useRef<HTMLDivElement>(null);
+  const [deleted, setDeleted] = useState<DeletedNotice | null>(null);
 
   const projects = useMemo(() => {
     const paths = Array.from(new Set((chats ?? []).map(chat => chat.projectPath)));
@@ -377,6 +389,32 @@ export function ChatList({ filter, onFilter, selectedId }: {
         </div>
       </div>
 
+      {/* How many chats work of the most this Mac runs (system:chatLimit): the frames' Working count. */}
+      {!none && working && (
+        <div data-chats-working className="flex items-center gap-1.5 px-[18px] pt-0.5 shrink-0 font-mono text-[10.5px] leading-[1.35] text-text-secondary">
+          <StatusSquare tone={working.tone} />
+          {working.text}
+        </div>
+      )}
+
+      {/* A chat deleted whose runner's worktree or work stays: what, and where, until ok. */}
+      {deleted && (
+        <div className="px-2 pt-1.5 shrink-0">
+          <div data-chat-deleted role="status" className="px-2.5 py-2 bg-secondary border border-border flex flex-col gap-1.5">
+            <div className="flex gap-2 text-[11.5px] leading-[1.45] text-foreground">
+              <span className="mt-[5px] w-1.5 h-1.5 shrink-0 bg-status-waiting" />
+              <div className="min-w-0 flex flex-col gap-1">
+                <p className="break-words">{deleted.text}</p>
+                {deleted.saved && <p className="break-words">{deleted.saved}</p>}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setDeleted(null)}>ok</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {none ? (
         <div className="px-[18px] pt-2.5 shrink-0">
           <p className="text-[12.5px] leading-[1.4] text-text-secondary">No chats yet</p>
@@ -396,7 +434,7 @@ export function ChatList({ filter, onFilter, selectedId }: {
                 <SectionHead name={section.name} count={section.chats.length} folded={isFolded} onToggle={() => toggle(section.name)} />
                 {!isFolded && (
                   <div className="flex flex-col gap-px">
-                    {section.chats.map(chat => <ChatRow key={chat.id} chat={chat} current={chat.id === selectedId} at={at} />)}
+                    {section.chats.map(chat => <ChatRow key={chat.id} chat={chat} current={chat.id === selectedId} at={at} onDeleted={setDeleted} />)}
                   </div>
                 )}
               </section>
