@@ -96,6 +96,9 @@
  * 45. (GATE-PR391, L2) The folder is recorded only as Tars saved it, and Claude Code files a transcript under the
  *     folder's real path: for a project reached through a link (/var on macOS, a linked checkout), once the worktree
  *     is gone (prune removed it) its real spelling can no longer be found, and the session reads as gone again.
+ * 46. (GATE-PR391-DELTA, L1, probe PB) A linked project whose target is missing at a launch loses the real spellings
+ *     recorded for it, for good: they cannot be checked against a real path that cannot be read, the repair drops
+ *     them and writes the file, and they are not back when the target is.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -809,5 +812,27 @@ describe("the folder each session's CLI ran in", () => {
       expect(chat, JSON.stringify(bad)).toBeDefined();
       expect(chat.sessionFolders ?? {}).toEqual({});
     }
+  });
+});
+
+describe('a linked project whose target is away at a launch', () => {
+  it('46. keeps the spellings recorded for it, and checks them again once its real path reads', () => {
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(path.join(real, '.worktrees', 'lead-old'), { recursive: true });
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    const store = open();
+    store.ensureMains([orch({ projectPath: link })]);
+    store.noteSession('o1', SESSION_B, path.join(link, '.worktrees', 'lead-old'));
+    const recorded = main(store, link).sessionFolders?.[SESSION_B];
+    expect(recorded).toHaveLength(2);
+
+    // The target away (a volume unmounted, a checkout moved): the link dangles at this launch.
+    const away = path.join(dir, 'real-project-away');
+    fs.renameSync(real, away);
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toEqual(recorded);
+    // The target back: the next launch still has both.
+    fs.renameSync(away, real);
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toEqual(recorded);
   });
 });
