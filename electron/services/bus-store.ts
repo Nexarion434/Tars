@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
 import { isSuperAgent } from '../utils';
+import { chatNameOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
 import type {
@@ -546,7 +547,11 @@ export function publishAgentMessage(input: {
 
   const room = getRoom(input.roomId);
   if (!room) return { published: false, reason: 'no_open_thread', detail: 'That room does not exist.' };
-  if (!room.memberIds.includes(input.agentId)) {
+  // A chat's runner is no member (what crosses the room reaches Main), but the
+  // chat speaks there, as itself, in its own project's room (4.6, PR F).
+  const poster = agents.get(input.agentId);
+  const runsAChatHere = !!poster && room.kind === 'project' && poster.projectPath === room.projectPath && !!chatNameOf(poster);
+  if (!room.memberIds.includes(input.agentId) && !runsAChatHere) {
     return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
   }
 
@@ -604,11 +609,16 @@ export function publishAgentMessage(input: {
   }
 
   const agent = agents.get(input.agentId);
+  // An agent that runs a chat speaks in the room as that chat (PR F): Main is
+  // chat #1, and Noah's answer to it goes back to it by its id.
+  const chat = agent ? chatNameOf(agent) : undefined;
   const { message, thread: updated } = appendMessage({
     roomId: input.roomId,
     authorKind: 'agent',
     authorId: input.agentId,
-    authorName: agent?.name || input.agentId,
+    authorName: chat
+      ? `the orchestrator of ${path.basename(chat.projectPath) || chat.projectPath}, chat #${chat.number} "${chat.title}"`
+      : agent?.name || input.agentId,
     text: input.text,
     mentions: input.mentions,
   });

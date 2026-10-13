@@ -41,6 +41,8 @@ export interface RelayMessage {
   projectPath?: string;
   /** Until when it may still go, if Hermes is down when it is sent. An hour when not said. */
   expiresAt?: number;
+  /** The chat it comes from or is about (PR F): a reply to it goes to that chat. */
+  chatId?: string;
 }
 
 export type RelaySendResult =
@@ -74,6 +76,8 @@ export interface RelayReply {
   /** When Tars sent the message it answers, and when the user replied, in ms. */
   sentAt: number;
   at: number;
+  /** The chat the message it answers came from, when one did (PR F). */
+  chatId?: string;
 }
 
 /** "@project text" from the user. */
@@ -84,7 +88,7 @@ export interface RelayProjectMessage {
   at: number;
 }
 
-interface SentEntry { messageId: string; ref: string; kind: RelayKind; projectPath: string; at: number }
+interface SentEntry { messageId: string; ref: string; kind: RelayKind; projectPath: string; at: number; chatId?: string }
 interface Waiting { id: string; message: RelayMessage; queuedAt: number; expiresAt: number }
 interface PluginReply {
   seq: number; at: number; kind: 'reply' | 'project'; ref: string; project: string;
@@ -222,7 +226,10 @@ async function trySend(message: RelayMessage, now: number): Promise<{ messageId?
     return { state: answer.status === 429 ? 'ready' : stateOf(answer) };
   }
   const sent = read<SentEntry[]>(FILES.sent(), []).filter(entry => entry.at > now - SENT_KEPT_MS);
-  sent.push({ messageId: String(messageId), ref: message.ref, kind: message.kind, projectPath: message.projectPath ?? '', at: now });
+  sent.push({
+    messageId: String(messageId), ref: message.ref, kind: message.kind, projectPath: message.projectPath ?? '', at: now,
+    ...(message.chatId ? { chatId: message.chatId } : {}),
+  });
   write(FILES.sent(), sent);
   return { messageId: String(messageId), state: 'ready' };
 }
@@ -251,8 +258,11 @@ export async function relaySend(message: RelayMessage, now: number = Date.now())
 }
 
 /** A word from Tars to the user, about something they wrote. A reply to it reaches nobody. */
-export function tellUser(text: string, projectPath?: string, now: number = Date.now()): Promise<RelaySendResult> {
-  return relaySend({ text, kind: 'report', ref: `notice:${randomUUID()}`, projectPath }, now);
+export function tellUser(text: string, projectPath?: string, now: number = Date.now(), chat?: { id: string; tag: string }): Promise<RelaySendResult> {
+  // About a chat: headed by it, and a reply to it goes to that chat (PR F).
+  return chat
+    ? relaySend({ text: `${chat.tag} ${text}`, kind: 'report', ref: `message:${randomUUID()}`, projectPath, chatId: chat.id }, now)
+    : relaySend({ text, kind: 'report', ref: `notice:${randomUUID()}`, projectPath }, now);
 }
 
 /** The event reports' channel while the relay is on: each report a message of its project. */
@@ -335,6 +345,7 @@ async function handle(reply: PluginReply, now: number): Promise<void> {
   await handler({
     seq: reply.seq, refType, refId: split < 0 ? '' : sent.ref.slice(split + 1), ref: sent.ref, kind: sent.kind,
     projectPath: sent.projectPath, text: reply.text, sentAt: sent.at, at,
+    ...(typeof sent.chatId === 'string' && sent.chatId ? { chatId: sent.chatId } : {}),
   }, now);
 }
 

@@ -3,7 +3,7 @@ import { bindTurn } from '../../core/task-requests';
 import { liveTaskLedger, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
-import { RouteApp, RouteContext } from './types';
+import { RouteApp, RouteContext, RouteRequest } from './types';
 import { AgentStatus } from '../../types';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
@@ -132,6 +132,28 @@ function isStaleSessionPost(agent: AgentStatus, sessionId?: string): boolean {
 }
 
 /**
+ * A post, for an agent nobody owns, from a CLI that is not its terminal's: a
+ * `claude -p` its Bash tool started, whose hooks carry the agent's id and
+ * token (the Audit's L4 and L5 on #380). Such a post drives nothing, on any
+ * route: not the session, the turn, the status, the last output nor an alert.
+ * Named by the hooks' X-Tars-Cli-Pid; a post that names no CLI is the
+ * terminal's, as before. When the process table must be read to tell, the
+ * post waits for its answer (one /proc read on Linux, one ps on macOS), and
+ * only then: answered at once, the route goes on in the same tick.
+ * An agent with an owner needs none of this: isStaleSessionPost decides.
+ */
+function fromAnotherCli(agent: AgentStatus, req: RouteRequest): boolean | Promise<boolean> {
+  if (usableSessionId(agent.currentSessionId)) return false;
+  const header = (req.raw as { headers?: Record<string, unknown> } | undefined)?.headers?.['x-tars-cli-pid'];
+  const postedBy = typeof header === 'string' ? header : undefined;
+  const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  const execLaunch = terminalIsTheCli(terminal) === true;
+  const atOnce = ownCliAtOnce(terminal?.pid, postedBy, process.platform, execLaunch);
+  // Answered at once when it can be: a route then goes on in the same tick, as it always did.
+  return atOnce === undefined ? isTerminalsOwnCli(terminal?.pid, postedBy, { execLaunch }).then((own) => !own) : !atOnce;
+}
+
+/**
  * An agent whose turn failed is not waiting for anyone.
  *
  * Claude Code raises its idle prompt about sixty seconds after StopFailure,
@@ -222,7 +244,7 @@ function describeTurnFailure(message: string | undefined, kind: string | undefin
 
 export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/hooks/output: capture clean text output from agent transcript
-  app.post('/api/hooks/output', (req, sendJson) => {
+  app.post('/api/hooks/output', async (req, sendJson) => {
     const { agent_id, session_id, output } = req.body as {
       agent_id: string;
       session_id?: string;
@@ -247,6 +269,12 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         sendJson({ success: false, stale: true });
         return;
       }
+      const notOwn = fromAnotherCli(agent, req);
+      if (notOwn === true || (notOwn !== false && await notOwn)) {
+        console.log(`[hooks] Ignored an output post for ${agent.id} from a CLI that is not its terminal's`);
+        sendJson({ success: false, stale: true });
+        return;
+      }
       agent.lastCleanOutput = output;
       saveAgents();
     }
@@ -255,7 +283,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/hooks/status
-  app.post('/api/hooks/status', (req, sendJson) => {
+  app.post('/api/hooks/status', async (req, sendJson) => {
     const {
       agent_id, session_id, status, source, event, waiting_reason, current_task, error_kind, error_message, opened_at,
       tool_name, tool_input, pending, cli_pid,
@@ -411,26 +439,19 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // (tars_auth, authHeader): a nested claude's hooks carry the agent's id
     // and token, and its first post adopted an agent whose own SessionStart
     // was lost or refused (the Audit's L4 on #380). A post that names no CLI
-    // adopts as before.
-    if (!usableSessionId(agent.currentSessionId)) {
-      const header = (req.raw as { headers?: Record<string, unknown> } | undefined)?.headers?.['x-tars-cli-pid'];
-      const postedBy = typeof header === 'string' ? header : undefined;
-      const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-      const execLaunch = terminalIsTheCli(terminal) === true;
-      const adopt = () => {
-        if (usableSessionId(agent.currentSessionId) || isTombstonedSession(agent, session_id)) return;
-        agent.currentSessionId = session_id;
-        agent.resumableSessionId = session_id;
-      };
-      const atOnce = ownCliAtOnce(terminal?.pid, postedBy, process.platform, execLaunch);
-      if (atOnce === true) adopt();
-      else if (atOnce === undefined) {
-        void isTerminalsOwnCli(terminal?.pid, postedBy, { execLaunch }).then((own) => {
-          if (!own) return;
-          adopt();
-          saveAgents();
-        });
-      }
+    // adopts as before. And a post from another CLI drives nothing: not
+    // adopted, its turn, its Stop and its status were still the agent's (L5).
+    // When the process table must be read, the post waits for its answer
+    // (one /proc read on Linux, one ps on macOS) before anything moves.
+    const notOwn = fromAnotherCli(agent, req);
+    if (notOwn === true || (notOwn !== false && await notOwn)) {
+      console.log(`[hooks] Ignored a status post for ${agent.id} from a CLI that is not its terminal's: ${status}`);
+      sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
+      return;
+    }
+    if (!usableSessionId(agent.currentSessionId) && !isTombstonedSession(agent, session_id)) {
+      agent.currentSessionId = session_id;
+      agent.resumableSessionId = session_id;
     }
 
     // The one post that proves a task reached the CLI. It cannot be read off
@@ -543,7 +564,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/hooks/task-completed: dedicated endpoint for TaskCompleted hook
-  app.post('/api/hooks/task-completed', (req, sendJson) => {
+  app.post('/api/hooks/task-completed', async (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;
       session_id?: string;
@@ -563,6 +584,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     // The same decision as everywhere else, taken in one place.
     if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored stale task-completed for ${agent.id} from session ${session_id}`);
+      sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
+      return;
+    }
+    const notOwn = fromAnotherCli(agent, req);
+    if (notOwn === true || (notOwn !== false && await notOwn)) {
       sendJson({ success: false, stale: true, agent: { id: agent.id, status: agent.status } });
       return;
     }
@@ -682,7 +708,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     sendJson(answer);
   });
 
-  app.post('/api/hooks/agent-stopped', (req, sendJson) => {
+  app.post('/api/hooks/agent-stopped', async (req, sendJson) => {
     const { agent_id, session_id } = req.body as {
       agent_id: string;
       session_id?: string;
@@ -709,6 +735,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       sendJson({ success: false, stale: true });
       return;
     }
+    const notOwn = fromAnotherCli(agent, req);
+    if (notOwn === true || (notOwn !== false && await notOwn)) {
+      sendJson({ success: false, stale: true });
+      return;
+    }
 
     if (ctx.getAppSettings().notificationsEnabled && ctx.getAppSettings().notifyOnStop) {
       const agentName = agent.name || `Agent ${agent.id.slice(0, 6)}`;
@@ -724,7 +755,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/hooks/notification
-  app.post('/api/hooks/notification', (req, sendJson) => {
+  app.post('/api/hooks/notification', async (req, sendJson) => {
     const { agent_id, session_id, type, title, message } = req.body as {
       agent_id: string;
       session_id: string;
@@ -750,6 +781,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     }
     if (isStaleSessionPost(agent, session_id)) {
       console.log(`[hooks] Ignored ${type} notification from session ${session_id} for ${agent.id} (current: ${agent.currentSessionId ?? 'none'})`);
+      sendJson({ success: false, stale: true });
+      return;
+    }
+    const notOwn = fromAnotherCli(agent, req);
+    if (notOwn === true || (notOwn !== false && await notOwn)) {
       sendJson({ success: false, stale: true });
       return;
     }
