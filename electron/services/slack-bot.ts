@@ -9,7 +9,7 @@ import { ptyProcesses } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getClaudeStats as readClaudeStats } from './claude-service';
 import {
-  findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
+  findAgent, forwardToOrchestrator, listedAgents, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type StatusGroup,
 } from './bot-core';
 
@@ -365,12 +365,12 @@ async function stopCommand(text: string, say: Say, appSettings: AppSettings): Pr
 const COMMANDS: Array<[(lowerText: string) => boolean, (text: string, say: Say, appSettings: AppSettings) => Promise<unknown>]> = [
   [lowerText => lowerText === 'help' || lowerText === '', (_text, say) => say(HELP)],
   [lowerText => lowerText === 'status', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say(':package: No agents created yet.');
     return say(statusReport(list, { title: `:bar_chart: *Agents Status*\n\n`, dot: DOTS, item: formatSlackAgentStatus, orchestratorFirst: false }));
   }],
   [lowerText => lowerText === 'agents', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say(':package: No agents created yet.');
     return say(`:robot_face: *All Agents*\n\n` + list.map(a => formatSlackAgentStatus(a) + '\n').join(''));
   }],
