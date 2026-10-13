@@ -99,7 +99,8 @@ export function registerChatHandlers(deps: {
   /** The session a runner registered, added to its chats (hooks-routes.ts records it as resumableSessionId). */
   const mirror = (agentId: string): void => {
     const agent = agents.get(agentId);
-    if (agent?.resumableSessionId && store.noteSession(agent.id, agent.resumableSessionId)) {
+    // With the folder its CLI runs in: its worktree, else its project (as every launch picks it).
+    if (agent?.resumableSessionId && store.noteSession(agent.id, agent.resumableSessionId, agent.worktreePath || agent.projectPath)) {
       for (const chat of store.list().chats.filter((c) => c.runnerId === agent.id)) tellChat(chat.id);
     }
   };

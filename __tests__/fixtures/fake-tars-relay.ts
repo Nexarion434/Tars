@@ -52,7 +52,10 @@ export interface FakeRelay {
 
 const JEANBRASSE = '1159000001';
 
-export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<FakeRelay> {
+/** Another route of the same gateway (an E2E's Hermes board): its answer, or undefined to let the relay's routes answer. */
+export type ExtraRoute = (req: { method: string; path: string; body: Record<string, unknown> }) => { status: number; body: unknown } | undefined;
+
+export async function startFakeRelay(token = 'fake-dashboard-token', opts: { extra?: ExtraRoute } = {}): Promise<FakeRelay> {
   let nextMessage = 501;
   let nextSeq = 1;
   let nextIncoming = 7001;
@@ -104,6 +107,12 @@ export async function startFakeRelay(token = 'fake-dashboard-token'): Promise<Fa
       const url = new URL(req.url ?? '/', 'http://x');
       fake.calls.push(`${req.method} ${url.pathname}${url.search}`);
       if (fake.mode === 'down') { req.socket.destroy(); return; }
+      if (opts.extra && req.headers['x-hermes-session-token'] === fake.token) {
+        let parsed: Record<string, unknown> = {};
+        try { parsed = raw ? JSON.parse(raw) : {}; } catch { /* the route reads none */ }
+        const answer = opts.extra({ method: req.method ?? 'GET', path: url.pathname, body: parsed });
+        if (answer) return json(res, answer.status, answer.body);
+      }
       if (!url.pathname.startsWith('/api/plugins/tars-relay/')) return json(res, 404, { detail: 'Not Found' });
       if (fake.mode === 'missing') return json(res, 404, { detail: 'Not Found' });
       if (fake.mode === 'unauthorized' || req.headers['x-hermes-session-token'] !== fake.token) return json(res, 401, { detail: 'Unauthorized' });
