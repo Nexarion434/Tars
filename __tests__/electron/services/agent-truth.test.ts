@@ -247,6 +247,19 @@ describe('what reading the model costs', () => {
     expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe(named);
   });
 
+  it('4. reads the model again when the transcript was rewritten to the same size with a new date', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(10)]);
+    vi.useFakeTimers();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      writeTranscript(PROJECT, SESSION, [assistant('claude-opus-6'), ...filler(10)]);
+      const later = new Date(Date.now() + 60_000);
+      fs.utimesSync(fileOf(), later, later);
+      vi.advanceTimersByTime(60_000);
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-6');
+    } finally { vi.useRealTimers(); }
+  });
+
   it('4. reads nothing again while the transcript has not changed', () => {
     writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(100)]);
     vi.useFakeTimers();
