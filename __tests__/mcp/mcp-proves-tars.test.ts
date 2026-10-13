@@ -20,7 +20,10 @@ import { moveTestHome } from '../setup/test-home';
  *    agent's token, from any of the four servers.
  * 2. It gets the shared token from ~/.dorothy/api-token instead.
  * 3. Over-correction: the Tars that started the CLI no longer gets the token.
- * 4. The proof is asked before every call, where once proven is enough.
+ * 4. A proof kept for the server's life (the Audit's M1 on #376): a server
+ *    proves itself at its first tool call, so a CLI that outlived a quit,
+ *    whose servers had all called Tars before it, handed its token to the
+ *    squatter with its next call. The port proves itself before every call.
  * 5. A CLI Tars did not start (no token in its environment) loses the shared
  *    token it has always presented.
  * 6. A token with no TARS_INSTANCE_ID beside it is sent unproven.
@@ -103,14 +106,24 @@ describe("the MCP servers' calls to Tars", () => {
     }
   });
 
-  it('3, 4. the Tars that started the CLI gets the token, proven once per server', async () => {
+  it('3. the Tars that started the CLI gets the token, at every call', async () => {
     mode = 'tars';
     for (const [name, call] of await clients({ CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE })) {
       received.length = 0;
       await call();
       await call();
       expect(calls().map((r) => r.authorization), name).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN}`]);
-      expect(received.filter((r) => r.path === '/api/health').length, `${name}: proven once`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('4. a squatter that took the port after a proof gets no token', async () => {
+    for (const [name, call] of await clients({ CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE })) {
+      mode = 'tars';
+      received.length = 0;
+      await call();
+      mode = 'squatter';
+      await call().catch(() => undefined);
+      expect(calls().map((r) => r.authorization), name).toEqual([`Bearer ${TOKEN}`, undefined]);
     }
   });
 
