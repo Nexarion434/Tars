@@ -56,6 +56,16 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  * 20. a line told at the place of one held goes after it, though that one
  *     has moved on and is told again next: the thread reads out of order
  *     until it is.
+ *
+ * Written before the fix, from the Audit's gate of #371's fourth delta (a
+ * Medium on #378): #371 names in one `removed` event the lines of a session
+ * whose transcript disappeared, before the lines that moved back are told
+ * again.
+ * 21. those lines stay, between the line that says the transcript is gone
+ *     and the ones that moved back: the thread reads hello, gone line, in b
+ *     1, later, in b 2, where the transcripts say hello, gone line, later;
+ * 22. a removal drops lines it does not name, lines of another chat, or
+ *     moves nothing when it names lines the page never read.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -235,5 +245,30 @@ describe('chat feed', () => {
     s = applyEvent(s, ev(13, 'c1', { type: 'item', item: item(3, 'in b', 'b') }));
     expect(texts(s)).toEqual(inOrder);
     expect(places(s)).toEqual([0, 1, 2, 3]);
+  });
+
+  // #371's case 13: session b's transcript disappears; its two lines are named
+  // removed, then come the line saying it is gone and later, moved back.
+  it('drops the lines a removal names, so the thread reads as the transcripts do (21)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0, 'hello', 'h'), item(1, 'in b 1', 'b1'), item(2, 'in b 2', 'b2'), item(3, 'later', 'l')]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'removed', itemIds: ['b1', 'b2'] }));
+    expect(texts(s), 'the removal alone').toEqual(['hello', 'later']);
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(1, 'gone line', 'g') }));
+    s = applyEvent(s, ev(13, 'c1', { type: 'item', item: item(2, 'later', 'l') }));
+    expect(texts(s)).toEqual(['hello', 'gone line', 'later']);
+    expect(places(s)).toEqual([0, 1, 2]);
+    expect(s.seq).toBe(13);
+  });
+
+  it('drops only the lines a removal names, of its own chat, and moves its seq alone for lines never read (22)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(5, 'five', 'u5'), item(6, 'six', 'u6')], 7));
+    s = applyEvent(s, ev(11, 'c2', { type: 'removed', itemIds: ['u5'] }));
+    expect(texts(s), 'another chat\'s removal').toEqual(['five', 'six']);
+    s = applyEvent(s, ev(12, 'c1', { type: 'removed', itemIds: ['u0', 'u1'] }));
+    expect(texts(s), 'lines the page never read').toEqual(['five', 'six']);
+    expect(s.seq).toBe(12);
+    expect(s.stale).toBe(false);
+    s = applyEvent(s, ev(13, 'c1', { type: 'removed', itemIds: ['u6'] }));
+    expect(texts(s)).toEqual(['five']);
   });
 });
