@@ -8,6 +8,7 @@ import { forgetRestart } from './agent-restart';
 import { stopAcpRuns } from '../services/acp/delegate';
 import { dropPermissionAsks } from '../services/permission-asks';
 import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
+import { gitRefusal } from './chat-slots';
 
 export interface RemovedAgent {
   success: true;
@@ -28,7 +29,8 @@ export interface RemovedAgent {
  * (Noah, 05/10), since `--force` below removes whatever was not committed. A
  * save that fails keeps the worktree where it is, and says so, as do files git
  * ignores that are not caches, a repository of its own inside it, and a
- * submodule holding work no remote has (#312, #335). What it was asked and
+ * submodule holding work no remote has (#312, #335), and so does a removal git
+ * refuses (a locked worktree, the Audit's L1 on #398). What it was asked and
  * will never finish is told to each requester (the Audit's R3).
  */
 export async function removeAgent(id: string): Promise<RemovedAgent> {
@@ -85,11 +87,15 @@ export async function removeAgent(id: string): Promise<RemovedAgent> {
       // make this fail silently and leak a stale worktree behind the deleted
       // agent. See the same fix in agent:create.
       console.log(`Removing worktree at ${agent.worktreePath}`);
-      execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe' });
+      // In the C locale: gitRefusal reads git's "fatal:", which a translated git would not write.
+      execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
       console.log(`Worktree removed successfully`);
     } catch (err) {
-      console.warn(`Failed to remove worktree:`, err);
-      // Continue even if worktree removal fails
+      // The agent goes all the same; its folder, when there is one, stays, and the window says why. A worktree
+      // already gone (removed outside Tars, or moved then pruned: "is not a working tree") keeps nothing.
+      const reason = gitRefusal(String((err as { stderr?: unknown }).stderr ?? ''));
+      if (fs.existsSync(agent.worktreePath)) worktreeKept = `git could not remove it (${reason}), so its worktree was kept at ${agent.worktreePath}`;
+      console.warn(`[agent:remove] git worktree remove ${agent.worktreePath}: ${reason}`);
     }
   }
 
