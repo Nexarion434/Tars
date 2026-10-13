@@ -285288,7 +285288,7 @@
               "fill": "$text-secondary",
               "textGrowth": "fixed-width",
               "width": 946,
-              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out.",
+              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out. A chat deleted whose runner's worktree stays on disk, or whose uncommitted work was saved on a branch, says so above the list, with the place and the branch, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 13,
@@ -287187,6 +287187,244 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "frame",
+              "id": "yhn3l",
+              "name": "state DELETED: WHAT STAYS, AND WHERE",
+              "width": 240,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "xTG5x",
+                  "name": "caption",
+                  "width": "fill_container",
+                  "height": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "maOb9",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 240,
+                      "content": "DELETED: WHAT STAYS, AND WHERE",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "N3QPU",
+                  "name": "sidebar",
+                  "clip": true,
+                  "width": 240,
+                  "height": 300,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "right": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pKbcj",
+                      "name": "notice deleted",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "P5SrH",
+                          "name": "l1",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "RQzxj",
+                              "name": "sq",
+                              "padding": [
+                                5,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "rectangle",
+                                  "id": "H1tpI",
+                                  "name": "square",
+                                  "fill": "$status-waiting",
+                                  "width": 6,
+                                  "height": 6
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "N20Vj",
+                              "name": "words",
+                              "width": 176,
+                              "layout": "vertical",
+                              "gap": 4,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "MHnKZ",
+                                  "name": "t",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Deleted tars #2, Release notes for 1.9.4, but not its worktree: it holds files git ignores, which no commit keeps (.env), so its worktree was kept at /Users/me/code/tars/.worktrees/chat-1a2b3c4d.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "vpn2k",
+                                  "name": "saved",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Its uncommitted work is on the branch wip/lead-release.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "LrH3Y",
+                          "name": "actions",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "mIA77",
+                              "name": "button ok",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "azrrb",
+                                  "name": "label",
+                                  "fill": "$text-primary",
+                                  "content": "ok",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "MYbRu",
+                      "name": "chat Retry the invoice webhook",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        5,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "x5hT1Y",
+                          "name": "line 1",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "raYWZ",
+                              "name": "title",
+                              "fill": "$text-primary",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Retry the invoice webhook",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "QjOnR",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "vhLOU",
+                              "name": "project",
+                              "fill": "$text-muted",
+                              "content": "harbor-billing #2",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "m4Rf86",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -287238,7 +287476,7 @@
               "fill": "$text-secondary",
               "textGrowth": "fixed-width",
               "width": 946,
-              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out.",
+              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out. A chat deleted whose runner's worktree stays on disk, or whose uncommitted work was saved on a branch, says so above the list, with the place and the branch, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 13,
@@ -289137,6 +289375,244 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "frame",
+              "id": "lE79h",
+              "name": "state DELETED: WHAT STAYS, AND WHERE",
+              "width": 240,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "g6bWo",
+                  "name": "caption",
+                  "width": "fill_container",
+                  "height": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zLEME",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 240,
+                      "content": "DELETED: WHAT STAYS, AND WHERE",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ScLTq",
+                  "name": "sidebar",
+                  "clip": true,
+                  "width": 240,
+                  "height": 300,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "right": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZYS0n",
+                      "name": "notice deleted",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "axpwd",
+                          "name": "l1",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "VLMH8",
+                              "name": "sq",
+                              "padding": [
+                                5,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "rectangle",
+                                  "id": "Qv7rz",
+                                  "name": "square",
+                                  "fill": "$status-waiting",
+                                  "width": 6,
+                                  "height": 6
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "of2vi",
+                              "name": "words",
+                              "width": 176,
+                              "layout": "vertical",
+                              "gap": 4,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "qNnMB",
+                                  "name": "t",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Deleted tars #2, Release notes for 1.9.4, but not its worktree: it holds files git ignores, which no commit keeps (.env), so its worktree was kept at /Users/me/code/tars/.worktrees/chat-1a2b3c4d.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "VSfC6",
+                                  "name": "saved",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Its uncommitted work is on the branch wip/lead-release.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "tWtRZ",
+                          "name": "actions",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "ZyusK",
+                              "name": "button ok",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "nraRs",
+                                  "name": "label",
+                                  "fill": "$text-primary",
+                                  "content": "ok",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Nb7Fu",
+                      "name": "chat Retry the invoice webhook",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        5,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "JpnEb",
+                          "name": "line 1",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jekcG",
+                              "name": "title",
+                              "fill": "$text-primary",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Retry the invoice webhook",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Vc81t",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "aOHJ3",
+                              "name": "project",
+                              "fill": "$text-muted",
+                              "content": "harbor-billing #2",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GOuRZ",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -289410,7 +289886,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "Pin, rename in place, snooze for an hour, until tomorrow or until Monday, settle, make it the inbox, delete. Delete asks first; a refusal from the store is shown in its own words, and the work out is named.",
+              "content": "Pin, rename in place, snooze for an hour, until tomorrow or until Monday, settle, make it the inbox, delete. Delete asks first; a refusal from the store is shown in its own words, and the work out is named. A deletion that leaves its runner's worktree on disk, or its work on a wip/ branch, says what stays and where, above the list, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
