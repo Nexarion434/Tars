@@ -25,7 +25,7 @@ import { toLaunch, projectName, type Launch } from '../platform';
 import { consumeResumeSessionId } from '../utils/resume-session';
 import { noteWaker } from '../core/agent-asleep';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
-import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown } from '../core/agent-launch';
+import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown, takeSlot } from '../core/agent-launch';
 import { handOffFrom, noteHandOff } from './task-ledger';
 
 /** What a bot needs from the rest of Tars. */
@@ -323,6 +323,11 @@ export async function startWithTask(
   opts: { resume: boolean; reply: Reply<StartOutcome> },
 ): Promise<void> {
   let launch: object | null = null;
+  // A chat's runner starts within the RAM's limit, whoever starts it: refused,
+  // nothing is opened and the bot says why (core/agent-launch.ts; the Audit's
+  // L2 on #379). Any other agent, or a runner whose CLI runs, passes at once.
+  const slot = await takeSlot(agent.id);
+  if (!slot.ok) throw new Error(slot.error);
   // Asleep, it wakes on its own conversation whatever this chat resumes, and
   // reads woken by the chat (core/agent-asleep.ts).
   const asleep = agent.status === 'asleep';
@@ -386,6 +391,8 @@ export async function startWithTask(
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
     throw err;
+  } finally {
+    slot.release();
   }
 }
 

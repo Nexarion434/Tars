@@ -13,7 +13,7 @@ import { diskRefusal, freeSpace } from '../core/disk-space';
 import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
-import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
+import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
@@ -104,6 +104,10 @@ export function runnerOf(chat: Chat): AgentStatus | undefined {
   return 'agent' in found ? found.agent : undefined;
 }
 
+/** Chats other than Main run on claude, whose conversations Tars resumes: an orchestrator on another CLI has Main only. */
+const PROVIDER_UNSUPPORTED = "This project's orchestrator runs a CLI whose conversations Tars cannot resume: chats other than Main work with claude for now.";
+const runsChats = (lead: AgentStatus): boolean => getProvider(lead.provider).binaryName === 'claude';
+
 /** The project's orchestrator: its role, never a runner (H1). */
 function leadOf(projectPath: string): AgentStatus | undefined {
   return [...agents.values()].find((a) => a.role === 'orchestrator' && a.kind !== 'chat' && a.projectPath === projectPath);
@@ -113,6 +117,15 @@ function announce(agent: AgentStatus): void {
   emitAgentStatus(agent.id);
   broadcastToAllWindows('agent:status', { type: 'status', agentId: agent.id, status: agent.status, timestamp: agent.lastActivity });
   scheduleTick();
+}
+
+/** A runner takes its project's orchestrator's configuration, when its chat names it (syncWithLead). */
+function syncFromLead(runner: AgentStatus): void {
+  const chat = runner.chatId ? store?.get(runner.chatId) : undefined;
+  const lead = leadOf(runner.projectPath);
+  if (!chat || !lead || runnerOf(chat) !== runner) return;
+  syncWithLead(runner, lead, chat);
+  saveAgents();
 }
 
 /** The orchestrator's configuration, read at each launch, never copied once (4.2). */
@@ -308,9 +321,14 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
   if (typeof text !== 'string' || !text.trim() || text.length > TEXT_MAX) {
     return { error: 'invalid_request', reason: `A message is text, 1 to ${TEXT_MAX} characters.` };
   }
+  // A runner that runs needs no slot: typed into at once, never behind
+  // another chat's runner being made in the lock (git fetch, the worktree,
+  // its dependencies; the Audit's L5 on #379). Read again in the lock for a
+  // launch.
+  const known = store.get(chatId);
+  const running = known ? runnerOf(known) : undefined;
+  if (known && running && isLive(running)) return typeInto(running, known, text);
   // Under the lock: whether a slot is needed, and the launch that takes it.
-  // A runner that runs needs none, and is typed into outside the lock, so a
-  // chat waiting on its starting CLI holds no other chat back.
   const decided = await withSlots(async (): Promise<SendAnswer | { typeInto: AgentStatus; chat: Chat }> => {
     const chat = store!.get(chatId);
     if (!chat) return { error: 'not_found', reason: 'No chat has this id.' };
@@ -333,11 +351,11 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     if (runner && isLive(runner)) return { typeInto: runner, chat };
     const full = diskRefusal(freeSpace());
     if (full) return { error: 'disk_full', reason: full };
+    // A chat other than Main is launched on its orchestrator's CLI: claude only,
+    // at its first send and at every later one (the Audit's L4 on #379).
+    if ((!runner || runner.kind === 'chat') && lead && !runsChats(lead)) return { error: 'provider_unsupported', reason: PROVIDER_UNSUPPORTED };
     if (!runner) {
       if (!lead) return { error: 'no_orchestrator', reason: 'This project has no orchestrator: set one on the Agents page.' };
-      if (getProvider(lead.provider).binaryName !== 'claude') {
-        return { error: 'provider_unsupported', reason: "This project's orchestrator runs a CLI whose conversations Tars cannot resume: chats other than Main work with claude for now." };
-      }
       const refused = await freeSlot();
       if (refused) return refused;
       const made = await makeRunner(chat, lead);
@@ -379,13 +397,19 @@ function ownRunnerOf(chat: Chat): AgentStatus | undefined {
 }
 
 /**
- * A deleted chat's runner: stopped, then removed with its worktree, its work
- * saved on wip/ first (#312, #335). The caller has checked the chat may go.
+ * A deleted chat's runner: stopped first, so nothing more is asked in its
+ * name, then checked again by the caller for work it asked for while it
+ * stopped (the Audit's L6 on #379).
  */
-export async function tearDownRunner(chat: Chat): Promise<{ savedTo?: string; worktreeKept?: string }> {
+export async function stopRunnerOf(chat: Chat): Promise<void> {
+  const runner = ownRunnerOf(chat);
+  if (runner) await stopAgent(runner, { by: 'you', reason: 'its chat was deleted' }, { save: saveAgents, announce });
+}
+
+/** Then, once nothing it asked for is out, removed with its worktree, its work saved on wip/ first (#312, #335). */
+export async function removeRunnerOf(chat: Chat): Promise<{ savedTo?: string; worktreeKept?: string }> {
   const runner = ownRunnerOf(chat);
   if (!runner) return {};
-  await stopAgent(runner, { by: 'you', reason: 'its chat was deleted' }, { save: saveAgents, announce });
   const removed = await removeAgent(runner.id);
   announce(runner);
   return { ...(removed.savedTo ? { savedTo: removed.savedTo } : {}), ...(removed.worktreeKept ? { worktreeKept: removed.worktreeKept } : {}) };
@@ -440,6 +464,9 @@ export function restartRunnersOf(leadId: string, changed: string[]): void {
   if (!store) return;
   const lead = agents.get(leadId);
   if (!lead || lead.role !== 'orchestrator') return;
+  // Moved to a CLI whose conversations Tars cannot resume: its runners are
+  // neither copied onto it nor restarted on it (the Audit's L4 on #379).
+  if (!runsChats(lead)) return;
   for (const runner of agents.values()) {
     if (runner.kind !== 'chat' || runner.projectPath !== lead.projectPath) continue;
     const chat = runner.chatId ? store.get(runner.chatId) : undefined;
@@ -495,6 +522,12 @@ const slotGate: SlotGate = async (agentId) => {
   const passes = { ok: true as const, release: () => undefined };
   const agent = agents.get(agentId);
   if (!store || !agent || agent.kind !== 'chat' || isLive(agent) || reserved.has(agentId)) return passes;
+  // On its orchestrator's CLI, claude only (the Audit's L4 on #379).
+  const lead = leadOf(agent.projectPath);
+  if (lead && !runsChats(lead)) return { ok: false as const, error: PROVIDER_UNSUPPORTED };
+  // Its configuration is the orchestrator's, read at each launch, whoever
+  // starts it, not only at a send (the Audit's L3 on #379).
+  syncFromLead(agent);
   return withSlots(async () => {
     if (isLive(agent) || reserved.has(agentId)) return passes;
     const refused = await freeSlot(agentId);
@@ -508,6 +541,16 @@ const slotGate: SlotGate = async (agentId) => {
 export function startChatRunners(chatStore: ChatStore): void {
   if (store) return;
   store = chatStore;
+  // A record is a claim: an agent marked a chat's runner keeps the mark, and
+  // the orchestrator's powers with it, only while a chat names it (L1).
+  const unconfirmed = unconfirmedRunners(agents, (chatId) => chatStore.get(chatId));
+  for (const agent of unconfirmed) {
+    console.warn(`[chat-runners] ${agent.name || agent.id}: marked as a chat's runner, but no chat names it; a worker from now on`);
+    agent.kind = undefined;
+    agent.chatId = undefined;
+    agent.teamOrchestratorId = undefined;
+  }
+  if (unconfirmed.length) saveAgents();
   setSlotGate(slotGate);
   setChatLookup({
     byId: (chatId) => chatStore.get(chatId),
