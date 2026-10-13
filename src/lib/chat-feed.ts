@@ -8,8 +8,10 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '@/types/electro
  * skipped means an event was missed, so nothing more is applied until the
  * snapshot is read again: while stale, an event answers the feed itself, so
  * the page neither draws again nor reads again per event. A line is kept by
- * its id, in its place (n): told
- * again, it replaces the one before. Tests: __tests__/lib/chat-feed.test.ts.
+ * its id, at its place (n): told again, it replaces the one before at the
+ * place it is told at, since a line that lands late in an earlier session
+ * moves every line after it one place on, and #371 tells each of them again.
+ * Tests: __tests__/lib/chat-feed.test.ts.
  */
 
 export type ChatRunnerState = Extract<ChatEvent, { type: 'state' }>['runner'];
@@ -36,13 +38,16 @@ export function emptyFeed(chatId: string): ChatFeed {
 
 const earlierThanFirst = (items: ChatItem[]) => items.length > 0 && items[0].n > 0;
 
-/** The line in its place by n, or in place of the one with its id. */
+/**
+ * The line at its place by n, the one with its id taken from where it was.
+ * Before a line held at the same place: that one has moved on, and is told
+ * again next, so the thread stays in order meanwhile.
+ */
 function withItem(items: ChatItem[], item: ChatItem): ChatItem[] {
-  const at = items.findIndex(held => held.id === item.id);
-  if (at >= 0) return items.map((held, i) => (i === at ? item : held));
-  let place = items.length;
-  while (place > 0 && items[place - 1].n > item.n) place -= 1;
-  return [...items.slice(0, place), item, ...items.slice(place)];
+  const others = items.filter(held => held.id !== item.id);
+  let place = others.length;
+  while (place > 0 && others[place - 1].n >= item.n) place -= 1;
+  return [...others.slice(0, place), item, ...others.slice(place)];
 }
 
 /** One event, in its turn. */
