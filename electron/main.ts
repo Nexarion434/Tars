@@ -651,6 +651,10 @@ app.whenReady().then(async () => {
       ...agentsRunningOverAcp(),
     ],
     knownAgentIds: () => [...agents.keys()],
+    sessionsOf: (id) => {
+      const a = agents.get(id);
+      return [a?.currentSessionId, a?.resumableSessionId].filter((s): s is string => !!s);
+    },
     freeBytes: () => {
       try {
         const st = fs.statfsSync(DATA_DIR);

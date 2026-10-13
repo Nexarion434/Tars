@@ -180,7 +180,8 @@ describe('the retention', () => {
     expect(exists(`${W()}/t/middle.bin`)).toBe(true);
     expect(exists(`${L()}/t/newest.bin`)).toBe(true);
 
-    put(`${W()}/t/more.bin`, 8000, 4);
+    // Touched within the day: a running agent's, kept over the cap (12 deletes it once a day old).
+    put(`${W()}/t/more.bin`, 8000, 0.5);
     await enforceTmpRetention(deps({ capBytes: 9000, liveAgentIds: () => ['worker'] }));
     expect(exists(`${W()}/t/more.bin`), 'live: kept, over the cap or not').toBe(true);
     expect(exists(`${L()}/t/newest.bin`)).toBe(false);

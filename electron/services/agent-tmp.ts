@@ -77,6 +77,23 @@ export function retentionLog(line: string, file = path.join(DATA_DIR, 'logs', 'a
 const DAY_MS = 86_400_000;
 const GB = 1024 ** 3;
 export const TMP_MAX_AGE_MS = 7 * DAY_MS;
+/**
+ * What an agent whose CLI runs keeps: what was touched within a day, and the
+ * folders of the sessions it runs or would resume, whatever their age. It kept
+ * everything for as long as it ran: on 2026-10-13 one agent's folder held
+ * 18.5 GB of its project's test sandboxes and build folders, and the pass
+ * deleted nothing.
+ */
+export const TMP_LIVE_IDLE_MS = DAY_MS;
+/**
+ * How long a unit's measure is reused while the unit cannot be old enough to
+ * go: a pass walked every file of every agent every hour (1.36 million lstat,
+ * 49 s, 7 s of it on the main thread, on 2026-10-13) to delete nothing. A
+ * unit's newest change only moves forward, so one seen touched within the
+ * shortest limit cannot reach it before that limit has passed; its size is
+ * weighed again after this.
+ */
+export const TMP_REMEASURE_MS = 6 * 3_600_000;
 export const TMP_CAP_BYTES = 20 * GB;
 export const TMP_LOW_DISK_BYTES = 30 * GB;
 export const TMP_LOW_DISK_CAP_BYTES = 10 * GB;
@@ -88,6 +105,8 @@ export interface RetentionDeps {
   liveAgentIds: () => string[];
   /** Every agent of the fleet: a folder of none of them belongs to a deleted agent. */
   knownAgentIds: () => string[];
+  /** The sessions an agent runs or would resume: their folders in its `c/` are kept while it runs, whatever their age. */
+  sessionsOf?: (agentId: string) => string[];
   /** Free space on the disk that holds the root, or null when it cannot be read. */
   freeBytes?: () => number | null;
   capBytes?: number;
@@ -107,7 +126,12 @@ export interface RetentionResult {
   removed: Array<{ path: string; bytes: number; reason: string }>;
   totalBytes: number;
   capBytes: number;
+  /** The units this pass walked; the others were weighed from an earlier pass. */
+  walked: number;
 }
+
+/** Each unit's last measure, and when it was taken, kept between passes. */
+const measures = new Map<string, { bytes: number; newest: number; at: number }>();
 
 /** Size and newest date of what is under `p`, never through a link; null when it cannot be read. */
 async function measure(p: string): Promise<{ bytes: number; newest: number } | null> {
@@ -182,8 +206,10 @@ async function unitsOf(root: string, known: Map<string, string>): Promise<Array<
 }
 
 /**
- * One pass: deletes what nothing touched for 7 days, then the oldest first
- * while the whole is over the cap. Nothing of a live agent, never through a
+ * One pass: deletes what nothing touched for 7 days, or for a day when its
+ * agent runs (never the folder of the session it runs or would resume), then
+ * the oldest first while the whole is over the cap, nothing of a running agent
+ * there. Never through a
  * link (a link is deleted as the link it is), nothing outside the root, and
  * nothing at all when the root itself is a link.
  */
@@ -194,7 +220,7 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
   const free = deps.freeBytes?.() ?? null;
   const lowDisk = free !== null && free < TMP_LOW_DISK_BYTES;
   const capBytes = deps.capBytes ?? (lowDisk ? TMP_LOW_DISK_CAP_BYTES : TMP_CAP_BYTES);
-  const result: RetentionResult = { removed: [], totalBytes: 0, capBytes };
+  const result: RetentionResult = { removed: [], totalBytes: 0, capBytes, walked: 0 };
   if (lowDisk) {
     log(`[agent-tmp] under 30 GB free on the disk (${(free / GB).toFixed(1)} GB): the agents' temporary folders are kept to ${(capBytes / GB).toFixed(0)} GB`);
   }
@@ -228,15 +254,34 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
   };
 
   const known = new Map(deps.knownAgentIds().map((id) => [shortIdOf(id), id] as const));
+  const sessionsOf = deps.sessionsOf ?? (() => []);
+  /** A folder of a session its agent runs or would resume (`c/<claude-uid>/<project>/<session>`). */
+  const isLiveSession = (p: string, owner: string, running: Set<string>): boolean => {
+    const parts = path.relative(root, p).split(path.sep);
+    return !!owner && running.has(owner) && parts[1] === 'c' && parts.length === 5 && sessionsOf(owner).includes(parts[4]);
+  };
   const units: Unit[] = [];
+  const seen = new Set<string>();
   for (const { path: p, owner } of await unitsOf(root, known)) {
+    seen.add(p);
+    const last = measures.get(p);
+    // Weighed from the last pass while it cannot be deletable yet: touched
+    // within the shortest limit, so not old enough for any rule before then.
+    if (last && last.newest > now - TMP_LIVE_IDLE_MS && now - last.at < TMP_REMEASURE_MS) {
+      units.push({ path: p, owner, bytes: last.bytes, newest: last.newest });
+      continue;
+    }
     const m = await measure(p);
+    result.walked += 1;
     if (!m) {
+      measures.delete(p);
       log(`[agent-tmp] ${p} could not be read: kept, and weighed again at the next pass`);
       continue;
     }
+    measures.set(p, { ...m, at: now });
     units.push({ path: p, owner, ...m });
   }
+  for (const p of measures.keys()) if (!seen.has(p) && (p === root || p.startsWith(root + path.sep))) measures.delete(p);
 
   // Who runs now, read once the measuring is done: an agent started during a
   // long pass is spared too.
@@ -256,6 +301,7 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
       log(`[agent-tmp] ${resolved} could not be deleted (${(err as Error).message}): kept`);
       return false;
     }
+    measures.delete(unit.path);
     result.removed.push({ path: resolved, bytes: unit.bytes, reason });
     const since = new Date(unit.newest).toISOString().slice(0, 16).replace('T', ' ');
     log(`[agent-tmp] removed ${resolved} (${unit.bytes} bytes, untouched since ${since}): ${reason}`);
@@ -266,6 +312,8 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
   for (const unit of units) {
     const mine = unit.owner && live.has(unit.owner);
     if (!mine && unit.newest < now - TMP_MAX_AGE_MS && (await remove(unit, 'untouched for 7 days'))) continue;
+    if (mine && !isLiveSession(unit.path, unit.owner, live) && unit.newest < now - TMP_LIVE_IDLE_MS
+      && (await remove(unit, 'untouched for a day, its agent running'))) continue;
     kept.push(unit);
   }
 
