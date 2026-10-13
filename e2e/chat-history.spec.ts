@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, type Page } from '@playwright/test';
+import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -71,7 +71,7 @@ test("a chat's conversation is read across its sessions, then followed live, and
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface: true }));
 
   // The two sessions, where Claude Code files them: under the project's real path.
-  const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[/.]/g, '-'));
+  const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(transcripts, { recursive: true });
   const first = [
     user(S1, 'ship the receipts'),
