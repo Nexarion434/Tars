@@ -49,7 +49,9 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
   const project = path.join(home, 'projects', 'demo');
   const dir = path.join(home, '.dorothy');
   for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
-  const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[/.]/g, '-'));
+  // The folder Claude Code names, every character but a letter or a digit as
+  // `-`: macOS's own temp folder holds a `_`, which the older name kept.
+  const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(transcripts, { recursive: true });
   const transcript = path.join(transcripts, `${S1}.jsonl`);
   // A hundred exchanges before it: 206 lines, of which the page opens on the last 200.
