@@ -153,6 +153,7 @@ import {
   migrateFromClaudeManager,
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
+import { endAuthCommands } from './services/claude-accounts/auth';
 
 // ============== App Settings Management ==============
 
@@ -797,6 +798,9 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // A `claude auth status` the accounts list started just before the
+      // quit: it wrote .claude.json into the home after Tars was gone.
+      ['endAuthCommands', endAuthCommands],
       // Last: what is owed on disk, and the run marked as ended cleanly, so
       // the next launch resumes nobody.
       ['endRestartRecovery', () => endRestartRecovery(recovery)],
