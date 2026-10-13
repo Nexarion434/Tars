@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-13',
     updates: [
       'Deleting an agent from the Agents page says what stays of it, as deleting a chat does: once it is gone, the page names the wip/ branch its uncommitted work was saved on and, when its worktree is kept on disk because it holds what no commit keeps (a file git ignores such as a .env, a repository of its own, or a submodule with work no remote has), why and where, until ok puts it away. Its confirmation no longer says the uncommitted changes go with the worktree: they are saved on a wip/ branch first.',
+      'With the new interface on, a message to a chat other than Main is refused as soon as the project\'s orchestrator runs a CLI other than Claude Code, even while that chat\'s runner is still running on Claude Code, where 2.0.0 typed it in. That runner is left to finish and the refusal says so: its turn ends as it would, and the agents it gave work to still answer it.',
     ],
   },
   {
