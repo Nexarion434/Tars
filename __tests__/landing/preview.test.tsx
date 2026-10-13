@@ -19,6 +19,10 @@ import { DEFAULT_APP_SETTINGS, SECTIONS } from '../../src/components/Settings/co
  *    Preferences;
  * 4. the home page does not show it, shows it twice, or elsewhere than
  *    between What it does and How it works, where the frame has it.
+ *
+ * Added after the code, for a mutant of its bench that survived (A2):
+ * 5. the row is renamed while its switch keeps the name, and the landing
+ *    names a row Settings no longer shows (case 3 reads both).
  */
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -63,8 +67,12 @@ describe('the landing\'s preview of 2.0.0', () => {
   it('names the switch the app has, where the app has it (3)', () => {
     const general = read('src/components/Settings/GeneralSection.tsx');
     const at = general.indexOf('newInterface: ');
-    const labels = [...general.slice(0, at).matchAll(/label="([^"]+)"/g)];
-    const label = labels[labels.length - 1]?.[1];
+    // The row that sets it: the name it shows, and its switch's.
+    const row = general.slice(general.lastIndexOf('<SettingsRow', at), at);
+    const labels = [...row.matchAll(/label="([^"]+)"/g)].map(m => m[1]);
+    expect(labels.length).toBeGreaterThan(1);
+    expect(new Set(labels).size, 'the row and its switch say the same').toBe(1);
+    const label = labels[0];
     expect(label).toBe('New interface');
     // The page GeneralSection draws, as Settings lists it: Preferences, under General.
     const page = SECTIONS.find(s => s.id === 'general')?.label;
