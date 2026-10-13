@@ -920,6 +920,15 @@ function quoteSenderLookAlikes(data: string): string {
   return data.replace(/^[^\n\u2028\u2029]*/gm, line => (skeletons(line).some(spelt => spelt.startsWith('messagefrom')) ? `> ${line}` : line));
 }
 
+/**
+ * A message with its sender line, as the prompt of a launch rather than typed:
+ * the same line, and the same quoting of a look-alike inside it, as writeBody
+ * gives a typed one (a chat's runner started by a bot's message, PR F).
+ */
+export function withSenderLine(sender: MessageSender, data: string): string {
+  return senderLine(sender) + quoteSenderLookAlikes(data);
+}
+
 /** The message itself, in whichever of the two shapes the TUI needs. */
 function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string): void {
   // Who it is from, typed before every message that has a sender, whatever
