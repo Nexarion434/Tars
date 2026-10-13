@@ -75,13 +75,18 @@ export function applyEvent(feed: ChatFeed, event: ChatEvent): ChatFeed {
  * The snapshot, read first or again after a gap, then what was heard while it
  * was read. Read again, it keeps the earlier pages held when its lines reach
  * them, and only then: lines held up to the one before its first, or past
- * it, leave no hole between the two.
+ * it, leave no hole between the two. Nor when a line of it is held at another
+ * place: a removal or a late line moved the lines after it, the places held
+ * mean nothing now, and Show earlier reads the rest again (the Audit's L1 on
+ * PR 378).
  */
 export function applySnapshot(feed: ChatFeed, history: ChatHistory, heard: ChatEvent[] = []): ChatFeed {
   const fresh = [...history.items].sort((a, b) => a.n - b.n);
   const first = fresh[0]?.n;
   const ids = new Set(fresh.map(item => item.id));
-  const kept = first !== undefined && feed.items.some(held => held.n >= first - 1)
+  const placed = new Map(feed.items.map(held => [held.id, held.n]));
+  const moved = fresh.some(item => placed.has(item.id) && placed.get(item.id) !== item.n);
+  const kept = first !== undefined && !moved && feed.items.some(held => held.n >= first - 1)
     ? feed.items.filter(held => held.n < first && !ids.has(held.id))
     : [];
   const items = [...kept, ...fresh];

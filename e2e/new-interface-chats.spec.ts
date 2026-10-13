@@ -23,7 +23,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * opens on its conversation (e2e/new-interface-chat-page.spec.ts reads one).
  * New chat: docs-demo cannot be chosen, it has no orchestrator; a chat
  * "Release notes" made in tars-demo is #2, opens, and its page, with no runner
- * yet, says its conversation opens with the next part of the preview.
+ * yet, waits for its first message, its composer open.
  * Renamed in place, then pinned, then snoozed for an hour (folded under
  * Snoozed, unfolded with its time), each kept in chats.json. harbor-demo's
  * Main is settled. "Triage", made next, becomes tars-demo's inbox; Main,
@@ -106,10 +106,10 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     seen.list = await texts(rows('Active'));
     expect(seen.list).toEqual(['Main tars-demo #1', 'Main harbor-demo #1']);
     // Main has a runner, Lead: it opens on its conversation (empty here, Lead
-    // has written none), its composer waiting for sending from a chat.
+    // has written none), its composer open (e2e/new-interface-chat-send.spec.ts sends from it).
     await expect(main.getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
     await expect(main.getByRole('log', { name: 'Conversation' })).toBeVisible();
-    await expect(main.getByText('Sending from a chat comes with the next part of this preview.')).toBeVisible();
+    await expect(main.getByRole('group', { name: 'Message composer' }).getByRole('textbox', { name: 'Message' })).toBeEnabled();
     await stepShot(page, '01-list');
 
     // New chat: a project without an orchestrator cannot be chosen.
@@ -122,7 +122,7 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
     await main.getByRole('textbox', { name: 'Title' }).fill('Release notes');
     await main.getByRole('button', { name: 'Create chat', exact: true }).click();
     await expect(main.getByRole('heading', { name: 'Release notes', exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(main.getByText('Its conversation opens with the next part of this preview')).toBeVisible();
+    await expect(main.getByText('Its conversation starts with your first message')).toBeVisible();
     const made = sidebar.locator('[data-chat-row]', { hasText: 'Release notes' });
     await expect(made).toContainText('tars-demo #2');
     await expect(made.getByRole('link')).toHaveAttribute('aria-current', 'page');
