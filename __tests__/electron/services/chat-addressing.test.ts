@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat, routeChannelMessage,
+  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat, routeChannelMessage, chatsReadable,
 } from '../../../electron/services/chat-addressing';
 import type { Chat } from '../../../electron/services/chats';
 
@@ -35,6 +35,9 @@ import type { Chat } from '../../../electron/services/chats';
  *    "#N"-looking first word; a reply to a chat since deleted reaches another chat, or vanishes without a word.
  * 9. A trailing slash in the project's path, as one sender spells it, finds no chat, and the message goes to the
  *    orchestrator rather than to the inbox.
+ * 10. chat_list (4.4 item 5, the cross-chat reading option) hands a runner another project's chats, the caller's own
+ *    chat, or more of a chat than its id, number, title, state and last activity (its runner's id, its sessions, its
+ *    project's path).
  */
 
 const at = '2026-10-13T08:00:00.000Z';
@@ -191,5 +194,21 @@ describe('7, 8, 9. the way a channel\'s message goes', () => {
     expect(route('#2 not an address here', 'rel')).toEqual({ kind: 'chat', chat: release, text: '#2 not an address here' });
     expect(route('thanks', 'main')).toEqual({ kind: 'orchestrator', text: 'thanks' });
     expect(route('thanks', 'gone-chat')).toEqual({ kind: 'gone' });
+  });
+});
+
+describe('10. what chat_list shows a chat of its project\'s other chats', () => {
+  const mine = chat({ id: 'mine', number: 3, title: 'Release', runnerId: 'r3', inbox: false, sessionIds: ['s1'] });
+  const main = chat({ id: 'main', number: 1 });
+  const settled = chat({ id: 'old', number: 2, title: 'Old', runnerId: 'r2', inbox: false, settledAt: at });
+  const other = chat({ id: 'other', projectPath: '/work/other', number: 4, title: 'Elsewhere' });
+  const states: Record<string, string> = { main: 'idle', old: 'asleep', other: 'working', mine: 'working' };
+
+  it('the others of its project, by number, with five fields', () => {
+    const listed = chatsReadable(mine, [other, settled, mine, main], (c) => states[c.id] as never);
+    expect(listed).toEqual([
+      { id: 'main', number: 1, title: 'Main', state: 'idle', lastActivityAt: at },
+      { id: 'old', number: 2, title: 'Old', state: 'settled', lastActivityAt: at },
+    ]);
   });
 });
