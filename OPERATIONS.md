@@ -214,6 +214,11 @@ or a mock:
 Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
 moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
+Stand-ins a spec may point the app at, read only under `DOROTHY_E2E=1`: `TARS_CHAT_RAM_GB` (the RAM the
+chats' limit is computed from) and `DOROTHY_TELEGRAM_API_URL` (`http://127.0.0.1:<port>` and nothing
+else: a stand-in of Telegram's Bot API, which the bot's token travels to in every request's path;
+`e2e/chat-senders.spec.ts`).
+
 ### Unit tests: `npm test`
 
 ```bash
@@ -903,6 +908,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
+| GET | `/api/chats/list` (`chat_list`: with `chatsReadEachOther` on, the other chats of the caller's project; `403 chats_read_off` off, `403 not_a_chat` for an agent that runs no chat) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
@@ -915,6 +921,16 @@ new chat out too: turn Telegram off and on in Settings, which restarts the bot a
 
 `ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) and the event reports go through the relay
 to your Hermes, not through this bot: see "The relay (Tars's side)" under Hermes gateway below.
+
+**Which chat a message reaches** (2.0.0, the chats; SPECS §4, The senders). A message from Telegram, Slack or
+Discord, or through the relay, that names no chat goes to the project's inbox chat: Main, the orchestrator, unless
+you made another chat the inbox. Start it with `#3 ` (or `@project #3 `) to write to chat 3; an `#N` the project has
+no chat for answers with the numbered list. On Telegram, reply to a chat's message (each starts
+`[<project> #N <title>]`) and it goes to that chat, whatever the text says. A reply that went to the wrong place: the
+bot's log of what it sent for a chat is `~/.tars-private/telegram-sent.json` (Telegram's chat and message ids, the
+chat's id, 7 days), the relay's is `~/.tars-private/relay-sent.json` (each entry's `chatId`); an entry older than its
+keep reaches nobody, and the sender is told. The kanban's and the error triage's notes, and the stall reports, go
+to the inbox chat too, only while its CLI runs.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -1891,6 +1907,11 @@ continuing its conversation (`--resume <session> --fork-session`), unless someth
 A turn can end with work still running in the background (Claude Code refuses a long foreground
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
+A task that ends while a turn runs is recorded there differently: Claude Code 2.1.296 writes its
+`<task-notification>` as a `queue-operation` `enqueue` and an `attachment` of type `queued_command`,
+never as a user line, and Tars reads both (`pendingBackgroundWork`). Before 2.0.0 it read user
+lines only: such a task stayed running for Tars, every rest of the agent told its requester that
+background work was still running, and the requester's background list never emptied.
 
 A restart that waits tells every window what it waits on (`agent:restart-pending`, and
 `agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
