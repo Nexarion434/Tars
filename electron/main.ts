@@ -17,7 +17,7 @@ import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, sta
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -156,7 +156,7 @@ import {
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
 import { endAuthCommands } from './services/claude-accounts/auth';
-import { currentFolderLookupsOff } from './platform';
+import { cliEnv, currentFolderLookupsOff, nodeMissing } from './platform';
 
 // ============== App Settings Management ==============
 
@@ -543,6 +543,11 @@ app.whenReady().then(async () => {
 
   // Initialize macOS menu bar tray with custom popup panel
   initTray();
+
+  // Windows: the hooks and the bundled tools run on Node, which a native
+  // claude.exe does not bring. Said at each launch until it is installed.
+  const noNode = nodeMissing(cliEnv() ?? process.env);
+  if (noNode) void dialog.showMessageBox({ type: 'warning', ...noNode });
 
   // Register all IPC handlers
   const deps = createIpcDependencies();
