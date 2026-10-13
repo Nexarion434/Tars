@@ -77,12 +77,22 @@
  * 26. git ends its line with a semicolon before an unprefixed hint ("cannot
  *     remove a locked working tree;" then "use 'remove -f -f' ..."): the
  *     sentence reads "tree;)".
+ * A start on its way (2.0.2, QA's Info on #397, written before the code, 2026-10-13)
+ * A runner restarting with no prompt (to follow a new orchestrator) holds its
+ * slot while its start is on its way, and is idle a moment later.
+ * 27. A full limit answers chat_limit at its first look at such a runner,
+ *     naming a chat that has nothing to do, instead of looking again.
+ * 28. Main, or a runner being started for the send in hand, is looked at
+ *     again: the first never sleeps, the second is about to work.
+ * 29. A refusal that does not pass by itself (in a turn, work owed, a draft
+ *     that does not settle) is looked at again, or one that does (a Stop
+ *     hook's tail, no process table, a message settling) no longer is.
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
   runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner, unconfirmedRunners,
-  gitRefusal, offClaudeRefusal,
+  gitRefusal, offClaudeRefusal, looksAgain,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -316,5 +326,28 @@ describe('a send while the orchestrator is off claude (2.0.1)', () => {
 
   it('25. a runner that is not running is not said to run', () => {
     expect(offClaudeRefusal(2, false, false)).not.toMatch(/running|turn/);
+  });
+});
+
+describe('a runner a full limit looks at again (2.0.2)', () => {
+  const runner = (refusal: string | null, more: Partial<{ isMain: boolean; settlesInMs: number; forSend: boolean }> = {}) => ({ isMain: false, refusal, ...more });
+
+  it('27. one whose start is on its way: idle a moment later, when it carries no message', () => {
+    expect(looksAgain(runner('starting'))).toBe(true);
+  });
+
+  it('28. never Main, nor a runner being started for the send in hand', () => {
+    expect(looksAgain(runner('starting', { isMain: true }))).toBe(false);
+    expect(looksAgain(runner('busy', { isMain: true }))).toBe(false);
+    expect(looksAgain(runner('starting', { forSend: true }))).toBe(false);
+  });
+
+  it('29. only what passes by itself', () => {
+    for (const refusal of ['busy', 'no-process-table']) expect(looksAgain(runner(refusal)), refusal).toBe(true);
+    expect(looksAgain(runner('field', { settlesInMs: 1200 }))).toBe(true);
+    expect(looksAgain(runner('field'))).toBe(false);
+    for (const refusal of ['not-at-rest', 'owed', 'owes', 'pending', 'no-cli', 'not-resumable', null]) {
+      expect(looksAgain(runner(refusal)), String(refusal)).toBe(false);
+    }
   });
 });

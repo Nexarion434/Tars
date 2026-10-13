@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 59,
+    version: '2.0.2',
+    date: '2026-10-13',
+    updates: [
+      'With the new interface on, a message to a sleeping chat no longer answers that the limit is reached, naming a chat that has nothing to do, in the moment that chat\'s runner restarts to follow a new orchestrator: Tars looks again, for up to about three seconds, at a runner whose start is still on its way, as it already did at one whose turn had just ended.',
+    ],
+  },
+  {
     id: 58,
     version: '2.0.1',
     date: '2026-10-13',
