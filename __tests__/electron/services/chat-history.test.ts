@@ -42,7 +42,8 @@
  *     delete) is replaced by its "gone" line, and the lines after it move back
  *     and are sent again, but the vanished items are never declared gone: a
  *     window keeps them, mixed with the moved ones, until it reads again. Or
- *     they are declared at every tick, or one still there is declared.
+ *     they are declared at every tick, or one still there is declared, or
+ *     after the items that moved back (GATE-PR371-DELTA4, L1).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -286,6 +287,12 @@ describe('a chat, followed', () => {
     expect(removed.map((e) => [...e.itemIds!].sort())).toEqual([[...vanished].sort()]);
     expect(removed[0].chatId).toBe(chat.id);
     expect(itemsSent()).toContain(`session ${S('b')}: its transcript is gone`);
+    // Before the items that moved back are sent again: a window that placed them
+    // first would hold the vanished ones among them until the event came (W4).
+    const removedAt = sent.findIndex((e) => e.type === 'removed');
+    const movedAt = sent.findIndex((e) => e.type === 'item' && e.item!.text === 'later');
+    expect(movedAt, '"later" moved back a place and was sent again').toBeGreaterThan(-1);
+    expect(removedAt).toBeLessThan(movedAt);
     // Declared once: the next tick says nothing more.
     sent.length = 0;
     const g = follow({ chats: [chat], runner });
