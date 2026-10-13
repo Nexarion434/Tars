@@ -66,7 +66,8 @@ beforeEach(async () => {
     run3: { id: 'c3', projectPath: TARS, number: 3, title: 'Release' },
     'run-other': { id: 'o2', projectPath: OTHER, number: 2, title: 'Elsewhere' },
   };
-  inbox.setChatLookups({ inbox: () => null, chatRunBy: (agentId) => chats[agentId] });
+  // Projects with several chats: each chat is named by it.
+  inbox.setChatLookups({ inbox: () => null, chatRunBy: (agentId) => chats[agentId], namedChatOf: (agentId) => chats[agentId] });
 });
 afterEach(() => inbox.setChatLookups(undefined));
 

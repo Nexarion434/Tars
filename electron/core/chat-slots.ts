@@ -41,6 +41,19 @@ export function startPointOf(git: { originHead: string | null; refs: string[] })
   return null;
 }
 
+/**
+ * Why `git worktree add` refused, as the page reads it after "Its worktree
+ * could not be made: ". git writes its progress ("Preparing worktree ...") and
+ * its hints to stderr too: only its error and fatal lines are the reason, else
+ * Tars says it has none.
+ */
+export function worktreeAddRefusal(stderr: string): string {
+  const reasons = stderr.split(/\r?\n/)
+    .map((line) => /^(?:fatal|error): (.*)$/.exec(line.trim())?.[1]?.trim().replace(/\.+$/, ''))
+    .filter((reason): reason is string => !!reason);
+  return reasons.length ? reasons.join('; ') : 'git refused it without saying why';
+}
+
 /** A live runner that a full limit may put to sleep, and what the sleep rule says of it. */
 export interface SlotCandidate {
   agentId: string;

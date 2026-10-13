@@ -14,7 +14,7 @@ import { chatTag } from './chat-addressing';
 import { chatById } from './chat-runners';
 import { deliverFromChannel, telegramSentLog } from './chat-senders';
 import type { Chat } from './chats';
-import { chatNameOf, leadOf, type ChatName } from '../core/chat-inbox';
+import { leadOf, namedChatOf, type ChatName } from '../core/chat-inbox';
 import {
   findAgent, forwardToOrchestrator, listedAgents, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type ClaudeUsageStats, type StatusGroup,
@@ -187,7 +187,7 @@ function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | '
 export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
   const rawOutput = agent.output.slice(-100).join('');
   // Main's answer, headed by its chat (PR F).
-  const chat = chatNameOf(agent);
+  const chat = namedChatOf(agent);
   const head = chat ? `${chatTag(chat)} ` : '';
 
   // Remove ANSI escape codes, then take the secrets out.

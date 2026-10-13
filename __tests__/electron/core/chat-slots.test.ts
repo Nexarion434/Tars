@@ -48,11 +48,22 @@
  * 15. A runner its chat names loses its kind; an agent of no chat is listed.
  * The place (the Audit's R9 on #379)
  * 16. A letter that is not hex reaches the runner's folder name.
+ * The refusal of its worktree (#394's gate, written before the code, 2026-10-13)
+ * git writes its progress to stderr too, and the page shows that text whole.
+ * 17. The page reads git's progress line ("Preparing worktree (new branch
+ *     'chat/1a2b3c4d')") before the reason, or the "fatal: " that heads it.
+ * 18. A refusal of several lines (an error, then the fatal) loses one, or keeps
+ *     git's hints with them.
+ * 19. git says nothing a user can read (no stderr, only its progress, a git
+ *     stopped by the timeout): the page gets an empty reason or the progress,
+ *     instead of Tars's own sentence.
+ * 20. git's line ends with a period, and the page reads two.
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
   runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner, unconfirmedRunners,
+  worktreeAddRefusal,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -220,5 +231,29 @@ describe("the runner's place, hex only (the Audit's R9 on #379)", () => {
   it('16. a letter that is not hex never reaches the folder name', () => {
     expect(runnerPlaceOf('/p', 'ghijklmn-0123-4567-89ab-cdef01234567')?.worktreePath).toBe(path.join('/p', '.worktrees', 'chat-01234567'));
     expect(runnerPlaceOf('/p', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz')).toBeNull();
+  });
+});
+
+describe("the refusal of a runner's worktree (#394's gate)", () => {
+  // As git 2.39 writes them, measured on 2026-10-13.
+  const progress = "Preparing worktree (new branch 'chat/1a2b3c4d')\n";
+
+  it('17. only the reason reaches the page, without the progress or the "fatal: "', () => {
+    expect(worktreeAddRefusal(`${progress}fatal: a branch named 'chat/1a2b3c4d' already exists\n`)).toBe("a branch named 'chat/1a2b3c4d' already exists");
+    expect(worktreeAddRefusal(`${progress}fatal: could not create leading directories of '/p/.worktrees/chat-1a2b3c4d/.git': Permission denied\n`))
+      .toBe("could not create leading directories of '/p/.worktrees/chat-1a2b3c4d/.git': Permission denied");
+  });
+
+  it('18. every error and fatal line, and no hint', () => {
+    expect(worktreeAddRefusal(`${progress}error: could not lock config file .git/config: File exists\r\nhint: remove the lock\nfatal: unable to write new index file\n`))
+      .toBe('could not lock config file .git/config: File exists; unable to write new index file');
+  });
+
+  it("19. Tars's own sentence when git gives no reason", () => {
+    for (const stderr of ['', '\n', progress, `${progress}hint: something\n`]) expect(worktreeAddRefusal(stderr)).toBe('git refused it without saying why');
+  });
+
+  it('20. no period of its own: the sentence adds one', () => {
+    expect(worktreeAddRefusal(`${progress}fatal: not a valid object name: 'origin/main'.\n`)).toBe("not a valid object name: 'origin/main'");
   });
 });
