@@ -1,7 +1,7 @@
 import type { MessageSender } from '../core/pty-manager';
 import { agents } from '../core/agent-manager';
 import { privatePath } from '../constants';
-import { allChats, chatById, chatRunBy, sendToChat } from './chat-runners';
+import { allChats, chatById, namedChatRunBy, sendToChat } from './chat-runners';
 import { chatTag, createChatSentLog, routeChannelMessage, type ChatSentLog } from './chat-addressing';
 import type { Chat } from './chats';
 
@@ -21,7 +21,7 @@ import type { Chat } from './chats';
  */
 export function chatHeadOf(agentId: string | undefined): string {
   const agent = agentId ? agents.get(agentId) : undefined;
-  const chat = agent ? chatRunBy(agent) : undefined;
+  const chat = agent ? namedChatRunBy(agent) : undefined;
   return chat ? `${chatTag(chat)} ` : '';
 }
 

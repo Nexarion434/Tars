@@ -13,10 +13,11 @@ import { diskRefusal, freeSpace } from '../core/disk-space';
 import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
-import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf } from '../core/chat-slots';
+import { dropRunnerGrants } from '../core/chat-grants';
+import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, worktreeAddRefusal } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
-import { pickChat } from './chat-addressing';
+import { namesItsChats, pickChat } from './chat-addressing';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
@@ -121,6 +122,12 @@ export function chatById(chatId: string): Chat | undefined {
  * orchestrator, its own chat for a runner. What its messages to a channel or
  * the room are named by (PR F).
  */
+/** The chat an agent runs, only once its project has several chats: what its messages are named by. */
+export function namedChatRunBy(agent: AgentStatus): Chat | undefined {
+  const chat = chatRunBy(agent);
+  return chat && namesItsChats(allChats(), chat) ? chat : undefined;
+}
+
 export function chatRunBy(agent: AgentStatus): Chat | undefined {
   const chat = store?.chatOfRunner(agent.id);
   return chat && runnerOf(chat) === agent ? chat : undefined;
@@ -170,9 +177,10 @@ function syncWithLead(runner: AgentStatus, lead: AgentStatus, chat: Chat): void 
 }
 
 type Git = { code: number; stdout: string; stderr: string };
+/** In the C locale: worktreeAddRefusal reads git's "fatal:" and "error:", which a translated git would not write. */
 function git(cwd: string, args: string[]): Promise<Git> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', args, { cwd, env: { ...process.env, LC_ALL: 'C' }, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
     });
@@ -210,7 +218,7 @@ async function makeRunner(chat: Chat, lead: AgentStatus): Promise<{ runner: Agen
   if (!start) return failed('This project has no default branch to start a chat from (no origin/main, origin/master, main or master).');
   fs.mkdirSync(path.dirname(place.worktreePath), { recursive: true });
   const added = await git(project, ['worktree', 'add', '-b', place.branchName, place.worktreePath, start]);
-  if (added.code !== 0) return failed(`Its worktree could not be made: ${added.stderr.trim() || 'git worktree add failed'}.`);
+  if (added.code !== 0) return failed(`Its worktree could not be made: ${worktreeAddRefusal(added.stderr)}.`);
   await logDependencies(place.worktreePath, await cloneDependencies(project, place.worktreePath));
   // The grants the orchestrator has, copied once: they diverge after, as any worktree's do.
   const grants = path.join(project, '.claude', 'settings.local.json');
@@ -455,6 +463,7 @@ export async function stopRunnerOf(chat: Chat): Promise<void> {
 export async function removeRunnerOf(chat: Chat): Promise<{ savedTo?: string; worktreeKept?: string }> {
   const runner = ownRunnerOf(chat);
   if (!runner) return {};
+  dropRunnerGrants(runner.projectPath, runner.worktreePath, runnerPlaceOf(runner.projectPath, chat.id)?.worktreePath);
   const removed = await removeAgent(runner.id);
   announce(runner);
   return { ...(removed.savedTo ? { savedTo: removed.savedTo } : {}), ...(removed.worktreeKept ? { worktreeKept: removed.worktreeKept } : {}) };
@@ -614,6 +623,10 @@ export function startChatRunners(chatStore: ChatStore): void {
     chatRunBy: (agentId) => {
       const agent = agents.get(agentId);
       return agent ? chatRunBy(agent) : undefined;
+    },
+    namedChatOf: (agentId) => {
+      const agent = agents.get(agentId);
+      return agent ? namedChatRunBy(agent) : undefined;
     },
   });
   agentStatusEmitter.on('fleet-change', onFleetChange);
