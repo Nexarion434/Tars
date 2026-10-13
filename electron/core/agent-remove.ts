@@ -91,9 +91,11 @@ export async function removeAgent(id: string): Promise<RemovedAgent> {
       execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
       console.log(`Worktree removed successfully`);
     } catch (err) {
-      // The agent goes all the same; its folder stays, and the window says why.
-      worktreeKept = `git could not remove it (${gitRefusal(String((err as { stderr?: unknown }).stderr ?? ''))}), so its worktree was kept at ${agent.worktreePath}`;
-      console.warn(`[agent:remove] ${worktreeKept}`);
+      // The agent goes all the same; its folder, when there is one, stays, and the window says why. A worktree
+      // already gone (removed outside Tars, or moved then pruned: "is not a working tree") keeps nothing.
+      const reason = gitRefusal(String((err as { stderr?: unknown }).stderr ?? ''));
+      if (fs.existsSync(agent.worktreePath)) worktreeKept = `git could not remove it (${reason}), so its worktree was kept at ${agent.worktreePath}`;
+      console.warn(`[agent:remove] git worktree remove ${agent.worktreePath}: ${reason}`);
     }
   }
 
