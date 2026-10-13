@@ -14,7 +14,7 @@ import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../
 import { diskRefusal, freeSpace } from '../../core/disk-space';
 import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
-import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown, takeSlot } from '../../core/agent-launch';
 import { getProvider, isValidProvider } from '../../providers';
 import { skillsProblem } from '../../utils/skill-name';
 import { buildFullPath } from '../../utils/path-builder';
@@ -22,7 +22,7 @@ import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
 import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
-import { getSuperAgentInstructionsPath, isSuperAgent } from '../../utils';
+import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
@@ -30,7 +30,7 @@ import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff } from '../task-ledger';
-import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart } from '../../core/task-requests';
+import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
 import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
@@ -40,9 +40,11 @@ import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
-import { assignRole, requestedRole } from '../../core/agent-role';
+import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
+import { replyTargetOf } from '../../core/reply-target';
+import { chatIdentityOf, chatOfAsker, orchestratorMoved } from '../../core/chat-identity';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -141,6 +143,26 @@ async function spawnAgentSession(
     sendJson({ error: 'Tars is quitting: no new session is started.', quitting: true }, 503);
     return false;
   }
+  // A chat's runner starts within the RAM's limit, whoever starts it (core/agent-launch.ts).
+  const slot = await takeSlot(agent.id);
+  if (!slot.ok) {
+    sendJson({ error: slot.error, chatLimit: true }, 409);
+    return false;
+  }
+  try {
+    return await spawnAgentSessionInSlot(agent, prompt, opts, ctx, sendJson);
+  } finally {
+    slot.release();
+  }
+}
+
+async function spawnAgentSessionInSlot(
+  agent: AgentStatus,
+  prompt: string,
+  opts: SpawnOpts,
+  ctx: RouteContext,
+  sendJson: SendJson
+): Promise<boolean> {
   // Raw cwd for pty.spawn; toLaunch quotes it for the `cd` command. These
   // must be separate: passing the shell-escaped form to pty.spawn would
   // break when the path legitimately contains a single quote.
@@ -155,8 +177,9 @@ async function spawnAgentSession(
 
   const usePrintMode = opts.printMode;
 
-  // Its project's orchestrator: the toggle, never the name (core/agent-role.ts).
-  const isSuperAgentApi = isSuperAgent(agent);
+  // The orchestrator's powers: its project's orchestrator (the toggle, never
+  // the name) or a chat's runner (core/agent-role.ts).
+  const isSuperAgentApi = hasOrchestratorPowers(agent);
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
@@ -205,13 +228,13 @@ async function spawnAgentSession(
   // (The provider builder handles the skills prefix itself.)
   const identityHeader =
     `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ` +
-    `${agent.role || 'worker'} of project ${agent.projectPath}` +
+    `${agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker'} of project ${agent.projectPath}` +
     (agent.worktreePath
       ? `, working in worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory`
       : '') +
     `. Work autonomously without asking for confirmation and end with a clear report of your results` +
     (isSuperAgentApi ? '' : ': an orchestrator reads your final message') +
-    `.]`;
+    `.` + (chatIdentityOf(agent) ? ` ${chatIdentityOf(agent)}` : '') + `]`;
 
   // MCP config for flag-strategy providers (all claude-based ones).
   let mcpConfigPath: string | undefined;
@@ -620,13 +643,14 @@ function requestFor(agent: AgentStatus, req: RouteRequest, title?: string): stri
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
   // A worker writing to the agent that leads it (the orchestrator that handed
-  // it the work, or its project's orchestrator) is reporting, not delegating:
-  // as a link, the orchestrator's next outcome was typed into the worker's
-  // terminal as news of work it had never handed over. The orchestrator's own
-  // link, if it has one, stays as it is.
+  // it the work, or one of its project's with the orchestrator's powers: the
+  // orchestrator, a chat's runner) is reporting, not delegating: as a link,
+  // the orchestrator's next outcome was typed into the worker's terminal as
+  // news of work it had never handed over. The orchestrator's own link, if it
+  // has one, stays as it is.
   const caller = agentId ? agents.get(agentId) : undefined;
   if (caller && (caller.requestedBy?.agentId === agent.id
-      || (agent.role === 'orchestrator' && agent.projectPath === caller.projectPath))) return undefined;
+      || (hasOrchestratorPowers(agent) && agent.projectPath === caller.projectPath))) return undefined;
   if (!agentId) return undefined;
   const ref = enqueueRequest(agent, agentId, { title });
   saveAgents();
@@ -1000,6 +1024,8 @@ async function performDispatchLocked(
       // caller hears it went in or was given up (#292).
       onWritten: () => { handedOver(delivered(agent, taskRef)); opts.onWritten?.(); },
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
+      // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
+      onWithdrawn: () => cancelRetell?.(),
       taskRef,
       untilRest: opts.untilRest,
       mark: opts.mark,
@@ -1031,6 +1057,26 @@ async function performDispatchLocked(
     return;
   }
   sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), ...(taskRef ? { taskRef } : {}), agent: { id: agent.id, name: agent.name, status: agent.status } });
+}
+
+/**
+ * The agent a message names (the Audit's R5): an id reaches that agent; the
+ * words "requester" and "orchestrator", or the orchestrator's name, reach
+ * whoever asked the caller for its current task when that is a chat's runner,
+ * else the project's orchestrator (core/reply-target.ts). Answers 404 itself
+ * when it names nobody. A message sent by those words is answered with where
+ * it went, `deliveredTo`.
+ */
+function messageTarget(req: RouteRequest, sendJson: SendJson): { agent: AgentStatus; reply: SendJson } | undefined {
+  const found = replyTargetOf(req.params.id, req.callerAgentId, agents);
+  const agent = found ? agents.get(found.agentId) : undefined;
+  if (!found || !agent) {
+    sendJson({ error: 'Agent not found' }, 404);
+    return undefined;
+  }
+  if (found.how === 'id') return { agent, reply: sendJson };
+  const deliveredTo = { id: agent.id, name: agent.name || agent.id, how: found.how };
+  return { agent, reply: (data, status) => sendJson(status && status >= 400 ? data : { ...(data as object), deliveredTo }, status) };
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
@@ -1125,10 +1171,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   app_.get('/api/agents', (req, sendJson) => {
     const caller = callerProject(req);
     const showAll = req.url.searchParams.get('all') === 'true';
-    let agentValues = Array.from(agents.values());
+    // The team: a chat's runner is a conversation with the orchestrator, listed
+    // only as the asker of the work it handed out (ORCHESTRATOR-PER-CHAT.md, 4.2).
+    let agentValues = Array.from(agents.values()).filter(a => a.kind !== 'chat');
     if (caller && !showAll) {
       agentValues = agentValues.filter(a => a.projectPath === caller);
     }
+    const askerOf = (a: AgentStatus) => {
+      const asker = a.requestedBy ? agents.get(a.requestedBy.agentId) : undefined;
+      return asker ? { id: asker.id, name: asker.name || asker.id, ...(asker.kind === 'chat' ? { chat: true } : {}) } : undefined;
+    };
     const agentList = agentValues.map(withSessionTruth).map(a => ({
       id: a.id,
       name: a.name,
@@ -1142,6 +1194,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       branchName: a.branchName,
       role: a.role,
       error: a.error,
+      askedBy: askerOf(a),
     }));
     sendJson({ agents: agentList, scopedToProject: caller && !showAll ? caller : undefined });
   });
@@ -1168,10 +1221,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
 
-    const isOrchestrator = isSuperAgent(agent);
+    // The orchestration rules go with the orchestrator's powers (core/agent-role.ts).
+    const isOrchestrator = hasOrchestratorPowers(agent);
 
+    // A chat's runner is a conversation with the orchestrator, not a teammate
+    // (ORCHESTRATOR-PER-CHAT.md, 4.2): left out of every team listed here.
     const teammates = Array.from(agents.values())
-      .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id)
+      .filter(a => a.projectPath === agent.projectPath && a.id !== agent.id && a.kind !== 'chat')
       .map(a => `- "${a.name || a.id}" (id: ${a.id}): ${a.role || 'worker'}, status: ${a.status}` +
                 (a.branchName ? `, branch: ${a.branchName}` : '') +
                 (a.skills?.length ? `, skills: ${a.skills.join(', ')}` : ''));
@@ -1179,11 +1235,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const lines = [
       `# Tars agent identity`,
       ``,
-      `You are "${agent.name || agent.id}" (agent id: ${agent.id}), ${agent.role || 'worker'} of project ${agent.projectPath}.`,
+      `You are "${agent.name || agent.id}" (agent id: ${agent.id}), ${agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker'} of project ${agent.projectPath}.`,
     ];
     if (agent.worktreePath) {
       lines.push(`You work in the worktree ${agent.worktreePath}${agent.branchName ? ` (branch ${agent.branchName})` : ''}: stay inside this directory.`);
     }
+    // A chat's runner: which chat, and that others may run beside it (core/chat-identity.ts).
+    const inChat = chatIdentityOf(agent);
+    if (inChat) lines.push(inChat);
     if (agent.savedPrompt) {
       lines.push(``, `## Your role`, agent.savedPrompt);
     }
@@ -1202,6 +1261,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         ``,
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
+        `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
         `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
@@ -1347,6 +1407,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const demoted = assignRole(agent, role, agents.values());
     agents.set(id, agent);
     saveAgents();
+    // An orchestrator made here: its project's Main follows it (core/chat-identity.ts).
+    orchestratorMoved();
     for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
     announceAgent(agent);
     sendJson({ agent });
@@ -1396,12 +1458,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   // Decides message-vs-spawn server-side, under the single-threaded event
   // loop, eliminating the GET-status-then-POST race that MCP tools had when
   // they made that decision client-side on stale status.
-  app_.post(/^\/api\/agents\/([^/]+)\/dispatch$/, async (req, sendJson) => {
-    const agent = agents.get(req.params.id);
-    if (!agent) {
-      sendJson({ error: 'Agent not found' }, 404);
-      return;
-    }
+  app_.post(/^\/api\/agents\/([^/]+)\/dispatch$/, async (req, sendJsonToCaller) => {
+    const target = messageTarget(req, sendJsonToCaller);
+    if (!target) return;
+    const { agent, reply: sendJson } = target;
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message, model, permissionMode, mode: asked, reason } = req.body as {
@@ -1431,7 +1491,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
       // Never across another asker's work: it would cut it (core/task-requests.ts).
       if ((mode === 'steer' && !mayInterrupt(agent, asker)) || (mode === 'restart' && !mayRestart(agent, asker))) {
-        send({
+        // Another chat's work, by its name: no chat cuts another's (ORCHESTRATOR-PER-CHAT.md 4.3, M1).
+        const otherChat = chatOfAsker(cutWorkOf(agent, asker, mode));
+        send(otherChat ? {
+          error: `${name} is working on, or holds, a task from the chat ${envelopeValue(otherChat.title)} (#${otherChat.number}): a ${mode} would cut it, and no chat cuts another's work. Send it with mode 'queue', or tell the user.`,
+          code: 'worker_busy_for_other_chat',
+          chat: { title: otherChat.title, number: otherChat.number },
+        } : {
           error: `${name} is working on, or holds, a task another agent asked for: a ${mode} would cut it. Send it with mode 'queue', or ask that agent.`,
           code: 'worker_busy_for_other_requester',
         }, 409);
@@ -1639,12 +1705,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // POST /api/agents/:id/message
-  app_.post(/^\/api\/agents\/([^/]+)\/message$/, async (req, sendJson) => {
-    const agent = agents.get(req.params.id);
-    if (!agent) {
-      sendJson({ error: 'Agent not found' }, 404);
-      return;
-    }
+  app_.post(/^\/api\/agents\/([^/]+)\/message$/, async (req, sendJsonToCaller) => {
+    const target = messageTarget(req, sendJsonToCaller);
+    if (!target) return;
+    const { agent, reply: sendJson } = target;
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message, mode } = req.body as { message: string; mode?: unknown };
@@ -1723,6 +1787,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           sender,
           onWritten: () => handedOver(delivered(agent, taskRef)),
           onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); },
+          onWithdrawn: () => cancelRetell?.(),
           taskRef,
           mark: markFor(agent, req),
         });
