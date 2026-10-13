@@ -135,3 +135,24 @@ export function routeChannelMessage(input: { chats: Chat[]; projectPath: string;
   const said = address?.text ?? text;
   return picked.chat.number === 1 ? { kind: 'orchestrator', text: said } : { kind: 'chat', chat: picked.chat, text: said };
 }
+
+/** A chat as another chat of its project reads it in chat_list. */
+export interface ChatListed {
+  id: string;
+  number: number;
+  title: string;
+  /** settled; else its runner's: working (in a turn), idle, asleep, or not started (no runner yet). */
+  state: 'settled' | 'working' | 'idle' | 'asleep' | 'not started';
+  lastActivityAt: string;
+}
+
+/**
+ * What chat_list shows a chat (4.4 item 5): the other chats of its own
+ * project, by number, and of each its id, number, title, state and last
+ * activity, nothing else.
+ */
+export function chatsReadable(reader: Chat, chats: Chat[], stateOf: (chat: Chat) => Exclude<ChatListed['state'], 'settled'>): ChatListed[] {
+  return ofProject(chats, reader.projectPath)
+    .filter((c) => c.id !== reader.id)
+    .map((c) => ({ id: c.id, number: c.number, title: c.title, state: c.settledAt ? 'settled' as const : stateOf(c), lastActivityAt: c.lastActivityAt }));
+}

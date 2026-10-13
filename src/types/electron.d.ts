@@ -1579,6 +1579,8 @@ export interface ElectronAPI {
       autoStartAgentsOnLaunch?: boolean;
       /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
       newInterface: boolean;
+      /** A project's chats may read one another (chat_list, chat_read), at each runner's next launch. Off unless chosen; `get` always answers a boolean. */
+      chatsReadEachOther: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -1658,6 +1660,8 @@ export interface ElectronAPI {
       autoStartAgentsOnLaunch?: boolean;
       /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
       newInterface?: boolean;
+      /** A project's chats may read one another (chat_list, chat_read), at each runner's next launch. */
+      chatsReadEachOther?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
