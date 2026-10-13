@@ -30,7 +30,8 @@ composer and the room head, each dark and light, and two notes frames. Hermes is
 Draw anything for the Chat in `chat-redesign-a.pen`.
 
 A fourth document, `design/landing.pen`, holds the site in `landing/`:
-`Landing · desktop`, `Landing · 404`, `Landing · privacy and terms` (the two
+`Landing · desktop` (its `Preview` section shows the new interface as the preview
+of 2.0.0), `Landing · 404`, `Landing · privacy and terms` (the two
 legal pages, drawn once: they share one layout), and `Landing · social image`,
 the picture link previews show. It was forked from `tars-redesign.pen` on 2026-09-23 with
 only the landing kept, and the landing frame left the first two documents in the
@@ -48,9 +49,10 @@ on one topic, all served by the same team, several at once. The current Chat sta
 it is, as the super orchestrator's space, and the chats are added beside it.
 
 **Built, behind Settings, Preferences, "New interface"** (off unless turned on; plan
-2.0.0, frontend brief of 12/10). Until 2.0.0 that row shows only once the preview is on,
-which `"newInterface": true` in `~/.dorothy/app-settings.json` does meanwhile, so that
-whoever turned it on can turn it off (JeanBrasse, 12/10). Off, the app draws exactly as before. On:
+2.0.0, frontend brief of 12/10). Since 2.0.0 that row shows to everyone, off by default:
+the preview. Before, it showed only once `"newInterface": true` in
+`~/.dorothy/app-settings.json` had turned the preview on, so that whoever did could turn
+it off (JeanBrasse, 12/10). Off, the app draws exactly as before. On:
 
 | Surface | Frames |
 |---|---|
@@ -109,7 +111,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 
 | Group | Sections |
 |---|---|
-| General | Preferences (with the New interface switch last, shown only once it is on until 2.0.0: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
+| General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
 | Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
