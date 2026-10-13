@@ -301,11 +301,17 @@ conversation with the project's orchestrator on one topic.
 
 - **The chat list.** The sidebar lists your projects' chats under Pinned,
   Active, Working, Snoozed and Settled, each with its state, and filters them by
-  project. Main is the conversation your orchestrator already had. A chat can be
-  renamed, pinned, snoozed, settled, made the project's inbox or deleted.
-- **A chat's page.** Its conversation, read from the orchestrator's own
-  transcripts and followed live: what it says, the tools it calls, the work it
-  hands to its team, and what it asks you, which you allow or deny there.
+  project; above it, how many chats work of the most your Mac runs at once, a
+  limit its memory sets. Main is the conversation your orchestrator already had.
+  A chat can be renamed, pinned, snoozed, settled, made the project's inbox or
+  deleted.
+- **A chat's page.** You write to its orchestrator there: the words go in when
+  it runs, after its turn if it is working, and start it when it does not; a new
+  chat's first message starts its own orchestrator and names the chat. Its
+  conversation is read from the orchestrator's own transcripts and followed
+  live: what it says, the tools it calls, the work it hands to its team, and what
+  it asks you, which you allow or deny there. When every chat your Mac runs at
+  once is working, a send says which, each with its Stop.
 - **A project's page.** Its chats, its team and what each agent is on, its
   terminals and its room.
 - **More.** Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings and
