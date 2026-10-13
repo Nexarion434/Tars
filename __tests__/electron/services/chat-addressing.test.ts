@@ -1,0 +1,153 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import {
+  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat,
+} from '../../../electron/services/chat-addressing';
+import type { Chat } from '../../../electron/services/chats';
+
+/**
+ * How a message from Telegram, Slack or Discord names one of a project's chats, and how Tars remembers which chat each
+ * message it sent there came from (ORCHESTRATOR-PER-CHAT.md v2.2, 4.6; PR F of 2.0.0). No routing by content: a reply
+ * goes to the chat it answers, "#N" at the start names chat N, anything else goes to the inbox.
+ *
+ * How this can fail, written before the code:
+ * 1. "#N" read where the user did not write an address: in the middle of a sentence ("see #3"), glued to a word
+ *    ("#3rd"), with a space after the # ("# 3"), as a fullwidth sign ("＃3"), signed or with leading zeros ("#-1",
+ *    "#03"), absurdly long ("#9999999"), or with nothing after it ("#3", "#3 "): a message then reaches a chat it was
+ *    not for, or an empty one is sent.
+ * 2. The text that goes on loses or keeps the wrong part: the "#N" left in, the separator (":" or ",") left in, or the
+ *    lines after the first dropped.
+ * 3. No "#N", and the message goes to chat 1 rather than to the inbox when another chat is the inbox; or to a chat of
+ *    another project; or nowhere when the project has chats.
+ * 4. An "#N" no chat of the project has reaches some chat anyway (the inbox, the nearest number), where it should reach
+ *    nobody and get the numbered list; or the list names another project's chats, or is out of order.
+ * 5. The prefix of an outgoing message does not name the project, the number and the title, in that form, or carries a
+ *    title's line break or bidi control into the channel.
+ * 6. The sent log: a reply to a message of one Telegram chat is matched with the same message id in another (Telegram
+ *    numbers messages per chat); an entry older than 7 days still routes; an unreadable or foreign file throws or routes;
+ *    the file grows without bound; it is written readable by others; it holds the message's text.
+ */
+
+const at = '2026-10-13T08:00:00.000Z';
+const chat = (over: Partial<Chat>): Chat => ({
+  id: 'c1', projectPath: '/work/tars', number: 1, title: 'Main', titleSource: 'user', runnerId: 'lead',
+  sessionIds: [], pinned: false, snoozedUntil: null, settledAt: null, inbox: true,
+  createdAt: at, updatedAt: at, lastActivityAt: at, ...over,
+});
+
+describe('1, 2. "#N" at the start names a chat', () => {
+  it('reads the number and the text after it, whatever separates them', () => {
+    expect(parseChatAddress('#3 ship it')).toEqual({ number: 3, text: 'ship it' });
+    expect(parseChatAddress('#3: ship it')).toEqual({ number: 3, text: 'ship it' });
+    expect(parseChatAddress('#12, ship it')).toEqual({ number: 12, text: 'ship it' });
+    expect(parseChatAddress('  #3   ship it  ')).toEqual({ number: 3, text: 'ship it' });
+    expect(parseChatAddress('#3\nfirst line\nsecond line')).toEqual({ number: 3, text: 'first line\nsecond line' });
+  });
+
+  it.each([
+    'see #3 ship it', '#3rd time', '# 3 ship it', '＃3 ship it', '#-1 ship it', '#03 ship it', '#9999999 ship it',
+    '#3', '#3 ', '#3:', '#', 'ship it', '',
+  ])('reads no address in %j', (text) => {
+    expect(parseChatAddress(text)).toBeNull();
+  });
+});
+
+describe('3, 4. which chat a message is for', () => {
+  const main = chat({ id: 'main', number: 1, inbox: false });
+  const release = chat({ id: 'rel', number: 3, title: 'Release 1.9.7', runnerId: 'r3', inbox: true });
+  const other = chat({ id: 'other', projectPath: '/work/other', number: 2, title: 'Other', inbox: true });
+  const all = [other, release, main];
+
+  it('with no number, the inbox of the project, even when it is not chat 1', () => {
+    expect(pickChat(all, '/work/tars', null)).toEqual({ kind: 'chat', chat: release });
+    expect(pickChat([chat({ id: 'm' })], '/work/tars', null)).toEqual({ kind: 'chat', chat: chat({ id: 'm' }) });
+  });
+
+  it('with a number, that chat of the project and no other project\'s', () => {
+    expect(pickChat(all, '/work/tars', 1)).toEqual({ kind: 'chat', chat: main });
+    expect(pickChat(all, '/work/tars', 3)).toEqual({ kind: 'chat', chat: release });
+  });
+
+  it('a number the project has not: nobody, and the list of its chats in order', () => {
+    const answer = pickChat(all, '/work/tars', 2);
+    expect(answer.kind).toBe('unknown');
+    expect(answer.kind === 'unknown' && answer.list).toBe(chatListFor('/work/tars', all));
+    expect(pickChat(all, '/work/tars', 9).kind).toBe('unknown');
+  });
+
+  it('a project with no chats: none, so the caller keeps to the orchestrator', () => {
+    expect(pickChat(all, '/work/empty', null)).toEqual({ kind: 'none' });
+    expect(pickChat(all, '/work/empty', 3)).toEqual({ kind: 'none' });
+  });
+
+  it('the list names the project\'s chats only, by number, and how to name one', () => {
+    const list = chatListFor('/work/tars', all);
+    expect(list).toContain('#1 Main');
+    expect(list).toContain('#3 Release 1.9.7');
+    expect(list).not.toContain('Other');
+    expect(list.indexOf('#1 Main')).toBeLessThan(list.indexOf('#3 Release'));
+    expect(list).toMatch(/#N/);
+  });
+});
+
+describe('5. the prefix of what a chat sends', () => {
+  it('names the project as it is written after @, the number and the title', () => {
+    expect(chatTag(chat({ projectPath: '/work/my project', number: 3, title: 'Release 1.9.7' }))).toBe('[my-project #3 Release 1.9.7]');
+  });
+
+  it('carries no break and no bidi control from a title', () => {
+    expect(chatTag(chat({ title: 'a\nb‮c' }))).toBe('[tars #1 a bc]');
+  });
+});
+
+describe('6. the log of what Tars\'s own bot sent for a chat', () => {
+  let dir: string;
+  let file: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-chat-sent-'));
+    file = path.join(dir, 'telegram-sent.json');
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const NOW = Date.parse(at);
+
+  it('finds the chat of a message by its Telegram chat and message id, and no other chat\'s', () => {
+    const log = createChatSentLog(file);
+    log.record({ telegramChatId: '100', messageId: 7, chatId: 'rel' }, NOW);
+    log.record({ telegramChatId: '200', messageId: 7, chatId: 'main' }, NOW);
+    expect(log.chatOf('100', 7, NOW)).toBe('rel');
+    expect(log.chatOf('200', 7, NOW)).toBe('main');
+    expect(log.chatOf('100', 8, NOW)).toBeUndefined();
+    expect(log.chatOf('300', 7, NOW)).toBeUndefined();
+  });
+
+  it('forgets after 7 days', () => {
+    const log = createChatSentLog(file);
+    log.record({ telegramChatId: '100', messageId: 7, chatId: 'rel' }, NOW);
+    expect(log.chatOf('100', 7, NOW + CHAT_SENT_KEPT_MS - 1)).toBe('rel');
+    expect(log.chatOf('100', 7, NOW + CHAT_SENT_KEPT_MS + 1)).toBeUndefined();
+  });
+
+  it('survives a restart, written to the owner alone, without any text', () => {
+    createChatSentLog(file).record({ telegramChatId: '100', messageId: 7, chatId: 'rel' }, NOW);
+    expect(createChatSentLog(file).chatOf('100', 7, NOW)).toBe('rel');
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o077).toBe(0);
+    expect(Object.keys(JSON.parse(fs.readFileSync(file, 'utf-8')).entries[0]).sort()).toEqual(['at', 'chatId', 'messageId', 'telegramChatId']);
+  });
+
+  it('reads an unreadable or foreign file as empty, and does not throw', () => {
+    for (const body of ['{', '[]', '{"entries":"x"}', '{"entries":[{"telegramChatId":1,"messageId":"x","chatId":2,"at":"y"}]}']) {
+      fs.writeFileSync(file, body);
+      expect(createChatSentLog(file).chatOf('1', 1, NOW)).toBeUndefined();
+    }
+  });
+
+  it('keeps the newest entries when it is full', () => {
+    const log = createChatSentLog(file);
+    for (let i = 1; i <= CHAT_SENT_MAX + 5; i += 1) log.record({ telegramChatId: '100', messageId: i, chatId: `c${i}` }, NOW + i);
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8')).entries.length).toBe(CHAT_SENT_MAX);
+    expect(log.chatOf('100', 1, NOW + CHAT_SENT_MAX + 5)).toBeUndefined();
+    expect(log.chatOf('100', CHAT_SENT_MAX + 5, NOW + CHAT_SENT_MAX + 5)).toBe(`c${CHAT_SENT_MAX + 5}`);
+  });
+});
