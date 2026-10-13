@@ -296,8 +296,12 @@ Tars 2.0.0 carries a new interface as a preview, off by default: Settings,
 Preferences, **New interface**. Until you turn it on, Tars looks and works
 exactly as before, and turning it off brings that back at once.
 
+![Settings, Preferences: the New interface row, on, in Settings as a card above the app](screenshots/new-interface-settings.png)
+
 A project keeps its team, and you open several chats in it, each its own
 conversation with the project's orchestrator on one topic.
+
+![A chat's page: its orchestrator hands the test to QA and the fix to the Frontend Engineer, reads their answers and runs the tests, your next words wait in the composer, and the list says 2 of 3 chats are working](screenshots/new-interface-chat.png)
 
 - **The chat list.** The sidebar lists your projects' chats under Pinned,
   Active, Working, Snoozed and Settled, each with its state, and filters them by
@@ -317,6 +321,8 @@ conversation with the project's orchestrator on one topic.
 - **More.** Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings and
   What's New open as cards above the app. Tars, all projects is today's Chat,
   unchanged.
+
+![A project's page: its chats by number, its team and what each agent is on, its terminals and its room](screenshots/new-interface-project.png)
 
 ---
 
