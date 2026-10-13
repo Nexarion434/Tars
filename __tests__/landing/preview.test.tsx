@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PreviewSection } from '../../landing/src/components/PreviewSection';
+import { DEFAULT_APP_SETTINGS, SECTIONS } from '../../src/components/Settings/constants';
 
 /**
  * The landing's section on the preview of 2.0.0 (landing/src/components/
@@ -54,7 +55,7 @@ describe('the landing\'s preview of 2.0.0', () => {
   });
 
   it('says it is off until turned on, as the app\'s default is (2)', () => {
-    expect(read('src/components/Settings/constants.ts')).toMatch(/\bnewInterface:\s*false\b/);
+    expect(DEFAULT_APP_SETTINGS.newInterface).toBe(false);
     expect(shown).toContain('off until you turn it on');
     expect(shown).not.toMatch(/\bon by default\b/i);
   });
@@ -65,9 +66,10 @@ describe('the landing\'s preview of 2.0.0', () => {
     const labels = [...general.slice(0, at).matchAll(/label="([^"]+)"/g)];
     const label = labels[labels.length - 1]?.[1];
     expect(label).toBe('New interface');
-    const section = /\{\s*id:\s*'general',\s*label:\s*'([^']+)'/.exec(read('src/components/Settings/constants.ts'))?.[1];
-    expect(section).toBe('Preferences');
-    expect(shown).toContain(`Settings, ${section}, ${label}.`);
+    // The page GeneralSection draws, as Settings lists it: Preferences, under General.
+    const page = SECTIONS.find(s => s.id === 'general')?.label;
+    expect(page).toBe('Preferences');
+    expect(shown).toContain(`Settings, ${page}, ${label}.`);
   });
 
   it('sits once on the home page, between What it does and How it works (4)', () => {
