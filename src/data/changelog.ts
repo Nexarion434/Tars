@@ -11,6 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.6',
     date: '2026-10-12',
     updates: [
+      'A Claude Code run from inside an agent\'s own terminal, such as a `claude -p` its Bash tool starts, no longer takes over the agent: it registered as the agent\'s session, its answer marked the agent done, the agent\'s real session was then ignored, and a restart resumed the wrong conversation. Tars now takes a session only from the Claude Code it launched in that terminal.',
       'On the Extensions page, every install count reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
       'An orchestrator\'s message or delegation is sent once, even when its call to Tars timed out and was made again: each one now carries an id, and a send Tars already made is answered as it was the first time, with nothing typed or started twice. The same id with another message is refused. Tars keeps these receipts for 24 hours in ~/.tars-private, with ids and outcomes only, never what the message said.',
       'An orchestrator can choose how its message goes in: at once as before, after the agent\'s current turn, by interrupting that turn first (Claude agents only), or by restarting the agent with it. Interrupting or restarting an agent while it works on another agent\'s request is refused, and so is restarting one that holds another agent\'s request in its queue.',
