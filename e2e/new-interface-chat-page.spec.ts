@@ -110,7 +110,7 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface: true }));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31451), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31449), DOROTHY_E2E: '1' },
   });
   const pageErrors: string[] = [];
   const seen: Record<string, unknown> = {};
