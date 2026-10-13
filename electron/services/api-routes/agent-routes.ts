@@ -30,7 +30,7 @@ import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff } from '../task-ledger';
-import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart } from '../../core/task-requests';
+import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
 import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
@@ -44,7 +44,7 @@ import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/age
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
-import { chatIdentityOf } from '../../core/chat-identity';
+import { chatIdentityOf, chatOfAsker, orchestratorMoved } from '../../core/chat-identity';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -1407,6 +1407,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const demoted = assignRole(agent, role, agents.values());
     agents.set(id, agent);
     saveAgents();
+    // An orchestrator made here: its project's Main follows it (core/chat-identity.ts).
+    orchestratorMoved();
     for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
     announceAgent(agent);
     sendJson({ agent });
@@ -1489,7 +1491,13 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
       // Never across another asker's work: it would cut it (core/task-requests.ts).
       if ((mode === 'steer' && !mayInterrupt(agent, asker)) || (mode === 'restart' && !mayRestart(agent, asker))) {
-        send({
+        // Another chat's work, by its name: no chat cuts another's (ORCHESTRATOR-PER-CHAT.md 4.3, M1).
+        const otherChat = chatOfAsker(cutWorkOf(agent, asker, mode));
+        send(otherChat ? {
+          error: `${name} is working on, or holds, a task from the chat ${envelopeValue(otherChat.title)} (#${otherChat.number}): a ${mode} would cut it, and no chat cuts another's work. Send it with mode 'queue', or tell the user.`,
+          code: 'worker_busy_for_other_chat',
+          chat: { title: otherChat.title, number: otherChat.number },
+        } : {
           error: `${name} is working on, or holds, a task another agent asked for: a ${mode} would cut it. Send it with mode 'queue', or ask that agent.`,
           code: 'worker_busy_for_other_requester',
         }, 409);

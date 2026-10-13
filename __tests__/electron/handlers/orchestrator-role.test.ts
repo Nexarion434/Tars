@@ -17,6 +17,18 @@ import * as path from 'node:path';
  * restart; only node-pty is replaced, by a terminal that records what is typed
  * into it and whose foreground can be set (`bash` at a shell, the version
  * number while claude runs).
+ *
+ * A chat's runner, from the window (the Audit's M1 and M2 on #379, written
+ * before the fixes, 2026-10-13):
+ * M2. agent:update refuses nothing on a runner: the toggle makes it the
+ *     project's orchestrator and demotes the real one, a project change
+ *     detaches its worktree, a launch setting is undone at its next send. Its
+ *     settings are the orchestrator's: every edit of it is refused, and the
+ *     orchestrator keeps the role.
+ * M1. A Start from the window calls the launch itself, past the slot gate: a
+ *     runner starts over the RAM's limit, and the window's words are kept as
+ *     its brief. The start takes the gate, a refused one opens nothing and
+ *     says why, and a runner's words are a turn.
  */
 
 const { tmpHome } = vi.hoisted(() => ({
@@ -84,6 +96,7 @@ import { spawnAgentPty } from '../../../electron/core/agent-pty';
 import { resetResumeTracking } from '../../../electron/utils/resume-session';
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
 import { resetAgentWatch } from '../../../electron/services/agent-watch';
+import { setSlotGate } from '../../../electron/core/agent-launch';
 import { getSuperAgentInstructionsPath, isSuperAgent } from '../../../electron/utils';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
@@ -509,5 +522,47 @@ describe('skill names, for every agent (gate of #204)', () => {
     expect(created.skills).toEqual(['vercel:nextjs', '@acme/ship', 'copywriting']);
     expect(await update({ id: created.id, skills: ['frontend-design'] })).toMatchObject({ success: true });
     expect(await update({ id: created.id, name: 'Still ok' })).toMatchObject({ success: true });
+  });
+});
+
+describe("a chat's runner, from the window (the Audit's M1 and M2 on #379)", () => {
+  const runnerFields = (): Partial<AgentStatus> => ({
+    role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'lead', savedPrompt: "the lead's brief",
+    worktreePath: path.join(project, '.worktrees', 'chat-0000aaaa'), branchName: 'chat/0000aaaa',
+  });
+  afterEach(() => setSlotGate(undefined));
+
+  it("M2. every edit of a runner is refused: its settings are the orchestrator's, who keeps the role", async () => {
+    record('lead', { role: 'orchestrator', orchestratorMode: true });
+    const runner = record('runner', runnerFields());
+    const before = { ...runner };
+    for (const change of [
+      { role: 'orchestrator' }, { orchestratorMode: true }, { projectPath: otherProject }, { model: 'claude-sonnet-5-5' },
+      { permissionMode: 'normal' }, { provider: 'codex' }, { effort: 'low' }, { skills: [] }, { savedPrompt: 'mine' }, { name: 'Renamed' },
+    ]) {
+      const answer = await update({ id: 'runner', ...change });
+      expect(answer, JSON.stringify(change)).toMatchObject({ success: false });
+      expect(answer.error, JSON.stringify(change)).toMatch(/runs a chat/);
+    }
+    expect(agents.get('lead')!.role).toBe('orchestrator');
+    expect(agents.get('runner')).toMatchObject({
+      role: before.role, kind: 'chat', projectPath: before.projectPath, worktreePath: before.worktreePath, model: before.model,
+      permissionMode: before.permissionMode, provider: before.provider, effort: before.effort, savedPrompt: before.savedPrompt, name: before.name,
+    });
+  });
+
+  it('M1. a start takes the slot gate: refused, it opens nothing and says why', async () => {
+    record('runner', runnerFields());
+    setSlotGate(async () => ({ ok: false, error: '2 chats are already working, the most this Mac runs at once.' }));
+    const answer = await handlers.get('agent:start')!({}, { id: 'runner', prompt: 'hello', options: {} });
+    expect(answer).toEqual({ success: false, error: '2 chats are already working, the most this Mac runs at once.' });
+    expect(spawned).toHaveLength(0);
+  });
+
+  it("M1. a runner started from the window keeps its brief: the window's words are a turn", async () => {
+    const runner = record('runner', runnerFields());
+    fs.mkdirSync(runner.worktreePath!, { recursive: true });
+    await settled(handlers.get('agent:start')!({}, { id: 'runner', prompt: 'hello from the window', options: {} }) as Promise<unknown>);
+    expect(runner.savedPrompt).toBe("the lead's brief");
   });
 });

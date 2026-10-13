@@ -76,6 +76,14 @@
  *     conversation (a provider other than claude): each send would start a
  *     new one, so it is refused at creation, with the reason. Main stays.
  * 35. A runner's chat cannot be found from the runner.
+ * Main follows the project's orchestrator (the orchestrator's decision of 2026-10-13: Main is the project's
+ * persistent orchestrator; written before the code):
+ * 36. The orchestrator role moves to another agent, and Main keeps naming the former one: its sends answer
+ *     runner_mismatch for ever.
+ * 37. The rebind loses Main's sessions, does not make the new orchestrator's conversation its current one (the
+ *     last), or adds a session it already has.
+ * 38. It rebinds a chat other than Main, another project's Main, or brings back a Main the user deleted.
+ * 39. It writes when Main already runs on the orchestrator, or does not say what it rebound.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -677,5 +685,50 @@ describe("the chats' runners (PR D)", () => {
     expect(store.chatOfRunner('run-2')?.id).toBe(made.id);
     expect(store.chatOfRunner('o1')?.number).toBe(1);
     expect(store.chatOfRunner('nobody')).toBeUndefined();
+  });
+});
+
+describe("Main follows the project's orchestrator (the orchestrator's decision, 2026-10-13)", () => {
+  it("36, 37, 39. rebinds Main to the new orchestrator, keeps the former's sessions, takes the new conversation last, and says so", () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    const id = main(store).id;
+    t += 60_000;
+    expect(store.followOrchestrators([orch({ id: 'o9', resumableSessionId: SESSION_B })]))
+      .toEqual([{ chatId: id, projectPath: projA, from: 'o1', to: 'o9' }]);
+    expect(main(store)).toMatchObject({ runnerId: 'o9', sessionIds: [SESSION_A, SESSION_B], number: 1, title: 'Main', inbox: true });
+    expect(main(store).updatedAt).toBe(new Date(t).toISOString());
+    expect(open().get(id)).toMatchObject({ runnerId: 'o9', sessionIds: [SESSION_A, SESSION_B] });
+  });
+
+  it('37. a new orchestrator with no conversation yet leaves the sessions as they were; one Main already has is not added twice', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    store.followOrchestrators([orch({ id: 'o9', resumableSessionId: undefined })]);
+    expect(main(store)).toMatchObject({ runnerId: 'o9', sessionIds: [SESSION_A] });
+    store.followOrchestrators([orch({ id: 'o1', resumableSessionId: SESSION_A })]);
+    expect(main(store)).toMatchObject({ runnerId: 'o1', sessionIds: [SESSION_A] });
+  });
+
+  it("38. touches no other chat and no other project's Main, and never brings back a Main the user deleted", () => {
+    const store = open();
+    store.ensureMains([orch(), orchB()]);
+    const two = ok(store.create({ projectPath: projA, title: 'Two' }, [orch(), orchB()]));
+    ok(store.setRunner(two.id, 'run-2'));
+    store.followOrchestrators([orch({ id: 'o9' }), orchB()]);
+    expect(store.get(two.id)?.runnerId).toBe('run-2');
+    expect(main(store, projB).runnerId).toBe('o2');
+    ok(store.setInbox(two.id));
+    expect(store.remove(main(store).id, () => [])).toEqual({ success: true });
+    expect(store.followOrchestrators([orch({ id: 'o7' })])).toEqual([]);
+    expect(chats(store).filter((c) => c.projectPath === projA).map((c) => c.number)).toEqual([2]);
+  });
+
+  it('39. writes nothing when Main already runs on the orchestrator', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    const before = bytes();
+    expect(store.followOrchestrators([orch()])).toEqual([]);
+    expect(bytes()).toEqual(before);
   });
 });

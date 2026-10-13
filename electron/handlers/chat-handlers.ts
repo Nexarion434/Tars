@@ -6,6 +6,7 @@ import { agentStatusEmitter } from '../services/agent-events';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
 import { chatsWorking, isLive, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
 import { getProvider } from '../providers';
+import { setOrchestratorFollower } from '../core/chat-identity';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
 
@@ -81,9 +82,21 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     if (agent?.resumableSessionId) store.noteSession(agent.id, agent.resumableSessionId);
   };
 
+  // Main is the project's persistent orchestrator: when the role moves to
+  // another agent, Main's record moves with it, its sessions kept as history
+  // (the orchestrator's decision of 2026-10-13). Logged, each one.
+  const followTheOrchestrators = (): void => {
+    for (const moved of store.followOrchestrators(orchestrators())) {
+      const name = (id: string | null) => (id ? agents.get(id)?.name || id : 'nobody');
+      console.log(`[chats] Main of ${moved.projectPath} follows the project's orchestrator: ${name(moved.from)} to ${name(moved.to)}`);
+    }
+  };
+  setOrchestratorFollower(followTheOrchestrators);
+
   // The migration, at the launch (4.6), then any session registered while
   // Tars was not running to see it: both write only what is new.
   store.ensureMains(orchestrators());
+  followTheOrchestrators();
   for (const id of agents.keys()) mirror(id);
   agentStatusEmitter.on('fleet-change', mirror);
   startChatRunners(store);
@@ -91,6 +104,7 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
   ipcMain.handle('chat:list', () => {
     // A project whose orchestrator was set since the launch gets its Main now.
     store.ensureMains(orchestrators());
+    followTheOrchestrators();
     const { seq, chats } = store.list();
     return { seq, chats: chats.map(view), problem: store.problem() };
   });

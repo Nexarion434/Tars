@@ -133,6 +133,12 @@ export interface ChatStore {
   get(chatId: unknown): Chat | undefined;
   /** The migration: Main for each project with an orchestrator that never had chats. Returns what it made. */
   ensureMains(orchestrators: OrchestratorFacts[]): Chat[];
+  /**
+   * Main follows the project's orchestrator, the persistent one: a Main whose runner is not it any more is
+   * rebound to it, its sessions kept as history and the orchestrator's conversation added last. Returns what it
+   * rebound; writes nothing when nothing moved.
+   */
+  followOrchestrators(orchestrators: OrchestratorFacts[]): MainRebound[];
   create(input: { projectPath?: unknown; title?: unknown }, orchestrators: OrchestratorFacts[]): Chat | ChatError;
   rename(chatId: unknown, title: unknown): Chat | ChatError;
   pin(chatId: unknown, pinned: unknown): Chat | ChatError;
@@ -452,6 +458,28 @@ export function createChatStore(opts: {
       return made.map(copy);
     },
 
+    followOrchestrators(orchestrators) {
+      if (!writable) return [];
+      const next = clone();
+      const moved: MainRebound[] = [];
+      for (const chat of next.chats) {
+        if (chat.number !== 1) continue;
+        const lead = orchestratorOf(chat.projectPath, orchestrators.filter((o) => !!o && typeof o.id === 'string' && AGENT_ID.test(o.id)));
+        if (!lead || lead.id === chat.runnerId) continue;
+        moved.push({ chatId: chat.id, projectPath: chat.projectPath, from: chat.runnerId, to: lead.id });
+        chat.runnerId = lead.id;
+        if (isSessionId(lead.resumableSessionId) && !chat.sessionIds.includes(lead.resumableSessionId)) chat.sessionIds.push(lead.resumableSessionId);
+        chat.updatedAt = iso();
+      }
+      if (!moved.length) return [];
+      const failed = commit(next);
+      if (failed) {
+        report({ kind: 'write_failed', detail: `Main could not follow the orchestrator of ${moved.length} project(s): ${failed.reason}` });
+        return [];
+      }
+      return moved;
+    },
+
     create(input, orchestrators) {
       if (!writable) return unavailable();
       // The project's Main first, when its orchestrator came after the launch.
@@ -572,6 +600,14 @@ export function createChatStore(opts: {
 
   load();
   return store;
+}
+
+/** A Main rebound to its project's orchestrator (followOrchestrators). */
+export interface MainRebound {
+  chatId: string;
+  projectPath: string;
+  from: string | null;
+  to: string;
 }
 
 /** A member of the fleet, as the work a chat has out reads it (AgentStatus has these). */
