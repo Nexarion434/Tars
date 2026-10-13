@@ -50,6 +50,25 @@ import { sessionModel, withSessionTruth, clearAgentTruthCache, pendingBackground
  *    tool output after it): the model reads as none.
  * 3. A line cut at the start of what is read is taken for a whole one.
  * 4. A file that has not changed is read again when the 5 s run out.
+ * And the background work a session left running (the Low logged after the
+ * 2.0.0 chain, 13/10: Tars told requesters, at every end of an agent's turn,
+ * that tasks finished hours before were still running), written before the
+ * code:
+ * 6. A task that ends while a turn runs has its note recorded, by claude
+ *    2.1.296, as an attachment of type queued_command (its prompt the
+ *    <task-notification>), with a queue-operation enqueue beside it: never as
+ *    a user line. Read only from user lines, it stays running for ever.
+ * 7. Either of the two alone (an enqueue whose attachment never came, the
+ *    note removed from the queue before the next turn) is not taken as the
+ *    task's end.
+ * 8. A note quoted in a tool's output (a transcript read, a file shown) ends
+ *    the task it names.
+ * 9. (GATE-PR389, L1) A message typed in during the turn (an attachment of
+ *    commandMode 'prompt', an enqueue that reads "Message from ...") that
+ *    quotes a completed note for this agent's running task ends it: only a
+ *    note Claude Code queued itself (commandMode 'task-notification', a
+ *    content that is the note) does.
+ *
  * 5. A character of several bytes cut at the start of what is read garbles
  *    the model's name.
  */
@@ -203,6 +222,56 @@ describe('work a session left running in the background', () => {
   it('ignores what an earlier process started: a forked transcript copies it with the old times', () => {
     writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', -30), result('t1', -29, { backgroundTaskId: 'from-before' })]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+  });
+
+  /** A note that came during a turn, as claude 2.1.296 writes it: queued, then attached to the turn. */
+  const notice = (taskId: string, status: string) => `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n<status>${status}</status>\n<summary>Background command "sleep 25" completed (exit code 0)</summary>\n</task-notification>`;
+  const enqueued = (taskId: string, s: number, status = 'completed') =>
+    JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(s), sessionId: SESSION, content: notice(taskId, status) });
+  const attached = (taskId: string, s: number, status = 'completed') =>
+    JSON.stringify({ type: 'attachment', timestamp: at(s), sessionId: SESSION, attachment: { type: 'queued_command', prompt: notice(taskId, status), commandMode: 'task-notification' } });
+
+  it('6. takes a note that came during a turn as the end of its task', () => {
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bmid0turn' }), enqueued('bmid0turn', 40), attached('bmid0turn', 41)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+  });
+
+  it('7. takes either of its two records alone as the end', () => {
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bq1' }), enqueued('bq1', 40)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'ba1' }), attached('ba1', 41)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+    // A Monitor's event, queued during a turn, still carries no end: as claude
+    // writes it, a summary and an <event>, no status (GATE-PR389, L2).
+    const event = `<task-notification>\n<task-id>bmon</task-id>\n<summary>Monitor event: "gate steps"</summary>\n<event>EXIT=0</event>\n</task-notification>`;
+    writeTranscript(PROJECT, SESSION, [
+      call('m1', 'Monitor', 5), result('m1', 6, { taskId: 'bmon' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: event }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: event, commandMode: 'task-notification' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bmon']);
+  });
+
+  it('9. does not take a typed message that quotes a completed note as an end', () => {
+    const typed = `Message from agent "Lead" ("o1"): the log said\n${notice('bquoted', 'completed')}\nis it done?`;
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bquoted' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: typed }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: typed, commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bquoted']);
+    // A note pasted as the whole message: its mode alone says it was typed.
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bpasted' }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: notice('bpasted', 'completed'), commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bpasted']);
+  });
+
+  it('8. does not take a note quoted in a tool\'s output as an end', () => {
+    const quoted = JSON.stringify({ type: 'user', timestamp: at(30), message: { content: [{ type: 'tool_result', tool_use_id: 'r1', content: notice('bstill', 'completed') }] } });
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bstill' }), quoted]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bstill']);
   });
 
   it('does not take a task id from any other tool for background work', () => {

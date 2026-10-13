@@ -43,6 +43,9 @@ import { hasPosixModes } from '../../setup/platform-limits';
  *     saying for what.
  * 16. (ORCHESTRATOR-PER-CHAT.md 4.2, PR D, written before the code on 2026-10-12) A chat's runner, a worker with
  *     `kind: 'chat'` and the orchestrator's powers, is refused as a worker.
+ * 17. (4.6, PR F; written after its wiring, shown to bite by a mutant) A chat's question goes out without its chat,
+ *     so the user cannot tell which conversation asks; or the answer to a chat whose runner has gone to sleep is
+ *     dropped ("no session running") instead of waking that chat with it, within the chats' limit.
  */
 
 /** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
@@ -81,6 +84,15 @@ vi.mock('electron', () => ({
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
 }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+/** What went to a chat through chat:send's path (17). */
+const toChat = vi.hoisted(() => [] as Array<{ chatId: unknown; text: unknown; opts: unknown }>);
+vi.mock('../../../electron/services/chat-runners', async (original) => ({
+  ...(await original<object>()),
+  sendToChat: vi.fn(async (chatId: string, text: string, opts: unknown) => {
+    toChat.push({ chatId, text, opts });
+    return { success: true, chatId, runnerId: 'run-3', how: 'launched' };
+  }),
+}));
 
 import type { AgentStatus } from '../../../electron/types';
 
@@ -394,5 +406,30 @@ describe('across a restart', () => {
     await answer('Use the staging database.', T0 + 1000, asked);
     await settle();
     expect(all('a1')).toContain('Use the staging database.');
+  });
+});
+
+describe('a chat asks (PR F)', () => {
+  it('17. the question is headed by its chat, and the answer wakes its runner once asleep', async () => {
+    const runner = agent('run-3', 'Lead · Release', { role: 'worker' });
+    Object.assign(runner, { kind: 'chat', chatId: 'c3' });
+    const { setChatLookups } = await import('../../../electron/core/chat-inbox');
+    setChatLookups({
+      inbox: () => null,
+      chatRunBy: (id) => (id === 'run-3' ? { id: 'c3', projectPath: PROJECT, number: 3, title: 'Release' } : undefined),
+    });
+    toChat.length = 0;
+    expect((await q.askUser({ agentId: 'run-3', question: 'Ship 1.9.7 tonight?' }, T0)).ok).toBe(true);
+    expect(questions().at(-1)!.text.startsWith('[tars #3 Release]\nQuestion from Lead')).toBe(true);
+
+    // Its CLI ends and it sleeps, its conversation kept.
+    runner.status = 'asleep';
+    ptyProcesses.delete('pty-run-3');
+    runner.ptyId = undefined;
+    await answer('Yes, ship it.', T0 + 60_000);
+    await settle();
+    expect(toChat).toEqual([{ chatId: 'c3', text: `Answer to the question you asked at ${new Date(T0).toTimeString().slice(0, 5)}:\nYes, ship it.`, opts: { sender: { kind: 'user', via: 'Telegram' } } }]);
+    expect(notices().at(-1)).toMatch(/^Passed to Lead · Release\.$/);
+    setChatLookups(undefined);
   });
 });
