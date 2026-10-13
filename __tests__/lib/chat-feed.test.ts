@@ -30,6 +30,14 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  * 12. an earlier page holding an older telling of a line told again live
  *     puts the older words back (C8);
  * 13. a first line at n = 1 is read as having nothing before it (C9).
+ *
+ * Written before the change, from the same gate (L3):
+ * 14. a snapshot read again after a gap drops the earlier pages read
+ *     before it, though its lines reach them, and the thread jumps;
+ * 15. lines kept from before a re-read leave a hole when the re-read
+ *     starts past them;
+ * 16. an earlier page asked from a first line that a re-read has since
+ *     moved is merged, leaving a hole between it and the new lines.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -94,7 +102,7 @@ describe('chat feed', () => {
 
   it('adds an earlier page before the first line, once, and keeps the seq (8)', () => {
     let s = applySnapshot(emptyFeed('c1'), history(10, [item(2), item(3)], 4));
-    s = applyEarlier(s, history(10, [item(0), item(1), item(2)], 4));
+    s = applyEarlier(s, history(10, [item(0), item(1), item(2)], 4), 2);
     expect(s.items.map(i => i.n)).toEqual([0, 1, 2, 3]);
     expect(s.seq).toBe(10);
     expect(s.hasEarlier).toBe(false);
@@ -136,11 +144,42 @@ describe('chat feed', () => {
   it('keeps the newer telling of a line when an earlier page holds an older one (12)', () => {
     let s = applySnapshot(emptyFeed('c1'), history(10, [item(2, 'first telling', 'u2'), item(3)], 4));
     s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(2, 'told again', 'u2') }));
-    s = applyEarlier(s, history(11, [item(0), item(1), item(2, 'first telling', 'u2')], 4));
+    s = applyEarlier(s, history(11, [item(0), item(1), item(2, 'first telling', 'u2')], 4), 2);
     expect(texts(s)).toEqual(['line 0', 'line 1', 'told again', 'line 3']);
   });
 
   it('says there is a line before a first line at n = 1 (13)', () => {
     expect(applySnapshot(emptyFeed('c1'), history(10, [item(1), item(2)], 3)).hasEarlier).toBe(true);
+  });
+
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => item(from + i));
+  const places = (s: ReturnType<typeof emptyFeed>) => s.items.map(i => i.n);
+
+  it('keeps the earlier pages read when a snapshot read again after a gap reaches them (14)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, range(5, 9), 10));
+    s = applyEarlier(s, history(10, range(0, 4), 10), 5);
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(11) }));
+    expect(s.stale).toBe(true);
+    s = applySnapshot(s, history(14, range(7, 12), 13));
+    expect(places(s)).toEqual(range(0, 12).map(i => i.n));
+    expect(s.hasEarlier).toBe(false);
+    expect(s.stale).toBe(false);
+  });
+
+  it('starts over when a snapshot read again begins past the lines held, leaving no hole (15)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, range(0, 9), 10));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(11) }));
+    s = applySnapshot(s, history(30, range(15, 20), 21));
+    expect(places(s)).toEqual(range(15, 20).map(i => i.n));
+    expect(s.hasEarlier).toBe(true);
+  });
+
+  it('drops an earlier page asked from a first line a re-read has since moved (16)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, range(5, 9), 10));
+    // Show earlier asks from line 5; a gap's re-read starts past the lines held, at 12.
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(11) }));
+    s = applySnapshot(s, history(30, range(12, 20), 21));
+    s = applyEarlier(s, history(30, range(0, 4), 21), 5);
+    expect(places(s)).toEqual(range(12, 20).map(i => i.n));
   });
 });
