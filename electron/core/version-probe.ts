@@ -17,8 +17,12 @@ import { resolveCliBinary, killTree } from '../platform';
 
 const running = new Set<ChildProcess>();
 
-/** The probe's whole group, then the probe itself should it have left it. */
-function end(child: ChildProcess): void {
+/**
+ * The probe's whole group, then the probe itself should it have left it. Also
+ * for the other short commands Tars runs in a group of their own so the quit
+ * ends them (claude-accounts/auth.ts).
+ */
+export function endProbe(child: ChildProcess): void {
   if (child.pid === undefined) return;
   // Windows has no process groups: taskkill /T ends the probe and what it
   // started, while the probe runs. Once Node has read its exit, its id is free
@@ -48,7 +52,7 @@ export function probeVersion(
   const cli = resolveCliBinary(binary, env, process.platform);
   if (!cli.ok) return Promise.reject(new Error(cli.detail));
   return new Promise((resolve, reject) => {
-    // detached: a group of its own, which end() can signal whole; a timeout on
+    // detached: a group of its own, which endProbe() can signal whole; a timeout on
     // the binary alone would leave what it started running. Not on Windows,
     // where it would open a console of its own and taskkill ends the tree.
     const child = spawn(cli.file, [...cli.prefixArgs, '--version'], {
@@ -60,11 +64,11 @@ export function probeVersion(
     child.stdout?.on('data', d => { stdout += String(d); });
     child.stderr?.on('data', d => { stderr += String(d); });
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; end(child); }, timeoutMs);
+    const timer = setTimeout(() => { timedOut = true; endProbe(child); }, timeoutMs);
     const settle = (err: Error | null) => {
       clearTimeout(timer);
       if (!running.delete(child) && !err) err = new Error(`${binary} --version was ended by the quit`);
-      end(child);
+      endProbe(child);
       if (err) reject(err);
       else resolve({ stdout, stderr });
     };
@@ -79,6 +83,6 @@ export function probeVersion(
 
 /** Ends every probe still running and what it started. For the quit. */
 export function endVersionProbes(): void {
-  for (const child of running) end(child);
+  for (const child of running) endProbe(child);
   running.clear();
 }

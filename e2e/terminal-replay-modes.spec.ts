@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -175,7 +175,7 @@ test('a panel remounted after a long turn, and the agent window, still send the 
     expect.soft(windowPaste, 'a paste into the agent window').toBe(`\x1b[200~${TYPED}\x1b[201~`);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
 

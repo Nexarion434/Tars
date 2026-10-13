@@ -9,10 +9,12 @@ import { OptionRow, OPTION_CONTROL_WIDTH } from './OptionsRow';
 import { SkillsField } from './SkillsField';
 import OrchestratorModeToggle from './OrchestratorModeToggle';
 import { EFFORT_LEVELS } from './logic';
+import { hasPlanMode, noPlanReason } from '@/lib/plan-mode';
 
 const EFFORT_OPTIONS: SegmentedOption<AgentEffort>[] = EFFORT_LEVELS.map(level => ({ value: level, label: level }));
 
 const PERMISSION_OPTIONS: SegmentedOption<AgentPermissionMode>[] = [
+  { value: 'plan', label: 'plan', title: 'Reads and plans, edits nothing' },
   { value: 'normal', label: 'manual', title: 'Asks before each tool' },
   { value: 'auto', label: 'auto', title: 'Autonomous - recommended' },
   { value: 'bypass', label: 'bypass', title: 'Skips all restrictions' },
@@ -94,11 +96,13 @@ export function AgentOptionsBody(props: {
         />
       </OptionRow>
 
-      <OptionRow label="Permissions" hint="Manual asks before each tool. Bypass skips every check.">
+      <OptionRow label="Permissions" hint="Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.">
         <SegmentedControl
           className="font-mono"
           ariaLabel="Permission mode"
-          options={PERMISSION_OPTIONS}
+          options={PERMISSION_OPTIONS.map(option => (option.value === 'plan' && !hasPlanMode(props.provider)
+            ? { ...option, disabled: true, title: noPlanReason(props.provider) }
+            : option))}
           value={props.permissionMode}
           onChange={props.onPermissionModeChange}
         />
