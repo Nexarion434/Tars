@@ -381,7 +381,7 @@ The contract is documented at the head of `electron/services/api-routes/hooks-ro
 - Only `session-start.sh` sends a `source` field. A post carrying `source` **registers** the session and never touches status: its startup `"idle"` would otherwise resolve the orchestrator's long-poll before the task began.
 - `/api/hooks/status` refuses with a 400 a `session_id` that is not a UUID, the shape Claude Code and Gemini CLI give their sessions: the registered id becomes a transcript file name and a `--resume` argument, and `../../x` was registered until 1.9.0. On the other hook routes such an id is no proof of ownership, so the post is stale wherever there is an owner.
 - Any post whose `session_id` equals `lastKilledSessionId` is dropped; any post whose `session_id` differs from the registered `currentSessionId` is dropped as stale. `currentSessionId` is *not* cleared on idle: the one-shot process is still alive at its prompt and its later hooks must keep matching.
-- Fallback: if `SessionStart` never arrived (API briefly down at boot), the first non-tombstoned session that reports in is adopted.
+- Fallback: if `SessionStart` never arrived (API briefly down at boot), the first non-tombstoned session that reports in is adopted, when its hooks name the terminal's own CLI (`X-Tars-Cli-Pid`; a post that names no CLI as before). A post from another CLI, a `claude -p` the agent's Bash tool started, is answered `stale` and drives nothing: not the session, not the turn, not the status. When the process table must be read to tell, the post waits for its answer before anything moves (the Audit's L4 and L5 on #380).
 
 ### The state mod
 
