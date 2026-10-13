@@ -108,6 +108,21 @@ export function offClaudeRefusal(chatNumber: number, leadRunsChats: boolean | un
   return runnerLive ? `${OFF_CLAUDE} ${OFF_CLAUDE_RUNNING}` : OFF_CLAUDE;
 }
 
+/**
+ * Whether a full limit looks at a runner again, a little later, rather than
+ * answering chat_limit: its refusal passes by itself. A Stop hook's process
+ * still under the CLI (busy), a process table that did not come, a message
+ * Tars has just typed in settling, and a start on its way (2.0.2: a runner
+ * restarting with no prompt, to follow a new orchestrator, is idle a moment
+ * later; one started with a message is then in its turn, and refuses). Never
+ * Main, which never sleeps, nor a runner being started for the send in hand.
+ */
+export function looksAgain(c: { isMain: boolean; refusal: string | null; settlesInMs?: number; forSend?: boolean }): boolean {
+  if (c.isMain || c.forSend) return false;
+  return c.refusal === 'busy' || c.refusal === 'no-process-table' || c.refusal === 'starting'
+    || (c.refusal === 'field' && c.settlesInMs !== undefined);
+}
+
 /** What a send answers when every slot holds a chat that is working (JeanBrasse, 07/10: an error the user sees). */
 export function chatLimitSentence(limit: number, ramGb: number, perChatGb: number, working: string[]): string {
   const one = limit === 1;
