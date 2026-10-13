@@ -177,9 +177,10 @@ function syncWithLead(runner: AgentStatus, lead: AgentStatus, chat: Chat): void 
 }
 
 type Git = { code: number; stdout: string; stderr: string };
+/** In the C locale: worktreeAddRefusal reads git's "fatal:" and "error:", which a translated git would not write. */
 function git(cwd: string, args: string[]): Promise<Git> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', args, { cwd, env: { ...process.env, LC_ALL: 'C' }, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as NodeJS.ErrnoException & { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
     });
