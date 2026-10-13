@@ -655,6 +655,25 @@ const FILES: Array<{
 /**
  * Initialize Telegram bot and set up handlers
  */
+/**
+ * The Bot API's address: Telegram's, or, for the E2E alone, a stand-in on the
+ * loopback (DOROTHY_TELEGRAM_API_URL, read only when DOROTHY_E2E=1, as
+ * TARS_CHAT_RAM_GB is). Anything else is ignored: the bot's token travels in
+ * every request's path.
+ */
+export function telegramApiOverride(env: Record<string, string | undefined>): { baseApiUrl?: string } {
+  const raw = env.DOROTHY_E2E === '1' ? env.DOROTHY_TELEGRAM_API_URL?.trim() : undefined;
+  if (!raw) return {};
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password && url.pathname === '/') {
+      return { baseApiUrl: `http://127.0.0.1:${url.port}` };
+    }
+  } catch { /* not a URL */ }
+  console.warn('[telegram] DOROTHY_TELEGRAM_API_URL is not http://127.0.0.1:<port>, and is ignored');
+  return {};
+}
+
 export function initTelegramBot() {
   // Stop existing bot if any
   if (telegramBot) {
@@ -675,7 +694,7 @@ export function initTelegramBot() {
   authMisses = [];
 
   try {
-    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true, ...telegramApiOverride(process.env) });
     console.log('Telegram bot started');
 
     // Fetch and cache bot username for mention detection
