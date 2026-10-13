@@ -108,7 +108,7 @@ describe('5. the prefix of what a chat sends', () => {
   });
 
   it('carries no break and no bidi control from a title', () => {
-    expect(chatTag(chat({ title: 'a\nb‮c' }))).toBe('[tars #1 a bc]');
+    expect(chatTag(chat({ title: 'a\nb\u202Ec' }))).toBe('[tars #1 a bc]');
   });
 });
 
