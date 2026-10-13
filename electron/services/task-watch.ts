@@ -4,6 +4,7 @@ import { agents } from '../core/agent-manager';
 import { agentStatusEmitter } from './agent-events';
 import { pendingBackgroundWork } from './agent-truth';
 import { createTaskLedger, endingOf, setLiveTaskLedger, liveTaskLedger, type TaskRecord } from './task-ledger';
+import { tellDelegationCut } from './agent-watch';
 import { readTaskCosts, selectTasks, taskReport, withDescendants, type TaskQuery, type TaskReport } from './task-cost';
 
 /**
@@ -16,6 +17,8 @@ import { readTaskCosts, selectTasks, taskReport, withDescendants, type TaskQuery
 export const TASK_LEDGER_FILE = path.join(DATA_DIR, 'task-ledger.jsonl');
 /** Each task's text, where no agent is handed it (JeanBrasse's answer of 2026-10-05). */
 export const TASK_TEXT_FILE = privatePath('task-texts.jsonl');
+/** What each delegated run answered, beside the texts (PR B, 4.4 item 3). */
+export const TASK_RESULT_FILE = privatePath('task-results.jsonl');
 
 function onFleetChange(agentId: string): void {
   const ledger = liveTaskLedger();
@@ -34,11 +37,12 @@ function onFleetChange(agentId: string): void {
   ledger.stateChanged(agent, { backgroundLeft });
 }
 
-export function startTaskWatch(file = TASK_LEDGER_FILE, textFile = TASK_TEXT_FILE): void {
+export function startTaskWatch(file = TASK_LEDGER_FILE, textFile = TASK_TEXT_FILE, resultFile = TASK_RESULT_FILE): void {
   if (liveTaskLedger()) return;
-  setLiveTaskLedger(createTaskLedger({
+  const ledger = createTaskLedger({
     file,
     textFile,
+    resultFile,
     // As recordRequester has it (#302): a sender writing to the agent that
     // handed it its work, or to its project's orchestrator, reports.
     leads: (receiverId, senderId) => {
@@ -48,7 +52,12 @@ export function startTaskWatch(file = TASK_LEDGER_FILE, textFile = TASK_TEXT_FIL
       return sender.requestedBy?.agentId === receiverId
         || (receiver.role === 'orchestrator' && receiver.projectPath === sender.projectPath);
     },
-  }));
+  });
+  setLiveTaskLedger(ledger);
+  // The delegations a quit cut: each asker told, once.
+  for (const task of ledger.interruptedAtStart()) {
+    if (task.requesterAgentId) tellDelegationCut(task.requesterAgentId, task.agentId, task.text);
+  }
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }
 

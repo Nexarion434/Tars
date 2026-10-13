@@ -136,15 +136,17 @@ export function bearer(token) {
 }
 
 /** The Authorization header of a post: none at all for a null token, as curl sends none when tars_auth prints nothing. */
-export function authHeader(token) {
-  return token === null ? {} : { Authorization: bearer(token) };
+export function authHeader(token, env = process.env) {
+  if (token === null) return {};
+  // Which CLI posts, as tars-hook.sh's tars_auth sends it: CLAUDE_PID, digits only.
+  const pid = /^[0-9]+$/.test(env.CLAUDE_PID ?? '') ? { 'X-Tars-Cli-Pid': env.CLAUDE_PID } : {};
+  return { Authorization: bearer(token), ...pid };
 }
 
 /**
  * tars-hook.sh, TARS_TOKEN_OK (upstream #212): whether the port is the Tars
  * that spawned this CLI, which alone gets the CLI's token on the hook posts
- * (/api/hooks/*); the bootstrap and memory calls send it without asking, as
- * the .sh send them (tokenWithFileFallback). While Tars is down any process
+ * (/api/hooks/*), and on the bootstrap and memory calls (tokenForReads). While Tars is down any process
  * may hold its port. So a fresh random challenge goes to /api/health, and
  * the answer must be sha256("<TARS_INSTANCE_ID>:<challenge>");
  * the id itself never leaves. No token or no id: nothing is asked. No answer
@@ -161,14 +163,15 @@ export async function tarsProvesInstance(env = process.env) {
 }
 
 /**
- * The token for the calls that fall back to the shared file (bootstrap,
- * memory): the CLI's own, else ~/.dorothy/api-token when Tars did not start
- * this CLI. Sent without the instance check, as the .sh send it. Hook posts
- * never read the file (tars_auth).
+ * tars-hook.sh, TARS_READ_TOKEN: the token the bootstrap and memory calls
+ * present. The CLI's own once the port proved it is this CLI's Tars
+ * (`proven`, tarsProvesInstance); ~/.dorothy/api-token when Tars did not
+ * start this CLI and gave it none; nothing otherwise, the shared file neither:
+ * a squatter on the port would get it instead (the Audit's Info on #355).
  */
-export function tokenWithFileFallback(env = process.env) {
+export function tokenForReads(env = process.env, proven = false) {
   const own = env.CLAUDE_MGR_API_TOKEN || '';
-  if (own) return own;
+  if (own) return proven ? own : '';
   const file = path.join(home(), '.dorothy', 'api-token');
   return isFile(file) ? catFile(file) : '';
 }

@@ -48,9 +48,8 @@ import { memoryStatus, projectMemoryDir } from '../../../electron/services/memor
 import { encodeClaudeProjectDir } from '../../../electron/platform/claude-project-dir';
 
 let base: string;
-/** The folder Claude Code keeps for a project at `real`, as it names it (on Windows, `:` and `\` to `-` as well). */
-const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects',
-  process.platform === 'win32' ? encodeClaudeProjectDir(real) : real.replace(/[/.]/g, '-'));
+/** The folder Claude Code keeps for a project at `real`, as it names it: every non-alphanumeric to `-`, on every platform. */
+const claudeFolder = (real: string) => path.join(tmpHome, '.claude', 'projects', encodeClaudeProjectDir(real));
 
 /** A project at a real path, a link to it, and optionally Claude Code's folder for it with a MEMORY.md. */
 function project(name: string, withClaude: boolean): { real: string; link: string } {
