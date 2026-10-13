@@ -267200,6 +267200,890 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "rBlox",
+      "x": 35000,
+      "y": 0,
+      "name": "Brain · Projects · a row with an older copy · states",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 760,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "w99gW",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "EOZgq",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Brain · Projects · a row with an older copy",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "hREM1",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 664,
+              "content": "Since #375, a project whose memory an older Tars kept under a folder name Claude never reads (a path with _, a space or ~) is one row: Claude's folder, the older folder's files copied in once while Claude's held no MEMORY.md, never over a file it holds. The row names the older folder on a third line, cut to the row's width; hovering it shows its whole path. The older folder is kept as it was.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e9YSc7",
+          "name": "state SELECTED, ITS FILES COPIED IN",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "SIrWj",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "SELECTED, ITS FILES COPIED IN",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "tDDHK",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "d1qjWE",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "mz3lB",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "S4Y97Z",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "viDaJ",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kd5eA",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "3 files · 6 KB · 2h ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "wJR9G",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "K5gJbz",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "lqCRH",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "thW37",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e2mAk",
+          "name": "state NOT SELECTED, A LONG FOLDER NAME CUT",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "W2Q68e",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "NOT SELECTED, A LONG FOLDER NAME CUT",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "HnYHq",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "F2mLc",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "AnEwT",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "WVE6n",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bUp4k",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "T8TBh9",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "o8PCP",
+                      "name": "row acme_web",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "IHoCW",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "acme_web",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "VhOTz",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "2 files · 4 KB · 3d ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "tFs0C",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-Docume…",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "twjGi",
+          "name": "state THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "feEV0",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "IPBZX",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tObzZ",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "Utes0",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "bAPVg",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "LLukV",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "N1jme",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "no memory yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "L6PuS",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nNGXq",
+      "x": 35860,
+      "y": 0,
+      "name": "Brain · Projects · a row with an older copy · states · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 760,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "kszAI",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "nwihc",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Brain · Projects · a row with an older copy",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "R0HSwa",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 664,
+              "content": "Since #375, a project whose memory an older Tars kept under a folder name Claude never reads (a path with _, a space or ~) is one row: Claude's folder, the older folder's files copied in once while Claude's held no MEMORY.md, never over a file it holds. The row names the older folder on a third line, cut to the row's width; hovering it shows its whole path. The older folder is kept as it was.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "H1WS4",
+          "name": "state SELECTED, ITS FILES COPIED IN",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "eRGzb",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "SELECTED, ITS FILES COPIED IN",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "pN3HJ",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "A9TYdG",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "s4sTS",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "zS42C",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "KRJzE",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "h7RUt",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "3 files · 6 KB · 2h ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "lkw7A",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jx2Rk",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Fku2d",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "arPl7",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "O3ssyP",
+          "name": "state NOT SELECTED, A LONG FOLDER NAME CUT",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "REs85",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "NOT SELECTED, A LONG FOLDER NAME CUT",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "VpZXd",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "dkNoY",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "QpGzg",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "OsWD5",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "BH9I3",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "xFwKB",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "tlaYC",
+                      "name": "row acme_web",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ebRHX",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "acme_web",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "pNDe9",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "2 files · 4 KB · 3d ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "aIRuX",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-Docume…",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bfYyF",
+          "name": "state THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "cqbwQ",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "j32uot",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "gp2KO",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "wRLP3",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "GEWXg",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "o1xAj6",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MGSHp",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "no memory yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Ak0d5",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-demo-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "themes": {
