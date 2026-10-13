@@ -27,8 +27,11 @@ export function chatTag(chat: Pick<Chat, 'projectPath' | 'number' | 'title'>): s
   return `[${projectWord(chat.projectPath)} #${chat.number} ${titleOf(chat.title) ?? ''}]`;
 }
 
+/** One spelling of a project's path: a trailing slash is the same folder. */
+const sameProject = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+
 const ofProject = (chats: Chat[], projectPath: string) =>
-  chats.filter((c) => c.projectPath === projectPath).sort((a, b) => a.number - b.number);
+  chats.filter((c) => sameProject(c.projectPath, projectPath)).sort((a, b) => a.number - b.number);
 
 /** The project's chats, numbered, and how to name one. */
 export function chatListFor(projectPath: string, chats: Chat[]): string {
@@ -103,4 +106,32 @@ export function createChatSentLog(file: string): ChatSentLog {
       return read(now).find((e) => e.telegramChatId === telegramChatId && e.messageId === messageId)?.chatId;
     },
   };
+}
+
+export type ChannelRoute =
+  /** Main, or a project with no chats: the orchestrator, by the path each bot has always taken. */
+  | { kind: 'orchestrator'; text: string }
+  /** Another chat: through the chats (chat-runners.ts), within their limit. */
+  | { kind: 'chat'; chat: Chat; text: string }
+  | { kind: 'unknown'; list: string }
+  /** A reply to a chat deleted since: it reaches nobody, and the sender is told. */
+  | { kind: 'gone' };
+
+/**
+ * Where a message from a channel goes, for a project already named: the chat
+ * a reply answers (its words as written), else "#N", else the inbox.
+ */
+export function routeChannelMessage(input: { chats: Chat[]; projectPath: string; text: string; replyChatId?: string }): ChannelRoute {
+  const text = input.text.trim();
+  if (input.replyChatId) {
+    const answered = input.chats.find((c) => c.id === input.replyChatId);
+    if (!answered) return { kind: 'gone' };
+    return answered.number === 1 ? { kind: 'orchestrator', text } : { kind: 'chat', chat: answered, text };
+  }
+  const address = parseChatAddress(text);
+  const picked = pickChat(input.chats, input.projectPath, address?.number ?? null);
+  if (picked.kind === 'none') return { kind: 'orchestrator', text };
+  if (picked.kind === 'unknown') return picked;
+  const said = address?.text ?? text;
+  return picked.chat.number === 1 ? { kind: 'orchestrator', text: said } : { kind: 'chat', chat: picked.chat, text: said };
 }
