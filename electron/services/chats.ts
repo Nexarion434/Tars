@@ -208,9 +208,13 @@ function realOf(folder: string): string | undefined {
  * chats.json is agents' to write, and the folder chooses which transcripts a
  * chat shows.
  */
+/** An absolute folder, normalised (no "." or ".." in it), of a sane length. */
+function isWellFormedFolder(folder: unknown): folder is string {
+  return typeof folder === 'string' && folder.length <= 4096 && !folder.includes('\0') && path.isAbsolute(folder) && path.resolve(folder) === folder;
+}
+
 export function isSessionFolder(folder: unknown, projectPath: string, projectReal = realOf(projectPath)): folder is string {
-  if (typeof folder !== 'string' || folder.length > 4096 || folder.includes('\0') || !path.isAbsolute(folder)) return false;
-  if (path.resolve(folder) !== folder) return false;
+  if (!isWellFormedFolder(folder)) return false;
   const inside = (root: string) => folder === root || folder.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
   return inside(projectPath) || (!!projectReal && inside(projectReal));
 }
@@ -276,8 +280,14 @@ function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   let foldersFixed = sessionFolders !== undefined && !isObject(sessionFolders);
   if (isObject(sessionFolders)) {
     const projectReal = realOf(projectPath);
+    // A project whose real path cannot be read now (a link whose target is
+    // away): a spelling that is not under the saved path cannot be checked, and
+    // is kept as recorded, to be checked at the next load that can read it.
+    // Dropped, the repair would write its loss for good (GATE-PR391-DELTA, L1).
+    const holds = (f: unknown): f is string => isSessionFolder(f, projectPath, projectReal)
+      || (projectReal === undefined && isWellFormedFolder(f));
     for (const [sessionId, spellings] of Object.entries(sessionFolders)) {
-      const kept = Array.isArray(spellings) ? [...new Set(spellings.filter((f) => isSessionFolder(f, projectPath, projectReal)))].slice(0, 2) as string[] : [];
+      const kept = Array.isArray(spellings) ? [...new Set(spellings.filter(holds))].slice(0, 2) as string[] : [];
       if (sessions.includes(sessionId) && kept.length) folders[sessionId] = kept;
       if (!sessions.includes(sessionId) || !Array.isArray(spellings) || kept.length !== spellings.length) foldersFixed = true;
     }
