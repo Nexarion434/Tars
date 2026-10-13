@@ -4,7 +4,7 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 158 root frames.
+rather than a companion to it. `design/tars-redesign.pen` holds 160 root frames.
 `design/chat-design.pen` holds 72 of those, the other eighty-four being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
@@ -154,7 +154,10 @@ Agent · Claude account (and their light copies).
   Overlay · New agent · Options open, Overlay · Edit agent · Orchestrator
   (and its light copy), Orchestrator role · states. Permissions offers plan,
   manual, auto and bypass; plan only for Claude Code, dimmed with its reason
-  for another CLI: Permissions · plan mode · states (and its light copy)
+  for another CLI: Permissions · plan mode · states (and its light copy).
+  An edit the main process refuses (a worktree git cannot make) keeps the
+  dialog open with the changes made, and says why beside its buttons:
+  Overlay · Edit agent · not saved (and its light copy)
 - Replace the orchestrator of <project>?: asked before a save would give the
   role to an agent while another agent of the same project holds it (the
   toggle, a new agent, a move to another project, a team with an orchestrator
