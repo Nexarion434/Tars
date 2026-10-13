@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 56,
+    version: '2.0.0',
+    date: '2026-10-13',
+    updates: [
+      'On the Brain page\'s Projects tab, a project whose memory an older Tars kept in a folder Claude Code never reads says so on its line: older copy in, then that folder, whose whole path shows when you hover it. The memory itself is copied into the folder Claude Code reads, and the older folder is kept as it was.',
+    ],
+  },
+  {
     id: 55,
     version: '1.9.6',
     date: '2026-10-12',
