@@ -60108,33 +60108,6 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "jjS89",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "rtouD",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
                                       "id": "iC1cV",
                                       "name": "a stop",
                                       "height": 26,
@@ -60537,33 +60510,6 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 10.5,
                                       "fontWeight": "normal"
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "DbYo9",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "O7P2cT",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
                                     },
                                     {
                                       "type": "frame",
@@ -60971,33 +60917,6 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "dZNxv",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "bpHjp",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
                                       "id": "Xkawn",
                                       "name": "a stop",
                                       "height": 26,
@@ -61389,33 +61308,6 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 10.5,
                                       "fontWeight": "normal"
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "h4pV7Y",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "VKOHP",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
                                     },
                                     {
                                       "type": "frame",
@@ -71125,33 +71017,6 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "tVVCr",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "teWFA",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
                                       "id": "as6QJ",
                                       "name": "a stop",
                                       "height": 26,
@@ -71554,33 +71419,6 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 10.5,
                                       "fontWeight": "normal"
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "vyi1i",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "i6yhD",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
                                     },
                                     {
                                       "type": "frame",
@@ -71988,33 +71826,6 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "JCJy0",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "Qg0jT",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
                                       "id": "yXvCp",
                                       "name": "a stop",
                                       "height": 26,
@@ -72406,33 +72217,6 @@
                                       "fontFamily": "$font-mono",
                                       "fontSize": 10.5,
                                       "fontWeight": "normal"
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "hBA0P",
-                                      "name": "s session",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$border-strong",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "mLD1x",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "session",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
                                     },
                                     {
                                       "type": "frame",
@@ -95379,41 +95163,6 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "frame",
-                              "id": "q9KqQ0",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "X4E2M",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "VLJoH",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
                               "type": "text",
                               "id": "X0Bip",
                               "name": "status",
@@ -95816,41 +95565,6 @@
                           "gap": 8,
                           "alignItems": "center",
                           "children": [
-                            {
-                              "type": "frame",
-                              "id": "ESery",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "wVNRQ",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "DDalh",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
                             {
                               "type": "text",
                               "id": "g2PGtL",
@@ -97730,41 +97444,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "B3RzV",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "YUuIy",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "nnnoD",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "vcqHG",
                               "name": "a stop",
                               "height": 26,
@@ -98000,41 +97679,6 @@
                           "gap": 8,
                           "alignItems": "center",
                           "children": [
-                            {
-                              "type": "frame",
-                              "id": "G7eFBC",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "C8Y5u6",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "tXFSz",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
                             {
                               "type": "frame",
                               "id": "zgmxu",
@@ -105647,41 +105291,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "thSQt",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "M0r6Uu",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "ogtnp",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "Y2TyN",
                               "name": "a stop",
                               "height": 26,
@@ -106247,41 +105856,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "R50ZSk",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "m97ZV",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "Y5c4xa",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -106973,41 +106547,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "k9TaX",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "MNGft",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "z8mvsf",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "qaJ3l",
                               "name": "a stop",
                               "height": 26,
@@ -107573,41 +107112,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "C6NSke",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "I6Hhfb",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "oe3IK",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -113615,40 +113119,6 @@
                         },
                         {
                           "type": "frame",
-                          "id": "UvXLZ",
-                          "name": "views",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "BeVUy",
-                              "name": "s session",
-                              "height": 24,
-                              "fill": "$surface-raised",
-                              "padding": [
-                                4,
-                                9
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "Y3cBXK",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
                           "id": "GJB26",
                           "name": "b stop",
                           "height": 26,
@@ -114096,40 +113566,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "kPXB0",
-                          "name": "views",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "D94QV8",
-                              "name": "s session",
-                              "height": 24,
-                              "fill": "$surface-raised",
-                              "padding": [
-                                4,
-                                9
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "CKzO2",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -114982,40 +114418,6 @@
                         },
                         {
                           "type": "frame",
-                          "id": "Q3uiT",
-                          "name": "views",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "OSmDu",
-                              "name": "s session",
-                              "height": 24,
-                              "fill": "$surface-raised",
-                              "padding": [
-                                4,
-                                9
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "PiJyG",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
                           "id": "SL4d6",
                           "name": "b stop",
                           "height": 26,
@@ -115463,40 +114865,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "vYHSu",
-                          "name": "views",
-                          "stroke": "$border",
-                          "strokeWidth": 1,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "r7pU9M",
-                              "name": "s session",
-                              "height": 24,
-                              "fill": "$surface-raised",
-                              "padding": [
-                                4,
-                                9
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "UaNx3",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.35,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -142827,7 +142195,7 @@
       "id": "RdUN5",
       "x": 0,
       "y": 19000,
-      "name": "Panel header · session and fullscreen",
+      "name": "Panel header · fullscreen",
       "theme": {
         "mode": "dark"
       },
@@ -142842,7 +142210,7 @@
           "id": "mKODi",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Panel header · the session, and fullscreen in one press",
+          "content": "Panel header · fullscreen in one press",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -142855,7 +142223,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "An agent's panel on the Dashboard shows its session and nothing else: the history view is gone, and the word that named the live view says session. Fullscreen is the arrows after start or stop, turned inward while the panel fills the window. The panel's menu keeps clear, and hide from this board outside fullscreen.",
+          "content": "An agent's panel on the Dashboard shows its session and nothing else, so its header names no view: the history view went on 01/10, and the word that named the live view on 13/10, since there is nothing left to choose. Fullscreen is the arrows after start or stop, turned inward while the panel fills the window. The panel's menu keeps clear, and hide from this board outside fullscreen.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -142881,7 +142249,7 @@
                   "id": "uX0yQ",
                   "name": "caption",
                   "fill": "$text-muted",
-                  "content": "at rest: the session, start or stop, the arrows, the menu",
+                  "content": "at rest: start or stop, the arrows, the menu",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -143155,41 +142523,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "mXvVb",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "POBBz",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "ci6DE",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -143545,41 +142878,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "lJrOF",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "aOT1p",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "OLBNY",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -143944,41 +143242,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Q0Znzb",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "r0xtX",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "W6ltPo",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -144412,41 +143675,6 @@
                         },
                         {
                           "type": "frame",
-                          "id": "xm1AS",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "umgiS",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "aqoC2",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
                           "id": "SPb21",
                           "name": "a stop",
                           "height": 26,
@@ -144572,7 +143800,7 @@
       "id": "ATIxG",
       "x": -1800,
       "y": 19000,
-      "name": "Panel header · session and fullscreen · light",
+      "name": "Panel header · fullscreen · light",
       "theme": {
         "mode": "light"
       },
@@ -144587,7 +143815,7 @@
           "id": "qm236",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Panel header · the session, and fullscreen in one press",
+          "content": "Panel header · fullscreen in one press",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -144600,7 +143828,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "An agent's panel on the Dashboard shows its session and nothing else: the history view is gone, and the word that named the live view says session. Fullscreen is the arrows after start or stop, turned inward while the panel fills the window. The panel's menu keeps clear, and hide from this board outside fullscreen.",
+          "content": "An agent's panel on the Dashboard shows its session and nothing else, so its header names no view: the history view went on 01/10, and the word that named the live view on 13/10, since there is nothing left to choose. Fullscreen is the arrows after start or stop, turned inward while the panel fills the window. The panel's menu keeps clear, and hide from this board outside fullscreen.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -144626,7 +143854,7 @@
                   "id": "RtsWi",
                   "name": "caption",
                   "fill": "$text-muted",
-                  "content": "at rest: the session, start or stop, the arrows, the menu",
+                  "content": "at rest: start or stop, the arrows, the menu",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -144900,41 +144128,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "zkx50",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "cmpqk",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "URywn",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -145290,41 +144483,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "FMOTP",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "NPS0k",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "cCX69",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -145689,41 +144847,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "y2bFCQ",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "uOJMS",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "EqSiT",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -146154,41 +145277,6 @@
                           "fontFamily": "$font-mono",
                           "fontSize": 10,
                           "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "PvTho",
-                          "name": "seg view",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "qeF53",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "OdxV0",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
                         },
                         {
                           "type": "frame",
@@ -177290,67 +176378,6 @@
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "I1u8e",
-                                  "name": "seg view",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "frame",
-                                      "id": "WR1GB",
-                                      "name": "s live",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$accent",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "kvNCr",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "live",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "q4B2kX",
-                                      "name": "s history",
-                                      "height": 26,
-                                      "stroke": "$border",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "FDCXI",
-                                          "name": "l",
-                                          "fill": "$text-muted",
-                                          "content": "history",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                },
-                                {
                                   "type": "text",
                                   "id": "l9Zlk",
                                   "name": "mono",
@@ -182037,67 +181064,6 @@
                               "alignItems": "center",
                               "children": [
                                 {
-                                  "type": "frame",
-                                  "id": "dv8N9",
-                                  "name": "seg view",
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "frame",
-                                      "id": "e6Nci",
-                                      "name": "s live",
-                                      "height": 26,
-                                      "fill": "$surface-raised",
-                                      "stroke": "$accent",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "rl3rP",
-                                          "name": "l",
-                                          "fill": "$text-primary",
-                                          "content": "live",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "YNkiJ",
-                                      "name": "s history",
-                                      "height": 26,
-                                      "stroke": "$border",
-                                      "strokeWidth": 1,
-                                      "padding": [
-                                        6,
-                                        12
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "LG3Pu",
-                                          "name": "l",
-                                          "fill": "$text-muted",
-                                          "content": "history",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-ui",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                },
-                                {
                                   "type": "text",
                                   "id": "r9wZd",
                                   "name": "mono",
@@ -184592,33 +183558,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "CaLZ7",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "td70x",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "UNWKR",
                               "name": "a start",
                               "height": 26,
@@ -184987,33 +183926,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "PRXn7",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "M3ojbN",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -188670,33 +187582,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "N7NgYW",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "Z9wtYp",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "o2jBao",
                               "name": "a start",
                               "height": 26,
@@ -189065,33 +187950,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "vEd1r",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "U3R1cF",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -197584,33 +196442,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "O7iYJl",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "Isg4p",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "URL6W",
                               "name": "a start",
                               "height": 26,
@@ -198020,33 +196851,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "L1qa3",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "W6swzr",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -206946,33 +205750,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "F89yuq",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "l9bLXL",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "y8vPB",
                               "name": "a start",
                               "height": 26,
@@ -207382,33 +206159,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "c6cO6l",
-                              "name": "s session",
-                              "height": 26,
-                              "fill": "$surface-raised",
-                              "stroke": "$border-strong",
-                              "strokeWidth": 1,
-                              "padding": [
-                                6,
-                                12
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "o8nkg",
-                                  "name": "l",
-                                  "fill": "$text-primary",
-                                  "content": "session",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -233426,41 +232176,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "oAbje",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "ELLno",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "wIIkD",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "vx0Og",
                               "name": "a stop",
                               "height": 26,
@@ -233998,41 +232713,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "F81h5",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "sggff",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "gCcBY",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -234702,41 +233382,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "fhAgm",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "byVSe",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "Lc66S",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "GLfLk",
                               "name": "a stop",
                               "height": 26,
@@ -235245,41 +233890,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "xqhv7",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "quPVl",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "IOavw",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -235889,41 +234499,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "lHXC8",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "k5MREs",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "tvXU1",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "uQvHc",
                               "name": "a stop",
                               "height": 26,
@@ -236461,41 +235036,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "Tee6H",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "JrQNh",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "eOEc1",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -239912,41 +238452,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "jgC0g",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "X6ZDWZ",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "Vqag8",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "WLtTc",
                               "name": "a stop",
                               "height": 26,
@@ -240484,41 +238989,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "fteEe",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "mrTri",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "VwK6t",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -241188,41 +239658,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "yQdp8",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "O2xTWV",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "vVfa2",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "wnkzZ",
                               "name": "a stop",
                               "height": 26,
@@ -241731,41 +240166,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "cqEgZ",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "OBcLz",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "k7hIR",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
@@ -242375,41 +240775,6 @@
                             },
                             {
                               "type": "frame",
-                              "id": "nE5hB",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "kkIS9",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "EUtgH",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
                               "id": "xpE8N",
                               "name": "a stop",
                               "height": 26,
@@ -242947,41 +241312,6 @@
                               "fontFamily": "$font-mono",
                               "fontSize": 10,
                               "fontWeight": "normal"
-                            },
-                            {
-                              "type": "frame",
-                              "id": "zEMq3",
-                              "name": "seg view",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "rETJ3",
-                                  "name": "s session",
-                                  "height": 26,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border-strong",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    6,
-                                    12
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "tlIhQ",
-                                      "name": "l",
-                                      "fill": "$text-primary",
-                                      "content": "session",
-                                      "lineHeight": 1.4,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 11.5,
-                                      "fontWeight": "normal"
-                                    }
-                                  ]
-                                }
-                              ]
                             },
                             {
                               "type": "frame",
