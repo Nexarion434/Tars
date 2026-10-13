@@ -16,7 +16,7 @@ export async function apiRequest(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const token = await tokenToPresent();
+  const token = await tokenToPresent(TARS_WAIT_MS);
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }

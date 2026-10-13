@@ -23,7 +23,7 @@ export async function apiRequest(method: string, path_: string, body?: Record<st
   // names none and which readApiToken would fall back to, is no use here: Tars
   // refuses it with a message that says so.
   // Sent only once the port proved it is the Tars that started this CLI (tokenToPresent).
-  if (AGENT_API_TOKEN && await tokenToPresent()) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
+  if (AGENT_API_TOKEN && await tokenToPresent(REQUEST_TIMEOUT_MS)) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
   const { status, data } = await send(http, {
     hostname: TARS.hostname,
     port: Number(TARS.port) || 80,

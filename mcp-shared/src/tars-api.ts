@@ -38,8 +38,6 @@ export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
 
 /** What the Tars that started this CLI proves it is with (tars-hook.sh): never sent. */
 const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
-/** How long the port has to prove it, as the hooks wait: a Tars whose main thread is held still answers. */
-export const PROOF_WAIT_MS = 5_000;
 /**
  * Whether the port at API_URL is the Tars that started this CLI: a fresh
  * challenge to /api/health, whose answer must be sha256("<id>:<challenge>"),
@@ -51,9 +49,12 @@ export const PROOF_WAIT_MS = 5_000;
  * life (as it first was) let a squatter that took the port after the first
  * call get the token with the next one, which is how a CLI that outlived a
  * quit would meet it (the Audit's M1 on #376). One loopback request per tool
- * call.
+ * call. It waits as long as the call it guards (`waitMs`): a port that never
+ * answers gets nothing however long the wait, and a Tars whose main thread is
+ * held past a shorter one had its caller's call leave with no token and come
+ * back refused (the Audit's Low on #376's delta).
  */
-async function portIsThisCliTars(): Promise<boolean> {
+async function portIsThisCliTars(waitMs: number): Promise<boolean> {
   if (!INSTANCE_ID) return false;
   const challenge = randomBytes(16).toString("hex");
   const tars = new URL(API_URL);
@@ -63,7 +64,7 @@ async function portIsThisCliTars(): Promise<boolean> {
       port: Number(tars.port) || 80,
       path: `/api/health?challenge=${challenge}`,
       method: "GET",
-      timeout: PROOF_WAIT_MS,
+      timeout: waitMs,
     }, undefined, (err) => err);
     const proof = (JSON.parse(data) as { proof?: unknown }).proof;
     return proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex");
@@ -78,8 +79,8 @@ async function portIsThisCliTars(): Promise<boolean> {
  * neither: a squatter would get that instead). A CLI Tars did not start has no
  * token and no instance to prove: it presents the shared file, as before.
  */
-export async function tokenToPresent(): Promise<string | null> {
-  if (AGENT_API_TOKEN) return (await portIsThisCliTars()) ? AGENT_API_TOKEN : null;
+export async function tokenToPresent(waitMs: number = TARS_WAIT_MS): Promise<string | null> {
+  if (AGENT_API_TOKEN) return (await portIsThisCliTars(waitMs)) ? AGENT_API_TOKEN : null;
   try {
     if (fs.existsSync(API_TOKEN_FILE)) {
       return fs.readFileSync(API_TOKEN_FILE, "utf-8").trim();
@@ -101,7 +102,12 @@ export async function apiRequest(
     // when the caller turns out to have no identity to scope it by.
     "X-Tars-Client": "mcp",
   };
-  const token = await tokenToPresent();
+  // Long-poll wait endpoints need a longer timeout. Callers passing a custom
+  // wait timeout must override this so the client never aborts before the
+  // server-side long-poll resolves. The proof before it waits as long.
+  const isLongPoll = endpoint.includes("/wait");
+  const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : TARS_WAIT_MS);
+  const token = await tokenToPresent(timeoutMs);
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -111,12 +117,6 @@ export async function apiRequest(
   if (CALLER_PROJECT_PATH) {
     headers["X-Tars-Caller-Project"] = CALLER_PROJECT_PATH;
   }
-
-  // Long-poll wait endpoints need a longer timeout. Callers passing a custom
-  // wait timeout must override this so the client never aborts before the
-  // server-side long-poll resolves.
-  const isLongPoll = endpoint.includes("/wait");
-  const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : TARS_WAIT_MS);
 
   const controller = new AbortController();
   let timedOut = false;
