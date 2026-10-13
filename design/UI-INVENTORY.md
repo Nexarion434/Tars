@@ -91,7 +91,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
 | `/chats` | Chats (the new shell's chats page: the chat open, on its conversation, or a new chat on its first message, or a new chat's record, read from the chats' records) | Shell · chats · list, a chat open, Shell · chats · new chat, its record, Shell · chats · empty (`tars-redesign.pen`), Chat · chats · from its transcripts, working, Chat · chats · from its transcripts, waiting on you, Chat · chats · a new chat, its first message, Chat · chats · the composer, sending, Chat · chats · every slot working (`chat-redesign-a.pen`), each with its light copy |
 | `/project` | A project's page (the new shell's, under Projects; `?path=` names the project) | Shell · chats · project page, from the records (and its light copy) |
@@ -205,7 +205,7 @@ read the transcript instead, is gone since 1.9.2.
 
 | Frame | What it holds |
 |---|---|
-| Panel header · session and fullscreen | The header at rest and in fullscreen, and its menu in both (and its light copy) |
+| Panel header · fullscreen | The header at rest and in fullscreen, and its menu in both; no word names the panel's view (and its light copy) |
 | Message waiting · notice | The line a panel shows while a message waits for a field somebody is typing in, with the two ways out |
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with restart (and its light copy) |
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
