@@ -29,6 +29,9 @@
  *     another path into the file read: `../../x` reads ~/.claude/x.jsonl.
  *  9. Two ticks at once (a slow read) send an item twice.
  * 10. A session in the middle whose transcript is gone no longer says so.
+ * 11. (The Audit's Y1 on #371's delta) An item that lands before the last one
+ *     told (an earlier session's file that gains a line) is never sent by a
+ *     follower that counts by position.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -211,6 +214,19 @@ describe('a chat, followed', () => {
     await Promise.all([f.tick(), f.tick()]);
     f.stop();
     expect(itemsSent()).toEqual(['once']);
+  });
+
+  it('11. sends an item that lands before the last one told', async () => {
+    write(S('a'), userLine('hello'));
+    write(S('b'), userLine('in b'));
+    const chat = chatOf({ sessionIds: [S('a'), S('b')] });
+    const runner = runnerOf({ currentSessionId: S('b') });
+    noteChatSnapshot(chat.id, await readChatItems(chat, { runner, homeDir: home }));
+    append(S('a'), userLine('late in a'));
+    const f = follow({ chats: [chat], runner });
+    await f.tick();
+    f.stop();
+    expect(itemsSent()).toEqual(['late in a']);
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
