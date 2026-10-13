@@ -38,6 +38,10 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  *     starts past them;
  * 16. an earlier page asked from a first line that a re-read has since
  *     moved is merged, leaving a hole between it and the new lines.
+ *
+ * Written before the fix, from the mutation bench of L2 and L3:
+ * 17. while stale, each event makes a new feed: the page re-renders and
+ *     its follower reads again per event, past its waits after a failure.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -181,5 +185,12 @@ describe('chat feed', () => {
     s = applySnapshot(s, history(30, range(12, 20), 21));
     s = applyEarlier(s, history(30, range(0, 4), 21), 5);
     expect(places(s)).toEqual(range(12, 20).map(i => i.n));
+  });
+
+  it('answers the feed itself to an event while stale (17)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0)]));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2) }));
+    expect(s.stale).toBe(true);
+    expect(applyEvent(s, ev(13, 'c1', { type: 'item', item: item(3) }))).toBe(s);
   });
 });
