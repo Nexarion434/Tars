@@ -62,9 +62,11 @@ export interface Chat {
    * The folder each session's CLI ran in, by session id, recorded when the
    * session was taken: Main follows a new orchestrator, and a session the
    * former one ran in its own worktree is found there (GATE-PR371-DELTA5).
-   * The project or a folder inside it; absent for a session from before.
+   * As Tars saved it, then its real path when that differs: Claude Code files
+   * a transcript under the real one, which cannot be read once the folder is
+   * gone (GATE-PR391, L2). Inside the project; absent for a session from before.
    */
-  sessionFolders?: Record<string, string>;
+  sessionFolders?: Record<string, string[]>;
   pinned: boolean;
   /** Hidden from the active chats until then (ISO), or until something arrives for it. */
   snoozedUntil: string | null;
@@ -187,18 +189,37 @@ const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <=
 export const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
 const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work'>): ChatError => ({ error, reason: REASONS[error] });
 const copy = (chat: Chat): Chat => ({
-  ...chat, sessionIds: [...chat.sessionIds], ...(chat.sessionFolders ? { sessionFolders: { ...chat.sessionFolders } } : {}),
+  ...chat, sessionIds: [...chat.sessionIds],
+  ...(chat.sessionFolders ? { sessionFolders: Object.fromEntries(Object.entries(chat.sessionFolders).map(([k, v]) => [k, [...v]])) } : {}),
 });
+
+/** A folder's real path, or undefined when it cannot be read. */
+function realOf(folder: string): string | undefined {
+  try {
+    return fs.realpathSync(folder);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * A folder a session's CLI may have run in: the project's own, or one inside
- * it (its worktrees). chats.json is agents' to write, and the folder chooses
- * which transcripts a chat shows.
+ * it (its worktrees), under the spelling Tars saved or the project's real one.
+ * chats.json is agents' to write, and the folder chooses which transcripts a
+ * chat shows.
  */
-export function isSessionFolder(folder: unknown, projectPath: string): folder is string {
+export function isSessionFolder(folder: unknown, projectPath: string, projectReal = realOf(projectPath)): folder is string {
   if (typeof folder !== 'string' || folder.length > 4096 || folder.includes('\0') || !path.isAbsolute(folder)) return false;
   if (path.resolve(folder) !== folder) return false;
-  return folder === projectPath || folder.startsWith(projectPath.endsWith(path.sep) ? projectPath : projectPath + path.sep);
+  const inside = (root: string) => folder === root || folder.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+  return inside(projectPath) || (!!projectReal && inside(projectReal));
+}
+
+/** The spellings to record for a folder: as given, then its real path when it differs, each inside the project. */
+function spellingsOf(folder: unknown, projectPath: string): string[] {
+  if (!isSessionFolder(folder, projectPath)) return [];
+  const real = realOf(folder);
+  return real && real !== folder && isSessionFolder(real, projectPath) ? [folder, real] : [folder];
 }
 
 /** One line of at most TITLE_MAX characters, or null: breaks become spaces, control and bidi characters go. */
@@ -251,13 +272,16 @@ function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   if (!isTime(createdAt) || !isTime(updatedAt) || !isTime(lastActivityAt)) return null;
   const sessions = [...new Set(sessionIds as string[])];
   // The folders of the sessions it holds, each inside its project; what does not hold is dropped, the chat kept.
-  const folders: Record<string, string> = {};
+  const folders: Record<string, string[]> = {};
+  let foldersFixed = sessionFolders !== undefined && !isObject(sessionFolders);
   if (isObject(sessionFolders)) {
-    for (const [sessionId, folder] of Object.entries(sessionFolders)) {
-      if (sessions.includes(sessionId) && isSessionFolder(folder, projectPath)) folders[sessionId] = folder;
+    const projectReal = realOf(projectPath);
+    for (const [sessionId, spellings] of Object.entries(sessionFolders)) {
+      const kept = Array.isArray(spellings) ? [...new Set(spellings.filter((f) => isSessionFolder(f, projectPath, projectReal)))].slice(0, 2) as string[] : [];
+      if (sessions.includes(sessionId) && kept.length) folders[sessionId] = kept;
+      if (!sessions.includes(sessionId) || !Array.isArray(spellings) || kept.length !== spellings.length) foldersFixed = true;
     }
   }
-  const foldersFixed = sessionFolders !== undefined && (!isObject(sessionFolders) || Object.keys(folders).length !== Object.keys(sessionFolders).length);
   return {
     chat: {
       id, projectPath, number: number as number, title: flat, titleSource, runnerId: runnerId as string | null, sessionIds: sessions,
@@ -620,7 +644,7 @@ export function createChatStore(opts: {
       if (!writable || !isSessionId(sessionId)) return false;
       // What a chat of this runner lacks: the session, or the folder its CLI ran in, recorded once.
       const lacks = (c: Chat) => c.runnerId === runnerId
-        && (!c.sessionIds.includes(sessionId) || (!c.sessionFolders?.[sessionId] && isSessionFolder(folder, c.projectPath)));
+        && (!c.sessionIds.includes(sessionId) || (!c.sessionFolders?.[sessionId] && spellingsOf(folder, c.projectPath).length > 0));
       if (!state.chats.some(lacks)) return false;
       const next = clone();
       const at = iso();
@@ -630,8 +654,9 @@ export function createChatStore(opts: {
           chat.sessionIds.push(sessionId);
           chat.lastActivityAt = at;
         }
-        if (!chat.sessionFolders?.[sessionId] && isSessionFolder(folder, chat.projectPath)) {
-          chat.sessionFolders = { ...(chat.sessionFolders ?? {}), [sessionId]: folder };
+        const spellings = spellingsOf(folder, chat.projectPath);
+        if (!chat.sessionFolders?.[sessionId] && spellings.length) {
+          chat.sessionFolders = { ...(chat.sessionFolders ?? {}), [sessionId]: spellings };
         }
         chat.updatedAt = at;
       }
