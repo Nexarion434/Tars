@@ -13,9 +13,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * A sandbox HOME with one project, a git repository whose origin's main is one commit and whose root has another
  * branch checked out; the orchestrator "Lead" (model opus-test) and a worker. The CLIs are stand-ins named
- * `claude`: they run Tars's own hook scripts with the JSON Claude Code gives them, keep a transcript where Claude
- * Code keeps it, continue the session `--resume` names, record every launch's argv and folder, and hold a turn whose
- * prompt says HOLD until told to end it. The RAM figure is the E2E's: 10 GB, so two chats work at once.
+ * `claude`: they run Tars's own hook scripts with the JSON Claude Code gives them and the CLAUDE_PID it hands them
+ * (its own pid), keep a transcript where Claude Code keeps it and a scratchpad in the CLAUDE_CODE_TMPDIR Tars gives
+ * them, continue the session `--resume` names, record every launch's argv and folder, and hold a turn whose prompt
+ * says HOLD until told to end it. The RAM figure is the E2E's: 10 GB, so two chats work at once.
+ * Every runner's session here is registered by #380's rule: its CLI is its terminal's process or that shell's child
+ * (2, 3, 4, 10, 18).
  *
  * Asserted, in order:
  * 0. a chat whose record an agent edited to name the worker shows no runner, answers runner_mismatch, and never
@@ -28,7 +31,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    orchestrator's brief; while it is made (a git fetch held by a remote that never answers), a send to Main, whose
  *    orchestrator runs, is typed at once (L5);
  * 3. with both slots taken, a send in chat B puts A, idle, to sleep and starts B: two runners, two sessions, two
- *    worktrees, though each turn's Stop hook leaves a process under the CLI for a second after it;
+ *    worktrees, though each turn's Stop hook leaves a process under the CLI for a second after it; A asleep is, for
+ *    #384's retention, an agent whose CLI does not run: a pass keeps all of it, one 8 days on takes its session's
+ *    scratchpad, never its folder while A is in the fleet, nor its conversation (4 resumes it);
  * 4. the next send in A puts B to sleep and resumes A's session (--resume <its id>);
  * 5. with Main and A both in a turn, a send in B answers chat_limit, with its sentence and who works, and so does a
  *    Start of B from the window (M1);
@@ -75,12 +80,21 @@ const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().rep
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
+// The session's scratchpad, where Claude Code makes it: CLAUDE_CODE_TMPDIR/claude-<uid>/<project folder>/<session>.
+const scratch = process.env.CLAUDE_CODE_TMPDIR
+  ? path.join(process.env.CLAUDE_CODE_TMPDIR, 'claude-' + process.getuid(), process.cwd().replace(/[^a-zA-Z0-9]/g, '-'), sid, 'scratchpad')
+  : null;
+if (scratch) {
+  fs.mkdirSync(scratch, { recursive: true });
+  fs.writeFileSync(path.join(scratch, 'notes.md'), 'scratch of ' + sid);
+}
 const record = (file, o) => fs.appendFileSync(path.join(process.env.HOME, file), JSON.stringify({ at: new Date().toISOString(), id, ...o }) + '\n');
 const dashes = args.indexOf('--');
 const launchPrompt = dashes === -1 ? '' : args.slice(dashes + 1).join(' ');
-record('launches.jsonl', { pid: process.pid, sid, resume: resumed === -1 ? null : args[resumed + 1], fork: forked, prompt: launchPrompt, argv: args, cwd: process.cwd() });
+record('launches.jsonl', { pid: process.pid, ppid: process.ppid, sid, resume: resumed === -1 ? null : args[resumed + 1], fork: forked, prompt: launchPrompt, argv: args, cwd: process.cwd(), scratch, transcript });
+// As Claude Code: its hooks are handed CLAUDE_PID, its own pid, which Tars compares with its terminal's (#380).
 const hook = (name, payload) => spawnSync('/bin/bash', [path.join(HOOKS, name)], {
-  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
+  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: { ...process.env, CLAUDE_PID: String(process.pid) }, timeout: 20000,
 });
 const line = (o) => fs.appendFileSync(transcript, JSON.stringify(o) + '\n');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -154,7 +168,10 @@ type ChatRecord = {
   runner?: { id: string; live: boolean; permissionAsk?: { tool: string } | null } | null;
 };
 type Answer = Record<string, unknown>;
-type Launch = { id: string; sid: string; resume: string | null; fork: boolean; prompt: string; argv: string[]; cwd: string };
+type Launch = {
+  id: string; pid: number; ppid: number; sid: string; resume: string | null; fork: boolean; prompt: string; argv: string[]; cwd: string;
+  scratch: string | null; transcript: string;
+};
 
 const lines = <T>(file: string): T[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -261,6 +278,45 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
         field: terminal ? fieldInUse(terminal) : null, cli: facts.cliRunning, resumable: facts.resumable,
       };
     }, { dist, id });
+    /** The pid of an agent's terminal process, as the session registration reads it. */
+    const terminalPidOf = (id: string) => app.evaluate((_e, { dist, id }) => {
+      const req = process.mainModule!.require;
+      const agent = req(`${dist}/core/agent-manager.js`).agents.get(id);
+      const terminal = agent?.ptyId ? req(`${dist}/core/pty-manager.js`).ptyProcesses.get(agent.ptyId) : undefined;
+      return (terminal?.pid as number | undefined) ?? null;
+    }, { dist, id });
+    /**
+     * Tars takes a session only from the CLI it launched in the agent's terminal (#380): the agent's last launch is
+     * its terminal's process or, typed into the shell there (darwin and linux), that shell's child, and the session
+     * its hooks named, with that CLI's pid, is the agent's.
+     */
+    const ownSession = async (id: string) => {
+      const last = launchesOf(id).at(-1)!;
+      expect([last.pid, last.ppid]).toContain(await terminalPidOf(id));
+      await expect.poll(async () => (await agentOf(id))?.currentSessionId ?? null, { timeout: 30_000 }).toBe(last.sid);
+    };
+    /** One pass of the temporary folders' retention (#384) with what main.ts hands it, its clock `days` on. */
+    const tmpPass = (days: number) => app.evaluate(async (_e, { dist, days }) => {
+      const req = process.mainModule!.require;
+      const { agents } = req(`${dist}/core/agent-manager.js`);
+      const { ptyProcesses } = req(`${dist}/core/pty-manager.js`);
+      const { agentsRunningOverAcp } = req(`${dist}/services/acp/delegate.js`);
+      const { enforceTmpRetention } = req(`${dist}/services/agent-tmp.js`);
+      const result = await enforceTmpRetention({
+        now: () => Date.now() + days * 86_400_000,
+        liveAgentIds: () => [
+          ...[...agents.values()].filter((a) => !!a.ptyId && ptyProcesses.has(a.ptyId)).map((a) => a.id),
+          ...agentsRunningOverAcp(),
+        ],
+        knownAgentIds: () => [...agents.keys()],
+        sessionsOf: (agentId: string) => {
+          const a = agents.get(agentId);
+          return [a?.currentSessionId, a?.resumableSessionId].filter((sid) => !!sid);
+        },
+        log: () => {},
+      });
+      return result.removed as Array<{ path: string; reason: string }>;
+    }, { dist, days });
     const lastContextOf = (id: string) => lines<{ id: string; context: string | null }>(sessionsFile).filter((l) => l.id === id).map((l) => l.context ?? '').pop() ?? '';
     // Each in one spelling: git may print a temporary folder as /var/... or /private/var/....
     const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.join(fs.realpathSync(path.dirname(p)), path.basename(p)));
@@ -324,6 +380,8 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await expect.poll(() => promptsOf(runnerA.id), { timeout: 30_000 }).toContain('A>> first');
     await atRest(runnerA.id);
     const launchA = launchesOf(runnerA.id)[0];
+    // Its session is the one the CLI Tars launched in its terminal registered (#380).
+    await ownSession(runnerA.id);
     expect(launchA.argv).toEqual(expect.arrayContaining(['--model', 'opus-test', '--append-system-prompt-file', '--disallowed-tools']));
     expect(fs.realpathSync(launchA.cwd)).toBe(fs.realpathSync(runnerA.worktreePath!));
     // Told, through its SessionStart, that it is the orchestrator in this chat, one of several.
@@ -349,9 +407,25 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await expect.poll(() => promptsOf(runnerB.id), { timeout: 30_000 }).toContain('B>> first');
     await atRest(runnerB.id);
     const launchB = launchesOf(runnerB.id)[0];
+    await ownSession(runnerB.id);
     expect(launchB.argv).toEqual(expect.arrayContaining(['--model', 'opus-test', '--disallowed-tools']));
     expect(launchB.sid).not.toBe(launchA.sid);
     expect(worktrees()).toEqual(expect.arrayContaining([real(runnerA.worktreePath!), real(runnerB.worktreePath!)]));
+    // A asleep has no terminal: for the retention (#384) it is an agent whose CLI does not run. A pass now keeps all
+    // of it; one 8 days on takes its session's scratchpad, as any sleeping agent's, and never its folder while A is
+    // in the fleet, nor its conversation, kept in ~/.claude/projects: step 4 resumes it.
+    const scratchA = launchA.scratch!;
+    const sessionDirA = path.dirname(scratchA);
+    const folderA = path.resolve(sessionDirA, '..', '..', '..', '..');
+    expect(fs.existsSync(path.join(scratchA, 'notes.md'))).toBe(true);
+    const removedNow = await tmpPass(0);
+    const removedLater = await tmpPass(8);
+    keep({ scratchA, removedNow, removedLater });
+    expect(removedNow.filter((r) => real(r.path).startsWith(real(folderA)))).toEqual([]);
+    expect(removedLater.map((r) => [real(r.path), r.reason])).toEqual(expect.arrayContaining([[real(sessionDirA), 'untouched for 7 days']]));
+    expect(fs.existsSync(sessionDirA)).toBe(false);
+    expect(fs.existsSync(path.join(folderA, 'c'))).toBe(true);
+    expect(fs.existsSync(launchA.transcript)).toBe(true);
 
     // 4. A again: B sleeps, A resumes its own session.
     const toA2 = await send(chatA.id, 'A>> second');
@@ -362,6 +436,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(launchesOf(runnerA.id)[1]).toMatchObject({ resume: launchA.sid, fork: false, sid: launchA.sid });
     await expect.poll(() => promptsOf(runnerA.id), { timeout: 30_000 }).toContain('A>> second');
     await atRest(runnerA.id);
+    await ownSession(runnerA.id);
 
     // 5. Main and A both in a turn: a send in B answers chat_limit, and says who works.
     expect(await send(chatA.id, 'HOLD>> a')).toMatchObject({ success: true, how: 'typed' });
@@ -493,7 +568,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(againC.sid).not.toBe(firstC.sid);
     await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> after a stop')), { timeout: 30_000 }).toBe(true);
     await atRest(runnerC.id);
-    expect((await agentOf(runnerC.id))?.currentSessionId).toBe(againC.sid);
+    await ownSession(runnerC.id);
 
     // 11. Its CLI ended by itself: no tombstone, the next send resumes the same session.
     expect(await send(startedChat.id, 'EXIT>> bye')).toMatchObject({ success: true, how: 'typed' });
@@ -593,7 +668,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect((await chats()).find((c) => c.number === 1)?.runnerId).toBe('w1');
     expect((await agentOf('o1'))?.role).toBe('worker');
     await expect.poll(() => launchesOf('w1').length, { timeout: 60_000 }).toBeGreaterThan(w1Launches);
-    await expect.poll(async () => (await agentOf('w1'))?.currentSessionId ?? null, { timeout: 30_000 }).toBe(launchesOf('w1').at(-1)!.sid);
+    await ownSession('w1');
     await atRest('w1');
     const mainAfter = (await chats()).find((c) => c.number === 1)!;
     keep({ mainBefore, mainAfter });
