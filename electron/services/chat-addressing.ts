@@ -22,6 +22,15 @@ export function parseChatAddress(message: string): { number: number; text: strin
   return found ? { number: Number(found[1]), text: found[2].trim() } : null;
 }
 
+/**
+ * Whether what a chat sends is headed by it: once its project has several
+ * chats. With only Main, a project's channels read as they did in 1.9.7
+ * (GATE-2.0.0-BULLETS, 2).
+ */
+export function namesItsChats(chats: Chat[], chat: Pick<Chat, 'projectPath'>): boolean {
+  return ofProject(chats, chat.projectPath).length > 1;
+}
+
 /** What every outgoing message of a chat starts with: "[<project> #N <title>]". */
 export function chatTag(chat: Pick<Chat, 'projectPath' | 'number' | 'title'>): string {
   return `[${projectWord(chat.projectPath)} #${chat.number} ${titleOf(chat.title) ?? ''}]`;
@@ -128,6 +137,10 @@ export function routeChannelMessage(input: { chats: Chat[]; projectPath: string;
     if (!answered) return { kind: 'gone' };
     return answered.number === 1 ? { kind: 'orchestrator', text } : { kind: 'chat', chat: answered, text };
   }
+  // A project with only Main is as it was in 1.9.7: "#2 " is an issue's
+  // number, and the message goes to the orchestrator as typed
+  // (GATE-2.0.0-BULLETS, 2). Numbers name chats once it has several.
+  if (ofProject(input.chats, input.projectPath).length <= 1) return { kind: 'orchestrator', text };
   const address = parseChatAddress(text);
   const picked = pickChat(input.chats, input.projectPath, address?.number ?? null);
   if (picked.kind === 'none') return { kind: 'orchestrator', text };

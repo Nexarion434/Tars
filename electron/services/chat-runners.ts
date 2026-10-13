@@ -16,7 +16,7 @@ import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
-import { pickChat } from './chat-addressing';
+import { namesItsChats, pickChat } from './chat-addressing';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
@@ -121,6 +121,12 @@ export function chatById(chatId: string): Chat | undefined {
  * orchestrator, its own chat for a runner. What its messages to a channel or
  * the room are named by (PR F).
  */
+/** The chat an agent runs, only once its project has several chats: what its messages are named by. */
+export function namedChatRunBy(agent: AgentStatus): Chat | undefined {
+  const chat = chatRunBy(agent);
+  return chat && namesItsChats(allChats(), chat) ? chat : undefined;
+}
+
 export function chatRunBy(agent: AgentStatus): Chat | undefined {
   const chat = store?.chatOfRunner(agent.id);
   return chat && runnerOf(chat) === agent ? chat : undefined;
@@ -614,6 +620,10 @@ export function startChatRunners(chatStore: ChatStore): void {
     chatRunBy: (agentId) => {
       const agent = agents.get(agentId);
       return agent ? chatRunBy(agent) : undefined;
+    },
+    namedChatOf: (agentId) => {
+      const agent = agents.get(agentId);
+      return agent ? namedChatRunBy(agent) : undefined;
     },
   });
   agentStatusEmitter.on('fleet-change', onFleetChange);

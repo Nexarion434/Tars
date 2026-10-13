@@ -7,7 +7,7 @@ import { hasOrchestratorPowers } from '../../core/agent-role';
 import { redactSecrets } from '../../utils/redact-secrets';
 import { relaySend } from '../hermes-relay';
 import { chatTag } from '../chat-addressing';
-import { chatRunBy } from '../chat-runners';
+import { namedChatRunBy } from '../chat-runners';
 import { sendForChat } from '../telegram-bot';
 
 /**
@@ -25,7 +25,7 @@ async function sendThroughRelay(req: RouteRequest, sendJson: SendJson, message: 
   }
   // Headed by the chat it comes from, so the user sees which, and a reply to
   // it goes back there (PR F); an agent that runs no chat, by its name.
-  const chat = chatRunBy(caller);
+  const chat = namedChatRunBy(caller);
   const text = `${chat ? chatTag(chat) : `${caller.name || caller.id}:`}\n${redactSecrets(message)}`;
   const result = await relaySend({ text, kind: 'report', ref: `message:${randomUUID()}`, projectPath: caller.projectPath, chatId: chat?.id });
   if (result.state === 'sent') sendJson({ success: true });
@@ -84,7 +84,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     // From a chat (its runner, or the orchestrator for Main): headed by it and
     // logged, so that a reply to it goes back to that chat (PR F).
     const caller = req.callerAgentId ? agents.get(req.callerAgentId) : undefined;
-    const chat = caller ? chatRunBy(caller) : undefined;
+    const chat = caller ? namedChatRunBy(caller) : undefined;
     try {
       await sendForChat(telegramBot, targetChatId, chat ? message : `\u{1F451} ${message}`, chat, { parse_mode: 'Markdown' });
       sendJson({ success: true });

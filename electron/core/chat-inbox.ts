@@ -22,6 +22,8 @@ export interface ChatLookups {
   inbox(projectPath: string): { agent: AgentStatus | undefined } | null;
   /** The chat an agent runs, when the fleet confirms it: Main for the orchestrator, its own for a runner. */
   chatRunBy(agentId: string): ChatName | undefined;
+  /** The same, only once its project has several chats: what is named on what it sends. */
+  namedChatOf?(agentId: string): ChatName | undefined;
 }
 
 let lookups: ChatLookups | undefined;
@@ -51,6 +53,16 @@ export function inboxAgentOf(projectPath: string, fleet: Iterable<AgentStatus>):
 /** The chat an agent runs, when the fleet confirms it. */
 export function chatNameOf(agent: Pick<AgentStatus, 'id'>): ChatName | undefined {
   return lookups?.chatRunBy(agent.id);
+}
+
+/**
+ * The chat an agent runs, to name on what it sends (a channel's prefix, the
+ * room's author): only once its project has several chats. A project with only
+ * Main reads as it did in 1.9.7, the new interface off or not
+ * (GATE-2.0.0-BULLETS, 2).
+ */
+export function namedChatOf(agent: Pick<AgentStatus, 'id'>): ChatName | undefined {
+  return lookups?.namedChatOf?.(agent.id);
 }
 
 /**

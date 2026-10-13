@@ -5,7 +5,7 @@ import { privatePath } from '../constants';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { redactSecrets } from '../utils/redact-secrets';
 import { hasOrchestratorPowers } from '../core/agent-role';
-import { chatNameOf } from '../core/chat-inbox';
+import { chatNameOf, namedChatOf } from '../core/chat-inbox';
 import { chatTag } from './chat-addressing';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
@@ -117,7 +117,8 @@ export async function askUser(
   if (!hasOrchestratorPowers(agent)) {
     return { ok: false, status: 403, error: 'Only a project\'s orchestrator asks the user. Ask your orchestrator: it decides whether to ask them, and passes their answer on.' };
   }
-  const chat = chatNameOf(agent);
+  // Named once its project has several chats (GATE-2.0.0-BULLETS, 2).
+  const chat = namedChatOf(agent);
   const question = input.question.trim();
   const context = input.context?.trim() || undefined;
   if (!question || question.length > MAX_QUESTION) return { ok: false, status: 400, error: `A question is 1 to ${MAX_QUESTION} characters.` };
