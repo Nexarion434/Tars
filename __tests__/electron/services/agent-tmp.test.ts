@@ -31,6 +31,15 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * 10. Something it cannot read or delete stops the pass.
  * 11. (the Audit's gate of #306) The root is checked once, then a long pass deletes by path: an agent that swaps
  *     ~/.dorothy/tmp for a link while the pass runs makes Tars delete an entry of the same name elsewhere.
+ * Measured on 2026-10-13 (~/.dorothy/tmp: 22 GB, 1.24 million files, 21 agents), and written before the code:
+ * 12. An agent whose CLI runs keeps everything for as long as it runs: one agent's folder held 18.5 GB, its project's
+ *     test sandboxes and build folders in `t/` (5,638 `staging-job-machines-*`, 3,793 build folders, 945 `e2e-step-*`),
+ *     and the pass deleted nothing, "what is left belongs to agents whose CLI runs". Its `t/` entries and the folders
+ *     of its ended sessions in `c/` go once nothing touched them for a day; the folder of the session it runs (or
+ *     would resume) never does, however old.
+ * 13. The pass walks every file of every agent every hour, even when nothing can go: 1.36 million lstat and 94,000
+ *     readdir, 49 s, 7 s of it on the main thread. A unit seen young cannot be old enough to go before its limit, so it
+ *     is not walked again until then; its size is refreshed every 6 hours.
  */
 
 const DAY = 86_400_000;
@@ -135,14 +144,28 @@ describe('the retention', () => {
     expect(exists(`${W()}/t`)).toBe(true);
   });
 
-  it('4. never touches an agent whose CLI is running, however old', async () => {
-    put(`${W()}/t/ancient.txt`, 10, 60);
-    put(`${L()}/t/ancient.txt`, 10, 60);
+  it('12. an agent whose CLI runs keeps what was touched within a day, and its live session whatever its age', async () => {
+    put(`${W()}/t/sandbox-of-a-test-run/home/x.json`, 10, 2);
+    put(`${W()}/t/build-folder/ssr/chunk.js`, 10, 1.5);
+    put(`${W()}/t/fresh.txt`, 10, 0.5);
+    put(`${W()}/c/claude-501/-work-tars/live-session/scratchpad/big.bin`, 10, 30);
+    put(`${W()}/c/claude-501/-work-tars/resumable-session/scratchpad/a.md`, 10, 20);
+    put(`${W()}/c/claude-501/-work-tars/ended-session/scratchpad/old.md`, 10, 3);
+    put(`${W()}/c/claude-501/-work-tars/ended-but-fresh/scratchpad/new.md`, 10, 0.2);
 
-    await enforceTmpRetention(deps({ liveAgentIds: () => ['worker'] }));
+    await enforceTmpRetention(deps({
+      liveAgentIds: () => ['worker'],
+      sessionsOf: (id: string) => (id === 'worker' ? ['live-session', 'resumable-session'] : []),
+    }));
 
-    expect(exists(`${W()}/t/ancient.txt`)).toBe(true);
-    expect(exists(`${L()}/t/ancient.txt`)).toBe(false);
+    expect(exists(`${W()}/t/sandbox-of-a-test-run`)).toBe(false);
+    expect(exists(`${W()}/t/build-folder`)).toBe(false);
+    expect(exists(`${W()}/t/fresh.txt`)).toBe(true);
+    expect(exists(`${W()}/c/claude-501/-work-tars/live-session/scratchpad/big.bin`)).toBe(true);
+    expect(exists(`${W()}/c/claude-501/-work-tars/resumable-session/scratchpad/a.md`)).toBe(true);
+    expect(exists(`${W()}/c/claude-501/-work-tars/ended-session`)).toBe(false);
+    expect(exists(`${W()}/c/claude-501/-work-tars/ended-but-fresh/scratchpad/new.md`)).toBe(true);
+    expect(logs.join('\n')).toMatch(/untouched for a day, its agent running/);
   });
 
   it('5. past the cap, deletes the oldest first, down to the cap, live agents aside', async () => {
@@ -246,6 +269,27 @@ describe('the retention', () => {
     } finally {
       if (fs.existsSync(path.join(root, W(), 't', 'locked'))) fs.chmodSync(path.join(root, W(), 't', 'locked'), 0o700);
     }
+  });
+});
+
+describe('13. what a pass walks', () => {
+  const W = () => shortIdOf('worker');
+  it('walks a unit seen young again only once it could be old enough, or its size six hours old', async () => {
+    put(`${W()}/t/young/a.txt`, 10, 0.1);
+    put(`${W()}/t/old/a.txt`, 10, 10);
+    const first = await enforceTmpRetention(deps());
+    expect(first.walked).toBe(2);
+    expect(exists(`${W()}/t/old`)).toBe(false);
+    // An hour later: the young unit cannot be 7 days old yet.
+    const second = await enforceTmpRetention(deps({ now: () => NOW + 3_600_000 }));
+    expect(second.walked).toBe(0);
+    // Six hours later: its size is weighed again.
+    const third = await enforceTmpRetention(deps({ now: () => NOW + 6 * 3_600_000 + 1 }));
+    expect(third.walked).toBe(1);
+    // A week later it is walked, found untouched, and goes.
+    const later = await enforceTmpRetention(deps({ now: () => NOW + 8 * DAY }));
+    expect(later.walked).toBe(1);
+    expect(exists(`${W()}/t/young`)).toBe(false);
   });
 });
 
