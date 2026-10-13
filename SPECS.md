@@ -474,7 +474,7 @@ A chat is one conversation with a project's orchestrator on one topic (ORCHESTRA
   - the project's path as Tars saved it, its orchestrator's;
   - a number fixed within the project: #1 is Main, then 2, 3... The project's counter only goes up, so a deleted chat's number is never handed out again, and an old reply to "#3" cannot reach a newer chat;
   - its title: one line, 80 characters at most. It is "New chat" until named (`titleSource: 'auto'`), and `'user'` once named, which nothing replaces;
-  - the agent that runs its conversation (`runnerId`), and every session that conversation went through (`sessionIds`, oldest first). Each session the runner registers is added;
+  - the agent that runs its conversation (`runnerId`), and every session that conversation went through (`sessionIds`, oldest first). Each session the runner registers is added, with the folder its CLI ran in (`sessionFolders`, by session id: the runner's worktree, else its project; the project or a folder inside it, and nothing else, since `chats.json` is agents' to write). A session is read from its recorded folder first, so Main still reads a former orchestrator's session, run in that one's own worktree, after the role moved;
   - `pinned`, `snoozedUntil`, `settledAt`;
   - `inbox`: the project's chat the bots, Hermes and Tars's notes will post to, exactly one per project with chats;
   - its times.
