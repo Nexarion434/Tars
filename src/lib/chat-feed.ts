@@ -59,16 +59,32 @@ export function applyEvent(feed: ChatFeed, event: ChatEvent): ChatFeed {
   }
 }
 
-/** The snapshot, read first or again after a gap, then what was heard while it was read. */
+/**
+ * The snapshot, read first or again after a gap, then what was heard while it
+ * was read. Read again, it keeps the earlier pages held when its lines reach
+ * them, and only then: lines held up to the one before its first, or past
+ * it, leave no hole between the two.
+ */
 export function applySnapshot(feed: ChatFeed, history: ChatHistory, heard: ChatEvent[] = []): ChatFeed {
-  const items = [...history.items].sort((a, b) => a.n - b.n);
+  const fresh = [...history.items].sort((a, b) => a.n - b.n);
+  const first = fresh[0]?.n;
+  const ids = new Set(fresh.map(item => item.id));
+  const kept = first !== undefined && feed.items.some(held => held.n >= first - 1)
+    ? feed.items.filter(held => held.n < first && !ids.has(held.id))
+    : [];
+  const items = [...kept, ...fresh];
   let next: ChatFeed = { ...feed, items, seq: history.seq, stale: false, hasEarlier: earlierThanFirst(items) };
   for (const event of heard) next = applyEvent(next, event);
   return next;
 }
 
-/** A page from before the first line held. The seq stays: the page tells nothing new. */
-export function applyEarlier(feed: ChatFeed, history: ChatHistory): ChatFeed {
+/**
+ * A page from before the first line held, asked from that line (`before`).
+ * The seq stays: the page tells nothing new. A page asked from a first line
+ * that a re-read has since moved would leave a hole: it is dropped.
+ */
+export function applyEarlier(feed: ChatFeed, history: ChatHistory, before: number): ChatFeed {
+  if (feed.items[0]?.n !== before) return feed;
   let items = feed.items;
   for (const item of history.items) if (!items.some(held => held.id === item.id)) items = withItem(items, item);
   return { ...feed, items, hasEarlier: earlierThanFirst(items) };
