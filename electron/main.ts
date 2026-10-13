@@ -156,6 +156,7 @@ import {
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
 import { endAuthCommands } from './services/claude-accounts/auth';
+import { currentFolderLookupsOff } from './platform';
 
 // ============== App Settings Management ==============
 
@@ -166,6 +167,10 @@ for (const stream of [process.stdout, process.stderr]) {
     if (err.code !== 'EPIPE') throw err;
   });
 }
+
+// On Windows, nothing Tars starts by a bare name is looked up in the folder
+// it is started in, which is often a project's (platform/git-command.ts).
+Object.assign(process.env, currentFolderLookupsOff());
 
 let appSettings: AppSettings = loadAppSettings();
 let stopTmpRetention: () => void = () => undefined;
