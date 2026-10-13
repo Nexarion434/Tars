@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { TMP_ROOT, agentTmpEnv, enforceTmpRetention, shortIdOf } from '../../../electron/services/agent-tmp';
 import { DATA_DIR } from '../../../electron/constants';
 import { hasPosixModes } from '../../setup/platform-limits';
@@ -40,6 +41,14 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * 13. The pass walks every file of every agent every hour, even when nothing can go: 1.36 million lstat and 94,000
  *     readdir, 49 s, 7 s of it on the main thread. A unit seen young cannot be old enough to go before its limit, so it
  *     is not walked again until then; its size is refreshed every 6 hours.
+ * 14. (the Audit's M1 on #384) A running CLI's socket goes after a day: claude 2.1.296 keeps its messaging socket at
+ *     `c/cc-socks/<pid>.sock`, dated its start and never touched, and a server an agent starts keeps one in `t/` (tmux,
+ *     an editor, ssh). While its agent runs, a unit holding a socket or a FIFO is kept, and in `c/` only an ended
+ *     session's folder is a leftover.
+ * 15. (L1) A unit measured old, then written to, goes at the next pass on the date measured before: the measure is
+ *     reused only while it says the unit is young.
+ * 16. (L3) A unit written between its measure and its deletion (a pass can take 100 s) goes anyway: its top's date is
+ *     read again just before it is deleted.
  */
 
 const DAY = 86_400_000;
@@ -291,6 +300,66 @@ describe('13. what a pass walks', () => {
     const later = await enforceTmpRetention(deps({ now: () => NOW + 8 * DAY }));
     expect(later.walked).toBe(1);
     expect(exists(`${W()}/t/young`)).toBe(false);
+  });
+});
+
+describe("14. what a running agent's CLI still uses", () => {
+  const W = () => shortIdOf('worker');
+  const net = (process.getBuiltinModule('node:net') as typeof import('node:net'));
+  it.skipIf(process.platform === 'win32')('keeps a socket or a FIFO two days old, and what in c/ is not a session folder', async () => {
+    // A short root: a Unix socket's path is limited to about 104 bytes.
+    const short = fs.mkdtempSync('/tmp/tt-');
+    root = path.join(short, 'tmp');
+    fs.mkdirSync(root);
+    fs.mkdirSync(path.join(root, W(), 'c', 'cc-socks'), { recursive: true });
+    const sock = path.join(root, W(), 'c', 'cc-socks', '4242.sock');
+    const server = net.createServer();
+    await new Promise<void>((r) => server.listen(sock, r));
+    try {
+      fs.mkdirSync(path.join(root, W(), 't', 'tmux-501'), { recursive: true });
+      execFileSync('mkfifo', [path.join(root, W(), 't', 'tmux-501', 'default')]);
+      put(`${W()}/c/claude-501/bash-edit-diff/x.diff`, 10, 3);
+      put(`${W()}/t/leftover/a.txt`, 10, 3);
+      for (const p of [sock, path.join(root, W(), 't', 'tmux-501', 'default')]) {
+        const at = new Date(NOW - 2 * DAY);
+        fs.lutimesSync(p, at, at);
+      }
+      age(`${W()}/c/cc-socks`, 2);
+      age(`${W()}/t/tmux-501`, 2);
+      await enforceTmpRetention(deps({ liveAgentIds: () => ['worker'] }));
+      expect(fs.existsSync(sock), 'the CLI\'s messaging socket').toBe(true);
+      expect(exists(`${W()}/t/tmux-501/default`), 'a FIFO a server listens on').toBe(true);
+      expect(exists(`${W()}/c/claude-501/bash-edit-diff/x.diff`), 'c/ outside a session folder').toBe(true);
+      expect(exists(`${W()}/t/leftover`)).toBe(false);
+    } finally {
+      server.close();
+      fs.rmSync(short, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('15, 16. dates that moved', () => {
+  const W = () => shortIdOf('worker');
+  it('15. does not delete, on a date measured before, a unit written since', async () => {
+    put(`${W()}/t/kept-while-stopped/a.txt`, 10, 2);
+    await enforceTmpRetention(deps());
+    expect(exists(`${W()}/t/kept-while-stopped`)).toBe(true);
+    // Its agent starts and writes to it; the next pass, an hour on, is within the 6 hours.
+    put(`${W()}/t/kept-while-stopped/b.txt`, 10, -1 / 24);
+    await enforceTmpRetention(deps({ now: () => NOW + 3_600_000, liveAgentIds: () => ['worker'] }));
+    expect(exists(`${W()}/t/kept-while-stopped`)).toBe(true);
+  });
+
+  it('16. does not delete a unit written between its measure and its deletion', async () => {
+    put(`${W()}/t/written-meanwhile/a.txt`, 10, 9);
+    await enforceTmpRetention(deps({
+      liveAgentIds: () => {
+        // Asked once the measuring is done: the moment a write lands before the deletions.
+        fs.writeFileSync(path.join(root, W(), 't', 'written-meanwhile', 'new.txt'), 'x');
+        return [];
+      },
+    }));
+    expect(exists(`${W()}/t/written-meanwhile/new.txt`)).toBe(true);
   });
 });
 
