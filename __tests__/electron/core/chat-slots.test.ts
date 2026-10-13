@@ -206,11 +206,13 @@ describe("a runner's kind, as the chats confirm it (the Audit's L1 on #379)", ()
     ['gone', { id: 'gone', role: 'worker', kind: 'chat', chatId: 'chat-gone', projectPath: project }],
     ['named-other', { id: 'named-other', role: 'worker', kind: 'chat', chatId: 'chat-b', projectPath: project }],
     ['runner-o', { id: 'runner-o', role: 'worker', kind: 'chat', chatId: 'chat-o', projectPath: project }],
+    // Claims chat A, whose record names runner-a, which exists.
+    ['thief', { id: 'thief', role: 'worker', kind: 'chat', chatId: 'chat-a', projectPath: project }],
   ]);
 
   it('14, 15. lists every agent marked kind chat that no chat names, and nothing else', () => {
     const ids = unconfirmedRunners(fleet, (chatId) => chats.get(chatId)).map((a) => a.id).sort();
-    expect(ids).toEqual(['gone', 'named-other', 'no-chat-id', 'runner-o']);
+    expect(ids).toEqual(['gone', 'named-other', 'no-chat-id', 'runner-o', 'thief']);
   });
 });
 

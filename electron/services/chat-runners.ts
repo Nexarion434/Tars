@@ -5,7 +5,7 @@ import { execFile } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
+import { fieldInUse, ptyProcesses, writeProgrammaticInput, WRITE_SETTLE_MS } from '../core/pty-manager';
 import { dialogOpen, launchAgent, sessionStarted, sessionStarting, setSlotGate, SENDER_WAIT_MS, type SlotGate } from '../core/agent-launch';
 import { cliRunningIn } from '../core/agent-pty';
 import { fallAsleep } from '../core/agent-asleep';
@@ -256,12 +256,17 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
     if (holders.length < limit.limit) return null;
     const procs = await readProcesses();
     const now = Date.now();
-    const candidates = holders.map(({ chat, agent }) => ({
-      agentId: agent.id,
-      isMain: chat.number === 1 || agent.kind !== 'chat',
-      lastActivity: Date.parse(agent.lastActivity) || 0,
-      refusal: reserved.has(agent.id) ? 'starting' : sleepRefusal(factsOf(agent, procs, now), { anyAge: true }),
-    }));
+    const candidates = holders.map(({ chat, agent }) => {
+      const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      return {
+        agentId: agent.id,
+        isMain: chat.number === 1 || agent.kind !== 'chat',
+        lastActivity: Date.parse(agent.lastActivity) || 0,
+        refusal: reserved.has(agent.id) ? 'starting' : sleepRefusal(factsOf(agent, procs, now), { anyAge: true }),
+        // A message Tars has just typed in keeps the field in use a moment (WRITE_SETTLE_MS): it settles by itself.
+        settlesInMs: terminal ? fieldInUse(terminal)?.retryInMs : undefined,
+      };
+    });
     const victimId = victimOf(candidates);
     const victim = victimId ? agents.get(victimId) : undefined;
     // Read again with nothing awaited since, then put to sleep: a message on its
@@ -272,11 +277,14 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
       return null;
     }
     // A turn's end reaches Tars from its Stop hook, whose process is still
-    // under the CLI for a moment after (busy), and the process table may not
-    // come at all under load: such a runner is looked at again, a little later.
-    const passing = candidates.some((c) => !c.isMain && (c.refusal === 'busy' || c.refusal === 'no-process-table'));
-    if (passing && look < EVICTION_LOOKS) {
-      await new Promise((resolve) => setTimeout(resolve, EVICTION_PAUSE_MS));
+    // under the CLI for a moment after (busy), the process table may not come
+    // at all under load, and a message Tars has just typed in keeps the field
+    // in use until it settles: such a runner is looked at again, a little later.
+    const passing = candidates.filter((c) => !c.isMain
+      && (c.refusal === 'busy' || c.refusal === 'no-process-table' || (c.refusal === 'field' && c.settlesInMs !== undefined)));
+    if (passing.length && look < EVICTION_LOOKS) {
+      const wait = Math.max(EVICTION_PAUSE_MS, ...passing.map((c) => Math.min(c.settlesInMs ?? 0, WRITE_SETTLE_MS)));
+      await new Promise((resolve) => setTimeout(resolve, wait));
       continue;
     }
     const why = candidates.map((c) => `${agents.get(c.agentId)?.name || c.agentId}: ${c.isMain ? 'main' : c.refusal ?? 'free'}`).join(', ');
