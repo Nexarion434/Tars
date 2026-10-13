@@ -9,8 +9,9 @@ import { RichText } from '@/components/Overseer/RichText';
 import { Button, ComposerCard, PanelCaption, StatusSquare } from '@/components/ui';
 import { useElectronAgents } from '@/hooks/useElectron';
 import { useChatFeed } from '@/hooks/useChatFeed';
-import { changeChat, isChatError, projectNameOf, refreshChats, useChats } from '@/hooks/useChats';
-import { clearsField, outcomeOf, stripOf, titleOf, type SendOutcome } from '@/lib/chat-send';
+import { projectNameOf, refreshChats, useChats } from '@/hooks/useChats';
+import { forgetSentOutcome, sendComposer, useChatComposer, writeComposer } from '@/hooks/useChatComposer';
+import { stripOf, type SendOutcome } from '@/lib/chat-send';
 import type { AgentStatus, ChatItem, ChatView } from '@/types/electron';
 import { ChatHead, clockOf } from './chat-bits';
 
@@ -26,6 +27,8 @@ import { ChatHead, clockOf } from './chat-bits';
  * that does not is started with them, and a new chat's first message makes its
  * runner and names it. A refusal is said in the page and the words stay; a
  * full limit names who works, with a Stop for each (src/lib/chat-send.ts).
+ * The field and its send are kept per chat for the window
+ * (src/hooks/useChatComposer.ts): a page left during a launch finds them again.
  */
 
 /** Within this many pixels of the end, the thread follows what arrives. */
@@ -215,43 +218,14 @@ export function ChatPage({ chat }: { chat: ChatView }) {
   const launching = !(listed?.live ?? false);
   const firstMessage = !runnerId && feed.items.length === 0 && !problem;
 
-  // The field, and what the last send came to (src/lib/chat-send.ts).
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [outcome, setOutcome] = useState<SendOutcome | null>(null);
-  const [nameProblem, setNameProblem] = useState<string | null>(null);
+  // The field, and what the last send came to, this chat's for the window (src/hooks/useChatComposer.ts).
+  const { text, sending, outcome, nameProblem } = useChatComposer(chat.id);
   // A held message goes in once the orchestrator takes a turn: the strip has said what it had to.
   useEffect(() => {
-    if (working) setOutcome(previous => (previous?.kind === 'sent' ? null : previous));
-  }, [working]);
-  const submit = async () => {
-    const words = text;
-    if (!words.trim() || sending) return;
-    setSending(true);
-    setOutcome(null);
-    setNameProblem(null);
-    let read: SendOutcome;
-    try {
-      const api = window.electronAPI?.chat;
-      read = outcomeOf(api
-        ? await api.send({ chatId: chat.id, text: words, clientRequestId: crypto.randomUUID(), mode: 'auto' })
-        : new Error('The chats are not available in this window.'));
-    } catch (error) {
-      read = outcomeOf(error instanceof Error ? error : new Error(String(error)));
-    }
-    setSending(false);
-    setOutcome(read);
-    if (clearsField(read)) {
-      setText(current => (current === words ? '' : current));
-      // Its first message names a chat nobody named.
-      const title = record.titleSource === 'auto' ? titleOf(words) : null;
-      if (title) {
-        const named = await changeChat(api => api.rename({ chatId: chat.id, title }));
-        if (isChatError(named)) setNameProblem(`This chat keeps its name: ${named.reason}`);
-      }
-    }
-    void refreshChats();
-  };
+    if (working) forgetSentOutcome(chat.id);
+  }, [working, chat.id]);
+  // Its first message names a chat nobody named.
+  const submit = () => void sendComposer(chat.id, { nameIt: record.titleSource === 'auto' });
   const strip = stripOf({ outcome, sending, launching, working });
 
   // At the end, the thread follows what arrives; scrolled up, it stays. Show
@@ -346,8 +320,8 @@ export function ChatPage({ chat }: { chat: ChatView }) {
             {nameProblem && <p role="alert" className="text-xs text-status-waiting">{nameProblem}</p>}
             <ComposerCard
               value={text}
-              onChange={setText}
-              onSubmit={() => void submit()}
+              onChange={value => writeComposer(chat.id, value)}
+              onSubmit={submit}
               placeholder="Message the orchestrator about this chat"
               canSubmit={!sending && text.trim().length > 0}
               submitLabel="Send"
