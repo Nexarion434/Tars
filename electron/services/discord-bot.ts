@@ -4,6 +4,8 @@ import { AgentStatus, AppSettings } from '../types';
 import { TG_CHARACTER_FACES } from '../constants';
 import { isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
+import { chatTag } from './chat-addressing';
+import { deliverFromChannel } from './chat-senders';
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses } from '../core/pty-manager';
 import { projectName } from '../platform';
@@ -325,24 +327,32 @@ export async function sendToSuperAgentFromDiscord(channelId: string, message: st
   }
   const superAgent = target.orchestrator;
 
-  // One line: the terminal takes a newline as Enter.
-  const sanitizedMessage = target.text.replace(/\r?\n/g, ' ').trim();
-
   try {
-    await forwardToOrchestrator(fleetFor(appSettings), superAgent, 'Discord', {
-      message: sanitizedMessage,
+    // Main, the orchestrator, by the path it always took; another chat, "#N"
+    // or the inbox, through the chats; the number alone names it here, with no
+    // reply-to (PR F).
+    await deliverFromChannel({
+      projectPath: target.projectPath, text: target.text,
       context: `[FROM DISCORD channel_id=${channelId} - Use send_discord MCP tool with channel_id="${channelId}" to respond!]`,
-      // Its own mode, as from Slack: Discord is no reason to lift its permissions.
-      permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
-      resume: true,
-      systemPromptFile: () => {
-        const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-        return fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
-      },
-      reply: outcome => {
-        if (outcome === 'no-terminal') return say('❌ Failed to connect to Super Agent terminal.');
-        if (outcome === 'typed') return say('👑 Super Agent is processing...');
-        return say('👑 Super Agent is processing your request...');
+      sender: { kind: 'channel', channel: 'Discord' },
+      tell: (said, chat) => say(`👑 ${chat ? `${chatTag(chat)} ` : ''}${said}`),
+      toOrchestrator: async (said) => {
+        await forwardToOrchestrator(fleetFor(appSettings), superAgent, 'Discord', {
+          message: said.replace(/\r?\n/g, ' ').trim(),
+          context: `[FROM DISCORD channel_id=${channelId} - Use send_discord MCP tool with channel_id="${channelId}" to respond!]`,
+          // Its own mode, as from Slack: Discord is no reason to lift its permissions.
+          permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
+          resume: true,
+          systemPromptFile: () => {
+            const superAgentInstructionsPath = getSuperAgentInstructionsPath();
+            return fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
+          },
+          reply: outcome => {
+            if (outcome === 'no-terminal') return say('❌ Failed to connect to Super Agent terminal.');
+            if (outcome === 'typed') return say('👑 Super Agent is processing...');
+            return say('👑 Super Agent is processing your request...');
+          },
+        });
       },
     });
   } catch (err) {
