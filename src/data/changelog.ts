@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '2.0.1',
     date: '2026-10-13',
     updates: [
-      'Deleting an agent from the Agents page says what stays of it, as deleting a chat does: once it is gone, the page names the wip/ branch its uncommitted work was saved on and, when its worktree is kept on disk (it holds files git ignores, such as a .env, a repository of its own, or a submodule with work no remote has), why and where, until ok puts it away. Its confirmation no longer says the uncommitted changes go with the worktree: they are saved on a wip/ branch first.',
+      'Deleting an agent from the Agents page says what stays of it, as deleting a chat does: once it is gone, the page names the wip/ branch its uncommitted work was saved on and, when its worktree is kept on disk because it holds what no commit keeps (a file git ignores such as a .env, a repository of its own, or a submodule with work no remote has), why and where, until ok puts it away. Its confirmation no longer says the uncommitted changes go with the worktree: they are saved on a wip/ branch first.',
     ],
   },
   {
