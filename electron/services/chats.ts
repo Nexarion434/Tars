@@ -58,6 +58,15 @@ export interface Chat {
   runnerId: string | null;
   /** Every session the runner's conversation went through, oldest first. */
   sessionIds: string[];
+  /**
+   * The folder each session's CLI ran in, by session id, recorded when the
+   * session was taken: Main follows a new orchestrator, and a session the
+   * former one ran in its own worktree is found there (GATE-PR371-DELTA5).
+   * As Tars saved it, then its real path when that differs: Claude Code files
+   * a transcript under the real one, which cannot be read once the folder is
+   * gone (GATE-PR391, L2). Inside the project; absent for a session from before.
+   */
+  sessionFolders?: Record<string, string[]>;
   pinned: boolean;
   /** Hidden from the active chats until then (ISO), or until something arrives for it. */
   snoozedUntil: string | null;
@@ -154,7 +163,7 @@ export interface ChatStore {
   /** The chat an agent runs, Main's included. */
   chatOfRunner(agentId: string): Chat | undefined;
   /** A session the agent registered: added to each chat it runs that lacks it. Returns whether anything changed. */
-  noteSession(runnerId: string, sessionId: unknown): boolean;
+  noteSession(runnerId: string, sessionId: unknown, folder?: unknown): boolean;
 }
 
 const REASONS = {
@@ -179,7 +188,58 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && Number.isFinite(Date.parse(v));
 export const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
 const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work'>): ChatError => ({ error, reason: REASONS[error] });
-const copy = (chat: Chat): Chat => ({ ...chat, sessionIds: [...chat.sessionIds] });
+const copy = (chat: Chat): Chat => ({
+  ...chat, sessionIds: [...chat.sessionIds],
+  ...(chat.sessionFolders ? { sessionFolders: Object.fromEntries(Object.entries(chat.sessionFolders).map(([k, v]) => [k, [...v]])) } : {}),
+});
+
+/** A folder's real path, or undefined when it cannot be read. */
+function realOf(folder: string): string | undefined {
+  try {
+    return fs.realpathSync(folder);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A folder a session's CLI may have run in: the project's own, or one inside
+ * it (its worktrees), under the spelling Tars saved or the project's real one.
+ * chats.json is agents' to write, and the folder chooses which transcripts a
+ * chat shows.
+ */
+/** An absolute folder, normalised (no "." or ".." in it), of a sane length. */
+function isWellFormedFolder(folder: unknown): folder is string {
+  return typeof folder === 'string' && folder.length <= 4096 && !folder.includes('\0') && path.isAbsolute(folder) && path.resolve(folder) === folder;
+}
+
+export function isSessionFolder(folder: unknown, projectPath: string, projectReal = realOf(projectPath)): folder is string {
+  if (!isWellFormedFolder(folder)) return false;
+  const inside = (root: string) => folder === root || folder.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+  return inside(projectPath) || (!!projectReal && inside(projectReal));
+}
+
+/**
+ * The recorded spellings of a session's folder a reader may use: only while
+ * the project's real path reads, and each inside the project. A spelling kept
+ * unchecked while a linked project's target was away is never read
+ * (GATE-PR391-DELTA2, probe PC): the record keeps it, unrepaired, for the next
+ * load that can check it.
+ */
+export function sessionFoldersToRead(chat: Pick<Chat, 'projectPath' | 'sessionFolders'>, sessionId: string): string[] {
+  const recorded = chat.sessionFolders?.[sessionId];
+  if (!recorded?.length) return [];
+  const projectReal = realOf(chat.projectPath);
+  if (!projectReal) return [];
+  return recorded.filter((f) => isSessionFolder(f, chat.projectPath, projectReal));
+}
+
+/** The spellings to record for a folder: as given, then its real path when it differs, each inside the project. */
+function spellingsOf(folder: unknown, projectPath: string): string[] {
+  if (!isSessionFolder(folder, projectPath)) return [];
+  const real = realOf(folder);
+  return real && real !== folder && isSessionFolder(real, projectPath) ? [folder, real] : [folder];
+}
 
 /** One line of at most TITLE_MAX characters, or null: breaks become spaces, control and bidi characters go. */
 export function titleOf(raw: unknown): string | null {
@@ -203,7 +263,11 @@ function serialize(state: State): string {
   for (const key of Object.keys(state.numbers).sort()) numbers[key] = state.numbers[key];
   const chats = [...state.chats].sort(byProjectThenNumber).map((c) => ({
     id: c.id, projectPath: c.projectPath, number: c.number, title: c.title, titleSource: c.titleSource,
-    runnerId: c.runnerId, sessionIds: c.sessionIds, pinned: c.pinned, snoozedUntil: c.snoozedUntil, settledAt: c.settledAt,
+    runnerId: c.runnerId, sessionIds: c.sessionIds,
+    ...(c.sessionFolders && Object.keys(c.sessionFolders).length
+      ? { sessionFolders: Object.fromEntries(Object.keys(c.sessionFolders).sort().map((k) => [k, c.sessionFolders![k]])) }
+      : {}),
+    pinned: c.pinned, snoozedUntil: c.snoozedUntil, settledAt: c.settledAt,
     inbox: c.inbox, createdAt: c.createdAt, updatedAt: c.updatedAt, lastActivityAt: c.lastActivityAt,
   }));
   return JSON.stringify({ version: CHATS_VERSION, numbers, chats }, null, 2) + '\n';
@@ -212,7 +276,7 @@ function serialize(state: State): string {
 /** A record as the file holds it, or null when it does not hold. A title is put on one line (`fixed`). */
 function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   if (!isObject(raw)) return null;
-  const { id, projectPath, number, title, titleSource, runnerId, sessionIds, pinned, snoozedUntil, settledAt, inbox, createdAt, updatedAt, lastActivityAt } = raw;
+  const { id, projectPath, number, title, titleSource, runnerId, sessionIds, sessionFolders, pinned, snoozedUntil, settledAt, inbox, createdAt, updatedAt, lastActivityAt } = raw;
   if (typeof id !== 'string' || !CHAT_ID.test(id)) return null;
   if (typeof projectPath !== 'string' || !path.isAbsolute(projectPath) || projectPath.includes('\0') || projectPath.length > 4096) return null;
   if (!Number.isInteger(number) || (number as number) < 1 || (number as number) > 1_000_000) return null;
@@ -226,12 +290,30 @@ function chatOf(raw: unknown): { chat: Chat; fixed: boolean } | null {
   if (settledAt !== null && !isTime(settledAt)) return null;
   if (!isTime(createdAt) || !isTime(updatedAt) || !isTime(lastActivityAt)) return null;
   const sessions = [...new Set(sessionIds as string[])];
+  // The folders of the sessions it holds, each inside its project; what does not hold is dropped, the chat kept.
+  const folders: Record<string, string[]> = {};
+  let foldersFixed = sessionFolders !== undefined && !isObject(sessionFolders);
+  if (isObject(sessionFolders)) {
+    const projectReal = realOf(projectPath);
+    // A project whose real path cannot be read now (a link whose target is
+    // away): a spelling that is not under the saved path cannot be checked, and
+    // is kept as recorded, to be checked at the next load that can read it.
+    // Dropped, the repair would write its loss for good (GATE-PR391-DELTA, L1).
+    const holds = (f: unknown): f is string => isSessionFolder(f, projectPath, projectReal)
+      || (projectReal === undefined && isWellFormedFolder(f));
+    for (const [sessionId, spellings] of Object.entries(sessionFolders)) {
+      const kept = Array.isArray(spellings) ? [...new Set(spellings.filter(holds))].slice(0, 2) as string[] : [];
+      if (sessions.includes(sessionId) && kept.length) folders[sessionId] = kept;
+      if (!sessions.includes(sessionId) || !Array.isArray(spellings) || kept.length !== spellings.length) foldersFixed = true;
+    }
+  }
   return {
     chat: {
       id, projectPath, number: number as number, title: flat, titleSource, runnerId: runnerId as string | null, sessionIds: sessions,
+      ...(Object.keys(folders).length ? { sessionFolders: folders } : {}),
       pinned, snoozedUntil: snoozedUntil as string | null, settledAt: settledAt as string | null, inbox, createdAt, updatedAt, lastActivityAt,
     },
-    fixed: flat !== title || sessions.length !== sessionIds.length,
+    fixed: flat !== title || sessions.length !== sessionIds.length || foldersFixed,
   };
 }
 
@@ -583,15 +665,24 @@ export function createChatStore(opts: {
       return chat ? copy(chat) : undefined;
     },
 
-    noteSession(runnerId, sessionId) {
+    noteSession(runnerId, sessionId, folder) {
       if (!writable || !isSessionId(sessionId)) return false;
-      if (!state.chats.some((c) => c.runnerId === runnerId && !c.sessionIds.includes(sessionId))) return false;
+      // What a chat of this runner lacks: the session, or the folder its CLI ran in, recorded once.
+      const lacks = (c: Chat) => c.runnerId === runnerId
+        && (!c.sessionIds.includes(sessionId) || (!c.sessionFolders?.[sessionId] && spellingsOf(folder, c.projectPath).length > 0));
+      if (!state.chats.some(lacks)) return false;
       const next = clone();
       const at = iso();
       for (const chat of next.chats) {
-        if (chat.runnerId !== runnerId || chat.sessionIds.includes(sessionId)) continue;
-        chat.sessionIds.push(sessionId);
-        chat.lastActivityAt = at;
+        if (!lacks(chat)) continue;
+        if (!chat.sessionIds.includes(sessionId)) {
+          chat.sessionIds.push(sessionId);
+          chat.lastActivityAt = at;
+        }
+        const spellings = spellingsOf(folder, chat.projectPath);
+        if (!chat.sessionFolders?.[sessionId] && spellings.length) {
+          chat.sessionFolders = { ...(chat.sessionFolders ?? {}), [sessionId]: spellings };
+        }
         chat.updatedAt = at;
       }
       return commit(next) === null;

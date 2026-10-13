@@ -25767,6 +25767,82 @@
                                   ]
                                 }
                               ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "G4Lgtj",
+                              "name": "row New interface",
+                              "width": "fill_container",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "gap": 16,
+                              "padding": [
+                                11,
+                                0
+                              ],
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "lKBvb",
+                                  "name": "l",
+                                  "width": 560,
+                                  "layout": "vertical",
+                                  "gap": 2,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "KfoY5",
+                                      "name": "n",
+                                      "fill": "$text-primary",
+                                      "content": "New interface",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "pmKnI",
+                                      "name": "h",
+                                      "fill": "$text-secondary",
+                                      "textGrowth": "fixed-width",
+                                      "width": 560,
+                                      "content": "Turns on the new shell and chats per project, a preview: the sidebar lists your chats, and Agents, Usage, Settings and the other pages open from More as cards above the app.",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "lzmb1",
+                                  "name": "Toggle off",
+                                  "width": 30,
+                                  "height": 16,
+                                  "fill": "$surface-raised",
+                                  "stroke": "$border",
+                                  "strokeWidth": 1,
+                                  "layout": "none",
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "lcZcd",
+                                      "x": 2,
+                                      "y": 1,
+                                      "name": "knob",
+                                      "fill": "$text-secondary",
+                                      "width": 12,
+                                      "height": 12
+                                    }
+                                  ]
+                                }
+                              ]
                             }
                           ]
                         }
@@ -140217,6 +140293,82 @@
                                       "icon": "chevron-down",
                                       "library": "lucide",
                                       "fill": "$text-secondary"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "zmAA0",
+                              "name": "row New interface",
+                              "width": "fill_container",
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "gap": 16,
+                              "padding": [
+                                11,
+                                0
+                              ],
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "GrB7S",
+                                  "name": "l",
+                                  "width": 560,
+                                  "layout": "vertical",
+                                  "gap": 2,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "j1bOIG",
+                                      "name": "n",
+                                      "fill": "$text-primary",
+                                      "content": "New interface",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 12.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "VT1cW",
+                                      "name": "h",
+                                      "fill": "$text-secondary",
+                                      "textGrowth": "fixed-width",
+                                      "width": 560,
+                                      "content": "Turns on the new shell and chats per project, a preview: the sidebar lists your chats, and Agents, Usage, Settings and the other pages open from More as cards above the app.",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "L8KMI",
+                                  "name": "Toggle off",
+                                  "width": 30,
+                                  "height": 16,
+                                  "fill": "$surface-raised",
+                                  "stroke": "$border",
+                                  "strokeWidth": 1,
+                                  "layout": "none",
+                                  "children": [
+                                    {
+                                      "type": "rectangle",
+                                      "id": "dma0i",
+                                      "x": 2,
+                                      "y": 1,
+                                      "name": "knob",
+                                      "fill": "$text-secondary",
+                                      "width": 12,
+                                      "height": 12
                                     }
                                   ]
                                 }
@@ -260341,7 +260493,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "Until 2.0.0 the New interface row shows only once the preview is on, which \"newInterface\": true in ~/.dorothy/app-settings.json does meanwhile, so that whoever turned it on can turn it off (Noah, 12/10). Off, Settings · Preferences draws as before, without the row; Settings · Preferences · new interface on and its light copy draw it on.",
+              "content": "Since 2.0.0 the New interface row shows to everyone, off by default: Settings · Preferences and its light copy draw it off, Settings · Preferences · new interface on and its light copy draw it on. Before 2.0.0 it showed only once \"newInterface\": true in ~/.dorothy/app-settings.json had turned the preview on, so that whoever did could turn it off (Noah, 12/10).",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -275489,7 +275641,7 @@
                       "id": "We0Bs",
                       "name": "t",
                       "fill": "$text-primary",
-                      "content": "Its conversation opens with the next part of this preview",
+                      "content": "Its conversation starts with your first message",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-display",
                       "fontSize": 22,
@@ -275502,51 +275654,12 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 480,
-                      "content": "The chat is kept: its number, its title and its place in the list. Until its orchestrator can answer here, Tars, all projects talks to every orchestrator.",
+                      "content": "Your first message starts this chat's orchestrator: a conversation of its own, in a worktree of its own, served by the project's team.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
                       "fontSize": 12.5,
                       "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ZLBlJ",
-                      "name": "button Open Tars, all projects",
-                      "height": 32,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "padding": [
-                        0,
-                        13
-                      ],
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "WV5Ll",
-                          "name": "message-square",
-                          "width": 14,
-                          "height": 14,
-                          "icon": "message-square",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        },
-                        {
-                          "type": "text",
-                          "id": "hVNoo",
-                          "name": "label",
-                          "fill": "$text-secondary",
-                          "content": "Open Tars, all projects",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 12.5,
-                          "fontWeight": "normal"
-                        }
-                      ]
                     }
                   ]
                 },
@@ -277126,7 +277239,7 @@
                           "id": "QsBp7",
                           "name": "note",
                           "fill": "$text-muted",
-                          "content": "Its conversation opens with the next part of this preview.",
+                          "content": "Its first message starts its orchestrator, and names it unless you do.",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -281176,7 +281289,7 @@
                       "id": "wxWla",
                       "name": "t",
                       "fill": "$text-primary",
-                      "content": "Its conversation opens with the next part of this preview",
+                      "content": "Its conversation starts with your first message",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-display",
                       "fontSize": 22,
@@ -281189,51 +281302,12 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 480,
-                      "content": "The chat is kept: its number, its title and its place in the list. Until its orchestrator can answer here, Tars, all projects talks to every orchestrator.",
+                      "content": "Your first message starts this chat's orchestrator: a conversation of its own, in a worktree of its own, served by the project's team.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
                       "fontSize": 12.5,
                       "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ZtPx0",
-                      "name": "button Open Tars, all projects",
-                      "height": 32,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "padding": [
-                        0,
-                        13
-                      ],
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "n0lMX",
-                          "name": "message-square",
-                          "width": 14,
-                          "height": 14,
-                          "icon": "message-square",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        },
-                        {
-                          "type": "text",
-                          "id": "uE2Or",
-                          "name": "label",
-                          "fill": "$text-secondary",
-                          "content": "Open Tars, all projects",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 12.5,
-                          "fontWeight": "normal"
-                        }
-                      ]
                     }
                   ]
                 },
@@ -282813,7 +282887,7 @@
                           "id": "iLQQf",
                           "name": "note",
                           "fill": "$text-muted",
-                          "content": "Its conversation opens with the next part of this preview.",
+                          "content": "Its first message starts its orchestrator, and names it unless you do.",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -285366,7 +285440,7 @@
               "fill": "$text-secondary",
               "textGrowth": "fixed-width",
               "width": 946,
-              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out.",
+              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out. A chat deleted whose runner's worktree stays on disk, or whose uncommitted work was saved on a branch, says so above the list, with the place and the branch, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 13,
@@ -287265,6 +287339,244 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "frame",
+              "id": "yhn3l",
+              "name": "state DELETED: WHAT STAYS, AND WHERE",
+              "width": 240,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "xTG5x",
+                  "name": "caption",
+                  "width": "fill_container",
+                  "height": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "maOb9",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 240,
+                      "content": "DELETED: WHAT STAYS, AND WHERE",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "N3QPU",
+                  "name": "sidebar",
+                  "clip": true,
+                  "width": 240,
+                  "height": 300,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "right": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pKbcj",
+                      "name": "notice deleted",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "P5SrH",
+                          "name": "l1",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "RQzxj",
+                              "name": "sq",
+                              "padding": [
+                                5,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "rectangle",
+                                  "id": "H1tpI",
+                                  "name": "square",
+                                  "fill": "$status-waiting",
+                                  "width": 6,
+                                  "height": 6
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "N20Vj",
+                              "name": "words",
+                              "width": 176,
+                              "layout": "vertical",
+                              "gap": 4,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "MHnKZ",
+                                  "name": "t",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Deleted tars #2, Release notes for 1.9.4, but not its worktree: it holds files git ignores, which no commit keeps (.env), so its worktree was kept at /Users/me/code/tars/.worktrees/chat-1a2b3c4d.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "vpn2k",
+                                  "name": "saved",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Its uncommitted work is on the branch wip/lead-release.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "LrH3Y",
+                          "name": "actions",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "mIA77",
+                              "name": "button ok",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "azrrb",
+                                  "name": "label",
+                                  "fill": "$text-primary",
+                                  "content": "ok",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "MYbRu",
+                      "name": "chat Retry the invoice webhook",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        5,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "x5hT1Y",
+                          "name": "line 1",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "raYWZ",
+                              "name": "title",
+                              "fill": "$text-primary",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Retry the invoice webhook",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "QjOnR",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "vhLOU",
+                              "name": "project",
+                              "fill": "$text-muted",
+                              "content": "harbor-billing #2",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "m4Rf86",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -287316,7 +287628,7 @@
               "fill": "$text-secondary",
               "textGrowth": "fixed-width",
               "width": 946,
-              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out.",
+              "content": "Each row of the chat list has its actions behind the dots that show on the row the pointer is on: pin, rename, snooze, settle, make it the project's inbox, delete. Delete asks first; when the chats' store refuses, the row says why in the store's own words, and names the work out. A chat deleted whose runner's worktree stays on disk, or whose uncommitted work was saved on a branch, says so above the list, with the place and the branch, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 13,
@@ -289215,6 +289527,244 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "frame",
+              "id": "lE79h",
+              "name": "state DELETED: WHAT STAYS, AND WHERE",
+              "width": 240,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "g6bWo",
+                  "name": "caption",
+                  "width": "fill_container",
+                  "height": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zLEME",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 240,
+                      "content": "DELETED: WHAT STAYS, AND WHERE",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ScLTq",
+                  "name": "sidebar",
+                  "clip": true,
+                  "width": 240,
+                  "height": 300,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "right": 1
+                  },
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZYS0n",
+                      "name": "notice deleted",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "axpwd",
+                          "name": "l1",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "VLMH8",
+                              "name": "sq",
+                              "padding": [
+                                5,
+                                0,
+                                0,
+                                0
+                              ],
+                              "children": [
+                                {
+                                  "type": "rectangle",
+                                  "id": "Qv7rz",
+                                  "name": "square",
+                                  "fill": "$status-waiting",
+                                  "width": 6,
+                                  "height": 6
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "of2vi",
+                              "name": "words",
+                              "width": 176,
+                              "layout": "vertical",
+                              "gap": 4,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "qNnMB",
+                                  "name": "t",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Deleted tars #2, Release notes for 1.9.4, but not its worktree: it holds files git ignores, which no commit keeps (.env), so its worktree was kept at /Users/me/code/tars/.worktrees/chat-1a2b3c4d.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "VSfC6",
+                                  "name": "saved",
+                                  "fill": "$text-primary",
+                                  "textGrowth": "fixed-width",
+                                  "width": 176,
+                                  "content": "Its uncommitted work is on the branch wip/lead-release.",
+                                  "lineHeight": 1.45,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "tWtRZ",
+                          "name": "actions",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "ZyusK",
+                              "name": "button ok",
+                              "height": 26,
+                              "fill": "$surface",
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1,
+                              "gap": 6,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "nraRs",
+                                  "name": "label",
+                                  "fill": "$text-primary",
+                                  "content": "ok",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Nb7Fu",
+                      "name": "chat Retry the invoice webhook",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "padding": [
+                        5,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "JpnEb",
+                          "name": "line 1",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jekcG",
+                              "name": "title",
+                              "fill": "$text-primary",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Retry the invoice webhook",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Vc81t",
+                          "name": "line 2",
+                          "width": "fill_container",
+                          "gap": 6,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "aOHJ3",
+                              "name": "project",
+                              "fill": "$text-muted",
+                              "content": "harbor-billing #2",
+                              "lineHeight": 1.35,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10.5,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GOuRZ",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -289283,7 +289833,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "The chat list reads the chats' records (chat:list, #361): every chat by project then number, each with its runner as the fleet has it now. Nothing else is shown of a chat until its conversation can be read: no last line, no unread, no count of chats working.",
+              "content": "The chat list reads the chats' records (chat:list, #361): every chat by project then number, each with its runner as the fleet has it now. Above it, how many chats work of the most this Mac runs (system:chatLimit): N of M working, its square idle at 0. Nothing else is shown of a chat in the list: no last line, no unread.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -289365,7 +289915,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "A chat opened from the list: its head as the chat page draws it, its actions aside, and in place of the conversation the sentence that it opens with the next part of the preview, with a way to Tars, all projects. Nothing delegated yet. Until the chat page comes (PR E), a chat's actions are on its row in the list, behind the dots that show on the row the pointer is on.",
+              "content": "A chat opened from the list opens on its page, drawn in chat-redesign-a.pen: a chat with a runner on its conversation, a new chat on its first message, which starts its orchestrator in a worktree of its own (Chat · chats · a new chat, its first message, where the composer under this frame's chat area is drawn). A chat's actions are on its row in the list, behind the dots that show on the row the pointer is on.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -289488,7 +290038,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "Pin, rename in place, snooze for an hour, until tomorrow or until Monday, settle, make it the inbox, delete. Delete asks first; a refusal from the store is shown in its own words, and the work out is named.",
+              "content": "Pin, rename in place, snooze for an hour, until tomorrow or until Monday, settle, make it the inbox, delete. Delete asks first; a refusal from the store is shown in its own words, and the work out is named. A deletion that leaves its runner's worktree on disk, or its work on a wip/ branch, says what stays and where, above the list, until ok puts it away.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -289515,7 +290065,7 @@
               "id": "P1460U",
               "name": "caption",
               "fill": "$text-secondary",
-              "content": "WAITING FOR PR D AND E",
+              "content": "SINCE PR D AND E",
               "lineHeight": 1.2,
               "fontFamily": "$font-ui",
               "fontSize": 10,
@@ -289529,7 +290079,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "How many chats work of the most this Mac runs, the conversation, what a chat delegated, and the composer's send come with the runners, chat:history and chat:events.",
+              "content": "The conversation, the composer's send and a new chat's first message are on the chat page; what a chat delegated comes once a task names the chat it came from.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,

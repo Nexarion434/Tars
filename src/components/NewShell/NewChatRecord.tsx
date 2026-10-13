@@ -12,7 +12,7 @@ import type { ChatError } from '@/types/electron';
  * New chat, as a record (`Shell · chats · new chat, its record`): the project,
  * the current one chosen and one without an orchestrator dimmed, and a title,
  * or New chat until its first message names it. The chat takes the project's
- * next number; its conversation opens with the next part of the preview.
+ * next number; its first message starts its orchestrator (PR D).
  */
 export function NewChatRecord({ initialProject }: { initialProject: string | null }) {
   const router = useRouter();
@@ -94,7 +94,7 @@ export function NewChatRecord({ initialProject }: { initialProject: string | nul
             <p role="alert" className="text-xs text-status-waiting">{refused.reason}</p>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-status-idle">Its conversation opens with the next part of this preview.</span>
+            <span className="text-xs text-status-idle">Its first message starts its orchestrator, and names it unless you do.</span>
             <span className="flex-1" />
             <Button variant="primary" disabled={!project || making} onClick={() => void create()}>Create chat</Button>
           </div>
