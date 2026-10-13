@@ -718,6 +718,9 @@ export async function stepShot(page, name) {
  * hooks, 14 KB, and nothing of what the app did (measured 2026-09-23).
  */
 async function traceApp(app) {
+  // A script that launches the app outside a test (e2e/new-interface-pictures.mjs) has no test, so no output folder
+  // to save a trace in: test.info() threw at its close, before the trace was even stopped. No trace there.
+  if (!inTest()) return;
   const context = app.context();
   await context.tracing.start({ screenshots: true, snapshots: true });
   const close = app.close.bind(app);
@@ -725,8 +728,20 @@ async function traceApp(app) {
     try {
       await context.tracing.stop({ path: test.info().outputPath('app-trace.zip') });
     } catch (error) {
-      console.warn('[e2e] the app trace could not be saved:', error);
+      // A spec that keeps its own trace (left-fullscreen.live.spec.ts) stops the context's tracing first and saves
+      // it where it wants: there is nothing left to save here, and nothing was lost (#366's Info).
+      if (!/Must start tracing before stopping/.test(String(error))) console.warn('[e2e] the app trace could not be saved:', error);
     }
     return close();
   };
+}
+
+/** Whether a Playwright test is running: test.info() throws outside one. */
+function inTest() {
+  try {
+    test.info();
+    return true;
+  } catch {
+    return false;
+  }
 }
