@@ -60,7 +60,7 @@ test('a claude auth status Tars started ends with the quit and writes nothing af
   if (fs.existsSync(marker)) fs.rmSync(marker);
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31452), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31448), DOROTHY_E2E: '1' },
   });
   let closed = false;
   try {
