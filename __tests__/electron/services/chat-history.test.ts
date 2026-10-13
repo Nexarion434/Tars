@@ -231,7 +231,8 @@ describe('a chat, followed', () => {
     const f = follow({ chats: [chat], runner });
     await f.tick();
     f.stop();
-    expect(itemsSent()).toEqual(['late in a']);
+    // The late item, then the two it moved one place on, sent again (12).
+    expect(itemsSent()).toEqual(['late in a', 'session', 'in b']);
   });
 
   it('12. sends again, with its new place, an item a late one moved on', async () => {

@@ -219,13 +219,16 @@ export function historyOf(items: NumberedItem[], query: { before?: unknown; limi
  * from its first chat:history answer, so a line written before its runner is
  * first seen live is still sent, and a chat no window asked for is not read.
  * By id, not by count: an item that came in before the last one told is sent
- * too, where counting by position never sent it (the gate of #371, M1).
+ * too, where counting by position never sent it (the gate of #371, M1). And
+ * with the place each was told at: that late item moves every item after it
+ * one place on, so an item whose place changed is sent again, the same id
+ * replacing the one the window holds (the gate of #371, delta 2).
  */
-const told = new Map<string, Set<string>>();
+const told = new Map<string, Map<string, number>>();
 
 /** A chat:history answer is a snapshot: what it held needs no event. */
 export function noteChatSnapshot(chatId: string, items: NumberedItem[]): void {
-  if (!told.has(chatId)) told.set(chatId, new Set(items.map((i) => i.id)));
+  if (!told.has(chatId)) told.set(chatId, new Map(items.map((i) => [i.id, i.n])));
 }
 
 /** Test seam: what this module knows of the files and the windows. */
@@ -272,8 +275,8 @@ export function followChats(deps: {
         continue;
       }
       for (const item of items) {
-        if (shown.has(item.id)) continue;
-        shown.add(item.id);
+        if (shown.get(item.id) === item.n) continue;
+        shown.set(item.id, item.n);
         publishChatEvent({ type: 'item', chatId: chat.id, item });
       }
     }
