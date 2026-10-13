@@ -219,6 +219,21 @@ export function isSessionFolder(folder: unknown, projectPath: string, projectRea
   return inside(projectPath) || (!!projectReal && inside(projectReal));
 }
 
+/**
+ * The recorded spellings of a session's folder a reader may use: only while
+ * the project's real path reads, and each inside the project. A spelling kept
+ * unchecked while a linked project's target was away is never read
+ * (GATE-PR391-DELTA2, probe PC): the record keeps it, unrepaired, for the next
+ * load that can check it.
+ */
+export function sessionFoldersToRead(chat: Pick<Chat, 'projectPath' | 'sessionFolders'>, sessionId: string): string[] {
+  const recorded = chat.sessionFolders?.[sessionId];
+  if (!recorded?.length) return [];
+  const projectReal = realOf(chat.projectPath);
+  if (!projectReal) return [];
+  return recorded.filter((f) => isSessionFolder(f, chat.projectPath, projectReal));
+}
+
 /** The spellings to record for a folder: as given, then its real path when it differs, each inside the project. */
 function spellingsOf(folder: unknown, projectPath: string): string[] {
   if (!isSessionFolder(folder, projectPath)) return [];
