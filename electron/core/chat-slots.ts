@@ -41,6 +41,11 @@ export function startPointOf(git: { originHead: string | null; refs: string[] })
   return null;
 }
 
+/** Why `git worktree add` refused, as the page reads it after "Its worktree could not be made: ". */
+export function worktreeAddRefusal(stderr: string): string {
+  return stderr.trim() || 'git worktree add failed';
+}
+
 /** A live runner that a full limit may put to sleep, and what the sleep rule says of it. */
 export interface SlotCandidate {
   agentId: string;

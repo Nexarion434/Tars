@@ -14,7 +14,7 @@ import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { dropRunnerGrants } from '../core/chat-grants';
-import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf } from '../core/chat-slots';
+import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, worktreeAddRefusal } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
 import { namesItsChats, pickChat } from './chat-addressing';
@@ -217,7 +217,7 @@ async function makeRunner(chat: Chat, lead: AgentStatus): Promise<{ runner: Agen
   if (!start) return failed('This project has no default branch to start a chat from (no origin/main, origin/master, main or master).');
   fs.mkdirSync(path.dirname(place.worktreePath), { recursive: true });
   const added = await git(project, ['worktree', 'add', '-b', place.branchName, place.worktreePath, start]);
-  if (added.code !== 0) return failed(`Its worktree could not be made: ${added.stderr.trim() || 'git worktree add failed'}.`);
+  if (added.code !== 0) return failed(`Its worktree could not be made: ${worktreeAddRefusal(added.stderr)}.`);
   await logDependencies(place.worktreePath, await cloneDependencies(project, place.worktreePath));
   // The grants the orchestrator has, copied once: they diverge after, as any worktree's do.
   const grants = path.join(project, '.claude', 'settings.local.json');
