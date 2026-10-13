@@ -74,8 +74,10 @@ export interface Chat {
 export type ChatErrorCode =
   | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
   | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable'
-  /** `chat:send` until the chats have runners of their own (PR D). */
-  | 'chat_send_unavailable';
+  /** The project's orchestrator runs a CLI whose conversations Tars cannot resume (PR D: chats work with claude). */
+  | 'provider_unsupported'
+  /** A chat that already has its runner, Main's being the orchestrator. */
+  | 'runner_set';
 
 export interface ChatError {
   error: ChatErrorCode;
@@ -120,6 +122,8 @@ export interface OrchestratorFacts {
   createdAt?: string;
   lastActivity?: string;
   resumableSessionId?: string;
+  /** False when its CLI's conversations cannot be resumed (a provider other than claude): no chat but Main. */
+  resumable?: boolean;
 }
 
 export interface ChatStore {
@@ -129,14 +133,26 @@ export interface ChatStore {
   get(chatId: unknown): Chat | undefined;
   /** The migration: Main for each project with an orchestrator that never had chats. Returns what it made. */
   ensureMains(orchestrators: OrchestratorFacts[]): Chat[];
+  /**
+   * Main follows the project's orchestrator, the persistent one: a Main whose runner is not it any more is
+   * rebound to it, its sessions kept as history and the orchestrator's conversation added last. Returns what it
+   * rebound; writes nothing when nothing moved.
+   */
+  followOrchestrators(orchestrators: OrchestratorFacts[]): MainRebound[];
   create(input: { projectPath?: unknown; title?: unknown }, orchestrators: OrchestratorFacts[]): Chat | ChatError;
   rename(chatId: unknown, title: unknown): Chat | ChatError;
   pin(chatId: unknown, pinned: unknown): Chat | ChatError;
   snooze(chatId: unknown, until: unknown): Chat | ChatError;
   settle(chatId: unknown, settled: unknown): Chat | ChatError;
   setInbox(chatId: unknown): Chat | ChatError;
+  /** Why the chat may not be deleted now (the inbox, work its runner has out), or null. Writes nothing. */
+  removalRefusal(chatId: unknown, workOut: (chat: Chat) => WorkItem[]): ChatError | null;
   /** Refused for the inbox, or while `workOut` names work the chat's runner has out. */
   remove(chatId: unknown, workOut: (chat: Chat) => WorkItem[]): { success: true } | ChatError;
+  /** The runner a chat's first send made (PR D). Main's is the orchestrator, set by the migration. */
+  setRunner(chatId: unknown, runnerId: unknown): Chat | ChatError;
+  /** The chat an agent runs, Main's included. */
+  chatOfRunner(agentId: string): Chat | undefined;
   /** A session the agent registered: added to each chat it runs that lacks it. Returns whether anything changed. */
   noteSession(runnerId: string, sessionId: unknown): boolean;
 }
@@ -149,18 +165,20 @@ const REASONS = {
   no_orchestrator: "This project has no orchestrator: set one on the Agents page, and its conversation becomes the chat Main.",
   inbox: "This chat is the project's inbox, where the bots, Hermes and Tars's notes arrive: make another chat the inbox first.",
   chat_has_work: 'This chat has work out at the team: wait for it to end, or cancel it, before deleting the chat.',
+  provider_unsupported: "This project's orchestrator runs a CLI whose conversations Tars cannot resume: chats other than Main work with claude for now.",
+  runner_set: 'This chat already has the agent that runs its conversation.',
 } as const;
 
 const SESSION_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const CHAT_ID = /^[A-Za-z0-9-]{1,64}$/;
 const AGENT_ID = /^[A-Za-z0-9._:-]{1,100}$/;
 /** The bidi controls (#186's class): they reorder what a reader sees. */
-const UNSEEN = /[\p{Cc}؜‎‏‪-‮⁦-⁩]/gu;
+const UNSEEN = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isTime = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && Number.isFinite(Date.parse(v));
 export const isSessionId = (v: unknown): v is string => typeof v === 'string' && SESSION_ID.test(v);
-const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work' | 'chat_send_unavailable'>): ChatError => ({ error, reason: REASONS[error] });
+const fail = (error: Exclude<ChatErrorCode, 'write_failed' | 'chats_unavailable' | 'chat_has_work'>): ChatError => ({ error, reason: REASONS[error] });
 const copy = (chat: Chat): Chat => ({ ...chat, sessionIds: [...chat.sessionIds] });
 
 /** One line of at most TITLE_MAX characters, or null: breaks become spaces, control and bidi characters go. */
@@ -440,12 +458,35 @@ export function createChatStore(opts: {
       return made.map(copy);
     },
 
+    followOrchestrators(orchestrators) {
+      if (!writable) return [];
+      const next = clone();
+      const moved: MainRebound[] = [];
+      for (const chat of next.chats) {
+        if (chat.number !== 1) continue;
+        const lead = orchestratorOf(chat.projectPath, orchestrators.filter((o) => !!o && typeof o.id === 'string' && AGENT_ID.test(o.id)));
+        if (!lead || lead.id === chat.runnerId) continue;
+        moved.push({ chatId: chat.id, projectPath: chat.projectPath, from: chat.runnerId, to: lead.id });
+        chat.runnerId = lead.id;
+        if (isSessionId(lead.resumableSessionId) && !chat.sessionIds.includes(lead.resumableSessionId)) chat.sessionIds.push(lead.resumableSessionId);
+        chat.updatedAt = iso();
+      }
+      if (!moved.length) return [];
+      const failed = commit(next);
+      if (failed) {
+        report({ kind: 'write_failed', detail: `Main could not follow the orchestrator of ${moved.length} project(s): ${failed.reason}` });
+        return [];
+      }
+      return moved;
+    },
+
     create(input, orchestrators) {
       if (!writable) return unavailable();
       // The project's Main first, when its orchestrator came after the launch.
       store.ensureMains(orchestrators);
       const orchestrator = orchestratorOf(input.projectPath, orchestrators);
       if (!orchestrator) return fail('no_orchestrator');
+      if (orchestrator.resumable === false) return fail('provider_unsupported');
       const named = input.title !== undefined && input.title !== null;
       const title = named ? titleOf(input.title) : NEW_CHAT_TITLE;
       if (title === null) return fail('invalid_title');
@@ -512,15 +553,34 @@ export function createChatStore(opts: {
       return true;
     }),
 
-    remove(chatId, workOut) {
+    removalRefusal(chatId, workOut) {
       const chat = find(state, chatId);
       if (!chat) return fail('not_found');
       if (chat.inbox) return fail('inbox');
       const tasks = workOut(copy(chat));
       if (tasks.length) return { error: 'chat_has_work', reason: REASONS.chat_has_work, tasks };
+      return null;
+    },
+
+    remove(chatId, workOut) {
+      const refused = store.removalRefusal(chatId, workOut);
+      if (refused) return refused;
+      const chat = find(state, chatId)!;
       const next = clone();
       next.chats = next.chats.filter((c) => c.id !== chat.id);
       return commit(next) ?? { success: true };
+    },
+
+    setRunner: (chatId, runnerId) => update(chatId, (chat) => {
+      if (typeof runnerId !== 'string' || !AGENT_ID.test(runnerId)) return fail('invalid_request');
+      if (chat.runnerId !== null) return fail('runner_set');
+      chat.runnerId = runnerId;
+      return true;
+    }),
+
+    chatOfRunner: (agentId) => {
+      const chat = [...state.chats].sort(byProjectThenNumber).find((c) => c.runnerId === agentId);
+      return chat ? copy(chat) : undefined;
     },
 
     noteSession(runnerId, sessionId) {
@@ -540,6 +600,14 @@ export function createChatStore(opts: {
 
   load();
   return store;
+}
+
+/** A Main rebound to its project's orchestrator (followOrchestrators). */
+export interface MainRebound {
+  chatId: string;
+  projectPath: string;
+  from: string | null;
+  to: string;
 }
 
 /** A member of the fleet, as the work a chat has out reads it (AgentStatus has these). */

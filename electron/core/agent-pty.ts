@@ -126,7 +126,11 @@ export function spawnAgentPty(opts: {
   // The Claude account this agent starts on, when the option is on (see
   // core/account-env.ts): here for the reason this module exists, since an
   // account a caller forgot would be a CLI billed to the wrong subscription.
-  const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
+  const env = { ...withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd)) };
+  // The pid of a claude that started Tars itself (a dev run, an e2e from an
+  // agent): the state mod reads CLAUDE_PID as "another claude started this
+  // CLI" and says nothing to Tars then (gate of #380). Never handed on.
+  delete env.CLAUDE_PID;
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
@@ -293,6 +297,15 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.
  * terminal had. Undefined for a terminal that did not come from spawnAgentPty
  * or has exited.
  */
+/**
+ * Whether the terminal's process is the CLI itself (the exec launch, `-c "cd
+ * ... && exec <cli>"`), rather than a shell the CLI was typed into; undefined
+ * for a terminal that did not come from spawnAgentPty or has exited.
+ */
+export function terminalIsTheCli(ptyProcess: pty.IPty | undefined): boolean | undefined {
+  return ptyProcess ? spawnedAs.get(ptyProcess)?.runsCommand : undefined;
+}
+
 export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
   return ptyProcess ? spawnedAs.get(ptyProcess)?.env : undefined;
 }

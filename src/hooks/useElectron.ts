@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { AgentStatus, AgentEvent, ElectronAPI, AgentCharacter, AgentProvider } from '@/types/electron';
+import type { AgentPermissionMode } from '@/types/agent';
 
 // Check if we're running in Electron
 export const isElectron = (): boolean => {
@@ -91,7 +92,7 @@ export function useElectronAgents() {
     character?: AgentCharacter;
     name?: string;
     secondaryProjectPath?: string;
-    permissionMode?: 'normal' | 'auto' | 'bypass';
+    permissionMode?: AgentPermissionMode;
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     provider?: AgentProvider;
     model?: string;
@@ -117,7 +118,7 @@ export function useElectronAgents() {
     projectPath?: string;
     skills?: string[];
     secondaryProjectPath?: string | null;
-    permissionMode?: 'normal' | 'auto' | 'bypass';
+    permissionMode?: AgentPermissionMode;
     effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     name?: string;
     character?: AgentCharacter;

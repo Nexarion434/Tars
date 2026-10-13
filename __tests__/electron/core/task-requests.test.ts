@@ -59,11 +59,17 @@
  *     queue: the stop ends every queued request, so it cuts that asker's work
  *     as surely as the work in hand. Refused then; the caller's own queued
  *     requests, and Tars, do not stop it.
+ * And for PR D, the chat case of 12 and 15 (written before the code, 2026-10-13):
+ * 16. A refusal cannot say whose work it protects, so a chat cannot be told
+ *     that its steer or restart would cut another chat's: the asker of the
+ *     work in hand, or for a restart the first other asker waiting in the
+ *     queue. Named exactly when mayInterrupt or mayRestart refuses, and never
+ *     the caller itself.
  */
 import { describe, it, expect } from 'vitest';
 import {
   newTaskRef, enqueueRequest, requestDelivered, bindTurn, linkSpent, requestDropped, takeAllRequests, isOwedByRequests,
-  endRequestsAtLaunch, setRequestsEndedHook, mayInterrupt, mayRestart, endUnresumed, requestTitle, type RequestWorker, type TaskRequest,
+  endRequestsAtLaunch, setRequestsEndedHook, mayInterrupt, mayRestart, cutWorkOf, endUnresumed, requestTitle, type RequestWorker, type TaskRequest,
 } from '../../../electron/core/task-requests';
 import { envelopeValue } from '../../../electron/utils/envelope-value';
 
@@ -305,5 +311,25 @@ describe('a restart (the Audit\'s L1 on #364)', () => {
     expect(mayRestart(w, 'o1')).toBe(false);
     expect(mayRestart(w, undefined)).toBe(true);
     expect(mayRestart(w, 'b1')).toBe(false);
+  });
+});
+
+describe("whose work a steer or a restart would cut (PR D, the chat case)", () => {
+  it('16. names the asker a refusal protects, exactly when mayInterrupt or mayRestart refuses', () => {
+    const w = worker();
+    expect(cutWorkOf(w, 'b1', 'steer')).toBeUndefined();
+    const a = enqueueRequest(w, 'o1');
+    requestDelivered(w, a);
+    expect(cutWorkOf(w, 'b1', 'steer')).toBe('o1');
+    expect(cutWorkOf(w, 'b1', 'restart')).toBe('o1');
+    expect(cutWorkOf(w, 'o1', 'steer')).toBeUndefined();
+    expect(cutWorkOf(w, undefined, 'restart')).toBeUndefined();
+    enqueueRequest(w, 'c1');
+    expect(cutWorkOf(w, 'o1', 'steer')).toBeUndefined();
+    expect(cutWorkOf(w, 'o1', 'restart')).toBe('c1');
+    for (const caller of ['o1', 'b1', 'c1', undefined]) {
+      expect(cutWorkOf(w, caller, 'steer') === undefined, `steer by ${caller}`).toBe(mayInterrupt(w, caller));
+      expect(cutWorkOf(w, caller, 'restart') === undefined, `restart by ${caller}`).toBe(mayRestart(w, caller));
+    }
   });
 });

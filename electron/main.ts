@@ -142,6 +142,7 @@ import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate'
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
 import {
@@ -154,6 +155,7 @@ import {
   migrateFromClaudeManager,
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
+import { endAuthCommands } from './services/claude-accounts/auth';
 
 // ============== App Settings Management ==============
 
@@ -556,7 +558,11 @@ app.whenReady().then(async () => {
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
-    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
+    onAgentAccountChanged: (agentId) => {
+      restartForSettings(agentId, ['claudeAccount']);
+      // An orchestrator's chats run on its account too: each runner takes it (the Audit's L3 on #379).
+      restartRunnersOf(agentId, ['claudeAccount']);
+    },
   });
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
@@ -655,6 +661,10 @@ app.whenReady().then(async () => {
       ...agentsRunningOverAcp(),
     ],
     knownAgentIds: () => [...agents.keys()],
+    sessionsOf: (id) => {
+      const a = agents.get(id);
+      return [a?.currentSessionId, a?.resumableSessionId].filter((s): s is string => !!s);
+    },
     freeBytes: () => {
       try {
         const st = fs.statfsSync(DATA_DIR);
@@ -797,6 +807,9 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // A `claude auth status` the accounts list started just before the
+      // quit: it wrote .claude.json into the home after Tars was gone.
+      ['endAuthCommands', endAuthCommands],
       // Last: what is owed on disk, and the run marked as ended cleanly, so
       // the next launch resumes nobody.
       ['endRestartRecovery', () => endRestartRecovery(recovery)],

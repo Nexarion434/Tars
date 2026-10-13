@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -90,6 +90,6 @@ test('the Extensions page writes every install count with one decimal, in K or M
     expect(pageErrors, 'no uncaught page error').toEqual([]);
   } finally {
     await app.close().catch(() => {});
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

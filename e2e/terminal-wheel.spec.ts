@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type CDPSession } from '@playwrigh
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -195,7 +195,7 @@ test('the wheel types nothing into a full-screen program, and the keys still do'
     expect(await sent('control, trackpad swipe up', swipe(-1))).toMatch(ARROWS);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
 

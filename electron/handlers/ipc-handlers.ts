@@ -1,11 +1,10 @@
 import { ipcMain, dialog, shell, app } from 'electron';
-import { stopAcpRuns } from '../services/acp/delegate';
-import { ignoredNotCaches, saveUncommittedWork, submodulesWithWork } from '../services/save-worktree-work';
 import { stopAgent } from '../core/agent-stop';
+import { removeAgent } from '../core/agent-remove';
+import { restartRunnersOf } from '../services/chat-runners';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
-import { endWorkerRequests } from '../core/task-requests';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
-import { answerPermission, dropPermissionAsks, type PermissionDecision } from '../services/permission-asks';
+import { answerPermission, type PermissionDecision } from '../services/permission-asks';
 import { noteWaker, publishedWaking, screenWhileAsleep, wakeAgent, wakesOnKey } from '../core/agent-asleep';
 import { publishedWaitingOn } from '../utils/waiting-on';
 import { defaultShell } from '../utils/default-shell';
@@ -54,9 +53,10 @@ import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts, forgetRestart } from '../core/agent-restart';
-import { assignRole, requestedRole } from '../core/agent-role';
+import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
+import { orchestratorMoved } from '../core/chat-identity';
+import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
+import { assignRole, hasOrchestratorPowers, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
@@ -478,6 +478,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Save agents to disk
     saveAgents();
+    // A new orchestrator: its project's Main follows it (core/chat-identity.ts).
+    orchestratorMoved();
     for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
 
     // Forward PTY output to renderer
@@ -746,8 +748,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
 
-    // Its project's orchestrator: the toggle, never the name.
-    const isSuperAgentCheck = isSuperAgent(agent);
+    // The orchestrator's powers: its project's orchestrator (the toggle, never
+    // the name) or a chat's runner (core/agent-role.ts).
+    const isSuperAgentCheck = hasOrchestratorPowers(agent);
 
     // Resolve MCP config path: pass for ALL agents using flag strategy (Claude)
     let mcpConfigPath: string | undefined;
@@ -868,7 +871,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // to an agent that is `running`, so a note owed to one of them waited on a
     // turn that was not coming.
     if (prompt.trim()) {
-      agent.savedPrompt = prompt;
+      // A chat's message is a turn, not the agent's brief (AgentLaunchOptions.message).
+      if (!options?.message) agent.savedPrompt = prompt;
       agent.status = 'running';
       agent.currentTask = prompt.slice(0, 100);
     } else {
@@ -947,10 +951,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   }) => {
     // Started from a window while asleep: woken by you (core/agent-asleep.ts).
     if (agents.get(id)?.status === 'asleep') noteWaker(id, 'you', 'start');
+    // Through the slot gate, as every start: a chat's runner takes a slot
+    // within the RAM's limit, its settings stay the orchestrator's, and the
+    // window's words are a turn, not its brief (the Audit's M1 on #379).
+    if (agents.get(id)?.kind === 'chat') return launchAgent(id, prompt, { message: true });
     // What a window may choose, and nothing else: the session a restart
     // resumes lands on a command line, and the permission the Kanban
     // automation imposes is its own. Neither is taken from an IPC message.
-    return startAgentCli(id, prompt, {
+    return launchAgent(id, prompt, {
       model: options?.model,
       provider: options?.provider,
       localModel: options?.localModel,
@@ -1043,6 +1051,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(params.id);
     if (!agent) {
       return { success: false, error: 'Agent not found' };
+    }
+    // A chat's runner takes its settings from the project's orchestrator at
+    // each launch (services/chat-runners.ts): changed here, its role would take
+    // the orchestrator's place, its project would lose its worktree, and the
+    // rest would be undone at its next send (the Audit's M2 on #379).
+    if (agent.kind === 'chat') {
+      return { success: false, error: `${agent.name || agent.id} runs a chat: its settings are the project's orchestrator's. Change them there.` };
     }
     let role: AgentRole | undefined;
     try {
@@ -1194,6 +1209,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     agent.lastActivity = new Date().toISOString();
     saveAgents();
+    // The role moved: its project's Main follows the orchestrator (core/chat-identity.ts).
+    orchestratorMoved();
 
     // A model, an effort or another flag the CLI only reads when it starts is
     // applied by restarting it, at a moment that cuts nothing: see
@@ -1203,6 +1220,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const changedAtLaunch = changedLaunchSettings(launchBefore, launchSettings(agent));
     if (changedAtLaunch.length > 0) restartForSettings(agent.id, changedAtLaunch);
     for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
+    // An orchestrator's chats run on its configuration: each runner takes it,
+    // and a live one restarts on what changed (services/chat-runners.ts).
+    restartRunnersOf(agent.id, changedAtLaunch);
 
     return { success: true, agent };
   });
@@ -1281,82 +1301,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
   });
 
-  ipcMain.handle('agent:remove', async (_event, id: string) => {
-    const agent = agents.get(id);
-    if (agent) await stopAcpRuns(agent.id, 'the agent was deleted');
-    dropPermissionAsks(id);
-    if (agent?.ptyId) {
-      const ptyProcess = ptyProcesses.get(agent.ptyId);
-      if (ptyProcess) {
-        killPty(ptyProcess);
-        ptyProcesses.delete(agent.ptyId);
-      }
-      // Nullify so pending onExit callbacks won't mutate state
-      agent.ptyId = undefined;
-    }
-
-    // Its uncommitted work is saved on wip/<name> first, without asking (Noah,
-    // 05/10): `--force` below removes whatever was not committed. A save that
-    // fails keeps the worktree where it is, and says so.
-    let savedTo: string | undefined;
-    let worktreeKept: string | undefined;
-    if (agent?.worktreePath && agent?.branchName && fs.existsSync(agent.worktreePath)) {
-      try {
-        const saved = await saveUncommittedWork(agent.worktreePath, agent.name || agent.id);
-        savedTo = saved?.branch;
-        if (savedTo) console.log(`[agent:remove] ${agent.name}'s uncommitted work saved on ${savedTo}`);
-        // What git ignores, a .env or an e2e run, no commit keeps: the
-        // worktree stays, rebuildable caches aside (the Audit's gate of #312).
-        // And a git repository of its own, which the save could only point at.
-        if (saved?.nestedRepos.length) {
-          worktreeKept = `it holds git repositories of its own, which no commit of the worktree keeps (${saved.nestedRepos.slice(0, 5).join(', ')}), so its worktree was kept at ${agent.worktreePath}`;
-          console.warn(`[agent:remove] ${worktreeKept}`);
-        }
-        // A submodule's commits and changes live in the worktree's own git
-        // store, which the removal deletes, and no remote may have them.
-        const submodules = worktreeKept ? [] : await submodulesWithWork(agent.worktreePath);
-        if (submodules.length) {
-          worktreeKept = `its submodules hold work no remote has (${submodules.slice(0, 5).join(', ')}), which removing the worktree would lose, so its worktree was kept at ${agent.worktreePath}`;
-          console.warn(`[agent:remove] ${worktreeKept}`);
-        }
-        const ignored = worktreeKept ? [] : await ignoredNotCaches(agent.worktreePath);
-        if (ignored.length) {
-          const named = ignored.slice(0, 5).join(', ') + (ignored.length > 5 ? ` and ${ignored.length - 5} more` : '');
-          worktreeKept = `it holds files git ignores, which no commit keeps (${named}), so its worktree was kept at ${agent.worktreePath}`;
-          console.warn(`[agent:remove] ${worktreeKept}`);
-        }
-      } catch (err) {
-        worktreeKept = `its uncommitted work could not be saved (${err instanceof Error ? err.message : String(err)}), so its worktree was kept at ${agent.worktreePath}`;
-        console.warn(`[agent:remove] ${worktreeKept}`);
-      }
-    }
-
-    // Clean up worktree if it exists
-    if (agent?.worktreePath && agent?.branchName && !worktreeKept) {
-      try {
-        // argv, not a shell string: an apostrophe in the project path used to
-        // make this fail silently and leak a stale worktree behind the deleted
-        // agent. See the same fix in agent:create.
-        const { execFileSync } = await import('child_process');
-        console.log(`Removing worktree at ${agent.worktreePath}`);
-        execFileSync('git', ['worktree', 'remove', agent.worktreePath, '--force'], { cwd: agent.projectPath, stdio: 'pipe' });
-        console.log(`Worktree removed successfully`);
-      } catch (err) {
-        console.warn(`Failed to remove worktree:`, err);
-        // Continue even if worktree removal fails
-      }
-    }
-
-    // What it was asked and will never finish, each requester told (the Audit's R3).
-    if (agent) endWorkerRequests(agent, 'deleted', { withLinked: true });
-    agents.delete(id);
-    forgetRestart(id);
-
-    // Save agents to disk
-    saveAgents();
-
-    return { success: true, ...(savedTo ? { savedTo } : {}), ...(worktreeKept ? { worktreeKept } : {}) };
-  });
+  // Delete an agent with its worktree, its work saved first (core/agent-remove.ts).
+  ipcMain.handle('agent:remove', async (_event, id: string) => removeAgent(id));
 
   // Update agent's secondary project path
   ipcMain.handle('agent:setSecondaryProject', async (_event, { id, secondaryProjectPath }: { id: string; secondaryProjectPath: string | null }) => {

@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -70,7 +70,7 @@ function writeStandIn(home: string): string {
     "const session = crypto.randomUUID();",
     "fs.appendFileSync(log, JSON.stringify({ n, session, args, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null, TARS_CLAUDE_ACCOUNT: process.env.TARS_CLAUDE_ACCOUNT ?? null }) + '\\n');",
     // A transcript as claude files it: under the account's projects/, which is ~/.claude/projects shared.
-    "const transcripts = path.join(d, 'projects', fs.realpathSync(process.cwd()).replace(/[/.]/g, '-'));",
+    "const transcripts = path.join(d, 'projects', fs.realpathSync(process.cwd()).replace(/[^a-zA-Z0-9]/g, '-'));",
     "fs.mkdirSync(transcripts, { recursive: true });",
     "fs.writeFileSync(path.join(transcripts, session + '.jsonl'), JSON.stringify({ type: 'user', sessionId: session, message: { role: 'user', content: 'work' } }) + '\\n');",
     "process.stdin.on('data', b => fs.appendFileSync(path.join(home, 'typed.jsonl'), JSON.stringify({ n, text: b.toString('utf8') }) + '\\n'));",
@@ -191,6 +191,6 @@ test('an agent cut by its account\'s limit goes on, on another account', async (
     });
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

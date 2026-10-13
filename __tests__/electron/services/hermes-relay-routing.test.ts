@@ -32,13 +32,21 @@ import { startFakeRelay, type FakeRelay } from '../../fixtures/fake-tars-relay';
  */
 
 const typed = vi.hoisted(() => ({} as Record<string, string[]>));
+/**
+ * Which test the terminals belong to. A terminal opened by an earlier test is
+ * never closed, and what reaches it late is that test's, not the current one's:
+ * case 1, past its own timeout under load, typed its reply into case 4's record
+ * (QA's gates of #374 and of main, 2026-10-13).
+ */
+const run = vi.hoisted(() => ({ generation: 0 }));
 vi.mock('node-pty', () => ({
   spawn: vi.fn((_file: string, _args: string[], opts: { env?: Record<string, string> }) => {
     const id = opts?.env?.CLAUDE_AGENT_ID ?? 'unknown';
+    const born = run.generation;
     typed[id] = typed[id] ?? [];
     return {
       pid: 4242, process: '2.1.286',
-      write: vi.fn((data: string) => { typed[id].push(data); }),
+      write: vi.fn((data: string) => { if (born === run.generation) typed[id].push(data); }),
       kill: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn(),
     };
   }),
@@ -117,6 +125,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  run.generation += 1;
   relay?.stopHermesRelay();
   fs.rmSync(path.join(os.homedir(), '.tars-private'), { recursive: true, force: true });
   for (const key of Object.keys(typed)) delete typed[key];
