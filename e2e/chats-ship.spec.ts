@@ -184,9 +184,12 @@ test('a project with only Main, the new interface off, reads on Telegram and in 
   });
   try {
     const prompts = () => lines<{ id: string; prompt: string }>(path.join(home, 'prompts.jsonl'));
-    const chats = (await call('chat', 'list') as unknown as { chats: Array<{ number: number }> }).chats;
+    const chats = (await call('chat', 'list') as unknown as { chats: Array<{ id: string; number: number }> }).chats;
     values.chats = chats;
     expect(chats.map((c) => c.number), 'the project has only Main').toEqual([1]);
+    // The orchestrator running, as it is when JeanBrasse writes to it.
+    expect(await call('chat', 'send', { chatId: chats[0].id, text: 'MAIN>> hello', clientRequestId: 'e2e-main' })).toMatchObject({ success: true });
+    await atRest('o1');
 
     // An issue's number at the start: to the orchestrator, as typed.
     telegram.write('#2 fix the login issue');
@@ -215,6 +218,7 @@ test('a project with only Main, the new interface off, reads on Telegram and in 
     values.posted = posted;
     expect(posted.authorName).toBe('Lead');
   } finally {
+    values.telegramSent = telegram.sent;
     recordValues(values);
     await app.close();
     await telegram.close();
