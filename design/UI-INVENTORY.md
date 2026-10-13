@@ -61,11 +61,12 @@ whoever turned it on can turn it off (Noah, 12/10). Off, the app draws exactly a
 | The chat list, read from the chats' records (#361): Pinned, Active, Working, Snoozed and Settled, the last two folded; each row with its title, project and number, and its runner's state; the project filter; "No chats yet" before a project has an orchestrator | `tars-redesign.pen`: Shell · chats · list, a chat open, Shell · chats · empty |
 | A chat's actions, behind the dots on its row: pin, rename in place, snooze until a chosen time, settle, make it the project's inbox, delete. Delete asks first; a refusal says why in the store's words and names the work out | `tars-redesign.pen`: Shell · chats · a chat's actions · states |
 | New chat: its record, a project with an orchestrator (one without cannot be chosen) and a title | `tars-redesign.pen`: Shell · chats · new chat, its record |
-| A chat open, waiting for its conversation: its head (title, project and number, team) and what it delegated, `/chats` (listed with the pages below) | `tars-redesign.pen`: Shell · chats · list, a chat open |
+| A chat with a runner (Main, today) open on its conversation, `/chats` (listed with the pages below): its lines read from its runner's transcripts (#371) and followed live, the last 200 and Show earlier for the ones before, each line as what it is, one speaker's lines under one head; its runner working at the end of the thread, with its last tool call; its permission ask above the composer, the one its window shows; the Chat's composer with nobody to receive yet, its strip opening Tars, all projects; the panel saying when what the chat delegates shows there | `chat-redesign-a.pen`: Chat · chats · from its transcripts, working, Chat · chats · from its transcripts, waiting on you |
+| A chat without a runner yet, waiting for its conversation: its head (title, project and number, team) and what it delegated | `tars-redesign.pen`: Shell · chats · list, a chat open |
 | A project's page, `/project` (listed with the pages below): its chats by number, Main named as its inbox, its team with what each agent is on, its Dashboard terminals and its room | `tars-redesign.pen`: Shell · chats · project page, from the records |
 
-The specs that walk them with the switch on are `e2e/new-interface-shell.spec.ts` and
-`e2e/new-interface-chats.spec.ts`.
+The specs that walk them with the switch on are `e2e/new-interface-shell.spec.ts`,
+`e2e/new-interface-chats.spec.ts` and `e2e/new-interface-chat-page.spec.ts`.
 
 **Drawn only, waiting for the chat runners and the conversation** (PR D and E of the
 Backend's orchestrator per chat design, v2.2): the first column names no route, so
@@ -74,13 +75,13 @@ Backend's orchestrator per chat design, v2.2): the first column names no route, 
 | Surface | Frames |
 |---|---|
 | How many chats work against the Mac's limit, above the list ("N of M working") | `tars-redesign.pen`: Shell · chats · project page |
-| The chat page: the conversation, its head (title, project and number, team) and what the chat delegated, with its state and result | `chat-redesign-a.pen`: Chat · chats · orchestrator working, · a worker on another chat, · a result back, · waiting on you, · every slot working, · a task given up |
+| The chat page once each chat has its own runner: sending from it, and what the chat delegated, with its state and result | `chat-redesign-a.pen`: Chat · chats · orchestrator working, · a worker on another chat, · a result back, · waiting on you, · every slot working, · a task given up |
 | New chat from its first message: the title taken from it | `chat-redesign-a.pen`: Chat · chats · new chat |
 
 Each frame has its `· light` copy beside it. A notes frame says what each frame
-shows: Chats · shell · notes, Chats · the list from the records · notes, and Chats ·
-chat page · notes, which also says how the room relates to the chats and what follows
-the Backend's v2.2.
+shows: Chats · shell · notes, Chats · the list from the records · notes, Chats · chat
+page from the transcripts · notes, and Chats · chat page · notes, which also says how
+the room relates to the chats and what follows the Backend's v2.2.
 
 ## Pages (17)
 
@@ -88,7 +89,7 @@ the Backend's v2.2.
 |---|---|---|
 | `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · session and fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
-| `/chats` | Chats (the new shell's chats page: the chat open, or a new chat's record, read from the chats' records) | Shell · chats · list, a chat open, Shell · chats · new chat, its record, Shell · chats · empty (each with its light copy) |
+| `/chats` | Chats (the new shell's chats page: the chat open, on its conversation once it has a runner, or a new chat's record, read from the chats' records) | Shell · chats · list, a chat open, Shell · chats · new chat, its record, Shell · chats · empty (`tars-redesign.pen`), Chat · chats · from its transcripts, working, Chat · chats · from its transcripts, waiting on you (`chat-redesign-a.pen`), each with its light copy |
 | `/project` | A project's page (the new shell's, under Projects; `?path=` names the project) | Shell · chats · project page, from the records (and its light copy) |
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
