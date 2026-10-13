@@ -75,6 +75,7 @@ import { moveTestHome } from '../../setup/test-home';
 let api: typeof import('../../../electron/services/api-server');
 let agents: typeof import('../../../electron/core/agent-manager')['agents'];
 let mintAgentToken: typeof import('../../../electron/core/agent-tokens')['mintAgentToken'];
+let tarsInstanceId: typeof import('../../../electron/core/agent-tokens')['tarsInstanceId'];
 let busStore: typeof import('../../../electron/services/bus-store');
 
 const ALPHA = { id: 'agent-alpha', projectPath: '/projects/alpha' };
@@ -141,7 +142,7 @@ beforeAll(async () => {
   port = await freePort();
   api = await import('../../../electron/services/api-server');
   ({ agents } = await import('../../../electron/core/agent-manager'));
-  ({ mintAgentToken } = await import('../../../electron/core/agent-tokens'));
+  ({ mintAgentToken, tarsInstanceId } = await import('../../../electron/core/agent-tokens'));
   busStore = await import('../../../electron/services/bus-store');
   api.startApiServer(
     null, { notificationsEnabled: false } as never, () => null, () => null, null, null,
@@ -370,7 +371,7 @@ describe('an agent on its own token and the global room', () => {
 describe('the MCP servers that call the API', () => {
   const home = fs.mkdtempSync(path.join(tmp, 'agent-home-'));
   let saved: Record<string, string | undefined>;
-  const KEYS = ['HOME', 'CLAUDE_MGR_API_URL', 'CLAUDE_MGR_API_TOKEN', 'CLAUDE_AGENT_ID', 'CLAUDE_PROJECT_PATH'];
+  const KEYS = ['HOME', 'CLAUDE_MGR_API_URL', 'CLAUDE_MGR_API_TOKEN', 'CLAUDE_AGENT_ID', 'CLAUDE_PROJECT_PATH', 'TARS_INSTANCE_ID'];
 
   /**
    * An agent's environment, as spawnAgentPty leaves it, and nothing else of
@@ -385,7 +386,7 @@ describe('the MCP servers that call the API', () => {
     saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]));
     for (const k of KEYS) delete process.env[k];
     const { HOME: agentHome = home, ...rest } = env;
-    Object.assign(process.env, { CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, ...rest });
+    Object.assign(process.env, { CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, TARS_INSTANCE_ID: tarsInstanceId(), ...rest });
     restoreHome = moveTestHome(agentHome);
   }
 
