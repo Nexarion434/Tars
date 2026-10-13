@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -104,6 +104,6 @@ test('a Dashboard panel keeps the last 5,000 lines of history, not 10,000', asyn
     expect(kept.top).toBe(`line ${WRITTEN + 1 - KEPT - kept.rows + 1}`);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
