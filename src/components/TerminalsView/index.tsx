@@ -30,6 +30,7 @@ import 'react-resizable/css/styles.css';
 
 // Lazy-load NewChatModal only when needed
 import dynamic from 'next/dynamic';
+import type { AgentPermissionMode } from '@/types/agent';
 const NewChatModal = dynamic(() => import('@/components/NewChatModal'), { ssr: false });
 
 /** Set once per window: this is what makes autostart a launch event rather
@@ -520,7 +521,7 @@ export default function TerminalsView() {
     character?: string,
     name?: string,
     secondaryProjectPath?: string,
-    permissionMode?: 'normal' | 'auto' | 'bypass',
+    permissionMode?: AgentPermissionMode,
     provider?: import('@/types/electron').AgentProvider,
     localModel?: string,
     obsidianVaultPaths?: string[],
