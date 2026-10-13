@@ -50,6 +50,8 @@ alone:
 | `~/.tars-private/hermes-webhook-secret` | Hermes | `POST /api/webhooks/hermes` and nothing else, and through it any agent of any project, named by id or by name |
 | `~/.dorothy/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
 
+The new agent an agent makes runs on any provider of the registry and on any CLI binary it names (`cliPath`, refused unless it is an absolute path to an executable file). That is not a boundary Tars gives away: an agent in bypass, which runs as the user, can already run any binary itself. What the API refuses is what could not start: an unknown provider, an API-key provider without its key, and a `cliPath` that is not an executable file (2.0.2, Noah: "ça doit supporter n'importe quel provider/cli").
+
 Measured before the change, on `b17db0f`: a call presenting the shared token
 with **no** `x-tars-client` header stopped, started, dispatched to and DELETEd
 an agent of any project and got a `200`. The guard refused only a caller that
