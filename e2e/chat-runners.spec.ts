@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import { execFileSync } from 'child_process';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -58,7 +58,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    it nor restarted, and a chat other than Main answers provider_unsupported (L4).
  * Mn and Ln are the Audit's findings on #379.
  * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl, prompts.jsonl, sessions.jsonl
- * (what each SessionStart handed its CLI) and permissions.jsonl (each answer to a permission ask).
+ * (what each SessionStart handed its CLI), permissions.jsonl (each answer to a permission ask) and hooks.log (what
+ * Tars answered each hook). The sandbox HOME is removed once they are kept.
  */
 
 const HOOKS = path.resolve('hooks');
@@ -285,15 +286,22 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
       const terminal = agent?.ptyId ? req(`${dist}/core/pty-manager.js`).ptyProcesses.get(agent.ptyId) : undefined;
       return (terminal?.pid as number | undefined) ?? null;
     }, { dist, id });
+    /** The sessions Tars refused an agent, as it writes each refusal into the agent's kept output (#380). */
+    const refusedSessionsOf = (id: string) => app.evaluate((_e, { dist, id }) => {
+      const agent = process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get(id);
+      return ((agent?.output ?? []) as string[]).filter((chunk) => chunk.includes('[Tars] Refused a session')).map((chunk) => chunk.trim());
+    }, { dist, id });
     /**
      * Tars takes a session only from the CLI it launched in the agent's terminal (#380): the agent's last launch is
      * its terminal's process or, typed into the shell there (darwin and linux), that shell's child, and the session
-     * its hooks named, with that CLI's pid, is the agent's.
+     * its hooks named, with that CLI's pid, is the agent's, taken at its SessionStart: never refused there and then
+     * adopted from a later post.
      */
     const ownSession = async (id: string) => {
       const last = launchesOf(id).at(-1)!;
       expect([last.pid, last.ppid]).toContain(await terminalPidOf(id));
       await expect.poll(async () => (await agentOf(id))?.currentSessionId ?? null, { timeout: 30_000 }).toBe(last.sid);
+      expect(await refusedSessionsOf(id)).toEqual([]);
     };
     /** One pass of the temporary folders' retention (#384) with what main.ts hands it, its clock `days` on. */
     const tmpPass = (days: number) => app.evaluate(async (_e, { dist, days }) => {
@@ -421,11 +429,11 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const removedNow = await tmpPass(0);
     const removedLater = await tmpPass(8);
     keep({ scratchA, removedNow, removedLater });
-    expect(removedNow.filter((r) => real(r.path).startsWith(real(folderA)))).toEqual([]);
-    expect(removedLater.map((r) => [real(r.path), r.reason])).toEqual(expect.arrayContaining([[real(sessionDirA), 'untouched for 7 days']]));
-    expect(fs.existsSync(sessionDirA)).toBe(false);
+    expect(removedNow.filter((r) => r.path.startsWith(folderA))).toEqual([]);
     expect(fs.existsSync(path.join(folderA, 'c'))).toBe(true);
     expect(fs.existsSync(launchA.transcript)).toBe(true);
+    expect(fs.existsSync(sessionDirA)).toBe(false);
+    expect(removedLater.map((r) => [r.path, r.reason])).toEqual(expect.arrayContaining([[sessionDirA, 'untouched for 7 days']]));
 
     // 4. A again: B sleeps, A resumes its own session.
     const toA2 = await send(chatA.id, 'A>> second');
@@ -698,6 +706,9 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   } finally {
     for (const id of ['o1', 'w1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();
-    for (const file of [launchesFile, promptsFile, sessionsFile, permissionsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
+    // Kept with the run, then the sandbox goes: each run left its HOME behind, 20 MB of worktrees and logs.
+    const hooksLog = path.join(dir, 'logs', 'hooks.log');
+    for (const file of [launchesFile, promptsFile, sessionsFile, permissionsFile, hooksLog]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
+    await removeHome(home);
   }
 });
