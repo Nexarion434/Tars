@@ -729,6 +729,8 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 | `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: Noah's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
@@ -814,10 +816,16 @@ jq '.numbers' ~/.dorothy/chats.json
 - **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
 
 **When a send answers `runner_mismatch`:** the chat's record names an agent the fleet does not confirm as its
-runner: for Main, an agent that is not the project's orchestrator (the orchestrator was changed, or the file
-edited); for another chat, an agent that is not the runner made for it. Tars sends, launches and counts nothing
-for it. Compare the record (the `jq` above) with `agents.json`. A chat other than Main can be deleted and started
-again; for Main after a change of orchestrator, quit Tars and set Main's `runnerId` to the new orchestrator's id.
+runner: for another chat than Main, an agent that is not the runner made for it (the file was edited). Tars sends,
+launches and counts nothing for it. Compare the record (the `jq` above) with `agents.json`; such a chat can be deleted
+and started again. Main follows the project's orchestrator by itself: when the role moves, its record is rebound and
+the log says `[chats] Main of <project> follows the project's orchestrator: <former> to <new>`.
+
+**When a dispatch answers `worker_busy_for_other_chat`:** a `steer` or a `restart` would cut work another chat asked
+for (its title and number are in the answer). Send it with mode `queue`, or let that chat's work end.
+
+**When a start or a send answers `provider_unsupported`:** the project's orchestrator runs a CLI whose conversations
+Tars cannot resume; chats other than Main wait until it is back on claude.
 
 **When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
 counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
@@ -2029,6 +2037,9 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # status line sessions
 jq -c 'select(.t == "task") | .task | [.id, .agentId, .source, .outcome]' ~/.dorothy/task-ledger.jsonl | tail  # last tasks opened
 tail ~/.tars-private/task-texts.jsonl                        # what they said, by task id
+jq -c 'select(.t == "acp") | [.id, .outcome, .stopReason]' ~/.dorothy/task-ledger.jsonl | tail  # delegated runs, how they ended (interrupted: a quit cut it)
+tail -c 2000 ~/.tars-private/task-results.jsonl              # what they answered, by task id
+jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.status]' ~/.tars-private/request-receipts.jsonl | tail  # sends answered once
 ```
 
 | Symptom | Cause |
@@ -2036,6 +2047,8 @@ tail ~/.tars-private/task-texts.jsonl                        # what they said, b
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
+| an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
+| a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 

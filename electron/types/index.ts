@@ -34,7 +34,10 @@ export type AgentProvider =
  * - auto: agent runs fully autonomously (--dangerously-skip-permissions)
  * - bypass: same as auto, explicit intent to bypass all checks
  */
-export type AgentPermissionMode = 'normal' | 'auto' | 'bypass';
+/** `plan`: the narrowest, where Claude Code plans and edits nothing (PR B, the ceiling for delegated
+ *  runs, core/permission-ceiling.ts). Set by the API and agents.json for now; the window's selector
+ *  offers the other three. The other CLIs read it as `normal`, the narrowest they have. */
+export type AgentPermissionMode = 'plan' | 'normal' | 'auto' | 'bypass';
 
 /** Effort level for agent reasoning:
  * - low: fast, minimal thinking

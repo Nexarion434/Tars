@@ -39,11 +39,20 @@
  * 12. A runner of this chat's id but of another project passes.
  * 13. A chat with no runner yet, or whose agent was deleted, reads as a forged
  *     one: the first must make its runner, the second say it is gone.
+ * A runner's kind (the Audit's L1 on #379, written before the code, 2026-10-13)
+ * agents.json is in ~/.dorothy too, and `kind: 'chat'` gives the orchestrator's
+ * powers: at launch, a runner keeps it only while a chat names it.
+ * 14. An agent marked kind chat that no chat names (no chatId, a chat that is
+ *     gone, a chat naming another agent, a chat of another project) keeps the
+ *     kind, and the powers with it.
+ * 15. A runner its chat names loses its kind; an agent of no chat is listed.
+ * The place (the Audit's R9 on #379)
+ * 16. A letter that is not hex reaches the runner's folder name.
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
-  runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner,
+  runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner, unconfirmedRunners,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -179,5 +188,37 @@ describe("a record's runner, as the fleet confirms it", () => {
     expect(recordedRunner(main(null), fleet)).toEqual({ why: 'none' });
     expect(recordedRunner(chatA('deleted'), fleet)).toEqual({ why: 'gone' });
     expect(recordedRunner(main('deleted'), fleet)).toEqual({ why: 'gone' });
+  });
+});
+
+describe("a runner's kind, as the chats confirm it (the Audit's L1 on #379)", () => {
+  const project = '/Users/me/projects/demo';
+  const chats = new Map([
+    ['chat-a', { id: 'chat-a', number: 2, projectPath: project, runnerId: 'runner-a' }],
+    ['chat-b', { id: 'chat-b', number: 3, projectPath: project, runnerId: 'runner-x' }],
+    ['chat-o', { id: 'chat-o', number: 2, projectPath: '/Users/me/projects/other', runnerId: 'runner-o' }],
+  ]);
+  const fleet = new Map([
+    ['lead', { id: 'lead', role: 'orchestrator', projectPath: project }],
+    ['worker', { id: 'worker', role: 'worker', projectPath: project }],
+    ['runner-a', { id: 'runner-a', role: 'worker', kind: 'chat', chatId: 'chat-a', projectPath: project }],
+    ['no-chat-id', { id: 'no-chat-id', role: 'worker', kind: 'chat', projectPath: project }],
+    ['gone', { id: 'gone', role: 'worker', kind: 'chat', chatId: 'chat-gone', projectPath: project }],
+    ['named-other', { id: 'named-other', role: 'worker', kind: 'chat', chatId: 'chat-b', projectPath: project }],
+    ['runner-o', { id: 'runner-o', role: 'worker', kind: 'chat', chatId: 'chat-o', projectPath: project }],
+    // Claims chat A, whose record names runner-a, which exists.
+    ['thief', { id: 'thief', role: 'worker', kind: 'chat', chatId: 'chat-a', projectPath: project }],
+  ]);
+
+  it('14, 15. lists every agent marked kind chat that no chat names, and nothing else', () => {
+    const ids = unconfirmedRunners(fleet, (chatId) => chats.get(chatId)).map((a) => a.id).sort();
+    expect(ids).toEqual(['gone', 'named-other', 'no-chat-id', 'runner-o', 'thief']);
+  });
+});
+
+describe("the runner's place, hex only (the Audit's R9 on #379)", () => {
+  it('16. a letter that is not hex never reaches the folder name', () => {
+    expect(runnerPlaceOf('/p', 'ghijklmn-0123-4567-89ab-cdef01234567')?.worktreePath).toBe(path.join('/p', '.worktrees', 'chat-01234567'));
+    expect(runnerPlaceOf('/p', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz')).toBeNull();
   });
 });

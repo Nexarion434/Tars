@@ -53,7 +53,8 @@ import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { tasksReport } from '../services/task-watch';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
-import { registerAgentLauncher, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
+import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
+import { orchestratorMoved } from '../core/chat-identity';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../core/agent-role';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
@@ -477,6 +478,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Save agents to disk
     saveAgents();
+    // A new orchestrator: its project's Main follows it (core/chat-identity.ts).
+    orchestratorMoved();
     for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
 
     // Forward PTY output to renderer
@@ -948,10 +951,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   }) => {
     // Started from a window while asleep: woken by you (core/agent-asleep.ts).
     if (agents.get(id)?.status === 'asleep') noteWaker(id, 'you', 'start');
+    // Through the slot gate, as every start: a chat's runner takes a slot
+    // within the RAM's limit, its settings stay the orchestrator's, and the
+    // window's words are a turn, not its brief (the Audit's M1 on #379).
+    if (agents.get(id)?.kind === 'chat') return launchAgent(id, prompt, { message: true });
     // What a window may choose, and nothing else: the session a restart
     // resumes lands on a command line, and the permission the Kanban
     // automation imposes is its own. Neither is taken from an IPC message.
-    return startAgentCli(id, prompt, {
+    return launchAgent(id, prompt, {
       model: options?.model,
       provider: options?.provider,
       localModel: options?.localModel,
@@ -1044,6 +1051,13 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const agent = agents.get(params.id);
     if (!agent) {
       return { success: false, error: 'Agent not found' };
+    }
+    // A chat's runner takes its settings from the project's orchestrator at
+    // each launch (services/chat-runners.ts): changed here, its role would take
+    // the orchestrator's place, its project would lose its worktree, and the
+    // rest would be undone at its next send (the Audit's M2 on #379).
+    if (agent.kind === 'chat') {
+      return { success: false, error: `${agent.name || agent.id} runs a chat: its settings are the project's orchestrator's. Change them there.` };
     }
     let role: AgentRole | undefined;
     try {
@@ -1195,6 +1209,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     agent.lastActivity = new Date().toISOString();
     saveAgents();
+    // The role moved: its project's Main follows the orchestrator (core/chat-identity.ts).
+    orchestratorMoved();
 
     // A model, an effort or another flag the CLI only reads when it starts is
     // applied by restarting it, at a moment that cuts nothing: see

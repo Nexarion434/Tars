@@ -75,7 +75,7 @@ export interface SessionOptions {
   env?: Record<string, string>;
   mcpServers?: McpServerSpec[];
   /** How permission requests are answered when the agent asks. */
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
   /** Tools the agent must not be allowed to use, by name fragment. */
   denyTools?: string[];
   /** Variables of Tars's own environment the agent must not inherit (its Claude account's). */
@@ -494,6 +494,17 @@ export class AcpSession extends EventEmitter {
       | { currentModeId?: string; availableModes?: { id: string }[] }
       | undefined;
     const available = new Set((modes?.availableModes ?? []).map(m => m.id));
+    // A run held to plan (core/permission-ceiling.ts) runs in plan or not at
+    // all: any other mode would be broader than its asker's.
+    if (this.options.permissionMode === 'plan') {
+      if (!available.has('plan')) {
+        throw new Error('permission_escalation_denied: this run is held to plan mode, and the agent offers no plan mode');
+      }
+      if (modes?.currentModeId === 'plan') return;
+      await this.request('session/set_mode', { sessionId: this.sessionId, modeId: 'plan' }, 15_000);
+      this.emit('mode', 'plan');
+      return;
+    }
     if (available.size === 0) return;
 
     const wantsArbitration = (this.options.denyTools?.length ?? 0) > 0
@@ -693,6 +704,14 @@ export class AcpSession extends EventEmitter {
   private onUpdate(update: Record<string, unknown>): void {
     const kind = update.sessionUpdate as string;
 
+    // A run held to plan whose session leaves plan, whatever made it: the
+    // caller ends the run (delegate.ts, permission_escalation_denied).
+    if (kind === 'current_mode_update' && this.options.permissionMode === 'plan') {
+      const mode = typeof update.currentModeId === 'string' ? update.currentModeId : '';
+      if (mode !== 'plan') this.emit('breach', mode || 'unknown');
+      return;
+    }
+
     if (kind === 'agent_message_chunk') {
       const content = update.content as { text?: string } | undefined;
       if (content?.text) {
@@ -755,10 +774,17 @@ export class AcpSession extends EventEmitter {
     const options = (params.options ?? []) as { optionId: string; kind?: string; name?: string }[];
     const label = `${toolCall.title ?? ''} ${toolCall.kind ?? ''}`.toLowerCase();
 
-    const denied = (this.options.denyTools ?? []).some(fragment => label.includes(fragment.toLowerCase()));
+    // Held to plan (core/permission-ceiling.ts), nothing is approved: Claude
+    // leaves plan by asking (ExitPlanMode, sent by claude-agent-acp 0.70.0 as
+    // this request, its options switching the session's mode), and the
+    // allow_once chosen here let a plan-held run out of plan, and every edit
+    // after it through (the Audit's B1 on #364). "No, keep planning" is its
+    // reject_once.
+    const held = this.options.permissionMode === 'plan';
+    const denied = held || (this.options.denyTools ?? []).some(fragment => label.includes(fragment.toLowerCase()));
     const wanted = denied
       ? ['reject_once', 'reject_always']
-      : this.options.permissionMode === 'normal'
+      : this.options.permissionMode === 'normal' || this.options.permissionMode === 'plan'
         ? ['allow_once']
         : ['allow_always', 'allow_once'];
 
