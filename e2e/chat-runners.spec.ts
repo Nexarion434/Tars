@@ -699,6 +699,8 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(forWorker.status).toBe(200);
     await expect.poll(async () => (await agentOf('o1'))?.status, { timeout: 30_000 }).toBe('running');
     expect(await send(startedChat.id, 'C>> before the lead moves\nHOLD>> until released')).toMatchObject({ success: true });
+    // In its turn: a launch, when C slept, is recorded before the turn's prompt, and its status runs ahead of both.
+    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> before the lead moves')), { timeout: 30_000 }).toBe(true);
     await expect.poll(async () => (await agentOf(runnerC.id))?.status, { timeout: 30_000 }).toBe('running');
     const cLaunches = launchesOf(runnerC.id).length;
     const cTurns = promptsOf(runnerC.id).length;
