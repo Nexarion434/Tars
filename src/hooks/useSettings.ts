@@ -6,6 +6,7 @@ import type { ClaudeSettings, ClaudeInfo, Skill, AppSettings } from '@/component
 import { DEFAULT_APP_SETTINGS } from '@/components/Settings/constants';
 import { readClaudeData } from '@/hooks/useClaude';
 import { followErrorReports } from '@/lib/error-reports';
+import { NEW_INTERFACE_EVENT } from './useNewInterface';
 
 /** The settings a bot fills in itself, which the page shows as they change. */
 const BOT_WRITTEN = ['slackChannelId', 'discordChannelId'] as const;
@@ -150,6 +151,10 @@ export const useSettings = () => {
         if (newSettings.errorReportsEnabled !== undefined) {
           // The window's half of error reports follows the switch at once.
           void followErrorReports(newSettings.errorReportsEnabled);
+        }
+        if (newSettings.newInterface !== undefined) {
+          // The shell follows the switch at once (useNewInterface).
+          window.dispatchEvent(new CustomEvent(NEW_INTERFACE_EVENT, { detail: newSettings.newInterface }));
         }
         // The relay on, main has erased the bot's token and turned the bot
         // off as it saved (settingsForRelay): this page sends only what
