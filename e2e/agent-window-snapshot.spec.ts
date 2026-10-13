@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -92,6 +92,6 @@ test('the agent window of a gemini agent shows the rows its CLI placed with curs
     expect(lines[third].replace(/ /g, ' ').startsWith('    the third row'), 'the third row four columns in').toBe(true);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
