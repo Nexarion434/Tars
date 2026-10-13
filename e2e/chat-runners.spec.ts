@@ -670,6 +670,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     //     reaches the new one (the orchestrator's decision of 2026-10-13).
     const mainBefore = (await chats()).find((c) => c.number === 1)!;
     const w1Launches = launchesOf('w1').length;
+    const aLaunches = launchesOf(runnerA.id).length;
     expect(await updateFromWindow({ id: 'w1', role: 'orchestrator' })).toMatchObject({ success: true });
     // Rebound when the role moved, before any list of the chats could do it: read from the file.
     const mainOnDisk = (JSON.parse(fs.readFileSync(path.join(dir, 'chats.json'), 'utf8')) as { chats: ChatRecord[] }).chats.find((c) => c.number === 1);
@@ -690,6 +691,12 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await expect.poll(() => promptsOf('w1').some((p) => p.includes('MAIN>> after the move')), { timeout: 30_000 }).toBe(true);
     expect(promptsOf('o1').some((p) => p.includes('MAIN>> after the move'))).toBe(false);
     await atRest('w1');
+    // Runner A follows the new orchestrator: Tars restarts it once its turn of step 16 ends. Step 19's first send
+    // needs A's slot, which A gives up only at rest: still in that turn, or starting again, it answered chat_limit
+    // (QA's run of 2.0.1 met both). Its new session up, then at rest.
+    await expect.poll(() => launchesOf(runnerA.id).length, { timeout: 60_000 }).toBeGreaterThan(aLaunches);
+    await ownSession(runnerA.id);
+    await atRest(runnerA.id);
 
     // 19. The orchestrator moves to a CLI whose conversations Tars cannot resume (L4) while chat C's runner is in a
     //     turn, with work out at a worker. A send to C is refused at once, its runner running or not (2.0.1): C is
