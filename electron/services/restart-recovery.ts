@@ -10,7 +10,7 @@ import { carryKanban, owedKanban, setKanbanQueuesChangedHook } from './api-route
 import { loadBus } from './bus-store';
 import { carryWaitingDeliveries } from './bus-delivery';
 import { readCarryOver, startCarryOver } from './carry-over';
-import { resumeInterrupted, type ResumeAgent } from './crash-resume';
+import { resumeInterrupted, type ResumeAgent, type ResumeOutcome } from './crash-resume';
 import { agentTmpEnvOrNone } from './agent-tmp';
 import { endRun, recordResumed, recordRun, type PreviousRun } from './run-state';
 
@@ -54,7 +54,7 @@ function typeNote(agentId: string, note: string): Promise<boolean> {
   });
 }
 
-export function startRestartRecovery(previous: PreviousRun | null): { flush: () => void } {
+export function startRestartRecovery(previous: PreviousRun | null): { flush: () => void; resumed: Promise<ResumeOutcome[]> } {
   // What the last run owed, taken back before anything new is owed.
   const carried = readCarryOver();
   carryNews(carried.notes);
@@ -77,13 +77,14 @@ export function startRestartRecovery(previous: PreviousRun | null): { flush: () 
   setInterval(record, RECORD_EVERY_MS).unref?.();
   record();
 
+  let resumed: Promise<ResumeOutcome[]> = Promise.resolve([]);
   if (previous) {
     const stoppedAt = new Date(previous.lastWriteAt).toISOString();
     console.log(`[resume] the last run of Tars stopped abruptly (last heard of at ${stoppedAt}); ${previous.working.length} agent(s) were working`);
     if (previous.working.length > 0) {
       // Before any launch: if this run stops too while resuming, the next one does not loop.
       if (!previous.resumedAndCrashedAgain) recordResumed(previous.working.map((w) => w.agentId));
-      void resumeInterrupted(previous, {
+      resumed = resumeInterrupted(previous, {
         agent: (id) => agents.get(id),
         fleet: () => agents.values(),
         cliRunning: (a) => cliRunningIn(a.ptyId ? ptyProcesses.get(a.ptyId) : undefined),
@@ -95,11 +96,15 @@ export function startRestartRecovery(previous: PreviousRun | null): { flush: () 
         },
         transcriptOf,
         tmpDirOf: (id) => agentTmpEnvOrNone(id).TMPDIR,
-      }).catch((err) => console.error('[resume] the resume failed:', err));
+      }).catch((err) => {
+        console.error('[resume] the resume failed:', err);
+        // Nobody known to be resumed: each one's work in hand is ended.
+        return previous.working.map((w) => ({ agentId: w.agentId, how: 'failed' as const, why: 'the resume failed' }));
+      });
     }
   }
 
-  return { flush: () => { writer.flush(); record(); } };
+  return { flush: () => { writer.flush(); record(); }, resumed };
 }
 
 /** At a quit: what is owed written now, and the run marked as ended cleanly. */

@@ -235,3 +235,65 @@ function handle(msg) {
     expect(partial.toolCalls.map(t => t.title)).toEqual(['pnpm build']);
   });
 });
+
+/**
+ * A run held to plan mode (the ceiling for delegated runs, core/permission-ceiling.ts),
+ * from the Audit's gate of #364 (B1), written before the fix (2026-10-12).
+ *
+ * How it fails:
+ * 1. Claude leaves plan by calling ExitPlanMode, which claude-agent-acp 0.70.0 sends
+ *    as a permission request whose options switch the session's mode; Tars answers
+ *    every request itself, and under plan it chose allow_once: the run left plan for
+ *    `default`, and every edit after was approved too.
+ * 2. Any other request under plan (an edit, a command) is approved.
+ * 3. The session's mode changes away from plan (the adapter switched without asking,
+ *    or a request was approved anyway) and nobody hears of it: the run goes on in a
+ *    broader mode than its asker's.
+ */
+describe('a run held to plan mode (the Audit\'s B1 on #364)', () => {
+  /** The options claude-agent-acp 0.70.0 offers with ExitPlanMode (dist/acp-agent.js:4126). */
+  const EXIT_PLAN = {
+    toolCall: { title: 'ExitPlanMode', kind: 'switch_mode' },
+    options: [
+      { kind: 'allow_always', name: 'Yes, and use "auto" mode', optionId: 'auto' },
+      { kind: 'allow_always', name: 'Yes, and auto-accept edits', optionId: 'acceptEdits' },
+      { kind: 'allow_once', name: 'Yes, and manually approve edits', optionId: 'default' },
+      { kind: 'reject_once', name: 'No, keep planning', optionId: 'plan' },
+    ],
+  };
+  const EDIT = { toolCall: { title: 'Write src/x.ts', kind: 'edit' }, options: [{ kind: 'allow_once', optionId: 'allow' }, { kind: 'reject_once', optionId: 'reject' }] };
+
+  function answered(mode: 'plan' | 'normal', params: unknown): unknown {
+    const s = new AcpSession({ command: 'x', args: [] }, { cwd: '/', permissionMode: mode });
+    let out: { result?: unknown } | undefined;
+    (s as unknown as { write: (m: unknown) => void }).write = (m) => { out = m as { result?: unknown }; };
+    (s as unknown as { answerPermission: (id: number, p: unknown) => void }).answerPermission(7, params);
+    return out?.result;
+  }
+
+  it('1. answers ExitPlanMode with "keep planning"', () => {
+    expect(answered('plan', EXIT_PLAN)).toEqual({ outcome: { outcome: 'selected', optionId: 'plan' } });
+  });
+
+  it('2. refuses every other request, and offered no refusal, cancels it', () => {
+    expect(answered('plan', EDIT)).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } });
+    expect(answered('plan', { toolCall: { title: 'Bash' }, options: [{ kind: 'allow_once', optionId: 'go' }] })).toEqual({ outcome: { outcome: 'cancelled' } });
+    // Outside plan, as before.
+    expect(answered('normal', EDIT)).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+  });
+
+  it('3. reports a mode change away from plan as a breach, and only that', () => {
+    const s = new AcpSession({ command: 'x', args: [] }, { cwd: '/', permissionMode: 'plan' });
+    const breaches: string[] = [];
+    s.on('breach', (mode: string) => breaches.push(mode));
+    const update = (u: Record<string, unknown>) => (s as unknown as { onUpdate: (u: Record<string, unknown>) => void }).onUpdate(u);
+    update({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' });
+    update({ sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' });
+    expect(breaches).toEqual(['acceptEdits']);
+    const free = new AcpSession({ command: 'x', args: [] }, { cwd: '/', permissionMode: 'normal' });
+    const none: string[] = [];
+    free.on('breach', (mode: string) => none.push(mode));
+    (free as unknown as { onUpdate: (u: Record<string, unknown>) => void }).onUpdate({ sessionUpdate: 'current_mode_update', currentModeId: 'bypassPermissions' });
+    expect(none).toEqual([]);
+  });
+});

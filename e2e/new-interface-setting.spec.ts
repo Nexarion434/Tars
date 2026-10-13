@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox, recordValues } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -40,7 +40,7 @@ test('the new interface switch reads off from an older file, which still loads, 
   fs.writeFileSync(file, JSON.stringify(older, null, 2));
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31456), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31453), DOROTHY_E2E: '1' },
   });
   try {
     const page = await app.firstWindow();
@@ -79,6 +79,38 @@ test('the new interface switch reads off from an older file, which still loads, 
     expect(Object.fromEntries(Object.keys(older).map(k => [k, onDisk[k]]))).toEqual(older);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
+  }
+});
+
+/**
+ * And from the Audit's L1 on #360 (2026-10-12): the loader spreads the file
+ * over the defaults with no type check, and the file is in ~/.dorothy, which
+ * every agent can write. A value that is not the boolean true ("false", 1,
+ * "yes") came back as it was: the string "false" is truthy, so a page reading
+ * `if (settings.newInterface)` would turn the new interface on.
+ */
+test('a newInterface that is not the boolean true reads false', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-new-interface-'));
+  seedSandbox(home);
+  const file = path.join(home, '.dorothy', 'app-settings.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ newInterface: 'false', terminalFontSize: 17 }, null, 2));
+
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31453), DOROTHY_E2E: '1' },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForFunction(() => !!(window as unknown as { electronAPI?: unknown }).electronAPI);
+    const read = await page.evaluate(() =>
+      (window as unknown as { electronAPI: { appSettings: { get: () => Promise<Record<string, unknown>> } } }).electronAPI.appSettings.get());
+    recordValues({ stringFalse: { newInterface: read.newInterface, type: typeof read.newInterface, terminalFontSize: read.terminalFontSize } });
+    expect(read.newInterface).toBe(false);
+    expect(read.terminalFontSize).toBe(17);
+  } finally {
+    await app.close();
+    await removeHome(home);
   }
 });
