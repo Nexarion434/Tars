@@ -1105,6 +1105,8 @@ export type ChatEvent = { seq: number; chatId: string } & (
   | { type: 'item'; item: ChatItem }
   | { type: 'meta'; chat: ChatView }
   | { type: 'deleted' }
+  /** Items told before that the chat no longer holds (a session's transcript disappeared): drop them. */
+  | { type: 'removed'; itemIds: string[] }
   | { type: 'state'; runner: { id: string; status: AgentStatus['status']; live: boolean } | null }
 );
 
