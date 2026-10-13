@@ -45,6 +45,10 @@
  *     the Agents page and the chat list say nothing of a folder still on disk.
  *     It must say git's reason and where the worktree is, in the shape of the
  *     other reasons ("..., so its worktree was kept at <path>").
+ * And from QA's gate of #399 (Low, probes P1 and P2, written before the fix, 2026-10-13):
+ * 14. Over-correction: a worktree already gone (removed outside Tars, or moved
+ *     then pruned), which git answers "is not a working tree", is announced as
+ *     kept at a path where nothing is.
  *
  * The handler and git are the real ones, on a repository in a throwaway folder.
  */
@@ -322,6 +326,21 @@ describe('the window\'s Delete', { timeout: 30_000 }, () => {
       worktreeKept: `git could not remove it (cannot remove a locked working tree, lock reason: kept by hand), so its worktree was kept at ${wt}`,
     });
     expect(fs.existsSync(wt)).toBe(true);
+    expect(agents.has('w1')).toBe(false);
+  });
+
+  it('14. a worktree already removed outside Tars is not announced as kept', async () => {
+    git(repo, 'worktree', 'remove', '--force', wt);
+
+    expect(await handlers.get('agent:remove')!({}, 'w1')).toEqual({ success: true });
+    expect(agents.has('w1')).toBe(false);
+  });
+
+  it('14. nor one moved away then pruned', async () => {
+    fs.renameSync(wt, path.join(path.dirname(repo), 'moved'));
+    git(repo, 'worktree', 'prune');
+
+    expect(await handlers.get('agent:remove')!({}, 'w1')).toEqual({ success: true });
     expect(agents.has('w1')).toBe(false);
   });
 });
