@@ -509,6 +509,12 @@ export function startChatRunners(chatStore: ChatStore): void {
   if (store) return;
   store = chatStore;
   setSlotGate(slotGate);
-  setChatLookup((chatId) => chatStore.get(chatId));
+  setChatLookup({
+    byId: (chatId) => chatStore.get(chatId),
+    byRunner: (agentId) => {
+      const chat = chatStore.chatOfRunner(agentId);
+      return chat && runnerOf(chat)?.id === agentId ? chat : undefined;
+    },
+  });
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }
