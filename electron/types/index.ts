@@ -421,6 +421,13 @@ export interface AppSettings {
   /** The 2.0 interface (PLAN-2.0.0). Off unless chosen: a file written before
    *  the switch existed reads false. */
   newInterface: boolean;
+  /**
+   * A project's chats may read one another (ORCHESTRATOR-PER-CHAT.md v2.2,
+   * 4.4 item 5): chat_list and chat_read, given to a chat's runner and to the
+   * orchestrator for Main at their next launch, read only, same project only.
+   * Off unless chosen: a file written before the switch existed reads false.
+   */
+  chatsReadEachOther: boolean;
   cliPaths: CLIPaths;
   /**
    * The shell a terminal runs on Windows: a path (Git Bash is
