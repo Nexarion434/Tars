@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Download, Github } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dashboard from '@/assets/dashboard.png';
+import { PreviewSection } from '@/components/PreviewSection';
 import { SiteFooter } from '@/components/SiteFooter';
 import { SiteNav } from '@/components/SiteNav';
 
@@ -130,6 +131,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <PreviewSection />
 
       {/* How */}
       <section id="how" className="max-w-[1040px] mx-auto px-6 py-16 border-b border-line">

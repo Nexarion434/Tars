@@ -22,6 +22,7 @@ on your machine and Tars is the room they work in.
 - [Memory](#memory)
 - [Hermes](#hermes)
 - [The surfaces](#the-surfaces)
+- [A preview: projects and chats](#a-preview-projects-and-chats)
 - [Where your data lives](#where-your-data-lives)
 - [Development](#development)
 - [Further reading](#further-reading)
@@ -286,6 +287,36 @@ without leaving Tars. Without a gateway the rest of Tars works fine.
 | **Brain** | The five memory sources, and whether each one answers |
 
 ![The vault: documents your agents can read and write](screenshots/vault.png)
+
+---
+
+## A preview: projects and chats
+
+Tars 2.0.0 carries a new interface as a preview, off by default: Settings,
+Preferences, **New interface**. Until you turn it on, Tars looks and works
+exactly as before, and turning it off brings that back at once.
+
+A project keeps its team, and you open several chats in it, each its own
+conversation with the project's orchestrator on one topic.
+
+- **The chat list.** The sidebar lists your projects' chats under Pinned,
+  Active, Working, Snoozed and Settled, each with its state, and filters them by
+  project; above it, how many chats work of the most your Mac runs at once, a
+  limit its memory sets. Main is the conversation your orchestrator already had.
+  A chat can be renamed, pinned, snoozed, settled, made the project's inbox or
+  deleted.
+- **A chat's page.** You write to its orchestrator there: the words go in when
+  it runs, after its turn if it is working, and start it when it does not; a new
+  chat's first message starts its own orchestrator and names the chat. Its
+  conversation is read from the orchestrator's own transcripts and followed
+  live: what it says, the tools it calls, the work it hands to its team, and what
+  it asks you, which you allow or deny there. When every chat your Mac runs at
+  once is working, a send says which, each with its Stop.
+- **A project's page.** Its chats, its team and what each agent is on, its
+  terminals and its room.
+- **More.** Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings and
+  What's New open as cards above the app. Tars, all projects is today's Chat,
+  unchanged.
 
 ---
 
