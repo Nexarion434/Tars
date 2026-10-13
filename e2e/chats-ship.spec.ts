@@ -14,7 +14,8 @@ import { BOT_TOKEN, JEANBRASSE, startFakeTelegram } from '../__tests__/fixtures/
  *    the global git ignore (~/.config/git/ignore); a chat's runner gets the project's settings.local.json copied into
  *    its worktree, so git called it an ignored file, and the removal kept the whole worktree for it. The sandbox HOME
  *    here has that global ignore. Asserted: a chat deleted goes with its worktree, and one whose worktree holds
- *    another ignored file keeps it and says so.
+ *    another ignored file keeps it and says so, and one whose .claude is a link to the project's leaves the
+ *    project's file alone (#394's gate, M1).
  * 2. With the new interface off and a project that has only Main, Telegram and the room read as 1.9.7 had them:
  *    a message that starts with "#2 " (an issue's number) reaches the orchestrator as typed, what the orchestrator
  *    sends carries no "[demo #1 Main]", and it posts in the room under its own name.
@@ -166,6 +167,19 @@ test('deleting a chat removes its worktree, a global git ignore of settings.loca
     recordValues(values);
     expect(String(kept.worktreeKept ?? '')).toContain('draft.keepme');
     expect(fs.existsSync(path.join(two.runner.worktreePath!, 'draft.keepme'))).toBe(true);
+
+    // A worktree whose .claude is a link to the project's (#394's M1): the project's grants stay.
+    const projectGrants = path.join(project, '.claude', 'settings.local.json');
+    const before = fs.readFileSync(projectGrants, 'utf8');
+    const three = await startChat('Linked');
+    fs.rmSync(path.join(three.runner.worktreePath!, '.claude'), { recursive: true });
+    fs.symlinkSync('../../.claude', path.join(three.runner.worktreePath!, '.claude'));
+    expect(fs.readFileSync(path.join(three.runner.worktreePath!, '.claude', 'settings.local.json'), 'utf8'), 'the link reaches the project\'s file').toBe(before);
+    values.linked = await call('chat', 'delete', { chatId: three.chat.id });
+    recordValues(values);
+    expect(values.linked).toMatchObject({ success: true });
+    expect(fs.existsSync(projectGrants), 'the project\'s own settings.local.json was deleted through the link').toBe(true);
+    expect(fs.readFileSync(projectGrants, 'utf8')).toBe(before);
   } finally {
     await app.close();
   }
