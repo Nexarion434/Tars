@@ -10,6 +10,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { carriedSince, type CarriedNote } from './carry-over';
 import { wakeAgent } from '../core/agent-asleep';
+import { inboxAgentOf } from '../core/chat-inbox';
 import { linkSpent, requestTitle, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
 
 /**
@@ -551,9 +552,11 @@ function queueForRequester(child: AgentStatus, news: News): void {
  */
 export function reportStall(child: AgentStatus, silentMinutes: number): void {
   const link = child.requestedBy;
+  // Else the project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
+  const inbox = inboxAgentOf(child.projectPath, agents.values());
   const requesterId = link && link.agentId !== child.id && link.ptyId === child.ptyId
     ? link.agentId
-    : [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === child.projectPath && a.id !== child.id)?.id;
+    : inbox && inbox.id !== child.id ? inbox.id : undefined;
   if (!requesterId) return;
   handToRequester(requesterId, child, { kind: 'stalled', status: child.status, reason: String(silentMinutes), handedAt: child.workHandedAt });
 }

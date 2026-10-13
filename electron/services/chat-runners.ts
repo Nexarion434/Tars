@@ -5,7 +5,7 @@ import { execFile } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
-import { fieldInUse, ptyProcesses, writeProgrammaticInput, WRITE_SETTLE_MS } from '../core/pty-manager';
+import { fieldInUse, ptyProcesses, withSenderLine, writeProgrammaticInput, WRITE_SETTLE_MS, type MessageSender } from '../core/pty-manager';
 import { dialogOpen, launchAgent, sessionStarted, sessionStarting, setSlotGate, SENDER_WAIT_MS, type SlotGate } from '../core/agent-launch';
 import { cliRunningIn } from '../core/agent-pty';
 import { fallAsleep } from '../core/agent-asleep';
@@ -15,6 +15,8 @@ import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
+import { setChatLookups } from '../core/chat-inbox';
+import { pickChat } from './chat-addressing';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
@@ -102,6 +104,26 @@ export function isLive(agent: AgentStatus): boolean {
 export function runnerOf(chat: Chat): AgentStatus | undefined {
   const found = recordedRunner(chat, agents);
   return 'agent' in found ? found.agent : undefined;
+}
+
+/** Every chat, as copies; none while the chats are not loaded. */
+export function allChats(): Chat[] {
+  return store ? store.list().chats : [];
+}
+
+/** A chat by its id. */
+export function chatById(chatId: string): Chat | undefined {
+  return store?.get(chatId);
+}
+
+/**
+ * The chat an agent runs, when the fleet confirms it: Main for the project's
+ * orchestrator, its own chat for a runner. What its messages to a channel or
+ * the room are named by (PR F).
+ */
+export function chatRunBy(agent: AgentStatus): Chat | undefined {
+  const chat = store?.chatOfRunner(agent.id);
+  return chat && runnerOf(chat) === agent ? chat : undefined;
 }
 
 /** Chats other than Main run on claude, whose conversations Tars resumes: an orchestrator on another CLI has Main only. */
@@ -306,7 +328,7 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
  * dialog (its Enter would answer it), and as the user's own, with no sender
  * line. Claude Code takes them during a turn too, in order.
  */
-async function typeInto(runner: AgentStatus, chat: Chat, text: string): Promise<SendAnswer> {
+async function typeInto(runner: AgentStatus, chat: Chat, text: string, sender?: MessageSender): Promise<SendAnswer> {
   if (!(await sessionStarted(runner, SENDER_WAIT_MS))) {
     return failed(`${runner.name || 'Its agent'} is still starting: nothing was typed. Send it again in a moment.`);
   }
@@ -315,16 +337,30 @@ async function typeInto(runner: AgentStatus, chat: Chat, text: string): Promise<
   if (dialogOpen(runner)) {
     return failed('Its CLI shows a dialog (a permission or a question), and a typed Enter would answer it: answer the dialog, then send again.');
   }
-  const outcome = writeProgrammaticInput(terminal, text, true, { agentId: runner.id, from: 'you' });
+  const outcome = writeProgrammaticInput(terminal, text, true, sender
+    ? { agentId: runner.id, from: fromOf(sender), sender }
+    : { agentId: runner.id, from: 'you' });
   if (outcome === 'refused') return failed('Its terminal already holds as many messages as it can take: wait for it, and send again.');
   return { success: true, chatId: chat.id, runnerId: runner.id, how: outcome === 'held' ? 'held' : 'typed' };
+}
+
+/** Who a message is from, as the agent's panel names a waiting one. */
+function fromOf(sender: MessageSender): string {
+  if (sender.kind === 'agent') return sender.name || sender.id;
+  if (sender.kind === 'channel') return sender.channel;
+  if (sender.kind === 'user') return `the user via ${sender.via}`;
+  return 'Tars';
 }
 
 /**
  * The user's words into a chat: typed into its runner's CLI when it runs, or
  * the prompt of a launch that resumes its conversation, within the limit.
+ *
+ * With a sender (a bot, the relay: PR F), what arrives is that sender's, after
+ * the line Tars writes for it, typed or at the head of the launch's prompt; a
+ * chat's own window sends none, and its words are the user's own.
  */
-export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAnswer> {
+export async function sendToChat(chatId: unknown, text: unknown, opts: { sender?: MessageSender } = {}): Promise<SendAnswer> {
   if (!store) return { error: 'chats_unavailable', reason: 'The chats are not loaded yet.' };
   if (typeof text !== 'string' || !text.trim() || text.length > TEXT_MAX) {
     return { error: 'invalid_request', reason: `A message is text, 1 to ${TEXT_MAX} characters.` };
@@ -335,7 +371,7 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
   // launch.
   const known = store.get(chatId);
   const running = known ? runnerOf(known) : undefined;
-  if (known && running && isLive(running)) return typeInto(running, known, text);
+  if (known && running && isLive(running)) return typeInto(running, known, text, opts.sender);
   // Under the lock: whether a slot is needed, and the launch that takes it.
   const decided = await withSlots(async (): Promise<SendAnswer | { typeInto: AgentStatus; chat: Chat }> => {
     const chat = store!.get(chatId);
@@ -388,14 +424,15 @@ export async function sendToChat(chatId: unknown, text: unknown): Promise<SendAn
     notesForNextLaunch.delete(runner.id);
     reserved.add(runner.id);
     try {
-      const result = await launchAgent(runner.id, note ? `${note}\n\n${text}` : text, options);
+      const said = opts.sender ? withSenderLine(opts.sender, text) : text;
+      const result = await launchAgent(runner.id, note ? `${note}\n\n${said}` : said, options);
       if (!result.success) return failed(result.error);
       return { success: true, chatId: chat.id, runnerId: runner.id, how: 'launched' };
     } finally {
       reserved.delete(runner.id);
     }
   });
-  return 'typeInto' in decided ? typeInto(decided.typeInto, decided.chat, text) : decided;
+  return 'typeInto' in decided ? typeInto(decided.typeInto, decided.chat, text, opts.sender) : decided;
 }
 
 /** Whether a chat may lose its runner: Main's is the orchestrator, never removed by a chat (4.1). */
@@ -565,6 +602,18 @@ export function startChatRunners(chatStore: ChatStore): void {
     byRunner: (agentId) => {
       const chat = chatStore.chatOfRunner(agentId);
       return chat && runnerOf(chat)?.id === agentId ? chat : undefined;
+    },
+  });
+  setChatLookups({
+    inbox: (projectPath) => {
+      const picked = pickChat(chatStore.list().chats, projectPath, null);
+      if (picked.kind !== 'chat') return null;
+      // Main's agent is the orchestrator, whatever its record says (runner_mismatch is the send's to tell).
+      return { agent: picked.chat.number === 1 ? leadOf(projectPath) : runnerOf(picked.chat) };
+    },
+    chatRunBy: (agentId) => {
+      const agent = agents.get(agentId);
+      return agent ? chatRunBy(agent) : undefined;
     },
   });
   agentStatusEmitter.on('fleet-change', onFleetChange);
