@@ -52,6 +52,8 @@ import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { tasksReport } from '../services/task-watch';
+import type { TaskQuery } from '../services/task-cost';
+import { oneReadingAtATime } from '../core/one-reading-at-a-time';
 import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
 import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { orchestratorMoved } from '../core/chat-identity';
@@ -2031,8 +2033,11 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
   // What each task cost, with who handed it over and the tasks handed on from
   // it, priced from the transcripts when asked (services/task-watch.ts).
+  // One reading at a time, one per question: the page asks again at each new
+  // figure, before the last answer is in (core/one-reading-at-a-time.ts).
+  const readTasks = oneReadingAtATime(tasksReport, (q: TaskQuery) => JSON.stringify([q.since ?? null, q.sinceDays ?? null, q.projectPath ?? null, q.agentId ?? null]));
   ipcMain.handle('usage:tasks', async (_event, query: { since?: number; sinceDays?: number; projectPath?: string; agentId?: string } = {}) =>
-    tasksReport({
+    readTasks({
       since: typeof query?.since === 'number' && Number.isFinite(query.since) ? query.since : undefined,
       sinceDays: typeof query?.sinceDays === 'number' ? query.sinceDays : undefined,
       projectPath: typeof query?.projectPath === 'string' ? query.projectPath : undefined,

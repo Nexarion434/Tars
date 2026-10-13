@@ -31,10 +31,16 @@ function bench() {
       fails.set(q.w, [...(fails.get(q.w) ?? []), (e) => { log.push(`fail ${id}`); reject(e); }]);
     });
   };
-  const end = (w: string) => ends.get(w)?.shift()?.(undefined);
-  const fail = (w: string) => fails.get(w)?.shift()?.(new Error(`${w} broke`));
+  // Ending or failing a reading takes both of its handles off.
+  const end = (w: string) => { fails.get(w)?.shift(); ends.get(w)?.shift()?.(undefined); };
+  const fail = (w: string) => { ends.get(w)?.shift(); fails.get(w)?.shift()?.(new Error(`${w} broke`)); };
   const tick = () => new Promise((r) => setImmediate(r));
-  return { log, read, end, fail, tick };
+  /** Until a reading of `w` has started: one after a failure starts a few turns of the loop later. */
+  const started = async (w: string, count = 1) => {
+    for (let i = 0; i < 50 && b.log.filter((l) => l.startsWith(`start ${w}#`)).length < count; i += 1) await tick();
+  };
+  const b = { log, read, end, fail, tick, started };
+  return b;
 }
 
 describe('one reading at a time', () => {
@@ -87,11 +93,11 @@ describe('one reading at a time', () => {
     await b.tick();
     b.fail('day');
     await expect(broken).rejects.toThrow('day broke');
-    await b.tick();
+    await b.started('week');
     b.end('week');
     expect(await waiting).toEqual({ id: 'week#2' });
     const later = ask({ w: 'day' });
-    await b.tick();
+    await b.started('day', 2);
     b.end('day');
     expect(await later).toEqual({ id: 'day#3' });
   });
