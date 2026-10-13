@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
+import { gitRefusal } from '../core/chat-slots';
 import { restartRunnersOf } from '../services/chat-runners';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
@@ -1180,12 +1181,14 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
             // path, so a quote or a space in it used to break the command (or
             // run its own). See the same fix in agent:create.
             const { execFileSync } = await import('child_process');
-            try {
-              execFileSync('git', ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
-              execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd: agent.projectPath, stdio: 'pipe' });
-            } catch {
-              execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
-            }
+            // In the C locale: gitRefusal reads git's "fatal:", which a translated git would not write.
+            const git = (args: string[]) => execFileSync('git', args, { cwd: agent.projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+            // An existing branch is checked out there, a new one is made: only the add that applies runs, so a
+            // refusal is git's reason for it. Any failure of the first used to be retried as a new branch, and the
+            // user read the retry's reason ("a branch named ... already exists").
+            let exists = true;
+            try { git(['rev-parse', '--verify', '--quiet', branchName]); } catch { exists = false; }
+            git(exists ? ['worktree', 'add', worktreePath, branchName] : ['worktree', 'add', '-b', branchName, worktreePath]);
           }
           await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
           agent.worktreePath = worktreePath;
@@ -1198,7 +1201,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           agent.currentTask = undefined;
         } catch (err) {
           console.error('Failed to create worktree on update:', err);
-          return { success: false, error: 'Failed to create git worktree' };
+          // What the Agents page shows after "Not saved:": git's own reason, without its progress or "fatal: ".
+          const stderr = String((err as { stderr?: unknown }).stderr ?? '').trim();
+          return { success: false, error: `The worktree could not be made: ${stderr ? gitRefusal(stderr) : (err as Error).message}` };
         }
       }
     }
