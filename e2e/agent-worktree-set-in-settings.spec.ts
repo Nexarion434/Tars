@@ -145,7 +145,14 @@ test('an agent\'s worktree set in its settings is saved and used, and a worktree
     await setWorktree('feat/notes');
     await expect(dialog, 'the dialog does not close as if it had saved').toBeVisible({ timeout: 10_000 });
     const refusal = dialog.getByRole('alert');
-    await expect(refusal).toContainText('Not saved');
+    await expect(refusal).toContainText('Not saved: ');
+    // The reason is agent:update's own, whatever it says, and the changes made stay in the dialog.
+    const answered = ((await updates()) as Array<{ answered: { success?: boolean; error?: string } }>).at(-1)!.answered;
+    expect(answered.success, 'agent:update refused it').toBe(false);
+    await expect(refusal).toContainText(String(answered.error));
+    await expect(refusal).toContainText('Your changes are still here.');
+    await expect(worktreeRow.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+    await expect(dialog.getByPlaceholder('feat/frontend')).toHaveValue('feat/notes');
     seen.refusal = (await refusal.innerText()).replace(/\s+/g, ' ').trim();
     expect(onDisk('nt').worktreePath ?? null).toBeNull();
     await stepShot(page, '02-plain-folder-refused');
