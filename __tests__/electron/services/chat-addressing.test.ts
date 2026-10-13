@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat,
+  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat, routeChannelMessage,
 } from '../../../electron/services/chat-addressing';
 import type { Chat } from '../../../electron/services/chats';
 
@@ -28,6 +28,13 @@ import type { Chat } from '../../../electron/services/chats';
  * 6. The sent log: a reply to a message of one Telegram chat is matched with the same message id in another (Telegram
  *    numbers messages per chat); an entry older than 7 days still routes; an unreadable or foreign file throws or routes;
  *    the file grows without bound; it is written readable by others; it holds the message's text.
+ * 7. A channel's message for Main, or for a project with no chats, leaves today's path to the orchestrator (the bots'
+ *    own forward, its context and its launch); or a message for another chat takes that path, which starts a CLI
+ *    outside the chats' limit.
+ * 8. A reply to a chat's message goes by its "#N" or to the inbox instead of to the chat it answers, or loses its
+ *    "#N"-looking first word; a reply to a chat since deleted reaches another chat, or vanishes without a word.
+ * 9. A trailing slash in the project's path, as one sender spells it, finds no chat, and the message goes to the
+ *    orchestrator rather than to the inbox.
  */
 
 const at = '2026-10-13T08:00:00.000Z';
@@ -144,10 +151,45 @@ describe('6. the log of what Tars\'s own bot sent for a chat', () => {
   });
 
   it('keeps the newest entries when it is full', () => {
+    // Full already, as a long run of sends leaves it; then five more.
+    const full = Array.from({ length: CHAT_SENT_MAX }, (_, k) => ({ telegramChatId: '100', messageId: k + 1, chatId: `c${k + 1}`, at: NOW + k + 1 }));
+    fs.writeFileSync(file, JSON.stringify({ entries: full }));
     const log = createChatSentLog(file);
-    for (let i = 1; i <= CHAT_SENT_MAX + 5; i += 1) log.record({ telegramChatId: '100', messageId: i, chatId: `c${i}` }, NOW + i);
+    for (let i = CHAT_SENT_MAX + 1; i <= CHAT_SENT_MAX + 5; i += 1) log.record({ telegramChatId: '100', messageId: i, chatId: `c${i}` }, NOW + i);
     expect(JSON.parse(fs.readFileSync(file, 'utf-8')).entries.length).toBe(CHAT_SENT_MAX);
     expect(log.chatOf('100', 1, NOW + CHAT_SENT_MAX + 5)).toBeUndefined();
     expect(log.chatOf('100', CHAT_SENT_MAX + 5, NOW + CHAT_SENT_MAX + 5)).toBe(`c${CHAT_SENT_MAX + 5}`);
+  });
+});
+
+describe('7, 8, 9. the way a channel\'s message goes', () => {
+  const main = chat({ id: 'main', number: 1, inbox: false });
+  const inbox = chat({ id: 'in', number: 2, title: 'Inbox', runnerId: 'r2', inbox: true });
+  const release = chat({ id: 'rel', number: 3, title: 'Release', runnerId: 'r3', inbox: false });
+  const chats = [main, inbox, release];
+  const route = (text: string, replyChatId?: string, projectPath = '/work/tars', list = chats) =>
+    routeChannelMessage({ chats: list, projectPath, text, replyChatId });
+
+  it('Main, and a project with no chats, keep the path to the orchestrator', () => {
+    expect(route('#1 hello')).toEqual({ kind: 'orchestrator', text: 'hello' });
+    expect(route('hello', undefined, '/work/none')).toEqual({ kind: 'orchestrator', text: 'hello' });
+    expect(route('#3 hello', undefined, '/work/none')).toEqual({ kind: 'orchestrator', text: '#3 hello' });
+    expect(route('hello', undefined, '/work/tars', [chat({ id: 'm' })])).toEqual({ kind: 'orchestrator', text: 'hello' });
+  });
+
+  it('another chat, by its number or as the inbox, through the chats', () => {
+    expect(route('#3 hello')).toEqual({ kind: 'chat', chat: release, text: 'hello' });
+    expect(route('hello')).toEqual({ kind: 'chat', chat: inbox, text: 'hello' });
+    expect(route('hello', undefined, '/work/tars/')).toEqual({ kind: 'chat', chat: inbox, text: 'hello' });
+  });
+
+  it('an unknown number reaches nobody', () => {
+    expect(route('#9 hello')).toEqual({ kind: 'unknown', list: chatListFor('/work/tars', chats) });
+  });
+
+  it('a reply goes to the chat it answers, its words as written', () => {
+    expect(route('#2 not an address here', 'rel')).toEqual({ kind: 'chat', chat: release, text: '#2 not an address here' });
+    expect(route('thanks', 'main')).toEqual({ kind: 'orchestrator', text: 'thanks' });
+    expect(route('thanks', 'gone-chat')).toEqual({ kind: 'gone' });
   });
 });
