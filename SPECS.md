@@ -294,7 +294,7 @@ An stdio MCP server (`@modelcontextprotocol/sdk`) bundled into `extraResources` 
 | `whoami` | Identity handshake: reads `CLAUDE_AGENT_ID` / `CLAUDE_PROJECT_PATH` from its own environment, resolves the agent, returns the project roster |
 | `list_agents` | Scoped to the caller's project by default; `all: true` for the global view |
 | `get_agent` / `get_agent_output` | Detail and `lastCleanOutput` |
-| `create_agent` | Defaults to the caller's project |
+| `create_agent` | Defaults to the caller's project. Any provider of the registry (`provider`, with `model`, `effort`, `permissionMode`) and any CLI binary (`cliPath`, an absolute path to an executable file); an unknown provider, an API-key provider without its key and a `cliPath` that is not an executable file are refused with the reason (2.0.2) |
 | `start_agent` / `send_message` | Both route to `POST /dispatch`; `send_message` accepts `message` or `prompt` so the LLM doesn't trip on naming, and a `mode` (see Receipts and send modes). Both send a `clientRequestId` |
 | `stop_agent` / `remove_agent` | `stop_agent` requires a one-line `reason`; the agent then reads `stopped`, with `stoppedBy` (the caller's name) and the reason (see Stopping an agent) |
 | `wait_for_agent` | Single long-poll against `/wait`, no polling loop |
