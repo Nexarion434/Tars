@@ -25,6 +25,10 @@ import { dropRunnerGrants } from '../../../electron/core/chat-grants';
  *    (`.worktrees/chat-x -> ..`). lstat follows it, `.claude` is the project's real folder and its file a regular one:
  *    the project's own grants are deleted. Whatever the layout, the file the worktree reaches must never be the
  *    project's own.
+ * 9. (QA's D2 on #394's delta) The worktree's `.claude` is a link to a folder other than the project's: another
+ *    worktree's, or the user's own ~/.claude. The realpath check knows only the project's file, so without the check
+ *    that `.claude` is no link, unlink goes through it and that folder's settings.local.json is deleted. Case 2 links
+ *    to the project's `.claude`, which the realpath check guards too: it never showed the link check was needed.
  */
 
 let root: string;
@@ -105,6 +109,17 @@ describe('dropRunnerGrants', () => {
     fs.symlinkSync('..', worktree);
     expect(fs.existsSync(grantsOf(worktree)), 'the link reaches the project\'s file').toBe(true);
     dropRunnerGrants(project, worktree, worktree);
+    expect(fs.existsSync(grantsOf(project))).toBe(true);
+  });
+
+  it('9. never removes another folder\'s file through a .claude linked elsewhere than the project\'s', () => {
+    const elsewhere = path.join(root, 'home', '.claude');
+    write(path.join(elsewhere, 'settings.local.json'), '{"permissions":{"allow":["Bash(git push)"]}}');
+    fs.symlinkSync(elsewhere, path.join(worktree, '.claude'));
+    expect(fs.existsSync(grantsOf(worktree)), 'the link reaches the other folder\'s file').toBe(true);
+    dropRunnerGrants(project, worktree, worktree);
+    expect(fs.readFileSync(path.join(elsewhere, 'settings.local.json'), 'utf8')).toBe('{"permissions":{"allow":["Bash(git push)"]}}');
+    expect(fs.lstatSync(path.join(worktree, '.claude')).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(grantsOf(project))).toBe(true);
   });
 });
