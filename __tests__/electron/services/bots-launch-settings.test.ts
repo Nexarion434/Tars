@@ -67,7 +67,7 @@ vi.mock('node-telegram-bot-api', () => ({
 
 import { agents, initAgentPty, wireDialogProbe } from '../../../electron/core/agent-manager';
 import { spawnAgentPty } from '../../../electron/core/agent-pty';
-import { resetLaunches, launchBegins, sessionStarting } from '../../../electron/core/agent-launch';
+import { resetLaunches, launchBegins, sessionStarting, setSlotGate } from '../../../electron/core/agent-launch';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import { initTelegramBotService, initTelegramBot, stopTelegramBot, sendToSuperAgent } from '../../../electron/services/telegram-bot';
 import { handleSlackCommand, sendToSuperAgentFromSlack } from '../../../electron/services/slack-bot';
@@ -221,6 +221,25 @@ describe('the role, on the launches the bots make', () => {
 
     expect(runner).toContain(INSTRUCTIONS());
     expect(runner).toContain(TOOL_BLOCK);
+  });
+
+  // The Audit's L2 on #379, written before the fix (2026-10-13): a bot started
+  // a chat's runner by its exact id through initAgentPty, past the slot gate,
+  // over the RAM's limit.
+  it("Telegram /start_agent takes the runner's slot: refused, it opens nothing and says why", async () => {
+    agent({ id: 'agent-o', name: 'Lead', role: 'orchestrator' });
+    agent({ id: 'agent-r', name: 'Lead · Release 1.9.4', role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'agent-o' });
+    setSlotGate(async () => ({ ok: false, error: '2 chats are already working, the most this Mac runs at once.' }));
+    try {
+      const startAgent = bot.texts.find(t => t.pattern.source.includes('start_agent'))!;
+      const text = '/start_agent agent-r Ship it';
+      await startAgent.handler({ chat: { id: 42, type: 'private' }, text }, startAgent.pattern.exec(text));
+      await new Promise(resolve => setTimeout(resolve, 450));
+      expect(spawned, 'a terminal opened for a start the gate refused').toHaveLength(0);
+      expect(bot.sent.join('\n')).toContain('2 chats are already working');
+    } finally {
+      setSlotGate(undefined);
+    }
   });
 
   it('a message goes to the agent whose role is orchestrator, not to one named like it', async () => {

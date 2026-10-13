@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as net from 'net';
 import { execFileSync } from 'child_process';
 import { launchSandboxed, recordValues } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
@@ -18,27 +19,41 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * Asserted, in order:
  * 0. a chat whose record an agent edited to name the worker shows no runner, answers runner_mismatch, and never
- *    launches, types into or counts that worker, before it runs or after;
+ *    launches, types into or counts that worker, before it runs or after; an agent agents.json marks as a runner
+ *    that no chat names is a plain worker since the launch (L1);
  * 1. a send in Main starts the orchestrator, with its model, its instructions and its tool block, its brief kept;
  * 2. a first send in chat A makes its runner: "Lead · Release", a worker of kind chat, in .worktrees/chat-<id> on
  *    chat/<id>, started from origin/main and not from the root's branch, launched like the orchestrator (model,
  *    instructions, --disallowed-tools), in its worktree, and told it is the orchestrator in that chat, its role the
- *    orchestrator's brief;
+ *    orchestrator's brief; while it is made (a git fetch held by a remote that never answers), a send to Main, whose
+ *    orchestrator runs, is typed at once (L5);
  * 3. with both slots taken, a send in chat B puts A, idle, to sleep and starts B: two runners, two sessions, two
  *    worktrees, though each turn's Stop hook leaves a process under the CLI for a second after it;
  * 4. the next send in A puts B to sleep and resumes A's session (--resume <its id>);
- * 5. with Main and A both in a turn, a send in B answers chat_limit, with its sentence and who works;
+ * 5. with Main and A both in a turn, a send in B answers chat_limit, with its sentence and who works, and so does a
+ *    Start of B from the window (M1);
  * 6. two sends in one tick for one free slot: one runner starts, the other answers chat_limit;
  * 7. a worker's reply to "requester" reaches the chat that asked; one to the orchestrator's id reaches it (R5);
  * 8. chat B's runner cannot cancel chat C's queued task (not_your_task); Main's orchestrator cannot without a
  *    reason, and can with one, and chat C is told (R6);
- * 9. a chat whose runner was stopped goes on with its conversation, under a new id (--fork-session), not a new one;
- * 10. a chat whose runner's CLI ended by itself goes on with the same session (--resume <its id>);
- * 11. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
- * 12. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
- * 13. deleting chat B removes its runner and its worktree, its branch kept.
- * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl, prompts.jsonl and sessions.jsonl
- * (what each SessionStart handed its CLI).
+ * 9. a steer by Main's orchestrator, or a restart by chat B's runner, of the worker busy with chat C's work is refused,
+ *    worker_busy_for_other_chat, naming chat C (PR B's rule, the chat case);
+ * 10. a chat whose runner was stopped goes on with its conversation, under a new id (--fork-session), not a new one;
+ * 11. a chat whose runner's CLI ended by itself goes on with the same session (--resume <its id>);
+ * 12. under 2 GB free, a first send answers with the reason and makes no worktree (R7);
+ * 13. scripts/worktree.mjs status lists the runners' worktrees, and its prune keeps them;
+ * 14. deleting chat B removes its runner and its worktree, its branch kept;
+ * 15. a permission ask from chat C's runner shows in chat C, and the window's answer reaches its CLI;
+ * 16. the orchestrator's brief changed: runner A, started from the window, reads it at that launch (L3), takes a slot
+ *    like a send (M1), and keeps it, the window's words being a turn;
+ * 17. the Orchestrator toggle on a runner is refused, and the orchestrator keeps the role (M2);
+ * 18. the role moves to the worker: Main follows the project's orchestrator, its sessions kept, and its next send
+ *    reaches the new one;
+ * 19. the orchestrator moves to a CLI whose conversations Tars cannot resume: its live runner is neither copied onto
+ *    it nor restarted, and a chat other than Main answers provider_unsupported (L4).
+ * Mn and Ln are the Audit's findings on #379.
+ * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl, prompts.jsonl, sessions.jsonl
+ * (what each SessionStart handed its CLI) and permissions.jsonl (each answer to a permission ask).
  */
 
 const HOOKS = path.resolve('hooks');
@@ -55,7 +70,8 @@ const args = process.argv.slice(2);
 const resumed = args.indexOf('--resume');
 const forked = args.includes('--fork-session');
 const sid = resumed === -1 || forked ? crypto.randomUUID() : args[resumed + 1];
-const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[/.]/g, '-'));
+// Where Claude Code keeps it: the folder's path, every character but a letter or a digit as '-' (platform/claude-project-dir.ts).
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
@@ -78,6 +94,18 @@ async function turn(prompt) {
     const release = path.join(process.env.HOME, 'release-' + id);
     while (!fs.existsSync(release)) await sleep(100);
     fs.rmSync(release, { force: true });
+  }
+  // A turn told to ask runs a permission question through Tars, as the state mod does, until the window answers.
+  if (prompt.includes('ASKPERM>>')) {
+    for (let i = 0; i < 10; i++) {
+      const answer = await fetch(process.env.CLAUDE_MGR_API_URL + '/api/hooks/permission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.CLAUDE_MGR_API_TOKEN },
+        body: JSON.stringify({ agent_id: id, session_id: sid, tool: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'toolu_e2e_ask' }),
+      }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+      record('permissions.jsonl', { sid, answer });
+      if (answer.decision && answer.decision !== 'pending') break;
+    }
   }
   line({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } });
   await sleep(200);
@@ -119,9 +147,12 @@ process.stdin.resume();
 
 type Agent = {
   id: string; name?: string; role?: string; kind?: string; chatId?: string; status: string; cliRunning?: boolean;
-  worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; savedPrompt?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
+  worktreePath?: string; branchName?: string; projectPath: string; currentSessionId?: string; savedPrompt?: string; provider?: string; taskQueue?: Array<{ ref: string; requesterAgentId: string; state: string }>;
 };
-type ChatRecord = { id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null; runner?: { id: string; live: boolean } | null };
+type ChatRecord = {
+  id: string; number: number; title: string; runnerId: string | null; inbox: boolean; settledAt: string | null; sessionIds: string[];
+  runner?: { id: string; live: boolean; permissionAsk?: { tool: string } | null } | null;
+};
 type Answer = Record<string, unknown>;
 type Launch = { id: string; sid: string; resume: string | null; fork: boolean; prompt: string; argv: string[]; cwd: string };
 
@@ -162,6 +193,8 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent('o1', 'Lead', 'orchestrator', { model: 'opus-test', savedPrompt: BRIEF }), agent('w1', 'Worker', 'worker'),
+    // Marked in agents.json as a chat's runner, which no chat names (L1).
+    agent('x1', 'Marked', 'worker', { kind: 'chat', chatId: 'ed17ed00-0000-4000-8000-000000000002' }),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   // chats.json as Tars writes it, with one record an agent edited (the file is in ~/.dorothy, which agents may
@@ -180,6 +213,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   const launchesFile = path.join(home, 'launches.jsonl');
   const promptsFile = path.join(home, 'prompts.jsonl');
   const sessionsFile = path.join(home, 'sessions.jsonl');
+  const permissionsFile = path.join(home, 'permissions.jsonl');
   const port = apiPort(31455);
   const dist = path.resolve('electron', 'dist');
   const values: Record<string, unknown> = { home, project, originMain, rootHead };
@@ -206,11 +240,38 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const contextOf = (id: string) => lines<{ id: string; context: string | null }>(sessionsFile).find((l) => l.id === id)?.context ?? '';
     const atRest = (id: string) => expect.poll(async () => (await agentOf(id))?.status, { timeout: 30_000 }).toMatch(/^(idle|completed)$/);
     const release = (id: string) => fs.writeFileSync(path.join(home, `release-${id}`), '');
+    type WindowAgentApi = { agent: {
+      start(p: { id: string; prompt: string }): Promise<Answer>; update(p: Record<string, unknown>): Promise<Answer>;
+      answerPermission(id: string, decision: string): Promise<Answer>;
+    } };
+    const startFromWindow = (id: string, prompt: string) => page.evaluate(([id, prompt]) => (window as unknown as { electronAPI: WindowAgentApi }).electronAPI.agent.start({ id, prompt }), [id, prompt] as const);
+    const updateFromWindow = (params: Record<string, unknown>) => page.evaluate((p) => (window as unknown as { electronAPI: WindowAgentApi }).electronAPI.agent.update(p), params);
+    /** What the sleep rule says of an agent now, as a full limit reads it. */
+    const refusalOf = (id: string) => app.evaluate(async (_e, { dist, id }) => {
+      const req = process.mainModule!.require;
+      const { agents } = req(`${dist}/core/agent-manager.js`);
+      const { sleepRefusal, factsOf } = req(`${dist}/services/agent-sleep.js`);
+      const { readProcesses } = req(`${dist}/services/stall-watch.js`);
+      const { ptyProcesses, fieldInUse } = req(`${dist}/core/pty-manager.js`);
+      const agent = agents.get(id);
+      const facts = factsOf(agent, await readProcesses(), Date.now());
+      const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      return {
+        refusal: sleepRefusal(facts, { anyAge: true }), owed: facts.owed, owes: facts.owes, pending: facts.pending,
+        field: terminal ? fieldInUse(terminal) : null, cli: facts.cliRunning, resumable: facts.resumable,
+      };
+    }, { dist, id });
+    const lastContextOf = (id: string) => lines<{ id: string; context: string | null }>(sessionsFile).filter((l) => l.id === id).map((l) => l.context ?? '').pop() ?? '';
     // Each in one spelling: git may print a temporary folder as /var/... or /private/var/....
     const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.join(fs.realpathSync(path.dirname(p)), path.basename(p)));
     const worktrees = () => git(project, 'worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).map((l) => real(l.slice(9)));
 
-    // 0. The edited record: no runner shown, nothing sent, the worker it names never launched for it.
+    // 0. The edited record: no runner shown, nothing sent, the worker it names never launched for it. And the agent
+    //    agents.json marked as a runner no chat names is a plain worker since the launch (L1).
+    const marked = await agentOf('x1');
+    keep({ marked });
+    expect(marked?.kind).toBeUndefined();
+    expect(marked?.chatId).toBeUndefined();
     const edited = (await chats()).find((c) => c.number === 2)!;
     expect(edited).toMatchObject({ title: 'Edited', runner: null });
     const toEdited = await send(edited.id, 'EDITED>> hello');
@@ -232,11 +293,25 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect((await agentOf('o1'))?.savedPrompt).toBe(BRIEF);
     expect(contextOf('o1')).toContain(`## Your role\n${BRIEF}`);
 
-    // 2. Chat A's runner, made by its first send.
+    // 2. Chat A's runner, made by its first send. While it is made, its git fetch held by a remote that never
+    //    answers, a send to Main, whose orchestrator runs, is typed at once, not behind the lock (L5).
     const chatA = await call('chat', 'create', { projectPath: project, title: 'Release' }) as unknown as ChatRecord;
     const chatB = await call('chat', 'create', { projectPath: project, title: 'Bug' }) as unknown as ChatRecord;
-    const toA = await send(chatA.id, 'A>> first');
-    keep({ toA });
+    const sockets = new Set<net.Socket>();
+    const silent = net.createServer((socket) => { sockets.add(socket); });
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    git(project, 'remote', 'set-url', 'origin', `http://127.0.0.1:${(silent.address() as net.AddressInfo).port}/demo.git`);
+    const toAPending = send(chatA.id, 'A>> first');
+    await page.waitForTimeout(1_500);
+    const sentAt = Date.now();
+    const whileMade = await Promise.race([send(main.id, 'MAIN>> while A is made'), page.waitForTimeout(10_000).then(() => ({ timedOut: true }))]);
+    const waitedMs = Date.now() - sentAt;
+    for (const socket of sockets) socket.destroy();
+    silent.close();
+    git(project, 'remote', 'set-url', 'origin', origin);
+    const toA = await toAPending;
+    keep({ toA, whileMade, waitedMs });
+    expect(whileMade).toMatchObject({ success: true, how: 'typed' });
     expect(toA).toMatchObject({ success: true, how: 'launched' });
     const runnerA = (await runnerOf(chatA.id))!;
     keep({ runnerA });
@@ -260,10 +335,14 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(contextA).toContain(`## Your role\n${BRIEF}`);
     expect(contextA).not.toContain('A>> first');
     expect(await call('system', 'chatLimit')).toMatchObject({ limit: 2, working: 2 });
+    await expect.poll(() => promptsOf('o1'), { timeout: 30_000 }).toContain('MAIN>> while A is made');
+    await atRest('o1');
 
-    // 3. Both slots taken: B's first send puts A, idle, to sleep.
+    // 3. Both slots taken: B's first send puts A, idle, to sleep. What the sleep rule says of A just before is kept
+    //    for the artefact: a refusal there is why a send answers chat_limit.
+    const refusalOfA = await refusalOf(runnerA.id);
     const toB = await send(chatB.id, 'B>> first');
-    keep({ toB });
+    keep({ refusalOfA, toB });
     expect(toB).toMatchObject({ success: true, how: 'launched' });
     const runnerB = (await runnerOf(chatB.id))!;
     await expect.poll(async () => (await agentOf(runnerA.id))?.status, { timeout: 15_000 }).toBe('asleep');
@@ -293,6 +372,14 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(limited).toMatchObject({ error: 'chat_limit', limit: 2, ramGb: 10 });
     expect(String(limited.reason)).toContain('2 chats are already working, the most this Mac runs at once (10 GB of RAM, one chat per 5 GB)');
     expect((limited.working as Array<{ title: string }>).map((w) => w.title).sort()).toEqual(['Main', 'Release']);
+    // A Start from the window takes the same slots (M1): refused with the sentence, and B stays asleep.
+    const launchesOfB = launchesOf(runnerB.id).length;
+    const startedB = await startFromWindow(runnerB.id, 'WINDOW>> start B');
+    keep({ startedB });
+    expect(startedB).toMatchObject({ success: false });
+    expect(String(startedB.error)).toContain('2 chats are already working, the most this Mac runs at once');
+    expect(launchesOf(runnerB.id)).toHaveLength(launchesOfB);
+    expect((await agentOf(runnerB.id))?.status).toBe('asleep');
     release(runnerA.id);
     release('o1');
     await atRest(runnerA.id);
@@ -374,7 +461,25 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await page.waitForTimeout(1_500);
     expect(promptsOf('w1').some((p) => p.includes('QUEUED>> later'))).toBe(false);
 
-    // 9. Stopped, not asleep: the chat's next send still goes on with its conversation.
+    // 9. The worker busy with chat C's work: Main's orchestrator may not steer it, nor chat B's runner restart it;
+    //    the refusal names chat C (PR B's rule, the chat case; ORCHESTRATOR-PER-CHAT.md 4.3, M1).
+    await atRest('w1');
+    // The hold is off its first line: the note C is sent when it ends quotes that line, and must not hold C.
+    const forC = await api('/api/agents/w1/dispatch', runnerC.id, { message: 'Work for chat C\nHOLD>> until released' });
+    expect(forC.status).toBe(200);
+    await expect.poll(async () => (await agentOf('w1'))?.status, { timeout: 30_000 }).toBe('running');
+    const steerByMain = await api('/api/agents/w1/dispatch', 'o1', { message: 'STEER>> drop that', mode: 'steer' });
+    const restartByB = await api('/api/agents/w1/dispatch', runnerB.id, { message: 'RESTART>> mine now', mode: 'restart', reason: 'mine' });
+    keep({ forC, steerByMain, restartByB });
+    const chatOfC = { title: startedChat.title, number: startedChat.number };
+    expect(steerByMain).toMatchObject({ status: 409, body: { code: 'worker_busy_for_other_chat', chat: chatOfC } });
+    expect(restartByB).toMatchObject({ status: 409, body: { code: 'worker_busy_for_other_chat', chat: chatOfC } });
+    expect(String(steerByMain.body.error)).toContain(`the chat "${startedChat.title}" (#${startedChat.number})`);
+    release('w1');
+    await atRest('w1');
+    expect(promptsOf('w1').some((p) => p.includes('STEER>>') || p.includes('RESTART>>'))).toBe(false);
+
+    // 10. Stopped, not asleep: the chat's next send still goes on with its conversation.
     await atRest(runnerC.id);
     await page.evaluate((id) => (window as unknown as { electronAPI: { agent: { stop(id: string): Promise<unknown> } } }).electronAPI.agent.stop(id), runnerC.id);
     await expect.poll(async () => (await agentOf(runnerC.id))?.cliRunning ?? false, { timeout: 15_000 }).toBe(false);
@@ -390,7 +495,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await atRest(runnerC.id);
     expect((await agentOf(runnerC.id))?.currentSessionId).toBe(againC.sid);
 
-    // 10. Its CLI ended by itself: no tombstone, the next send resumes the same session.
+    // 11. Its CLI ended by itself: no tombstone, the next send resumes the same session.
     expect(await send(startedChat.id, 'EXIT>> bye')).toMatchObject({ success: true, how: 'typed' });
     await expect.poll(async () => (await agentOf(runnerC.id))?.cliRunning ?? true, { timeout: 30_000 }).toBe(false);
     // Back at its shell, it holds no slot: Main alone works.
@@ -407,7 +512,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> after an exit')), { timeout: 30_000 }).toBe(true);
     await atRest(runnerC.id);
 
-    // 11. R7: under the 2 GB floor, a first send makes no worktree, and says why.
+    // 12. R7: under the 2 GB floor, a first send makes no worktree, and says why.
     await app.evaluate((_e, { dist }) => { process.mainModule!.require(`${dist}/core/disk-space.js`).setFreeSpaceReader(() => 1024 ** 3); }, { dist });
     const chatE = await call('chat', 'create', { projectPath: project, title: 'Floor' }) as unknown as ChatRecord;
     const before = worktrees();
@@ -419,7 +524,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(worktrees()).toEqual(before);
     expect(await runnerOf(chatE.id)).toBeUndefined();
 
-    // 12. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
+    // 13. The worktree tool sees the runners' worktrees, and its cleanup keeps them while their runners exist.
     const tool = (...args: string[]) => execFileSync(process.execPath, [WORKTREE_TOOL, ...args], { cwd: project, env: { ...process.env, HOME: home }, encoding: 'utf8' });
     const status = tool('status');
     const pruned = tool('prune', '--dry-run', '--no-github', '--older-than', '0');
@@ -430,7 +535,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
       expect(pruned.split('\n').find((l) => l.startsWith(`kept ${name}: `))).toContain(`it is the worktree of the Tars agent ${r.name}`);
     }
 
-    // 13. Deleting chat B: its runner and its worktree go, its branch stays.
+    // 14. Deleting chat B: its runner and its worktree go, its branch stays.
     const deleted = await call('chat', 'delete', { chatId: chatB.id });
     keep({ deleted, worktreesAtEnd: worktrees(), launches: lines(launchesFile) });
     expect(deleted).toMatchObject({ success: true });
@@ -440,9 +545,84 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     // The worker the edited record named: launched once, by the test, and never given its words.
     expect(launchesOf('w1')).toHaveLength(1);
     expect(promptsOf('w1').some((p) => p.includes('EDITED>>'))).toBe(false);
+
+    // 15. A permission ask from chat C's runner shows in chat C, and the window's answer reaches its CLI.
+    const viewOfC = async () => (await chats()).find((c) => c.id === startedChat.id)?.runner;
+    expect(await send(startedChat.id, 'ASKPERM>> clean the build')).toMatchObject({ success: true });
+    await expect.poll(async () => (await viewOfC())?.permissionAsk?.tool ?? null, { timeout: 30_000 }).toBe('Bash');
+    const askView = await viewOfC();
+    keep({ askView });
+    expect(askView).toMatchObject({ id: runnerC.id, permissionAsk: { tool: 'Bash' } });
+    await page.evaluate((id) => (window as unknown as { electronAPI: WindowAgentApi }).electronAPI.agent.answerPermission(id, 'allow'), runnerC.id);
+    await expect.poll(() => lines<{ id: string; answer: { decision?: string } }>(permissionsFile).filter((l) => l.id === runnerC.id).map((l) => l.answer.decision).pop() ?? null, { timeout: 30_000 }).toBe('allow');
+    await expect.poll(async () => (await viewOfC())?.permissionAsk ?? null, { timeout: 30_000 }).toBeNull();
+    await atRest(runnerC.id);
+
+    // 16. The orchestrator's brief changed: runner A, started from the window, reads it at that launch (L3), takes a
+    //     slot like a send (M1), and keeps it, the window's words being a turn.
+    // The change is made where no path tells the runners (agent:update would resync every one of them): what a
+    // launch reads is then the gate's own doing.
+    const NEW_BRIEF = 'Lead the demo team: plan, delegate, review, and ask for a test first.';
+    await app.evaluate((_e, { dist, brief }) => { process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get('o1').savedPrompt = brief; }, { dist, brief: NEW_BRIEF });
+    expect((await agentOf(runnerA.id))?.savedPrompt).toBe(BRIEF);
+    const refusalOfC = await refusalOf(runnerC.id);
+    const startedA = await startFromWindow(runnerA.id, 'WINDOW>> start A');
+    keep({ refusalOfC, startedA });
+    expect(startedA).toMatchObject({ success: true });
+    await expect.poll(() => lastContextOf(runnerA.id), { timeout: 30_000 }).toContain(`## Your role\n${NEW_BRIEF}`);
+    expect((await agentOf(runnerA.id))?.savedPrompt).toBe(NEW_BRIEF);
+    await expect.poll(() => promptsOf(runnerA.id), { timeout: 30_000 }).toContain('WINDOW>> start A');
+
+    // 17. The Orchestrator toggle on a runner is refused (M2): the project's orchestrator keeps the role.
+    const toggled = await updateFromWindow({ id: runnerA.id, role: 'orchestrator' });
+    keep({ toggled });
+    expect(toggled).toMatchObject({ success: false });
+    expect(String(toggled.error)).toMatch(/runs a chat/);
+    expect((await agentOf('o1'))?.role).toBe('orchestrator');
+    expect((await agentOf(runnerA.id))?.role).toBe('worker');
+
+    // 18. The role moves to the worker: Main follows the project's orchestrator, its sessions kept, and its next send
+    //     reaches the new one (the orchestrator's decision of 2026-10-13).
+    const mainBefore = (await chats()).find((c) => c.number === 1)!;
+    const w1Launches = launchesOf('w1').length;
+    expect(await updateFromWindow({ id: 'w1', role: 'orchestrator' })).toMatchObject({ success: true });
+    // Rebound when the role moved, before any list of the chats could do it: read from the file.
+    const mainOnDisk = (JSON.parse(fs.readFileSync(path.join(dir, 'chats.json'), 'utf8')) as { chats: ChatRecord[] }).chats.find((c) => c.number === 1);
+    keep({ mainOnDisk });
+    expect(mainOnDisk?.runnerId).toBe('w1');
+    expect((await chats()).find((c) => c.number === 1)?.runnerId).toBe('w1');
+    expect((await agentOf('o1'))?.role).toBe('worker');
+    await expect.poll(() => launchesOf('w1').length, { timeout: 60_000 }).toBeGreaterThan(w1Launches);
+    await expect.poll(async () => (await agentOf('w1'))?.currentSessionId ?? null, { timeout: 30_000 }).toBe(launchesOf('w1').at(-1)!.sid);
+    await atRest('w1');
+    const mainAfter = (await chats()).find((c) => c.number === 1)!;
+    keep({ mainBefore, mainAfter });
+    expect(mainAfter.sessionIds).toEqual(expect.arrayContaining(mainBefore.sessionIds));
+    expect(mainAfter.sessionIds).toContain(launchesOf('w1')[0].sid);
+    const toNewLead = await send(main.id, 'MAIN>> after the move');
+    keep({ toNewLead });
+    expect(toNewLead).toMatchObject({ success: true, runnerId: 'w1' });
+    await expect.poll(() => promptsOf('w1').some((p) => p.includes('MAIN>> after the move')), { timeout: 30_000 }).toBe(true);
+    expect(promptsOf('o1').some((p) => p.includes('MAIN>> after the move'))).toBe(false);
+    await atRest('w1');
+
+    // 19. The orchestrator moves to a CLI whose conversations Tars cannot resume (L4): its live runner is neither
+    //     copied onto it nor restarted on it, and a chat other than Main answers provider_unsupported.
+    expect(await send(startedChat.id, 'C>> before the lead moves')).toMatchObject({ success: true });
+    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> before the lead moves')), { timeout: 30_000 }).toBe(true);
+    await atRest(runnerC.id);
+    const cLaunches = launchesOf(runnerC.id).length;
+    expect(await updateFromWindow({ id: 'w1', provider: 'gemini' })).toMatchObject({ success: true });
+    await page.waitForTimeout(2_000);
+    const cAfter = await agentOf(runnerC.id);
+    const suspended = await send(chatA.id, 'A>> after the lead moved');
+    keep({ cAfter, suspended });
+    expect(cAfter?.provider ?? 'claude').toBe('claude');
+    expect(launchesOf(runnerC.id)).toHaveLength(cLaunches);
+    expect(suspended).toMatchObject({ error: 'provider_unsupported' });
   } finally {
-    for (const id of ['o1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
+    for (const id of ['o1', 'w1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();
-    for (const file of [launchesFile, promptsFile, sessionsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
+    for (const file of [launchesFile, promptsFile, sessionsFile, permissionsFile]) if (fs.existsSync(file)) fs.copyFileSync(file, test.info().outputPath(path.basename(file)));
   }
 });
