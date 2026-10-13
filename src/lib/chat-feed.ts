@@ -6,8 +6,9 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '@/types/electro
  * hears goes through here, whichever chat it is about, because the seq is one
  * counter for every chat: another chat's event only moves it, and a number
  * skipped means an event was missed, so nothing more is applied until the
- * snapshot is read again (the seq stays where the gap is, so every later
- * event is past it too). A line is kept by its id, in its place (n): told
+ * snapshot is read again: while stale, an event answers the feed itself, so
+ * the page neither draws again nor reads again per event. A line is kept by
+ * its id, in its place (n): told
  * again, it replaces the one before. Tests: __tests__/lib/chat-feed.test.ts.
  */
 
@@ -46,7 +47,7 @@ function withItem(items: ChatItem[], item: ChatItem): ChatItem[] {
 
 /** One event, in its turn. */
 export function applyEvent(feed: ChatFeed, event: ChatEvent): ChatFeed {
-  if (feed.seq < 0 || event.seq <= feed.seq) return feed;
+  if (feed.seq < 0 || feed.stale || event.seq <= feed.seq) return feed;
   if (event.seq > feed.seq + 1) return { ...feed, stale: true };
   const moved = { ...feed, seq: event.seq };
   if (event.chatId !== feed.chatId) return moved;
