@@ -32,6 +32,8 @@ export type ChatEvent =
   | { type: 'item'; chatId: string; item: NumberedItem }
   | { type: 'meta'; chatId: string; chat: unknown }
   | { type: 'deleted'; chatId: string }
+  /** Items the window was told of that are no longer in the chat: a session's transcript disappeared (Claude Code's cleanup, a delete). */
+  | { type: 'removed'; chatId: string; itemIds: string[] }
   | { type: 'state'; chatId: string; runner: { id: string; status: AgentStatus['status']; live: boolean } | null };
 
 let seq = 0;
@@ -273,6 +275,15 @@ export function followChats(deps: {
       } catch (err) {
         console.warn(`[chats] could not read chat ${chat.id}:`, (err as Error).message);
         continue;
+      }
+      // What the window was told of and the chat no longer holds: a session's
+      // transcript disappeared, and its "gone" line took its items' place.
+      // Declared once, before the items that moved back are sent again.
+      const now = new Set(items.map((i) => i.id));
+      const vanished = [...shown.keys()].filter((id) => !now.has(id));
+      if (vanished.length) {
+        for (const id of vanished) shown.delete(id);
+        publishChatEvent({ type: 'removed', chatId: chat.id, itemIds: vanished });
       }
       for (const item of items) {
         if (shown.get(item.id) === item.n) continue;

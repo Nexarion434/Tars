@@ -24,7 +24,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    `item`, its seq after the snapshot's;
  * 4. a rename arrives as a `meta` event, its seq after the item's;
  * 5. agent:queue answers a worker's work in hand and its queue, and a request
- *    sent to it arrives as an `agent:queue` event.
+ *    sent to it arrives as an `agent:queue` event;
+ * 6. (2.0.0 follow-up) a session's transcript that disappears (Claude Code's
+ *    cleanup, a delete) has the items the window was told of declared in one
+ *    `removed` event: that session's own, none of the other's.
  * The artefact: values.json with every answer and every event.
  */
 
@@ -121,7 +124,7 @@ test("a chat's conversation is read across its sessions, then followed live, and
     expect(main.sessionIds).toEqual([S1, S2]);
 
     // 1. The history, both sessions.
-    const history = await call('chat', 'history', { chatId: main.id }) as { seq: number; total: number; items: Array<{ n: number; kind: string; text: string; from?: string; sessionId: string }> };
+    const history = await call('chat', 'history', { chatId: main.id }) as { seq: number; total: number; items: Array<{ id: string; n: number; kind: string; text: string; from?: string; sessionId: string }> };
     values.history = history;
     expect(history.items.map((i) => [i.kind, i.text])).toEqual([
       ['user', 'ship the receipts'],
@@ -151,7 +154,7 @@ test("a chat's conversation is read across its sessions, then followed live, and
     await call('agent', 'start', { id: 'lead', prompt: '' });
     await expect.poll(async () => ((await call('agent', 'list')) as unknown as Array<{ id: string; cliRunning?: boolean }>).find((a) => a.id === 'lead')?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
     await expect.poll(async () => (await heard()).some((e) => e.channel === 'chat:events' && e.type === 'item'), { timeout: 15_000 }).toBe(true);
-    const item = (await heard()).find((e) => e.channel === 'chat:events' && e.type === 'item') as { seq: number; chatId: string; item: { kind: string; text: string; n: number } };
+    const item = (await heard()).find((e) => e.channel === 'chat:events' && e.type === 'item') as { seq: number; chatId: string; item: { id: string; kind: string; text: string; n: number } };
     values.itemEvent = item;
     expect(item.chatId).toBe(main.id);
     expect(item.item).toMatchObject({ kind: 'text', text: 'Docs updated.', n: 7 });
@@ -171,6 +174,20 @@ test("a chat's conversation is read across its sessions, then followed live, and
     const relisted = await call('chat', 'list') as { seq: number };
     values.relistedSeq = relisted.seq;
     expect(relisted.seq).toBeGreaterThanOrEqual(meta.seq);
+
+    // 6. The second session's transcript disappears: what the window holds of it
+    // is declared removed, at once and once; nothing of the first session.
+    fs.rmSync(s2File);
+    const removedOf = (e: Record<string, unknown>) => e.channel === 'chat:events' && e.type === 'removed' && e.chatId === main.id;
+    await expect.poll(async () => (await heard()).some(removedOf), { timeout: 15_000 }).toBe(true);
+    const removed = (await heard()).filter(removedOf) as unknown as Array<{ seq: number; itemIds: string[] }>;
+    values.removed = removed;
+    const ofS2 = [history.items.find((i) => i.text === 'now the docs')!.id, item.item.id];
+    const ofS1 = history.items.filter((i) => i.n < 4).map((i) => i.id);
+    expect(removed).toHaveLength(1);
+    expect(removed[0].itemIds).toEqual(expect.arrayContaining(ofS2));
+    expect(removed[0].itemIds.filter((id) => ofS1.includes(id))).toEqual([]);
+    expect(removed[0].seq).toBeGreaterThan(meta.seq);
 
     // 5. A worker's queue: a request from Lead, read and heard.
     const token = await app.evaluate((_e, { dist }) => process.mainModule!.require(`${dist}/core/agent-tokens.js`).mintAgentToken('lead'), { dist });
