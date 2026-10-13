@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 56,
+    version: '1.9.7',
+    date: '2026-10-13',
+    updates: [
+      'Tars clears more of the agents\' temporary folders. What an agent left there, its project\'s test sandboxes and build folders, and the folders of its ended Claude Code sessions, now goes once untouched for a day while the agent runs, where it was kept for as long as the agent ran: on one Mac that freed 10 GB at the first pass. The folder of the session an agent runs or would resume is never touched. The hourly pass also no longer reads every file of every agent again when nothing can go.',
+    ],
+  },
+  {
     id: 55,
     version: '1.9.6',
     date: '2026-10-13',
