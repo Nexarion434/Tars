@@ -42,12 +42,13 @@ export function startPointOf(git: { originHead: string | null; refs: string[] })
 }
 
 /**
- * Why `git worktree add` refused, as the page reads it after "Its worktree
- * could not be made: ". git writes its progress ("Preparing worktree ...") and
- * its hints to stderr too: only its error and fatal lines are the reason, else
- * Tars says it has none.
+ * Why git refused, from its stderr: `git worktree add`, as the page reads it
+ * after "Its worktree could not be made: ", and `git worktree remove`, inside
+ * an agent's worktreeKept (core/agent-remove.ts). git writes its progress
+ * ("Preparing worktree ...") and its hints to stderr too: only its error and
+ * fatal lines are the reason, else Tars says it has none.
  */
-export function worktreeAddRefusal(stderr: string): string {
+export function gitRefusal(stderr: string): string {
   const reasons = stderr.split(/\r?\n/)
     .map((line) => /^(?:fatal|error): (.*)$/.exec(line.trim())?.[1]?.trim().replace(/\.+$/, ''))
     .filter((reason): reason is string => !!reason);

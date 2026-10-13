@@ -37,6 +37,14 @@
  *     ignored files are read by a git status that does not go into it.
  * (12, a submodule that cannot be read, is in save-worktree-work.test.ts: the
  * worktree's own git status fails on it first, and the save keeps it.)
+ * And from the Audit's gate of #398 (L1, written before the code, 2026-10-13):
+ * `git worktree remove --force` can refuse after the save (a locked worktree, a
+ * folder git does not know as a worktree, a permission error), and the removal
+ * only logged it.
+ * 13. The worktree stays and the answer has neither savedTo nor worktreeKept:
+ *     the Agents page and the chat list say nothing of a folder still on disk.
+ *     It must say git's reason and where the worktree is, in the shape of the
+ *     other reasons ("..., so its worktree was kept at <path>").
  *
  * The handler and git are the real ones, on a repository in a throwaway folder.
  */
@@ -301,6 +309,19 @@ describe('the window\'s Delete', { timeout: 30_000 }, () => {
     }
     expect(result).toMatchObject({ success: true, worktreeKept: expect.stringContaining(wt) });
     expect(fs.readFileSync(path.join(wt, 'a.txt'), 'utf8')).toBe('kept\n');
+    expect(agents.has('w1')).toBe(false);
+  });
+
+  it('13. a worktree git refuses to remove (locked): the answer says why, and where it stays', async () => {
+    git(repo, 'worktree', 'lock', '--reason', 'kept by hand', wt);
+
+    const result = await handlers.get('agent:remove')!({}, 'w1');
+
+    expect(result).toEqual({
+      success: true,
+      worktreeKept: `git could not remove it (cannot remove a locked working tree, lock reason: kept by hand), so its worktree was kept at ${wt}`,
+    });
+    expect(fs.existsSync(wt)).toBe(true);
     expect(agents.has('w1')).toBe(false);
   });
 });

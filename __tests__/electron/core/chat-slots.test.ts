@@ -58,12 +58,16 @@
  *     stopped by the timeout): the page gets an empty reason or the progress,
  *     instead of Tars's own sentence.
  * 20. git's line ends with a period, and the page reads two.
+ * And from `git worktree remove` (the Audit's L1 on #398, written before the code, 2026-10-13)
+ * 21. git ends its line with a semicolon before an unprefixed hint ("cannot
+ *     remove a locked working tree;" then "use 'remove -f -f' ..."): the
+ *     sentence reads "tree;)".
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
   runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner, unconfirmedRunners,
-  worktreeAddRefusal,
+  gitRefusal,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -239,21 +243,25 @@ describe("the refusal of a runner's worktree (#394's gate)", () => {
   const progress = "Preparing worktree (new branch 'chat/1a2b3c4d')\n";
 
   it('17. only the reason reaches the page, without the progress or the "fatal: "', () => {
-    expect(worktreeAddRefusal(`${progress}fatal: a branch named 'chat/1a2b3c4d' already exists\n`)).toBe("a branch named 'chat/1a2b3c4d' already exists");
-    expect(worktreeAddRefusal(`${progress}fatal: could not create leading directories of '/p/.worktrees/chat-1a2b3c4d/.git': Permission denied\n`))
+    expect(gitRefusal(`${progress}fatal: a branch named 'chat/1a2b3c4d' already exists\n`)).toBe("a branch named 'chat/1a2b3c4d' already exists");
+    expect(gitRefusal(`${progress}fatal: could not create leading directories of '/p/.worktrees/chat-1a2b3c4d/.git': Permission denied\n`))
       .toBe("could not create leading directories of '/p/.worktrees/chat-1a2b3c4d/.git': Permission denied");
   });
 
   it('18. every error and fatal line, and no hint', () => {
-    expect(worktreeAddRefusal(`${progress}error: could not lock config file .git/config: File exists\r\nhint: remove the lock\nfatal: unable to write new index file\n`))
+    expect(gitRefusal(`${progress}error: could not lock config file .git/config: File exists\r\nhint: remove the lock\nfatal: unable to write new index file\n`))
       .toBe('could not lock config file .git/config: File exists; unable to write new index file');
   });
 
   it("19. Tars's own sentence when git gives no reason", () => {
-    for (const stderr of ['', '\n', progress, `${progress}hint: something\n`]) expect(worktreeAddRefusal(stderr)).toBe('git refused it without saying why');
+    for (const stderr of ['', '\n', progress, `${progress}hint: something\n`]) expect(gitRefusal(stderr)).toBe('git refused it without saying why');
   });
 
   it('20. no period of its own: the sentence adds one', () => {
-    expect(worktreeAddRefusal(`${progress}fatal: not a valid object name: 'origin/main'.\n`)).toBe("not a valid object name: 'origin/main'");
+    expect(gitRefusal(`${progress}fatal: not a valid object name: 'origin/main'.\n`)).toBe("not a valid object name: 'origin/main'");
+  });
+
+  it('21. no semicolon git ends its line with before a hint', () => {
+    expect(gitRefusal("fatal: cannot remove a locked working tree;\nuse 'remove -f -f' to override or unlock first\n")).toBe('cannot remove a locked working tree');
   });
 });
