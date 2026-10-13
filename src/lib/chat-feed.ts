@@ -11,7 +11,9 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '@/types/electro
  * its id, at its place (n): told again, it replaces the one before at the
  * place it is told at, since a line that lands late in an earlier session
  * moves every line after it one place on, and #371 tells each of them again.
- * Tests: __tests__/lib/chat-feed.test.ts.
+ * A session whose transcript disappeared has its lines named in one removed
+ * event, before the lines that moved back are told again: they leave the
+ * thread. Tests: __tests__/lib/chat-feed.test.ts.
  */
 
 export type ChatRunnerState = Extract<ChatEvent, { type: 'state' }>['runner'];
@@ -58,6 +60,10 @@ export function applyEvent(feed: ChatFeed, event: ChatEvent): ChatFeed {
   if (event.chatId !== feed.chatId) return moved;
   switch (event.type) {
     case 'item': return { ...moved, items: withItem(feed.items, event.item) };
+    case 'removed': {
+      const gone = new Set(event.itemIds);
+      return { ...moved, items: feed.items.filter(held => !gone.has(held.id)) };
+    }
     case 'meta': return { ...moved, chat: event.chat };
     case 'deleted': return { ...moved, deleted: true };
     case 'state': return { ...moved, runner: event.runner };

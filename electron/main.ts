@@ -142,6 +142,7 @@ import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate'
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
 import {
@@ -557,7 +558,11 @@ app.whenReady().then(async () => {
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
-    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
+    onAgentAccountChanged: (agentId) => {
+      restartForSettings(agentId, ['claudeAccount']);
+      // An orchestrator's chats run on its account too: each runner takes it (the Audit's L3 on #379).
+      restartRunnersOf(agentId, ['claudeAccount']);
+    },
   });
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
@@ -579,7 +584,7 @@ app.whenReady().then(async () => {
   registerBusHandlers();
   // The chats' records, and the migration that makes each project's
   // orchestrator's conversation its chat #1, Main (handlers/chat-handlers.ts).
-  registerChatHandlers({ agents });
+  registerChatHandlers({ agents, chatsShown: () => appSettings.newInterface === true });
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.

@@ -11,7 +11,7 @@ import { projectName } from '../platform';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
 import {
-  findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
+  findAgent, forwardToOrchestrator, listedAgents, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type ClaudeUsageStats, type StatusGroup,
 } from './bot-core';
 
@@ -584,12 +584,12 @@ const COMMANDS: Array<[RegExp, Command]> = [
     else telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
   }],
   [/\/status/, msg => {
-    const list = Array.from(fleet.agents.values());
+    const list = listedAgents(fleet.agents.values());
     if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
     else telegramBot?.sendMessage(msg.chat.id, statusReport(list, { title: `📊 *Agents Status*\n\n`, dot: DOTS, item: statusLine, orchestratorFirst: true }), { parse_mode: 'Markdown' });
   }],
   [/\/agents/, msg => {
-    const list = Array.from(fleet.agents.values());
+    const list = listedAgents(fleet.agents.values());
     if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
     else telegramBot?.sendMessage(msg.chat.id, `🤖 *All Agents*\n\n` + list.map(a => formatAgentStatus(a) + '\n\n').join(''), { parse_mode: 'Markdown' });
   }],
