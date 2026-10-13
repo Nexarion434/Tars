@@ -92367,7 +92367,7 @@
                               "fill": "#727272",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Manual asks before each tool. Bypass skips every check.",
+                              "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ui",
                               "fontSize": 10,
@@ -92384,9 +92384,37 @@
                           "children": [
                             {
                               "type": "frame",
+                              "id": "K7mfQ",
+                              "name": "s plan",
+                              "height": 26,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "rlaSl",
+                                  "name": "l",
+                                  "fill": "#727272",
+                                  "content": "plan",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
                               "id": "G8SZfr",
                               "name": "s0",
                               "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "left": 1
+                              },
                               "padding": [
                                 0,
                                 12
@@ -108260,7 +108288,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Manual asks before each tool. Bypass skips every check.",
+                              "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ui",
                               "fontSize": 10,
@@ -108277,9 +108305,37 @@
                           "children": [
                             {
                               "type": "frame",
+                              "id": "L9URaa",
+                              "name": "s plan",
+                              "height": 26,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "qs3an",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "plan",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
                               "id": "dCQWx",
                               "name": "s manual",
                               "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "left": 1
+                              },
                               "padding": [
                                 0,
                                 12
@@ -109181,7 +109237,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Manual asks before each tool. Bypass skips every check.",
+                              "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ui",
                               "fontSize": 10,
@@ -109198,9 +109254,37 @@
                           "children": [
                             {
                               "type": "frame",
+                              "id": "oTy6O",
+                              "name": "s plan",
+                              "height": 26,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "qPEB8",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "plan",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
                               "id": "FMNRZ",
                               "name": "s manual",
                               "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "left": 1
+                              },
                               "padding": [
                                 0,
                                 12
@@ -111464,7 +111548,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Manual asks before each tool. Bypass skips every check.",
+                              "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ui",
                               "fontSize": 10,
@@ -111481,9 +111565,37 @@
                           "children": [
                             {
                               "type": "frame",
+                              "id": "VL9om",
+                              "name": "s plan",
+                              "height": 26,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "hGgjO",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "plan",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
                               "id": "mZRNr",
                               "name": "s manual",
                               "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "left": 1
+                              },
                               "padding": [
                                 0,
                                 12
@@ -112385,7 +112497,7 @@
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Manual asks before each tool. Bypass skips every check.",
+                              "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
                               "lineHeight": 1.45,
                               "fontFamily": "$font-ui",
                               "fontSize": 10,
@@ -112402,9 +112514,37 @@
                           "children": [
                             {
                               "type": "frame",
+                              "id": "sVS8O",
+                              "name": "s plan",
+                              "height": 26,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "ZgBUT",
+                                  "name": "l",
+                                  "fill": "$text-muted",
+                                  "content": "plan",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
                               "id": "IK8vp",
                               "name": "s manual",
                               "height": 26,
+                              "stroke": "$border",
+                              "strokeWidth": {
+                                "left": 1
+                              },
                               "padding": [
                                 0,
                                 12
@@ -267196,6 +267336,2166 @@
               "fontFamily": "$font-ui",
               "fontSize": 14,
               "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "rBlox",
+      "x": 35000,
+      "y": 0,
+      "name": "Brain · Projects · a row with an older copy · states",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 760,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "w99gW",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "EOZgq",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Brain · Projects · a row with an older copy",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "hREM1",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 664,
+              "content": "Since #375, a project whose memory an older Tars kept under a folder name Claude never reads (a path with _, a space or ~) is one row: Claude's folder, the older folder's files copied in once while Claude's held no MEMORY.md, never over a file it holds. The row names the older folder on a third line, cut to the row's width; hovering it shows its whole path. The older folder is kept as it was.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e9YSc7",
+          "name": "state SELECTED, ITS FILES COPIED IN",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "SIrWj",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "SELECTED, ITS FILES COPIED IN",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "tDDHK",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "d1qjWE",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "mz3lB",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "S4Y97Z",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "viDaJ",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "kd5eA",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "3 files · 6 KB · 2h ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "wJR9G",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "K5gJbz",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "lqCRH",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "thW37",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e2mAk",
+          "name": "state NOT SELECTED, A LONG FOLDER NAME CUT",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "W2Q68e",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "NOT SELECTED, A LONG FOLDER NAME CUT",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "HnYHq",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "F2mLc",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "AnEwT",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "WVE6n",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bUp4k",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "T8TBh9",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "o8PCP",
+                      "name": "row acme_web",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "IHoCW",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "acme_web",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "VhOTz",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "2 files · 4 KB · 3d ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "tFs0C",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-Documents…",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "twjGi",
+          "name": "state THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "feEV0",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "IPBZX",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tObzZ",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "Utes0",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "bAPVg",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "LLukV",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "N1jme",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "no memory yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "L6PuS",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nNGXq",
+      "x": 35860,
+      "y": 0,
+      "name": "Brain · Projects · a row with an older copy · states · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 760,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "kszAI",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "nwihc",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Brain · Projects · a row with an older copy",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "R0HSwa",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 664,
+              "content": "Since #375, a project whose memory an older Tars kept under a folder name Claude never reads (a path with _, a space or ~) is one row: Claude's folder, the older folder's files copied in once while Claude's held no MEMORY.md, never over a file it holds. The row names the older folder on a third line, cut to the row's width; hovering it shows its whole path. The older folder is kept as it was.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "H1WS4",
+          "name": "state SELECTED, ITS FILES COPIED IN",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "eRGzb",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "SELECTED, ITS FILES COPIED IN",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "pN3HJ",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "A9TYdG",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "s4sTS",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "zS42C",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "KRJzE",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "h7RUt",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "3 files · 6 KB · 2h ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "lkw7A",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jx2Rk",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Fku2d",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "arPl7",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "O3ssyP",
+          "name": "state NOT SELECTED, A LONG FOLDER NAME CUT",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "REs85",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "NOT SELECTED, A LONG FOLDER NAME CUT",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "VpZXd",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "dkNoY",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "QpGzg",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "OsWD5",
+                      "name": "row tars",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "BH9I3",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "tars",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "xFwKB",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "13 files · 31 KB · 5m ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "tlaYC",
+                      "name": "row acme_web",
+                      "width": "fill_container",
+                      "stroke": "$border",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ebRHX",
+                          "name": "name",
+                          "fill": "$text-secondary",
+                          "content": "acme_web",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "pNDe9",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "2 files · 4 KB · 3d ago",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "aIRuX",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-Documents…",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bfYyF",
+          "name": "state THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "text",
+              "id": "cqbwQ",
+              "name": "caption",
+              "fill": "$text-secondary",
+              "content": "THE COPY FAILED: NO MEMORY YET, THE OLDER FOLDER STILL NAMED",
+              "lineHeight": 1.2,
+              "fontFamily": "$font-ui",
+              "fontSize": 10,
+              "fontWeight": "normal",
+              "letterSpacing": 0.8
+            },
+            {
+              "type": "frame",
+              "id": "j32uot",
+              "name": "Projects panel",
+              "width": 256,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 8,
+              "padding": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "gp2KO",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "content": "PROJECTS WITH MEMORY",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "wRLP3",
+                  "name": "rows",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "GEWXg",
+                      "name": "row my_proj",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border-strong",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "o1xAj6",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "500"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MGSHp",
+                          "name": "counts",
+                          "fill": "$text-secondary",
+                          "content": "no memory yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Ak0d5",
+                          "name": "older copy",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 216,
+                          "content": "older copy in -Users-me-my_proj",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "b6YFWU",
+      "x": 16724,
+      "y": 2200,
+      "name": "Permissions · plan mode · states",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "Xmc8t",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "Jl1HU",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Permissions: plan mode",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "VhOnY",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 946,
+              "content": "Plan is the narrowest mode: Claude Code reads and plans, and edits nothing until you approve its plan. It is chosen where an agent's mode is: New agent and Edit agent, and an agent's window. Only Claude Code has it here: another CLI would run plan as manual, so there plan is dimmed and says why, and choosing that CLI while plan is chosen falls back to manual.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "nNdu5",
+          "name": "states",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "bqCxL",
+              "name": "state NEW AGENT, CLAUDE CODE: PLAN CHOSEN",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "U2kbhj",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "NEW AGENT, CLAUDE CODE: PLAN CHOSEN",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "lGcFE",
+                  "name": "row Permissions",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Y0C8tr",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "h6NaUv",
+                          "name": "l",
+                          "fill": "$text-primary",
+                          "content": "Permissions",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "BNOg1",
+                          "name": "n",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 360,
+                          "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "q2XwGc",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "jiubR",
+                          "name": "s plan",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "n3ESb2",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "F8aCN",
+                          "name": "s manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ra068",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "cYltK",
+                          "name": "s auto",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "OEpHJ",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "opaCW",
+                          "name": "s bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ORcTy",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "zDOnI",
+              "name": "state NEW AGENT, ANOTHER CLI: PLAN DIMMED",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "J0nRwx",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "NEW AGENT, ANOTHER CLI: PLAN DIMMED",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "yWFh6",
+                  "name": "row Permissions",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "WAtpd",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "iiw00",
+                          "name": "l",
+                          "fill": "$text-primary",
+                          "content": "Permissions",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "lsclO",
+                          "name": "n",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 360,
+                          "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "M0mNnY",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "RnG7B",
+                          "name": "s plan",
+                          "opacity": 0.4,
+                          "height": 26,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "WDHSC",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "DltLU",
+                          "name": "s manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "s9dMw",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "P1r2t9",
+                          "name": "s auto",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "zJbzG",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "JMBFa",
+                          "name": "s bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "dtYVf",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "SWuGi",
+                      "name": "title",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 360,
+                      "content": "Codex has no plan mode here: plan would run as manual.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aBmnA",
+              "name": "state AN AGENT'S WINDOW, SKILLS",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "vtVMM",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "AN AGENT'S WINDOW, SKILLS",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "C7Fk2",
+                  "name": "skills tab",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t5h33",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "content": "PERMISSIONS",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "PjxNf",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "ytndd",
+                          "name": "s Plan",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "JWwTS",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "Plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "X0R7wg",
+                          "name": "s Manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "z9DAxm",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "CPWL8",
+                          "name": "s Auto",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jR1RN",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "p8CQfX",
+                          "name": "s Bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "TzADU",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "d9h2P",
+                      "name": "note",
+                      "fill": "$text-muted",
+                      "content": "Changes take effect on the next task.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "WDWot",
+      "x": 18264,
+      "y": 2200,
+      "name": "Permissions · plan mode · states · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": [
+        40,
+        48,
+        48,
+        48
+      ],
+      "children": [
+        {
+          "type": "frame",
+          "id": "F0Wryf",
+          "name": "head",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "WJ1QR",
+              "name": "title",
+              "fill": "$text-primary",
+              "content": "Permissions: plan mode",
+              "lineHeight": 1.1,
+              "fontFamily": "$font-display",
+              "fontSize": 28,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "WOHi0",
+              "name": "intro",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 946,
+              "content": "Plan is the narrowest mode: Claude Code reads and plans, and edits nothing until you approve its plan. It is chosen where an agent's mode is: New agent and Edit agent, and an agent's window. Only Claude Code has it here: another CLI would run plan as manual, so there plan is dimmed and says why, and choosing that CLI while plan is chosen falls back to manual.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "O52j8O",
+          "name": "states",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "scvCx",
+              "name": "state NEW AGENT, CLAUDE CODE: PLAN CHOSEN",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "oW9ur",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "NEW AGENT, CLAUDE CODE: PLAN CHOSEN",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "kOIXd",
+                  "name": "row Permissions",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "R0g7T",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "gT0MH",
+                          "name": "l",
+                          "fill": "$text-primary",
+                          "content": "Permissions",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "i9LXeE",
+                          "name": "n",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 360,
+                          "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "n4sZ8",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Ew5l2",
+                          "name": "s plan",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "dmnaX",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "mQNnN",
+                          "name": "s manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "kn1IR",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "JvbLU",
+                          "name": "s auto",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jgEmQ",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Mz9zB",
+                          "name": "s bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "t3Bs4u",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ErSTg",
+              "name": "state NEW AGENT, ANOTHER CLI: PLAN DIMMED",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "v2SKB7",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "NEW AGENT, ANOTHER CLI: PLAN DIMMED",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "UpTsn",
+                  "name": "row Permissions",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "o3p4p",
+                      "name": "t",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bueE9",
+                          "name": "l",
+                          "fill": "$text-primary",
+                          "content": "Permissions",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "oUWDj",
+                          "name": "n",
+                          "fill": "$text-muted",
+                          "textGrowth": "fixed-width",
+                          "width": 360,
+                          "content": "Plan reads and plans, and edits nothing. Manual asks before each tool. Bypass skips every check.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aMay7",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "J63EZ0",
+                          "name": "s plan",
+                          "opacity": 0.4,
+                          "height": 26,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "XCu1s",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "SW39G",
+                          "name": "s manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "CtRjf",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "c0sEYA",
+                          "name": "s auto",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Ii7e5",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "SggjG",
+                          "name": "s bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "TpTqm",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "TQQ2G",
+                      "name": "title",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 360,
+                      "content": "Codex has no plan mode here: plan would run as manual.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xYoDM",
+              "name": "state AN AGENT'S WINDOW, SKILLS",
+              "width": 392,
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "T2xnPP",
+                  "name": "caption",
+                  "fill": "$text-secondary",
+                  "textGrowth": "fixed-width",
+                  "width": 392,
+                  "content": "AN AGENT'S WINDOW, SKILLS",
+                  "lineHeight": 1.2,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 10,
+                  "fontWeight": "normal",
+                  "letterSpacing": 0.8
+                },
+                {
+                  "type": "frame",
+                  "id": "SeWdQ",
+                  "name": "skills tab",
+                  "width": "fill_container",
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "CgSLM",
+                      "name": "caption",
+                      "fill": "$text-secondary",
+                      "content": "PERMISSIONS",
+                      "lineHeight": 1.2,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 10,
+                      "fontWeight": "normal",
+                      "letterSpacing": 0.8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "sr2Eu",
+                      "name": "segmented",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "ahWVF",
+                          "name": "s Plan",
+                          "height": 26,
+                          "fill": "$accent-dim",
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "WptXh",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "Plan",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "eQ9dF",
+                          "name": "s Manual",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Dn7Oc",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Manual",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "cn91R",
+                          "name": "s Auto",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "xAEPp",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Auto",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "D7fFuc",
+                          "name": "s Bypass",
+                          "height": 26,
+                          "stroke": "$border",
+                          "strokeWidth": {
+                            "left": 1
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "FL2sa",
+                              "name": "l",
+                              "fill": "$text-muted",
+                              "content": "Bypass",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "wVKfR",
+                      "name": "note",
+                      "fill": "$text-muted",
+                      "content": "Changes take effect on the next task.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

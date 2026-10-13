@@ -1,6 +1,6 @@
 import * as http from "http";
 import { send } from "../../mcp-shared/src/http.js";
-import { AGENT_API_TOKEN, API_URL } from "../../mcp-shared/src/tars-api.js";
+import { AGENT_API_TOKEN, API_URL, tokenToPresent } from "../../mcp-shared/src/tars-api.js";
 
 /**
  * Tars's local API, as this agent. The kanban lives on the Hermes board, and
@@ -22,7 +22,8 @@ export async function apiRequest(method: string, path_: string, body?: Record<st
   // kanban tools act for an agent, so the shared ~/.dorothy/api-token, which
   // names none and which readApiToken would fall back to, is no use here: Tars
   // refuses it with a message that says so.
-  if (AGENT_API_TOKEN) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
+  // Sent only once the port proved it is the Tars that started this CLI (tokenToPresent).
+  if (AGENT_API_TOKEN && await tokenToPresent(REQUEST_TIMEOUT_MS)) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
   const { status, data } = await send(http, {
     hostname: TARS.hostname,
     port: Number(TARS.port) || 80,
