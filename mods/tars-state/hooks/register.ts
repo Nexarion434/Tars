@@ -95,6 +95,16 @@ function hex(buffer: ArrayBuffer): string {
 
 async function proven($: Engine): Promise<Tars | null> {
   if (tars !== undefined) return tars;
+  // CLAUDE_PID in this process's own environment means another claude started
+  // this one (a `claude -p` from the agent's Bash tool): Claude Code puts it in
+  // the environment of what it starts, never in its own (measured by the Audit
+  // on 2.1.296, gate of #380). Such a CLI inherited the agent's id and token,
+  // and is not the agent: the mod says nothing to Tars from it, and Tars strips
+  // CLAUDE_PID from every agent terminal so the agent's own claude never has it.
+  if (await $.env.get('CLAUDE_PID')) {
+    tars = null;
+    return tars;
+  }
   const agentId = await $.env.get('CLAUDE_AGENT_ID');
   const api = await $.env.get('CLAUDE_MGR_API_URL');
   const token = await $.env.get('CLAUDE_MGR_API_TOKEN');
@@ -218,12 +228,6 @@ async function askTars($: Engine, e: Check, verdict: Verdict): Promise<Verdict |
   return null;
 }
 
-/** CLAUDE_PID, which Claude Code sets to its own pid for what it starts: digits, or empty. */
-async function cliPid($: Engine): Promise<string> {
-  const pid = await $.env.get('CLAUDE_PID');
-  return pid && /^[0-9]+$/.test(pid) ? pid : '';
-}
-
 function beat($: Engine): void {
   if (!sessionId) return;
   report($, '/api/hooks/mod-beat', { session_id: sessionId, tool: inFlight[inFlight.length - 1] ?? null });
@@ -232,10 +236,7 @@ function beat($: Engine): void {
 export function register(on: On) {
   on<Classic>('classic.SessionStart', ($, e, next) => {
     sessionId = e.session_id ?? null;
-    // This CLI's pid, as the shell hook sends it: Tars registers only the CLI
-    // it launched in the agent's terminal, not one run from inside it, which
-    // loads this mod too (core/terminal-cli.ts).
-    report($, '/api/hooks/status', async () => ({ session_id: e.session_id, status: 'idle', source: e.source, cli_pid: await cliPid($) }));
+    report($, '/api/hooks/status', { session_id: e.session_id, status: 'idle', source: e.source });
     if (!beating) {
       beating = true;
       $.clock.every(BEAT_MS, () => beat($));
