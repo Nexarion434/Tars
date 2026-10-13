@@ -1,5 +1,4 @@
 import type { AgentStatus } from '../types';
-import { agents } from './agent-manager';
 import { readAppSettingsFromDisk } from '../providers/cli-provider';
 
 /**
@@ -9,35 +8,33 @@ import { readAppSettingsFromDisk } from '../providers/cli-provider';
  * The inbox is chat 1, Main, the orchestrator itself, unless the user made
  * another chat the inbox; a project with no chats has its orchestrator alone.
  *
- * The chats are read through a lookup services/chat-runners.ts sets when it
- * starts, so these senders do not load the runner service (and the sleep, the
- * stall watch and the bus behind it).
+ * The chats are read through lookups services/chat-runners.ts sets when it
+ * starts, and the fleet is handed in: this module loads neither, so the agent
+ * terminal's spawn (core/agent-pty.ts), the stall watch and the bus can ask it
+ * without loading the runner service or the agent manager.
  */
-
-/** The inbox chat's agent (undefined: its runner not made yet), or null when the project has no chats. */
-type InboxLookup = (projectPath: string) => { agent: AgentStatus | undefined } | null;
 
 /** A chat as the senders name it. */
 export interface ChatName { id: string; projectPath: string; number: number; title: string }
 
-let lookup: InboxLookup | undefined;
-let runBy: ((agent: AgentStatus) => ChatName | undefined) | undefined;
-
-export function setInboxLookup(fn: InboxLookup | undefined, chatRunByFn?: (agent: AgentStatus) => ChatName | undefined): void {
-  lookup = fn;
-  runBy = chatRunByFn;
+export interface ChatLookups {
+  /** The inbox chat's agent (undefined: its runner not made yet), or null when the project has no chats. */
+  inbox(projectPath: string): { agent: AgentStatus | undefined } | null;
+  /** The chat an agent runs, when the fleet confirms it: Main for the orchestrator, its own for a runner. */
+  chatRunBy(agentId: string): ChatName | undefined;
 }
 
-/** The chat an agent runs, when the fleet confirms it: Main for the orchestrator, its own for a runner. */
-export function chatNameOf(agent: AgentStatus): ChatName | undefined {
-  return runBy?.(agent);
+let lookups: ChatLookups | undefined;
+
+export function setChatLookups(next: ChatLookups | undefined): void {
+  lookups = next;
 }
 
 const sameProject = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
 
-/** The project's orchestrator: its role, never a chat's runner. */
-export function leadOf(projectPath: string): AgentStatus | undefined {
-  return [...agents.values()].find((a) => a.role === 'orchestrator' && a.kind !== 'chat' && sameProject(a.projectPath, projectPath));
+/** The project's orchestrator in this fleet: its role, never a chat's runner. */
+export function leadOf(projectPath: string, fleet: Iterable<AgentStatus>): AgentStatus | undefined {
+  return [...fleet].find((a) => a.role === 'orchestrator' && a.kind !== 'chat' && sameProject(a.projectPath, projectPath));
 }
 
 /**
@@ -45,9 +42,14 @@ export function leadOf(projectPath: string): AgentStatus | undefined {
  * runner, Main's being the orchestrator; the orchestrator when the project has
  * no chats. Undefined when the inbox has no runner yet: a note never starts one.
  */
-export function inboxAgentOf(projectPath: string): AgentStatus | undefined {
-  const found = lookup?.(projectPath);
-  return found ? found.agent : leadOf(projectPath);
+export function inboxAgentOf(projectPath: string, fleet: Iterable<AgentStatus>): AgentStatus | undefined {
+  const found = lookups?.inbox(projectPath);
+  return found ? found.agent : leadOf(projectPath, fleet);
+}
+
+/** The chat an agent runs, when the fleet confirms it. */
+export function chatNameOf(agent: Pick<AgentStatus, 'id'>): ChatName | undefined {
+  return lookups?.chatRunBy(agent.id);
 }
 
 /**
@@ -56,6 +58,5 @@ export function inboxAgentOf(projectPath: string): AgentStatus | undefined {
  * The route checks both again at every call (api-routes/chat-read-routes.ts).
  */
 export function chatsReadEnv(agentId: string): { TARS_CHATS_READ?: '1' } {
-  const agent = agents.get(agentId);
-  return agent && chatNameOf(agent) && readAppSettingsFromDisk().chatsReadEachOther === true ? { TARS_CHATS_READ: '1' } : {};
+  return lookups?.chatRunBy(agentId) && readAppSettingsFromDisk().chatsReadEachOther === true ? { TARS_CHATS_READ: '1' } : {};
 }

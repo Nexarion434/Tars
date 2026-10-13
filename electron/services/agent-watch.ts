@@ -543,7 +543,7 @@ function queueForRequester(child: AgentStatus, news: News): void {
 export function reportStall(child: AgentStatus, silentMinutes: number): void {
   const link = child.requestedBy;
   // Else the project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
-  const inbox = inboxAgentOf(child.projectPath);
+  const inbox = inboxAgentOf(child.projectPath, agents.values());
   const requesterId = link && link.agentId !== child.id && link.ptyId === child.ptyId
     ? link.agentId
     : inbox && inbox.id !== child.id ? inbox.id : undefined;

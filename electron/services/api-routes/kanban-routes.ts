@@ -181,7 +181,7 @@ function handOff(target: AgentStatus, task: AgentTask, by: KanbanCaller, ctx: Ro
  */
 function tellOrchestrator(creator: KanbanCaller & { agent: AgentStatus }, task: AgentTask, ctx: RouteContext): void {
   if (chatNameOf(creator.agent)) return;
-  const orchestrator = inboxAgentOf(creator.projectPath);
+  const orchestrator = inboxAgentOf(creator.projectPath, agents.values());
   if (!orchestrator || orchestrator.id === creator.agentId) return;
   typeInto(orchestrator, { ...landingNote(creator, task), purpose: 'note', what: `the note of kanban task ${task.id}` }, ctx);
 }
@@ -197,7 +197,7 @@ function tellOrchestrator(creator: KanbanCaller & { agent: AgentStatus }, task: 
  */
 export function tellOrchestratorAsTars(projectPath: string, message: string): Promise<NoteDelivery> {
   // The project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
-  const orchestrator = inboxAgentOf(projectPath);
+  const orchestrator = inboxAgentOf(projectPath, agents.values());
   if (!orchestrator || !routeCtx) return Promise.resolve('no-orchestrator');
   const when = whenToType(stateOf(orchestrator), 'note');
   if (when === 'skip') return Promise.resolve('not-running');

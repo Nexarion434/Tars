@@ -12,9 +12,9 @@ import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAge
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
 import { chatTag } from './chat-addressing';
 import { chatById } from './chat-runners';
-import { deliverFromChannel, leadOf, telegramSentLog } from './chat-senders';
+import { deliverFromChannel, telegramSentLog } from './chat-senders';
 import type { Chat } from './chats';
-import { chatNameOf, type ChatName } from '../core/chat-inbox';
+import { chatNameOf, leadOf, type ChatName } from '../core/chat-inbox';
 import {
   findAgent, forwardToOrchestrator, listedAgents, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type ClaudeUsageStats, type StatusGroup,
@@ -903,7 +903,7 @@ export async function sendToSuperAgent(chatId: string, message: string, attached
   let superAgent: AgentStatus | undefined;
   if (replyChatId) {
     projectPath = chatById(replyChatId)?.projectPath ?? '';
-    superAgent = projectPath ? leadOf(projectPath) : undefined;
+    superAgent = projectPath ? leadOf(projectPath, fleet.agents.values()) : undefined;
     text = message;
   } else {
     const target = orchestratorForMessage(fleet.agents, message);

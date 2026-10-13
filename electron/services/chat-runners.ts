@@ -15,7 +15,7 @@ import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, victimOf } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
-import { setInboxLookup } from '../core/chat-inbox';
+import { setChatLookups } from '../core/chat-inbox';
 import { pickChat } from './chat-addressing';
 import { getProvider } from '../providers';
 import { resolveResumeSessionId, resumeOnNextStart } from '../utils/resume-session';
@@ -547,11 +547,17 @@ export function startChatRunners(chatStore: ChatStore): void {
   store = chatStore;
   setSlotGate(slotGate);
   setChatLookup((chatId) => chatStore.get(chatId));
-  setInboxLookup((projectPath) => {
-    const picked = pickChat(chatStore.list().chats, projectPath, null);
-    if (picked.kind !== 'chat') return null;
-    // Main's agent is the orchestrator, whatever its record says (runner_mismatch is the send's to tell).
-    return { agent: picked.chat.number === 1 ? leadOf(projectPath) : runnerOf(picked.chat) };
-  }, chatRunBy);
+  setChatLookups({
+    inbox: (projectPath) => {
+      const picked = pickChat(chatStore.list().chats, projectPath, null);
+      if (picked.kind !== 'chat') return null;
+      // Main's agent is the orchestrator, whatever its record says (runner_mismatch is the send's to tell).
+      return { agent: picked.chat.number === 1 ? leadOf(projectPath) : runnerOf(picked.chat) };
+    },
+    chatRunBy: (agentId) => {
+      const agent = agents.get(agentId);
+      return agent ? chatRunBy(agent) : undefined;
+    },
+  });
   agentStatusEmitter.on('fleet-change', onFleetChange);
 }
