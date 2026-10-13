@@ -321,6 +321,10 @@ describe.runIf(onWindows)('a secret is born closed', { timeout: 180_000 }, () =>
 describe('darwin and linux never rotate api-token (case 6)', () => {
   const HOST = process.platform;
   afterEach(() => Object.defineProperty(process, 'platform', { value: HOST, configurable: true }));
+  // The first import of api-server transforms the main process's module graph: 8.3 s of the darwin case's 5 at a
+  // load of 70 and 11.4 s at 130, then 81 ms for the linux case (QA's runs of 2.0.1). Paid here, once, with the
+  // time it takes; each case still imports api-server anew, under its platform, after vi.resetModules().
+  beforeAll(async () => { await import('../../../electron/services/api-server'); }, 60_000);
 
   it.each(['darwin', 'linux'] as const)('%s: a usable token is kept, the file untouched, no marker made', async (platform) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-rotation-posix-'));
