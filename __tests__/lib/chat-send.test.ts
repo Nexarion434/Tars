@@ -24,7 +24,11 @@ import { clearsField, outcomeOf, stripOf, titleOf, workingLine } from '../../src
  * 9. N of M working shows before the limit is read, or its square runs at 0;
  * 10. a new chat's first message names it with more than one line, past the
  *     record's 80 characters, with its runs of spaces, or names it from
- *     nothing but spaces.
+ *     nothing but spaces;
+ * 11. a refusal whose reason is blank is shown with no reason, or a blank
+ *     limit's sentence draws a block that says nothing (the Audit's G3 on PR
+ *     392, written after the code, which already gives it the unread sentence:
+ *     this case kills the mutant that drops that check).
  */
 
 const limitAnswer = {
@@ -62,6 +66,21 @@ describe('outcomeOf', () => {
       expect((read as { reason: string }).reason.length).toBeGreaterThan(0);
     }
     expect(outcomeOf(new Error('the main process did not answer'))).toEqual({ kind: 'refused', reason: 'the main process did not answer' });
+  });
+
+  it('gives a refusal whose reason is blank a reason to read, a limit included (11)', () => {
+    const blanks = [
+      { error: 'runner_failed', reason: '' },
+      { error: 'runner_failed', reason: '  \n ' },
+      { error: 'chat_limit', reason: ' ', working: limitAnswer.working },
+      new Error(''),
+      new Error('   '),
+    ];
+    for (const answer of blanks) {
+      const read = outcomeOf(answer);
+      expect(read.kind, String(answer)).toBe('refused');
+      expect((read as { reason: string }).reason.trim().length, JSON.stringify(answer)).toBeGreaterThan(0);
+    }
   });
 });
 
