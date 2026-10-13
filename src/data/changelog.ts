@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 57,
+    version: '2.0.0',
+    date: '2026-10-13',
+    updates: [
+      'A Claude Code run from inside an agent\'s terminal no longer changes the agent\'s status when the agent has no session Tars knows of (its own session start was lost): its turn and its answer set the agent working, then done, though the agent\'s own Claude Code was elsewhere. Tars now ignores them, and only the Claude Code it launched in that terminal moves the agent.',
+    ],
+  },
+  {
     id: 56,
     version: '1.9.7',
     date: '2026-10-13',
