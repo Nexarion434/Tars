@@ -24,11 +24,15 @@ import { moveTestHome } from '../setup/test-home';
  *  4. Gemini's probe looks for `gemini/<file>` in a backslash path and appends
  *     a copy of every hook at each start; those copies are kept.
  *  5. Gemini is wired on `UserPromptSubmit`, which it does not fire;
- *     `BeforeAgent` is its event.
+ *     `BeforeAgent` is its event. On every platform since 2026-10-12 (it was
+ *     win32's alone): on darwin and linux the turn's start never reached
+ *     Tars, and a Gemini agent read idle while it worked. The entry an older
+ *     Tars wrote there goes; the user's own entries in that event stay.
  *  6. The agent token cannot reach a Gemini hook once the user turns on
  *     environment redaction (`CLAUDE_MGR_API_TOKEN` matches /TOKEN/): it is
  *     not in `security.environmentVariableRedaction.allowed`; or adding it
- *     drops the user's own entries or flips `enabled`.
+ *     drops the user's own entries or flips `enabled`. On every platform since
+ *     2026-10-12 (it was win32's alone): Gemini redacts the same way on macOS.
  *  7. The user's own hooks, in the same event, are removed or rewritten.
  *  8. The command is quoted so that Git Bash, or PowerShell (Claude without
  *     Git Bash, and Gemini always on Windows), splits the path at a space
@@ -55,6 +59,10 @@ import { moveTestHome } from '../setup/test-home';
  *     `~/.claude/hooks/`, say), and deletes it at every launch while Tars's is
  *     off. It is Tars's only in this app's hooks folder, or in one that holds
  *     Tars's runner beside it, and never under a .claude or .gemini folder.
+ * 14. On darwin and linux, removing an older Tars's Gemini UserPromptSubmit
+ *     entry (5) by the name in its command takes a user's own
+ *     `.../gemini/user-prompt-submit.sh`, or an installed Dorothy's, for
+ *     Tars's and deletes it. The same rule as 10 and 12 decides.
  */
 
 const HOOKS_DIR = path.join(__dirname, '../../hooks');
@@ -134,7 +142,7 @@ const claudeSettingsFile = () => path.join(home, '.claude', 'settings.json');
 const geminiSettingsFile = () => path.join(home, '.gemini', 'settings.json');
 const read = (f: string) => JSON.parse(fs.readFileSync(f, 'utf-8'));
 
-describe('on darwin and linux nothing changes', () => {
+describe('on darwin and linux the .sh wiring stays, Gemini on the event it fires', () => {
   for (const platform of ['darwin', 'linux'] as const) {
     it(`Claude writes the bare .sh path, timeout 30, the same matchers (${platform})`, async () => {
       const p = await claude();
@@ -150,7 +158,7 @@ describe('on darwin and linux nothing changes', () => {
       );
     });
 
-    it(`Gemini writes the .sh paths, UserPromptSubmit, timeout 10000, the same file text (${platform})`, async () => {
+    it(`Gemini writes the .sh paths, BeforeAgent, timeout 10000, the same file text (${platform})`, async () => {
       const p = await gemini();
       await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
       const g = (f: string) => path.join(HOOKS_DIR, 'gemini', f);
@@ -161,10 +169,56 @@ describe('on darwin and linux nothing changes', () => {
           SessionStart: [{ hooks: [{ type: 'command', command: g('session-start.sh'), timeout: 10000 }], matcher: '*' }],
           SessionEnd: [{ hooks: [{ type: 'command', command: g('session-end.sh'), timeout: 10000 }], matcher: '*' }],
           Notification: [{ hooks: [{ type: 'command', command: g('notification.sh'), timeout: 10000 }], matcher: '*' }],
-          UserPromptSubmit: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }],
+          BeforeAgent: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }],
         },
+        security: { environmentVariableRedaction: { allowed: ['CLAUDE_MGR_API_TOKEN'] } },
       };
       expect(fs.readFileSync(geminiSettingsFile(), 'utf-8')).toBe(JSON.stringify(expected, null, 2));
+    });
+
+    it(`6. Gemini lets the agent token through its redaction, the user's own settings kept (${platform})`, async () => {
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({
+        security: { environmentVariableRedaction: { enabled: true, allowed: ['MY_KEY'] }, folderTrust: { enabled: true } },
+      }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      expect(read(geminiSettingsFile()).security).toEqual({
+        environmentVariableRedaction: { enabled: true, allowed: ['MY_KEY', 'CLAUDE_MGR_API_TOKEN'] }, folderTrust: { enabled: true },
+      });
+    });
+
+    it(`5. Gemini moves an older Tars's UserPromptSubmit entry to BeforeAgent, and keeps the user's own (${platform})`, async () => {
+      const g = (f: string) => path.join(HOOKS_DIR, 'gemini', f);
+      const mine = { hooks: [{ type: 'command', command: '/Users/me/bin/log-prompt.sh', timeout: 5000 }] };
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({ hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }, mine],
+      } }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      const hooks = read(geminiSettingsFile()).hooks;
+      expect(hooks.UserPromptSubmit).toEqual([mine]);
+      expect(hooks.BeforeAgent).toEqual([{ hooks: [{ type: 'command', command: g('user-prompt-submit.sh'), timeout: 10000 }] }]);
+    });
+
+    it(`14. Gemini leaves a user's own and Dorothy's user-prompt-submit.sh on UserPromptSubmit, and removes an older Tars's (${platform})`, async () => {
+      const entry = (command: string) => ({ hooks: [{ type: 'command', command, timeout: 10000 }] });
+      const userOwn = entry(path.join(home, '.gemini', 'hooks', 'gemini', 'user-prompt-submit.sh'));
+      const elsewhere = path.join(fs.mkdtempSync(path.join(tmp, 'me-')), 'hooks', 'gemini');
+      fs.mkdirSync(elsewhere, { recursive: true });
+      const userElsewhere = entry(path.join(elsewhere, 'user-prompt-submit.sh'));
+      const dorothy = entry(path.join(dorothyInstall(), 'gemini', 'user-prompt-submit.sh'));
+      const olderTars = entry(path.join(oldCheckout(), 'gemini', 'user-prompt-submit.sh'));
+      fs.mkdirSync(path.dirname(geminiSettingsFile()), { recursive: true });
+      fs.writeFileSync(geminiSettingsFile(), JSON.stringify({ hooks: {
+        UserPromptSubmit: [userOwn, userElsewhere, dorothy, olderTars],
+      } }, null, 2));
+      const p = await gemini();
+      await (p.configureHooks as (d: string, pl?: NodeJS.Platform) => Promise<void>)(HOOKS_DIR, platform);
+      expect(read(geminiSettingsFile()).hooks.UserPromptSubmit).toEqual([userOwn, userElsewhere, dorothy]);
     });
   }
 });
