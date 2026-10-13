@@ -4,12 +4,14 @@ import { AgentStatus, AppSettings } from '../types';
 import { SLACK_CHARACTER_FACES } from '../constants';
 import { formatSlackAgentStatus, isSuperAgent, getSuperAgentInstructionsPath } from '../utils';
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
+import { chatTag } from './chat-addressing';
+import { deliverFromChannel } from './chat-senders';
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { getClaudeStats as readClaudeStats } from './claude-service';
 import {
-  findAgent, forwardToOrchestrator, projectsReport, startWithTask, statusReport, stopNow,
+  findAgent, forwardToOrchestrator, listedAgents, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type StatusGroup,
 } from './bot-core';
 
@@ -365,12 +367,12 @@ async function stopCommand(text: string, say: Say, appSettings: AppSettings): Pr
 const COMMANDS: Array<[(lowerText: string) => boolean, (text: string, say: Say, appSettings: AppSettings) => Promise<unknown>]> = [
   [lowerText => lowerText === 'help' || lowerText === '', (_text, say) => say(HELP)],
   [lowerText => lowerText === 'status', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say(':package: No agents created yet.');
     return say(statusReport(list, { title: `:bar_chart: *Agents Status*\n\n`, dot: DOTS, item: formatSlackAgentStatus, orchestratorFirst: false }));
   }],
   [lowerText => lowerText === 'agents', (_text, say) => {
-    const list = Array.from(agents.values());
+    const list = listedAgents(agents.values());
     if (list.length === 0) return say(':package: No agents created yet.');
     return say(`:robot_face: *All Agents*\n\n` + list.map(a => formatSlackAgentStatus(a) + '\n').join(''));
   }],
@@ -430,28 +432,36 @@ export async function sendToSuperAgentFromSlack(
   }
   const superAgent = target.orchestrator;
 
-  // Sanitize message - replace newlines with spaces for terminal compatibility
-  const sanitizedMessage = target.text.replace(/\r?\n/g, ' ').trim();
-
   try {
-    await forwardToOrchestrator(fleetFor(appSettings), superAgent, 'Slack', {
-      message: sanitizedMessage,
-      // Simple prompt with Slack context: the detail comes from the file.
+    // Main, the orchestrator, by the path it always took; another chat, "#N"
+    // or the inbox, through the chats; the number alone names it here, with no
+    // reply-to (PR F).
+    await deliverFromChannel({
+      projectPath: target.projectPath, text: target.text,
       context: '[FROM SLACK - Use send_slack MCP tool to respond!]',
-      permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
-      resume: false,
-      // The instructions travel as a FILE: inlined into a double-quoted shell
-      // word, the ~124 markdown backticks in super-agent-instructions.md became
-      // command substitutions, so `whoami` really ran, every backticked MCP
-      // tool name was executed and its text deleted from the prompt.
-      systemPromptFile: () => {
-        const superAgentInstructionsPath = getSuperAgentInstructionsPath();
-        return fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
-      },
-      reply: outcome => {
-        if (outcome === 'no-terminal') return say(':x: Failed to connect to Super Agent terminal.');
-        if (outcome === 'typed') return say(':crown: Super Agent is processing...');
-        return say(':crown: Super Agent is processing your request...');
+      sender: { kind: 'channel', channel: 'Slack' },
+      tell: (said, chat) => say(`:crown: ${chat ? `${chatTag(chat)} ` : ''}${said}`),
+      toOrchestrator: async (said) => {
+        await forwardToOrchestrator(fleetFor(appSettings), superAgent, 'Slack', {
+          message: said.replace(/\r?\n/g, ' ').trim(),
+          // Simple prompt with Slack context: the detail comes from the file.
+          context: '[FROM SLACK - Use send_slack MCP tool to respond!]',
+          permissionMode: superAgent.permissionMode ?? (superAgent.skipPermissions ? 'bypass' : 'normal'),
+          resume: false,
+          // The instructions travel as a FILE: inlined into a double-quoted shell
+          // word, the ~124 markdown backticks in super-agent-instructions.md became
+          // command substitutions, so `whoami` really ran, every backticked MCP
+          // tool name was executed and its text deleted from the prompt.
+          systemPromptFile: () => {
+            const superAgentInstructionsPath = getSuperAgentInstructionsPath();
+            return fs.existsSync(superAgentInstructionsPath) ? superAgentInstructionsPath : undefined;
+          },
+          reply: outcome => {
+            if (outcome === 'no-terminal') return say(':x: Failed to connect to Super Agent terminal.');
+            if (outcome === 'typed') return say(':crown: Super Agent is processing...');
+            return say(':crown: Super Agent is processing your request...');
+          },
+        });
       },
     });
   } catch (err) {

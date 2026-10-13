@@ -1,4 +1,5 @@
 import { generateTaskFromPrompt } from '../../utils/kanban-generate';
+import { chatNameOf, inboxAgentOf } from '../../core/chat-inbox';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { agents } from '../../core/agent-manager';
 import { ptyProcesses } from '../../core/pty-manager';
@@ -174,11 +175,14 @@ function handOff(target: AgentStatus, task: AgentTask, by: KanbanCaller, ctx: Ro
 /**
  * A task that lands on a project is told to that project's orchestrator, whose
  * job is to hand work out, as the agent that filed it: only one whose CLI runs,
- * never started for a note, and never mid-turn.
+ * never started for a note, and never mid-turn. The project's inbox chat, Main
+ * unless another chat is the inbox (PR F); none when a chat filed it, which is
+ * the chat that would be told.
  */
-function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteContext): void {
-  const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === creator.projectPath && a.id !== creator.agentId);
-  if (!orchestrator) return;
+function tellOrchestrator(creator: KanbanCaller & { agent: AgentStatus }, task: AgentTask, ctx: RouteContext): void {
+  if (chatNameOf(creator.agent)) return;
+  const orchestrator = inboxAgentOf(creator.projectPath, agents.values());
+  if (!orchestrator || orchestrator.id === creator.agentId) return;
   typeInto(orchestrator, { ...landingNote(creator, task), purpose: 'note', what: `the note of kanban task ${task.id}` }, ctx);
 }
 
@@ -192,8 +196,8 @@ function tellOrchestrator(creator: KanbanCaller, task: AgentTask, ctx: RouteCont
  * is not held here; the triage keeps it owed on disk and gives it again.
  */
 export function tellOrchestratorAsTars(projectPath: string, message: string): Promise<NoteDelivery> {
-  const project = projectPath.replace(/\/+$/, '');
-  const orchestrator = [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath.replace(/\/+$/, '') === project);
+  // The project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
+  const orchestrator = inboxAgentOf(projectPath, agents.values());
   if (!orchestrator || !routeCtx) return Promise.resolve('no-orchestrator');
   const when = whenToType(stateOf(orchestrator), 'note');
   if (when === 'skip') return Promise.resolve('not-running');

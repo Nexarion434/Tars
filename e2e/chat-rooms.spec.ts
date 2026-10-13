@@ -62,7 +62,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  removeShotSandbox(sandboxHome);
+  await removeShotSandbox(sandboxHome);
 });
 
 for (const surface of CHAT_ROOMS as ChatSurface[]) {

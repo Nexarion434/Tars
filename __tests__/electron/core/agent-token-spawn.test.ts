@@ -78,6 +78,16 @@ describe('the instance id a hook checks before it sends the token (#11)', () => 
   });
 });
 
+describe("the pid of a claude that started Tars (the gate of #380)", () => {
+  // The state mod reads CLAUDE_PID as "another claude started this one" and
+  // says nothing to Tars then. A Tars started from a claude session (a dev
+  // run, an e2e from an agent) has that claude's CLAUDE_PID in its own
+  // environment: handed on, every agent's mod would go silent.
+  it('is never handed to an agent process', () => {
+    expect('CLAUDE_PID' in spawnWith({ CLAUDE_PID: '41688' })).toBe(false);
+  });
+});
+
 describe('the token an agent process starts with', () => {
   it('reaches an agent started from the interface or restored, and names that agent', async () => {
     const agent = {

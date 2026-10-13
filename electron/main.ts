@@ -113,6 +113,7 @@ import {
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
+import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
@@ -122,7 +123,7 @@ import { registerOverseerHandlers } from './handlers/overseer-handlers';
 import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach } from './services/overseer';
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
-import { endRequestsAtLaunch } from './core/task-requests';
+import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
 import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
@@ -141,6 +142,7 @@ import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate'
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
 import {
@@ -153,6 +155,7 @@ import {
   migrateFromClaudeManager,
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
+import { endAuthCommands } from './services/claude-accounts/auth';
 
 // ============== App Settings Management ==============
 
@@ -224,6 +227,8 @@ function loadAppSettings(): AppSettings {
     chromeEnabled: false,
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
+    newInterface: false,
+    chatsReadEachOther: false,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     ampEnabled: false,
@@ -250,7 +255,10 @@ function loadAppSettings(): AppSettings {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
       // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
-      return { ...defaults, ...sentryTokenOutOf(saved) };
+      // The switch is on only for the boolean true: the file is in ~/.dorothy,
+      // which every agent can write, and "false" or 1 would read as on to a
+      // page that tests it for truth (the Audit's L1 on #360).
+      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
@@ -551,7 +559,11 @@ app.whenReady().then(async () => {
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
-    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
+    onAgentAccountChanged: (agentId) => {
+      restartForSettings(agentId, ['claudeAccount']);
+      // An orchestrator's chats run on its account too: each runner takes it (the Audit's L3 on #379).
+      restartRunnersOf(agentId, ['claudeAccount']);
+    },
   });
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
@@ -571,6 +583,9 @@ app.whenReady().then(async () => {
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerOverseerHandlers();
   registerBusHandlers();
+  // The chats' records, and the migration that makes each project's
+  // orchestrator's conversation its chat #1, Main (handlers/chat-handlers.ts).
+  registerChatHandlers({ agents, chatsShown: () => appSettings.newInterface === true });
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.
@@ -611,7 +626,8 @@ app.whenReady().then(async () => {
   // What the last run owed, its waiting room messages, the run record, and,
   // after an abrupt stop, the agents that were working resumed with a note
   // (services/restart-recovery.ts). After the launcher and the API are up.
-  recovery = startRestartRecovery(previousRun);
+  const restarted = startRestartRecovery(previousRun);
+  recovery = restarted;
   startAgentWatch();
   // Requests still out from the run before: what was queued or typed into a
   // terminal that is gone never ran, and each requester is told (the Audit's
@@ -620,6 +636,14 @@ app.whenReady().then(async () => {
   endRequestsAtLaunch(agents.values(), new Set(previousRun && !previousRun.resumedAndCrashedAgain
     ? previousRun.working.map((w) => w.agentId) : []));
   saveAgents();
+  // And once the resume has run, the work in hand of each worker it did not
+  // relaunch (deleted, stopped or whose folder is gone since, a launch that
+  // failed) is ended and told: kept until then, it waited on an end that
+  // never came (the Audit's Low on #351).
+  void restarted.resumed.then((outcomes) => {
+    endUnresumed(agents.values(), outcomes);
+    saveAgents();
+  });
   // The tasks the Usage page prices: who handed what, from turn to rest
   // (services/task-ledger.ts).
   startTaskWatch();
@@ -638,6 +662,10 @@ app.whenReady().then(async () => {
       ...agentsRunningOverAcp(),
     ],
     knownAgentIds: () => [...agents.keys()],
+    sessionsOf: (id) => {
+      const a = agents.get(id);
+      return [a?.currentSessionId, a?.resumableSessionId].filter((s): s is string => !!s);
+    },
     freeBytes: () => {
       try {
         const st = fs.statfsSync(DATA_DIR);
@@ -780,6 +808,9 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // A `claude auth status` the accounts list started just before the
+      // quit: it wrote .claude.json into the home after Tars was gone.
+      ['endAuthCommands', endAuthCommands],
       // Last: what is owed on disk, and the run marked as ended cleanly, so
       // the next launch resumes nobody.
       ['endRestartRecovery', () => endRestartRecovery(recovery)],

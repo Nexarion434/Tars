@@ -70,18 +70,24 @@ function atRest(agent: SleepFacts['agent']): boolean {
   return agent.status === 'idle' || agent.status === 'completed' || (agent.status === 'waiting' && agent.waitingReason === 'idle');
 }
 
-/** Why this agent may not be put to sleep now, or null when it may. */
-export function sleepRefusal(f: SleepFacts): SleepRefusal | null {
+/**
+ * Why this agent may not be put to sleep now, or null when it may. `anyAge`:
+ * every rule but the 30 minutes, for a chat's runner put to sleep to free a
+ * slot for another chat, or because its chat was settled (services/chat-runners.ts).
+ */
+export function sleepRefusal(f: SleepFacts, opts: { anyAge?: boolean } = {}): SleepRefusal | null {
   if (f.orchestrator) return 'orchestrator';
   if (!atRest(f.agent)) return 'not-at-rest';
   if (!f.cliRunning) return 'no-cli';
   if (f.starting) return 'starting';
   // The status, the last turn and the last work handed over, all 30 minutes
   // old. A status with no time is not known to be old.
-  const since = Date.parse(f.agent.statusSince ?? '');
-  if (!Number.isFinite(since)) return 'recent';
-  const latest = Math.max(since, ...[f.agent.lastTurnStartedAt, f.agent.workHandedAt].map((t) => Date.parse(t ?? '')).filter(Number.isFinite));
-  if (f.now - latest < SLEEP_AFTER_MS) return 'recent';
+  if (!opts.anyAge) {
+    const since = Date.parse(f.agent.statusSince ?? '');
+    if (!Number.isFinite(since)) return 'recent';
+    const latest = Math.max(since, ...[f.agent.lastTurnStartedAt, f.agent.workHandedAt].map((t) => Date.parse(t ?? '')).filter(Number.isFinite));
+    if (f.now - latest < SLEEP_AFTER_MS) return 'recent';
+  }
   if (!f.resumable) return 'not-resumable';
   if (f.owed) return 'owed';
   if (f.owes) return 'owes';
@@ -126,7 +132,7 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
 }
 
 /** Its CLI ended, its last screen kept, and the window told. */
-async function putToSleep(agent: AgentStatus, now: number): Promise<void> {
+async function putToSleep(agent: AgentStatus, now: number, why = 'no turn for 30 minutes'): Promise<void> {
   const ptyId = agent.ptyId!;
   const terminal = ptyProcesses.get(ptyId)!;
   const screen = terminalSnapshot(terminal);
@@ -136,8 +142,19 @@ async function putToSleep(agent: AgentStatus, now: number): Promise<void> {
   emitAgentStatus(agent.id);
   broadcastToAllWindows('agent:status', { type: 'status', agentId: agent.id, status: agent.status, timestamp: agent.asleepSince });
   scheduleTick();
-  console.log(`[sleep] ${agent.name || agent.id}: asleep, no turn for 30 minutes; its CLI ends, its conversation is kept`);
+  console.log(`[sleep] ${agent.name || agent.id}: asleep, ${why}; its CLI ends, its conversation is kept`);
   await endTerminalTree(terminal);
+}
+
+/**
+ * A chat's runner put to sleep now, the caller having read the rule
+ * (sleepRefusal with anyAge) with nothing awaited since: services/chat-runners.ts,
+ * to free a slot or for a settled chat. Synchronous up to the end of its
+ * terminal's tree, so no delivery can slip in between the check and the sleep.
+ */
+export function sleepNow(agent: AgentStatus, why: string): Promise<void> {
+  if (!agent.ptyId || !ptyProcesses.has(agent.ptyId)) return Promise.resolve();
+  return putToSleep(agent, Date.now(), why);
 }
 
 export interface SleepOutcome { agentId: string; slept: boolean; why?: SleepRefusal }

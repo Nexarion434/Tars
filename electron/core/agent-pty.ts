@@ -11,6 +11,7 @@ import { childEnv, type Env } from '../platform';
 import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
+import { chatsReadEnv } from './chat-inbox';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -126,7 +127,11 @@ export function spawnAgentPty(opts: {
   // The Claude account this agent starts on, when the option is on (see
   // core/account-env.ts): here for the reason this module exists, since an
   // account a caller forgot would be a CLI billed to the wrong subscription.
-  const env = withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd));
+  const env = { ...withAccountEnv(opts.env, accountEnvFor(agentId, opts.cwd)) };
+  // The pid of a claude that started Tars itself (a dev run, an e2e from an
+  // agent): the state mod reads CLAUDE_PID as "another claude started this
+  // CLI" and says nothing to Tars then (gate of #380). Never handed on.
+  delete env.CLAUDE_PID;
 
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
@@ -164,6 +169,8 @@ export function spawnAgentPty(opts: {
       // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
       // here because every agent terminal is spawned here.
       ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
+      // A chat's orchestrator, with the reading option on: chat_list and chat_read (PR F).
+      ...(agentId ? chatsReadEnv(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
       // The state mod (services/state-mod.ts), for a claude new enough to load
       // it: its hooks report this terminal's state from inside the CLI.
@@ -293,6 +300,15 @@ export function cliRunningIn(ptyProcess: pty.IPty | undefined, platform: NodeJS.
  * terminal had. Undefined for a terminal that did not come from spawnAgentPty
  * or has exited.
  */
+/**
+ * Whether the terminal's process is the CLI itself (the exec launch, `-c "cd
+ * ... && exec <cli>"`), rather than a shell the CLI was typed into; undefined
+ * for a terminal that did not come from spawnAgentPty or has exited.
+ */
+export function terminalIsTheCli(ptyProcess: pty.IPty | undefined): boolean | undefined {
+  return ptyProcess ? spawnedAs.get(ptyProcess)?.runsCommand : undefined;
+}
+
 export function agentPtyEnv(ptyProcess: pty.IPty | undefined): Env | undefined {
   return ptyProcess ? spawnedAs.get(ptyProcess)?.env : undefined;
 }

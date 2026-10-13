@@ -5,6 +5,8 @@ import type { PanelType } from './AgentDialogTypes';
 import { AgentDialogSecondaryProject } from './AgentDialogSecondaryProject';
 import { BrandSpinner, MetaChip, PanelCaption, SegmentedControl } from '@/components/ui';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
+import type { AgentPermissionMode } from '@/types/agent';
+import { hasPlanMode, noPlanReason } from '@/lib/plan-mode';
 
 const GitPanel = dynamic(() => import('./GitPanel'), {
   loading: () => (
@@ -57,11 +59,11 @@ interface AgentDialogSidebarProps {
   onSetSecondaryProject: (path: string | null) => void;
   onBrowseFolder?: () => Promise<string | null>;
   // Settings
-  editPermissionMode: 'normal' | 'auto' | 'bypass';
+  editPermissionMode: AgentPermissionMode;
   isSavingSettings: boolean;
   /** Set when the last change was refused, so the control stops claiming it took. */
   permissionError?: string | null;
-  onSavePermissionMode: (value: 'normal' | 'auto' | 'bypass') => void;
+  onSavePermissionMode: (value: AgentPermissionMode) => void;
 }
 
 export const AgentDialogSidebar = memo(function AgentDialogSidebar({
@@ -183,11 +185,14 @@ export const AgentDialogSidebar = memo(function AgentDialogSidebar({
         <div className="p-3 space-y-4">
           <div className="space-y-2">
             <PanelCaption>PERMISSIONS</PanelCaption>
-            <SegmentedControl<'normal' | 'auto' | 'bypass'>
+            <SegmentedControl<AgentPermissionMode>
               ariaLabel="Permission mode"
               value={editPermissionMode}
               onChange={onSavePermissionMode}
               options={[
+                hasPlanMode(agent.provider)
+                  ? { value: 'plan', label: 'Plan', disabled: isSavingSettings }
+                  : { value: 'plan', label: 'Plan', disabled: true, title: noPlanReason(agent.provider) },
                 { value: 'normal', label: 'Manual', disabled: isSavingSettings },
                 { value: 'auto', label: 'Auto', disabled: isSavingSettings },
                 { value: 'bypass', label: 'Bypass', disabled: isSavingSettings },

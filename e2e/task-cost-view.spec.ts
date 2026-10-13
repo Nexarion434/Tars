@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -92,12 +92,7 @@ test('the usage page lists each task with its own cost and its total, the averag
       turns: t.replies?.length || 1, sessionIds: t.session ? [t.session] : [],
     } }));
     if (!t.session) return;
-    // Claude Code's folder for the project, written out here rather than taken
-    // from the app: on Windows every character but an ASCII letter or digit
-    // turns into `-`, the drive's colon and the backslashes included
-    // (electron/platform/claude-project-dir.ts); `/` and `.` are all a macOS or
-    // Linux temp path holds.
-    const file = path.join(home, '.claude', 'projects', t.project.replace(process.platform === 'win32' ? /[^a-zA-Z0-9]/g : /[/.]/g, '-'), `${t.session}.jsonl`);
+    const file = path.join(home, '.claude', 'projects', t.project.replace(/[^a-zA-Z0-9]/g, '-'), `${t.session}.jsonl`);
     const list = transcripts.get(file) ?? [];
     (t.replies ?? []).forEach(([input, output], i) => {
       reply += 1;
@@ -249,6 +244,6 @@ test('the usage page lists each task with its own cost and its total, the averag
     expect(errors, errors.join('\n')).toEqual([]);
   } finally {
     await app.close().catch(() => { /* gone */ });
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

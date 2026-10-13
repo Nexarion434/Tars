@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { expect, test } from '@playwright/test';
 
 /**
@@ -507,9 +509,9 @@ export function makeShotSandbox(prefix, elsewhere) {
   return fs.mkdtempSync(path.join(WINDOWS_E2E_ROOT, prefix));
 }
 
-/** Removes a sandbox made by makeShotSandbox, and on Windows the root once nothing else is in it. */
-export function removeShotSandbox(dir) {
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+/** Removes a sandbox made by makeShotSandbox (removeHome), and on Windows the root once nothing else is in it. */
+export async function removeShotSandbox(dir) {
+  if (dir) await removeHome(dir);
   if (!onWindows) return;
   try {
     fs.rmdirSync(WINDOWS_E2E_ROOT);
@@ -763,6 +765,79 @@ function writeFakeTailscale(home) {
 export const SWEEP_STATUSES = { a1: 'running', a2: 'running', a3: 'running', a4: 'running', a5: 'idle', a6: 'idle' };
 
 /**
+ * The folders a spec makes its sandbox in: os.tmpdir(), an agent's own TMPDIR
+ * included; /tmp, where the chat rooms make theirs for the length of the path
+ * their heads print; and macOS's own temporary folder, where the surfaces make
+ * theirs for the same reason (#368).
+ */
+function sandboxRoots() {
+  const roots = [os.tmpdir()];
+  if (process.platform !== 'win32') roots.push('/tmp');
+  // Windows: the root makeShotSandbox makes its sandboxes in.
+  if (onWindows) roots.push(WINDOWS_E2E_ROOT);
+  if (process.platform === 'darwin') {
+    try {
+      roots.push(execFileSync('getconf', ['DARWIN_USER_TEMP_DIR'], { encoding: 'utf8' }).trim());
+    } catch { /* not this Mac's: os.tmpdir() and /tmp stay */ }
+  }
+  return roots;
+}
+
+/**
+ * Where a path lands, its links and its `..` resolved as the system does: for
+ * a path that does not exist, where its nearest existing parent lands, and the
+ * rest of the path.
+ */
+function landing(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch (error) {
+    const parent = path.dirname(p);
+    if (error.code !== 'ENOENT' || parent === p) throw error;
+    return path.join(landing(parent), path.basename(p));
+  }
+}
+
+/**
+ * Removes a spec's sandbox HOME once its app has closed. A process the app
+ * started can still be writing there: `amp --version`'s log, a hook's, and
+ * until #383 a `claude auth status` that outlived the quit and wrote
+ * .claude.json and its lock (QA, 2026-10-12). rmSync then meets ENOTEMPTY,
+ * and its maxRetries do not help, since Node lists the folder once. This
+ * removes again from a fresh listing, for up to 5 s, and says so on the run's
+ * output when it had to: a writer that outlives the app is still a finding,
+ * only no longer a red cleanup. The loop two specs and #382 each had a copy of.
+ *
+ * It removes only what lies strictly under one of `roots`, judged by where the
+ * path lands through its links and its `..`, and refuses anything else, a root
+ * included, before touching it: a wrong path fails its spec instead of
+ * deleting (the Audit's L1 on #385). Tests: __tests__/e2e-remove-home.test.ts.
+ */
+export async function removeHome(dir, roots = sandboxRoots()) {
+  const where = landing(dir);
+  const real = roots.flatMap((root) => {
+    try {
+      return [fs.realpathSync.native(root)];
+    } catch {
+      return [];
+    }
+  });
+  if (!real.some((root) => where.startsWith(root + path.sep))) {
+    throw new Error(`removeHome: ${dir} is not inside a folder the specs make their sandboxes in (${real.join(', ')}): nothing was removed`);
+  }
+  for (let attempt = 1; ; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (attempt > 1) console.warn(`[removeHome] ${dir} was written after its app closed: removed at try ${attempt}`);
+      return;
+    } catch (error) {
+      if ((error.code !== 'ENOTEMPTY' && error.code !== 'EBUSY') || attempt === 20) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
+/**
  * Waits until every agent to be shown running has its CLI in its terminal,
  * which is when autostart has done writing its status, then sets the
  * statuses on the app's own agent map and pushes a tick, as a hook would.
@@ -820,6 +895,9 @@ export async function stepShot(page, name) {
  * hooks, 14 KB, and nothing of what the app did (measured 2026-09-23).
  */
 async function traceApp(app) {
+  // A script that launches the app outside a test (e2e/new-interface-pictures.mjs) has no test, so no output folder
+  // to save a trace in: test.info() threw at its close, before the trace was even stopped. No trace there.
+  if (!inTest()) return;
   const context = app.context();
   await context.tracing.start({ screenshots: true, snapshots: true });
   const close = app.close.bind(app);
@@ -827,7 +905,9 @@ async function traceApp(app) {
     try {
       await context.tracing.stop({ path: test.info().outputPath('app-trace.zip') });
     } catch (error) {
-      console.warn('[e2e] the app trace could not be saved:', error);
+      // A spec that keeps its own trace (left-fullscreen.live.spec.ts) stops the context's tracing first and saves
+      // it where it wants: there is nothing left to save here, and nothing was lost (#366's Info).
+      if (!/Must start tracing before stopping/.test(String(error))) console.warn('[e2e] the app trace could not be saved:', error);
     }
     return close();
   };
@@ -939,5 +1019,15 @@ export async function assertWindowOnScreen(app) {
     throw new Error(`the window's content (${c.width}x${c.height} at ${c.x},${c.y}) is not wholly on the screen's work area `
       + `(${a.width}x${a.height} at ${a.x},${a.y}): a capture reads black and a click lands nowhere outside it. `
       + 'Give the machine a larger display (CI sets 1920x1080 before the E2E step).');
+  }
+}
+
+/** Whether a Playwright test is running: test.info() throws outside one. */
+function inTest() {
+  try {
+    test.info();
+    return true;
+  } catch {
+    return false;
   }
 }

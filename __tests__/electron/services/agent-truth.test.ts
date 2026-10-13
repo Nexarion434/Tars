@@ -1,5 +1,22 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
+
+/** Bytes read from files while `on`, through either way of reading one. */
+const counted = vi.hoisted(() => ({ on: false, bytes: 0 }));
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const readSync = ((...args: Parameters<typeof actual.readSync>) => {
+    const n = (actual.readSync as (...a: Parameters<typeof actual.readSync>) => number)(...args);
+    if (counted.on) counted.bytes += n;
+    return n;
+  }) as typeof actual.readSync;
+  const readFileSync = ((...args: Parameters<typeof actual.readFileSync>) => {
+    const out = (actual.readFileSync as (...a: Parameters<typeof actual.readFileSync>) => string | Buffer)(...args);
+    if (counted.on) counted.bytes += typeof out === 'string' ? Buffer.byteLength(out) : out.length;
+    return out;
+  }) as typeof actual.readFileSync;
+  return { ...actual, readSync, readFileSync, default: { ...actual, readSync, readFileSync } };
+});
 import * as os from 'os';
 import * as path from 'path';
 import { encodeProjectDirName } from '../../../electron/utils/resume-session';
@@ -18,6 +35,42 @@ import { sessionModel, withSessionTruth, clearAgentTruthCache, pendingBackground
  * a new model back on the one their previous session had used. What has to be
  * right is the "only ever fills in" part: a reading that fails must leave the
  * record alone rather than blanking a model the user did choose.
+ *
+ * And what reading it costs (the crash of 2026-10-13 00:26: Tars's main process
+ * died at its heap's limit, its live heap measured at 2.8 to 3.2 GB). The
+ * agent list is built about twice a second, and the model is read for every
+ * agent once the 5 s cache runs out: the whole transcript, read and split into
+ * lines, to find its last assistant line. The fleet's live transcripts were
+ * 136 MB, 114 MB, 104 MB... 830 MB together. How it fails, written before the
+ * code:
+ * 1. The read follows the file's size: megabytes of strings made, every 5 s,
+ *    for each agent, where the last assistant line is a few kilobytes from
+ *    the end.
+ * 2. Reading only the end misses a last assistant line further back (a long
+ *    tool output after it): the model reads as none.
+ * 3. A line cut at the start of what is read is taken for a whole one.
+ * 4. A file that has not changed is read again when the 5 s run out.
+ * And the background work a session left running (the Low logged after the
+ * 2.0.0 chain, 13/10: Tars told requesters, at every end of an agent's turn,
+ * that tasks finished hours before were still running), written before the
+ * code:
+ * 6. A task that ends while a turn runs has its note recorded, by claude
+ *    2.1.296, as an attachment of type queued_command (its prompt the
+ *    <task-notification>), with a queue-operation enqueue beside it: never as
+ *    a user line. Read only from user lines, it stays running for ever.
+ * 7. Either of the two alone (an enqueue whose attachment never came, the
+ *    note removed from the queue before the next turn) is not taken as the
+ *    task's end.
+ * 8. A note quoted in a tool's output (a transcript read, a file shown) ends
+ *    the task it names.
+ * 9. (GATE-PR389, L1) A message typed in during the turn (an attachment of
+ *    commandMode 'prompt', an enqueue that reads "Message from ...") that
+ *    quotes a completed note for this agent's running task ends it: only a
+ *    note Claude Code queued itself (commandMode 'task-notification', a
+ *    content that is the note) does.
+ *
+ * 5. A character of several bytes cut at the start of what is read garbles
+ *    the model's name.
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-truth-'));
@@ -171,6 +224,56 @@ describe('work a session left running in the background', () => {
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
   });
 
+  /** A note that came during a turn, as claude 2.1.296 writes it: queued, then attached to the turn. */
+  const notice = (taskId: string, status: string) => `<task-notification>\n<task-id>${taskId}</task-id>\n<tool-use-id>toolu_x</tool-use-id>\n<status>${status}</status>\n<summary>Background command "sleep 25" completed (exit code 0)</summary>\n</task-notification>`;
+  const enqueued = (taskId: string, s: number, status = 'completed') =>
+    JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(s), sessionId: SESSION, content: notice(taskId, status) });
+  const attached = (taskId: string, s: number, status = 'completed') =>
+    JSON.stringify({ type: 'attachment', timestamp: at(s), sessionId: SESSION, attachment: { type: 'queued_command', prompt: notice(taskId, status), commandMode: 'task-notification' } });
+
+  it('6. takes a note that came during a turn as the end of its task', () => {
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bmid0turn' }), enqueued('bmid0turn', 40), attached('bmid0turn', 41)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+  });
+
+  it('7. takes either of its two records alone as the end', () => {
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bq1' }), enqueued('bq1', 40)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'ba1' }), attached('ba1', 41)]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+    // A Monitor's event, queued during a turn, still carries no end: as claude
+    // writes it, a summary and an <event>, no status (GATE-PR389, L2).
+    const event = `<task-notification>\n<task-id>bmon</task-id>\n<summary>Monitor event: "gate steps"</summary>\n<event>EXIT=0</event>\n</task-notification>`;
+    writeTranscript(PROJECT, SESSION, [
+      call('m1', 'Monitor', 5), result('m1', 6, { taskId: 'bmon' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: event }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: event, commandMode: 'task-notification' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bmon']);
+  });
+
+  it('9. does not take a typed message that quotes a completed note as an end', () => {
+    const typed = `Message from agent "Lead" ("o1"): the log said\n${notice('bquoted', 'completed')}\nis it done?`;
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bquoted' }),
+      JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: at(40), sessionId: SESSION, content: typed }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: typed, commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bquoted']);
+    // A note pasted as the whole message: its mode alone says it was typed.
+    writeTranscript(PROJECT, SESSION, [
+      call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bpasted' }),
+      JSON.stringify({ type: 'attachment', timestamp: at(41), sessionId: SESSION, attachment: { type: 'queued_command', prompt: notice('bpasted', 'completed'), commandMode: 'prompt' } }),
+    ]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bpasted']);
+  });
+
+  it('8. does not take a note quoted in a tool\'s output as an end', () => {
+    const quoted = JSON.stringify({ type: 'user', timestamp: at(30), message: { content: [{ type: 'tool_result', tool_use_id: 'r1', content: notice('bstill', 'completed') }] } });
+    writeTranscript(PROJECT, SESSION, [call('t1', 'Bash', 5), result('t1', 6, { backgroundTaskId: 'bstill' }), quoted]);
+    expect(pendingBackgroundWork(agent, SINCE, home)).toEqual(['bstill']);
+  });
+
   it('does not take a task id from any other tool for background work', () => {
     // The todo tools answer with a taskId too.
     writeTranscript(PROJECT, SESSION, [call('c1', 'TaskCreate', 5), result('c1', 6, { taskId: '3' })]);
@@ -180,5 +283,63 @@ describe('work a session left running in the background', () => {
   it('reports nothing without a session or a transcript', () => {
     expect(pendingBackgroundWork({ projectPath: PROJECT }, SINCE, home)).toEqual([]);
     expect(pendingBackgroundWork(agent, SINCE, home)).toEqual([]);
+  });
+});
+
+describe('what reading the model costs', () => {
+  const fileOf = () => path.join(home, '.claude', 'projects', encodeProjectDirName(PROJECT), `${SESSION}.jsonl`);
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => JSON.stringify({ type: 'user', message: { content: `${i} ${'x'.repeat(1000)}` } }));
+  const readBytes = () => {
+    counted.bytes = 0;
+    counted.on = true;
+    return { bytes: () => counted.bytes, restore: () => { counted.on = false; } };
+  };
+
+  it('1. reads the end of a large transcript, not the whole of it', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-sonnet-5'), ...filler(20_000), assistant('claude-opus-5')]);
+    const size = fs.statSync(fileOf()).size;
+    const spy = readBytes();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      expect(spy.bytes(), `read ${spy.bytes()} of ${size} bytes`).toBeLessThanOrEqual(1024 * 1024);
+    } finally { spy.restore(); }
+  });
+
+  it('2. still finds a last assistant line further back than the first read', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(2_000)]);
+    expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+  });
+
+  it('3, 5. takes no cut line for a whole one, and keeps a name of several-byte characters whole', () => {
+    const named = 'claude-öpus-5-ünïcode';
+    writeTranscript(PROJECT, SESSION, [assistant(named), ...filler(600)]);
+    expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe(named);
+  });
+
+  it('4. reads the model again when the transcript was rewritten to the same size with a new date', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(10)]);
+    vi.useFakeTimers();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      writeTranscript(PROJECT, SESSION, [assistant('claude-opus-6'), ...filler(10)]);
+      const later = new Date(Date.now() + 60_000);
+      fs.utimesSync(fileOf(), later, later);
+      vi.advanceTimersByTime(60_000);
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-6');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('4. reads nothing again while the transcript has not changed', () => {
+    writeTranscript(PROJECT, SESSION, [assistant('claude-opus-5'), ...filler(100)]);
+    vi.useFakeTimers();
+    try {
+      expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+      vi.advanceTimersByTime(60_000);
+      const spy = readBytes();
+      try {
+        expect(sessionModel({ resumableSessionId: SESSION, projectPath: PROJECT }, home)).toBe('claude-opus-5');
+        expect(spy.bytes()).toBe(0);
+      } finally { spy.restore(); }
+    } finally { vi.useRealTimers(); }
   });
 });

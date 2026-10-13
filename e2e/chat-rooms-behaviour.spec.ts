@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, roomListSettled, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, removeHome, roomListSettled, seedSandbox, stepShot } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { splitPageErrors } from './surfaces.mjs';
 
@@ -65,7 +65,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(sandboxHome, { recursive: true, force: true });
+  await removeHome(sandboxHome);
 });
 
 /** Patches agents on the app's own map and pushes a tick, as a hook would. */

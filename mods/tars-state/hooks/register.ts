@@ -95,6 +95,16 @@ function hex(buffer: ArrayBuffer): string {
 
 async function proven($: Engine): Promise<Tars | null> {
   if (tars !== undefined) return tars;
+  // CLAUDE_PID in this process's own environment means another claude started
+  // this one (a `claude -p` from the agent's Bash tool): Claude Code puts it in
+  // the environment of what it starts, never in its own (measured by the Audit
+  // on 2.1.296, gate of #380). Such a CLI inherited the agent's id and token,
+  // and is not the agent: the mod says nothing to Tars from it, and Tars strips
+  // CLAUDE_PID from every agent terminal so the agent's own claude never has it.
+  if (await $.env.get('CLAUDE_PID')) {
+    tars = null;
+    return tars;
+  }
   const agentId = await $.env.get('CLAUDE_AGENT_ID');
   const api = await $.env.get('CLAUDE_MGR_API_URL');
   const token = await $.env.get('CLAUDE_MGR_API_TOKEN');
@@ -115,14 +125,18 @@ async function proven($: Engine): Promise<Tars | null> {
   return tars;
 }
 
-function report($: Engine, route: string, body: Record<string, unknown>): void {
+/** A post's body, or how to make it, in the queue, when it needs the engine first. */
+type Body = Record<string, unknown> | (() => Promise<Record<string, unknown>>);
+
+function report($: Engine, route: string, body: Body): void {
   queue = queue.then(async () => {
     const to = await proven($);
     if (!to) return;
+    const fields = typeof body === 'function' ? await body() : body;
     const init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${to.token}` },
-      body: JSON.stringify({ agent_id: to.agentId, ...body, via: 'mod' }),
+      body: JSON.stringify({ agent_id: to.agentId, ...fields, via: 'mod' }),
     };
     // Tried again, in the queue, so the events keep their order; given up
     // after the third try, so one that keeps failing holds nothing back.

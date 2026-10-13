@@ -1,11 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { assignRole, requestedRole, rolesOnLoad, roleFromName } from '../../../electron/core/agent-role';
+import { assignRole, hasOrchestratorPowers, requestedRole, rolesOnLoad, roleFromName } from '../../../electron/core/agent-role';
 import type { AgentStatus } from '../../../electron/types';
 
 /**
  * The Orchestrator toggle is the role, a project has one orchestrator, and the
  * name decides nothing: JeanBrasse's decision of 2026-09-22 after the audit showed
  * the toggle changed nothing for an orchestrator and the name was the switch.
+ *
+ * The orchestrator's powers (ORCHESTRATOR-PER-CHAT.md v2.2, 4.2, PR D): its
+ * project's orchestrator has them, and so does a chat's runner, a worker with
+ * `kind: 'chat'` that runs one chat's conversation. Where they are read is
+ * role-sites.test.ts.
+ * How hasOrchestratorPowers fails, written before the code (2026-10-12):
+ * 1. A chat's runner is refused them: the role alone is read.
+ * 2. The project's orchestrator loses them: the kind alone is read.
+ * 3. A worker gets them from its name (a runner is called "<orchestrator> ·
+ *    <chat title>", and any worker may be called "Orchestrator"), or from the
+ *    toggle's old field left on its record.
+ * 4. A worker gets them from a chat id or an orchestrator id on its record,
+ *    without the kind.
+ * 5. A record with a kind this Tars does not know (a newer one's), or a role
+ *    or a kind spelled otherwise, gets them: any kind is read as a runner's.
  */
 
 function agent(id: string, fields: Partial<AgentStatus> = {}): AgentStatus {
@@ -134,5 +149,37 @@ describe('roleFromName', () => {
     expect(roleFromName('super agent')).toBe('orchestrator');
     expect(roleFromName('Tars-Lead')).toBe('worker');
     expect(roleFromName(undefined)).toBe('worker');
+  });
+});
+
+describe('hasOrchestratorPowers', () => {
+  const runner = (fields: Partial<AgentStatus> = {}) =>
+    agent('runner', { name: 'Tars-Lead · Release 1.9.4', role: 'worker', kind: 'chat', chatId: 'c-2', teamOrchestratorId: 'lead', ...fields });
+
+  it("1, 2. are its project's orchestrator's, and a chat's runner's", () => {
+    expect(hasOrchestratorPowers(agent('lead', { role: 'orchestrator', orchestratorMode: true }))).toBe(true);
+    expect(hasOrchestratorPowers(runner())).toBe(true);
+    // A runner whose record says orchestrator too (never written by Tars) keeps them.
+    expect(hasOrchestratorPowers(runner({ role: 'orchestrator' }))).toBe(true);
+  });
+
+  it("3. are no worker's, whatever its name or the old toggle field says", () => {
+    expect(hasOrchestratorPowers(agent('w', { role: 'worker' }))).toBe(false);
+    expect(hasOrchestratorPowers(agent('no-role'))).toBe(false);
+    expect(hasOrchestratorPowers(agent('named', { name: 'Tars-Lead · Release 1.9.4', role: 'worker' }))).toBe(false);
+    expect(hasOrchestratorPowers(agent('called', { name: 'Orchestrator', role: 'worker' }))).toBe(false);
+    expect(hasOrchestratorPowers(agent('stale', { role: 'worker', orchestratorMode: true }))).toBe(false);
+  });
+
+  it('4. come from the kind, not from a chat id or an orchestrator id on a worker', () => {
+    expect(hasOrchestratorPowers(agent('w', { role: 'worker', chatId: 'c-2' }))).toBe(false);
+    expect(hasOrchestratorPowers(agent('w', { role: 'worker', teamOrchestratorId: 'lead' }))).toBe(false);
+  });
+
+  it('5. come from no other kind, and from no other spelling', () => {
+    expect(hasOrchestratorPowers({ role: 'worker', kind: 'review' })).toBe(false);
+    expect(hasOrchestratorPowers({ role: 'worker', kind: 'Chat' })).toBe(false);
+    expect(hasOrchestratorPowers({ role: 'Orchestrator' })).toBe(false);
+    expect(hasOrchestratorPowers({})).toBe(false);
   });
 });

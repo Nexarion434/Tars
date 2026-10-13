@@ -4,6 +4,8 @@ import Image from 'next/image';
 import { Download, Github } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dashboard from '@/assets/dashboard.png';
+import newInterface from '@/assets/new-interface.png';
+import { PreviewSection } from '@/components/PreviewSection';
 import { SiteFooter } from '@/components/SiteFooter';
 import { SiteNav } from '@/components/SiteNav';
 
@@ -130,6 +132,17 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <PreviewSection
+        picture={(
+          <Image
+            src={newInterface}
+            alt="A chat's page in the new interface: its orchestrator hands the scroll lock's test to QA and its fix to the Frontend Engineer, reads their answers and runs the tests, while the chat list says 2 of 3 chats are working."
+            sizes="(min-width: 1040px) 992px, 100vw"
+            className="w-full h-auto border border-line"
+          />
+        )}
+      />
 
       {/* How */}
       <section id="how" className="max-w-[1040px] mx-auto px-6 py-16 border-b border-line">

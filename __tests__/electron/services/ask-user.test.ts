@@ -41,6 +41,13 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 14. (the gate of #231) The expiry notice types the agent's own question back to it, as Tars's words.
  * 15. (JeanBrasse's answer 24 of 2026-10-05) The user's receipt is long, or says the answer went in while it waits, without
  *     saying for what.
+ * 16. (ORCHESTRATOR-PER-CHAT.md 4.2, PR D, written before the code on 2026-10-12) A chat's runner, a worker with
+ *     `kind: 'chat'` and the orchestrator's powers, is refused as a worker.
+ * 17. (4.6, PR F; written after its wiring, shown to bite by a mutant) A chat's question goes out without its chat,
+ *     so the user cannot tell which conversation asks; or the answer to a chat whose runner has gone to sleep is
+ *     dropped ("no session running") instead of waking that chat with it, within the chats' limit.
+ * 18. (GATE-2.0.0-BULLETS 2, the Low L2 of #394's gate, shown to bite by its mutant H6) A project with only Main
+ *     heads the orchestrator's question with "[tars #1 Main]", which 1.9.7 never did.
  */
 
 /** What runs in the terminals spawned next: claude's version, or `bash` at its prompt. */
@@ -79,6 +86,15 @@ vi.mock('electron', () => ({
   BrowserWindow: Object.assign(vi.fn(), { getAllWindows: () => [] }),
 }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+/** What went to a chat through chat:send's path (17). */
+const toChat = vi.hoisted(() => [] as Array<{ chatId: unknown; text: unknown; opts: unknown }>);
+vi.mock('../../../electron/services/chat-runners', async (original) => ({
+  ...(await original<object>()),
+  sendToChat: vi.fn(async (chatId: string, text: string, opts: unknown) => {
+    toChat.push({ chatId, text, opts });
+    return { success: true, chatId, runnerId: 'run-3', how: 'launched' };
+  }),
+}));
 
 import type { AgentStatus } from '../../../electron/types';
 
@@ -193,6 +209,15 @@ describe('asking', () => {
     const r = await q.askUser({ agentId: 'w1', question: 'May I?' }, T0);
     expect(r).toMatchObject({ ok: false, status: 403, error: expect.stringMatching(/orchestrator/) });
     expect(fake.sends).toEqual([]);
+  });
+
+  it("16. a chat's runner asks the user: it has the orchestrator's powers", async () => {
+    const runner = agent('r1', 'Tars-Orchestrator · Release 1.9.4', { role: 'worker', withCli: false });
+    runner.role = 'worker';
+    runner.kind = 'chat';
+    const r = await q.askUser({ agentId: 'r1', question: 'Ship 1.9.4 tonight?' }, T0);
+    expect(r).toMatchObject({ ok: true });
+    expect(questions()).toHaveLength(1);
   });
 
   it('12. with the relay off, nothing leaves, and the agent is told why', async () => {
@@ -383,5 +408,41 @@ describe('across a restart', () => {
     await answer('Use the staging database.', T0 + 1000, asked);
     await settle();
     expect(all('a1')).toContain('Use the staging database.');
+  });
+});
+
+describe('a chat asks (PR F)', () => {
+  it('17. the question is headed by its chat, and the answer wakes its runner once asleep', async () => {
+    const runner = agent('run-3', 'Lead · Release', { role: 'worker' });
+    Object.assign(runner, { kind: 'chat', chatId: 'c3' });
+    const { setChatLookups } = await import('../../../electron/core/chat-inbox');
+    // Chat #3: its project has several chats, so what it sends is named by it.
+    const c3 = (id: string) => (id === 'run-3' ? { id: 'c3', projectPath: PROJECT, number: 3, title: 'Release' } : undefined);
+    setChatLookups({ inbox: () => null, chatRunBy: c3, namedChatOf: c3 });
+    toChat.length = 0;
+    expect((await q.askUser({ agentId: 'run-3', question: 'Ship 1.9.7 tonight?' }, T0)).ok).toBe(true);
+    expect(questions().at(-1)!.text.startsWith('[tars #3 Release]\nQuestion from Lead')).toBe(true);
+
+    // Its CLI ends and it sleeps, its conversation kept.
+    runner.status = 'asleep';
+    ptyProcesses.delete('pty-run-3');
+    runner.ptyId = undefined;
+    await answer('Yes, ship it.', T0 + 60_000);
+    await settle();
+    expect(toChat).toEqual([{ chatId: 'c3', text: `Answer to the question you asked at ${new Date(T0).toTimeString().slice(0, 5)}:\nYes, ship it.`, opts: { sender: { kind: 'user', via: 'Telegram' } } }]);
+    expect(notices().at(-1)).toMatch(/^Passed to Lead · Release\.$/);
+    setChatLookups(undefined);
+  });
+
+  it('18. a project with only Main: the question is not headed by a chat, as in 1.9.7', async () => {
+    agent('o1', 'Lead');
+    const { setChatLookups } = await import('../../../electron/core/chat-inbox');
+    // o1 runs Main, the project's only chat: it has a chat, and names none.
+    setChatLookups({ inbox: () => null, chatRunBy: (id) => (id === 'o1' ? { id: 'c1', projectPath: PROJECT, number: 1, title: 'Main' } : undefined), namedChatOf: () => undefined });
+    expect((await q.askUser({ agentId: 'o1', question: 'Ship tonight?' }, T0)).ok).toBe(true);
+    const text = questions().at(-1)!.text;
+    expect(text).not.toContain('#1 Main');
+    expect(text.startsWith('Question from Lead')).toBe(true);
+    setChatLookups(undefined);
   });
 });

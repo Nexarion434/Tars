@@ -289,6 +289,8 @@ export interface ProjectMemory {
   lastModified: string;
   hasMemory: boolean;
   provider: string;    // 'claude' | 'codex' | 'gemini'
+  /** The memory folder an older Tars made under a name Claude never reads; its files were copied into `memoryDir` once, and kept. */
+  olderCopy?: string;
 }
 
 export interface ObsidianFile {
@@ -457,7 +459,7 @@ export interface AgentStatus {
   pathMissing?: boolean; // True if project path no longer exists
   /** @deprecated Use permissionMode instead */
   skipPermissions?: boolean;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
@@ -467,6 +469,14 @@ export interface AgentStatus {
    *  the fleet's first (getSuperAgent with no project). A project has one at
    *  most. Always set on a record from the main process. */
   role?: 'orchestrator' | 'worker';
+  /** 'chat': this agent runs one chat's conversation (a chat runner). A
+   *  worker with the orchestrator's powers, listed under its chat rather than
+   *  in the team. */
+  kind?: 'chat';
+  /** The chat a runner runs. */
+  chatId?: string;
+  /** The project's orchestrator a runner is launched like. */
+  teamOrchestratorId?: string;
   /** The Claude account this agent's CLI was last launched on. Absent: account 1. */
   claudeAccountId?: ClaudeAccountId;
   /** The account the agent is held to. Absent: chosen automatically. */
@@ -1024,6 +1034,164 @@ export interface OrphanRemovalReport {
 /** What the claude-accounts channels answer: the result, or a sentence. */
 export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { success: false; error: string };
 
+/* ── The chats of each project (electron/services/chats.ts, handlers/chat-handlers.ts) ── */
+
+/** A chat's record, as ~/.dorothy/chats.json keeps it. */
+export interface Chat {
+  id: string;
+  /** The project's path as Tars saved it (its orchestrator's). */
+  projectPath: string;
+  /** Fixed within its project: 1 is Main, then 2, 3...; never handed out again after a delete. */
+  number: number;
+  title: string;
+  /** auto: "New chat" until its first message names it; user: named, never replaced. */
+  titleSource: 'user' | 'auto';
+  /** The agent that runs its conversation: Main's is the project's orchestrator; null until the chat's first send. */
+  runnerId: string | null;
+  /** Every session its conversation went through, oldest first. */
+  sessionIds: string[];
+  pinned: boolean;
+  snoozedUntil: string | null;
+  settledAt: string | null;
+  /** The project's chat the bots, Hermes and Tars's notes post to: one per project. */
+  inbox: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt: string;
+}
+
+/** A chat, with its runner as the fleet has it now. */
+export interface ChatView extends Chat {
+  /** The agent the chat runs on, as the fleet confirms its record; null before its first send, or when the record names another agent. */
+  runner: {
+    id: string;
+    name: string;
+    status: AgentTickItem['status'];
+    waking: boolean;
+    /** Its CLI runs in its terminal, or is starting there: it counts in the limit. A terminal back at its shell does not. */
+    live: boolean;
+    lastActivity: string;
+    /** A permission its CLI asked Tars: shown in the chat that runs it. */
+    permissionAsk: AgentStatus['permissionAsk'] | null;
+  } | null;
+}
+
+/** A request a chat's runner has out at another agent: what keeps the chat from being deleted. */
+export interface ChatWorkItem {
+  workerId: string;
+  workerName: string | null;
+  /** The request's id as Tars typed it; null for a link an older Tars left. */
+  ref: string | null;
+  state: 'queued' | 'delivered';
+  queuedAt: string | null;
+}
+
+/** One item of a chat's conversation, read from its runner's transcripts (services/chat-transcript.ts). */
+export interface ChatItem {
+  /** The transcript line's uuid (`:n` for a later part of the same line). */
+  id: string;
+  /** Its place in the chat, the same in chat:history and in chat:events. */
+  n: number;
+  sessionId: string;
+  at: string | null;
+  /** user: the user's words; message: from an agent or a channel; note: from Tars or Claude Code;
+   *  text: the runner's; tool: one of its tool calls, folded; divider: a compaction or a new session;
+   *  raw: a line Tars does not know or cannot read, shown as one line. */
+  kind: 'user' | 'message' | 'note' | 'text' | 'tool' | 'divider' | 'raw';
+  text: string;
+  from?: string;
+}
+
+/** chat:history: the items before `before`, the last `limit` of them, and the seq they are a snapshot at. */
+export interface ChatHistory {
+  seq: number;
+  total: number;
+  items: ChatItem[];
+}
+
+/**
+ * chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again.
+ * An `item` whose id the window already holds replaces it: an item is sent again when its place `n`
+ * changed (a line that landed in an earlier session moves every item after it one place on).
+ */
+export type ChatEvent = { seq: number; chatId: string } & (
+  | { type: 'item'; item: ChatItem }
+  | { type: 'meta'; chat: ChatView }
+  | { type: 'deleted' }
+  /** Items told before that the chat no longer holds (a session's transcript disappeared): drop them. */
+  | { type: 'removed'; itemIds: string[] }
+  | { type: 'state'; runner: { id: string; status: AgentStatus['status']; live: boolean } | null }
+);
+
+/** agent:queue: a worker's work in hand and the requests waiting behind it. */
+export interface AgentQueueEntry {
+  ref: string | null;
+  requesterAgentId: string;
+  requesterName: string;
+  state: 'queued' | 'delivered';
+  queuedAt: string | null;
+  /** The chat it was asked from: null until chats have their own runners. */
+  chatId: string | null;
+}
+export interface AgentQueueView {
+  agentId: string;
+  current: AgentQueueEntry | null;
+  queue: AgentQueueEntry[];
+}
+
+/** Why a chat channel did nothing, in a sentence the window can show as it is. */
+export interface ChatError {
+  error:
+    | 'not_found' | 'invalid_request' | 'invalid_title' | 'invalid_until' | 'no_orchestrator'
+    | 'inbox' | 'chat_has_work' | 'write_failed' | 'chats_unavailable' | 'provider_unsupported' | 'runner_set';
+  reason: string;
+  /** chat_has_work: the work the chat's runner has out. */
+  tasks?: ChatWorkItem[];
+}
+
+/** What chat:send answers: how the words went in, or why they did not. */
+export type ChatSendAnswer =
+  | {
+    success: true;
+    chatId: string;
+    /** The agent that runs the chat: Main's is the project's orchestrator. */
+    runnerId: string;
+    /** typed into its running CLI; held behind a draft in its field; launched, its conversation resumed. */
+    how: 'typed' | 'held' | 'launched';
+  }
+  | {
+    error: 'not_found' | 'invalid_request' | 'no_orchestrator' | 'provider_unsupported' | 'disk_full'
+      | 'chat_limit' | 'runner_failed' | 'runner_mismatch' | 'chats_unavailable';
+    /** A sentence the window shows as it is. */
+    reason: string;
+    /** chat_limit: the limit, the RAM it comes from, and the chats working. */
+    limit?: number;
+    ramGb?: number;
+    working?: Array<{ chatId: string; title: string; since: string }>;
+  };
+
+/** chats.json could not be read as it was: what was done, and where the file as it was is kept. */
+export interface ChatsProblem {
+  kind: 'corrupt' | 'repaired' | 'newer' | 'unreadable' | 'write_failed';
+  detail: string;
+  file?: string;
+  dropped?: number;
+  at: string;
+}
+
+/** How many chats may have a live CLI at once, across every project, Main counted: one per 5 GB of RAM, from 1 to 8. */
+export interface ChatLimit {
+  limit: number;
+  ramGb: number;
+  perChatGb: number;
+  min: number;
+  max: number;
+  /** ram: this machine's memory; override: the E2E's figure. */
+  source: 'ram' | 'override';
+  /** Chats whose runner holds a terminal now. */
+  working: number;
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -1044,7 +1212,7 @@ export interface ElectronAPI {
       character?: AgentCharacter;
       name?: string;
       secondaryProjectPath?: string;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider?: AgentProvider;
       localModel?: string;
@@ -1060,7 +1228,7 @@ export interface ElectronAPI {
       projectPath?: string;
       skills?: string[];
       secondaryProjectPath?: string | null;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       name?: string;
       character?: AgentCharacter;
@@ -1097,6 +1265,8 @@ export interface ElectronAPI {
     onError: (callback: (event: AgentEvent) => void) => () => void;
     onComplete: (callback: (event: AgentEvent) => void) => () => void;
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
+    queue: (agentId: string) => Promise<AgentQueueView | { error: 'not_found'; reason: string }>;
+    onQueue: (callback: (view: AgentQueueView) => void) => () => void;
     onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
@@ -1464,6 +1634,10 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface: boolean;
+      /** A project's chats may read one another (chat_list, chat_read), at each runner's next launch. Off unless chosen; `get` always answers a boolean. */
+      chatsReadEachOther: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -1541,6 +1715,10 @@ export interface ElectronAPI {
       terminalFontSize?: number;
       /** Resume idle agents once at launch (not on navigation). */
       autoStartAgentsOnLaunch?: boolean;
+      /** The 2.0 interface. Off unless chosen; `get` always answers a boolean. */
+      newInterface?: boolean;
+      /** A project's chats may read one another (chat_list, chat_read), at each runner's next launch. */
+      chatsReadEachOther?: boolean;
       terminalTheme?: 'dark' | 'light';
       statusLineEnabled?: boolean;
       hermesGatewayUrl?: string;
@@ -2084,6 +2262,29 @@ export interface ElectronAPI {
     /** Removes the folders named (the OrphanFolder.path of the rows shown), each only if it is still an orphan, and nothing else; one at a time, asking nothing itself (the window confirms first). A folder a process works in is kept. */
     removeOrphanFolders: (paths: string[]) => Promise<OrphanRemovalReport | { error: string }>;
     onOrphanRemovalProgress: (callback: (progress: OrphanRemovalProgress) => void) => () => void;
+    /** How many chats may work at once, and where that figure came from. */
+    chatLimit: () => Promise<ChatLimit>;
+  };
+
+  /** The chats of each project. Mirror of the `chat` namespace in electron/preload.ts. */
+  chat: {
+    /** Every chat, by project then number; `seq` moves at each change. A project's orchestrator's conversation is its chat #1, Main. */
+    list: () => Promise<{ seq: number; chats: ChatView[]; problem: ChatsProblem | null }>;
+    /** title omitted: "New chat", named by its first message. no_orchestrator for a project without one. */
+    create: (params: { projectPath: string; title?: string }) => Promise<ChatView | ChatError>;
+    rename: (params: { chatId: string; title: string }) => Promise<ChatView | ChatError>;
+    pin: (params: { chatId: string; pinned: boolean }) => Promise<ChatView | ChatError>;
+    /** until: a time to come, or null to end the snooze. */
+    snooze: (params: { chatId: string; until: string | null }) => Promise<ChatView | ChatError>;
+    settle: (params: { chatId: string; settled: boolean }) => Promise<ChatView | ChatError>;
+    /** Refused for the project's inbox, and while the chat has work out at the team (chat_has_work, with that work). Its own runner goes with it, its worktree's work saved first. */
+    delete: (params: { chatId: string }) => Promise<{ success: true; savedTo?: string; worktreeKept?: string } | ChatError>;
+    /** The project's inbox moves to this chat. */
+    setInbox: (params: { chatId: string }) => Promise<ChatView | ChatError>;
+    /** The user's words into the chat: typed into its runner, or launched with them, within the RAM's limit (chat_limit). */
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: 'auto' | 'queue' | 'steer' | 'restart' }) => Promise<ChatSendAnswer>;
+    history: (params: { chatId: string; before?: number; limit?: number }) => Promise<ChatHistory | (ChatError & { seq: number })>;
+    onEvent: (callback: (event: ChatEvent) => void) => () => void;
   };
 
   // Obsidian vault browsing & editing

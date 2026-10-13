@@ -1,3 +1,4 @@
+import { chatNameOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { ptyProcesses } from '../core/pty-manager';
@@ -352,7 +353,10 @@ export async function sendNow(params: {
   }
   const agentId = typeof params.agentId === 'string' ? params.agentId : '';
   const agent = agents.get(agentId);
-  if (!agent || !room.memberIds.includes(agentId)) {
+  // A member, or a chat's runner of this room's project: JeanBrasse's answer to what
+  // that chat said in the room goes back to it (PR F).
+  const runsAChatHere = !!agent && room.kind === 'project' && agent.projectPath === room.projectPath && !!chatNameOf(agent);
+  if (!agent || (!room.memberIds.includes(agentId) && !runsAChatHere)) {
     return { success: false, interrupted: false, error: 'That agent is not a member of this room.' };
   }
   const files = stagedFor(room.id, params.attachments);
@@ -384,13 +388,7 @@ export async function sendNow(params: {
   broadcastPublication(message, thread, [row]);
   closeSuperseded();
 
-  const escAt = Date.now();
-  try {
-    ptyProcess.write('\x1b');
-  } catch (err) {
-    console.warn('[bus] send now could not write the interrupt:', err);
-  }
-  const interrupted = await interruptOnRecord(agent, escAt - INTERRUPT_SLACK_MS);
+  const interrupted = await interruptTurn(agent, ptyProcess);
   const queued = queuedOf(message);
 
   if (interrupted) {
@@ -405,6 +403,22 @@ export async function sendNow(params: {
   if (queueBusMessage(agentId, queued)) deliverBusMessages(agentId);
   else announceDropped(agentId, message.id, 'no_live_session', 'the agent already has as many messages waiting as it can hold');
   return { success: true, messageId: message.id, threadId: thread.id, interrupted: false, deliveries: deliveriesOf(message.id) };
+}
+
+/**
+ * An Esc into the agent's turn, and whether its transcript records the
+ * interrupt within INTERRUPT_CONFIRM_MS. Shared by the room's send now and the
+ * API's `steer` (agent-routes.ts): the caller has checked the agent is in a
+ * turn, that Tars can interrupt it (canInterrupt), and that no dialog is up.
+ */
+export async function interruptTurn(agent: Parameters<typeof lastInterruptAt>[0], ptyProcess: { write(data: string): void }): Promise<boolean> {
+  const escAt = Date.now();
+  try {
+    ptyProcess.write('\x1b');
+  } catch (err) {
+    console.warn('[bus] could not write the interrupt:', err);
+  }
+  return interruptOnRecord(agent, escAt - INTERRUPT_SLACK_MS);
 }
 
 /** Whether the transcript records an interrupt at or after `since`, within the bound. */

@@ -216,6 +216,11 @@ or a mock:
 Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
 moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
+Stand-ins a spec may point the app at, read only under `DOROTHY_E2E=1`: `TARS_CHAT_RAM_GB` (the RAM the
+chats' limit is computed from) and `DOROTHY_TELEGRAM_API_URL` (`http://127.0.0.1:<port>` and nothing
+else: a stand-in of Telegram's Bot API, which the bot's token travels to in every request's path;
+`e2e/chat-senders.spec.ts`).
+
 ### Unit tests: `npm test`
 
 ```bash
@@ -803,6 +808,8 @@ work.
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
+| `~/.dorothy/chats.json` | `electron/services/chats.ts` | the chats of each project: one record per chat (its number, title, runner and sessions, pinned, snoozed, settled, the inbox), and each project's last number (`numbers`). Not the conversations: those are the runners' transcripts (A chat's record, below) |
+| `~/.dorothy/chats.json.corrupt-<time>` | same | a `chats.json` that could not be read as one, set aside byte for byte; never written over or removed by Tars |
 | `~/.dorothy/templates.json` + `templates.backup.json` | `electron/handlers/template-handlers.ts` | agent templates |
 | `~/.dorothy/team-templates.json` | `electron/handlers/team-template-handlers.ts` | team blueprints |
 | `~/.dorothy/projects.json` | `ipc-handlers.ts` (`CUSTOM_PROJECTS_FILE`) | manually added projects |
@@ -811,7 +818,7 @@ work.
 | `~/.dorothy/cli-updates.log` + `.1` | `electron/services/cli-updater.ts` | one line per CLI update result; moved to `.1` past 256 KB |
 | `~/.dorothy/usage-ledger.jsonl` | `electron/services/usage-ledger.ts` | one line per turn; capped 20 000 → trimmed to 12 000 |
 | `~/.dorothy/task-ledger.jsonl` | `electron/services/task-ledger.ts` | one line per task opened, turn and end, without what each task said (in `~/.tars-private/task-texts.jsonl`); past 20 000 lines, rewritten to the newest 10 000 tasks |
-| `~/.dorothy/tmp/<short id>/` | `electron/services/agent-tmp.ts` | each agent's temporary folder (`t` = `TMPDIR`, `c` = `CLAUDE_CODE_TMPDIR`), kept across reboots; 7 days untouched, then deleted, 20 GB in all (10 GB under 30 GB free), never an agent whose CLI runs. `ls ~/.dorothy/tmp` and `logs/agent-tmp.log` (a line per deletion). An agent's folder name: `printf %s <agent id> \| shasum -a 256 \| cut -c1-10` |
+| `~/.dorothy/tmp/<short id>/` | `electron/services/agent-tmp.ts` | each agent's temporary folder (`t` = `TMPDIR`, `c` = `CLAUDE_CODE_TMPDIR`), kept across reboots; 7 days untouched, then deleted (a day for an agent whose CLI runs, never its live session's folder), 20 GB in all (10 GB under 30 GB free), nothing of a running agent past the cap. `ls ~/.dorothy/tmp` and `logs/agent-tmp.log` (a line per deletion). An agent's folder name: `printf %s <agent id> \| shasum -a 256 \| cut -c1-10` |
 | `~/.dorothy/observations/<slug>.jsonl` | `api-routes/memory-routes.ts` | post-tool-use ledger; capped 1 000 → trimmed to 500 |
 | `~/.dorothy/model-catalog.json` + `.meta.json` | `electron/services/model-catalog.ts` | models.dev mirror, 6 h TTL |
 | `~/.dorothy/acp-registry.json` | `electron/services/acp/registry.ts` | ACP launch commands, 24 h TTL |
@@ -835,6 +842,8 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 | `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: JeanBrasse's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
 Outside `~/.dorothy`, Tars writes into provider config it does not own: see *MCP servers* and
@@ -875,6 +884,75 @@ cp ~/.dorothy/agents.backup.json ~/.dorothy/agents.json
 
 `parseAgentsFile()` accepts both shapes: a bare array (v1) and `{version, savedAt, agents}`
 (v2). A hand-written array will load.
+
+### A chat's record
+
+**Where a chat lives.**
+- **The records:** each project's chats are in `~/.dorothy/chats.json` (`electron/services/chats.ts`).
+- **The conversation:** what a chat says is not in that file. It is the transcripts of the agent that runs
+  it (`runnerId`), one per session in `sessionIds`, under `~/.claude/projects/`, in the folder Claude Code
+  names after the project's path, or after its real path when the project was saved through a link.
+- **Main:** chat #1 is the project's orchestrator's own conversation. Its runner is the orchestrator. It
+  is made by the first launch that finds the project with an orchestrator and no chat ever
+  (`registerChatHandlers`, after `loadAgents()`), or by the next `chat:list` when the orchestrator is
+  set later; a launch with nothing to make writes nothing.
+
+```bash
+# every chat, by project
+jq -r '.chats[] | "\(.projectPath)  #\(.number)  \(.title)  runner=\(.runnerId // "-")  inbox=\(.inbox)  sessions=\(.sessionIds | length)"' ~/.dorothy/chats.json
+
+# each project's last number: a deleted chat's number is never handed out again
+jq '.numbers' ~/.dorothy/chats.json
+```
+
+**When `chat:list` reports a `problem`:**
+- **`corrupt`:** the file could not be read as a chats file. It is kept byte for byte as
+  `chats.json.corrupt-<time>`, and Tars started a new `chats.json` from each orchestrator: Main again, and
+  each project's numbers from 1 again. To put the old one back, quit Tars, repair the copy so it parses
+  (`jq . <copy>` says where it breaks), and move it over `chats.json`.
+- **`repaired`:** records that did not hold were dropped (`problem.dropped` says how many), or a rule was
+  put right (a number in use above the project's counter, one inbox per project). The file as it was is
+  the `.corrupt-<time>` copy.
+- **`newer`** (a newer Tars wrote it) or **`unreadable`** (its permissions): Tars changes nothing in it,
+  and no chat can change until it is fixed.
+
+**Where a runner lives.** Each chat other than Main runs in an agent of its own, made at its first send:
+- **Its record:** in `~/.dorothy/agents.json`, `kind: "chat"`, `chatId`, named `<orchestrator> · <chat title>`:
+  `jq '.agents[] | select(.kind == "chat") | {id, name, chatId, status, worktreePath, branchName}' ~/.dorothy/agents.json`.
+- **Its worktree:** `<project>/.worktrees/chat-<8 hex>` on the branch `chat/<the same>`, started from origin's
+  default branch. `node scripts/worktree.mjs status`, run in the project, lists it with the others; `prune`
+  never removes it, since an agent of Tars owns it.
+- **Its conversation:** the transcripts under `~/.claude/projects/`, in the folder Claude Code names after its
+  worktree's path, one per session in the chat's `sessionIds`.
+- **Asleep:** a runner put to sleep (to free a slot, after 30 minutes, or because its chat was settled) keeps its
+  worktree and its conversation; the chat's next send resumes it.
+- **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
+
+**When a send answers `runner_mismatch`:** the chat's record names an agent the fleet does not confirm as its
+runner: for another chat than Main, an agent that is not the runner made for it (the file was edited). Tars sends,
+launches and counts nothing for it. Compare the record (the `jq` above) with `agents.json`; such a chat can be deleted
+and started again. Main follows the project's orchestrator by itself: when the role moves, its record is rebound and
+the log says `[chats] Main of <project> follows the project's orchestrator: <former> to <new>`.
+
+**When a dispatch answers `worker_busy_for_other_chat`:** a `steer` or a `restart` would cut work another chat asked
+for (its title and number are in the answer). Send it with mode `queue`, or let that chat's work end.
+
+**When a start or a send answers `provider_unsupported`:** the project's orchestrator runs a CLI whose conversations
+Tars cannot resume; chats other than Main wait until it is back on claude. A runner whose claude still ran when the
+orchestrator moved is left to finish (its turn, the answers of the agents it gave work to) and then sleeps by the
+usual rule; nothing its chat sends reaches it meanwhile. Stopped from its card, it ends at once, and an answer still
+owed to it is refused until the orchestrator is back on claude, since nothing can start it again before.
+
+**When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
+counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
+by itself to make room.
+
+**Going back to a Tars without chats (1.9.5 and earlier):**
+- It does not read `chats.json`, and leaves it where it is.
+- Main is the orchestrator's own conversation, so the orchestrator works as before.
+- The chats' runners show as idle workers named `<orchestrator> · <chat title>`, each in its worktree. Nothing
+  routes to them, and the older Tars never demotes the real orchestrator for them. Delete them from the Agents
+  page (their work is saved on `wip/`), or upgrade again, which finds every chat as it was.
 
 ### Full reset
 
@@ -936,7 +1014,8 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 |---|---|
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
-| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` |
+| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
 | POST | `/api/hooks/{output,status,task-completed,agent-stopped,notification}` |
 | GET | `/api/memory/{context,search,status}` · POST `/api/memory/{write,remember}` |
@@ -945,6 +1024,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
+| GET | `/api/chats/list` (`chat_list`: with `chatsReadEachOther` on, the other chats of the caller's project; `403 chats_read_off` off, `403 not_a_chat` for an agent that runs no chat) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
@@ -957,6 +1037,16 @@ new chat out too: turn Telegram off and on in Settings, which restarts the bot a
 
 `ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) and the event reports go through the relay
 to your Hermes, not through this bot: see "The relay (Tars's side)" under Hermes gateway below.
+
+**Which chat a message reaches** (2.0.0, the chats; SPECS §4, The senders). A message from Telegram, Slack or
+Discord, or through the relay, that names no chat goes to the project's inbox chat: Main, the orchestrator, unless
+you made another chat the inbox. Start it with `#3 ` (or `@project #3 `) to write to chat 3; an `#N` the project has
+no chat for answers with the numbered list. On Telegram, reply to a chat's message (each starts
+`[<project> #N <title>]`) and it goes to that chat, whatever the text says. A reply that went to the wrong place: the
+bot's log of what it sent for a chat is `~/.tars-private/telegram-sent.json` (Telegram's chat and message ids, the
+chat's id, 7 days), the relay's is `~/.tars-private/relay-sent.json` (each entry's `chatId`); an entry older than its
+keep reaches nobody, and the sender is told. The kanban's and the error triage's notes, and the stall reports, go
+to the inbox chat too, only while its CLI runs.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a
@@ -999,6 +1089,7 @@ stat -f '%Sp %N' ~/.dorothy/api-token      # expect -rw-------
 | `403 Forbidden origin` | called from a browser page or a tool that sets `Origin` | drop the header; `curl` sends none |
 | every call `ECONNREFUSED` | port taken at boot, API never started | `lsof -nP -iTCP:31415`, kill the squatter, restart Tars |
 | `413 Request body too large` | >4 MiB payload | it is a hard cap; chunk the prompt |
+| An agent stuck in its last status, and its Logs say `[Tars] Refused a session (...): its CLI (pid N) is not this terminal's` | Tars takes a session only from the CLI it launched in the agent's terminal: the terminal's own process, or, when the terminal runs a shell the CLI was typed into, that shell's child (`core/terminal-cli.ts`). A `claude -p` run from inside the agent is refused, as meant. So is a CLI further down: a `cliPath` wrapper script that does not `exec` the CLI, or a shell rc that starts tmux (its shells are children of the tmux server) | `exec` the CLI in the wrapper; no tmux in the agent's shell rc. On Linux the parent is read from `/proc/<pid>/stat`, so `ps` is not needed |
 
 ---
 
@@ -1932,6 +2023,11 @@ continuing its conversation (`--resume <session> --fork-session`), unless someth
 A turn can end with work still running in the background (Claude Code refuses a long foreground
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
+A task that ends while a turn runs is recorded there differently: Claude Code 2.1.296 writes its
+`<task-notification>` as a `queue-operation` `enqueue` and an `attachment` of type `queued_command`,
+never as a user line, and Tars reads both (`pendingBackgroundWork`). Before 2.0.0 it read user
+lines only: such a task stayed running for Tars, every rest of the agent told its requester that
+background work was still running, and the requester's background list never emptied.
 
 A restart that waits tells every window what it waits on (`agent:restart-pending`, and
 `agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
@@ -2063,6 +2159,9 @@ jq 'keys | length' ~/.dorothy/model-catalog.json             # providers in the 
 wc -c ~/.dorothy/token-stats.json; jq 'length' ~/.dorothy/token-stats.json  # status line sessions
 jq -c 'select(.t == "task") | .task | [.id, .agentId, .source, .outcome]' ~/.dorothy/task-ledger.jsonl | tail  # last tasks opened
 tail ~/.tars-private/task-texts.jsonl                        # what they said, by task id
+jq -c 'select(.t == "acp") | [.id, .outcome, .stopReason]' ~/.dorothy/task-ledger.jsonl | tail  # delegated runs, how they ended (interrupted: a quit cut it)
+tail -c 2000 ~/.tars-private/task-results.jsonl              # what they answered, by task id
+jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.status]' ~/.tars-private/request-receipts.jsonl | tail  # sends answered once
 ```
 
 | Symptom | Cause |
@@ -2070,6 +2169,8 @@ tail ~/.tars-private/task-texts.jsonl                        # what they said, b
 | "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
+| an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
+| a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
 
