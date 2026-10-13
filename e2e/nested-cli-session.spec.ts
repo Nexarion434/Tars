@@ -22,7 +22,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * NEST, runs a second stand-in from a shell, as the Bash tool does, which
  * starts a session, answers "ok" and exits.
  * Asserted: the agent's session, the session a restart resumes and its last
- * output are the agent's own, before and after the nested run.
+ * output are the agent's own, before and after the nested run. And (the
+ * Audit's L5 on #380) when the agent's own SessionStart was lost, so that it
+ * has no session at all, the nested run's turn and Stop change nothing either:
+ * not its session, not its status, not its last output.
  * The artefact: values.json with both sessions and the agent as Tars holds it.
  */
 
@@ -47,7 +50,8 @@ const record = (o) => fs.appendFileSync(path.join(process.env.HOME, 'cli.jsonl')
 const hook = (name, payload) => spawnSync('/bin/bash', [path.join(HOOKS, name)], {
   input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
 });
-hook('session-start.sh', { hook_event_name: 'SessionStart', source: 'startup' });
+// The agent's own SessionStart lost (the API down at its boot), when the test says so.
+if (nested || !fs.existsSync(path.join(process.env.HOME, 'lose-session-start'))) hook('session-start.sh', { hook_event_name: 'SessionStart', source: 'startup' });
 record({ event: 'started' });
 if (nested) {
   fs.appendFileSync(transcript, JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } }) + '\n');
@@ -122,6 +126,58 @@ test("a CLI run inside an agent's terminal does not take the agent's session", a
 
     expect(after.currentSessionId, "the agent's session stays its own").toBe(own);
     expect(after.resumableSessionId, 'a restart resumes its own conversation').toBe(own);
+    expect(after.lastCleanOutput ?? null, "the nested CLI's answer is not the agent's").not.toBe('ok');
+  } finally {
+    await app.close();
+  }
+});
+
+test("a CLI run inside an agent's terminal drives nothing when the agent's own session start was lost", async () => {
+  test.setTimeout(240_000);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-nested-lost-'));
+  const project = path.join(home, 'projects', 'demo');
+  const dir = path.join(home, '.dorothy');
+  const bin = path.join(home, 'bin');
+  for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
+  const cli = path.join(bin, 'claude');
+  fs.writeFileSync(cli, `#!${process.execPath}\nconst HOOKS = ${JSON.stringify(HOOKS)};\n${STAND_IN}`, { mode: 0o755 });
+  fs.writeFileSync(path.join(home, 'lose-session-start'), '');
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
+    id: 'w', name: 'Worker', character: 'robot', provider: 'claude', status: 'idle', role: 'worker', permissionMode: 'normal',
+    projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-13T08:00:00.000Z', lastActivity: '2026-10-13T08:00:00.000Z',
+  }], null, 2));
+  fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+  fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
+  const events = () => lines(path.join(home, 'cli.jsonl'));
+  const values: Record<string, unknown> = {};
+
+  const app = await launchSandboxed(electron, home, {
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31440), DOROTHY_E2E: '1' },
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+    const worker = async () => (await page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find((a) => a.id === 'w')!;
+
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'w', prompt: '' }));
+    await expect.poll(() => events().some((e) => !e.nested && e.event === 'started'), { timeout: 60_000 }).toBe(true);
+    // Its status settled from the launch, with no session of its own.
+    await page.waitForTimeout(2_000);
+    const before = await worker();
+    values.before = before;
+    expect(before.currentSessionId ?? null, 'the stand-in lost its own SessionStart').toBeNull();
+
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'w', input: 'NEST\r' }));
+    await expect.poll(() => events().some((e) => e.event === 'nested-done'), { timeout: 90_000 }).toBe(true);
+    await page.waitForTimeout(1_500);
+    const after = await worker();
+    values.after = { agent: after, events: events() };
+    recordValues(values);
+
+    expect(after.currentSessionId ?? null, 'the nested CLI took the session').toBeNull();
+    expect(after.status, "the nested CLI's Stop changed the agent's status").toBe(before.status);
     expect(after.lastCleanOutput ?? null, "the nested CLI's answer is not the agent's").not.toBe('ok');
   } finally {
     await app.close();

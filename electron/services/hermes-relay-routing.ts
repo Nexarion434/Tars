@@ -3,23 +3,28 @@ import { forwardToOrchestrator, type BotFleet } from './bot-core';
 import { onRelayProjectMessage, onRelayReply, receiptFor, setRelayProjects, tellUser } from './hermes-relay';
 import { orchestratorForProject, orchestratorOf, projectName, projectNames, whereToWrite } from './orchestrator-routing';
 import { getSuperAgentInstructionsPath } from '../utils';
+import { chatTag } from './chat-addressing';
+import { deliverFromChannel } from './chat-senders';
 import type { AgentStatus } from '../types';
 
 /**
  * Where the user's messages through the relay go (DESIGN-RELAIS-HERMES-V2.md, step 2; JeanBrasse's rule of 2026-10-01:
  * only a project's orchestrator talks to Hermes, and gets the user's replies).
  *
- * - A reply to a report, or to a message a project's orchestrator sent the user, goes to that project's orchestrator.
- * - "@project text" goes to that project's orchestrator; a name no project has, one two projects share, or a project
- *   with no orchestrator gets the user the list, or a word, and reaches nobody. The plugin keeps "@name" only for the
- *   fleet's projects, which the relay registers with it at every change.
+ * - A reply to a message one of a project's chats sent the user goes to that chat, exactly (its runner, or the
+ *   orchestrator for Main); a reply to a report, or to a message no chat sent, to the project's inbox chat (PR F).
+ * - "@project #N text" goes to chat N of that project, an "#N" it has not gets the user the list of its chats and
+ *   reaches nobody; "@project text" goes to its inbox chat. The inbox is Main, the orchestrator, unless the user made
+ *   another chat the inbox. A name no project has, one two projects share, or a project with no orchestrator gets
+ *   the user the list, or a word, and reaches nobody. The plugin keeps "@name" only for the fleet's projects, which
+ *   the relay registers with it at every change.
  * - A reply to a word from Tars reaches nobody: the user is told how to reach an orchestrator.
  * - A reply to a question goes to the agent that asked (user-questions.ts registers it); to a Sentry request, to
  *   Tars itself: the error triage takes the user's go-ahead (error-triage.ts registers it).
  *
  * Each goes after the line "Message from the user via Telegram:", which only Tars writes, and holds the user's own
  * words: never the report or the message they answer, written from agents' output and page titles. A worker is
- * never typed a message under that line.
+ * never typed a message under that line: a chat's runner is stored as one, and is the orchestrator of its chat.
  */
 
 const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
@@ -43,14 +48,25 @@ async function toOrchestrator(fleet: BotFleet, orchestrator: AgentStatus, projec
   });
 }
 
-/** A reply to something of a project: to its orchestrator, or a word to the user when it has none. */
-async function toProject(fleet: BotFleet, projectPath: string, text: string, now: number): Promise<void> {
-  const orchestrator = orchestratorOf(fleet.agents, projectPath);
-  if (!orchestrator) {
-    await tellUser(`Project ${projectName(projectPath)} has no orchestrator in Tars, so your reply reached nobody.`, projectPath, now);
-    return;
-  }
-  await toOrchestrator(fleet, orchestrator, projectPath, text, now);
+/**
+ * The user's words for a project: the chat a reply answers, the chat "#N"
+ * names, or the inbox; Main, the orchestrator, by the path above (PR F). A
+ * word back about a chat is headed by it, so a reply to it goes there too.
+ */
+async function toProject(fleet: BotFleet, projectPath: string, text: string, now: number, replyChatId?: string): Promise<void> {
+  await deliverFromChannel({
+    projectPath, text, replyChatId,
+    sender: { kind: 'user', via: 'Telegram' },
+    tell: (said, chat) => tellUser(said, projectPath, now, chat ? { id: chat.id, tag: chatTag(chat) } : undefined),
+    toOrchestrator: async (said) => {
+      const orchestrator = orchestratorOf(fleet.agents, projectPath);
+      if (!orchestrator) {
+        await tellUser(`Project ${projectName(projectPath)} has no orchestrator in Tars, so your message reached nobody.`, projectPath, now);
+        return;
+      }
+      await toOrchestrator(fleet, orchestrator, projectPath, said, now);
+    },
+  });
 }
 
 export function startRelayRouting(fleet: BotFleet): void {
@@ -58,7 +74,7 @@ export function startRelayRouting(fleet: BotFleet): void {
   onRelayReply('report', (reply, now) =>
     toProject(fleet, reply.projectPath, `Reply to Tars's report of ${clock(reply.sentAt)} on this project:\n${reply.text}`, now));
   onRelayReply('message', (reply, now) =>
-    toProject(fleet, reply.projectPath, `Reply to your message of ${clock(reply.sentAt)}:\n${reply.text}`, now));
+    toProject(fleet, reply.projectPath, `Reply to your message of ${clock(reply.sentAt)}:\n${reply.text}`, now, reply.chatId));
   onRelayReply('notice', async (reply, now) => {
     await tellUser('That was a word from Tars, so your reply reached nobody. To write to a project\'s orchestrator, start your message with "@" and the project\'s name.', reply.projectPath || undefined, now);
   });
@@ -68,6 +84,6 @@ export function startRelayRouting(fleet: BotFleet): void {
       await tellUser(whereToWrite(target), target.kind === 'no-orchestrator' ? target.projectPath : undefined, now);
       return;
     }
-    await toOrchestrator(fleet, target.orchestrator, target.projectPath, target.text, now);
+    await toProject(fleet, target.projectPath, target.text, now);
   });
 }

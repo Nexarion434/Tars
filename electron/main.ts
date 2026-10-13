@@ -228,6 +228,7 @@ function loadAppSettings(): AppSettings {
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
     newInterface: false,
+    chatsReadEachOther: false,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     ampEnabled: false,
@@ -257,7 +258,7 @@ function loadAppSettings(): AppSettings {
       // The switch is on only for the boolean true: the file is in ~/.dorothy,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
-      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true };
+      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
