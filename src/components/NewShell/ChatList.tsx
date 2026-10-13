@@ -5,10 +5,11 @@ import Link from 'next/link';
 import {
   CalendarClock, Check, ChevronDown, ChevronRight, Ellipsis, FolderKanban, Inbox, Pencil, Pin, Trash2,
 } from 'lucide-react';
-import { Button, PanelCaption } from '@/components/ui';
+import { Button, PanelCaption, StatusSquare } from '@/components/ui';
 import type { ChatError, ChatView, ChatWorkItem } from '@/types/electron';
 import { chatSections, chatStateWord, sectionOf, type ChatSectionName } from '@/lib/chat-sections';
 import { snoozeLabel, snoozeUntil, type SnoozeChoice } from '@/lib/chat-snooze';
+import { workingLine } from '@/lib/chat-send';
 import { changeChat, isChatError, projectNameOf, useChats } from '@/hooks/useChats';
 
 /**
@@ -306,7 +307,8 @@ export function ChatList({ filter, onFilter, selectedId }: {
   onFilter: (projectPath: string | null) => void;
   selectedId: string | null;
 }) {
-  const { chats, at } = useChats();
+  const { chats, at, limit } = useChats();
+  const working = workingLine(limit);
   const [folded, setFolded] = useState<Set<ChatSectionName>>(() => new Set(FOLDED_FIRST));
   const [filterOpen, setFilterOpen] = useState(false);
   const filterArea = useRef<HTMLDivElement>(null);
@@ -376,6 +378,14 @@ export function ChatList({ filter, onFilter, selectedId }: {
           )}
         </div>
       </div>
+
+      {/* How many chats work of the most this Mac runs (system:chatLimit): the frames' Working count. */}
+      {!none && working && (
+        <div data-chats-working className="flex items-center gap-1.5 px-[18px] pt-0.5 shrink-0 font-mono text-[10.5px] leading-[1.35] text-text-secondary">
+          <StatusSquare tone={working.tone} />
+          {working.text}
+        </div>
+      )}
 
       {none ? (
         <div className="px-[18px] pt-2.5 shrink-0">
