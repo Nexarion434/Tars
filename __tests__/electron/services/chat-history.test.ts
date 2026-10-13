@@ -37,13 +37,19 @@
  *     event, and a window that places items by n puts the late one after them
  *     until its next snapshot. An item whose n changed is sent again (the
  *     same id: it replaces the one the window holds).
+ * 13. (2.0.0 follow-up, found by the Frontend) A session's transcript that
+ *     disappears between two ticks (Claude Code's cleanupPeriodDays, a user's
+ *     delete) is replaced by its "gone" line, and the lines after it move back
+ *     and are sent again, but the vanished items are never declared gone: a
+ *     window keeps them, mixed with the moved ones, until it reads again. Or
+ *     they are declared at every tick, or one still there is declared.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const sent: Array<{ seq: number; type: string; chatId: string; item?: { id: string; n: number; text: string } }> = [];
+const sent: Array<{ seq: number; type: string; chatId: string; item?: { id: string; n: number; text: string }; itemIds?: string[] }> = [];
 vi.mock('../../../electron/utils/broadcast', () => ({
   broadcastToAllWindows: (_channel: string, payload: never) => { sent.push(payload); },
 }));
@@ -260,6 +266,32 @@ describe('a chat, followed', () => {
     await g.tick();
     g.stop();
     expect(sent.filter((e) => e.type === 'item')).toEqual([]);
+  });
+
+  it('13. declares the items of a transcript that disappeared, once, and sends its "gone" line', async () => {
+    write(S('a'), userLine('hello'));
+    write(S('b'), userLine('in b 1') + userLine('in b 2'));
+    write(S('c'), userLine('later'));
+    const chat = chatOf({ sessionIds: [S('a'), S('b'), S('c')] });
+    const runner = runnerOf({ currentSessionId: S('c') });
+    const snapshot = await readChatItems(chat, { runner, homeDir: home });
+    const vanished = snapshot.filter((i) => i.text.startsWith('in b')).map((i) => i.id);
+    expect(vanished).toHaveLength(2);
+    noteChatSnapshot(chat.id, snapshot);
+    fs.rmSync(fileOf(S('b')));
+    const f = follow({ chats: [chat], runner });
+    await f.tick();
+    f.stop();
+    const removed = sent.filter((e) => e.type === 'removed');
+    expect(removed.map((e) => [...e.itemIds!].sort())).toEqual([[...vanished].sort()]);
+    expect(removed[0].chatId).toBe(chat.id);
+    expect(itemsSent()).toContain(`session ${S('b')}: its transcript is gone`);
+    // Declared once: the next tick says nothing more.
+    sent.length = 0;
+    const g = follow({ chats: [chat], runner });
+    await g.tick();
+    g.stop();
+    expect(sent).toEqual([]);
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
