@@ -225147,7 +225147,7 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "n0l1m",
+                          "id": "Qgzci",
                           "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
@@ -225158,7 +225158,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "NAPvB",
+                              "id": "D7m1rF",
                               "name": "notice",
                               "width": "fill_container",
                               "height": 36,
@@ -225178,19 +225178,19 @@
                               "children": [
                                 {
                                   "type": "rectangle",
-                                  "id": "O3his",
-                                  "name": "status hollow",
+                                  "id": "PoFYL",
+                                  "name": "status",
+                                  "fill": "$status-running",
                                   "width": 8,
                                   "height": 8,
-                                  "stroke": "$status-idle",
-                                  "strokeWidth": 1
+                                  "stroke": "$status-idle"
                                 },
                                 {
                                   "type": "text",
-                                  "id": "hqRsP",
+                                  "id": "Ju3pj",
                                   "name": "words",
                                   "fill": "$text-secondary",
-                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "content": "The orchestrator is working: your message goes in when its turn ends.",
                                   "lineHeight": 1.3333333333333333,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 12,
@@ -225198,44 +225198,16 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "yfCFS",
+                                  "id": "wXTjp",
                                   "name": "sp",
                                   "width": "fill_container",
                                   "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "i3SfX",
-                                  "name": "button open Tars",
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "cornerRadius": "$radius",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    0,
-                                    10
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "t9yUTE",
-                                      "name": "label",
-                                      "fill": "$text-primary",
-                                      "content": "Open Tars, all projects",
-                                      "lineHeight": 1.2,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
                                 }
                               ]
                             },
                             {
                               "type": "frame",
-                              "id": "dfYt7",
+                              "id": "Zd31L",
                               "name": "body",
                               "width": "fill_container",
                               "layout": "vertical",
@@ -225249,9 +225221,8 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "RfcC1",
+                                  "id": "u9jQu",
                                   "name": "field",
-                                  "opacity": 0.6,
                                   "width": "fill_container",
                                   "height": 28,
                                   "padding": [
@@ -225262,7 +225233,7 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "E53OpP",
+                                      "id": "TpXaL",
                                       "name": "placeholder",
                                       "fill": "$text-muted",
                                       "content": "Message the orchestrator about this chat",
@@ -225275,7 +225246,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "l73SFG",
+                                  "id": "I2sifm",
                                   "name": "row",
                                   "width": "fill_container",
                                   "height": 32,
@@ -225284,7 +225255,7 @@
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "zRnkY",
+                                      "id": "PlB9T",
                                       "name": "attach",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -225295,7 +225266,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "cjAAc",
+                                          "id": "sMafa",
                                           "name": "plus",
                                           "width": 16,
                                           "height": 16,
@@ -225307,14 +225278,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "V3ftze",
+                                      "id": "AvqDS",
                                       "name": "sp",
                                       "width": "fill_container",
                                       "height": 1
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "qPvHg",
+                                      "id": "o3FYt",
                                       "name": "send",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -225326,7 +225297,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "tFUbY",
+                                          "id": "BPHUh",
                                           "name": "arrow-up",
                                           "width": 16,
                                           "height": 16,
@@ -225405,7 +225376,7 @@
                           "fill": "$text-secondary",
                           "textGrowth": "fixed-width",
                           "width": 308,
-                          "content": "What this chat delegates shows here once each chat has its own runner, with the next part of this preview.",
+                          "content": "What this chat delegates shows here once a task names the chat it came from.",
                           "lineHeight": 1.5,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -227954,7 +227925,7 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "uxAH4",
+                          "id": "vaMOf",
                           "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
@@ -227965,7 +227936,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "UJMlW",
+                              "id": "sVZ84",
                               "name": "notice",
                               "width": "fill_container",
                               "height": 36,
@@ -227985,19 +227956,19 @@
                               "children": [
                                 {
                                   "type": "rectangle",
-                                  "id": "T6Pb4Y",
-                                  "name": "status hollow",
+                                  "id": "cYcMJ",
+                                  "name": "status",
+                                  "fill": "$status-running",
                                   "width": 8,
                                   "height": 8,
-                                  "stroke": "$status-idle",
-                                  "strokeWidth": 1
+                                  "stroke": "$status-idle"
                                 },
                                 {
                                   "type": "text",
-                                  "id": "X3Z8c",
+                                  "id": "D4lcWt",
                                   "name": "words",
                                   "fill": "$text-secondary",
-                                  "content": "Sending from a chat comes with the next part of this preview.",
+                                  "content": "The orchestrator is working: your message goes in when its turn ends.",
                                   "lineHeight": 1.3333333333333333,
                                   "fontFamily": "$font-ui",
                                   "fontSize": 12,
@@ -228005,44 +227976,16 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "XgxcZ",
+                                  "id": "yUUh7",
                                   "name": "sp",
                                   "width": "fill_container",
                                   "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "cr0j4",
-                                  "name": "button open Tars",
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "cornerRadius": "$radius",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    0,
-                                    10
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "R5SNVi",
-                                      "name": "label",
-                                      "fill": "$text-primary",
-                                      "content": "Open Tars, all projects",
-                                      "lineHeight": 1.2,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
                                 }
                               ]
                             },
                             {
                               "type": "frame",
-                              "id": "OVyxH",
+                              "id": "NfY5C",
                               "name": "body",
                               "width": "fill_container",
                               "layout": "vertical",
@@ -228056,9 +227999,8 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "rEG44",
+                                  "id": "R4ZSJf",
                                   "name": "field",
-                                  "opacity": 0.6,
                                   "width": "fill_container",
                                   "height": 28,
                                   "padding": [
@@ -228069,7 +228011,7 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "cs08r",
+                                      "id": "Cu4IJ",
                                       "name": "placeholder",
                                       "fill": "$text-muted",
                                       "content": "Message the orchestrator about this chat",
@@ -228082,7 +228024,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "Z2sJv",
+                                  "id": "Pi7D0",
                                   "name": "row",
                                   "width": "fill_container",
                                   "height": 32,
@@ -228091,7 +228033,7 @@
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "r4wDV",
+                                      "id": "i8MpF",
                                       "name": "attach",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -228102,7 +228044,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "uOuxF",
+                                          "id": "DCbEa",
                                           "name": "plus",
                                           "width": 16,
                                           "height": 16,
@@ -228114,14 +228056,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "eHL7E",
+                                      "id": "cSiYQ",
                                       "name": "sp",
                                       "width": "fill_container",
                                       "height": 1
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "thnOi",
+                                      "id": "B7VmY",
                                       "name": "send",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -228133,7 +228075,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "TLYKE",
+                                          "id": "NVdxd",
                                           "name": "arrow-up",
                                           "width": 16,
                                           "height": 16,
@@ -228212,7 +228154,7 @@
                           "fill": "$text-secondary",
                           "textGrowth": "fixed-width",
                           "width": 308,
-                          "content": "What this chat delegates shows here once each chat has its own runner, with the next part of this preview.",
+                          "content": "What this chat delegates shows here once a task names the chat it came from.",
                           "lineHeight": 1.5,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -230901,7 +230843,7 @@
                         },
                         {
                           "type": "frame",
-                          "id": "m4McbX",
+                          "id": "W33IXg",
                           "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
@@ -230912,84 +230854,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "ObUi0",
-                              "name": "notice",
-                              "width": "fill_container",
-                              "height": 36,
-                              "fill": "$surface-raised",
-                              "stroke": "$border",
-                              "strokeWidth": {
-                                "bottom": 1
-                              },
-                              "gap": 8,
-                              "padding": [
-                                0,
-                                24,
-                                0,
-                                10
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "rectangle",
-                                  "id": "n2EGDY",
-                                  "name": "status hollow",
-                                  "width": 8,
-                                  "height": 8,
-                                  "stroke": "$status-idle",
-                                  "strokeWidth": 1
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "Yh46J",
-                                  "name": "words",
-                                  "fill": "$text-secondary",
-                                  "content": "Sending from a chat comes with the next part of this preview.",
-                                  "lineHeight": 1.3333333333333333,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "X1hx3e",
-                                  "name": "sp",
-                                  "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "E5hRp",
-                                  "name": "button open Tars",
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "cornerRadius": "$radius",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    0,
-                                    10
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "wYhKc",
-                                      "name": "label",
-                                      "fill": "$text-primary",
-                                      "content": "Open Tars, all projects",
-                                      "lineHeight": 1.2,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "QbXSY",
+                              "id": "KnfiY",
                               "name": "body",
                               "width": "fill_container",
                               "layout": "vertical",
@@ -231003,9 +230868,8 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "cOGVN",
+                                  "id": "siOpA",
                                   "name": "field",
-                                  "opacity": 0.6,
                                   "width": "fill_container",
                                   "height": 28,
                                   "padding": [
@@ -231016,7 +230880,7 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "VxQbq",
+                                      "id": "DKLpm",
                                       "name": "placeholder",
                                       "fill": "$text-muted",
                                       "content": "Message the orchestrator about this chat",
@@ -231029,7 +230893,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "Hreos",
+                                  "id": "IxjeU",
                                   "name": "row",
                                   "width": "fill_container",
                                   "height": 32,
@@ -231038,7 +230902,7 @@
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "qmN3m",
+                                      "id": "nttZE",
                                       "name": "attach",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -231049,7 +230913,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "dezou",
+                                          "id": "IVmCv",
                                           "name": "plus",
                                           "width": 16,
                                           "height": 16,
@@ -231061,14 +230925,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "LTIvW",
+                                      "id": "mZlNb",
                                       "name": "sp",
                                       "width": "fill_container",
                                       "height": 1
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "jQvOk",
+                                      "id": "TSMM5",
                                       "name": "send",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -231080,7 +230944,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "SiWu2",
+                                          "id": "YpRQS",
                                           "name": "arrow-up",
                                           "width": 16,
                                           "height": 16,
@@ -231159,7 +231023,7 @@
                           "fill": "$text-secondary",
                           "textGrowth": "fixed-width",
                           "width": 308,
-                          "content": "What this chat delegates shows here once each chat has its own runner, with the next part of this preview.",
+                          "content": "What this chat delegates shows here once a task names the chat it came from.",
                           "lineHeight": 1.5,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -233848,7 +233712,7 @@
                         },
                         {
                           "type": "frame",
-                          "id": "XPvmZ",
+                          "id": "B1IvH",
                           "name": "Composer card",
                           "width": "fill_container",
                           "fill": "$surface",
@@ -233859,84 +233723,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "iYXmi",
-                              "name": "notice",
-                              "width": "fill_container",
-                              "height": 36,
-                              "fill": "$surface-raised",
-                              "stroke": "$border",
-                              "strokeWidth": {
-                                "bottom": 1
-                              },
-                              "gap": 8,
-                              "padding": [
-                                0,
-                                24,
-                                0,
-                                10
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "rectangle",
-                                  "id": "STDRw",
-                                  "name": "status hollow",
-                                  "width": 8,
-                                  "height": 8,
-                                  "stroke": "$status-idle",
-                                  "strokeWidth": 1
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "XRP9Z",
-                                  "name": "words",
-                                  "fill": "$text-secondary",
-                                  "content": "Sending from a chat comes with the next part of this preview.",
-                                  "lineHeight": 1.3333333333333333,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "pubB5",
-                                  "name": "sp",
-                                  "width": "fill_container",
-                                  "height": 1
-                                },
-                                {
-                                  "type": "frame",
-                                  "id": "TEPNW",
-                                  "name": "button open Tars",
-                                  "height": 26,
-                                  "fill": "$surface",
-                                  "cornerRadius": "$radius",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "padding": [
-                                    0,
-                                    10
-                                  ],
-                                  "alignItems": "center",
-                                  "children": [
-                                    {
-                                      "type": "text",
-                                      "id": "cmyyU",
-                                      "name": "label",
-                                      "fill": "$text-primary",
-                                      "content": "Open Tars, all projects",
-                                      "lineHeight": 1.2,
-                                      "fontFamily": "$font-ui",
-                                      "fontSize": 12,
-                                      "fontWeight": "500"
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "CKPbW",
+                              "id": "tlgnz",
                               "name": "body",
                               "width": "fill_container",
                               "layout": "vertical",
@@ -233950,9 +233737,8 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "chhmo",
+                                  "id": "v02te",
                                   "name": "field",
-                                  "opacity": 0.6,
                                   "width": "fill_container",
                                   "height": 28,
                                   "padding": [
@@ -233963,7 +233749,7 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "C9DGhx",
+                                      "id": "c2Q36",
                                       "name": "placeholder",
                                       "fill": "$text-muted",
                                       "content": "Message the orchestrator about this chat",
@@ -233976,7 +233762,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "Y4Shb6",
+                                  "id": "GvsLK",
                                   "name": "row",
                                   "width": "fill_container",
                                   "height": 32,
@@ -233985,7 +233771,7 @@
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "q4cWro",
+                                      "id": "D27U1y",
                                       "name": "attach",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -233996,7 +233782,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "f4FZt",
+                                          "id": "RnuHe",
                                           "name": "plus",
                                           "width": 16,
                                           "height": 16,
@@ -234008,14 +233794,14 @@
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "FiH3w",
+                                      "id": "tEDLE",
                                       "name": "sp",
                                       "width": "fill_container",
                                       "height": 1
                                     },
                                     {
                                       "type": "frame",
-                                      "id": "l0nms",
+                                      "id": "TdZsS",
                                       "name": "send",
                                       "opacity": 0.4,
                                       "width": 32,
@@ -234027,7 +233813,7 @@
                                       "children": [
                                         {
                                           "type": "icon",
-                                          "id": "N8AUu",
+                                          "id": "rZoWj",
                                           "name": "arrow-up",
                                           "width": 16,
                                           "height": 16,
@@ -234106,7 +233892,7 @@
                           "fill": "$text-secondary",
                           "textGrowth": "fixed-width",
                           "width": 308,
-                          "content": "What this chat delegates shows here once each chat has its own runner, with the next part of this preview.",
+                          "content": "What this chat delegates shows here once a task names the chat it came from.",
                           "lineHeight": 1.5,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
