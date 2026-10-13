@@ -22,6 +22,14 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  * 8. an earlier page shows a line twice, or moves the seq;
  * 9. a deleted chat, a renamed one or a runner's new state is not kept;
  * 10. reading the snapshot again after a gap keeps the old lines or the gap.
+ *
+ * Added after the code, at the Audit's gate of #378 (L1), each one killing a
+ * mutant that survived the cases above:
+ * 11. an event heard before any snapshot changes the feed (a gap read in
+ *     it), where it has nothing to apply to (C2);
+ * 12. an earlier page holding an older telling of a line told again live
+ *     puts the older words back (C8);
+ * 13. a first line at n = 1 is read as having nothing before it (C9).
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -115,5 +123,24 @@ describe('chat feed', () => {
   it('says whether there is more before the first line', () => {
     expect(applySnapshot(emptyFeed('c1'), history(10, [item(5), item(6)], 7)).hasEarlier).toBe(true);
     expect(applySnapshot(emptyFeed('c1'), history(10, [item(0), item(1)], 2)).hasEarlier).toBe(false);
+  });
+
+  it('applies nothing before the first snapshot, and leaves its seq to the snapshot (11)', () => {
+    const empty = emptyFeed('c1');
+    const before = applyEvent(empty, ev(3, 'c1', { type: 'item', item: item(0, 'too early') }));
+    expect(before).toBe(empty);
+    const s = applySnapshot(before, history(2, [item(0)]), [ev(3, 'c1', { type: 'item', item: item(1) })]);
+    expect(texts(s)).toEqual(['line 0', 'line 1']);
+  });
+
+  it('keeps the newer telling of a line when an earlier page holds an older one (12)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(2, 'first telling', 'u2'), item(3)], 4));
+    s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(2, 'told again', 'u2') }));
+    s = applyEarlier(s, history(11, [item(0), item(1), item(2, 'first telling', 'u2')], 4));
+    expect(texts(s)).toEqual(['line 0', 'line 1', 'told again', 'line 3']);
+  });
+
+  it('says there is a line before a first line at n = 1 (13)', () => {
+    expect(applySnapshot(emptyFeed('c1'), history(10, [item(1), item(2)], 3)).hasEarlier).toBe(true);
   });
 });
