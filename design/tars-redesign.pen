@@ -225482,7 +225482,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "The tasks of Usage · cost per task, over the page's one timeframe and the project picked, one row per agent. The switch at the head of the list goes from one view to the other, its counts the tasks and the agents listed, and the page opens on the view last picked: by task the first time. An agent's tokens and cost are the sums of its own tasks, so work it handed on is counted once, in the agent that did it. Its project, and the provider and Claude account its latest task ran on, with any other under it. A task not counted is left out of the sums and the cost says partial; an agent with nothing counted says not counted, never $0.00. Time adds the tasks that ended. The agent picker steps aside, every agent of the project being a row; the averages below are over the same tasks.",
+          "content": "The tasks of Usage · cost per task, over the page's one timeframe and the project picked, one row per agent. The switch at the head of the list goes from one view to the other, its counts the tasks and the agents listed, and the page opens on the view last picked: by task the first time. An agent's tokens and cost are the sums of its own tasks, which hold every turn it took since Tars records tasks (1.9.3), typed in its window or handed to it, over ACP included, so work it handed on is counted once, in the agent that did it. What it spent before 1.9.3 is in the charts above and in no row, and the panel says so. Its project, and the provider and Claude account its latest task ran on, with any other under it. A task not counted is left out of the sums and the cost says partial; an agent with nothing counted says not counted, never $0.00. Time adds the tasks that ended. The agent picker steps aside, every agent of the project being a row; the averages below are over the same tasks.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -226882,6 +226882,19 @@
                       ]
                     }
                   ]
+                },
+                {
+                  "type": "text",
+                  "id": "zyvXT",
+                  "name": "covers",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 900,
+                  "content": "A row adds up the agent's tasks, which Tars records since 1.9.3: what it spent before then is in the charts above, in no row.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
                 },
                 {
                   "type": "text",
@@ -229289,7 +229302,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "The tasks of Usage · cost per task, over the page's one timeframe and the project picked, one row per agent. The switch at the head of the list goes from one view to the other, its counts the tasks and the agents listed, and the page opens on the view last picked: by task the first time. An agent's tokens and cost are the sums of its own tasks, so work it handed on is counted once, in the agent that did it. Its project, and the provider and Claude account its latest task ran on, with any other under it. A task not counted is left out of the sums and the cost says partial; an agent with nothing counted says not counted, never $0.00. Time adds the tasks that ended. The agent picker steps aside, every agent of the project being a row; the averages below are over the same tasks.",
+          "content": "The tasks of Usage · cost per task, over the page's one timeframe and the project picked, one row per agent. The switch at the head of the list goes from one view to the other, its counts the tasks and the agents listed, and the page opens on the view last picked: by task the first time. An agent's tokens and cost are the sums of its own tasks, which hold every turn it took since Tars records tasks (1.9.3), typed in its window or handed to it, over ACP included, so work it handed on is counted once, in the agent that did it. What it spent before 1.9.3 is in the charts above and in no row, and the panel says so. Its project, and the provider and Claude account its latest task ran on, with any other under it. A task not counted is left out of the sums and the cost says partial; an agent with nothing counted says not counted, never $0.00. Time adds the tasks that ended. The agent picker steps aside, every agent of the project being a row; the averages below are over the same tasks.",
           "lineHeight": 1.4,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -230689,6 +230702,19 @@
                       ]
                     }
                   ]
+                },
+                {
+                  "type": "text",
+                  "id": "fRjuA",
+                  "name": "covers",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 900,
+                  "content": "A row adds up the agent's tasks, which Tars records since 1.9.3: what it spent before then is in the charts above, in no row.",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
                 },
                 {
                   "type": "text",
