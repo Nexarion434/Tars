@@ -82,6 +82,32 @@ export function runnersToResume(working: Array<{ agentId: string; lastActivity: 
   return { resume: ordered.slice(0, take), leave: ordered.slice(take) };
 }
 
+/** Why a chat other than Main is refused while its orchestrator runs a CLI other than claude (the Audit's L4 on #379). */
+export const OFF_CLAUDE = "This project's orchestrator runs a CLI whose conversations Tars cannot resume: chats other than Main work with claude for now.";
+
+/**
+ * And what becomes of the chat's runner when it still runs (2.0.1): left to
+ * finish, since a stopped runner could not start again while the orchestrator
+ * is off claude (the slot gate refuses it), and the answers of the work it
+ * handed out would be refused with it. Running, its turn ends as it would, the
+ * sleep rule keeps it awake while those answers are owed, and it sleeps after.
+ */
+const OFF_CLAUDE_RUNNING = "This chat's runner, still running on claude, is left to finish: its turn ends as it would and the agents it gave work to still answer it, but nothing more from this chat reaches it until the orchestrator runs claude again.";
+
+/**
+ * What a send to a chat answers while its project's orchestrator is off
+ * claude, or null when it goes on. A chat other than Main runs on its
+ * orchestrator's CLI, claude only: refused as soon as the orchestrator leaves
+ * it, its runner running or not (2.0.1; 2.0.0 typed into a runner still
+ * running). Main's runner is the orchestrator itself, on whatever CLI.
+ * `leadRunsChats` is undefined for a project with no orchestrator, which
+ * answers its own refusal.
+ */
+export function offClaudeRefusal(chatNumber: number, leadRunsChats: boolean | undefined, runnerLive: boolean): string | null {
+  if (chatNumber === 1 || leadRunsChats !== false) return null;
+  return runnerLive ? `${OFF_CLAUDE} ${OFF_CLAUDE_RUNNING}` : OFF_CLAUDE;
+}
+
 /** What a send answers when every slot holds a chat that is working (JeanBrasse, 07/10: an error the user sees). */
 export function chatLimitSentence(limit: number, ramGb: number, perChatGb: number, working: string[]): string {
   const one = limit === 1;

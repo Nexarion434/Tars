@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deletedNotice } from '../../src/lib/chat-deleted';
+import { agentDeletedNotice, deletedNotice } from '../../src/lib/chat-deleted';
 
 /**
  * What the chat list says once a chat is deleted (src/lib/chat-deleted.ts), from
@@ -20,6 +20,12 @@ import { deletedNotice } from '../../src/lib/chat-deleted';
  * 8. it names another chat than the one deleted;
  * 9. a sentence that ends with a full stop gets a second one, the chat's own
  *    title included (a first message names a chat "Write the docs.").
+ *
+ * Added with the Agents page (2.0.1), before its code: agent:remove answers the
+ * same two fields, and the page says them as the chat list does. How it can fail:
+ * 10. an agent deleted is named otherwise than by its name, or its notice reads
+ *     otherwise than a chat's for the same answer;
+ * 11. an agent whose deletion failed, or of which nothing stays, says something.
  */
 
 const chat = { project: 'tars', number: 2, title: 'Release notes for 1.9.4' };
@@ -70,5 +76,24 @@ describe('deletedNotice', () => {
     expect(notice?.text.endsWith('..')).toBe(false);
     const titled = deletedNotice({ success: true, savedTo: 'wip/lead-write-the-docs' }, { project: 'tars', number: 3, title: 'Write the docs.' });
     expect(titled?.text).toBe('Deleted tars #3, Write the docs.');
+  });
+});
+
+describe('agentDeletedNotice', () => {
+  it('says what stays of an agent deleted, by its name, in the words a chat\'s notice has (10)', () => {
+    expect(agentDeletedNotice({ success: true, savedTo: 'wip/backend-engineer', worktreeKept: kept }, 'Backend Engineer')).toEqual({
+      text: `Deleted Backend Engineer, but not its worktree: ${kept}.`,
+      saved: 'Its uncommitted work is on the branch wip/backend-engineer.',
+    });
+    expect(agentDeletedNotice({ success: true, savedTo: 'wip/qa' }, 'QA')).toEqual({
+      text: 'Deleted QA.',
+      saved: 'Its uncommitted work is on the branch wip/qa.',
+    });
+  });
+
+  it('says nothing of an agent whose deletion failed, or of which nothing stays (11)', () => {
+    expect(agentDeletedNotice({ success: true }, 'QA')).toBeNull();
+    expect(agentDeletedNotice({ success: false, savedTo: 'wip/qa', worktreeKept: kept }, 'QA')).toBeNull();
+    expect(agentDeletedNotice(undefined, 'QA')).toBeNull();
   });
 });
