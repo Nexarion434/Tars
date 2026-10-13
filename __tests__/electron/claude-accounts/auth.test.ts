@@ -158,3 +158,22 @@ describe.skipIf(claudeAccountsNotPorted() || process.platform === 'win32')('a ch
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe.skipIf(claudeAccountsNotPorted() || process.platform === 'win32')('a check asked for once the quit has begun', () => {
+  it('is refused and starts nothing', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-auth-quitting-'));
+    const ran = path.join(dir, 'ran');
+    const bin = path.join(dir, 'claude');
+    fs.writeFileSync(bin, `#!/bin/bash\necho "$$" > ${JSON.stringify(ran)}\necho '{"loggedIn":false}'\n`, { mode: 0o755 });
+    // A registry of its own, so the quit begun here ends nowhere else.
+    vi.resetModules();
+    const quit = await import('../../../electron/core/quit-state');
+    const auth = await import('../../../electron/services/claude-accounts/auth');
+    quit.beginQuit();
+    await expect(auth.claudeAuthStatus(bin, dirA)).rejects.toThrow(/quitting/);
+    await new Promise(r => setTimeout(r, 300));
+    expect(fs.existsSync(ran), 'a claude was started during the quit').toBe(false);
+    vi.resetModules();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
