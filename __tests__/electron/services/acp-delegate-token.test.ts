@@ -51,7 +51,7 @@ function handle(msg) {
     const report = {
       process: process.env.CLAUDE_MGR_API_TOKEN || null,
       instance: process.env.TARS_INSTANCE_ID || null,
-      servers: servers.map(s => ({ name: s.name, token: (s.env.find(e => e.name === 'CLAUDE_MGR_API_TOKEN') || {}).value || null })),
+      servers: servers.map(s => ({ name: s.name, token: (s.env.find(e => e.name === 'CLAUDE_MGR_API_TOKEN') || {}).value || null, instance: (s.env.find(e => e.name === 'TARS_INSTANCE_ID') || {}).value || null })),
     };
     send({ jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(report) } } } });
     return send(${ending === 'end_turn'}
@@ -95,7 +95,7 @@ const AGENT = {
 interface Report {
   process: string | null;
   instance: string | null;
-  servers: { name: string; token: string | null }[];
+  servers: { name: string; token: string | null; instance: string | null }[];
 }
 
 /** Runs one delegation, reading the fake agent's report while the turn is still open. */
@@ -138,6 +138,10 @@ describe('a task delegated over ACP', () => {
     expect(report.servers.map(s => s.name).sort()).toEqual(['claude-mgr-orchestrator', 'tars-memory']);
     for (const server of report.servers) {
       expect(server.token, `${server.name} was handed no token, and would call as nobody`).toBe(report.process);
+      // And the id it proves the port with before it sends that token (#376): a CLI
+      // such as codex hands a server only its explicit env, so without it here every
+      // Tars tool of the run went without a token, a 401 (QA's H1 on #376).
+      expect(server.instance, `${server.name} was handed no instance id, and would send no token`).toBe(tarsInstanceId());
     }
     expect(namedDuringTheRun).toEqual([AGENT.id, AGENT.id, AGENT.id]);
   });

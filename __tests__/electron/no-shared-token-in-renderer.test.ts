@@ -37,6 +37,11 @@ vi.mock('electron-updater', () => ({
   },
 }));
 
+// The main process's module graph, loaded with the file as orphan-folders-ipc and agent-remove-saves-work load it.
+// Imported inside the case, it was the case: 7.5 s of its 5 at a load of 70 and 10.4 s at 130 (QA's runs of
+// 2.0.1), where registering the handlers and checking them take milliseconds.
+import { registerIpcHandlers } from '../../electron/handlers/ipc-handlers';
+
 describe('the shared API token', () => {
   it('is not exposed to the renderer by the preload', async () => {
     await import('../../electron/preload');
@@ -46,8 +51,7 @@ describe('the shared API token', () => {
     expect(api).not.toHaveProperty('api');
   });
 
-  it('has no handler for the renderer to call', async () => {
-    const { registerIpcHandlers } = await import('../../electron/handlers/ipc-handlers');
+  it('has no handler for the renderer to call', () => {
     registerIpcHandlers(new Proxy({} as Record<string, unknown>, {
       get(target, key: string) {
         if (!(key in target)) target[key] = key.endsWith('ptyProcesses') || key === 'agents' ? new Map() : vi.fn();

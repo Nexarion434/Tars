@@ -3,9 +3,18 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
+
+/** What each refusal of POST /api/tasks/:ref/cancel means, for the agent that asked (core/task-cancel.ts). */
+const CANCEL_REFUSALS: Record<string, string> = {
+  not_found: "no agent holds a task with that id: it ended, or was never asked",
+  not_your_task: "another chat asked for it, and only that chat, or the project's orchestrator with a reason, may cancel it",
+  reason_required: "cancelling a task another chat asked for needs a reason, which that chat is told",
+  already_delivered: "it is already in the agent's terminal, where it cannot be taken back: stop the agent to end it",
+};
 
 type WaitResult = {
   status: string;
@@ -25,6 +34,13 @@ type WaitResult = {
 type DispatchResult = {
   success: boolean;
   mode: "message" | "start";
+  /** Answered from the receipt of an earlier call with the same clientRequestId: nothing was sent again. */
+  duplicate?: boolean;
+  /** Sent in `queue` mode to an agent in a turn: it goes in once the turn ends. */
+  queued?: boolean;
+  /** Sent in `steer` mode: whether the turn was interrupted first. */
+  interrupted?: boolean;
+  clientRequestId?: string;
   previousStatus?: string;
   /**
    * Nothing was typed yet: the message is queued for the agent's terminal,
@@ -57,6 +73,46 @@ function heldText(agentName: string, what: string, reason?: string): string {
     + " It goes in by itself once the field is free; if it still waits a few minutes on, Tars tells you again.";
 }
 
+/** How a message goes in (ORCHESTRATOR-PER-CHAT.md v2.2, 4.4 item 4). */
+const SEND_MODES = ["auto", "queue", "steer", "restart"] as const;
+type SendMode = (typeof SEND_MODES)[number];
+
+/**
+ * The pauses before trying a send again, after Tars did not answer or could
+ * not be reached: two retries, then the call fails and names its id.
+ */
+const RETRY_PAUSES_MS = [500, 1_500];
+
+/** Tars could not be reached or did not answer: an answer, even a refusal, is not this. */
+function unreached(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === "AbortError" || (err instanceof TypeError && /fetch failed/.test(err.message))
+    || /ECONNREFUSED|ECONNRESET|socket hang up/.test(err.message);
+}
+
+/**
+ * A send with a clientRequestId (4.4 item 1): the agent's own, or one minted
+ * for this call. A call that timed out at 30 s was made again by the agent,
+ * and the worker got the work twice; tried again here with the same id, a
+ * send Tars already did is answered from its receipt and done once.
+ */
+async function sendOnce(endpoint: string, body: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
+  const clientRequestId = typeof body.clientRequestId === "string" && body.clientRequestId ? body.clientRequestId : randomUUID();
+  const withId = { ...body, clientRequestId };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await apiRequest(endpoint, "POST", withId, timeoutMs);
+    } catch (err) {
+      if (!unreached(err) || attempt >= RETRY_PAUSES_MS.length) {
+        if (!unreached(err)) throw err;
+        throw new Error(`${err instanceof Error ? err.message : String(err)}. Tried ${attempt + 1} times with clientRequestId "${clientRequestId}": `
+          + `call again with that clientRequestId, and a send Tars already made is answered, not made twice.`);
+      }
+      await new Promise((r) => setTimeout(r, RETRY_PAUSES_MS[attempt]));
+    }
+  }
+}
+
 /**
  * Atomically hand a task to an agent. The server decides message-vs-spawn
  * under its single-threaded event loop: the old GET-status-then-POST pattern
@@ -70,13 +126,33 @@ async function dispatchToAgent(
   id: string,
   message: string,
   model?: string,
-  allowCrossProject?: boolean
+  allowCrossProject?: boolean,
+  send: { clientRequestId?: string; mode?: SendMode; reason?: string } = {},
 ): Promise<DispatchResult> {
-  return (await apiRequest(`/api/agents/${id}/dispatch`, "POST", {
+  return (await sendOnce(`/api/agents/${id}/dispatch`, {
     message,
     model,
     allowCrossProject,
+    ...(send.mode ? { mode: send.mode } : {}),
+    ...(send.reason ? { reason: send.reason } : {}),
+    ...(send.clientRequestId ? { clientRequestId: send.clientRequestId } : {}),
   })) as DispatchResult;
+}
+
+/** What a caller is told when its send was answered from an earlier call's receipt. */
+function duplicateNote(data: DispatchResult): string {
+  return data.duplicate
+    ? `\n(clientRequestId ${data.clientRequestId ?? ""}: an earlier call already sent this; this is its answer, and nothing was sent again.)`
+    : "";
+}
+
+type TaskView = { id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number; endedAt?: number | null };
+
+/** A delegated task as the ledger keeps it, said for the caller. */
+function taskText(task: TaskView): string {
+  const head = `Task ${task.id} on agent ${task.agentId}: ${task.outcome}${task.stopReason ? ` (${task.stopReason})` : ""}.`;
+  if (task.outcome === "running") return `${head} It is still working: ask task_status again later.`;
+  return task.result ? `${head}\n\n${task.result}` : `${head} It left no answer.`;
 }
 
 /**
@@ -373,21 +449,22 @@ const AGENT_TOOLS: Tool[] = [
       prompt: z.string().describe("The task or instruction for the agent to work on"),
       model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
+      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's outcome, and nothing is sent twice. Omitted: one is made for this call."),
     },
     failure: "starting agent",
-    async run({ id, prompt, model, allowCrossProject }) {
-      const data = await dispatchToAgent(id, prompt, model, allowCrossProject);
+    async run({ id, prompt, model, allowCrossProject, clientRequestId }) {
+      const data = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
       const agentName = data.agent.name || id;
 
       if (data.held) {
-        return text(heldText(agentName, "The task", data.heldReason));
+        return text(heldText(agentName, "The task", data.heldReason) + duplicateNote(data));
       }
 
       if (data.mode === "message") {
-        return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"`);
+        return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"${duplicateNote(data)}`);
       }
 
-      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}${restartNote(data)}`);
+      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}${restartNote(data)}${duplicateNote(data)}`);
     },
   }),
 
@@ -412,37 +489,69 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "send_message",
-    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status.",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent.",
     schema: {
-      id: z.string().describe("The agent ID"),
+      id: z.string().describe("The agent ID, or \"requester\" for whoever asked you for your current task"),
       message: z.string().optional().describe("The message to send to the agent"),
       prompt: z.string().optional().describe("Alias for 'message', use either one"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
+      mode: z.enum(SEND_MODES).optional().describe("How it goes in. 'auto' (default): typed at once, into a running turn too. 'queue': typed once the agent's current turn ends. 'steer': its turn interrupted first, then typed (claude agents only; refused as not_steerable otherwise). 'restart': the agent stopped and started again with the message. steer and restart are refused while the agent works on a task another agent asked for."),
+      reason: z.string().optional().describe("With mode 'restart': why, in one line, kept with the stop"),
+      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's outcome, and nothing is sent twice. Omitted: one is made for this call."),
     },
     failure: "sending message",
-    async run({ id, message, prompt, allowCrossProject }) {
+    async run({ id, message, prompt, allowCrossProject, mode, reason, clientRequestId }) {
       // Accept either "message" or "prompt" so the LLM doesn't trip on naming
       const resolvedMessage = message || prompt;
       if (!resolvedMessage) {
         return problem("Error: either 'message' or 'prompt' is required.");
       }
-      const data = await dispatchToAgent(id, resolvedMessage, undefined, allowCrossProject);
+      const data = await dispatchToAgent(id, resolvedMessage, undefined, allowCrossProject, { clientRequestId, mode, reason });
       const agentName = data.agent.name || id;
       const previousStatus = data.previousStatus ?? "idle";
+      const again = duplicateNote(data);
 
       if (data.held) {
-        return text(heldText(agentName, "Your message", data.heldReason));
+        return text(heldText(agentName, "Your message", data.heldReason) + again);
+      }
+
+      if (data.queued) {
+        return text(`Queued for agent "${agentName}": it goes in once its current turn ends.${data.interrupted === false ? " Its turn could not be interrupted in time, so it waits for the end of it." : ""}${again}`);
       }
 
       if (data.mode === "start") {
-        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}${restartNote(data)}`);
+        return text(`Agent "${agentName}" was ${previousStatus}, started it with prompt: "${resolvedMessage}". New status: ${data.agent.status}${restartNote(data)}${again}`);
+      }
+
+      if (data.interrupted) {
+        return text(`Interrupted agent "${agentName}"'s turn, then sent: "${resolvedMessage}"${again}`);
       }
 
       if (previousStatus === "running") {
-        return text(`⚠️ Agent "${agentName}" is currently running. Message sent but may interfere with current work. Consider using wait_for_agent first to wait until the agent is done.\nMessage sent: "${resolvedMessage}"`);
+        return text(`⚠️ Agent "${agentName}" is currently running. Message sent but may interfere with current work. Consider using wait_for_agent first, or send with mode 'queue'.\nMessage sent: "${resolvedMessage}"${again}`);
       }
 
-      return text(`Sent message to agent "${agentName}" (${previousStatus}): "${resolvedMessage}"`);
+      return text(`Sent message to agent "${agentName}" (${previousStatus}): "${resolvedMessage}"${again}`);
+    },
+  }),
+
+  tool({
+    name: "task_cancel",
+    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal. Its id is the t-xxxxxxxx Tars named in the line it typed before your message. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
+    schema: {
+      taskId: z.string().describe("The task's id: t- and 8 hex characters"),
+      reason: z.string().optional().describe("Why. Required when the task was asked for by another chat: that chat is told it."),
+    },
+    failure: "cancelling the task",
+    async run({ taskId, reason }) {
+      try {
+        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string } };
+        return text(`Cancelled task ${taskId}: it never went into ${data.worker?.name ? `${data.worker.name}'s` : "its agent's"} terminal.`);
+      } catch (err) {
+        const why = CANCEL_REFUSALS[(err as Error).message];
+        if (why) return problem(`Task ${taskId} was not cancelled: ${why}.`);
+        throw err;
+      }
     },
   }),
 
@@ -525,9 +634,11 @@ const AGENT_TOOLS: Tool[] = [
       model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
+      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this delegation. Calling again with the same id answers with the first call's task (task_status reads it), and nothing is run twice. Omitted: one is made for this call."),
     },
     failure: "delegating task",
-    async run({ id, prompt, model, timeoutSeconds = 300, allowCrossProject }, extra) {
+    async run({ id, prompt, model, timeoutSeconds = 300, allowCrossProject, clientRequestId: givenId }, extra) {
+      const clientRequestId = givenId || randomUUID();
       // Claude Code abandons an MCP call silent for 30 minutes; a delegation
       // can last an hour. Progress while it waits keeps the caller listening.
       const stopProgress = keepCallerListening(extra);
@@ -540,11 +651,14 @@ const AGENT_TOOLS: Tool[] = [
           const acp = (await apiRequest(
             `/api/agents/${id}/run-task`,
             "POST",
-            { task: prompt, timeoutSeconds },
+            { task: prompt, timeoutSeconds, clientRequestId },
             (timeoutSeconds + 60) * 1000,
           )) as {
             ok?: boolean;
             started?: boolean;
+            duplicate?: boolean;
+            taskId?: string;
+            outcome?: string;
             stopReason?: string;
             text?: string;
             toolCalls?: string[];
@@ -555,6 +669,16 @@ const AGENT_TOOLS: Tool[] = [
             retryWithDispatch?: boolean;
           };
 
+          // An earlier call with this id started the run: its task is the
+          // answer, read from the ledger once it has ended (4.4 item 3).
+          if (acp?.duplicate && acp.started) {
+            if (acp.outcome === "running" || !acp.taskId) {
+              return text(`This delegation already runs from an earlier call (clientRequestId ${clientRequestId}${acp.taskId ? `, task ${acp.taskId}` : ""}): nothing was started again. Follow it with task_status.`);
+            }
+            const found = (await apiRequest(`/api/tasks/${acp.taskId}`)) as { task: TaskView };
+            return { content: [{ type: "text", text: taskText(found.task) }], isError: found.task.outcome !== "completed" };
+          }
+
           // A run that started is the answer, however it ended. Falling back
           // to the terminal after one typed the same brief into a second
           // session: the task ran twice (Parallel project, 2026-09-23).
@@ -564,6 +688,7 @@ const AGENT_TOOLS: Tool[] = [
               acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
               acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
               typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
+              acp.taskId ? `task ${acp.taskId}` : "",
             ].filter(Boolean).join(" | ");
             // A run is one turn: what the agent left running when it answered
             // was stopped with it, and nothing brings it back for that work.
@@ -585,7 +710,13 @@ const AGENT_TOOLS: Tool[] = [
           // working, and typing the brief into the terminal as well would run
           // the task twice.
           if (err instanceof Error && err.name === "AbortError") {
-            return problem(`No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with get_agent or wait_for_agent rather than delegating the task again.`);
+            return problem(`No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again.`);
+          }
+          // Held to a mode the agent does not offer (the ceiling for delegated
+          // runs): typing the task into its terminal would run it in the
+          // agent's own, broader mode.
+          if (err instanceof Error && /permission_escalation_denied/.test(err.message)) {
+            return problem(`Not delegated: ${err.message}`);
           }
           // No run started (this CLI has no ACP mode, or its launch failed).
           // The terminal path still works.
@@ -593,7 +724,7 @@ const AGENT_TOOLS: Tool[] = [
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
         // lock, so a stale status can never route the prompt to a dead PTY.
-        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject);
+        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
         const agentName = dispatched.agent.name || id;
 
         // Not typed yet: waiting here would wait on a turn that has not
@@ -688,6 +819,22 @@ const AGENT_TOOLS: Tool[] = [
       } finally {
         stopProgress();
       }
+    },
+  }),
+
+  tool({
+    name: "task_status",
+    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too: running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
+    schema: {
+      taskId: z.string().optional().describe("The task's id"),
+      clientRequestId: z.string().optional().describe("The clientRequestId the delegation was sent with"),
+    },
+    failure: "reading the task",
+    async run({ taskId, clientRequestId }) {
+      if (!taskId && !clientRequestId) return problem("Error: taskId or clientRequestId is required.");
+      const endpoint = taskId ? `/api/tasks/${encodeURIComponent(taskId)}` : `/api/tasks?clientRequestId=${encodeURIComponent(clientRequestId!)}`;
+      const found = (await apiRequest(endpoint)) as { task: TaskView };
+      return text(taskText(found.task));
     },
   }),
 ];

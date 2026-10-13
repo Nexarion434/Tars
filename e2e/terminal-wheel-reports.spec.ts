@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type CDPSession, type Locator, typ
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox, splashGone, writeNodeCli } from './fixture.mjs';
+import { launchSandboxed, removeHome, seedSandbox, splashGone, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -208,7 +208,7 @@ test('a panel sends the wheel a full-screen CLI asked for as wheel reports, and 
     expect(await sent(logs.asked, 'control, three notches up', notches(-1))).toMatch(/^(\x1b\[A)+$/);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
 

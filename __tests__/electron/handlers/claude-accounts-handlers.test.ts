@@ -443,6 +443,20 @@ describe.skipIf(claudeAccountsNotPorted())("an agent's account", () => {
     expect(accountChanged).toEqual(['ag1']);
   });
 
+  // The Audit's L3 on #379, written before the fix (2026-10-13): a chat's
+  // runner takes its account from the project's orchestrator at each launch,
+  // so a pin of its own was undone there; it is refused, as every other edit
+  // of a runner is (M2).
+  it("refuses to pin a chat's runner: its account is its orchestrator's", async () => {
+    const a = await add('Max two');
+    agents.set('runner', { id: 'runner', name: 'Lead · Release', kind: 'chat', chatId: 'c-2' } as never);
+    const answer = await call('claude-accounts:set-agent-account', { agentId: 'runner', accountId: a.id });
+    expect(answer).toMatchObject({ success: false });
+    expect(JSON.stringify(answer)).toMatch(/runs a chat/);
+    expect(agents.get('runner')!.claudeAccountPin).toBeUndefined();
+    expect(saves).toBe(0);
+  });
+
   it('pins and unpins an agent, and refuses an unknown agent or account', async () => {
     const a = await add('Max two');
     agents.set('ag1', { id: 'ag1' });

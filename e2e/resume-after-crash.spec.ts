@@ -40,9 +40,7 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const id = process.env.CLAUDE_AGENT_ID;
 const sid = crypto.randomUUID();
-// Where Claude Code keeps the transcript: the project's path with / and . turned into -; on Windows every
-// character but an ASCII letter or digit, the drive's colon and the backslashes included (claude-project-dir.ts).
-const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(process.platform === 'win32' ? /[^a-zA-Z0-9]/g : /[/.]/g, '-'));
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 fs.writeFileSync(transcript, '');

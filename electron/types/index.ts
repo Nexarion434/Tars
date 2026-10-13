@@ -34,7 +34,10 @@ export type AgentProvider =
  * - auto: agent runs fully autonomously (--dangerously-skip-permissions)
  * - bypass: same as auto, explicit intent to bypass all checks
  */
-export type AgentPermissionMode = 'normal' | 'auto' | 'bypass';
+/** `plan`: the narrowest, where Claude Code plans and edits nothing (PR B, the ceiling for delegated
+ *  runs, core/permission-ceiling.ts). Set by the API and agents.json for now; the window's selector
+ *  offers the other three. The other CLIs read it as `normal`, the narrowest they have. */
+export type AgentPermissionMode = 'plan' | 'normal' | 'auto' | 'bypass';
 
 /** Effort level for agent reasoning:
  * - low: fast, minimal thinking
@@ -168,6 +171,17 @@ export interface AgentStatus {
    *  answers Telegram and Slack; a project has one at most. Set by the toggle
    *  only, never by the name. See core/agent-role.ts. */
   role?: AgentRole;
+  /**
+   * 'chat': this agent runs one chat's conversation with the orchestrator (a
+   * chat runner, services/chat-runners.ts). Stored as a worker, so it is never
+   * its project's orchestrator (the bots' target, the one that never sleeps);
+   * it has the orchestrator's powers through hasOrchestratorPowers().
+   */
+  kind?: 'chat';
+  /** The chat a runner runs (~/.dorothy/chats.json). */
+  chatId?: string;
+  /** The project's orchestrator whose configuration a runner is launched with. */
+  teamOrchestratorId?: string;
   /**
    * The agent that asked for this one's current work, from the
    * X-Tars-Caller-Id header the MCP client sends on every call.
@@ -407,6 +421,16 @@ export interface AppSettings {
   /** Resume idle agents once, when the app launches. Not on navigation - that
    *  was the old behaviour and it spawned sessions on every visit home. */
   autoStartAgentsOnLaunch?: boolean;
+  /** The 2.0 interface (PLAN-2.0.0). Off unless chosen: a file written before
+   *  the switch existed reads false. */
+  newInterface: boolean;
+  /**
+   * A project's chats may read one another (ORCHESTRATOR-PER-CHAT.md v2.2,
+   * 4.4 item 5): chat_list and chat_read, given to a chat's runner and to the
+   * orchestrator for Main at their next launch, read only, same project only.
+   * Off unless chosen: a file written before the switch existed reads false.
+   */
+  chatsReadEachOther: boolean;
   cliPaths: CLIPaths;
   /**
    * The shell a terminal runs on Windows: a path (Git Bash is

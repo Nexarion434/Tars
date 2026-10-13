@@ -10,7 +10,8 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { carriedSince, type CarriedNote } from './carry-over';
 import { wakeAgent } from '../core/agent-asleep';
-import { linkSpent, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
+import { inboxAgentOf } from '../core/chat-inbox';
+import { linkSpent, requestTitle, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
 
 /**
  * Handing something to an agent at a moment when it can take it.
@@ -65,6 +66,8 @@ type News = {
   kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled' | 'not_delivered';
   status: AgentStatus['status'];
   reason?: string;
+  /** For a `not_delivered` request `cancelled` by another agent: who, and why, already quoted as data. */
+  detail?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
   /**
@@ -77,6 +80,14 @@ type News = {
   since?: string;
   /** Owed by a run of Tars before this one, and carried across its restart. */
   carried?: boolean;
+  /**
+   * The request this is about (core/task-requests.ts): the note names it, by
+   * its id and its first line, since a follow-up typed in mid-turn gets a
+   * report of its own (the Audit's Low after 1.9.5).
+   */
+  taskRef?: string;
+  /** The first line of a task that has no request id (a delegated run over ACP), for the note to name it. */
+  title?: string;
 };
 
 /**
@@ -128,11 +139,13 @@ function ranHandedWork(agent: AgentStatus): boolean {
 
 function newsOf(agent: AgentStatus): News | undefined {
   const handedAt = agent.workHandedAt;
+  const taskRef = agent.requestedBy?.taskRef;
+  const task = taskRef ? { taskRef } : {};
   if (agent.status === 'completed' || agent.status === 'error') {
-    return { kind: 'outcome', status: agent.status, handedAt };
+    return { kind: 'outcome', status: agent.status, handedAt, ...task };
   }
   if (isAtRest(agent)) {
-    return ranHandedWork(agent) ? { kind: 'ended', status: agent.status, handedAt } : undefined;
+    return ranHandedWork(agent) ? { kind: 'ended', status: agent.status, handedAt, ...task } : undefined;
   }
   if (agent.status === 'waiting') {
     return { kind: 'wait', status: agent.status, reason: agent.waitingReason, handedAt };
@@ -309,13 +322,28 @@ export function startAgentWatch(): void {
   setRequestsEndedHook(tellRequestsEnded);
 }
 
+/**
+ * A request cancelled before it went in (core/task-cancel.ts) by the project's
+ * orchestrator rather than its requester: the requester is told who and why
+ * (the Audit's R6). Its own requester cancelling it needs no note.
+ */
+export function tellCancelled(requesterId: string, workerId: string, by: string, reason: string): void {
+  const worker = agents.get(workerId);
+  if (!worker || requesterId === workerId) return;
+  handToRequester(requesterId, worker, {
+    kind: 'not_delivered', status: worker.status, reason: 'cancelled',
+    detail: `from ${by}: ${envelopeValue(reason.replace(/\s+/g, ' ').trim().slice(0, 300))}`,
+    handedAt: worker.workHandedAt,
+  });
+}
+
 /** Each request a worker will never run, told to whoever asked (the Audit's R2, R3). */
 function tellRequestsEnded(worker: RequestWorker, requests: TaskRequest[], why: RequestsEndedWhy): void {
   const child = agents.get(worker.id);
   if (!child) return;
   for (const request of requests) {
     if (request.requesterAgentId === child.id) continue;
-    handToRequester(request.requesterAgentId, child, { kind: 'not_delivered', status: child.status, reason: why, handedAt: child.workHandedAt });
+    handToRequester(request.requesterAgentId, child, { kind: 'not_delivered', status: child.status, reason: why, handedAt: child.workHandedAt, taskRef: request.ref });
   }
 }
 
@@ -524,11 +552,25 @@ function queueForRequester(child: AgentStatus, news: News): void {
  */
 export function reportStall(child: AgentStatus, silentMinutes: number): void {
   const link = child.requestedBy;
+  // Else the project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
+  const inbox = inboxAgentOf(child.projectPath, agents.values());
   const requesterId = link && link.agentId !== child.id && link.ptyId === child.ptyId
     ? link.agentId
-    : [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === child.projectPath && a.id !== child.id)?.id;
+    : inbox && inbox.id !== child.id ? inbox.id : undefined;
   if (!requesterId) return;
   handToRequester(requesterId, child, { kind: 'stalled', status: child.status, reason: String(silentMinutes), handedAt: child.workHandedAt });
+}
+
+/**
+ * A delegated run over ACP that a quit cut, found open at this launch
+ * (task-ledger.ts interruptedAtStart): its asker is told, as for any work
+ * that never finished (4.4 item 3).
+ */
+export function tellDelegationCut(requesterId: string, workerId: string, firstLine: string): void {
+  const child = agents.get(workerId);
+  if (!child || requesterId === workerId) return;
+  const title = Array.from(firstLine.trim().split(/\r?\n|\r/)[0] ?? '').slice(0, 80).join('');
+  handToRequester(requesterId, child, { kind: 'not_delivered', status: child.status, reason: 'interrupted', ...(title ? { title } : {}) });
 }
 
 /** What a requester is owed about a child: held for it, and typed in when it is free. */
@@ -830,7 +872,9 @@ function describeNews(news: News): string {
       + 'Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done';
   }
   if (news.kind === 'not_delivered') {
+    if (news.reason === 'cancelled') return `never ran what you asked of it: it was cancelled before it went in, ${news.detail ?? 'by another agent'}. Nothing was retried; ask again if it is still needed`;
     if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
+    if (news.reason === 'interrupted') return 'was running a task you delegated to it when Tars stopped: the run was cut, and nothing was retried; ask again if it is still needed';
     if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';
     const why = news.reason === 'stopped' ? 'it was stopped before it ran it'
       : news.reason === 'restart' ? 'Tars stopped before it ran it'
@@ -842,9 +886,17 @@ function describeNews(news: News): string {
   return `is now ${news.status}`;
 }
 
+/** Which task the news is about: its id and, while Tars remembers it, its first line, quoted as data. */
+function taskNamed(news: News): string {
+  if (!news.taskRef && news.title) return ` (task ${envelopeValue(news.title)})`;
+  if (!news.taskRef || !/^t-[0-9a-f]{8}$/.test(news.taskRef)) return '';
+  const title = requestTitle(news.taskRef);
+  return ` (task ${news.taskRef}${title ? `, ${envelopeValue(title)}` : ''})`;
+}
+
 /** What the note says, and, for news carried across a restart, since when it was owed. */
 function describeOwed(news: News): string {
-  const said = describeNews(news);
+  const said = describeNews(news) + (news.kind === 'ended' || news.kind === 'outcome' || news.kind === 'not_delivered' ? taskNamed(news) : '');
   return news.carried && news.since ? `${said} (${carriedSince(news.since)})` : said;
 }
 

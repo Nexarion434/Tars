@@ -35,9 +35,7 @@ const id = process.env.CLAUDE_AGENT_ID;
 const args = process.argv.slice(2);
 const resumed = args.indexOf('--resume');
 const sid = resumed === -1 ? crypto.randomUUID() : args[resumed + 1];
-// Where Claude Code keeps the transcript: the project's path with / and . turned into -; on Windows every
-// character but an ASCII letter or digit, the drive's colon and the backslashes included (claude-project-dir.ts).
-const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(process.platform === 'win32' ? /[^a-zA-Z0-9]/g : /[/.]/g, '-'));
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');

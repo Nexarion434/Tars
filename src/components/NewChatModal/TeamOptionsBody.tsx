@@ -1,12 +1,12 @@
 'use client';
 
-import type { AgentPermissionMode } from '@/types/agent';
+import type { TeamPermissionMode } from '@/types/agent';
 import { SegmentedControl } from '@/components/ui';
 import type { SegmentedOption } from '@/components/ui';
 import { Toggle } from '@/components/Settings/Toggle';
 import { OptionRow } from './OptionsRow';
 
-const PERMISSION_OPTIONS: SegmentedOption<AgentPermissionMode>[] = [
+const PERMISSION_OPTIONS: SegmentedOption<TeamPermissionMode>[] = [
   { value: 'normal', label: 'manual', title: 'Asks before each tool' },
   { value: 'auto', label: 'auto', title: 'Autonomous - recommended' },
   { value: 'bypass', label: 'bypass', title: 'Skips all restrictions' },
@@ -24,8 +24,8 @@ export function TeamOptionsBody({
   startOnDeploy,
   onToggleStartOnDeploy,
 }: {
-  permissionOverride: AgentPermissionMode;
-  onPermissionOverride: (mode: AgentPermissionMode) => void;
+  permissionOverride: TeamPermissionMode;
+  onPermissionOverride: (mode: TeamPermissionMode) => void;
   startOnDeploy: boolean;
   onToggleStartOnDeploy: () => void;
 }) {

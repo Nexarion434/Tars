@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, stepShot, writeNodeCli } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome, stepShot, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -46,9 +46,7 @@ const id = process.env.CLAUDE_AGENT_ID;
 const args = process.argv.slice(2);
 const resumed = args.indexOf('--resume');
 const sid = resumed === -1 ? crypto.randomUUID() : args[resumed + 1];
-// Where Claude Code keeps the transcript: the project's path with / and . turned into -; on Windows every
-// character but an ASCII letter or digit, the drive's colon and the backslashes included (claude-project-dir.ts).
-const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(process.platform === 'win32' ? /[^a-zA-Z0-9]/g : /[/.]/g, '-'));
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
@@ -264,16 +262,6 @@ test('an asleep agent reads asleep since when on its card, its panel, its window
     recordValues({ seen, launches: lines(launchesFile).filter((l) => l.id === 'worker') });
   } finally {
     await app.close().catch(() => { /* gone */ });
-    // A hook the last CLI started can still be writing its log there: the
-    // removal is done again until nothing comes back under it.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        fs.rmSync(home, { recursive: true, force: true });
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY' || attempt === 10) throw error;
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    }
+    await removeHome(home);
   }
 });

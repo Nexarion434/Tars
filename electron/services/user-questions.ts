@@ -4,7 +4,9 @@ import { randomUUID } from 'crypto';
 import { privatePath } from '../constants';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { redactSecrets } from '../utils/redact-secrets';
-import { isSuperAgent } from '../utils';
+import { hasOrchestratorPowers } from '../core/agent-role';
+import { chatNameOf, namedChatOf } from '../core/chat-inbox';
+import { chatTag } from './chat-addressing';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
@@ -50,6 +52,8 @@ interface Question {
   askedAt: number;
   expiresAt: number;
   state: 'open' | 'answered' | 'expired';
+  /** The chat that asked, when its agent runs one (PR F): the question is headed by it. */
+  chat?: { id: string; tag: string };
 }
 
 function load(): Question[] {
@@ -83,7 +87,8 @@ const quoted = (s: string) => redactSecrets(s).split(/\r?\n/).map(line => `> ${l
 
 /** The question as the user reads it, within what Telegram takes: the context is cut first. */
 function compose(q: Question): string {
-  const head = `Question from ${oneLine(q.agentName)}, project ${oneLine(path.basename(q.projectPath) || q.projectPath)}:`;
+  const asker = `Question from ${oneLine(q.agentName)}, project ${oneLine(path.basename(q.projectPath) || q.projectPath)}:`;
+  const head = q.chat ? `${oneLine(q.chat.tag)}\n${asker}` : asker;
   const tail = `Reply to this message to answer: your reply is typed into ${oneLine(q.agentName)}'s terminal. Open until ${clock(q.expiresAt)}.`;
   const body = quoted(q.question);
   if (!q.context) return [head, body, '', tail].join('\n');
@@ -108,9 +113,12 @@ export async function askUser(
 ): Promise<AskResult> {
   const agent = agents.get(input.agentId);
   if (!agent) return { ok: false, status: 404, error: 'The asking agent is not one Tars knows about.' };
-  if (!isSuperAgent(agent)) {
+  // The orchestrator's powers: its project's orchestrator, or a chat's runner (core/agent-role.ts).
+  if (!hasOrchestratorPowers(agent)) {
     return { ok: false, status: 403, error: 'Only a project\'s orchestrator asks the user. Ask your orchestrator: it decides whether to ask them, and passes their answer on.' };
   }
+  // Named once its project has several chats (GATE-2.0.0-BULLETS, 2).
+  const chat = namedChatOf(agent);
   const question = input.question.trim();
   const context = input.context?.trim() || undefined;
   if (!question || question.length > MAX_QUESTION) return { ok: false, status: 400, error: `A question is 1 to ${MAX_QUESTION} characters.` };
@@ -139,11 +147,15 @@ export async function askUser(
     askedAt: now,
     expiresAt: now + QUESTION_LIFETIME_MS,
     state: 'open',
+    ...(chat ? { chat: { id: chat.id, tag: chatTag(chat) } } : {}),
   };
   // Recorded before it is sent, so a second call from the same agent while
   // this one waits on Hermes is refused rather than sent too.
   save([...list, record], now);
-  const sent = await relaySend({ text: compose(record), kind: 'question', ref: `question:${record.id}`, projectPath: record.projectPath, expiresAt: record.expiresAt }, now);
+  const sent = await relaySend({
+    text: compose(record), kind: 'question', ref: `question:${record.id}`, projectPath: record.projectPath, expiresAt: record.expiresAt,
+    ...(record.chat ? { chatId: record.chat.id } : {}),
+  }, now);
   if (sent.state === 'refused') {
     save(load().filter(q => q.id !== record.id), now);
     return { ok: false, status: 503, error: `The user cannot be asked: ${sent.reason}` };
@@ -177,6 +189,19 @@ async function answerQuestion(reply: RelayReply, now: number): Promise<void> {
   }
   const agent = agents.get(q.agentId);
   const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+  // A chat asked, and its runner sleeps: woken with the answer, within the chats' limit (PR F).
+  const asleepChat = agent && agent.status === 'asleep' && !cliRunningIn(terminal) ? chatNameOf(agent) : undefined;
+  if (asleepChat) {
+    const { sendToChat } = await import('./chat-runners');
+    const woken = await sendToChat(asleepChat.id, `Answer to the question you asked at ${clock(q.askedAt)}:\n${answer}`, { sender: { kind: 'user', via: 'Telegram' } });
+    if ('error' in woken) {
+      await tell(`Not delivered: ${woken.reason} The question stays open until ${clock(q.expiresAt)}.`);
+      return;
+    }
+    save(list.map(x => (x.id === q.id ? { ...x, state: 'answered' as const } : x)), now);
+    await tell(receiptFor(q.agentName));
+    return;
+  }
   if (!agent || !cliRunningIn(terminal)) {
     await tell(`Not delivered: ${q.agentName} has no session running. The question stays open until ${clock(q.expiresAt)}; reply again once it runs.`);
     return;

@@ -10,8 +10,13 @@ import { redactSecrets } from '../utils/redact-secrets';
 import { projectName } from '../platform';
 import { isSuperAgent, formatAgentStatus, getSuperAgentInstructions, getSuperAgentInstructionsPath, getTelegramInstructions } from '../utils';
 import { orchestratorForMessage, whereToWrite } from './orchestrator-routing';
+import { chatTag } from './chat-addressing';
+import { chatById } from './chat-runners';
+import { deliverFromChannel, telegramSentLog } from './chat-senders';
+import type { Chat } from './chats';
+import { leadOf, namedChatOf, type ChatName } from '../core/chat-inbox';
 import {
-  findAgent, forwardToOrchestrator, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
+  findAgent, forwardToOrchestrator, listedAgents, priceUsage, projectsReport, startWithTask, statusReport, stopNow,
   type BotFleet, type ClaudeUsageStats, type StatusGroup,
 } from './bot-core';
 
@@ -99,7 +104,7 @@ export function initTelegramBotService(
  * @param parseMode - Markdown or HTML
  * @param targetChatId - Specific chat ID to send to (if not provided, sends to current response chat or all authorized)
  */
-export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML' = 'Markdown', targetChatId?: string) {
+export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML' = 'Markdown', targetChatId?: string, chat?: ChatName) {
   if (!telegramBot) return;
 
   // Telegram has a 4096 char limit, truncate if needed
@@ -108,7 +113,7 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
 
   // If specific target provided, send only to that chat
   if (targetChatId) {
-    sendToChat(targetChatId, truncated, parseMode, text);
+    sendToChat(targetChatId, truncated, parseMode, text, chat);
     return;
   }
 
@@ -122,7 +127,7 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
 
   // If we have a current response chat (from an active Telegram task), send there
   if (currentResponseChatId) {
-    sendToChat(currentResponseChatId, truncated, parseMode, text);
+    sendToChat(currentResponseChatId, truncated, parseMode, text, chat);
     return;
   }
 
@@ -134,7 +139,7 @@ export function sendTelegramMessage(text: string, parseMode: 'Markdown' | 'HTML'
   if (chatIds.length === 0) return;
 
   for (const chatId of chatIds) {
-    sendToChat(chatId, truncated, parseMode, text);
+    sendToChat(chatId, truncated, parseMode, text, chat);
   }
 }
 
@@ -151,7 +156,7 @@ function sendableChats(): Set<string> {
 /**
  * Helper to send to a specific chat with error handling
  */
-function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | 'HTML', originalText: string) {
+function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | 'HTML', originalText: string, chat?: ChatName) {
   if (!telegramBot) return;
   // Every send that is not a reply to a message passes here, so a chat
   // Settings does not allow is refused here, whoever named it.
@@ -159,13 +164,17 @@ function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | '
     console.warn(`Telegram: not sending to chat ${chatId}, which Settings does not authorize`);
     return;
   }
+  // What a chat says is logged, so that a reply to it reaches that chat (PR F).
+  const logged = (sent: Promise<TelegramBot.Message>) => {
+    if (chat) sent.then(m => telegramSentLog().record({ telegramChatId: chatId, messageId: m.message_id, chatId: chat.id }), () => undefined);
+  };
   try {
-    telegramBot.sendMessage(chatId, truncated, { parse_mode: parseMode });
+    logged(telegramBot.sendMessage(chatId, truncated, { parse_mode: parseMode }));
   } catch (err) {
     console.error(`Failed to send Telegram message to ${chatId}:`, err);
     // Try without markdown if it fails (in case of formatting issues)
     try {
-      telegramBot.sendMessage(chatId, originalText.replace(/[*_`\[\]]/g, ''));
+      logged(telegramBot.sendMessage(chatId, originalText.replace(/[*_`\[\]]/g, '')));
     } catch {
       // Give up
     }
@@ -177,6 +186,9 @@ function sendToChat(chatId: string, truncated: string, parseMode: 'Markdown' | '
  */
 export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
   const rawOutput = agent.output.slice(-100).join('');
+  // Main's answer, headed by its chat (PR F).
+  const chat = namedChatOf(agent);
+  const head = chat ? `${chatTag(chat)} ` : '';
 
   // Remove ANSI escape codes, then take the secrets out.
   //
@@ -220,7 +232,7 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
     // The last portion, likely the summary.
     const response = responseLines.slice(-40).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     if (response.length > 10) {
-      sendTelegramMessage(`👑 ${response}`);
+      sendTelegramMessage(`${head}👑 ${response}`, 'Markdown', undefined, chat);
       return;
     }
   }
@@ -237,7 +249,7 @@ export function sendSuperAgentResponseToTelegram(agent: AgentStatus) {
     .slice(-20);
 
   if (fallbackLines.length > 0) {
-    sendTelegramMessage(`👑 ${fallbackLines.join('\n')}`);
+    sendTelegramMessage(`${head}👑 ${fallbackLines.join('\n')}`, 'Markdown', undefined, chat);
   } else {
     sendTelegramMessage(`✅ Super Agent completed the task.`);
   }
@@ -584,12 +596,12 @@ const COMMANDS: Array<[RegExp, Command]> = [
     else telegramBot?.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
   }],
   [/\/status/, msg => {
-    const list = Array.from(fleet.agents.values());
+    const list = listedAgents(fleet.agents.values());
     if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
     else telegramBot?.sendMessage(msg.chat.id, statusReport(list, { title: `📊 *Agents Status*\n\n`, dot: DOTS, item: statusLine, orchestratorFirst: true }), { parse_mode: 'Markdown' });
   }],
   [/\/agents/, msg => {
-    const list = Array.from(fleet.agents.values());
+    const list = listedAgents(fleet.agents.values());
     if (list.length === 0) telegramBot?.sendMessage(msg.chat.id, '📭 No agents created yet.');
     else telegramBot?.sendMessage(msg.chat.id, `🤖 *All Agents*\n\n` + list.map(a => formatAgentStatus(a) + '\n\n').join(''), { parse_mode: 'Markdown' });
   }],
@@ -655,6 +667,25 @@ const FILES: Array<{
 /**
  * Initialize Telegram bot and set up handlers
  */
+/**
+ * The Bot API's address: Telegram's, or, for the E2E alone, a stand-in on the
+ * loopback (DOROTHY_TELEGRAM_API_URL, read only when DOROTHY_E2E=1, as
+ * TARS_CHAT_RAM_GB is). Anything else is ignored: the bot's token travels in
+ * every request's path.
+ */
+export function telegramApiOverride(env: Record<string, string | undefined>): { baseApiUrl?: string } {
+  const raw = env.DOROTHY_E2E === '1' ? env.DOROTHY_TELEGRAM_API_URL?.trim() : undefined;
+  if (!raw) return {};
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' && url.hostname === '127.0.0.1' && !url.username && !url.password && url.pathname === '/') {
+      return { baseApiUrl: `http://127.0.0.1:${url.port}` };
+    }
+  } catch { /* not a URL */ }
+  console.warn('[telegram] DOROTHY_TELEGRAM_API_URL is not http://127.0.0.1:<port>, and is ignored');
+  return {};
+}
+
 export function initTelegramBot() {
   // Stop existing bot if any
   if (telegramBot) {
@@ -675,7 +706,7 @@ export function initTelegramBot() {
   authMisses = [];
 
   try {
-    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true });
+    telegramBot = new TelegramBot(getSettings().telegramBotToken, { polling: true, ...telegramApiOverride(process.env) });
     console.log('Telegram bot started');
 
     // Fetch and cache bot username for mention detection
@@ -843,7 +874,7 @@ export function initTelegramBot() {
       const cleanedText = removeBotMention(msg.text);
       if (!cleanedText) return; // Don't process if message was just the mention
 
-      await sendToSuperAgent(chatId, cleanedText);
+      await sendToSuperAgent(chatId, cleanedText, undefined, msg.reply_to_message?.message_id);
     });
 
     // Handle polling errors
@@ -862,49 +893,85 @@ export function initTelegramBot() {
  * @param message - Message text
  * @param attachedFiles - Optional array of local file paths that were downloaded
  */
-export async function sendToSuperAgent(chatId: string, message: string, attachedFiles?: string[]) {
-  // The orchestrator the message names with "@project", or the fleet's only
-  // one: never the first found, which may be another project's (point E).
-  const target = orchestratorForMessage(fleet.agents, message);
-  if (target.kind !== 'found') {
-    telegramBot?.sendMessage(chatId, `👑 ${whereToWrite(target)}`);
-    return;
+export async function sendToSuperAgent(chatId: string, message: string, attachedFiles?: string[], replyTo?: number) {
+  // A reply to what Tars sent for a chat goes to that chat, exactly; anything
+  // else names its project with "@project", or the fleet has a single one:
+  // never the first found, which may be another project's (point E).
+  const replyChatId = replyTo !== undefined ? telegramSentLog().chatOf(chatId, replyTo) : undefined;
+  let projectPath: string;
+  let text: string;
+  let superAgent: AgentStatus | undefined;
+  if (replyChatId) {
+    projectPath = chatById(replyChatId)?.projectPath ?? '';
+    superAgent = projectPath ? leadOf(projectPath, fleet.agents.values()) : undefined;
+    text = message;
+  } else {
+    const target = orchestratorForMessage(fleet.agents, message);
+    if (target.kind !== 'found') {
+      telegramBot?.sendMessage(chatId, `👑 ${whereToWrite(target)}`);
+      return;
+    }
+    projectPath = target.projectPath;
+    superAgent = target.orchestrator;
+    text = target.text;
   }
-  const superAgent = target.orchestrator;
-  message = target.text;
 
   // Track which chat to respond to - this is crucial for multi-chat support
   currentResponseChatId = chatId;
   console.log(`Telegram: Setting response chat ID to ${chatId}`);
 
   // Build message with file information if files are attached
-  let fullMessage = message;
-  if (attachedFiles && attachedFiles.length > 0) {
-    const filesList = attachedFiles.map(f => `  - ${f}`).join('\n');
-    fullMessage += `\n\nDownloaded files available at:\n${filesList}\n\nYou can read/analyze these files using your tools.`;
-  }
-
-  // Sanitize message - replace newlines with spaces for terminal compatibility
-  const sanitizedMessage = fullMessage.replace(/\r?\n/g, ' ').trim();
+  const filesNote = attachedFiles && attachedFiles.length > 0
+    ? `\n\nDownloaded files available at:\n${attachedFiles.map(f => `  - ${f}`).join('\n')}\n\nYou can read/analyze these files using your tools.`
+    : '';
+  const context = `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!]`;
 
   try {
-    await forwardToOrchestrator(fleet, superAgent, 'Telegram', {
-      message: sanitizedMessage,
-      context: `[FROM TELEGRAM chat_id=${chatId} - Use send_telegram MCP tool with chat_id="${chatId}" to respond!]`,
-      // Started from a phone, nobody is there to answer a permission question.
-      permissionMode: 'bypass',
-      resume: true,
-      systemPromptFile: telegramSystemPromptFile,
-      reply: outcome => {
-        if (outcome === 'no-terminal') telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
-        else if (outcome === 'typed') telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
-        else telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
+    await deliverFromChannel({
+      projectPath, text: text + filesNote, replyChatId, context,
+      sender: { kind: 'channel', channel: 'Telegram' },
+      tell: (said, chat) => sendForChat(telegramBot, chatId, `👑 ${said}`, chat),
+      toOrchestrator: async (said) => {
+        if (!superAgent) {
+          telegramBot?.sendMessage(chatId, '👑 That project has no orchestrator in Tars any more, so your message reached nobody.');
+          return;
+        }
+        await forwardToOrchestrator(fleet, superAgent, 'Telegram', {
+          // Sanitized: newlines become spaces for terminal compatibility.
+          message: said.replace(/\r?\n/g, ' ').trim(),
+          context,
+          // Started from a phone, nobody is there to answer a permission question.
+          permissionMode: 'bypass',
+          resume: true,
+          systemPromptFile: telegramSystemPromptFile,
+          reply: outcome => {
+            if (outcome === 'no-terminal') telegramBot?.sendMessage(chatId, '❌ Failed to connect to Super Agent terminal.');
+            else if (outcome === 'typed') telegramBot?.sendMessage(chatId, `👑 Super Agent is processing...`);
+            else telegramBot?.sendMessage(chatId, `👑 Super Agent is processing your request...`);
+          },
+        });
       },
     });
   } catch (err) {
     console.error('Failed to send to Super Agent:', err);
     telegramBot?.sendMessage(chatId, `❌ Error: ${err}`);
   }
+}
+
+/**
+ * A message about a chat, or from it: headed "[<project> #N <title>]", and
+ * logged, so that a reply to it reaches that chat (PR F). Without a chat, as
+ * it always went. It checks no authorization itself: its callers send only to
+ * a chat Settings authorizes (the send route's authorizedChats, the bot's
+ * answer to a chat isAuthorized let in).
+ */
+export async function sendForChat(
+  bot: Pick<TelegramBot, 'sendMessage'> | null, telegramChatId: string, text: string, chat?: Chat, options: TelegramBot.SendMessageOptions = {},
+): Promise<TelegramBot.Message | undefined> {
+  if (!bot) return undefined;
+  const sent = await bot.sendMessage(telegramChatId, chat ? `${chatTag(chat)} ${text}` : text, options);
+  if (chat && sent?.message_id !== undefined) telegramSentLog().record({ telegramChatId, messageId: sent.message_id, chatId: chat.id });
+  return sent;
 }
 
 /**

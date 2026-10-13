@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { launchSandboxed, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -213,7 +213,7 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
   } finally {
     if (busy.pid) { try { process.kill(busy.pid, 'SIGKILL'); } catch { /* gone */ } }
     await app.close().catch(() => { /* gone */ });
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
 
@@ -277,6 +277,6 @@ test('a folder that could not be removed says why in its title, never with its p
   } finally {
     fs.chmodSync(locked, 0o755);
     await app.close().catch(() => { /* gone */ });
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

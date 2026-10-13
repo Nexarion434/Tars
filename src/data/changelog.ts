@@ -7,11 +7,79 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    id: 55,
-    version: '1.9.6',
-    date: '2026-10-09',
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-13',
     updates: [
       'Tars runs on Windows 10 and 11 (64-bit). Download Tars-Setup-1.9.6.exe from the release: it installs for your account, with no administrator rights, adds Tars to the Start menu and the desktop, and updates itself from the same releases as the Mac app. The installer is not signed yet, so SmartScreen warns the first time you run it: More info, then Run anyway. Each agent\'s CLI runs in a real Windows terminal, with Tars\'s hooks and status line run through Node; Tars draws its own title bar under the Windows buttons, closing the window keeps your agents working with Tars in the tray, and Settings, Terminal picks the shell a terminal opens: PowerShell 7, Windows PowerShell, the Command Prompt or Git Bash. Not on Windows yet: several Claude accounts, putting an idle agent to sleep, marking a frozen agent stalled, and removing the folders Settings, System lists.',
+    ],
+  },
+  {
+    id: 59,
+    version: '2.0.2',
+    date: '2026-10-13',
+    updates: [
+      'With the new interface on, a message to a sleeping chat no longer answers that the limit is reached, naming a chat that has nothing to do, in the moment that chat\'s runner restarts to follow a new orchestrator: Tars looks again, for up to about three seconds, at a runner whose start is still on its way, as it already did at one whose turn had just ended.',
+    ],
+  },
+  {
+    id: 58,
+    version: '2.0.1',
+    date: '2026-10-13',
+    updates: [
+      'Deleting an agent from the Agents page says what stays of it, as deleting a chat does: once it is gone, the page names the wip/ branch its uncommitted work was saved on and, when its worktree is kept on disk because it holds what no commit keeps (a file git ignores such as a .env, a repository of its own, or a submodule with work no remote has) or because git refused to remove it, why and where, until ok puts it away. Its confirmation no longer says the uncommitted changes go with the worktree: they are saved on a wip/ branch first.',
+      'With the new interface on, a message to a chat other than Main is refused as soon as the project\'s orchestrator runs a CLI other than Claude Code, even while that chat\'s runner is still running on Claude Code, where 2.0.0 typed it in. That runner is left to finish and the refusal says so: its turn ends as it would, and the agents it gave work to still answer it.',
+    ],
+  },
+  {
+    id: 57,
+    version: '2.0.0',
+    date: '2026-10-13',
+    updates: [
+      'A new interface comes as a preview, off by default: Settings, Preferences, New interface. On, the sidebar is a main menu (Chat, Projects, Dashboard, Kanban, Schedules) with Tars, all projects first, today\'s Chat unchanged, and your chats under it; Agents, Review, Logs, Vault, Extensions, Usage, Brain, Settings and What\'s New open from More as cards above the app. Off, every page is as it was, Settings gaining only that row, and turning it off brings that back at once.',
+      'With it on, a project keeps its team and holds several chats, each numbered in its project and never renumbered; Main is the conversation its orchestrator already had. The list sorts them into Pinned, Active, Working, Snoozed and Settled, says whether each is working, waiting on you or in error, and filters them by project; a chat can be renamed, pinned, snoozed for an hour or until a morning, settled, made the project\'s inbox or deleted, and a refusal says why. A project\'s page gathers its chats, its team and what each agent is on, its terminals and its room.',
+      'A chat opens on its conversation, read from the orchestrator\'s own transcripts across its sessions: your words, its answers, its tool calls folded to one line, the messages it got, Tars\'s notes, and where it was compacted or a new session began, the last 200 lines first and Show earlier for the rest. It follows the conversation live, keeps your place when you scroll up, says when the orchestrator is working, and shows its permission asks above the field, to allow or deny there. A session whose transcript was deleted leaves the conversation, a line saying so in its place.',
+      'From a chat\'s page you write to its orchestrator: the words are typed into it when it runs, going in when its turn ends if it is working, and start it when it does not, and a new chat\'s first message names the chat unless you did. A message that is refused is said in the page with its reason, the words kept in the field, and they are there again when you come back to the chat; when every chat this Mac runs at once is working, the page names them, each with its Stop. Above the list, N of M working says how many chats work of the most this Mac runs.',
+      'With the new interface on, a chat other than Main has its own conversation with the project\'s orchestrator: its first message starts the chat\'s runner, named after the orchestrator and the chat, with the orchestrator\'s model, instructions and brief. The runner works in a worktree of its own, .worktrees/chat-<id> on the branch chat/<id>, started from the project\'s default branch (the remote\'s, fetched first, else main or master), whatever branch the project has checked out; with under 2 GB free on the disk, that first message makes no worktree and says why. Deleting the chat removes its runner and its worktree, and keeps its branch; a worktree that holds what no commit keeps, such as a .env or a repository of its own, stays, uncommitted work goes to a wip/ branch, and the list says what stays and where.',
+      'How many chats work at once follows the Mac\'s RAM: one per 5 GB, from 1 to 8. When they are all taken, a new message puts the idle runner that worked least recently to sleep, never Main\'s, and when every one is in a turn it answers that the limit is reached, naming the chats at work; a runner you start yourself counts the same way. A chat goes on with the same conversation after its runner slept, was stopped or saw its Claude Code end, and after a crash the runners that start again are the most recently active, no more than the limit allows, the others staying asleep.',
+      'Main follows the project\'s orchestrator: give the role to another agent and Main becomes that agent\'s conversation, its earlier sessions kept. A runner\'s settings are the orchestrator\'s, read again each time it starts, and the window refuses to change them on the runner itself, the Orchestrator toggle included. While the orchestrator runs a CLI other than Claude Code, chats other than Main answer that they work with Claude Code only, for now.',
+      'A worker\'s reply to whoever asked for its task reaches the chat that asked. A worker at work on one chat\'s task can\'t be steered or restarted from another chat, nor restarted while it holds one in its queue, and the refusal now names that chat. An orchestrator can take back a task it asked for until it goes into the worker\'s terminal, and Main\'s orchestrator can take back another chat\'s with a reason, which that chat is told; no other chat can.',
+      'Whatever writes to a project\'s orchestrator now reaches the project\'s inbox chat, which is Main unless you make another chat the inbox: your messages to Tars\'s Telegram, Slack and Discord bots and through Hermes, the note of a kanban task a worker files, the error triage\'s note, and the report of a worker that went quiet. Main is the orchestrator itself, so while it is the inbox nothing changes, and an inbox chat not started yet passes its notes to the orchestrator.',
+      'Once a project has a second chat, what its chats send on Telegram starts with the project, number and title, as [tars #3 Release], through Tars\'s bot or Hermes, and a reply to it goes back to that chat. A message that starts with #3, or @project #3, goes to chat 3, and a number the project has no chat for gets the list of its chats and reaches nobody; Slack and Discord take the number too, with no reply routing. A question a chat asks you through Hermes carries its chat, and your answer goes back to it. A project with only Main works on Telegram, Slack and Discord as in 1.9.7.',
+      'In a project\'s room, once it has a second chat, a chat speaks as itself (the orchestrator of the project, chat #3 "Release"), and your answer that names it goes back to that chat; your messages to the project still reach Main and its team only.',
+      'A project\'s chats can be allowed to list one another, read only and within their project (number, title, state and last activity), with a setting off by default that has no row in Settings yet.',
+      'An agent whose background task (a command, a monitor, a background agent) ended while it was working no longer tells whoever asked for its work, at every end of its turn, that work is still running: Tars missed the way Claude Code records a task that ends during a turn, and took the task for running, hours after it had finished.',
+      'A Claude Code run from inside an agent\'s terminal no longer changes the agent\'s status when the agent has no session Tars knows of (its own session start was lost): its turn and its answer set the agent working, then done, though the agent\'s own Claude Code was elsewhere. Tars now ignores them, and only the Claude Code it launched in that terminal moves the agent.',
+    ],
+  },
+  {
+    id: 56,
+    version: '1.9.7',
+    date: '2026-10-13',
+    updates: [
+      'Tars\'s own tools in an agent (its orchestrator, memory, kanban and vault servers) now check, before every call, that the port they call answers as the Tars that started the agent, and send the agent\'s token only then, a delegated run\'s included: a program that took Tars\'s port after a quit no longer receives it.',
+      'An agent\'s permissions offer plan, in New agent, Edit agent and the agent\'s window: Claude Code reads and plans, and edits nothing until you approve its plan. Another CLI, and Claude Code through an API-key provider, has no plan mode here, so plan is dimmed there and says why; choosing one while plan is chosen falls back to manual.',
+      'On the Brain page\'s Projects tab, a project whose memory an older Tars kept in a folder Claude Code never reads says so on its line: older copy in, then that folder, whose whole path shows when you hover it. Its memory was copied once into the folder Claude Code reads, when that folder had no MEMORY.md of its own; the older folder is kept as it was.',
+      'Tars clears more of the agents\' temporary folders. What an agent left there, its project\'s test sandboxes and build folders, and the folders of its ended Claude Code sessions, now goes once untouched for a day while the agent runs, where it was kept for as long as the agent ran: on one Mac that freed 10 GB at the first pass. While an agent runs, the folder of the session it runs or would resume is never touched. The hourly pass also no longer reads every file of every agent again when nothing can go.',
+      'A Claude Code run from inside an agent\'s own terminal, such as a `claude -p` its Bash tool starts, no longer takes over the agent: it registered as the agent\'s session, its answer marked the agent done, the agent\'s real session was then ignored, and a restart resumed the wrong conversation. Tars now takes a session only from the Claude Code it launched in that terminal.',
+    ],
+  },
+  {
+    id: 55,
+    version: '1.9.6',
+    date: '2026-10-13',
+    updates: [
+      'Tars reads far less of your Claude Code transcripts while it runs. To show the model each agent last used, it read the agent\'s whole transcript every few seconds, for every agent, while it listed them; and every minute the Agents, Projects or Usage page was open, it read again, whole, every transcript that had changed. It reads the end of a transcript, and only what was added since, now. On a fleet of 45 agents whose transcripts came to 1 GB, the first was up to 1 GB read every five seconds on the thread that also answers the window and the agents.',
+      'On the Extensions page, an install count of a thousand or more reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
+      'An orchestrator\'s message or delegation is sent once, even when its call to Tars timed out and was made again: each one now carries an id, and a send Tars already made is answered as it was the first time, with nothing typed or started twice. The same id with another message is refused. Tars keeps these receipts for 24 hours in ~/.tars-private, with ids, a fingerprint of the request and outcomes, never what the message said.',
+      'An orchestrator can choose how its message goes in: at once as before, after the agent\'s current turn, by interrupting that turn first (Claude agents only), or by restarting the agent with it. Interrupting or restarting an agent while it works on another agent\'s request is refused, and so is restarting one that holds another agent\'s request in its queue.',
+      'A task an agent in plan mode delegates over ACP stays in plan mode: the run is refused every permission it asks for, leaving plan included, and is stopped if it leaves plan anyway. Plan mode is new to Tars, for agents set through the API for now. Between the other modes a delegated run differs little, since Tars approves its requests itself, and an agent with no ACP mode gets the task in its terminal, in its own mode. A message from an agent in a narrower mode to one working in a broader mode says so before the message. This is a guard on delegated runs, not a boundary: an agent working on its own keeps its own mode.',
+      'A delegated task\'s result outlives a restart of Tars: an orchestrator reads it again with task_status, by the task or by the id it was sent with. A delegation that a quit cut is told to whoever asked for it at the next launch.',
+      'On macOS and Linux, an agent of a project whose path holds an underscore, a space, a tilde or any character other than an unaccented letter, a digit, a slash, a dot or a dash resumes its conversation when Tars starts it again, where it started a new one every time: Tars looked for the conversation under a folder name Claude Code never gives. The Memory page also creates such a project\'s MEMORY.md in the folder Claude Code reads. When it made such a project\'s memory before, in a folder Claude Code never read, its memory files are copied once into the folder Claude Code reads when that one holds no MEMORY.md, never over a file it holds; the old files stay where they were, and the project shows on one line, the one Claude Code reads.',
+      'When an agent\'s work ends, the note to whoever asked for it names the task, by its id and its first line, now that a request typed in during a turn gets a report of its own. After Tars stops abruptly, an agent that could not be resumed tells whoever was waiting on its work, where they waited for an end that never came.',
+      'A Gemini agent on macOS and Linux reads as working while it works: its turns\' start now reaches Tars, which waited for an event Gemini never sends and showed the agent idle until it finished. Its hooks keep reaching Tars when Gemini\'s environment redaction is on, as they did on Windows.',
+      'Every call the hooks make to Tars from an agent Tars started now checks first that the port answers as that Tars, as their status posts already did: the hooks no longer hand an agent\'s token to another program that holds the port after Tars has quit.',
+      'When Tars makes its API token, it writes it in one step, readable by you alone, and replaces a link left at its name instead of writing through it; and a project path made only of dots can no longer point the project memory agents write outside ~/.claude/projects. Fixed by Nexarion434.',
     ],
   },
   {

@@ -6,6 +6,7 @@ import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
 import { isSuperAgent } from '../utils';
 import { projectName } from '../platform';
+import { chatNameOf, namedChatOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
 import type {
@@ -228,7 +229,9 @@ function memberIdsFor(roomId: string, kind: 'global' | 'project', projectPath?: 
   if (override) return override.filter(id => agents.has(id));
   const all = Array.from(agents.values());
   if (kind === 'global') return all.filter(isSuperAgent).map(a => a.id);
-  return all.filter(a => a.projectPath === projectPath).map(a => a.id);
+  // A chat's runner is a conversation, not a member of its project's room
+  // (ORCHESTRATOR-PER-CHAT.md, 4.6): what crosses the room reaches Main.
+  return all.filter(a => a.projectPath === projectPath && a.kind !== 'chat').map(a => a.id);
 }
 
 export function listRooms(): BusRoom[] {
@@ -547,7 +550,11 @@ export function publishAgentMessage(input: {
 
   const room = getRoom(input.roomId);
   if (!room) return { published: false, reason: 'no_open_thread', detail: 'That room does not exist.' };
-  if (!room.memberIds.includes(input.agentId)) {
+  // A chat's runner is no member (what crosses the room reaches Main), but the
+  // chat speaks there, as itself, in its own project's room (4.6, PR F).
+  const poster = agents.get(input.agentId);
+  const runsAChatHere = !!poster && room.kind === 'project' && poster.projectPath === room.projectPath && !!chatNameOf(poster);
+  if (!room.memberIds.includes(input.agentId) && !runsAChatHere) {
     return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
   }
 
@@ -605,11 +612,17 @@ export function publishAgentMessage(input: {
   }
 
   const agent = agents.get(input.agentId);
+  // An agent that runs a chat speaks in the room as that chat (PR F), once its
+  // project has several: Noah's answer to it goes back to it by its id. With
+  // only Main, the orchestrator posts under its own name, as in 1.9.7.
+  const chat = agent ? namedChatOf(agent) : undefined;
   const { message, thread: updated } = appendMessage({
     roomId: input.roomId,
     authorKind: 'agent',
     authorId: input.agentId,
-    authorName: agent?.name || input.agentId,
+    authorName: chat
+      ? `the orchestrator of ${path.basename(chat.projectPath) || chat.projectPath}, chat #${chat.number} "${chat.title}"`
+      : agent?.name || input.agentId,
     text: input.text,
     mentions: input.mentions,
   });

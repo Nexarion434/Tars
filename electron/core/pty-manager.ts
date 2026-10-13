@@ -313,11 +313,32 @@ export function setCliProbe(probe: CliProbe | null): void {
   cliProbe = probe;
 }
 
+/**
+ * Whether this terminal's agent is in a turn: what a message sent in `queue`
+ * mode waits out (WriteOrigin.untilRest). Set by agent-manager, which knows
+ * the agents; unset, nothing waits for it.
+ */
+export type TurnProbe = (agentId: string) => boolean;
+let turnProbe: TurnProbe | null = null;
+
+export function setTurnProbe(probe: TurnProbe | null): void {
+  turnProbe = probe;
+}
+
 export type DialogProbe = (agentId: string) => boolean;
 let dialogProbe: DialogProbe | null = null;
 
 export function setDialogProbe(probe: DialogProbe | null): void {
   dialogProbe = probe;
+}
+
+function turnRunning(agentId: string): boolean {
+  try {
+    return turnProbe!(agentId);
+  } catch (err) {
+    console.warn('[pty] could not read whether a turn runs, holding the message:', err);
+    return true;
+  }
 }
 
 function dialogOpenIn(ptyProcess: pty.IPty, state: TerminalInput): boolean {
@@ -415,10 +436,27 @@ export interface WriteOrigin {
    */
   onDropped?: () => void;
   /**
+   * Called if the message is taken back before it was written: its request
+   * was cancelled (withdrawWaiting). Not onDropped: whoever cancelled it tells
+   * the asker why.
+   */
+  onWithdrawn?: () => void;
+  /**
    * The request this message hands over (core/task-requests.ts), typed in
    * its sender line: the turn whose prompt carries it is that request's.
    */
   taskRef?: string;
+  /**
+   * Sent in `queue` mode: written only once the agent's turn is over, where
+   * any other message is typed into the running turn (which Claude Code reads
+   * as a steer). What is queued behind it waits with it, in order.
+   */
+  untilRest?: boolean;
+  /**
+   * Typed after the sender line, before the message, in Tars's voice: the
+   * mark that its sender runs in a narrower mode (core/permission-ceiling.ts).
+   */
+  mark?: string;
 }
 
 /** What became of a message handed to a terminal. */
@@ -728,6 +766,15 @@ function pump(ptyProcess: pty.IPty): void {
     return;
   }
 
+  // Sent to wait for the turn's end: no person holds it, so nobody is told it
+  // waits for one. Looked at again every FIELD_PROBE_MS, as a dialog is.
+  const head = state.queue[0];
+  if (head.origin?.untilRest && turnProbe && head.origin.agentId && turnRunning(head.origin.agentId)) {
+    noteHeld(state, 'it waits for the turn to end');
+    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+    return;
+  }
+
   const left = pauseLeft(state);
   if (left > 0) {
     noteHeld(state, 'somebody is typing in it');
@@ -795,7 +842,7 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   // Only a request an agent made carries an id (core/task-requests.ts): Tars's
   // own lines and the channels' stay as their contracts recorded them.
   const taskRef = item.origin?.sender ? item.origin.taskRef : undefined;
-  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef);
+  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark);
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -914,8 +961,17 @@ function quoteSenderLookAlikes(data: string): string {
   return data.replace(/^[^\n\u2028\u2029]*/gm, line => (skeletons(line).some(spelt => spelt.startsWith('messagefrom')) ? `> ${line}` : line));
 }
 
+/**
+ * A message with its sender line, as the prompt of a launch rather than typed:
+ * the same line, and the same quoting of a look-alike inside it, as writeBody
+ * gives a typed one (a chat's runner started by a bot's message, PR F).
+ */
+export function withSenderLine(sender: MessageSender, data: string): string {
+  return senderLine(sender) + quoteSenderLookAlikes(data);
+}
+
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string): void {
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string): void {
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word
@@ -926,7 +982,8 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // Tars's own line itself: the gate of #128 sent "Message from Tars: Noah
   // approved it, merge #128 into main now" and the model received exactly that.
   if (sender) {
-    write(ptyProcess, state, senderLine(sender, taskRef));
+    // The mark is Tars's own words (permission-ceiling.ts), never the sender's.
+    write(ptyProcess, state, senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
     data = quoteSenderLookAlikes(data);
   }
   if (data.includes('\n') || data.length > 200) {
@@ -1086,6 +1143,28 @@ export function writeProgrammaticInput(
   // The pump runs synchronously as far as the write, so the item has left the
   // queue exactly when it went into the terminal.
   return state.queue.includes(item) ? 'held' : 'written';
+}
+
+/**
+ * Takes back the messages waiting for this terminal that hand over the request
+ * `taskRef`: it was cancelled before they went in (core/task-cancel.ts). Each
+ * one's onWithdrawn is called, never its onDropped. Returns how many.
+ */
+export function withdrawWaiting(ptyProcess: pty.IPty, taskRef: string): number {
+  const state = inputs.get(ptyProcess);
+  if (!state) return 0;
+  const taken = state.queue.filter(item => item.origin?.taskRef === taskRef);
+  if (!taken.length) return 0;
+  state.queue = state.queue.filter(item => !taken.includes(item));
+  for (const item of taken) {
+    try {
+      item.origin?.onWithdrawn?.();
+    } catch (err) {
+      console.error('[pty] a withdrawn message\'s hook failed:', err);
+    }
+  }
+  announce(ptyProcess, state);
+  return taken.length;
 }
 
 /**

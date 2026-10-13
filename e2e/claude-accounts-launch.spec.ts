@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -146,6 +146,6 @@ test('an agent starts on the account with room, and a pin moves it', async () =>
     recordValues({ launches: launches(home), accounts: (await ev(() => (window as unknown as Api).electronAPI.claudeAccounts.list())).accounts });
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

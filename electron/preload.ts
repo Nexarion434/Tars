@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       character?: string;
       name?: string;
       secondaryProjectPath?: string;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider?: string;
       model?: string;
@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       projectPath?: string;
       skills?: string[];
       secondaryProjectPath?: string | null;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
       name?: string;
       character?: string;
@@ -143,6 +143,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: unknown, event: Parameters<AgentEventCallback>[0]) => callback(event);
       ipcRenderer.on('agent:tool_use', listener);
       return () => ipcRenderer.removeListener('agent:tool_use', listener);
+    },
+    // A worker's work in hand and its queue, and each change of them.
+    queue: (agentId: string) => ipcRenderer.invoke('agent:queue', agentId),
+    onQueue: (callback: (view: unknown) => void) => {
+      const listener = (_: unknown, view: unknown) => callback(view);
+      ipcRenderer.on('agent:queue', listener);
+      return () => ipcRenderer.removeListener('agent:queue', listener);
     },
     onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => {
       const listener = (_: unknown, event: { type: string; agentId: string; status: string; timestamp: string }) => callback(event);
@@ -823,6 +830,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: unknown, progress: { done: number; total: number; freedBytes: number; current: string }) => callback(progress);
       ipcRenderer.on('system:orphanFolders:progress', listener);
       return () => ipcRenderer.removeListener('system:orphanFolders:progress', listener);
+    },
+    // How many chats may work at once: one per 5 GB of RAM, from 1 to 8.
+    chatLimit: () => ipcRenderer.invoke('system:chatLimit'),
+  },
+
+  // The chats of each project (handlers/chat-handlers.ts): their records,
+  // kept in ~/.dorothy/chats.json. `send` refuses until the chats have
+  // orchestrators of their own.
+  chat: {
+    list: () => ipcRenderer.invoke('chat:list'),
+    create: (params: { projectPath: string; title?: string }) => ipcRenderer.invoke('chat:create', params),
+    rename: (params: { chatId: string; title: string }) => ipcRenderer.invoke('chat:rename', params),
+    pin: (params: { chatId: string; pinned: boolean }) => ipcRenderer.invoke('chat:pin', params),
+    snooze: (params: { chatId: string; until: string | null }) => ipcRenderer.invoke('chat:snooze', params),
+    settle: (params: { chatId: string; settled: boolean }) => ipcRenderer.invoke('chat:settle', params),
+    delete: (params: { chatId: string }) => ipcRenderer.invoke('chat:delete', params),
+    setInbox: (params: { chatId: string }) => ipcRenderer.invoke('chat:setInbox', params),
+    send: (params: { chatId: string; text: string; clientRequestId: string; mode?: string }) => ipcRenderer.invoke('chat:send', params),
+    // A chat's conversation from its runner's transcripts, and the seq it is
+    // a snapshot at; then every change after it (services/chat-history.ts).
+    history: (params: { chatId: string; before?: number; limit?: number }) => ipcRenderer.invoke('chat:history', params),
+    onEvent: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('chat:events', listener);
+      return () => ipcRenderer.removeListener('chat:events', listener);
     },
   },
 

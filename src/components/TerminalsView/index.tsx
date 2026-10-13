@@ -30,6 +30,7 @@ import 'react-resizable/css/styles.css';
 
 // Lazy-load NewChatModal only when needed
 import dynamic from 'next/dynamic';
+import type { AgentPermissionMode } from '@/types/agent';
 const NewChatModal = dynamic(() => import('@/components/NewChatModal'), { ssr: false });
 
 /** Set once per window: this is what makes autostart a launch event rather
@@ -366,12 +367,11 @@ export default function TerminalsView() {
     await stopAgent(agentId);
   }, [stopAgent]);
 
-  // The way back offered to a panel whose claude left fullscreen: the header's
-  // stop, then its start, so the new session opens fullscreen and the wheel
-  // scrolls again. A start that fails says why, as it does from the header.
-  // A panel's `restart` (the left-fullscreen notice) continues the agent's
-  // conversation (#138). A stop then a start began a new one, since a start
-  // resumes only once per app run.
+  // The way back offered to a panel whose claude left fullscreen (its notice's
+  // `restart`): one agent:restart, which continues the agent's conversation in
+  // a new session that opens fullscreen, so the wheel scrolls again (#138). A
+  // stop then a start began a new conversation, since a start resumes only once
+  // per app run. A restart that fails says why, on the line a failed start uses.
   const handleRestartAgent = useCallback(async (agentId: string) => {
     setStartError(null);
     try {
@@ -521,7 +521,7 @@ export default function TerminalsView() {
     character?: string,
     name?: string,
     secondaryProjectPath?: string,
-    permissionMode?: 'normal' | 'auto' | 'bypass',
+    permissionMode?: AgentPermissionMode,
     provider?: import('@/types/electron').AgentProvider,
     localModel?: string,
     obsidianVaultPaths?: string[],
