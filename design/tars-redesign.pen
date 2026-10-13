@@ -275489,7 +275489,7 @@
                       "id": "We0Bs",
                       "name": "t",
                       "fill": "$text-primary",
-                      "content": "Its conversation opens with the next part of this preview",
+                      "content": "Its conversation starts with your first message",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-display",
                       "fontSize": 22,
@@ -275502,51 +275502,12 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 480,
-                      "content": "The chat is kept: its number, its title and its place in the list. Until its orchestrator can answer here, Tars, all projects talks to every orchestrator.",
+                      "content": "Your first message starts this chat's orchestrator: a conversation of its own, in a worktree of its own, served by the project's team.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
                       "fontSize": 12.5,
                       "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ZLBlJ",
-                      "name": "button Open Tars, all projects",
-                      "height": 32,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "padding": [
-                        0,
-                        13
-                      ],
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "WV5Ll",
-                          "name": "message-square",
-                          "width": 14,
-                          "height": 14,
-                          "icon": "message-square",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        },
-                        {
-                          "type": "text",
-                          "id": "hVNoo",
-                          "name": "label",
-                          "fill": "$text-secondary",
-                          "content": "Open Tars, all projects",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 12.5,
-                          "fontWeight": "normal"
-                        }
-                      ]
                     }
                   ]
                 },
@@ -277126,7 +277087,7 @@
                           "id": "QsBp7",
                           "name": "note",
                           "fill": "$text-muted",
-                          "content": "Its conversation opens with the next part of this preview.",
+                          "content": "Its first message starts its orchestrator, and names it unless you do.",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -281176,7 +281137,7 @@
                       "id": "wxWla",
                       "name": "t",
                       "fill": "$text-primary",
-                      "content": "Its conversation opens with the next part of this preview",
+                      "content": "Its conversation starts with your first message",
                       "lineHeight": 1.15,
                       "fontFamily": "$font-display",
                       "fontSize": 22,
@@ -281189,51 +281150,12 @@
                       "fill": "$text-secondary",
                       "textGrowth": "fixed-width",
                       "width": 480,
-                      "content": "The chat is kept: its number, its title and its place in the list. Until its orchestrator can answer here, Tars, all projects talks to every orchestrator.",
+                      "content": "Your first message starts this chat's orchestrator: a conversation of its own, in a worktree of its own, served by the project's team.",
                       "lineHeight": 1.5,
                       "textAlign": "center",
                       "fontFamily": "$font-ui",
                       "fontSize": 12.5,
                       "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ZtPx0",
-                      "name": "button Open Tars, all projects",
-                      "height": 32,
-                      "fill": "$surface",
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "gap": 6,
-                      "padding": [
-                        0,
-                        13
-                      ],
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "icon",
-                          "id": "n0lMX",
-                          "name": "message-square",
-                          "width": 14,
-                          "height": 14,
-                          "icon": "message-square",
-                          "library": "lucide",
-                          "fill": "$text-secondary"
-                        },
-                        {
-                          "type": "text",
-                          "id": "uE2Or",
-                          "name": "label",
-                          "fill": "$text-secondary",
-                          "content": "Open Tars, all projects",
-                          "lineHeight": 1.4,
-                          "fontFamily": "$font-ui",
-                          "fontSize": 12.5,
-                          "fontWeight": "normal"
-                        }
-                      ]
                     }
                   ]
                 },
@@ -282813,7 +282735,7 @@
                           "id": "iLQQf",
                           "name": "note",
                           "fill": "$text-muted",
-                          "content": "Its conversation opens with the next part of this preview.",
+                          "content": "Its first message starts its orchestrator, and names it unless you do.",
                           "lineHeight": 1.4,
                           "fontFamily": "$font-ui",
                           "fontSize": 12,
@@ -289283,7 +289205,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "The chat list reads the chats' records (chat:list, #361): every chat by project then number, each with its runner as the fleet has it now. Nothing else is shown of a chat until its conversation can be read: no last line, no unread, no count of chats working.",
+              "content": "The chat list reads the chats' records (chat:list, #361): every chat by project then number, each with its runner as the fleet has it now. Above it, how many chats work of the most this Mac runs (system:chatLimit): N of M working, its square idle at 0. Nothing else is shown of a chat in the list: no last line, no unread.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -289365,7 +289287,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "A chat opened from the list: its head as the chat page draws it, its actions aside, and in place of the conversation the sentence that it opens with the next part of the preview, with a way to Tars, all projects. Nothing delegated yet. Until the chat page comes (PR E), a chat's actions are on its row in the list, behind the dots that show on the row the pointer is on.",
+              "content": "A chat opened from the list opens on its page, drawn in chat-redesign-a.pen: a chat with a runner on its conversation, a new chat on its first message, which starts its orchestrator in a worktree of its own (Chat · chats · a new chat, its first message, where the composer under this frame's chat area is drawn). A chat's actions are on its row in the list, behind the dots that show on the row the pointer is on.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
@@ -289515,7 +289437,7 @@
               "id": "P1460U",
               "name": "caption",
               "fill": "$text-secondary",
-              "content": "WAITING FOR PR D AND E",
+              "content": "SINCE PR D AND E",
               "lineHeight": 1.2,
               "fontFamily": "$font-ui",
               "fontSize": 10,
@@ -289529,7 +289451,7 @@
               "fill": "$text-primary",
               "textGrowth": "fixed-width",
               "width": "fill_container",
-              "content": "How many chats work of the most this Mac runs, the conversation, what a chat delegated, and the composer's send come with the runners, chat:history and chat:events.",
+              "content": "The conversation, the composer's send and a new chat's first message are on the chat page; what a chat delegated comes once a task names the chat it came from.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": 14,
