@@ -16,6 +16,7 @@ import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
 import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown, takeSlot } from '../../core/agent-launch';
 import { getAllProviders, getProvider, isValidProvider } from '../../providers';
+import { planModeRefusal } from '../../providers/plan-mode';
 // An agent may name any CLI, since an agent in bypass can run any binary itself (SECURITY.md): what is
 // refused is only what could not start, on the platform Tars runs on (2.0.2).
 import { cliPathProblem } from '../../platform/cli-path';
@@ -1352,6 +1353,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     if (permissionMode !== undefined && !['plan', 'normal', 'auto', 'bypass'].includes(permissionMode)) {
       sendJson({ error: 'Invalid permission mode: plan, normal, auto or bypass' }, 400);
+      return;
+    }
+    // Plan on a provider that has none would run as normal (the Audit's Low 2 on #407).
+    const noPlan = planModeRefusal(provider, permissionMode);
+    if (noPlan) {
+      sendJson({ error: noPlan }, 400);
       return;
     }
     if (cliPath !== undefined) {
