@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -25,7 +25,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * output are the agent's own, before and after the nested run. And (the
  * Audit's L5 on #380) when the agent's own SessionStart was lost, so that it
  * has no session at all, the nested run's turn and Stop change nothing either:
- * not its session, not its status, not its last output.
+ * not its session, not its status, not its last output. The agent is started
+ * on a task of its own, so it reads running before the nested run: the nested
+ * Stop's idle would change that (QA's Low on #388: started with no prompt, the
+ * agent read idle before and after, and the status assertion could not fail).
  * The artefact: values.json with both sessions and the agent as Tars holds it.
  */
 
@@ -129,6 +132,7 @@ test("a CLI run inside an agent's terminal does not take the agent's session", a
     expect(after.lastCleanOutput ?? null, "the nested CLI's answer is not the agent's").not.toBe('ok');
   } finally {
     await app.close();
+    await removeHome(home);
   }
 });
 
@@ -161,13 +165,15 @@ test("a CLI run inside an agent's terminal drives nothing when the agent's own s
     await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
     const worker = async () => (await page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find((a) => a.id === 'w')!;
 
-    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'w', prompt: '' }));
+    // Its own turn first: started on a task, Tars marks it running, and its stand-in posts nothing of it.
+    await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'w', prompt: 'Write the release notes.' }));
     await expect.poll(() => events().some((e) => !e.nested && e.event === 'started'), { timeout: 60_000 }).toBe(true);
     // Its status settled from the launch, with no session of its own.
     await page.waitForTimeout(2_000);
     const before = await worker();
     values.before = before;
     expect(before.currentSessionId ?? null, 'the stand-in lost its own SessionStart').toBeNull();
+    expect(before.status, 'its own turn, under way').toBe('running');
 
     await page.evaluate(() => (window as unknown as Api).electronAPI.agent.sendInput({ id: 'w', input: 'NEST\r' }));
     await expect.poll(() => events().some((e) => e.event === 'nested-done'), { timeout: 90_000 }).toBe(true);
@@ -181,5 +187,6 @@ test("a CLI run inside an agent's terminal drives nothing when the agent's own s
     expect(after.lastCleanOutput ?? null, "the nested CLI's answer is not the agent's").not.toBe('ok');
   } finally {
     await app.close();
+    await removeHome(home);
   }
 });
