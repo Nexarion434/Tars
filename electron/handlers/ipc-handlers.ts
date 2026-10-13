@@ -1,6 +1,8 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
+import { gitRefusal } from '../core/chat-slots';
+import { execFileSync } from 'child_process';
 import { restartRunnersOf } from '../services/chat-runners';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
@@ -150,6 +152,39 @@ function writeCustomProjects(list: string[]): void {
   // the reader above silently returns [] for that - the user's project list
   // just disappears.
   writeAtomicSync(CUSTOM_PROJECTS_FILE, JSON.stringify(Array.from(new Set(list)), null, 2));
+}
+
+/**
+ * An agent's own worktree, set in its settings (agent:update): made, or why
+ * not, before the record changes. The answer is what the Agents page shows
+ * after "Not saved:": git's own reason, without its progress or "fatal: ".
+ */
+async function makeAgentWorktree(projectPath: string, branchName: string): Promise<{ worktreePath: string; branchName: string } | { error: string }> {
+  const worktreePath = resolveWorktreePath(projectPath, branchName);
+  if (!worktreePath) return { error: 'Invalid branch name' };
+  try {
+    fs.mkdirSync(path.join(projectPath, '.worktrees'), { recursive: true });
+    if (!fs.existsSync(worktreePath)) {
+      // argv, not a shell string: worktreePath comes from the project path, so
+      // a quote or a space in it used to break the command (or run its own).
+      // See the same fix in agent:create. In the C locale: gitRefusal reads
+      // git's "fatal:", which a translated git would not write.
+      const git = (args: string[]) => execFileSync('git', args, { cwd: projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+      // An existing branch is checked out there, a new one is made: only the
+      // add that applies runs, so a refusal is git's reason for it. Any failure
+      // of the first used to be retried as a new branch, and the user read the
+      // retry's reason ("a branch named ... already exists").
+      let exists = true;
+      try { git(['rev-parse', '--verify', '--quiet', branchName]); } catch { exists = false; }
+      git(exists ? ['worktree', 'add', worktreePath, branchName] : ['worktree', 'add', '-b', branchName, worktreePath]);
+    }
+    await logDependencies(worktreePath, await cloneDependencies(projectPath, worktreePath));
+    return { worktreePath, branchName };
+  } catch (err) {
+    console.error('Failed to create worktree on update:', err);
+    const stderr = String((err as { stderr?: unknown }).stderr ?? '').trim();
+    return { error: `The worktree could not be made: ${stderr ? gitRefusal(stderr) : (err as Error).message}` };
+  }
 }
 
 export function registerIpcHandlers(deps: IpcHandlerDependencies): void {
@@ -1067,24 +1102,40 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
-    // Checked before any field changes: a refused edit changes nothing.
+    // Every check first, git's included: a save refused changes nothing on the record and kills no terminal, as
+    // the Agents page tells the user ("Not saved: <reason>. Your changes are still here."). The name, the CLI and
+    // the rest used to be written, and a terminal killed for a new provider or CLI, before git ran, and a refusal
+    // undid none of it (the Audit's MEDIUM on #403).
     if (params.skills !== undefined) {
       const skillsWrong = skillsProblem(params.skills);
       if (skillsWrong) return { success: false, error: `Not saved: ${skillsWrong}.` };
     }
+    const moving = params.projectPath !== undefined && params.projectPath !== agent.projectPath;
+    if (moving && !fs.existsSync(params.projectPath!)) {
+      return { success: false, error: 'Project path does not exist' };
+    }
+    if (params.secondaryProjectPath && !fs.existsSync(params.secondaryProjectPath)) {
+      return { success: false, error: 'Secondary project path does not exist' };
+    }
+    // The worktree, the one check that writes: made before the record changes, in the project the agent will be in.
+    // Only for an agent with none (a move detaches the old one): changing it under a running agent could be
+    // destructive.
+    let worktree: { worktreePath: string; branchName: string } | undefined;
+    if (params.worktree?.enabled && params.worktree.branchName && (moving || !agent.worktreePath)) {
+      const made = await makeAgentWorktree(moving ? params.projectPath! : agent.projectPath, params.worktree.branchName);
+      if ('error' in made) return { success: false, error: made.error };
+      worktree = made;
+    }
     // What the running CLI was started with, as far as this edit can change it.
     const launchBefore = launchSettings(agent);
 
-    // Update fields if provided
-    if (params.projectPath !== undefined && params.projectPath !== agent.projectPath) {
-      if (!fs.existsSync(params.projectPath)) {
-        return { success: false, error: 'Project path does not exist' };
-      }
-      agent.projectPath = params.projectPath;
+    // Then the save, which nothing refuses any more.
+    if (moving) {
+      agent.projectPath = params.projectPath!;
       agent.pathMissing = false;
       // The old worktree belongs to the previous repository. Detach it so the
       // agent works directly in the new project (a new worktree can be set up
-      // via the worktree param below).
+      // via the worktree param).
       agent.worktreePath = undefined;
       agent.branchName = undefined;
       // BUG 4: any live PTY still has the old repo as cwd.
@@ -1096,13 +1147,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       agent.skills = params.skills;
     }
     if (params.secondaryProjectPath !== undefined) {
-      if (params.secondaryProjectPath === null) {
-        agent.secondaryProjectPath = undefined;
-      } else if (fs.existsSync(params.secondaryProjectPath)) {
-        agent.secondaryProjectPath = params.secondaryProjectPath;
-      } else {
-        return { success: false, error: 'Secondary project path does not exist' };
-      }
+      agent.secondaryProjectPath = params.secondaryProjectPath === null ? undefined : params.secondaryProjectPath;
     }
     if (params.permissionMode !== undefined) {
       agent.permissionMode = params.permissionMode;
@@ -1163,46 +1208,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       }
       agent.cliPath = newCliPath;
     }
-    if (params.worktree !== undefined && !agent.worktreePath) {
-      // Only allow worktree setup if agent doesn't already have one
-      // (worktree changes on a running agent could be destructive)
-      if (params.worktree.enabled && params.worktree.branchName) {
-        const branchName = params.worktree.branchName;
-        const worktreesDir = path.join(agent.projectPath, '.worktrees');
-        const worktreePath = resolveWorktreePath(agent.projectPath, branchName);
-        if (!worktreePath) {
-          return { success: false, error: 'Invalid branch name' };
-        }
-        try {
-          if (!fs.existsSync(worktreesDir)) {
-            fs.mkdirSync(worktreesDir, { recursive: true });
-          }
-          if (!fs.existsSync(worktreePath)) {
-            // argv, not a shell string: worktreePath comes from the project
-            // path, so a quote or a space in it used to break the command (or
-            // run its own). See the same fix in agent:create.
-            const { execFileSync } = await import('child_process');
-            try {
-              execFileSync('git', ['rev-parse', '--verify', branchName], { cwd: agent.projectPath, stdio: 'pipe' });
-              execFileSync('git', ['worktree', 'add', worktreePath, branchName], { cwd: agent.projectPath, stdio: 'pipe' });
-            } catch {
-              execFileSync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: agent.projectPath, stdio: 'pipe' });
-            }
-          }
-          await logDependencies(worktreePath, await cloneDependencies(agent.projectPath, worktreePath));
-          agent.worktreePath = worktreePath;
-          agent.branchName = branchName;
-          // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
-          // It must be killed so the next agent:start respawns in the new
-          // worktree directory. Otherwise writes leak into the main workspace.
-          killStalePty(agent);
-          agent.status = 'idle';
-          agent.currentTask = undefined;
-        } catch (err) {
-          console.error('Failed to create worktree on update:', err);
-          return { success: false, error: 'Failed to create git worktree' };
-        }
-      }
+    if (worktree) {
+      agent.worktreePath = worktree.worktreePath;
+      agent.branchName = worktree.branchName;
+      // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
+      // It must be killed so the next agent:start respawns in the new
+      // worktree directory. Otherwise writes leak into the main workspace.
+      killStalePty(agent);
+      agent.status = 'idle';
+      agent.currentTask = undefined;
     }
 
     // Last, once the project is settled: an orchestrator, whether the toggle
