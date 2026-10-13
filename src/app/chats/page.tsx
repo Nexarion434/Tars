@@ -6,7 +6,6 @@ import { useSearchParams } from 'next/navigation';
 import { MessageSquare } from 'lucide-react';
 import { BrandMark } from '@/components/Brand';
 import { LoadingPanel, PageHeader } from '@/components/ui';
-import { ChatOpen } from '@/components/NewShell/ChatOpen';
 import { ChatPage } from '@/components/NewShell/ChatPage';
 import { NewChatRecord } from '@/components/NewShell/NewChatRecord';
 import { chatSections } from '@/lib/chat-sections';
@@ -15,9 +14,9 @@ import { useChats } from '@/hooks/useChats';
 /**
  * The chats page of the new shell. `?new=1`: a new chat's record. `?chat=`: that
  * chat, opened. Neither: the first chat of the list opened, or, with none at
- * all, the state `Shell · chats · empty` draws. No chat is made up. A chat with
- * a runner opens on its conversation; one without (a new chat, until sending
- * from a chat comes with PR D) has none to read, and says when it will.
+ * all, the state `Shell · chats · empty` draws. No chat is made up. A chat opens
+ * on its page: its conversation, or, for a new chat, its first message, which
+ * starts its runner (PR D).
  */
 export default function ChatsPage() {
   return (
@@ -37,7 +36,7 @@ function ChatsPageInner() {
   const asked = params.get('chat');
   const open = (asked && chats.find(chat => chat.id === asked))
     || chatSections(chats, { now: at }).flatMap(section => section.chats)[0];
-  if (open) return open.runnerId ? <ChatPage key={open.id} chat={open} /> : <ChatOpen chat={open} />;
+  if (open) return <ChatPage key={open.id} chat={open} />;
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col">
