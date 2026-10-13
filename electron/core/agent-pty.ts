@@ -11,6 +11,7 @@ import { childEnv, type Env } from '../platform';
 import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
+import { chatsReadEnv } from './chat-inbox';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -164,6 +165,8 @@ export function spawnAgentPty(opts: {
       // Its own temporary folder, which a boot does not empty (services/agent-tmp.ts):
       // here because every agent terminal is spawned here.
       ...(agentId ? agentTmpEnvOrNone(agentId) : {}),
+      // A chat's orchestrator, with the reading option on: chat_list and chat_read (PR F).
+      ...(agentId ? chatsReadEnv(agentId) : {}),
       ...managedCliEnv(opts.binaryName),
       // The state mod (services/state-mod.ts), for a claude new enough to load
       // it: its hooks report this terminal's state from inside the CLI.

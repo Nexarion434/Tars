@@ -352,7 +352,10 @@ export async function sendNow(params: {
   }
   const agentId = typeof params.agentId === 'string' ? params.agentId : '';
   const agent = agents.get(agentId);
-  if (!agent || !room.memberIds.includes(agentId)) {
+  // A member, or a chat's runner of this room's project: Noah's answer to what
+  // that chat said in the room goes back to it (PR F).
+  const runsAChatHere = !!agent && agent.kind === 'chat' && room.kind === 'project' && agent.projectPath === room.projectPath;
+  if (!agent || (!room.memberIds.includes(agentId) && !runsAChatHere)) {
     return { success: false, interrupted: false, error: 'That agent is not a member of this room.' };
   }
   const files = stagedFor(room.id, params.attachments);
