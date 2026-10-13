@@ -28,7 +28,8 @@ import { startFakeRelay, type FakeRelay } from '../__tests__/fixtures/fake-tars-
  *    fresh "@demo #3 text" lands in chat #3, "@demo text" in the inbox, "@demo #9 text" gets the list;
  * 5. a question chat #3 asks the user is prefixed with its chat, and the user's answer lands in chat #3;
  * 6. the room: Noah's message to the project lands in the room and in Main, not in a chat's runner; chat #3's post
- *    reaches the room named "chat #3 "Release""; Noah's answer to it lands in chat #3, not in Main.
+ *    reaches the room named "chat #3 "Release""; Noah's answer to it lands in chat #3, not in Main;
+ * 7. a worker nobody asked for work, running and silent for 40 minutes, is reported to the inbox chat, not to Main.
  * The artefact: values.json (each answer, what each stand-in received), prompts.jsonl (every turn of every CLI).
  */
 
@@ -230,7 +231,6 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     const agentOf = async (id: string) => (await fleet()).find((a) => a.id === id);
     const runnerOf = async (chatId: string) => (await fleet()).find((a) => a.kind === 'chat' && a.chatId === chatId);
     const prompts = () => lines<{ id: string; prompt: string }>(promptsFile);
-    const promptsOf = (id: string) => prompts().filter((l) => l.id === id).map((l) => l.prompt);
     const reached = (needle: string) => prompts().filter((l) => l.prompt.includes(needle)).map((l) => l.id);
     const atRest = (id: string) => expect.poll(async () => (await agentOf(id))?.status, { timeout: 30_000 }).toMatch(/^(idle|completed)$/);
     const tokenOf = (id: string) => app.evaluate((_e, { dist, id }) => {
@@ -357,6 +357,31 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     keep({ answered });
     expect(answered).toMatchObject({ success: true });
     await expect.poll(() => reached('ROOM3>>'), { timeout: 30_000 }).toEqual([releaseRunner]);
+    await atRest(releaseRunner);
+
+    // 7. A stall nobody asked for: to the inbox chat. The worker's session as its SessionStart registered it, marked
+    // running on a transcript last written 40 minutes ago, and the check run once, as its timer would.
+    await page.evaluate(() => (window as unknown as { electronAPI: { agent: { start(p: { id: string; prompt: string }): Promise<unknown> } } }).electronAPI.agent.start({ id: 'w1', prompt: '' }));
+    await expect.poll(() => app.evaluate((_e, { dist }) => {
+      const req = process.mainModule!.require;
+      return !!req(`${dist}/core/agent-manager.js`).agents.get('w1').currentSessionId;
+    }, { dist }), { timeout: 30_000 }).toBe(true);
+    const stalledTranscript = await app.evaluate((_e, { dist }) => {
+      const req = process.mainModule!.require;
+      const a = req(`${dist}/core/agent-manager.js`).agents.get('w1');
+      req(`${dist}/core/agent-launch.js`).resetLaunches();
+      a.status = 'running';
+      return req(`${dist}/utils/resume-session.js`).transcriptPath(a.ptyCwd, a.currentSessionId) as string;
+    }, { dist });
+    const fortyMinutesAgo = new Date(Date.now() - 40 * 60_000);
+    fs.mkdirSync(path.dirname(stalledTranscript), { recursive: true });
+    if (!fs.existsSync(stalledTranscript)) fs.writeFileSync(stalledTranscript, '{"type":"user"}\n');
+    fs.utimesSync(stalledTranscript, fortyMinutesAgo, fortyMinutesAgo);
+    await app.evaluate(async (_e, { dist }) => {
+      const req = process.mainModule!.require;
+      await req(`${dist}/services/stall-watch.js`).checkStalls();
+    }, { dist });
+    await expect.poll(() => reached('nothing to its transcript for 40 minutes'), { timeout: 30_000 }).toEqual([inboxRunner]);
     keep({ prompts: prompts(), telegramSent: telegram.sent, hermesSends: hermes.sends });
   } finally {
     await app.close();
