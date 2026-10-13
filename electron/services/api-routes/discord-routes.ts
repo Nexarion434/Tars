@@ -1,5 +1,6 @@
 import { RouteApp, RouteContext } from './types';
 import { sendDiscordMessage } from '../discord-bot';
+import { chatHeadOf } from '../chat-senders';
 
 export function registerDiscordRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/discord/send: send_discord, an agent answering in Discord.
@@ -10,7 +11,8 @@ export function registerDiscordRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
     // The settings as they are now, not the server's startup snapshot.
-    const sent = await sendDiscordMessage(`👑 ${message}`, ctx.getAppSettings(), channel_id);
+    // Headed by the chat it comes from: Discord's way to name it (PR F).
+    const sent = await sendDiscordMessage(`${chatHeadOf(req.callerAgentId)}👑 ${message}`, ctx.getAppSettings(), channel_id);
     if (sent.ok) sendJson({ success: true });
     else sendJson({ error: sent.error }, sent.status);
   });

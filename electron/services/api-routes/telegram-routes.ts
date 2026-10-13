@@ -6,6 +6,9 @@ import { agents } from '../../core/agent-manager';
 import { hasOrchestratorPowers } from '../../core/agent-role';
 import { redactSecrets } from '../../utils/redact-secrets';
 import { relaySend } from '../hermes-relay';
+import { chatTag } from '../chat-addressing';
+import { chatRunBy } from '../chat-runners';
+import { sendForChat } from '../telegram-bot';
 
 /**
  * With the relay on (services/hermes-relay.ts), send_telegram is the one way left to write to the user, and goes
@@ -20,8 +23,11 @@ async function sendThroughRelay(req: RouteRequest, sendJson: SendJson, message: 
     sendJson({ error: 'Only a project\'s orchestrator writes to the user. Tell your orchestrator: it decides what reaches them.' }, 403);
     return;
   }
-  const text = `${caller.name || caller.id}:\n${redactSecrets(message)}`;
-  const result = await relaySend({ text, kind: 'report', ref: `message:${randomUUID()}`, projectPath: caller.projectPath });
+  // Headed by the chat it comes from, so the user sees which, and a reply to
+  // it goes back there (PR F); an agent that runs no chat, by its name.
+  const chat = chatRunBy(caller);
+  const text = `${chat ? chatTag(chat) : `${caller.name || caller.id}:`}\n${redactSecrets(message)}`;
+  const result = await relaySend({ text, kind: 'report', ref: `message:${randomUUID()}`, projectPath: caller.projectPath, chatId: chat?.id });
   if (result.state === 'sent') sendJson({ success: true });
   else if (result.state === 'queued') sendJson({ success: true, queued: true, note: result.reason }, 202);
   else sendJson({ error: result.reason }, 503);
@@ -75,12 +81,16 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
       return;
     }
 
+    // From a chat (its runner, or the orchestrator for Main): headed by it and
+    // logged, so that a reply to it goes back to that chat (PR F).
+    const caller = req.callerAgentId ? agents.get(req.callerAgentId) : undefined;
+    const chat = caller ? chatRunBy(caller) : undefined;
     try {
-      await telegramBot.sendMessage(targetChatId, `\u{1F451} ${message}`, { parse_mode: 'Markdown' });
+      await sendForChat(telegramBot, targetChatId, chat ? message : `\u{1F451} ${message}`, chat, { parse_mode: 'Markdown' });
       sendJson({ success: true });
     } catch {
       try {
-        await telegramBot.sendMessage(targetChatId, `\u{1F451} ${message}`);
+        await sendForChat(telegramBot, targetChatId, chat ? message : `\u{1F451} ${message}`, chat);
         sendJson({ success: true });
       } catch (err2) {
         sendJson({ error: `Failed to send: ${err2}` }, 500);

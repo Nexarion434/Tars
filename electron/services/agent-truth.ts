@@ -356,6 +356,24 @@ export function pendingBackgroundWork(
       }
       continue;
     }
+    // A note that came while a turn ran: claude 2.1.296 queues it
+    // (queue-operation enqueue) and attaches it to the turn (an attachment
+    // queued_command), and writes no user line for it. Read only from user
+    // lines, such a task stayed running for ever, and every rest told its
+    // requester so (the Low after the 2.0.0 chain).
+    // Only a note Claude Code queued itself: a message typed in during the turn
+    // is queued the same way (commandMode 'prompt', "Message from ..."), and
+    // one quoting a note must end nothing (GATE-PR389, L1).
+    const attachment = entry.attachment as { type?: unknown; commandMode?: unknown; prompt?: unknown } | undefined;
+    const queued = entry.type === 'queue-operation' && entry.operation === 'enqueue'
+      ? entry.content
+      : entry.type === 'attachment' && attachment?.type === 'queued_command' && attachment.commandMode === 'task-notification'
+        ? attachment.prompt
+        : undefined;
+    if (entry.type === 'queue-operation' || entry.type === 'attachment') {
+      if (typeof queued === 'string' && queued.trimStart().startsWith('<task-notification>')) noteEnds(queued, finished);
+      continue;
+    }
     if (entry.type !== 'user') continue;
 
     const result = entry.toolUseResult as Record<string, unknown> | undefined;
@@ -370,13 +388,18 @@ export function pendingBackgroundWork(
     const text = typeof content === 'string'
       ? content
       : blocks.map(b => (typeof b.text === 'string' ? b.text : '')).join('\n');
-    for (const [, note] of text.matchAll(TASK_NOTE)) {
-      const id = note.match(TASK_ID)?.[1];
-      const status = note.match(TASK_STATUS)?.[1]?.trim();
-      if (id && status && status !== 'running') finished.add(id);
-    }
+    noteEnds(text, finished);
   }
   return [...started].filter(id => !finished.has(id));
+}
+
+/** The tasks the <task-notification> notes in some text say ended (a status other than running). */
+function noteEnds(text: string, finished: Set<string>): void {
+  for (const [, note] of text.matchAll(TASK_NOTE)) {
+    const id = note.match(TASK_ID)?.[1];
+    const status = note.match(TASK_STATUS)?.[1]?.trim();
+    if (id && status && status !== 'running') finished.add(id);
+  }
 }
 
 /**
