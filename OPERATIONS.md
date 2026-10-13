@@ -811,10 +811,16 @@ jq '.numbers' ~/.dorothy/chats.json
 - **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
 
 **When a send answers `runner_mismatch`:** the chat's record names an agent the fleet does not confirm as its
-runner: for Main, an agent that is not the project's orchestrator (the orchestrator was changed, or the file
-edited); for another chat, an agent that is not the runner made for it. Tars sends, launches and counts nothing
-for it. Compare the record (the `jq` above) with `agents.json`. A chat other than Main can be deleted and started
-again; for Main after a change of orchestrator, quit Tars and set Main's `runnerId` to the new orchestrator's id.
+runner: for another chat than Main, an agent that is not the runner made for it (the file was edited). Tars sends,
+launches and counts nothing for it. Compare the record (the `jq` above) with `agents.json`; such a chat can be deleted
+and started again. Main follows the project's orchestrator by itself: when the role moves, its record is rebound and
+the log says `[chats] Main of <project> follows the project's orchestrator: <former> to <new>`.
+
+**When a dispatch answers `worker_busy_for_other_chat`:** a `steer` or a `restart` would cut work another chat asked
+for (its title and number are in the answer). Send it with mode `queue`, or let that chat's work end.
+
+**When a start or a send answers `provider_unsupported`:** the project's orchestrator runs a CLI whose conversations
+Tars cannot resume; chats other than Main wait until it is back on claude.
 
 **When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
 counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
