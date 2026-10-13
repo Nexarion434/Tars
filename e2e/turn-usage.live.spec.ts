@@ -142,7 +142,7 @@ test("each turn's usage is kept in the task ledger, and prices a task whose tran
 
     // The transcript gone: what the turns alone give.
     const session = (await agentState())!.session!;
-    const transcripts = [project, fs.realpathSync(project)].map(p => path.join(HOME, '.claude', 'projects', p.replace(/[/.]/g, '-'), `${session}.jsonl`));
+    const transcripts = [project, fs.realpathSync(project)].map(p => path.join(HOME, '.claude', 'projects', p.replace(/[^a-zA-Z0-9]/g, '-'), `${session}.jsonl`));
     const removed = transcripts.filter(f => fs.existsSync(f));
     for (const f of removed) fs.renameSync(f, `${f}.moved`);
     const fromTurns = await report();

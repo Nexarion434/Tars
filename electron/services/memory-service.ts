@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { projectFolders } from './project-index';
-import { memoryProjectDirName, knownProjectsByFolder } from '../platform/claude-project-dir';
+import { memoryProjectDirName, knownProjectsByFolder, claudeProjectDirNames } from '../platform/claude-project-dir';
 import { unlinkRetryingSync } from '../platform/rename-replacing';
 import { spellingsOf } from '../utils/resume-session';
 
@@ -25,6 +25,13 @@ export interface ProjectMemory {
   lastModified: string;
   hasMemory: boolean;
   provider: string;    // 'claude' | 'codex' | 'gemini'
+  /**
+   * The memory folder an older Tars made for this project under a name Claude
+   * never reads (before 1.9.6 on macOS and Linux, a path with `_`, a space,
+   * `~`...). Its files were copied into this row's folder once, when that had
+   * no MEMORY.md, and are kept where they were.
+   */
+  olderCopy?: string;
 }
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
@@ -108,45 +115,8 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
     for (const folder of await projectFolders(projectsDir)) {
       const memoryDir = path.join(folder.dir, 'memory');
       const decodedPath = knownByFolder.get(folder.name) ?? folder.projectPath;
-      const projectName = getProjectName(decodedPath);
 
-      const project: ProjectMemory = {
-        id: `${provider}:${folder.name}`,
-        projectName,
-        projectPath: decodedPath,
-        memoryDir,
-        files: [],
-        totalSize: 0,
-        lastModified: '',
-        hasMemory: false,
-        provider,
-      };
-
-      if (await fs.promises.access(memoryDir).then(() => true, () => false)) {
-        try {
-          const mdFiles = (await fs.promises.readdir(memoryDir))
-            .filter(f => f.endsWith('.md'))
-            .sort((a, b) => {
-              // MEMORY.md always first
-              if (a === 'MEMORY.md') return -1;
-              if (b === 'MEMORY.md') return 1;
-              return a.localeCompare(b);
-            });
-
-          const files = await Promise.all(mdFiles.map(f => readMemoryFileAsync(path.join(memoryDir, f))));
-          const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-          const lastModified = files.reduce((latest, f) =>
-            f.lastModified > latest ? f.lastModified : latest, '');
-
-          project.files = files;
-          project.totalSize = totalSize;
-          project.lastModified = lastModified;
-          project.hasMemory = files.length > 0;
-        } catch {
-          // Skip unreadable directories
-        }
-      }
-
+      const project = await readProjectRow(provider, folder.name, memoryDir, decodedPath);
       seenPaths.add(project.projectPath);
       if (!byPath.has(project.projectPath)) byPath.set(project.projectPath, project);
       results.push(project);
@@ -192,12 +162,96 @@ export async function listProjectMemories(extraProjectPaths: string[] = []): Pro
     });
   }
 
+  for (const projectPath of extraProjectPaths) {
+    if (projectPath) await keepClaudesRow(projectPath, results);
+  }
+
   // Sort: projects with memory first, then by lastModified desc
   return results.sort((a, b) => {
     if (a.hasMemory && !b.hasMemory) return -1;
     if (!a.hasMemory && b.hasMemory) return 1;
     return b.lastModified.localeCompare(a.lastModified);
   });
+}
+
+/** A row of the listing, as a folder holds it. */
+async function readProjectRow(provider: string, folderName: string, memoryDir: string, projectPath: string): Promise<ProjectMemory> {
+  const project: ProjectMemory = {
+    id: `${provider}:${folderName}`,
+    projectName: getProjectName(projectPath),
+    projectPath,
+    memoryDir,
+    files: [],
+    totalSize: 0,
+    lastModified: '',
+    hasMemory: false,
+    provider,
+  };
+  if (await fs.promises.access(memoryDir).then(() => true, () => false)) {
+    try {
+      const mdFiles = (await fs.promises.readdir(memoryDir))
+        .filter(f => f.endsWith('.md'))
+        .sort((a, b) => {
+          // MEMORY.md always first
+          if (a === 'MEMORY.md') return -1;
+          if (b === 'MEMORY.md') return 1;
+          return a.localeCompare(b);
+        });
+      const files = await Promise.all(mdFiles.map(f => readMemoryFileAsync(path.join(memoryDir, f))));
+      project.files = files;
+      project.totalSize = files.reduce((sum, f) => sum + f.size, 0);
+      project.lastModified = files.reduce((latest, f) => (f.lastModified > latest ? f.lastModified : latest), '');
+      project.hasMemory = files.length > 0;
+    } catch {
+      // Skip unreadable directories
+    }
+  }
+  return project;
+}
+
+/**
+ * One row for a Tars project whose memory an older Tars made under a folder
+ * Claude never reads (the gate of #375, M1): before 1.9.6, macOS and Linux
+ * named `/Users/me/my_proj` `-Users-me-my_proj`, where Claude's is
+ * `-Users-me-my-proj`. The project was listed twice, the old memory in one row
+ * and an empty one where Claude reads.
+ *
+ * Once, when Claude's folder holds no MEMORY.md, its memory files (every .md
+ * of the old memory folder) are copied in, none over a file Claude's folder
+ * holds, the old ones kept. Then the old row goes and
+ * Claude's stays, naming the old folder (`olderCopy`). A copy that fails
+ * leaves Claude's row as it is, the old folder still named on it.
+ */
+async function keepClaudesRow(projectPath: string, results: ProjectMemory[]): Promise<void> {
+  const spellings = spellingsOf(projectPath);
+  const claudes = new Set(spellings.map(spelling => memoryProjectDirName(spelling)));
+  const legacy = new Set(spellings.flatMap(spelling => claudeProjectDirNames(spelling)).filter(name => !claudes.has(name)));
+  const folderOf = (row: ProjectMemory) => row.id.slice('claude:'.length);
+  const old = results.filter(row => row.provider === 'claude' && row.id.startsWith('claude:') && legacy.has(folderOf(row)));
+  const older = old.find(row => row.files.some(f => f.isEntrypoint)) ?? old.find(row => row.hasMemory);
+  if (!older) return;
+  const target = results.find(row => row.provider === 'claude' && row.id.startsWith('claude:') && claudes.has(folderOf(row)));
+  const name = target ? folderOf(target) : memoryProjectDirName(spellings[spellings.length - 1]);
+  const memoryDir = path.join(CLAUDE_PROJECTS_DIR, name, 'memory');
+  if (!fs.existsSync(path.join(memoryDir, 'MEMORY.md'))) {
+    try {
+      await fs.promises.mkdir(memoryDir, { recursive: true });
+      for (const file of older.files) {
+        await fs.promises.copyFile(file.path, path.join(memoryDir, file.name), fs.constants.COPYFILE_EXCL).catch((err: NodeJS.ErrnoException) => {
+          if (err.code !== 'EEXIST') throw err;
+        });
+      }
+    } catch (err) {
+      console.warn(`[memory] could not copy ${older.memoryDir} into ${memoryDir}:`, (err as Error).message);
+    }
+  }
+  const row = await readProjectRow('claude', name, memoryDir, projectPath);
+  row.olderCopy = older.memoryDir;
+  for (const gone of [...old, ...(target ? [target] : [])]) results.splice(results.indexOf(gone), 1);
+  // A row the listing made for the project while it had no folder of Claude's.
+  const empty = results.findIndex(r => r.id === `tars:${projectPath}`);
+  if (empty !== -1) results.splice(empty, 1);
+  results.push(row);
 }
 
 export function readMemoryFileContent(filePath: string): { content: string; error?: string } {
