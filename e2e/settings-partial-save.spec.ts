@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -86,5 +86,5 @@ test('saving the Git toggle carries that key and nothing else', async () => {
   expect(after.model).toBe('sonnet');
   expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort());
 
-  fs.rmSync(home, { recursive: true, force: true });
+  await removeHome(home);
 });

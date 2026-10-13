@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { test } from '@playwright/test';
 
 /**
@@ -586,6 +588,77 @@ function writeFakeTailscale(home) {
  * idle on launch, so the suite sets them once their CLIs hold their terminals.
  */
 export const SWEEP_STATUSES = { a1: 'running', a2: 'running', a3: 'running', a4: 'running', a5: 'idle', a6: 'idle' };
+
+/**
+ * The folders a spec makes its sandbox in: os.tmpdir(), an agent's own TMPDIR
+ * included; /tmp, where the chat rooms make theirs for the length of the path
+ * their heads print; and macOS's own temporary folder, where the surfaces make
+ * theirs for the same reason (#368).
+ */
+function sandboxRoots() {
+  const roots = [os.tmpdir()];
+  if (process.platform !== 'win32') roots.push('/tmp');
+  if (process.platform === 'darwin') {
+    try {
+      roots.push(execFileSync('getconf', ['DARWIN_USER_TEMP_DIR'], { encoding: 'utf8' }).trim());
+    } catch { /* not this Mac's: os.tmpdir() and /tmp stay */ }
+  }
+  return roots;
+}
+
+/**
+ * Where a path lands, its links and its `..` resolved as the system does: for
+ * a path that does not exist, where its nearest existing parent lands, and the
+ * rest of the path.
+ */
+function landing(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch (error) {
+    const parent = path.dirname(p);
+    if (error.code !== 'ENOENT' || parent === p) throw error;
+    return path.join(landing(parent), path.basename(p));
+  }
+}
+
+/**
+ * Removes a spec's sandbox HOME once its app has closed. A process the app
+ * started can still be writing there: `amp --version`'s log, a hook's, and
+ * until #383 a `claude auth status` that outlived the quit and wrote
+ * .claude.json and its lock (QA, 2026-10-12). rmSync then meets ENOTEMPTY,
+ * and its maxRetries do not help, since Node lists the folder once. This
+ * removes again from a fresh listing, for up to 5 s, and says so on the run's
+ * output when it had to: a writer that outlives the app is still a finding,
+ * only no longer a red cleanup. The loop two specs and #382 each had a copy of.
+ *
+ * It removes only what lies strictly under one of `roots`, judged by where the
+ * path lands through its links and its `..`, and refuses anything else, a root
+ * included, before touching it: a wrong path fails its spec instead of
+ * deleting (the Audit's L1 on #385). Tests: __tests__/e2e-remove-home.test.ts.
+ */
+export async function removeHome(dir, roots = sandboxRoots()) {
+  const where = landing(dir);
+  const real = roots.flatMap((root) => {
+    try {
+      return [fs.realpathSync.native(root)];
+    } catch {
+      return [];
+    }
+  });
+  if (!real.some((root) => where.startsWith(root + path.sep))) {
+    throw new Error(`removeHome: ${dir} is not inside a folder the specs make their sandboxes in (${real.join(', ')}): nothing was removed`);
+  }
+  for (let attempt = 1; ; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (attempt > 1) console.warn(`[removeHome] ${dir} was written after its app closed: removed at try ${attempt}`);
+      return;
+    } catch (error) {
+      if ((error.code !== 'ENOTEMPTY' && error.code !== 'EBUSY') || attempt === 20) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
 
 /**
  * Waits until every agent to be shown running has its CLI in its terminal,

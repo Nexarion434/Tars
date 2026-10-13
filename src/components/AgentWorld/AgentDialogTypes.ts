@@ -1,4 +1,5 @@
 import type { AgentStatus } from '@/types/electron';
+import type { AgentPermissionMode } from '@/types/agent';
 
 export type PanelType = 'code' | 'git' | 'terminal' | 'context' | 'settings';
 
@@ -16,7 +17,7 @@ export interface AgentTerminalDialogProps {
     id: string;
     skills?: string[];
     secondaryProjectPath?: string | null;
-    permissionMode?: 'normal' | 'auto' | 'bypass';
+    permissionMode?: AgentPermissionMode;
     effort?: 'low' | 'medium' | 'high';
   }) => Promise<{ success: boolean; error?: string; agent?: AgentStatus }>;
   initialPanel?: PanelType;
