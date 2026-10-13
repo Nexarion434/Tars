@@ -26,6 +26,20 @@ import type { AgentRole, AgentStatus } from '../types';
 export const ROLE_IS_THE_TOGGLE_SINCE = 3;
 
 /**
+ * The orchestrator's powers: its instructions, its editing tools taken away,
+ * writing to and asking the user, and a worker's message to it being a report.
+ * Its project's orchestrator has them, and so does a chat's runner, a worker
+ * that runs one chat's conversation with the orchestrator
+ * (ORCHESTRATOR-PER-CHAT.md, 4.2). The powers and not the place: what only the
+ * project's one orchestrator is (it never sleeps, the bots write to it, the
+ * rule below keeps it unique) still reads the role, and a runner is stored as
+ * a worker. Which site reads which: __tests__/electron/core/role-sites.test.ts.
+ */
+export function hasOrchestratorPowers(agent: { role?: string; kind?: string }): boolean {
+  return agent.role === 'orchestrator' || agent.kind === 'chat';
+}
+
+/**
  * The role a create or an update asks for, if any. Throws on a role that is
  * neither, rather than leaving the agent as it was and saying it worked.
  */

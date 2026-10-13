@@ -113,6 +113,7 @@ import {
 import { registerIpcHandlers, IpcHandlerDependencies } from './handlers/ipc-handlers';
 import { registerCLIPathsHandlers } from './handlers/cli-paths-handlers';
 import { registerBusHandlers } from './handlers/bus-handlers';
+import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
@@ -141,6 +142,7 @@ import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate'
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
 import {
@@ -226,6 +228,7 @@ function loadAppSettings(): AppSettings {
     autoCheckUpdates: true,
     autoStartAgentsOnLaunch: true,
     newInterface: false,
+    chatsReadEachOther: false,
     opencodeEnabled: false,
     opencodeDefaultModel: '',
     ampEnabled: false,
@@ -255,7 +258,7 @@ function loadAppSettings(): AppSettings {
       // The switch is on only for the boolean true: the file is in ~/.dorothy,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
-      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true };
+      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
     console.error('Failed to load app settings:', err);
@@ -556,7 +559,11 @@ app.whenReady().then(async () => {
     agents,
     saveAgents,
     loginPtys: pluginPtyProcesses,
-    onAgentAccountChanged: (agentId) => { restartForSettings(agentId, ['claudeAccount']); },
+    onAgentAccountChanged: (agentId) => {
+      restartForSettings(agentId, ['claudeAccount']);
+      // An orchestrator's chats run on its account too: each runner takes it (the Audit's L3 on #379).
+      restartRunnersOf(agentId, ['claudeAccount']);
+    },
   });
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
@@ -576,6 +583,9 @@ app.whenReady().then(async () => {
   if (readAccountsSettings().enabled) void claudeAccounts.refreshAll();
   registerOverseerHandlers();
   registerBusHandlers();
+  // The chats' records, and the migration that makes each project's
+  // orchestrator's conversation its chat #1, Main (handlers/chat-handlers.ts).
+  registerChatHandlers({ agents, chatsShown: () => appSettings.newInterface === true });
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.
