@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
 import type { ProjectMemory, MemoryFile, HermesMcpServer, HermesMemoryProvider } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
+import { olderCopyFolder } from '@/lib/older-copy';
 import {
   BrandSpinner,
   Button,
@@ -100,6 +101,7 @@ function ProjectRow({
   activeAgents: number;
   onClick: () => void;
 }) {
+  const olderFolder = olderCopyFolder(project.olderCopy);
   return (
     <button
       onClick={onClick}
@@ -128,6 +130,12 @@ function ProjectRow({
           ? `${project.files.length} files · ${formatBytes(project.totalSize)} · ${timeAgo(project.lastModified)}`
           : 'no memory yet'}
       </p>
+      {/* The folder an older Tars kept this memory in, under a name Claude never reads (PR 375): kept as it was. */}
+      {olderFolder && (
+        <p title={project.olderCopy} className="mt-1 font-mono text-[10px] text-text-muted truncate">
+          older copy in {olderFolder}
+        </p>
+      )}
     </button>
   );
 }

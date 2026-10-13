@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, seedSandbox, stubSkillsSh, markWhatsNewSeen, listenForErrors, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, seedSandbox, stubSkillsSh, markWhatsNewSeen, listenForErrors, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { splitPageErrors } from './surfaces.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -69,6 +69,6 @@ test('the broadcast toast and the install dialog draw no backdrop blur, and open
     expect(fatal, 'page errors while opening them').toEqual([]);
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
