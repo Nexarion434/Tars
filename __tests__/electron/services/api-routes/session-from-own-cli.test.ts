@@ -13,6 +13,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * 2. (L3) A refused registration is one console line: a wrong refusal reads as
  *    an agent stuck in its last status, with nothing for a person to find. It
  *    is written into the agent's kept output, which Logs shows.
+ * 3. (L5, GATE-PR380-DELTA) Not adopted, a nested CLI's posts still go on to
+ *    the turn, the ledger and the status: its UserPromptSubmit and its Stop
+ *    set the agent running, then idle, though the agent's own CLI is in
+ *    another state. Refused at once or after the process table answers, such
+ *    a post must answer stale and change nothing; the terminal's own CLI,
+ *    once the table says so, must still drive the status.
  */
 
 vi.mock('electron', () => ({ app: { getPath: () => '/Users/test', getAppPath: () => process.cwd() }, BrowserWindow: vi.fn() }));
@@ -96,5 +102,30 @@ describe('a registration refused', () => {
     await settle();
     expect(a.currentSessionId).toBe(sid('own'));
     expect(a.output.join('')).toMatch(/\[Tars\].*refused.*not this terminal's/i);
+  });
+});
+
+describe('a post from a CLI that is not the terminal\'s, for an agent nobody owns', () => {
+  it('3. answers stale, and leaves the status as it was', async () => {
+    const a = agent({ status: 'waiting' });
+    const routes = app(); registerHooksRoutes(routes, ctx);
+    const prompt = post(routes, { agent_id: 'a1', session_id: sid('nested'), status: 'running', event: 'UserPromptSubmit', current_task: 'nested work' }, NESTED);
+    await settle();
+    expect(a.status, 'a nested turn set the agent running').toBe('waiting');
+    expect(a.currentTask).toBeUndefined();
+    expect(prompt).toMatchObject({ stale: true });
+    const stop = post(routes, { agent_id: 'a1', session_id: sid('nested'), status: 'idle' }, NESTED);
+    await settle();
+    expect(a.status, 'a nested Stop set the agent idle').toBe('waiting');
+    expect(stop).toMatchObject({ stale: true });
+  });
+
+  it("3. lets the terminal's own CLI drive the status once known", async () => {
+    const a = agent({ status: 'idle' });
+    const routes = app(); registerHooksRoutes(routes, ctx);
+    post(routes, { agent_id: 'a1', session_id: sid('own'), status: 'running', event: 'UserPromptSubmit' }, TERMINAL);
+    await settle();
+    expect(a.currentSessionId).toBe(sid('own'));
+    expect(a.status).toBe('running');
   });
 });
