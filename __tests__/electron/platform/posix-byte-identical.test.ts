@@ -11,7 +11,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
  * How it can fail:
  * 1. a folder name decodes to anything else than before (the Windows decoder
  *    answering for a POSIX name, or a host separator creeping in);
- * 2. a transcript Tars found under the old `[/.]` spelling is no longer found.
+ * 2. a transcript is not found under Claude Code's own name (every character
+ *    that is not an ASCII letter or digit to `-`, since 2026-10-13: the old
+ *    `[/.]` spelling missed the conversation of a path with any other one).
  */
 
 const disk = vi.hoisted(() => ({ existing: new Set<string>() }));
@@ -26,6 +28,7 @@ vi.mock('fs', async () => {
 
 import { decodeProjectPath } from '../../../electron/utils/decode-project-path';
 import { transcriptPath } from '../../../electron/utils/resume-session';
+import { encodeClaudeProjectDir } from '../../../electron/platform/claude-project-dir';
 import { POSIX_CORPUS } from './posix-corpus';
 import golden from './posix-golden.json';
 
@@ -51,14 +54,14 @@ describe.each(['darwin', 'linux'] as const)('%s, to the byte', (platform) => {
     for (const [name, before] of Object.entries(golden.decode)) expect(decodeProjectPath(name), name).toBe(before);
   });
 
-  it('2. a transcript under the old spelling is still the one found', () => {
+  it('2. a transcript under Claude\'s own name is the one found', () => {
     as(platform);
     const home = '/Users/demo';
     const id = '11111111-2222-4333-8444-555555555555';
     for (const project of POSIX_CORPUS.layout) {
-      const old = `${home}/.claude/projects/${project.replace(/[/.]/g, '-')}/${id}.jsonl`;
-      disk.existing = new Set([old]);
-      expect(transcriptPath(project, id, home), project).toBe(old);
+      const claude = `${home}/.claude/projects/${encodeClaudeProjectDir(project)}/${id}.jsonl`;
+      disk.existing = new Set([claude]);
+      expect(transcriptPath(project, id, home), project).toBe(claude);
     }
   });
 });
