@@ -14,7 +14,7 @@ import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { dropRunnerGrants } from '../core/chat-grants';
-import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, worktreeAddRefusal } from '../core/chat-slots';
+import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, gitRefusal } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
 import { namesItsChats, pickChat } from './chat-addressing';
@@ -177,7 +177,7 @@ function syncWithLead(runner: AgentStatus, lead: AgentStatus, chat: Chat): void 
 }
 
 type Git = { code: number; stdout: string; stderr: string };
-/** In the C locale: worktreeAddRefusal reads git's "fatal:" and "error:", which a translated git would not write. */
+/** In the C locale: gitRefusal reads git's "fatal:" and "error:", which a translated git would not write. */
 function git(cwd: string, args: string[]): Promise<Git> {
   return new Promise((resolve) => {
     execFile('git', args, { cwd, env: { ...process.env, LC_ALL: 'C' }, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -218,7 +218,7 @@ async function makeRunner(chat: Chat, lead: AgentStatus): Promise<{ runner: Agen
   if (!start) return failed('This project has no default branch to start a chat from (no origin/main, origin/master, main or master).');
   fs.mkdirSync(path.dirname(place.worktreePath), { recursive: true });
   const added = await git(project, ['worktree', 'add', '-b', place.branchName, place.worktreePath, start]);
-  if (added.code !== 0) return failed(`Its worktree could not be made: ${worktreeAddRefusal(added.stderr)}.`);
+  if (added.code !== 0) return failed(`Its worktree could not be made: ${gitRefusal(added.stderr)}.`);
   await logDependencies(place.worktreePath, await cloneDependencies(project, place.worktreePath));
   // The grants the orchestrator has, copied once: they diverge after, as any worktree's do.
   const grants = path.join(project, '.claude', 'settings.local.json');
