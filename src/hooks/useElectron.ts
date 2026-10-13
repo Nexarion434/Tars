@@ -177,13 +177,14 @@ export function useElectronAgents() {
     return result;
   }, [fetchAgents]);
 
-  // Remove an agent
+  // Remove an agent; its answer says what stayed of it (a wip/ branch, a worktree kept), for the page to say.
   const removeAgent = useCallback(async (id: string) => {
     if (!isElectron()) {
       throw new Error('Electron API not available');
     }
-    await window.electronAPI!.agent.remove(id);
+    const answer = await window.electronAPI!.agent.remove(id);
     setAgents(prev => prev.filter(a => a.id !== id));
+    return answer;
   }, []);
 
   // Send input to an agent
