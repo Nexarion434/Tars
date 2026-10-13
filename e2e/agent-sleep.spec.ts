@@ -51,7 +51,7 @@ const args = process.argv.slice(2);
 // As Claude Code: --resume <id> continues that session, in its own transcript.
 const resumed = args.indexOf('--resume');
 const sid = resumed === -1 ? crypto.randomUUID() : args[resumed + 1];
-const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[/.]/g, '-'));
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
 fs.mkdirSync(dir, { recursive: true });
 const transcript = path.join(dir, sid + '.jsonl');
 if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
