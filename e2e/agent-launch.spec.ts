@@ -263,7 +263,9 @@ test('an agent is created, started from a window, over the API and from a bot, r
     ];
     expect(fromWindow.argv, 'the argv the CLI received').toEqual(expectedArgv);
     expect(fromWindow.argv.at(-1), 'the prompt, byte for byte').toBe(HOSTILE_PROMPT);
-    expect(fromWindow.cwd).toBe(project);
+    // The same folder, read through its links: macOS hands the CLI the
+    // physical /private/var/... of os.tmpdir()'s /var/...
+    expect(fs.realpathSync(fromWindow.cwd)).toBe(fs.realpathSync(project));
     expect(fromWindow.token, 'the CLI was started without a token of its own').toBe(true);
     expect(fromWindow.apiUrl).toBe(`http://127.0.0.1:${port}`);
     expect(fromWindow.pathKeys, 'PATH twice in the CLI\'s env (Path and PATH)').toBe(1);
@@ -284,7 +286,7 @@ test('an agent is created, started from a window, over the API and from a bot, r
     const overApi = await launchOf(log, apiStarted.id);
     expect(overApi.argv.at(-1)).toMatch(/^\[Tars: you are agent "Api Started" .*\]\n\nfrom the api\nsecond line$/s);
     expect(overApi.argv.slice(0, -1)).toEqual(expectedArgv.slice(0, -1));
-    expect(overApi.cwd).toBe(project);
+    expect(fs.realpathSync(overApi.cwd)).toBe(fs.realpathSync(project));
     expect(overApi.token).toBe(true);
     expect(overApi.pathKeys).toBe(1);
     values.overApi = { argv: overApi.argv, cwd: overApi.cwd, agentId: overApi.agentId, status: response.status };
@@ -310,7 +312,7 @@ test('an agent is created, started from a window, over the API and from a bot, r
     expect(reply).toEqual(['started']);
     const fromBot = await launchOf(log, botStarted.id);
     expect(fromBot.argv).toEqual([...expectedArgv.slice(0, -1), 'from a chat']);
-    expect(fromBot.cwd).toBe(project);
+    expect(fs.realpathSync(fromBot.cwd)).toBe(fs.realpathSync(project));
     await expect.poll(async () => (await call(page, (api, id) => api.agent.get(id as string), botStarted.id))?.cliRunning, { timeout: 15_000 }).toBe(true);
     values.fromBot = { reply, argv: fromBot.argv, cwd: fromBot.cwd, agentId: fromBot.agentId };
 

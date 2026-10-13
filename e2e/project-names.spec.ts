@@ -41,7 +41,10 @@ let project: string;
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-project-names-')));
+  // Through realpath on Windows only, for its 8.3 names (RUNNER~1); on macOS
+  // the app reports /var/..., as os.tmpdir() gives it, not /private/var/...
+  const made = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-project-names-'));
+  home = process.platform === 'win32' ? fs.realpathSync(made) : made;
   seedSandbox(home, { chatRooms: true });
   project = path.join(home, 'projects', 'tars');
   for (const [rel, text] of [
