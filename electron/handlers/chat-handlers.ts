@@ -2,9 +2,11 @@ import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR } from '../constants';
-import { ptyProcesses } from '../core/pty-manager';
 import { agentStatusEmitter } from '../services/agent-events';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
+import { chatsWorking, isLive, removeRunnerOf, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, stopRunnerOf } from '../services/chat-runners';
+import { getProvider } from '../providers';
+import { setOrchestratorFollower } from '../core/chat-identity';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
 
@@ -17,8 +19,8 @@ import { isSuperAgent } from '../utils';
  * from the fleet as it is (Main's is the orchestrator); every session that
  * runner registers is added to its chats' sessions. Nothing in the window
  * calls these yet: the Frontend builds the chat pages on them behind the
- * "new interface" switch. `chat:send` refuses, with its reason, until the
- * chats have runners of their own (PR D).
+ * "new interface" switch. A send reaches the chat's runner, made at its first
+ * send (services/chat-runners.ts, PR D).
  */
 
 export const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
@@ -37,14 +39,11 @@ export interface ChatRunnerView {
   /** Its CLI holds a terminal: it counts in the limit. */
   live: boolean;
   lastActivity: string;
+  /** A permission its CLI asked Tars, shown in the chat that runs it (#318). */
+  permissionAsk: AgentStatus['permissionAsk'] | null;
 }
 
 export type ChatView = Chat & { runner: ChatRunnerView | null };
-
-const SEND_REFUSED: ChatError = {
-  error: 'chat_send_unavailable',
-  reason: "This version keeps the chats' records only: writing in a chat comes with the chats' own orchestrators. Until then, write to the project's orchestrator on the Dashboard.",
-};
 
 let live: ChatStore | null = null;
 
@@ -60,17 +59,19 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
   const store = createChatStore({ file: deps.file ?? CHATS_FILE });
   live = store;
 
-  const orchestrators = (): OrchestratorFacts[] => [...agents.values()].filter(isSuperAgent).map((a) => ({
+  const orchestrators = (): OrchestratorFacts[] => [...agents.values()].filter((a) => isSuperAgent(a) && a.kind !== 'chat').map((a) => ({
     id: a.id, projectPath: a.projectPath, createdAt: a.createdAt, lastActivity: a.lastActivity, resumableSessionId: a.resumableSessionId,
+    // A chat other than Main resumes its conversation at each launch: claude only, for now.
+    resumable: getProvider(a.provider).binaryName === 'claude',
   }));
-  const isLive = (agent: AgentStatus): boolean => !!agent.ptyId && ptyProcesses.has(agent.ptyId);
   const view = (chat: Chat): ChatView => {
-    const runner = chat.runnerId ? agents.get(chat.runnerId) : undefined;
+    // Only an agent the fleet confirms as the chat's runner (runnerOf): chats.json is agents' to write.
+    const runner = runnerOf(chat);
     return {
       ...chat,
       runner: runner ? {
         id: runner.id, name: runner.name || runner.id, status: runner.status, waking: !!runner.waking, live: isLive(runner),
-        lastActivity: runner.lastActivity,
+        lastActivity: runner.lastActivity, permissionAsk: runner.permissionAsk ?? null,
       } : null,
     };
   };
@@ -81,15 +82,29 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     if (agent?.resumableSessionId) store.noteSession(agent.id, agent.resumableSessionId);
   };
 
+  // Main is the project's persistent orchestrator: when the role moves to
+  // another agent, Main's record moves with it, its sessions kept as history
+  // (the orchestrator's decision of 2026-10-13). Logged, each one.
+  const followTheOrchestrators = (): void => {
+    for (const moved of store.followOrchestrators(orchestrators())) {
+      const name = (id: string | null) => (id ? agents.get(id)?.name || id : 'nobody');
+      console.log(`[chats] Main of ${moved.projectPath} follows the project's orchestrator: ${name(moved.from)} to ${name(moved.to)}`);
+    }
+  };
+  setOrchestratorFollower(followTheOrchestrators);
+
   // The migration, at the launch (4.6), then any session registered while
   // Tars was not running to see it: both write only what is new.
   store.ensureMains(orchestrators());
+  followTheOrchestrators();
   for (const id of agents.keys()) mirror(id);
   agentStatusEmitter.on('fleet-change', mirror);
+  startChatRunners(store);
 
   ipcMain.handle('chat:list', () => {
     // A project whose orchestrator was set since the launch gets its Main now.
     store.ensureMains(orchestrators());
+    followTheOrchestrators();
     const { seq, chats } = store.list();
     return { seq, chats: chats.map(view), problem: store.problem() };
   });
@@ -97,23 +112,45 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     const args = argsOf(raw);
     return answer(store.create({ projectPath: args.projectPath, title: args.title }, orchestrators()));
   });
-  ipcMain.handle('chat:rename', (_e, raw: unknown) => answer(store.rename(argsOf(raw).chatId, argsOf(raw).title)));
+  ipcMain.handle('chat:rename', (_e, raw: unknown) => {
+    const renamed = store.rename(argsOf(raw).chatId, argsOf(raw).title);
+    if (!('error' in renamed)) renameRunner(renamed);
+    return answer(renamed);
+  });
   ipcMain.handle('chat:pin', (_e, raw: unknown) => answer(store.pin(argsOf(raw).chatId, argsOf(raw).pinned)));
   ipcMain.handle('chat:snooze', (_e, raw: unknown) => answer(store.snooze(argsOf(raw).chatId, argsOf(raw).until)));
-  ipcMain.handle('chat:settle', (_e, raw: unknown) => answer(store.settle(argsOf(raw).chatId, argsOf(raw).settled)));
-  ipcMain.handle('chat:setInbox', (_e, raw: unknown) => answer(store.setInbox(argsOf(raw).chatId)));
-  // Refused while the chat's runner has a request out at the team (PR A's queue).
-  ipcMain.handle('chat:delete', (_e, raw: unknown) => store.remove(argsOf(raw).chatId, (chat) => workOutOf(chat.runnerId, agents.values())));
-  ipcMain.handle('chat:send', (_e, raw: unknown) => (store.get(argsOf(raw).chatId) ? SEND_REFUSED : { error: 'not_found', reason: 'No chat has this id.' }));
-
-  ipcMain.handle('system:chatLimit', (): ChatLimit & { working: number } => {
-    const runners = new Set(store.list().chats.map((c) => c.runnerId).filter((id): id is string => !!id));
-    const working = [...runners].filter((id) => {
-      const agent = agents.get(id);
-      return !!agent && isLive(agent);
-    }).length;
-    return { ...chatLimitOf(os.totalmem(), process.env), working };
+  ipcMain.handle('chat:settle', (_e, raw: unknown) => {
+    const settled = store.settle(argsOf(raw).chatId, argsOf(raw).settled);
+    // Its runner sleeps at once, or as soon as the rule allows it; Main's never does.
+    if (!('error' in settled) && settled.settledAt) settleRunner(settled);
+    return answer(settled);
   });
+  ipcMain.handle('chat:setInbox', (_e, raw: unknown) => answer(store.setInbox(argsOf(raw).chatId)));
+  // Refused for the inbox and while the chat's runner has a request out at the
+  // team (PR A's queue); then its own runner is stopped and removed with its
+  // worktree, its work saved first, and the record goes. Main's runner, the
+  // orchestrator, stays.
+  ipcMain.handle('chat:delete', async (_e, raw: unknown) => {
+    const chatId = argsOf(raw).chatId;
+    const workOut = (chat: Chat) => workOutOf(runnerOf(chat)?.id ?? null, agents.values());
+    const refused = store.removalRefusal(chatId, workOut);
+    if (refused) return refused;
+    // Stopped first, then checked again: what it asked for while it stopped
+    // would stay filed by a requester that is gone (the Audit's L6 on #379).
+    await stopRunnerOf(store.get(chatId)!);
+    const late = store.removalRefusal(chatId, workOut);
+    if (late) return late;
+    const torn = await removeRunnerOf(store.get(chatId)!);
+    const removed = store.remove(chatId, workOut);
+    return 'error' in removed ? removed : { ...removed, ...torn };
+  });
+  // The user's words into the chat's runner, made at its first send, within the limit.
+  // clientRequestId and the send modes come with PR B's receipts.
+  ipcMain.handle('chat:send', (_e, raw: unknown) => sendToChat(argsOf(raw).chatId, argsOf(raw).text));
+
+  ipcMain.handle('system:chatLimit', (): ChatLimit & { working: number } => (
+    { ...chatLimitOf(os.totalmem(), process.env), working: chatsWorking() }
+  ));
 
   return store;
 }

@@ -227,7 +227,9 @@ function memberIdsFor(roomId: string, kind: 'global' | 'project', projectPath?: 
   if (override) return override.filter(id => agents.has(id));
   const all = Array.from(agents.values());
   if (kind === 'global') return all.filter(isSuperAgent).map(a => a.id);
-  return all.filter(a => a.projectPath === projectPath).map(a => a.id);
+  // A chat's runner is a conversation, not a member of its project's room
+  // (ORCHESTRATOR-PER-CHAT.md, 4.6): what crosses the room reaches Main.
+  return all.filter(a => a.projectPath === projectPath && a.kind !== 'chat').map(a => a.id);
 }
 
 export function listRooms(): BusRoom[] {
