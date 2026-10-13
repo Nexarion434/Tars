@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat, routeChannelMessage, chatsReadable,
+  CHAT_SENT_KEPT_MS, CHAT_SENT_MAX, chatTag, chatListFor, createChatSentLog, parseChatAddress, pickChat, routeChannelMessage, chatsReadable, namesItsChats,
 } from '../../../electron/services/chat-addressing';
 import type { Chat } from '../../../electron/services/chats';
 
@@ -35,6 +35,10 @@ import type { Chat } from '../../../electron/services/chats';
  *    "#N"-looking first word; a reply to a chat since deleted reaches another chat, or vanishes without a word.
  * 9. A trailing slash in the project's path, as one sender spells it, finds no chat, and the message goes to the
  *    orchestrator rather than to the inbox.
+ * 11. (GATE-2.0.0-BULLETS, 2) A project that has only Main changes for everyone, the new interface off: a message
+ *    that starts with "#2 " (an issue's number) reaches nobody, where 1.9.7 delivered it to the orchestrator as it
+ *    was typed, and what the orchestrator sends is headed "[tars #1 Main]". While a project has only Main, it
+ *    behaves as 1.9.7 did; with several chats, the rules above stand.
  * 10. chat_list (4.4 item 5, the cross-chat reading option) hands a runner another project's chats, the caller's own
  *    chat, or more of a chat than its id, number, title, state and last activity (its runner's id, its sessions, its
  *    project's path).
@@ -210,5 +214,24 @@ describe('10. what chat_list shows a chat of its project\'s other chats', () => 
       { id: 'main', number: 1, title: 'Main', state: 'idle', lastActivityAt: at },
       { id: 'old', number: 2, title: 'Old', state: 'settled', lastActivityAt: at },
     ]);
+  });
+});
+
+describe('11. a project that has only Main, as 1.9.7 was', () => {
+  const main = chat({ id: 'main', number: 1 });
+  const other = chat({ id: 'o', projectPath: '/work/other', number: 1 });
+
+  it('takes "#N" as text and gives it to the orchestrator as typed', () => {
+    expect(routeChannelMessage({ chats: [main, other], projectPath: '/work/tars', text: '#2 fix the login issue' }))
+      .toEqual({ kind: 'orchestrator', text: '#2 fix the login issue' });
+    expect(routeChannelMessage({ chats: [main], projectPath: '/work/tars', text: '#1 hello' }))
+      .toEqual({ kind: 'orchestrator', text: '#1 hello' });
+  });
+
+  it('names no chat on what it sends, until it has another', () => {
+    expect(namesItsChats([main, other], main)).toBe(false);
+    const two = chat({ id: 'two', number: 2, inbox: false });
+    expect(namesItsChats([main, two, other], main)).toBe(true);
+    expect(namesItsChats([main, two, other], two)).toBe(true);
   });
 });
