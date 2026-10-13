@@ -67,6 +67,26 @@ function validSkill(entry: unknown): entry is MarketplaceSkill {
     && typeof s.installsNum === 'number' && Number.isFinite(s.installsNum) && s.installsNum >= 0;
 }
 
+/**
+ * A count as the Extensions page writes it (src/lib/install-count.ts): one
+ * decimal always, in K, M or B, and under a thousand as it is. The page
+ * writes it from installsNum and shows this text only when it cannot; it read
+ * "1113K" here beside the page's "1.3M".
+ */
+function countText(installs: number): string {
+  const whole = Math.round(installs);
+  if (whole < 1000) return String(whole);
+  const units = ['K', 'M', 'B'];
+  let value = whole / 1000;
+  let unit = 0;
+  // 999,950 rounds to "1000.0" in thousands: it is written "1.0M".
+  while (unit < units.length - 1 && Number(value.toFixed(1)) >= 1000) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value.toFixed(1)}${units[unit]}`;
+}
+
 /** The listing as skills.sh publishes it in its page, or null when it cannot be read. */
 export function parseMarketplace(html: string): MarketplaceSkill[] | null {
   const match = html.match(/initialSkills.*?(\[\{.*?\}\])/);
@@ -79,9 +99,7 @@ export function parseMarketplace(html: string): MarketplaceSkill[] | null {
     rank: i + 1,
     name: s.name,
     repo: s.source,
-    installs: s.installs >= 1000
-      ? `${(s.installs / 1000).toFixed(1).replace(/\.0$/, '')}K`
-      : String(s.installs),
+    installs: countText(s.installs),
     installsNum: s.installs,
   })).filter(validSkill);
   return skills.length > 0 ? skills : null;

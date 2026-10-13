@@ -289,6 +289,8 @@ export interface ProjectMemory {
   lastModified: string;
   hasMemory: boolean;
   provider: string;    // 'claude' | 'codex' | 'gemini'
+  /** The memory folder an older Tars made under a name Claude never reads; its files were copied into `memoryDir` once, and kept. */
+  olderCopy?: string;
 }
 
 export interface ObsidianFile {
@@ -457,7 +459,7 @@ export interface AgentStatus {
   pathMissing?: boolean; // True if project path no longer exists
   /** @deprecated Use permissionMode instead */
   skipPermissions?: boolean;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** @deprecated Read `role`. Kept equal to `role === 'orchestrator'`. */
   orchestratorMode?: boolean;
@@ -1044,7 +1046,7 @@ export interface ElectronAPI {
       character?: AgentCharacter;
       name?: string;
       secondaryProjectPath?: string;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider?: AgentProvider;
       localModel?: string;
@@ -1060,7 +1062,7 @@ export interface ElectronAPI {
       projectPath?: string;
       skills?: string[];
       secondaryProjectPath?: string | null;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       name?: string;
       character?: AgentCharacter;

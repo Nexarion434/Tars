@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -203,6 +203,6 @@ test('a permission question Tars holds is answered from the panel and the window
     expect(status, 'at its terminal\'s dialog, the agent still waits, and Tars holds nothing').toEqual({ status: 'waiting', permissionAsk: null });
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
