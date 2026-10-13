@@ -414,10 +414,9 @@ describe('a chat asks (PR F)', () => {
     const runner = agent('run-3', 'Lead · Release', { role: 'worker' });
     Object.assign(runner, { kind: 'chat', chatId: 'c3' });
     const { setChatLookups } = await import('../../../electron/core/chat-inbox');
-    setChatLookups({
-      inbox: () => null,
-      chatRunBy: (id) => (id === 'run-3' ? { id: 'c3', projectPath: PROJECT, number: 3, title: 'Release' } : undefined),
-    });
+    // Chat #3: its project has several chats, so what it sends is named by it.
+    const c3 = (id: string) => (id === 'run-3' ? { id: 'c3', projectPath: PROJECT, number: 3, title: 'Release' } : undefined);
+    setChatLookups({ inbox: () => null, chatRunBy: c3, namedChatOf: c3 });
     toChat.length = 0;
     expect((await q.askUser({ agentId: 'run-3', question: 'Ship 1.9.7 tonight?' }, T0)).ok).toBe(true);
     expect(questions().at(-1)!.text.startsWith('[tars #3 Release]\nQuestion from Lead')).toBe(true);

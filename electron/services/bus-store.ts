@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
 import { isSuperAgent } from '../utils';
-import { chatNameOf } from '../core/chat-inbox';
+import { chatNameOf, namedChatOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
 import type {
@@ -609,9 +609,10 @@ export function publishAgentMessage(input: {
   }
 
   const agent = agents.get(input.agentId);
-  // An agent that runs a chat speaks in the room as that chat (PR F): Main is
-  // chat #1, and Noah's answer to it goes back to it by its id.
-  const chat = agent ? chatNameOf(agent) : undefined;
+  // An agent that runs a chat speaks in the room as that chat (PR F), once its
+  // project has several: Noah's answer to it goes back to it by its id. With
+  // only Main, the orchestrator posts under its own name, as in 1.9.7.
+  const chat = agent ? namedChatOf(agent) : undefined;
   const { message, thread: updated } = appendMessage({
     roomId: input.roomId,
     authorKind: 'agent',
