@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 58,
+    version: '2.0.1',
+    date: '2026-10-13',
+    updates: [
+      'With the new interface on, a message to a chat other than Main is refused as soon as the project\'s orchestrator runs a CLI other than Claude Code, even while that chat\'s runner is still running on Claude Code, where 2.0.0 typed it in. That runner is left to finish and the refusal says so: its turn ends as it would, and the agents it gave work to still answer it.',
+    ],
+  },
+  {
     id: 57,
     version: '2.0.0',
     date: '2026-10-13',

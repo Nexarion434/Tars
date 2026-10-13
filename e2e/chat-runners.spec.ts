@@ -54,8 +54,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 17. the Orchestrator toggle on a runner is refused, and the orchestrator keeps the role (M2);
  * 18. the role moves to the worker: Main follows the project's orchestrator, its sessions kept, and its next send
  *    reaches the new one;
- * 19. the orchestrator moves to a CLI whose conversations Tars cannot resume: its live runner is neither copied onto
- *    it nor restarted, and a chat other than Main answers provider_unsupported (L4).
+ * 19. the orchestrator moves to a CLI whose conversations Tars cannot resume while chat C's runner works, with work
+ *    out at a worker: a send to C is refused at once and nothing is typed (2.0.1; 2.0.0 typed it); C is left to
+ *    finish, its turn ending as it would and the worker's answer still reaching it, neither copied onto that CLI nor
+ *    restarted on it; and a chat whose runner is not running answers provider_unsupported too (L4).
  * Mn and Ln are the Audit's findings on #379.
  * The artefact: values.json (each answer, the launches, the worktrees), launches.jsonl, prompts.jsonl, sessions.jsonl
  * (what each SessionStart handed its CLI), permissions.jsonl (each answer to a permission ask) and hooks.log (what
@@ -689,20 +691,41 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     expect(promptsOf('o1').some((p) => p.includes('MAIN>> after the move'))).toBe(false);
     await atRest('w1');
 
-    // 19. The orchestrator moves to a CLI whose conversations Tars cannot resume (L4): its live runner is neither
-    //     copied onto it nor restarted on it, and a chat other than Main answers provider_unsupported.
-    expect(await send(startedChat.id, 'C>> before the lead moves')).toMatchObject({ success: true });
-    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('C>> before the lead moves')), { timeout: 30_000 }).toBe(true);
-    await atRest(runnerC.id);
+    // 19. The orchestrator moves to a CLI whose conversations Tars cannot resume (L4) while chat C's runner is in a
+    //     turn, with work out at a worker. A send to C is refused at once, its runner running or not (2.0.1): C is
+    //     left to finish, its turn not cut, the worker's answer still reaching it, and it is neither copied onto that
+    //     CLI nor restarted on it. The holds are off the first lines: a note quotes a request's first line.
+    const forWorker = await api('/api/agents/o1/dispatch', runnerC.id, { message: 'Work for C, before the move\nHOLD>> until released' });
+    expect(forWorker.status).toBe(200);
+    await expect.poll(async () => (await agentOf('o1'))?.status, { timeout: 30_000 }).toBe('running');
+    expect(await send(startedChat.id, 'C>> before the lead moves\nHOLD>> until released')).toMatchObject({ success: true });
+    await expect.poll(async () => (await agentOf(runnerC.id))?.status, { timeout: 30_000 }).toBe('running');
     const cLaunches = launchesOf(runnerC.id).length;
+    const cTurns = promptsOf(runnerC.id).length;
     expect(await updateFromWindow({ id: 'w1', provider: 'gemini' })).toMatchObject({ success: true });
-    await page.waitForTimeout(2_000);
+    const whileRunning = await send(startedChat.id, 'C>> while the lead is off claude');
+    // The worker, still in its turn, answers whoever asked for it: C.
+    const workerAnswer = await api('/api/agents/requester/message', 'o1', { message: 'ANSWER>> for C' });
+    keep({ forWorker, whileRunning, workerAnswer });
+    expect(whileRunning).toMatchObject({ error: 'provider_unsupported' });
+    expect(String(whileRunning.reason)).toContain("This chat's runner, still running on claude, is left to finish");
+    expect(workerAnswer.status).toBe(200);
+    expect(workerAnswer.body).toMatchObject({ deliveredTo: { id: runnerC.id, how: 'requester' } });
+    release('o1');
+    release(runnerC.id);
+    await expect.poll(() => promptsOf(runnerC.id).some((p) => p.includes('ANSWER>> for C')), { timeout: 30_000 }).toBe(true);
+    await atRest(runnerC.id);
     const cAfter = await agentOf(runnerC.id);
-    const suspended = await send(chatA.id, 'A>> after the lead moved');
-    keep({ cAfter, suspended });
+    keep({ cAfter, cTurnsAfter: promptsOf(runnerC.id).slice(cTurns) });
     expect(cAfter?.provider ?? 'claude').toBe('claude');
+    expect(cAfter?.cliRunning).toBe(true);
     expect(launchesOf(runnerC.id)).toHaveLength(cLaunches);
+    expect(promptsOf(runnerC.id).some((p) => p.includes('C>> while the lead is off claude'))).toBe(false);
+    // A chat whose runner is not running is refused too, without being told of a runner that runs.
+    const suspended = await send(chatA.id, 'A>> after the lead moved');
+    keep({ suspended });
     expect(suspended).toMatchObject({ error: 'provider_unsupported' });
+    expect(String(suspended.reason)).not.toContain('still running');
   } finally {
     for (const id of ['o1', 'w1']) fs.writeFileSync(path.join(home, `release-${id}`), '');
     await app.close();

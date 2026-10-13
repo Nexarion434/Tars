@@ -58,12 +58,27 @@
  *     stopped by the timeout): the page gets an empty reason or the progress,
  *     instead of Tars's own sentence.
  * 20. git's line ends with a period, and the page reads two.
+ * The orchestrator off claude (2.0.1, written before the code, 2026-10-13)
+ * A chat other than Main runs on its orchestrator's CLI, claude only (the
+ * Audit's L4 on #379). 2.0.0 read that rule only on the way to a launch: a
+ * runner still running when its orchestrator left claude took its chat's
+ * messages on claude.
+ * 21. A send to a chat other than Main goes in while the orchestrator is off
+ *     claude, because its runner is still running.
+ * 22. Main is refused, though its runner is the orchestrator itself, on
+ *     whatever CLI it runs.
+ * 23. A chat is refused while its orchestrator runs claude, or a project with
+ *     no orchestrator answers this refusal instead of its own.
+ * 24. The refusal does not say why, or the one of a runner still running does
+ *     not say what becomes of it: its turn, the answers it waits for, and that
+ *     nothing more from the chat reaches it.
+ * 25. The refusal of a runner that is not running says that it runs.
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
 import {
   runnerNameOf, runnerPlaceOf, startPointOf, victimOf, runnersToResume, chatLimitSentence, recordedRunner, unconfirmedRunners,
-  worktreeAddRefusal,
+  worktreeAddRefusal, offClaudeRefusal,
 } from '../../../electron/core/chat-slots';
 
 describe('a runner', () => {
@@ -255,5 +270,43 @@ describe("the refusal of a runner's worktree (#394's gate)", () => {
 
   it('20. no period of its own: the sentence adds one', () => {
     expect(worktreeAddRefusal(`${progress}fatal: not a valid object name: 'origin/main'.\n`)).toBe("not a valid object name: 'origin/main'");
+  });
+});
+
+describe('a send while the orchestrator is off claude (2.0.1)', () => {
+  it('21. a chat other than Main is refused, its runner running or not', () => {
+    for (const number of [2, 7]) {
+      expect(offClaudeRefusal(number, false, true)).not.toBeNull();
+      expect(offClaudeRefusal(number, false, false)).not.toBeNull();
+    }
+  });
+
+  it('22. never Main: its runner is the orchestrator itself', () => {
+    expect(offClaudeRefusal(1, false, true)).toBeNull();
+    expect(offClaudeRefusal(1, false, false)).toBeNull();
+  });
+
+  it('23. not while the orchestrator runs claude, nor in a project with no orchestrator', () => {
+    for (const live of [true, false]) {
+      expect(offClaudeRefusal(2, true, live)).toBeNull();
+      expect(offClaudeRefusal(2, undefined, live)).toBeNull();
+    }
+  });
+
+  it('24. says why, and of a runner still running what becomes of it', () => {
+    const why = offClaudeRefusal(2, false, false)!;
+    expect(why).toMatch(/orchestrator runs a CLI whose conversations Tars cannot resume/);
+    expect(why).toMatch(/chats other than Main work with claude/);
+    const running = offClaudeRefusal(2, false, true)!;
+    expect(running.startsWith(`${why} `)).toBe(true);
+    const after = running.slice(why.length);
+    expect(after).toMatch(/still running on claude/);
+    expect(after).toMatch(/turn ends as it would/);
+    expect(after).toMatch(/still answer it/);
+    expect(after).toMatch(/nothing more from this chat reaches it until the orchestrator runs claude again/);
+  });
+
+  it('25. a runner that is not running is not said to run', () => {
+    expect(offClaudeRefusal(2, false, false)).not.toMatch(/running|turn/);
   });
 });
