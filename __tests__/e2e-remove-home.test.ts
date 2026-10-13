@@ -65,13 +65,20 @@ describe('removeHome, against the roots it is given', () => {
 
   it('3. judges a path that climbs out of a root by where it lands', async () => {
     fs.mkdirSync(path.join(root, 'x'));
-    await expect(removeHome(path.join(root, 'x', '..', '..', 'outside'), [root])).rejects.toThrow(/not inside/);
+    await expect(removeHome([root, 'x', '..', '..', 'outside'].join(path.sep), [root])).rejects.toThrow(/not inside/);
     expect(fs.existsSync(path.join(outside, 'precious.txt'))).toBe(true);
   });
 
   it.skipIf(cannotSymlink())('4. never deletes what a link points at, handed the link or a sandbox holding it', async () => {
     fs.symlinkSync(outside, path.join(root, 'link'));
     await expect(removeHome(path.join(root, 'link'), [root])).rejects.toThrow(/not inside/);
+    expect(fs.existsSync(path.join(outside, 'precious.txt'))).toBe(true);
+    // Through a link, then `..`: spelled inside the root, it lands in outside/,
+    // which is where the system would delete.
+    fs.mkdirSync(path.join(outside, 'inner'));
+    fs.symlinkSync(path.join(outside, 'inner'), path.join(root, 'deep'));
+    // Joined by hand: path.join would fold `deep/..` away before removeHome saw it.
+    await expect(removeHome([root, 'deep', '..', 'precious.txt'].join(path.sep), [root])).rejects.toThrow(/not inside/);
     expect(fs.existsSync(path.join(outside, 'precious.txt'))).toBe(true);
 
     const sandbox = path.join(root, 'sandbox');
