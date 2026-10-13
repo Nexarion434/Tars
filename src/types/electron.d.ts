@@ -1046,7 +1046,7 @@ export interface ElectronAPI {
       character?: AgentCharacter;
       name?: string;
       secondaryProjectPath?: string;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       provider?: AgentProvider;
       localModel?: string;
@@ -1062,7 +1062,7 @@ export interface ElectronAPI {
       projectPath?: string;
       skills?: string[];
       secondaryProjectPath?: string | null;
-      permissionMode?: 'normal' | 'auto' | 'bypass';
+      permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       name?: string;
       character?: AgentCharacter;
