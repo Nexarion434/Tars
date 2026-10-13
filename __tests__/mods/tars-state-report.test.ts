@@ -33,8 +33,15 @@
  * And from the nested session of 13/10: a `claude -p` run inside an agent's
  * terminal loads this mod too, and its SessionStart took the agent's session.
  * Tars registers only the CLI it launched there, by its pid.
- * 9. The SessionStart names no CLI pid, so Tars cannot tell the agent's CLI
- *    from a nested one; or it sends something that is not a pid.
+ * 9. The mod in a nested claude speaks for the agent. Measured by the Audit
+ *    (gate of #380, claude 2.1.296): Claude Code puts CLAUDE_PID into the
+ *    environment of what it starts, not into its own; the mod's $.env is its
+ *    own process's, so CLAUDE_PID there is the pid of the claude that started
+ *    this one. A mod that sends it as its CLI's pid hands Tars the agent's own
+ *    CLI's pid, and the nested session was taken. A mod that sees CLAUDE_PID is
+ *    in a claude another claude started: it says nothing to Tars at all (no
+ *    registration, no heartbeat, no turn, no question), and it never sends a
+ *    pid it cannot know.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -172,16 +179,29 @@ describe("a turn's usage (mods step 4)", () => {
     expect(handed, '8. handed on unchanged').toBe(e);
   });
 
-  it("9. the SessionStart names this CLI's pid, CLAUDE_PID, and nothing that is not one", async () => {
-    for (const [pid, sentAs] of [['4242', '4242'], [undefined, ''], ['42 && rm', '']] as const) {
-      if (pid === undefined) delete ENV.CLAUDE_PID; else ENV.CLAUDE_PID = pid;
+  it('9. in a claude another claude started (CLAUDE_PID in its environment), says nothing to Tars', async () => {
+    ENV.CLAUDE_PID = '4242';
+    try {
       sent = [];
       await load();
       await fire('classic.SessionStart', { session_id: SESSION, source: 'startup' });
+      await fire('classic.UserPromptSubmit', { session_id: SESSION, prompt: 'nested' });
+      await fire('classic.Stop', { session_id: SESSION, stop_hook_active: false, last_assistant_message: 'ok' });
       await drained();
-      expect(sent[0].body, String(pid)).toMatchObject({ session_id: SESSION, source: 'startup', cli_pid: sentAs, via: 'mod' });
+      expect(sent.map((s) => s.route)).toEqual([]);
+    } finally {
+      delete ENV.CLAUDE_PID;
     }
+  });
+
+  it("9. in the agent's own claude, registers its session without a pid it cannot know", async () => {
     delete ENV.CLAUDE_PID;
+    sent = [];
+    await load();
+    await fire('classic.SessionStart', { session_id: SESSION, source: 'startup' });
+    await drained();
+    expect(sent[0].body).toMatchObject({ session_id: SESSION, source: 'startup', via: 'mod' });
+    expect(sent[0].body).not.toHaveProperty('cli_pid');
   });
 
   it('8. posts nothing for a turn.complete with no usage', async () => {

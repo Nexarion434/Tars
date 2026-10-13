@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
-import { isTerminalsOwnCli, parentPid } from '../../../electron/core/terminal-cli';
+import { isTerminalsOwnCli, parentPid, parentPidFromProcStat } from '../../../electron/core/terminal-cli';
 
 /**
  * Whose SessionStart may register a session for an agent: only the CLI Tars
@@ -34,6 +34,14 @@ import { isTerminalsOwnCli, parentPid } from '../../../electron/core/terminal-cl
  *  8. Windows, where there is no `ps`: every session refused, or the lookup
  *     throws. Only the equal pid is checked there; anything else is accepted
  *     as before.
+ *  9. (The Audit's L1 on #380) On the exec launch the terminal's process IS
+ *     the agent's CLI (`bash -l -c "cd ... && exec claude"`), so its children
+ *     are the CLI's own tools: a claude its Bash tool started straight under
+ *     it is accepted as "the terminal's child". Only a terminal that runs a
+ *     shell the CLI was typed into has the CLI as its child.
+ * 10. (L2) A Linux without `ps` (no procps) refuses every typed-in agent's
+ *     session: its parent is read from /proc/<pid>/stat there, whose command
+ *     name may itself hold spaces and parentheses.
  */
 
 const PTY = 4242;
@@ -84,6 +92,34 @@ describe('isTerminalsOwnCli', () => {
     const parentPid = async () => { throw new Error('no ps on win32'); };
     expect(await isTerminalsOwnCli(PTY, String(PTY), { platform: 'win32', parentPid })).toBe(true);
     expect(await isTerminalsOwnCli(PTY, '5001', { platform: 'win32', parentPid })).toBe(true);
+  });
+});
+
+describe('the launch the terminal ran', () => {
+  it('9. refuses the CLI\'s own child when the terminal\'s process is the CLI (exec launch)', async () => {
+    const parentPid = async () => PTY;
+    expect(await isTerminalsOwnCli(PTY, '5001', { platform: 'darwin', parentPid, execLaunch: true })).toBe(false);
+    expect(await isTerminalsOwnCli(PTY, String(PTY), { platform: 'darwin', parentPid, execLaunch: true })).toBe(true);
+  });
+
+  it('9. accepts the child when the terminal runs a shell the CLI was typed into', async () => {
+    expect(await isTerminalsOwnCli(PTY, '4300', { platform: 'darwin', parentPid: async () => PTY, execLaunch: false })).toBe(true);
+  });
+});
+
+describe('10. the parent from /proc on Linux', () => {
+  it('reads the fourth field after the command name, whatever the name holds', () => {
+    expect(parentPidFromProcStat('5001 (claude) S 4300 5001 4300 0 -1 4194560')).toBe(4300);
+    expect(parentPidFromProcStat('5001 (my (odd) cli) R 4242 5001 4300 0')).toBe(4242);
+    expect(parentPidFromProcStat('garbage')).toBeUndefined();
+    expect(parentPidFromProcStat('5001 (x) S abc 1')).toBeUndefined();
+  });
+
+  it('takes /proc on Linux before asking ps, and ps when /proc cannot be read', async () => {
+    const proc = (pid: number) => (pid === 5001 ? '5001 (claude) S 4300 5001' : undefined);
+    expect(await parentPid(5001, { platform: 'linux', readProcStat: proc, ps: async () => { throw new Error('no ps'); } })).toBe(4300);
+    expect(await parentPid(5002, { platform: 'linux', readProcStat: proc, ps: async () => 7 })).toBe(7);
+    expect(await parentPid(5001, { platform: 'darwin', readProcStat: proc, ps: async () => 9 })).toBe(9);
   });
 });
 
