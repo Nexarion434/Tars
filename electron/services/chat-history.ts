@@ -4,7 +4,7 @@ import * as path from 'path';
 import { encodeProjectDirName, transcriptRoots } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { joinSessions, transcriptItems, type ChatItem } from './chat-transcript';
-import { isSessionId, type Chat } from './chats';
+import { isSessionId, type Chat, sessionFoldersToRead } from './chats';
 import type { AgentStatus } from '../types';
 
 /**
@@ -195,7 +195,7 @@ export async function readChatItems(chat: Chat, deps: {
   const key: string[] = [];
   for (const sessionId of ids) {
     // Where it ran first, as recorded when it was taken: a former runner's worktree (GATE-PR371-DELTA5).
-    const file = sessionFile(sessionId, [...(chat.sessionFolders?.[sessionId] ?? []), deps.runner?.worktreePath, chat.projectPath], homeDir);
+    const file = sessionFile(sessionId, [...sessionFoldersToRead(chat, sessionId), deps.runner?.worktreePath, chat.projectPath], homeDir);
     const items = file ? await readTranscript(file, sessionId, { nameOf: deps.nameOf }) : null;
     sessions.push({ sessionId, items, mayBeWritten: live.has(sessionId) });
     key.push(`${file ?? '-'}:${items?.length ?? -1}:${items?.[items.length - 1]?.id ?? ''}:${live.has(sessionId)}`);
