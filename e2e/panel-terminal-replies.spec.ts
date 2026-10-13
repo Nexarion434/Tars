@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Locator, type Page } from '@p
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -100,6 +100,6 @@ test('a mounted panel sends its terminal\'s replies to nobody, and the keys type
     expect(escaped(replies), 'the replies the panel sent as keys').toBe(escaped(''));
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });

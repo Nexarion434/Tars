@@ -153,6 +153,11 @@ describe('every spawn site and exit handler in electron/', () => {
     const unguarded: string[] = [];
     let spawns = 0;
     for (const { f, text } of files) {
+      // isSpawn takes a callee written `pty.spawn`, or `spawn` called on
+      // `this.launch.command`: a file holding neither text holds no such call,
+      // and only the others are parsed. Parsing all of electron/ took this test
+      // past the 5 s default under load (QA, the gate of #358, 2026-10-12).
+      if (!text.includes('pty.spawn') && !text.includes('this.launch.command')) continue;
       const source = ts.createSourceFile(f, text, ts.ScriptTarget.ES2022, true);
       const isSpawn = (node: ts.CallExpression) => {
         const callee = node.expression.getText(source);

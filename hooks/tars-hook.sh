@@ -44,6 +44,26 @@ if [ -n "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -n "${TARS_INSTANCE_ID:-}" ]; then
   fi
   unset tars_challenge tars_proof tars_expected
 fi
+# And which CLI posts, on every post (Tars adopts an agent nobody owns only
+# from its terminal's own CLI): Claude Code's CLAUDE_PID, digits or nothing.
+TARS_CLI_PID="${CLAUDE_PID:-}"
+[[ "$TARS_CLI_PID" =~ ^[0-9]+$ ]] || TARS_CLI_PID=""
 tars_auth() {
-  if [ "$TARS_TOKEN_OK" = yes ]; then printf "Authorization: Bearer %s" "$CLAUDE_MGR_API_TOKEN"; fi
+  if [ "$TARS_TOKEN_OK" = yes ]; then
+    printf "Authorization: Bearer %s" "$CLAUDE_MGR_API_TOKEN"
+    if [ -n "$TARS_CLI_PID" ]; then printf "\nX-Tars-Cli-Pid: %s" "$TARS_CLI_PID"; fi
+  fi
 }
+
+# The token a hook's reads present (the bootstrap, the memory context, the
+# memory post), on the same rule as its posts: the terminal's token only once
+# the port proved it is this CLI's Tars. A CLI with a token whose port did not
+# prove it gets none, the shared one neither: a squatter would get that
+# instead (the Audit's Info on #355). A CLI Tars did not start has no token and
+# no instance to prove: it reads with the shared file, as before.
+TARS_READ_TOKEN=""
+if [ "$TARS_TOKEN_OK" = yes ]; then
+  TARS_READ_TOKEN="$CLAUDE_MGR_API_TOKEN"
+elif [ -z "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -f "$HOME/.dorothy/api-token" ]; then
+  TARS_READ_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
+fi
