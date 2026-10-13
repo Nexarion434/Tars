@@ -825,7 +825,10 @@ the log says `[chats] Main of <project> follows the project's orchestrator: <for
 for (its title and number are in the answer). Send it with mode `queue`, or let that chat's work end.
 
 **When a start or a send answers `provider_unsupported`:** the project's orchestrator runs a CLI whose conversations
-Tars cannot resume; chats other than Main wait until it is back on claude.
+Tars cannot resume; chats other than Main wait until it is back on claude. A runner whose claude still ran when the
+orchestrator moved is left to finish (its turn, the answers of the agents it gave work to) and then sleeps by the
+usual rule; nothing its chat sends reaches it meanwhile. Stopped from its card, it ends at once, and an answer still
+owed to it is refused until the orchestrator is back on claude, since nothing can start it again before.
 
 **When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
 counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
