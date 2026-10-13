@@ -39,6 +39,7 @@ import { resolveWorktreePath } from '../utils/worktree-path';
 import { landsUnderSafeRoot } from '../utils/real-target';
 import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
+import { planModeRefusal } from '../providers/plan-mode';
 import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
 import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
@@ -338,6 +339,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     if (config.effort && !VALID_EFFORTS.includes(config.effort)) {
       throw new Error(`Invalid effort level: ${config.effort}`);
     }
+    // Plan on a provider that has none would run as normal (the Audit's Low 2 on #407).
+    const noPlan = planModeRefusal(config.provider, config.permissionMode);
+    if (noPlan) throw new Error(noPlan);
     // Before anything is created: a refused role leaves no worktree or terminal behind.
     const role = requestedRole(config) ?? 'worker';
     // Every task the agent is given opens with its skills (gate of #204).
@@ -1093,6 +1097,11 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // rest would be undone at its next send (the Audit's M2 on #379).
     if (agent.kind === 'chat') {
       return { success: false, error: `${agent.name || agent.id} runs a chat: its settings are the project's orchestrator's. Change them there.` };
+    }
+    // Plan on a provider that has none, set here or kept across a move to it, would run as normal (the Audit's Low 2 on #407).
+    if (params.provider !== undefined || params.permissionMode !== undefined) {
+      const noPlan = planModeRefusal(params.provider ?? agent.provider, params.permissionMode ?? agent.permissionMode);
+      if (noPlan) return { success: false, error: noPlan };
     }
     let role: AgentRole | undefined;
     try {

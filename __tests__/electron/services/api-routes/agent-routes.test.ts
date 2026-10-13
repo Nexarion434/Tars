@@ -347,6 +347,17 @@ describe('agent-routes', () => {
       expect(status).toBe(400);
       expect(answer.error).toMatch(/plan, normal, auto or bypass/);
     });
+
+    // The Audit's Low 2 on #407: a Codex agent made in plan ran as normal and edited once it had asked.
+    it("6. refuses plan for a provider that has none, with the window's reason, and keeps it for Claude Code", async () => {
+      const [answer, status] = await create({ provider: 'codex', permissionMode: 'plan' });
+      expect(status).toBe(400);
+      expect(answer.error).toMatch(/has no plan mode here: plan would run as manual/);
+      expect(agents.size).toBe(1);
+      const [made, ok] = await create({ provider: 'claude', permissionMode: 'plan' });
+      expect(ok).toBeUndefined();
+      expect(made.agent.permissionMode).toBe('plan');
+    });
   });
 
   describe('POST /api/agents/:id/stop', () => {
