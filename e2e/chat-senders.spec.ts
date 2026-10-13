@@ -50,6 +50,8 @@ if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '');
 const record = (file, o) => fs.appendFileSync(path.join(process.env.HOME, file), JSON.stringify({ at: new Date().toISOString(), id, ...o }) + '\n');
 const dashes = args.indexOf('--');
 const launchPrompt = dashes === -1 ? '' : args.slice(dashes + 1).join(' ');
+// The token its MCP servers present for it, as Tars handed it to this process.
+record('tokens.jsonl', { token: process.env.CLAUDE_MGR_API_TOKEN || null });
 const hook = (name, payload) => spawnSync('/bin/bash', [path.join(HOOKS, name)], {
   input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
 });
@@ -233,10 +235,13 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     const prompts = () => lines<{ id: string; prompt: string }>(promptsFile);
     const reached = (needle: string) => prompts().filter((l) => l.prompt.includes(needle)).map((l) => l.id);
     const atRest = (id: string) => expect.poll(async () => (await agentOf(id))?.status, { timeout: 30_000 }).toMatch(/^(idle|completed)$/);
-    const tokenOf = (id: string) => app.evaluate((_e, { dist, id }) => {
-      const req = process.mainModule!.require;
-      return req(`${dist}/core/agent-tokens.js`).mintAgentToken(id) as string;
-    }, { dist, id });
+    // The agent's own token: the one its running CLI was handed (minting another would end that one, and its
+    // hooks with it); minted only for an agent with no terminal yet.
+    const tokenOf = async (id: string) => lines<{ id: string; token: string | null }>(path.join(home, 'tokens.jsonl')).filter((l) => l.id === id && l.token).at(-1)?.token
+      ?? app.evaluate((_e, { dist, id }) => {
+        const req = process.mainModule!.require;
+        return req(`${dist}/core/agent-tokens.js`).mintAgentToken(id) as string;
+      }, { dist, id });
     const api = async (id: string, route: string, body: unknown) => {
       const res = await fetch(`http://127.0.0.1:${port}${route}`, {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${await tokenOf(id)}` }, body: JSON.stringify(body),
@@ -263,6 +268,8 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     telegram.write('TG1>> fresh, for the inbox');
     await expect.poll(() => reached('TG1>>'), { timeout: 30_000 }).toEqual([inboxRunner]);
     await atRest(inboxRunner);
+    // After the line Tars writes for its sender, as the orchestrator gets it.
+    expect(prompts().find((l) => l.prompt.includes('TG1>>'))!.prompt.startsWith('Message from Telegram: ')).toBe(true);
     telegram.write('#3 TG2>> named by its number');
     await expect.poll(() => reached('TG2>>'), { timeout: 30_000 }).toEqual([releaseRunner]);
     await atRest(releaseRunner);
@@ -323,6 +330,7 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
     hermes.projectMessage('demo', 'RL3>> fresh, for the inbox');
     await expect.poll(() => reached('RL3>>'), { timeout: 30_000 }).toEqual([inboxRunner]);
     await atRest(inboxRunner);
+    expect(prompts().find((l) => l.prompt.includes('RL3>>'))!.prompt.startsWith('Message from the user via Telegram: ')).toBe(true);
     const sendsBefore = hermes.sends.length;
     hermes.projectMessage('demo', '#9 RL4>> to no chat');
     await expect.poll(() => hermes.sends.slice(sendsBefore).map((s) => s.text).join('\n'), { timeout: 30_000 }).toContain('#3 Release');

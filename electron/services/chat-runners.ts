@@ -371,7 +371,7 @@ export async function sendToChat(chatId: unknown, text: unknown, opts: { sender?
   // launch.
   const known = store.get(chatId);
   const running = known ? runnerOf(known) : undefined;
-  if (known && running && isLive(running)) return typeInto(running, known, text);
+  if (known && running && isLive(running)) return typeInto(running, known, text, opts.sender);
   // Under the lock: whether a slot is needed, and the launch that takes it.
   const decided = await withSlots(async (): Promise<SendAnswer | { typeInto: AgentStatus; chat: Chat }> => {
     const chat = store!.get(chatId);
