@@ -1,0 +1,36 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { useAppPathname } from '@/hooks/useAppPathname';
+import NewSidebar from './NewSidebar';
+import { PageCard } from './PageCard';
+import { MORE_PAGES, type MorePageId } from './more-pages';
+
+/**
+ * The new shell (plan 2.0.0), while Settings, Preferences, "New interface" is
+ * on: the sidebar of `Shell · chats · empty`, 240 wide, the page in the main
+ * column with the gutters every page is drawn for, and a page of More as a
+ * card above it. Going to another page puts the card away.
+ */
+export default function NewShell({ children }: { children: ReactNode }) {
+  const pathname = useAppPathname();
+  const [open, setOpen] = useState<MorePageId | null>(null);
+  const close = useCallback(() => setOpen(null), []);
+
+  useEffect(() => {
+    setOpen(null);
+  }, [pathname]);
+
+  const page = open ? MORE_PAGES.find(p => p.id === open) : undefined;
+
+  return (
+    <>
+      {/* The traffic lights' drag strip, the sidebar's width only, as before. */}
+      <div className="window-drag fixed top-0 left-0 h-7 w-[240px] z-[60]" />
+      <NewSidebar onOpenPage={setOpen} />
+      <main className="min-h-screen ml-[240px] px-[26px] pb-[22px] pt-[22px]">{children}</main>
+      {page && <PageCard page={page} onClose={close} />}
+    </>
+  );
+}
