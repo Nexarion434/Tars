@@ -958,6 +958,241 @@
         },
         {
           "type": "frame",
+          "id": "g19TpL",
+          "name": "Preview",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "layout": "vertical",
+          "gap": 40,
+          "padding": [
+            64,
+            200
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "b3N23B",
+              "name": "head",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "oAEGB",
+                  "name": "eyebrow",
+                  "fill": "$accent",
+                  "content": "Preview in 2.0.0",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ZTi2X",
+                  "name": "h2",
+                  "fill": "#F5F4F2",
+                  "content": "Projects and chats",
+                  "lineHeight": 1.1,
+                  "fontFamily": "$font-display",
+                  "fontSize": 34,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "bVrGn",
+                  "name": "lead",
+                  "fill": "#9B9B9B",
+                  "textGrowth": "fixed-width",
+                  "width": 600,
+                  "content": "A project keeps its team, and you open several chats in it, each its own conversation with the project’s orchestrator on one topic. It comes in 2.0.0 as a preview, off until you turn it on.",
+                  "lineHeight": 1.6,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 15,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "wZH0m",
+              "name": "grid",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 36,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ZKOGY",
+                  "name": "row0",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZK1GB",
+                      "name": "f Every chat, in one list",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "kNFhy",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Every chat, in one list",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "gJfJk",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "The sidebar lists your projects’ chats, pinned, active, working, snoozed or settled, each with its state, filters them by project, and says how many work of the most your Mac runs at once. Main is the conversation your orchestrator already had.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "dourV",
+                      "name": "f A chat’s conversation, live",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t3TqD",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "A chat’s conversation, live",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "rjJgx",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Write to its orchestrator there, and read the conversation from its own transcripts as it happens: what it says, the tools it calls, the work it hands to its team, and what it asks you. A new chat’s first message starts its own orchestrator.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "QOnlp",
+                  "name": "row1",
+                  "width": "fill_container",
+                  "gap": 40,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "S0Xke",
+                      "name": "f A page for each project",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "LGmo2",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "A page for each project",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "l47o6i",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Its chats, its team and what each agent is on, its terminals and its room, on one page. Agents, Usage, Settings and the other pages open from More, as cards above the app.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bWmBn",
+                      "name": "f Off until you turn it on",
+                      "width": 500,
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fG9i2",
+                          "name": "t",
+                          "fill": "#F5F4F2",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Off until you turn it on",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 16,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "A8tX5h",
+                          "name": "b",
+                          "fill": "#9B9B9B",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Settings, Preferences, New interface. Today’s interface stays exactly as it is until then, and comes back the moment you turn it off.",
+                          "lineHeight": 1.55,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
           "id": "C7LRg",
           "name": "How",
           "width": "fill_container",
