@@ -29,7 +29,10 @@ const MARKER = 'Remember: the fleet ships on Fridays.';
 const claudeFolder = (p: string) => p.replace(/[^a-zA-Z0-9]/g, '-');
 
 test('lists a project Claude Code opened, under its own name, on Projects and on Memory', async () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-claude-projects-')));
+  // Through realpath on Windows only, for its 8.3 names (RUNNER~1); on macOS
+  // the app reports /var/..., as os.tmpdir() gives it, not /private/var/...
+  const made = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-claude-projects-'));
+  const home = process.platform === 'win32' ? fs.realpathSync(made) : made;
   seedSandbox(home);
   const parent = process.platform === 'win32' ? 'Claude Project' : 'claude-project';
   const project = path.join(home, 'work', parent, 'my_app.v2');
