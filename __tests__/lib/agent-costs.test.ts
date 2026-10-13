@@ -144,11 +144,14 @@ describe('its project and provider (6)', () => {
   });
 
   it('keeps the latest project a task named when the latest names none', () => {
-    const rows = totalsByAgent([
+    const rows = byId(totalsByAgent([
       task({ id: 'a', agentId: 'lead', startedAt: T0, projectPath: null }),
       task({ id: 'b', agentId: 'lead', startedAt: T0 - DAY, projectPath: '/Users/me/projects/tars' }),
-    ], LABELS);
-    expect(rows[0].projectPath).toBe('/Users/me/projects/tars');
+      task({ id: 'c', agentId: 'writer', startedAt: T0, projectPath: '' }),
+      task({ id: 'd', agentId: 'writer', startedAt: T0 - DAY, projectPath: '/Users/me/projects/site' }),
+    ], LABELS));
+    expect(rows.lead.projectPath).toBe('/Users/me/projects/tars');
+    expect(rows.writer.projectPath).toBe('/Users/me/projects/site');
   });
 
   it('writes a project by its folder\'s name, from a POSIX or a Windows path, and none without one', () => {
