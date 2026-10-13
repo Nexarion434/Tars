@@ -14,7 +14,7 @@ import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { dropRunnerGrants } from '../core/chat-grants';
-import { chatLimitSentence, OFF_CLAUDE, offClaudeRefusal, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, gitRefusal } from '../core/chat-slots';
+import { chatLimitSentence, OFF_CLAUDE, offClaudeRefusal, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, gitRefusal, looksAgain } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
 import { namesItsChats, pickChat } from './chat-addressing';
@@ -300,6 +300,7 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
         isMain: chat.number === 1 || agent.kind !== 'chat',
         lastActivity: Date.parse(agent.lastActivity) || 0,
         refusal: reserved.has(agent.id) ? 'starting' : sleepRefusal(factsOf(agent, procs, now), { anyAge: true }),
+        forSend: reserved.has(agent.id),
         // A message Tars has just typed in keeps the field in use a moment (WRITE_SETTLE_MS): it settles by itself.
         settlesInMs: terminal ? fieldInUse(terminal)?.retryInMs : undefined,
       };
@@ -315,10 +316,10 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
     }
     // A turn's end reaches Tars from its Stop hook, whose process is still
     // under the CLI for a moment after (busy), the process table may not come
-    // at all under load, and a message Tars has just typed in keeps the field
-    // in use until it settles: such a runner is looked at again, a little later.
-    const passing = candidates.filter((c) => !c.isMain
-      && (c.refusal === 'busy' || c.refusal === 'no-process-table' || (c.refusal === 'field' && c.settlesInMs !== undefined)));
+    // at all under load, a message Tars has just typed in keeps the field in
+    // use until it settles, and a restart with no prompt is idle once its start
+    // is through: such a runner is looked at again, a little later (looksAgain).
+    const passing = candidates.filter(looksAgain);
     if (passing.length && look < EVICTION_LOOKS) {
       const wait = Math.max(EVICTION_PAUSE_MS, ...passing.map((c) => Math.min(c.settlesInMs ?? 0, WRITE_SETTLE_MS)));
       await new Promise((resolve) => setTimeout(resolve, wait));
