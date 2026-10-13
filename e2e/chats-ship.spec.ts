@@ -15,7 +15,8 @@ import { BOT_TOKEN, JEANBRASSE, startFakeTelegram } from '../__tests__/fixtures/
  *    its worktree, so git called it an ignored file, and the removal kept the whole worktree for it. The sandbox HOME
  *    here has that global ignore. Asserted: a chat deleted goes with its worktree, and one whose worktree holds
  *    another ignored file keeps it and says so, and one whose .claude is a link to the project's leaves the
- *    project's file alone (#394's gate, M1).
+ *    project's file alone (#394's gate, M1), and one whose worktree git refuses to remove (locked) says git's reason
+ *    and where the worktree stays (the Audit's L1 on #398).
  * 2. With the new interface off and a project that has only Main, Telegram and the room read as 1.9.7 had them:
  *    a message that starts with "#2 " (an issue's number) reaches the orchestrator as typed, what the orchestrator
  *    sends carries no "[demo #1 Main]", and it posts in the room under its own name.
@@ -180,6 +181,16 @@ test('deleting a chat removes its worktree, a global git ignore of settings.loca
     expect(values.linked).toMatchObject({ success: true });
     expect(fs.existsSync(projectGrants), 'the project\'s own settings.local.json was deleted through the link').toBe(true);
     expect(fs.readFileSync(projectGrants, 'utf8')).toBe(before);
+
+    // A worktree git refuses to remove (locked, the Audit's L1 on #398): the answer says why, and where it stays.
+    const four = await startChat('Locked');
+    execFileSync('git', ['worktree', 'lock', '--reason', 'kept by hand', four.runner.worktreePath!], { cwd: project });
+    values.locked = await call('chat', 'delete', { chatId: four.chat.id });
+    recordValues(values);
+    expect(values.locked).toMatchObject({ success: true });
+    expect(String((values.locked as Answer).worktreeKept ?? ''), 'the chat list is told nothing of the worktree still on disk')
+      .toBe(`git could not remove it (cannot remove a locked working tree, lock reason: kept by hand), so its worktree was kept at ${four.runner.worktreePath}`);
+    expect(fs.existsSync(four.runner.worktreePath!)).toBe(true);
   } finally {
     await app.close();
   }
