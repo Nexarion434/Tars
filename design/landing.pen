@@ -1019,6 +1019,21 @@
             },
             {
               "type": "frame",
+              "id": "gJ0hV",
+              "name": "picture",
+              "width": "fill_container",
+              "height": 650,
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "../landing/src/assets/new-interface.png",
+                "mode": "stretch"
+              },
+              "stroke": "$border",
+              "strokeWidth": 1
+            },
+            {
+              "type": "frame",
               "id": "wZH0m",
               "name": "grid",
               "width": "fill_container",

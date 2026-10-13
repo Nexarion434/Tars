@@ -23,6 +23,14 @@ import { DEFAULT_APP_SETTINGS, SECTIONS } from '../../src/components/Settings/co
  * Added after the code, for a mutant of its bench that survived (A2):
  * 5. the row is renamed while its switch keeps the name, and the landing
  *    names a row Settings no longer shows (case 3 reads both).
+ *
+ * Added with the pictures of 2.0.0, before them:
+ * 6. the frame's picture is not on the page, or another one is: the image its
+ *    Preview section names under landing/src/assets is missing, is not a PNG
+ *    of the app at least 1440 wide (e2e/new-interface-pictures.mjs takes it),
+ *    is not the one the home page imports and hands to the section, or has no
+ *    words for whoever cannot see it; or the section shows it elsewhere than
+ *    between its head and its points.
  */
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -33,7 +41,7 @@ const textOf = (markup: string) => markup
   .replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
   .replace(/\s+/g, ' ').trim();
 
-type Node = { type?: string; name?: string; content?: string; children?: Node[] };
+type Node = { type?: string; name?: string; content?: string; fill?: { type?: string; url?: string }; children?: Node[] };
 /** The texts of the frame's Preview section, in the order the page reads them. */
 function frameTexts(): string[] {
   const doc = JSON.parse(read('design/landing.pen')) as { children: Node[] };
@@ -47,6 +55,20 @@ function frameTexts(): string[] {
   };
   walk(section);
   return out;
+}
+
+/** The picture the frame's Preview section shows, as a path from the repository's root. */
+function framePicture(): string {
+  const doc = JSON.parse(read('design/landing.pen')) as { children: Node[] };
+  const section = doc.children.find(c => c.name === 'Landing · desktop')?.children?.find(c => c.name === 'Preview');
+  const urls: string[] = [];
+  const walk = (n: Node) => {
+    if (n.fill?.type === 'image' && n.fill.url) urls.push(n.fill.url);
+    (n.children ?? []).forEach(walk);
+  };
+  if (section) walk(section);
+  if (urls.length !== 1) throw new Error(`the Preview section shows ${urls.length} pictures, not 1`);
+  return path.posix.normalize(path.posix.join('design', urls[0]));
 }
 
 const shown = textOf(renderToStaticMarkup(<PreviewSection />));
@@ -78,6 +100,29 @@ describe('the landing\'s preview of 2.0.0', () => {
     const page = SECTIONS.find(s => s.id === 'general')?.label;
     expect(page).toBe('Preferences');
     expect(shown).toContain(`Settings, ${page}, ${label}.`);
+  });
+
+  it('shows the picture its frame names, from the app, between its head and its points (6)', () => {
+    const file = framePicture();
+    expect(file).toMatch(/^landing\/src\/assets\/[\w.-]+\.png$/);
+    const png = fs.readFileSync(path.join(ROOT, file));
+    expect(png.subarray(1, 4).toString('latin1'), `${file} is a PNG`).toBe('PNG');
+    expect(png.readUInt32BE(16), `${file} is at least 1440 wide`).toBeGreaterThanOrEqual(1440);
+
+    // The home page imports it and hands it to the section, with words for whoever cannot see it.
+    const home = read('landing/src/app/page.tsx');
+    const asset = file.replace(/^landing\/src\//, '@/');
+    const imported = home.match(new RegExp(`import (\\w+) from '${asset.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}';`))?.[1];
+    expect(imported, `page.tsx imports ${asset}`).toBeTruthy();
+    const element = home.slice(home.indexOf('<PreviewSection'), home.indexOf('id="how"'));
+    expect(element).toContain(`src={${imported}}`);
+    expect(element).toMatch(/alt="[^"]{20,}"/);
+
+    // The section shows what it is handed, between its head and its points.
+    const markup = renderToStaticMarkup(<PreviewSection picture={<span data-picture="">A chat&apos;s page</span>} />);
+    const at = markup.indexOf('data-picture');
+    expect(at).toBeGreaterThan(markup.indexOf('Projects and chats'));
+    expect(at).toBeLessThan(markup.indexOf('Every chat, in one list'));
   });
 
   it('sits once on the home page, between What it does and How it works (4)', () => {
