@@ -7,11 +7,19 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 56,
+    version: '1.9.7',
+    date: '2026-10-13',
+    updates: [
+      'A Claude Code run from inside an agent\'s own terminal, such as a `claude -p` its Bash tool starts, no longer takes over the agent: it registered as the agent\'s session, its answer marked the agent done, the agent\'s real session was then ignored, and a restart resumed the wrong conversation. Tars now takes a session only from the Claude Code it launched in that terminal.',
+    ],
+  },
+  {
     id: 55,
     version: '1.9.6',
     date: '2026-10-12',
     updates: [
-      'A Claude Code run from inside an agent\'s own terminal, such as a `claude -p` its Bash tool starts, no longer takes over the agent: it registered as the agent\'s session, its answer marked the agent done, the agent\'s real session was then ignored, and a restart resumed the wrong conversation. Tars now takes a session only from the Claude Code it launched in that terminal.',
+      'Tars reads far less of your Claude Code transcripts while it runs. To show the model each agent last used, it read the agent\'s whole transcript every few seconds, for every agent, while it listed them; and every minute the Agents, Projects or Usage page was open, it read again, whole, every transcript that had changed. It reads the end of a transcript, and only what was added since, now. On a fleet of 45 agents whose transcripts came to 1 GB, the first was up to 1 GB read every five seconds on the thread that also answers the window and the agents.',
       'On the Extensions page, every install count reads with one decimal, in K or M, such as 1.1M beside 1.3M, where a count on a round thousand lost its decimal and counts past a million read in thousands, such as 1113K beside 1300.1K.',
       'An orchestrator\'s message or delegation is sent once, even when its call to Tars timed out and was made again: each one now carries an id, and a send Tars already made is answered as it was the first time, with nothing typed or started twice. The same id with another message is refused. Tars keeps these receipts for 24 hours in ~/.tars-private, with ids and outcomes only, never what the message said.',
       'An orchestrator can choose how its message goes in: at once as before, after the agent\'s current turn, by interrupting that turn first (Claude agents only), or by restarting the agent with it. Interrupting or restarting an agent while it works on another agent\'s request is refused, and so is restarting one that holds another agent\'s request in its queue.',
