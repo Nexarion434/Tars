@@ -1096,7 +1096,11 @@ export interface ChatHistory {
   items: ChatItem[];
 }
 
-/** chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again. */
+/**
+ * chat:events: one change, its seq after the snapshot's. A gap in seq: ask chat:history again.
+ * An `item` whose id the window already holds replaces it: an item is sent again when its place `n`
+ * changed (a line that landed in an earlier session moves every item after it one place on).
+ */
 export type ChatEvent = { seq: number; chatId: string } & (
   | { type: 'item'; item: ChatItem }
   | { type: 'meta'; chat: ChatView }
