@@ -32,6 +32,11 @@
  * 11. (The Audit's Y1 on #371's delta) An item that lands before the last one
  *     told (an earlier session's file that gains a line) is never sent by a
  *     follower that counts by position.
+ * 12. (GATE-PR371-DELTA2, Info) That late item moves every item after it one
+ *     place on: told at n=1, the later session's line is now n=2, with no
+ *     event, and a window that places items by n puts the late one after them
+ *     until its next snapshot. An item whose n changed is sent again (the
+ *     same id: it replaces the one the window holds).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -227,6 +232,33 @@ describe('a chat, followed', () => {
     await f.tick();
     f.stop();
     expect(itemsSent()).toEqual(['late in a']);
+  });
+
+  it('12. sends again, with its new place, an item a late one moved on', async () => {
+    write(S('a'), userLine('hello'));
+    write(S('b'), userLine('in b'));
+    const chat = chatOf({ sessionIds: [S('a'), S('b')] });
+    const runner = runnerOf({ currentSessionId: S('b') });
+    const snapshot = await readChatItems(chat, { runner, homeDir: home });
+    const inB = snapshot.find((i) => i.text === 'in b')!;
+    noteChatSnapshot(chat.id, snapshot);
+    append(S('a'), userLine('late in a'));
+    const f = follow({ chats: [chat], runner });
+    await f.tick();
+    f.stop();
+    const items = sent.filter((e) => e.type === 'item').map((e) => e.item!);
+    const late = items.find((i) => i.text === 'late in a')!;
+    const moved = items.filter((i) => i.id === inB.id);
+    // hello 0, late in a 1, the divider 2, in b 3 (it was 2).
+    expect(inB.n).toBe(2);
+    expect(late.n).toBe(1);
+    expect(moved.map((i) => i.n), 'the later items, sent again where they now are').toEqual([3]);
+    // A second tick sends nothing: what moved was told.
+    sent.length = 0;
+    const g = follow({ chats: [chat], runner });
+    await g.tick();
+    g.stop();
+    expect(sent.filter((e) => e.type === 'item')).toEqual([]);
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
