@@ -50,7 +50,7 @@ export function startPointOf(git: { originHead: string | null; refs: string[] })
  */
 export function gitRefusal(stderr: string): string {
   const reasons = stderr.split(/\r?\n/)
-    .map((line) => /^(?:fatal|error): (.*)$/.exec(line.trim())?.[1]?.trim().replace(/\.+$/, ''))
+    .map((line) => /^(?:fatal|error): (.*)$/.exec(line.trim())?.[1]?.trim().replace(/[.;]+$/, ''))
     .filter((reason): reason is string => !!reason);
   return reasons.length ? reasons.join('; ') : 'git refused it without saying why';
 }
