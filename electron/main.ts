@@ -585,7 +585,7 @@ app.whenReady().then(async () => {
   registerBusHandlers();
   // The chats' records, and the migration that makes each project's
   // orchestrator's conversation its chat #1, Main (handlers/chat-handlers.ts).
-  registerChatHandlers({ agents });
+  registerChatHandlers({ agents, chatsShown: () => appSettings.newInterface === true });
 
   // The overseer's watch timer: an unprompted briefing reaches the Chat page
   // through the same broadcast channel every other live update uses.

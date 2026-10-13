@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 57,
+    version: '2.0.0',
+    date: '2026-10-13',
+    updates: [
+      'A Claude Code run from inside an agent\'s terminal no longer changes the agent\'s status when the agent has no session Tars knows of (its own session start was lost): its turn and its answer set the agent working, then done, though the agent\'s own Claude Code was elsewhere. Tars now ignores them, and only the Claude Code it launched in that terminal moves the agent.',
+    ],
+  },
+  {
     id: 56,
     version: '1.9.7',
     date: '2026-10-13',
@@ -14,7 +22,7 @@ export const CHANGELOG: Release[] = [
       'Tars\'s own tools in an agent (its orchestrator, memory, kanban and vault servers) now check, before every call, that the port they call answers as the Tars that started the agent, and send the agent\'s token only then, a delegated run\'s included: a program that took Tars\'s port after a quit no longer receives it.',
       'An agent\'s permissions offer plan, in New agent, Edit agent and the agent\'s window: Claude Code reads and plans, and edits nothing until you approve its plan. Another CLI, and Claude Code through an API-key provider, has no plan mode here, so plan is dimmed there and says why; choosing one while plan is chosen falls back to manual.',
       'On the Brain page\'s Projects tab, a project whose memory an older Tars kept in a folder Claude Code never reads says so on its line: older copy in, then that folder, whose whole path shows when you hover it. Its memory was copied once into the folder Claude Code reads, when that folder had no MEMORY.md of its own; the older folder is kept as it was.',
-      'Tars clears more of the agents\' temporary folders. What an agent left there, its project\'s test sandboxes and build folders, and the folders of its ended Claude Code sessions, now goes once untouched for a day while the agent runs, where it was kept for as long as the agent ran: on one Mac that freed 10 GB at the first pass. The folder of the session an agent runs or would resume is never touched. The hourly pass also no longer reads every file of every agent again when nothing can go.',
+      'Tars clears more of the agents\' temporary folders. What an agent left there, its project\'s test sandboxes and build folders, and the folders of its ended Claude Code sessions, now goes once untouched for a day while the agent runs, where it was kept for as long as the agent ran: on one Mac that freed 10 GB at the first pass. While an agent runs, the folder of the session it runs or would resume is never touched. The hourly pass also no longer reads every file of every agent again when nothing can go.',
       'A Claude Code run from inside an agent\'s own terminal, such as a `claude -p` its Bash tool starts, no longer takes over the agent: it registered as the agent\'s session, its answer marked the agent done, the agent\'s real session was then ignored, and a restart resumed the wrong conversation. Tars now takes a session only from the Claude Code it launched in that terminal.',
     ],
   },
