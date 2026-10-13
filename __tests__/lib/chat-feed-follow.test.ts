@@ -27,6 +27,10 @@ import type { ChatEvent, ChatHistory, ChatItem } from '../../src/types/electron'
  * Written before the fix, from the mutation bench of L2 and L3:
  * 10. after a re-read that failed, each event reads again at once, past
  *     the wait, and a read may start beside the one the wait starts.
+ *
+ * Added after the code, for a mutant of the same bench that survived (F13):
+ * 11. a read that answers leaves the waits where the failures before it took
+ *     them, so the next failure waits longer than the first.
  */
 
 type Call = { params: { chatId: string; before?: number; limit?: number }; listening: number; resolve: (v: unknown) => void; reject: (e: unknown) => void };
@@ -194,5 +198,18 @@ describe('followChatFeed', () => {
     src.calls[2].resolve(history(14, range(0, 5)));
     await settle();
     expect(lines()).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('starts its waits over once a read answers (11)', async () => {
+    const { src, clock } = follow();
+    src.calls[0].reject(new Error('no'));
+    await settle();
+    clock.run();
+    src.calls[1].resolve(history(10, range(0, 1)));
+    await settle();
+    src.emit(said(12, item(3)));
+    src.calls[2].reject(new Error('no'));
+    await settle();
+    expect(clock.waits()).toEqual([RETRY_MS[0]]);
   });
 });
