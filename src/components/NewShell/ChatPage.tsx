@@ -1,26 +1,31 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ArrowUp } from 'lucide-react';
+import { ArrowRight, ArrowUp, Square } from 'lucide-react';
 import { BrandMark } from '@/components/Brand';
 import PermissionAskNotice from '@/components/PermissionAskNotice';
 import { RichText } from '@/components/Overseer/RichText';
-import { ComposerCard, PanelCaption } from '@/components/ui';
+import { Button, ComposerCard, PanelCaption, StatusSquare } from '@/components/ui';
 import { useElectronAgents } from '@/hooks/useElectron';
 import { useChatFeed } from '@/hooks/useChatFeed';
+import { changeChat, isChatError, projectNameOf, refreshChats, useChats } from '@/hooks/useChats';
+import { clearsField, outcomeOf, stripOf, titleOf, type SendOutcome } from '@/lib/chat-send';
 import type { AgentStatus, ChatItem, ChatView } from '@/types/electron';
 import { ChatHead, clockOf } from './chat-bits';
 
 /**
  * A chat's page, its conversation read from its runner's transcripts and
  * followed live (src/hooks/useChatFeed.ts). Frames: `Chat · chats · from its
- * transcripts, working` and `· waiting on you`, in chat-redesign-a.pen. Each
- * line is shown as what it is, the lines of one speaker under one head; the
- * runner in a turn says so at the end of the thread, and its permission ask
- * sits above the composer, the one its window shows. The composer is the
- * Chat's with nobody to receive yet: sending from a chat comes with chat:send
- * (PR D), and so does what the chat delegated, on the right.
+ * transcripts, working`, `· waiting on you`, `· a new chat, its first message`,
+ * `· the composer, sending` and `· every slot working`, in chat-redesign-a.pen.
+ * Each line is shown as what it is, the lines of one speaker under one head;
+ * the runner in a turn says so at the end of the thread, and its permission
+ * ask sits above the composer, the one its window shows. The composer sends
+ * through chat:send (PR D): a runner that runs has the words typed into it, one
+ * that does not is started with them, and a new chat's first message makes its
+ * runner and names it. A refusal is said in the page and the words stay; a
+ * full limit names who works, with a Stop for each (src/lib/chat-send.ts).
  */
 
 /** Within this many pixels of the end, the thread follows what arrives. */
@@ -135,8 +140,60 @@ function Alone({ item }: { item: ChatItem }) {
   );
 }
 
+/**
+ * A send the limit refused (`Chat · chats · every slot working`): its sentence,
+ * each chat working with a way to it and its Stop, and the words kept.
+ */
+function LimitBlock({ outcome, chats }: { outcome: Extract<SendOutcome, { kind: 'limit' }>; chats: ChatView[] }) {
+  const [stopping, setStopping] = useState<string | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+  const stop = async (runnerId: string) => {
+    setStopping(runnerId);
+    setRefused(null);
+    try {
+      const answer = await window.electronAPI?.agent?.stop(runnerId);
+      if (!answer?.success) setRefused('Tars did not stop it.');
+    } catch (error) {
+      setRefused(error instanceof Error ? error.message : String(error));
+    }
+    setStopping(null);
+    void refreshChats();
+  };
+  return (
+    <div data-chat-limit role="alert" className="flex flex-col border border-border bg-card">
+      <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
+        <StatusSquare tone="error" className="mt-[5px]" />
+        <p className="text-[12.5px] leading-[1.45] text-foreground">{outcome.reason}</p>
+      </div>
+      {outcome.working.map(work => {
+        const listed = chats.find(c => c.id === work.chatId);
+        const runnerId = listed?.runnerId ?? null;
+        const since = clockOf(work.since);
+        return (
+          <div key={work.chatId} data-chat-limit-row={work.chatId} className="flex items-center gap-2.5 px-3 py-1.5 border-t border-border min-w-0">
+            <StatusSquare tone="running" />
+            <Link href={`/chats?chat=${encodeURIComponent(work.chatId)}`} className="text-[12.5px] leading-[1.4] text-primary hover:underline truncate">
+              {work.title}
+            </Link>
+            {listed && <span className="font-mono text-[10.5px] text-status-idle shrink-0">{projectNameOf(listed.projectPath)} #{listed.number}</span>}
+            {since && <span className="font-mono text-[10.5px] text-status-idle shrink-0">since {since}</span>}
+            <span className="flex-1" />
+            <Button size="sm" disabled={!runnerId || stopping !== null} onClick={() => runnerId && void stop(runnerId)}>
+              <Square className="w-3 h-3" />
+              Stop
+            </Button>
+          </div>
+        );
+      })}
+      {refused && <p role="alert" className="px-3 pb-1.5 text-xs text-status-waiting">Not stopped: {refused}</p>}
+      <p className="px-3 pt-1 pb-2.5 font-mono text-[10.5px] text-status-idle">Your message stays in the composer.</p>
+    </div>
+  );
+}
+
 export function ChatPage({ chat }: { chat: ChatView }) {
   const { agents } = useElectronAgents();
+  const { chats } = useChats();
   const { feed, problem, showEarlier, readingEarlier } = useChatFeed(chat.id);
 
   // The record as its last event told it; the runner as the fleet has it now.
@@ -154,6 +211,48 @@ export function ChatPage({ chat }: { chat: ChatView }) {
   const state = stateOf(runnerId && status ? { name: runnerName, status } : null, ask);
   const meta = [created && `created ${created}`, state].filter(Boolean).join(' · ');
   const earlier = feed.hasEarlier ? feed.items[0]?.n ?? 0 : 0;
+  // A chat whose runner is not made yet, or not running, is started by the send.
+  const launching = !(listed?.live ?? false);
+  const firstMessage = !runnerId && feed.items.length === 0 && !problem;
+
+  // The field, and what the last send came to (src/lib/chat-send.ts).
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [outcome, setOutcome] = useState<SendOutcome | null>(null);
+  const [nameProblem, setNameProblem] = useState<string | null>(null);
+  // A held message goes in once the orchestrator takes a turn: the strip has said what it had to.
+  useEffect(() => {
+    if (working) setOutcome(previous => (previous?.kind === 'sent' ? null : previous));
+  }, [working]);
+  const submit = async () => {
+    const words = text;
+    if (!words.trim() || sending) return;
+    setSending(true);
+    setOutcome(null);
+    setNameProblem(null);
+    let read: SendOutcome;
+    try {
+      const api = window.electronAPI?.chat;
+      read = outcomeOf(api
+        ? await api.send({ chatId: chat.id, text: words, clientRequestId: crypto.randomUUID(), mode: 'auto' })
+        : new Error('The chats are not available in this window.'));
+    } catch (error) {
+      read = outcomeOf(error instanceof Error ? error : new Error(String(error)));
+    }
+    setSending(false);
+    setOutcome(read);
+    if (clearsField(read)) {
+      setText(current => (current === words ? '' : current));
+      // Its first message names a chat nobody named.
+      const title = record.titleSource === 'auto' ? titleOf(words) : null;
+      if (title) {
+        const named = await changeChat(api => api.rename({ chatId: chat.id, title }));
+        if (isChatError(named)) setNameProblem(`This chat keeps its name: ${named.reason}`);
+      }
+    }
+    void refreshChats();
+  };
+  const strip = stripOf({ outcome, sending, launching, working });
 
   // At the end, the thread follows what arrives; scrolled up, it stays. Show
   // earlier keeps the line that was first where it was.
@@ -191,6 +290,15 @@ export function ChatPage({ chat }: { chat: ChatView }) {
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 flex flex-col">
           <div ref={scroller} onScroll={onScroll} role="log" aria-label="Conversation" className="flex-1 min-h-0 overflow-y-auto [overflow-anchor:none]">
+            {firstMessage && (
+              <div className="min-h-full flex flex-col items-center justify-center gap-3 px-10 pb-20">
+                <BrandMark className="w-2.5 h-2.5" />
+                <h2 className="font-serif text-[22px] leading-[1.15] text-foreground text-center">Its conversation starts with your first message</h2>
+                <p className="max-w-[480px] text-center text-[12.5px] leading-[1.5] text-text-secondary">
+                  Your first message starts this chat&apos;s orchestrator: a conversation of its own, in a worktree of its own, served by the project&apos;s team.
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-[18px] pt-6 px-10 pb-4">
               {earlier > 0 && (
                 <div className="pl-8 flex items-center gap-2.5">
@@ -234,28 +342,18 @@ export function ChatPage({ chat }: { chat: ChatView }) {
 
           <div className="shrink-0 flex flex-col gap-2 px-10 pb-5">
             {runner && <PermissionAskNotice agent={runner} layout="window" />}
+            {outcome?.kind === 'limit' && <LimitBlock outcome={outcome} chats={chats ?? []} />}
+            {nameProblem && <p role="alert" className="text-xs text-status-waiting">{nameProblem}</p>}
             <ComposerCard
-              value=""
-              onChange={() => {}}
-              onSubmit={() => {}}
+              value={text}
+              onChange={setText}
+              onSubmit={() => void submit()}
               placeholder="Message the orchestrator about this chat"
-              canSubmit={false}
+              canSubmit={!sending && text.trim().length > 0}
               submitLabel="Send"
-              disabled
-              attachLabel="Attaching comes with sending, in the next part of this preview"
-              notice={{
-                tone: 'idle',
-                hollow: true,
-                text: 'Sending from a chat comes with the next part of this preview.',
-                actions: (
-                  <Link
-                    href="/chat"
-                    className="inline-flex items-center justify-center h-[26px] px-2.5 border border-border bg-card text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-                  >
-                    Open Tars, all projects
-                  </Link>
-                ),
-              }}
+              disabled={sending && launching}
+              attachLabel="A message to a chat is text: files cannot be attached here"
+              notice={strip}
             />
           </div>
         </div>
@@ -265,7 +363,7 @@ export function ChatPage({ chat }: { chat: ChatView }) {
             <PanelCaption>Delegated in this chat</PanelCaption>
           </div>
           <p className="px-4 py-3 text-xs leading-[1.5] text-text-secondary">
-            What this chat delegates shows here once each chat has its own runner, with the next part of this preview.
+            What this chat delegates shows here once a task names the chat it came from.
           </p>
           <p className="px-4 py-3 border-t border-border text-[11.5px] leading-[1.45] text-status-idle">
             Each task runs in its agent&apos;s terminal on the Dashboard. The room shows what this project and Tars say to each other.
