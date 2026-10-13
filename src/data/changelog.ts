@@ -8,7 +8,7 @@ export interface Release {
 export const CHANGELOG: Release[] = [
   {
     id: 56,
-    version: '2.0.0',
+    version: '1.9.7',
     date: '2026-10-13',
     updates: [
       'An agent\'s permissions offer plan, in New agent, Edit agent and the agent\'s window: Claude Code reads and plans, and edits nothing until you approve its plan. Another CLI has no plan mode, so plan is dimmed there and says why, and choosing that CLI while plan is chosen falls back to manual.',
