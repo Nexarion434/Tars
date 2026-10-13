@@ -68,8 +68,10 @@ async function sessionStart(input) {
   const projectPath = env.CLAUDE_PROJECT_PATH || cwd;
 
   // Registration, retried once: no probe first, the POST is the probe (see the .sh).
+  // cli_pid: the CLI whose session this is, as the .sh sends it (digits or empty).
+  const cliPid = /^[0-9]+$/.test(env.CLAUDE_PID ?? '') ? env.CLAUDE_PID : '';
   const result = await postWithRetry(`${api}/api/hooks/status`, token(),
-    JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle', source, hook: 'SessionStart' }));
+    JSON.stringify({ agent_id: agentId, session_id: sessionId, status: 'idle', source, hook: 'SessionStart', cli_pid: cliPid }));
   appendLog(hookLog, `[${stamp()}] SESSION_START curl result: ${result}`);
 
   const apiToken = tokenForReads(env, tokenOk);

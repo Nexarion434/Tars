@@ -5,7 +5,7 @@ import { lastPathPart } from '@/lib/display-path';
 
 import type { NewChatModalProps } from './types';
 import type { AgentCharacter, AgentProvider, TeamTemplateMember } from '@/types/electron';
-import type { AgentPermissionMode } from '@/types/agent';
+import type { AgentPermissionMode, TeamPermissionMode } from '@/types/agent';
 import { computeProviderAvailability } from '@/lib/providers';
 import { useElectronAgents } from '@/hooks/useElectron';
 import { useElectronTeamTemplates } from '@/hooks/useElectronTeamTemplates';
@@ -20,6 +20,7 @@ import { canSubmitAgent, canSubmitTeam, deployButtonLabel, deployedMemberName } 
 import type { CreationMode } from './types';
 import { ReplaceOrchestratorDialog } from './ReplaceOrchestratorDialog';
 import type { PendingReplace } from './ReplaceOrchestratorDialog';
+import { modeForProvider } from '@/lib/plan-mode';
 
 const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
   { value: 'agent', label: 'One agent' },
@@ -145,7 +146,7 @@ export default function NewChatModal({
   const [selectedMemberIdx, setSelectedMemberIdx] = useState<Set<number>>(new Set());
   const [teamBrief, setTeamBrief] = useState('');
   const [teamOptionsOpen, setTeamOptionsOpen] = useState(false);
-  const [teamPermissionOverride, setTeamPermissionOverride] = useState<AgentPermissionMode>('auto');
+  const [teamPermissionOverride, setTeamPermissionOverride] = useState<TeamPermissionMode>('auto');
   const [startOnDeploy, setStartOnDeploy] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [deployErrors, setDeployErrors] = useState<string[]>([]);
@@ -190,7 +191,7 @@ export default function NewChatModal({
       return next;
     });
   }, []);
-  const applyPermissionOverride = useCallback((mode: AgentPermissionMode) => {
+  const applyPermissionOverride = useCallback((mode: TeamPermissionMode) => {
     setTeamPermissionOverride(mode);
     setEditedMembers(prev => prev.map(m => ({ ...m, permissionMode: mode })));
   }, []);
@@ -546,7 +547,11 @@ export default function NewChatModal({
               hiddenProjects={hiddenProjects}
               defaultProjectPath={defaultProjectPath}
               provider={provider}
-              onProviderChange={setProvider}
+              onProviderChange={(next) => {
+                setProvider(next);
+                // Plan runs on Claude Code only: another CLI keeps manual (frame: Permissions · plan mode · states).
+                setPermissionMode(mode => modeForProvider(mode, next));
+              }}
               model={model}
               onModelChange={setModel}
               installedProviders={installedProviders}

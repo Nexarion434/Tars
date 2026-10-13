@@ -92,7 +92,7 @@ test('the usage page lists each task with its own cost and its total, the averag
       turns: t.replies?.length || 1, sessionIds: t.session ? [t.session] : [],
     } }));
     if (!t.session) return;
-    const file = path.join(home, '.claude', 'projects', t.project.replace(/[/.]/g, '-'), `${t.session}.jsonl`);
+    const file = path.join(home, '.claude', 'projects', t.project.replace(/[^a-zA-Z0-9]/g, '-'), `${t.session}.jsonl`);
     const list = transcripts.get(file) ?? [];
     (t.replies ?? []).forEach(([input, output], i) => {
       reply += 1;
