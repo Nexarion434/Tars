@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
-import { usesNodeHooks } from '../utils/hook-command';
-import { configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
+import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
+import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -190,12 +190,31 @@ export class GeminiProvider implements CLIProvider {
       { type: 'SessionStart', file: 'session-start.sh', matcher: '*' },
       { type: 'SessionEnd', file: 'session-end.sh', matcher: '*' },
       { type: 'Notification', file: 'notification.sh', matcher: '*' },
-      { type: 'UserPromptSubmit', file: 'user-prompt-submit.sh', matcher: undefined },
+      // BeforeAgent: Gemini CLI fires no UserPromptSubmit
+      // (https://geminicli.com/docs/hooks/), and a Gemini agent read idle while
+      // it worked. win32 had moved already (utils/gemini-node-hooks.ts).
+      { type: 'BeforeAgent', file: 'user-prompt-submit.sh', matcher: undefined },
     ];
 
     let updated = false;
 
     type HookEntry = { matcher?: string; hooks: Array<{ type: string; command: string; timeout?: number }> };
+
+    // The entry an older Tars wrote on UserPromptSubmit goes; the user's own
+    // entries in that event stay, and so do another app's of the same name
+    // (isTarsHooksFile decides, as on win32).
+    const former = settings.hooks.UserPromptSubmit;
+    if (Array.isArray(former)) {
+      const isOlderTars = legacyShCommand('gemini/user-prompt-submit.sh', this.configDir, hooksDir);
+      const kept = former
+        .map((entry: HookEntry) => ({ ...entry, hooks: (entry.hooks ?? []).filter((hh) => !(typeof hh.command === 'string' && isOlderTars(hh.command))) }))
+        .filter((entry: HookEntry) => entry.hooks.length > 0);
+      if (kept.length !== former.length || kept.some((entry: HookEntry, i: number) => entry.hooks.length !== former[i].hooks?.length)) {
+        if (kept.length) settings.hooks.UserPromptSubmit = kept;
+        else delete settings.hooks.UserPromptSubmit;
+        updated = true;
+      }
+    }
 
     for (const { type, file, matcher } of hookFiles) {
       const commandPath = path.join(geminiHooksDir, file);
@@ -222,6 +241,9 @@ export class GeminiProvider implements CLIProvider {
         updated = true;
       }
     }
+
+    // The agent token through Gemini's environment redaction, as on win32.
+    if (allowAgentToken(settings)) updated = true;
 
     if (updated) {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
