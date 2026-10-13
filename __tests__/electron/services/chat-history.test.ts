@@ -44,12 +44,12 @@
  *     window keeps them, mixed with the moved ones, until it reads again. Or
  *     they are declared at every tick, or one still there is declared, or
  *     after the items that moved back (GATE-PR371-DELTA4, L1).
- * 14. (GATE-PR371-DELTA4, Info; a case of what the code does, written after
- *     it) Main follows a change of orchestrator; a session the former one ran
- *     in a worktree of its own is looked for under the new runner's folders
- *     and the project's only, and reads as gone. A live window must then hold
- *     what a fresh chat:history answers: the same gone line, its items
- *     declared removed, not kept as if they were still there.
+ * 14. (GATE-PR371-DELTA4 and DELTA5, Info) Main follows a change of
+ *     orchestrator; a session the former one ran in a worktree of its own was
+ *     looked for under the new runner's folders and the project's only, and
+ *     read as gone while its file was there, its items declared removed. Its
+ *     folder is recorded with it (chats.ts, sessionFolders): it stays
+ *     readable, in a fresh read and live, and nothing of it is removed.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
@@ -307,14 +307,14 @@ describe('a chat, followed', () => {
     expect(sent).toEqual([]);
   });
 
-  it('14. after a change of orchestrator, a live window holds what a fresh read answers', async () => {
+  it("14. after a change of orchestrator, the former one's session stays readable where it ran", async () => {
     const worktree = path.join(home, 'old-lead-worktree');
     fs.mkdirSync(worktree);
     const inWorktree = path.join(home, '.claude', 'projects', encodeProjectDirName(worktree), `${S('a')}.jsonl`);
     fs.mkdirSync(path.dirname(inWorktree), { recursive: true });
     fs.writeFileSync(inWorktree, userLine('ran in the old lead\'s worktree'));
     write(S('b'), userLine('the new lead'));
-    const chat = chatOf({ sessionIds: [S('a'), S('b')] });
+    const chat = chatOf({ sessionIds: [S('a'), S('b')], sessionFolders: { [S('a')]: worktree } });
     const before = await readChatItems(chat, { runner: runnerOf({ id: 'old', worktreePath: worktree, currentSessionId: S('a') }), homeDir: home });
     expect(texts(before)).toContain("ran in the old lead's worktree");
     noteChatSnapshot(chat.id, before);
@@ -323,10 +323,9 @@ describe('a chat, followed', () => {
     await f.tick();
     f.stop();
     const fresh = await readChatItems(chat, { runner: newLead, homeDir: home });
-    expect(texts(fresh)).toContain(`session ${S('a')}: its transcript is gone`);
-    const removed = sent.filter((e) => e.type === 'removed').flatMap((e) => e.itemIds!);
-    expect(removed).toEqual(before.filter((i) => i.text === "ran in the old lead's worktree").map((i) => i.id));
-    expect(fs.existsSync(inWorktree), 'nothing is deleted: the file is only not looked for there').toBe(true);
+    expect(texts(fresh)).toContain("ran in the old lead's worktree");
+    expect(texts(fresh)).not.toContain(`session ${S('a')}: its transcript is gone`);
+    expect(sent.filter((e) => e.type === 'removed')).toEqual([]);
   });
 
   it('10. says so for a session in the middle whose transcript is gone', async () => {
