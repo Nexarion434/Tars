@@ -1,9 +1,13 @@
+import type { ReactNode } from 'react';
+
 /**
  * The new interface as the preview of 2.0.0: `Landing · desktop`, its Preview
  * section (design/landing.pen). Projects and chats, off until Settings,
- * Preferences, New interface turns it on, as the app has it. No `@/` import
- * and no package of the landing's own: __tests__/landing/preview.test.tsx
- * renders it with the root's, and reads its words against the frame's.
+ * Preferences, New interface turns it on, as the app has it; between its head
+ * and its points, the picture of a chat's page the home page hands it (taken by
+ * e2e/new-interface-pictures.mjs). No `@/` import and no package of the
+ * landing's own: __tests__/landing/preview.test.tsx renders it with the root's,
+ * and reads its words against the frame's.
  */
 const POINTS = [
   {
@@ -24,7 +28,7 @@ const POINTS = [
   },
 ];
 
-export function PreviewSection() {
+export function PreviewSection({ picture }: { picture?: ReactNode }) {
   return (
     <section id="preview" className="max-w-[1040px] mx-auto px-6 py-16 border-b border-line">
       <p className="font-mono text-xs text-accent mb-3.5">Preview in 2.0.0</p>
@@ -33,6 +37,7 @@ export function PreviewSection() {
         A project keeps its team, and you open several chats in it, each its own conversation with the
         project{'’'}s orchestrator on one topic. It comes in 2.0.0 as a preview, off until you turn it on.
       </p>
+      {picture && <div className="mb-10">{picture}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-9">
         {POINTS.map(p => (
           <div key={p.title}>
