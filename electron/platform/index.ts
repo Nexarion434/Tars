@@ -52,3 +52,4 @@ export {
 } from './integration-paths';
 export { installerAssetFor, offersUpdate } from './update-feed';
 export { gitCommand, currentFolderLookupsOff } from './git-command';
+export { nodeMissing } from './node-check';
