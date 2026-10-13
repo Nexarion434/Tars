@@ -314,8 +314,9 @@ describe('a chat, followed', () => {
   });
 
   it("14. after a change of orchestrator, the former one's session stays readable where it ran", async () => {
-    const worktree = path.join(home, 'old-lead-worktree');
-    fs.mkdirSync(worktree);
+    // Where Tars makes an agent's worktree: inside its project.
+    const worktree = path.join(project, '.worktrees', 'old-lead');
+    fs.mkdirSync(worktree, { recursive: true });
     const inWorktree = path.join(home, '.claude', 'projects', encodeProjectDirName(worktree), `${S('a')}.jsonl`);
     fs.mkdirSync(path.dirname(inWorktree), { recursive: true });
     fs.writeFileSync(inWorktree, userLine('ran in the old lead\'s worktree'));
@@ -335,8 +336,8 @@ describe('a chat, followed', () => {
   });
 
   it('15. reads a session from the real spelling recorded for it, its folder gone (GATE-PR391, L2)', async () => {
-    const real = path.join(home, 'real-worktree');
-    const link = path.join(home, 'linked-worktree');
+    const real = path.join(fs.realpathSync(project), '.worktrees', 'old-lead');
+    const link = path.join(project, '.worktrees', 'old-lead');
     // As Claude Code files it: under the real path of where its CLI ran.
     const filed = path.join(home, '.claude', 'projects', encodeProjectDirName(real), `${S('a')}.jsonl`);
     fs.mkdirSync(path.dirname(filed), { recursive: true });
