@@ -23,6 +23,7 @@ const WT = process.cwd();
 const DIST = `${WT}/electron/dist`;
 const AM = `${DIST}/core/agent-manager.js`;
 const PM = `${DIST}/core/pty-manager.js`;
+const TM = `${DIST}/core/terminal-mirror.js`;
 const PORT = apiPort(31481);
 const STUB = 31981 + PORT_OFFSET;
 const STYLE = fs.readFileSync(`${WT}/e2e/screenshot.css`, 'utf8');
@@ -150,7 +151,7 @@ test('a panel whose claude left fullscreen', async () => {
 
     // ---- Recorders in the sandbox's main: every input, resize, start and stop the renderer sends.
     const wrapped = await app.evaluate(({ ipcMain }) => {
-      globalThis.__rec = { input: [], resize: [], start: [], stop: [] };
+      globalThis.__rec = { input: [], resize: [], start: [], stop: [], restart: [] };
       const wrap = (channel, note) => {
         const h = ipcMain._invokeHandlers && ipcMain._invokeHandlers.get(channel);
         if (!h) return false;
@@ -162,6 +163,9 @@ test('a panel whose claude left fullscreen', async () => {
         wrap('agent:resize', ([p]) => globalThis.__rec.resize.push({ at: Date.now(), id: p && p.id, cols: p && p.cols, rows: p && p.rows })),
         wrap('agent:start', ([p]) => globalThis.__rec.start.push({ at: Date.now(), id: p && p.id, options: p && p.options })),
         wrap('agent:stop', ([id]) => globalThis.__rec.stop.push({ at: Date.now(), id })),
+        // The notice's restart is one call since #138 (38b01c02), which keeps
+        // the conversation: a stop then a start began a new one.
+        wrap('agent:restart', ([id]) => globalThis.__rec.restart.push({ at: Date.now(), id })),
       ];
     });
     fact('recorders', { wrapped });
@@ -178,6 +182,15 @@ test('a panel whose claude left fullscreen', async () => {
       const p = a && a.ptyId ? process.mainModule.require(pm).ptyProcesses.get(a.ptyId) : null;
       return p ? { ptyId: a.ptyId, pid: p.pid, cols: p.cols, rows: p.rows } : null;
     }, [AM, PM, id]);
+    // The terminal's own state, from its mirror (terminal-mirror.ts terminalSnapshot):
+    // the PTY the agent holds now, not agent.output, which a restart does not
+    // empty and whose trims carry the old session's modes (the gate of #366).
+    const terminalModes = id => app.evaluate((_e, [am, pm, tm, agentId]) => {
+      const a = process.mainModule.require(am).agents.get(agentId);
+      const p = a && a.ptyId ? process.mainModule.require(pm).ptyProcesses.get(a.ptyId) : null;
+      const snap = p ? process.mainModule.require(tm).terminalSnapshot(p) : undefined;
+      return snap === undefined ? null : { ptyId: a.ptyId, alternateScreen: snap.includes('\x1b[?1049h'), sgrMouse: snap.includes('\x1b[?1006h') };
+    }, [AM, PM, TM, id]);
     // What the panel is handed on a remount since #127: one redraw of the screen.
     const screenOf = id => page.evaluate(async agentId => {
       const a = await window.electronAPI.agent.get(agentId);
@@ -374,6 +387,13 @@ test('a panel whose claude left fullscreen', async () => {
     // ---- Restart, from the notice.
     {
       const old = await byId();
+      // The negative witness (Rule 3.5): E2E_WITNESS_INLINE_RESTART=1 makes the
+      // restarted claude come back inline, which must turn the restart check red.
+      // The main process's environment is what the restarted terminal inherits.
+      if (process.env.E2E_WITNESS_INLINE_RESTART === '1') {
+        await app.evaluate(() => { process.env.CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = '1'; });
+        fact('witness', { CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: '1' });
+      }
       const clickAt = Date.now();
       await panels();
       await page.locator('[data-notice="Left agent"]').getByRole('button', { name: 'restart' }).click();
@@ -385,8 +405,10 @@ test('a panel whose claude left fullscreen', async () => {
       values.restart = {
         stops: r.stop.filter(x => x.id === 'left' && x.at >= clickAt).length,
         starts: r.start.filter(x => x.id === 'left' && x.at >= clickAt).map(x => x.options),
+        restarts: r.restart.filter(x => x.id === 'left' && x.at >= clickAt).length,
         list: (await list()).find(a => a.id === 'left'),
         alternateScreen: screen.includes('\x1b[?1049h'),
+        newTerminal: await terminalModes('left'),
         panel: (({ notice, noticeButtons }) => ({ notice, noticeButtons }))((await panels())['Left agent']),
       };
       fact('restart', values.restart);
@@ -415,8 +437,9 @@ test('a panel whose claude left fullscreen', async () => {
       'Inline scrolls its own history': w['Inline agent'].reportsSent === 0 && w['Inline agent'].viewportTop[1] < w['Inline agent'].viewportTop[0],
       'Copy Output is the text on screen': values.copy.hasEscape === false && values.copy.hasTheAnswer === true,
       'a new PTY ends at its panel\'s size': values.sizeResend.newPty.cols === values.sizeResend.panelSize.cols && values.sizeResend.newPty.rows === values.sizeResend.panelSize.rows,
-      'restart gives a fullscreen session and the wheel back': !!(values.restart && values.restart.stops === 1 && values.restart.starts.length === 1
-        && values.restart.alternateScreen && values.restart.list.leftFullscreen === false && values.restart.panel.notice === null && values.restart.wheel.reportsSent > 0),
+      'restart gives a fullscreen session and the wheel back': !!(values.restart && values.restart.restarts === 1 && values.restart.stops === 0 && values.restart.starts.length === 0
+        && values.restart.newTerminal && values.restart.newTerminal.ptyId !== null && values.restart.newTerminal.alternateScreen && values.restart.newTerminal.sgrMouse
+        && values.restart.list.leftFullscreen === false && values.restart.panel.notice === null && values.restart.wheel.reportsSent > 0),
       'no page error': pageErrors.length === 0,
     };
     fs.writeFileSync(path.join(OUT, 'checks.json'), JSON.stringify(checks, null, 2));

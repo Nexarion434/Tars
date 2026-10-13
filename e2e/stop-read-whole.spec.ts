@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -70,7 +70,7 @@ test.afterAll(async ({}, testInfo) => {
   // Under next dev the app's process can linger a minute after it quits.
   testInfo.setTimeout(180_000);
   await app?.close().catch(() => { /* gone */ });
-  if (home) fs.rmSync(home, { recursive: true, force: true });
+  if (home) await removeHome(home);
 });
 
 /** An Agents card: the smallest block holding the name and its row of actions. */

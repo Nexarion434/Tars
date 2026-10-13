@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, stepShot } from './fixture.mjs';
+import { launchSandboxed, recordValues, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -54,6 +54,6 @@ test('claude data store: a skill added since the last read shows when Settings i
     expect(text).toContain('2');
   } finally {
     await app.close();
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
