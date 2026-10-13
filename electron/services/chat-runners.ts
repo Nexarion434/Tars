@@ -457,10 +457,34 @@ export async function stopRunnerOf(chat: Chat): Promise<void> {
   if (runner) await stopAgent(runner, { by: 'you', reason: 'its chat was deleted' }, { save: saveAgents, announce });
 }
 
+/**
+ * The runner's copy of the project's settings.local.json goes with the chat:
+ * Claude Code puts that file in the global git ignore, so it would otherwise
+ * keep the whole worktree as an ignored file no commit has. The grants it
+ * holds are the runner's own (the copy, and what Claude Code added since),
+ * and the project keeps its own file. Only in the chat's own worktree, and
+ * only a regular file: any other ignored file still keeps the worktree.
+ */
+function dropGrants(chat: Chat, runner: AgentStatus): void {
+  const place = runnerPlaceOf(runner.projectPath, chat.id);
+  if (!place || !runner.worktreePath || path.resolve(runner.worktreePath) !== path.resolve(place.worktreePath)) return;
+  const dir = path.join(place.worktreePath, '.claude');
+  const grants = path.join(dir, 'settings.local.json');
+  try {
+    if (!fs.lstatSync(grants).isFile()) return;
+    fs.unlinkSync(grants);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.warn(`[chat-runners] ${grants} not removed: ${(err as Error).message}`);
+    return;
+  }
+  try { fs.rmdirSync(dir); } catch { /* .claude holds more: git decides about the rest */ }
+}
+
 /** Then, once nothing it asked for is out, removed with its worktree, its work saved on wip/ first (#312, #335). */
 export async function removeRunnerOf(chat: Chat): Promise<{ savedTo?: string; worktreeKept?: string }> {
   const runner = ownRunnerOf(chat);
   if (!runner) return {};
+  dropGrants(chat, runner);
   const removed = await removeAgent(runner.id);
   announce(runner);
   return { ...(removed.savedTo ? { savedTo: removed.savedTo } : {}), ...(removed.worktreeKept ? { worktreeKept: removed.worktreeKept } : {}) };
