@@ -17,14 +17,22 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * transcripts grow by one usage line every 5 s each, as live sessions do.
  * HEAP_REPLICA_MINUTES sets the length (default 10). Nothing of the real home
  * is written: the clone and the copy live in the sandbox, removed at the end.
+ *
+ * Out of every suite (playwright.config.ts): run on purpose with
+ * `HEAP_HUNT_OUT=<dir> TARS_HEAP_BENCH=1 npx playwright test --project=bench e2e/heap-replica.bench.spec.ts`.
  */
 
-const OUT = process.env.HEAP_HUNT_OUT ?? path.join(os.homedir(), 'Documents', 'Tars-revue-2026-09-24', 'runs', 'heap-replica-1313');
+/** Where the samples go: HEAP_HUNT_OUT, else this run's own output folder. */
+const outDir = () => process.env.HEAP_HUNT_OUT ?? test.info().outputPath();
 const MINUTES = Number(process.env.HEAP_REPLICA_MINUTES ?? 10);
 const REAL_HOME = process.env.HEAP_REPLICA_FROM ?? os.homedir();
 
 test('the main process heap with the machine\'s own transcripts and fleet', async () => {
+  test.skip(process.env.TARS_HEAP_BENCH !== '1', 'a bench: TARS_HEAP_BENCH=1 and --project=bench');
+  test.skip(process.platform !== 'darwin', 'the clone is an APFS clone (cp -c)');
+  test.skip(!fs.existsSync(path.join(REAL_HOME, '.dorothy', 'agents.json')) || !fs.existsSync(path.join(REAL_HOME, '.claude', 'projects')), 'no fleet or no transcripts to replicate');
   test.setTimeout((MINUTES + 8) * 60_000);
+  const OUT = outDir();
   fs.mkdirSync(OUT, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-heap-replica-'));
   try {

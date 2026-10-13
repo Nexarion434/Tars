@@ -29,7 +29,10 @@ export default defineConfig({
     // folders read as they did when this was the only project.
     {
       name: '',
-      testIgnore: /known-errors\.spec\.ts$/,
+      // The benches are not tests of the product: they sample the main
+      // process's heap for minutes, and the replica clones the runner's own
+      // ~/.claude/projects. Run only on purpose, below.
+      testIgnore: /(known-errors|\.bench)\.spec\.ts$/,
       teardown: 'known-errors',
     },
     // The check that no tolerated page error has outlived its defect. As a
@@ -40,6 +43,9 @@ export default defineConfig({
       name: 'known-errors',
       testMatch: /known-errors\.spec\.ts$/,
     },
+    // The heap benches (e2e/*.bench.spec.ts), there only when asked for:
+    // TARS_HEAP_BENCH=1 npx playwright test --project=bench <file>.
+    ...(process.env.TARS_HEAP_BENCH === '1' ? [{ name: 'bench', testMatch: /\.bench\.spec\.ts$/ }] : []),
   ],
   webServer: {
     // E2E_PORT_OFFSET moves this with every suite's API port: see e2e/ports.mjs.
