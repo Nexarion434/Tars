@@ -10,6 +10,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import { scheduleTick } from '../utils/agents-tick';
 import { carriedSince, type CarriedNote } from './carry-over';
 import { wakeAgent } from '../core/agent-asleep';
+import { inboxAgentOf } from '../core/chat-inbox';
 import { linkSpent, requestTitle, setRequestsEndedHook, type RequestsEndedWhy, type RequestWorker, type TaskRequest } from '../core/task-requests';
 
 /**
@@ -65,6 +66,8 @@ type News = {
   kind: 'outcome' | 'wait' | 'ended' | 'stopped' | 'stalled' | 'not_delivered';
   status: AgentStatus['status'];
   reason?: string;
+  /** For a `not_delivered` request `cancelled` by another agent: who, and why, already quoted as data. */
+  detail?: string;
   /** The work this is about, so that news overtaken by new work is not handed over. */
   handedAt?: string;
   /**
@@ -319,6 +322,21 @@ export function startAgentWatch(): void {
   setRequestsEndedHook(tellRequestsEnded);
 }
 
+/**
+ * A request cancelled before it went in (core/task-cancel.ts) by the project's
+ * orchestrator rather than its requester: the requester is told who and why
+ * (the Audit's R6). Its own requester cancelling it needs no note.
+ */
+export function tellCancelled(requesterId: string, workerId: string, by: string, reason: string): void {
+  const worker = agents.get(workerId);
+  if (!worker || requesterId === workerId) return;
+  handToRequester(requesterId, worker, {
+    kind: 'not_delivered', status: worker.status, reason: 'cancelled',
+    detail: `from ${by}: ${envelopeValue(reason.replace(/\s+/g, ' ').trim().slice(0, 300))}`,
+    handedAt: worker.workHandedAt,
+  });
+}
+
 /** Each request a worker will never run, told to whoever asked (the Audit's R2, R3). */
 function tellRequestsEnded(worker: RequestWorker, requests: TaskRequest[], why: RequestsEndedWhy): void {
   const child = agents.get(worker.id);
@@ -534,9 +552,11 @@ function queueForRequester(child: AgentStatus, news: News): void {
  */
 export function reportStall(child: AgentStatus, silentMinutes: number): void {
   const link = child.requestedBy;
+  // Else the project's inbox chat: Main, the orchestrator, unless another chat is the inbox (PR F).
+  const inbox = inboxAgentOf(child.projectPath, agents.values());
   const requesterId = link && link.agentId !== child.id && link.ptyId === child.ptyId
     ? link.agentId
-    : [...agents.values()].find(a => a.role === 'orchestrator' && a.projectPath === child.projectPath && a.id !== child.id)?.id;
+    : inbox && inbox.id !== child.id ? inbox.id : undefined;
   if (!requesterId) return;
   handToRequester(requesterId, child, { kind: 'stalled', status: child.status, reason: String(silentMinutes), handedAt: child.workHandedAt });
 }
@@ -852,6 +872,7 @@ function describeNews(news: News): string {
       + 'Read get_agent_output; if nothing moves, stop it and start it again with a brief of what is already done';
   }
   if (news.kind === 'not_delivered') {
+    if (news.reason === 'cancelled') return `never ran what you asked of it: it was cancelled before it went in, ${news.detail ?? 'by another agent'}. Nothing was retried; ask again if it is still needed`;
     if (news.reason === 'deleted') return 'was deleted before it finished what you asked of it. Nothing was retried; ask again if it is still needed';
     if (news.reason === 'interrupted') return 'was running a task you delegated to it when Tars stopped: the run was cut, and nothing was retried; ask again if it is still needed';
     if (news.reason === 'cut') return 'was stopped while working on what you asked of it, and did not finish. Nothing was retried; ask again if it is still needed';

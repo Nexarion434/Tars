@@ -214,6 +214,11 @@ or a mock:
 Two E2E runs share the machine when each takes its own `E2E_PORT_OFFSET` (`e2e/ports.mjs`): it
 moves `next dev` (3100) and every suite's API port together. Unset, nothing moves.
 
+Stand-ins a spec may point the app at, read only under `DOROTHY_E2E=1`: `TARS_CHAT_RAM_GB` (the RAM the
+chats' limit is computed from) and `DOROTHY_TELEGRAM_API_URL` (`http://127.0.0.1:<port>` and nothing
+else: a stand-in of Telegram's Bot API, which the bot's token travels to in every request's path;
+`e2e/chat-senders.spec.ts`).
+
 ### Unit tests: `npm test`
 
 ```bash
@@ -798,12 +803,40 @@ jq '.numbers' ~/.dorothy/chats.json
 - **`newer`** (a newer Tars wrote it) or **`unreadable`** (its permissions): Tars changes nothing in it,
   and no chat can change until it is fixed.
 
+**Where a runner lives.** Each chat other than Main runs in an agent of its own, made at its first send:
+- **Its record:** in `~/.dorothy/agents.json`, `kind: "chat"`, `chatId`, named `<orchestrator> · <chat title>`:
+  `jq '.agents[] | select(.kind == "chat") | {id, name, chatId, status, worktreePath, branchName}' ~/.dorothy/agents.json`.
+- **Its worktree:** `<project>/.worktrees/chat-<8 hex>` on the branch `chat/<the same>`, started from origin's
+  default branch. `node scripts/worktree.mjs status`, run in the project, lists it with the others; `prune`
+  never removes it, since an agent of Tars owns it.
+- **Its conversation:** the transcripts under `~/.claude/projects/`, in the folder Claude Code names after its
+  worktree's path, one per session in the chat's `sessionIds`.
+- **Asleep:** a runner put to sleep (to free a slot, after 30 minutes, or because its chat was settled) keeps its
+  worktree and its conversation; the chat's next send resumes it.
+- **Deleted with its chat:** its uncommitted work is saved on `wip/<its name>` first; its branch stays.
+
+**When a send answers `runner_mismatch`:** the chat's record names an agent the fleet does not confirm as its
+runner: for another chat than Main, an agent that is not the runner made for it (the file was edited). Tars sends,
+launches and counts nothing for it. Compare the record (the `jq` above) with `agents.json`; such a chat can be deleted
+and started again. Main follows the project's orchestrator by itself: when the role moves, its record is rebound and
+the log says `[chats] Main of <project> follows the project's orchestrator: <former> to <new>`.
+
+**When a dispatch answers `worker_busy_for_other_chat`:** a `steer` or a `restart` would cut work another chat asked
+for (its title and number are in the answer). Send it with mode `queue`, or let that chat's work end.
+
+**When a start or a send answers `provider_unsupported`:** the project's orchestrator runs a CLI whose conversations
+Tars cannot resume; chats other than Main wait until it is back on claude.
+
+**When a send answers `chat_limit`:** every slot the RAM allows (`system:chatLimit`, one chat per 5 GB, Main
+counted) holds a chat in a turn or owed work. Stop one, or wait for one to finish; an idle chat is put to sleep
+by itself to make room.
+
 **Going back to a Tars without chats (1.9.5 and earlier):**
 - It does not read `chats.json`, and leaves it where it is.
-- Nothing else was moved: Main is the orchestrator's own conversation, so the orchestrator works as
-  before.
-- Chats other than Main do not run anything yet, so there is nothing else to undo.
-- Upgrading again finds the chats as they were.
+- Main is the orchestrator's own conversation, so the orchestrator works as before.
+- The chats' runners show as idle workers named `<orchestrator> · <chat title>`, each in its worktree. Nothing
+  routes to them, and the older Tars never demotes the real orchestrator for them. Delete them from the Agents
+  page (their work is saved on `wip/`), or upgrade again, which finds every chat as it was.
 
 ### Full reset
 
@@ -865,7 +898,8 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 |---|---|
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
-| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` |
+| POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
 | POST | `/api/hooks/{output,status,task-completed,agent-stopped,notification}` |
 | GET | `/api/memory/{context,search,status}` · POST `/api/memory/{write,remember}` |
@@ -874,6 +908,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | POST | `/api/kanban/generate` |
 | POST/GET | `/api/bus/post` · `/api/bus/read` (what `room_post` and `room_read` call; authenticated, and the caller is the agent its token names; a call on the shared token has no agent behind it and is refused `403`, before any room is looked at) |
 | POST | `/api/telegram/{send,send-photo,send-video,send-document}` (only to the chats authorized in Settings, read live) · `/api/slack/send` · `/api/discord/send` (only to the channel Settings > Discord detected, or one an allowed member wrote from) |
+| GET | `/api/chats/list` (`chat_list`: with `chatsReadEachOther` on, the other chats of the caller's project; `403 chats_read_off` off, `403 not_a_chat` for an agent that runs no chat) |
 | POST | `/api/webhooks/hermes` |
 
 The Slack bot answers only the member ids in Settings > Slack (`slackAllowedUserIds`): with
@@ -886,6 +921,16 @@ new chat out too: turn Telegram off and on in Settings, which restarts the bot a
 
 `ask_user` (the orchestrator MCP server's tool, `POST /api/user/ask`) and the event reports go through the relay
 to your Hermes, not through this bot: see "The relay (Tars's side)" under Hermes gateway below.
+
+**Which chat a message reaches** (2.0.0, the chats; SPECS §4, The senders). A message from Telegram, Slack or
+Discord, or through the relay, that names no chat goes to the project's inbox chat: Main, the orchestrator, unless
+you made another chat the inbox. Start it with `#3 ` (or `@project #3 `) to write to chat 3; an `#N` the project has
+no chat for answers with the numbered list. On Telegram, reply to a chat's message (each starts
+`[<project> #N <title>]`) and it goes to that chat, whatever the text says. A reply that went to the wrong place: the
+bot's log of what it sent for a chat is `~/.tars-private/telegram-sent.json` (Telegram's chat and message ids, the
+chat's id, 7 days), the relay's is `~/.tars-private/relay-sent.json` (each entry's `chatId`); an entry older than its
+keep reaches nobody, and the sender is told. The kanban's and the error triage's notes, and the stall reports, go
+to the inbox chat too, only while its CLI runs.
 
 The Discord bot (`electron/services/discord-bot.ts`) holds the same rule with the user ids in
 Settings > Discord (`discordAllowedUserIds`, 17 to 20 digits). In a server channel it reads a

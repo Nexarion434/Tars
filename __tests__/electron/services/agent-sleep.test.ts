@@ -40,6 +40,9 @@ import type { Proc } from '../../../electron/services/stall-watch';
  *    is not one is not taken.
  * 17. (PR A, written with its code and shown to bite by a mutant) A requester whose request is still out at a
  *     worker, queued or written, is not owed anything, and is put to sleep before the answer comes.
+ * 18. (PR D, written with its code and shown to bite by a mutant) A chat's runner put to sleep to free a slot,
+ *     or because its chat was settled (`anyAge`), is held to the 30 minutes, so no slot is ever freed; or
+ *     `anyAge` lets through what the other rules refuse.
  */
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
@@ -91,6 +94,17 @@ describe('the rule', () => {
     expect(sleepRefusal(facts({}, { workHandedAt: ago(5) }))).toBe('recent');
     expect(sleepRefusal(facts({}, { statusSince: undefined }))).toBe('recent');
     expect(sleepRefusal(facts({}, { statusSince: 'not a time' }))).toBe('recent');
+  });
+
+  it('18. anyAge: every rule but the 30 minutes', () => {
+    expect(sleepRefusal(facts({}, { statusSince: ago(1), lastTurnStartedAt: ago(1), workHandedAt: ago(1) }), { anyAge: true })).toBeNull();
+    expect(sleepRefusal(facts({}, { statusSince: undefined }), { anyAge: true })).toBeNull();
+    expect(sleepRefusal(facts({}, { statusSince: ago(1) }))).toBe('recent');
+    expect(sleepRefusal(facts({ orchestrator: true }), { anyAge: true })).toBe('orchestrator');
+    expect(sleepRefusal(facts({}, { status: 'running' }), { anyAge: true })).toBe('not-at-rest');
+    expect(sleepRefusal(facts({ owes: true }), { anyAge: true })).toBe('owes');
+    expect(sleepRefusal(facts({ fieldInUse: true }), { anyAge: true })).toBe('field');
+    expect(sleepRefusal(facts({ resumable: false }), { anyAge: true })).toBe('not-resumable');
   });
 
   it('3. leaves alone an agent at work, in a dialog, in error, stopped, asleep, without a CLI, or starting', () => {
