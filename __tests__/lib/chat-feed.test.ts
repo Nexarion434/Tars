@@ -42,6 +42,10 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  * Written before the fix, from the mutation bench of L2 and L3:
  * 17. while stale, each event makes a new feed: the page re-renders and
  *     its follower reads again per event, past its waits after a failure.
+ *
+ * Added after the code, for a mutant of the same bench that survived (R1):
+ * 18. a re-read that begins right after the lines held, with none in common,
+ *     drops the pages read before it.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -192,5 +196,12 @@ describe('chat feed', () => {
     s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2) }));
     expect(s.stale).toBe(true);
     expect(applyEvent(s, ev(13, 'c1', { type: 'item', item: item(3) }))).toBe(s);
+  });
+
+  it('keeps the pages read when a re-read begins right after them (18)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, range(0, 6), 7));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(8) }));
+    s = applySnapshot(s, history(20, range(7, 12), 13));
+    expect(places(s)).toEqual(range(0, 12).map(i => i.n));
   });
 });
