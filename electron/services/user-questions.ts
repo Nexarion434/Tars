@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { privatePath } from '../constants';
 import { writeSecretFileSync } from '../utils/secret-file';
 import { redactSecrets } from '../utils/redact-secrets';
-import { isSuperAgent } from '../utils';
+import { hasOrchestratorPowers } from '../core/agent-role';
 import { agents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
@@ -108,7 +108,8 @@ export async function askUser(
 ): Promise<AskResult> {
   const agent = agents.get(input.agentId);
   if (!agent) return { ok: false, status: 404, error: 'The asking agent is not one Tars knows about.' };
-  if (!isSuperAgent(agent)) {
+  // The orchestrator's powers: its project's orchestrator, or a chat's runner (core/agent-role.ts).
+  if (!hasOrchestratorPowers(agent)) {
     return { ok: false, status: 403, error: 'Only a project\'s orchestrator asks the user. Ask your orchestrator: it decides whether to ask them, and passes their answer on.' };
   }
   const question = input.question.trim();

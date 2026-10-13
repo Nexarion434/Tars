@@ -424,6 +424,8 @@ takes it as a correction, or merges it), and Tars gets it all the same from the 
 keeping it from the model would mean replacing Hermes's Telegram adapter. Hence JeanBrasse's decision of
 2026-10-01 that the token moves to `~/.tars-private`: the plugin goes in with that move, not before it.
 
+The chats' records (`chats.json`) and the fleet (`agents.json`) are in `~/.dorothy` too, so the runner a chat's record names, and an agent's mark as a chat's runner (`kind: 'chat'`, which carries the orchestrator's powers), are claims. Tars types, launches, counts, puts to sleep or renames nothing for the agent a record names until the fleet agrees (`recordedRunner`: Main's runner is the project's orchestrator, any other chat's the runner made for it, in its project). At each launch an agent marked as a runner that no chat names goes back to a plain worker (`unconfirmedRunners`). An agent that edits both files can still mark itself a runner for the next launch, as it can give itself the orchestrator's role in `agents.json`: these checks are defence in depth, not a boundary (the Audit's L1 on #379).
+
 What an agent waits on (`waitingOn`, the command or question of an open dialog) is kept in memory only: it is not written to `agents.json`. While the dialog is open, another agent can read it through `GET /api/agents/:id?full=true`, as it can read the rest of that agent's record; a command typed with a secret in it is visible there for that long. The hook sends only the fields that name the dialog, each cut at 1000 characters, never a tool's whole input.
 
 `~/.tars-private/overseer.json` used to be `~/.dorothy/overseer.json`: 148,654
