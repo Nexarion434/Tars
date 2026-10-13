@@ -93,6 +93,9 @@
  *     chats.json is agents' to write, and the folder chooses which transcripts a chat shows.
  * 43. The folders do not survive a launch, or a folder in the file for a session the chat does not hold is kept.
  * 44. A file whose folders are malformed loses the chat, where only its folders should go.
+ * 45. (GATE-PR391, L2) The folder is recorded only as Tars saved it, and Claude Code files a transcript under the
+ *     folder's real path: for a project reached through a link (/var on macOS, a linked checkout), once the worktree
+ *     is gone (prune removed it) its real spelling can no longer be found, and the session reads as gone again.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -749,9 +752,26 @@ describe("the folder each session's CLI ran in", () => {
     const store = open();
     store.ensureMains([orch()]);
     expect(store.noteSession('o1', SESSION_B, worktree())).toBe(true);
-    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: worktree() });
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: [worktree()] });
     expect(store.noteSession('o1', SESSION_B, projA)).toBe(false);
-    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: worktree() });
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: [worktree()] });
+  });
+
+  it('45. is recorded in its real spelling too, which Claude Code files transcripts under (GATE-PR391, L2)', () => {
+    // The project reached through a link, as Tars saved it: /var on macOS, a linked checkout.
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(path.join(real, '.worktrees', 'lead-old'), { recursive: true });
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    const store = open();
+    store.ensureMains([orch({ projectPath: link })]);
+    expect(store.noteSession('o1', SESSION_B, path.join(link, '.worktrees', 'lead-old'))).toBe(true);
+    expect(main(store, link).sessionFolders?.[SESSION_B]).toEqual([
+      path.join(link, '.worktrees', 'lead-old'), path.join(fs.realpathSync(real), '.worktrees', 'lead-old'),
+    ]);
+    // Kept once the worktree is gone (prune removed it): read back from the file, both spellings.
+    fs.rmSync(path.join(real, '.worktrees'), { recursive: true, force: true });
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toHaveLength(2);
   });
 
   it('41. is filled in for a session the record already holds without one', () => {
@@ -759,14 +779,15 @@ describe("the folder each session's CLI ran in", () => {
     store.ensureMains([orch()]);
     expect(main(store).sessionIds).toEqual([SESSION_A]);
     expect(store.noteSession('o1', SESSION_A, projA)).toBe(true);
-    expect(main(store).sessionFolders).toEqual({ [SESSION_A]: projA });
+    expect(main(store).sessionFolders?.[SESSION_A]?.[0]).toBe(projA);
     expect(main(store).sessionIds).toEqual([SESSION_A]);
   });
 
   it('42. is the project or a folder inside it, and nothing else', () => {
     const store = open();
     store.ensureMains([orch()]);
-    for (const outside of [projB, 'relative/folder', path.join(projA, '..', 'b'), `${projA}-sibling`, '']) {
+    // Literal: path.join would normalise the climb before the call (GATE-PR391, L1).
+    for (const outside of [projB, 'relative/folder', `${projA}/../b`, `${projA}/.worktrees/../../b`, `${projA}-sibling`, '']) {
       store.noteSession('o1', SESSION_B, outside);
       expect(main(store).sessionFolders?.[SESSION_B], outside).toBeUndefined();
     }
@@ -776,13 +797,13 @@ describe("the folder each session's CLI ran in", () => {
   it('43. survives a launch, for the sessions the chat holds only', () => {
     writeFile({
       version: 1, numbers: { [projA]: 1 },
-      chats: [record({ sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: worktree(), [SESSION_B]: projA } })],
+      chats: [record({ sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: [worktree()], [SESSION_B]: [projA] } })],
     });
-    expect(main(open()).sessionFolders).toEqual({ [SESSION_A]: worktree() });
+    expect(main(open()).sessionFolders).toEqual({ [SESSION_A]: [worktree()] });
   });
 
   it('44. a malformed one is dropped, the chat kept', () => {
-    for (const bad of [{ [SESSION_A]: 7 }, 'x', [worktree()], { [SESSION_A]: projB }]) {
+    for (const bad of [{ [SESSION_A]: 7 }, 'x', [worktree()], { [SESSION_A]: [projB] }, { [SESSION_A]: [`${projA}/../b`] }]) {
       writeFile({ version: 1, numbers: { [projA]: 1 }, chats: [record({ sessionFolders: bad as never })] });
       const chat = main(open());
       expect(chat, JSON.stringify(bad)).toBeDefined();
