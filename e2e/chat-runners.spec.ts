@@ -560,8 +560,11 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
 
     // 16. The orchestrator's brief changed: runner A, started from the window, reads it at that launch (L3), takes a
     //     slot like a send (M1), and keeps it, the window's words being a turn.
+    // The change is made where no path tells the runners (agent:update would resync every one of them): what a
+    // launch reads is then the gate's own doing.
     const NEW_BRIEF = 'Lead the demo team: plan, delegate, review, and ask for a test first.';
-    expect(await updateFromWindow({ id: 'o1', savedPrompt: NEW_BRIEF })).toMatchObject({ success: true });
+    await app.evaluate((_e, { dist, brief }) => { process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get('o1').savedPrompt = brief; }, { dist, brief: NEW_BRIEF });
+    expect((await agentOf(runnerA.id))?.savedPrompt).toBe(BRIEF);
     const refusalOfC = await refusalOf(runnerC.id);
     const startedA = await startFromWindow(runnerA.id, 'WINDOW>> start A');
     keep({ refusalOfC, startedA });
@@ -583,7 +586,11 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     const mainBefore = (await chats()).find((c) => c.number === 1)!;
     const w1Launches = launchesOf('w1').length;
     expect(await updateFromWindow({ id: 'w1', role: 'orchestrator' })).toMatchObject({ success: true });
-    await expect.poll(async () => (await chats()).find((c) => c.number === 1)?.runnerId ?? null, { timeout: 15_000 }).toBe('w1');
+    // Rebound when the role moved, before any list of the chats could do it: read from the file.
+    const mainOnDisk = (JSON.parse(fs.readFileSync(path.join(dir, 'chats.json'), 'utf8')) as { chats: ChatRecord[] }).chats.find((c) => c.number === 1);
+    keep({ mainOnDisk });
+    expect(mainOnDisk?.runnerId).toBe('w1');
+    expect((await chats()).find((c) => c.number === 1)?.runnerId).toBe('w1');
     expect((await agentOf('o1'))?.role).toBe('worker');
     await expect.poll(() => launchesOf('w1').length, { timeout: 60_000 }).toBeGreaterThan(w1Launches);
     await expect.poll(async () => (await agentOf('w1'))?.currentSessionId ?? null, { timeout: 30_000 }).toBe(launchesOf('w1').at(-1)!.sid);
