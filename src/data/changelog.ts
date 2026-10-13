@@ -11,7 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '1.9.7',
     date: '2026-10-13',
     updates: [
-      'On the Brain page\'s Projects tab, a project whose memory an older Tars kept in a folder Claude Code never reads says so on its line: older copy in, then that folder, whose whole path shows when you hover it. The memory itself is copied into the folder Claude Code reads, and the older folder is kept as it was.',
+      'On the Brain page\'s Projects tab, a project whose memory an older Tars kept in a folder Claude Code never reads says so on its line: older copy in, then that folder, whose whole path shows when you hover it. Its memory was copied once into the folder Claude Code reads, when that folder had no MEMORY.md of its own; the older folder is kept as it was.',
     ],
   },
   {
