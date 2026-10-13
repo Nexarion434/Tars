@@ -14,7 +14,7 @@ import { restartForSettings } from '../core/agent-restart';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { dropRunnerGrants } from '../core/chat-grants';
-import { chatLimitSentence, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, gitRefusal } from '../core/chat-slots';
+import { chatLimitSentence, OFF_CLAUDE, offClaudeRefusal, recordedRunner, runnerNameOf, runnerPlaceOf, runnersToResume, startPointOf, unconfirmedRunners, victimOf, gitRefusal } from '../core/chat-slots';
 import { setChatLookup } from '../core/chat-identity';
 import { setChatLookups } from '../core/chat-inbox';
 import { namesItsChats, pickChat } from './chat-addressing';
@@ -134,8 +134,15 @@ export function chatRunBy(agent: AgentStatus): Chat | undefined {
 }
 
 /** Chats other than Main run on claude, whose conversations Tars resumes: an orchestrator on another CLI has Main only. */
-const PROVIDER_UNSUPPORTED = "This project's orchestrator runs a CLI whose conversations Tars cannot resume: chats other than Main work with claude for now.";
+const PROVIDER_UNSUPPORTED = OFF_CLAUDE;
 const runsChats = (lead: AgentStatus): boolean => getProvider(lead.provider).binaryName === 'claude';
+
+/** A send to a chat while its orchestrator is off claude (core/chat-slots.ts, offClaudeRefusal). */
+function offClaude(chat: Chat, runnerLive: boolean): SendError | undefined {
+  const lead = leadOf(chat.projectPath);
+  const reason = offClaudeRefusal(chat.number, lead ? runsChats(lead) : undefined, runnerLive);
+  return reason ? { error: 'provider_unsupported', reason } : undefined;
+}
 
 /** The project's orchestrator: its role, never a runner (H1). */
 function leadOf(projectPath: string): AgentStatus | undefined {
@@ -337,6 +344,10 @@ async function freeSlot(forAgentId?: string): Promise<SendError | null> {
  * line. Claude Code takes them during a turn too, in order.
  */
 async function typeInto(runner: AgentStatus, chat: Chat, text: string, sender?: MessageSender): Promise<SendAnswer> {
+  // The one place a chat's words are typed: refused here once its orchestrator
+  // is off claude, its runner still running (2.0.1).
+  const refused = offClaude(chat, true);
+  if (refused) return refused;
   if (!(await sessionStarted(runner, SENDER_WAIT_MS))) {
     return failed(`${runner.name || 'Its agent'} is still starting: nothing was typed. Send it again in a moment.`);
   }
@@ -405,7 +416,8 @@ export async function sendToChat(chatId: unknown, text: unknown, opts: { sender?
     if (full) return { error: 'disk_full', reason: full };
     // A chat other than Main is launched on its orchestrator's CLI: claude only,
     // at its first send and at every later one (the Audit's L4 on #379).
-    if ((!runner || runner.kind === 'chat') && lead && !runsChats(lead)) return { error: 'provider_unsupported', reason: PROVIDER_UNSUPPORTED };
+    const offClaudeRefused = offClaude(chat, false);
+    if (offClaudeRefused) return offClaudeRefused;
     if (!runner) {
       if (!lead) return { error: 'no_orchestrator', reason: 'This project has no orchestrator: set one on the Agents page.' };
       const refused = await freeSlot();
