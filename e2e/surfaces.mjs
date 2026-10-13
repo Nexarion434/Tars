@@ -26,6 +26,10 @@ export const PAGES = [
   // than masking the list: a masked panel is a pink rectangle in the baseline
   // and no coverage at all.
   { name: 'chat', route: '/chat', settle: 3000 },
+  // The new shell's chats page (Shell · chats · empty), photographed here with
+  // the switch off, as everything in this sweep; e2e/new-interface-shell.spec.ts
+  // walks it with the switch on.
+  { name: 'chats', route: '/chats' },
   { name: 'agents', route: '/agents' },
   { name: 'kanban', route: '/kanban' },
   { name: 'vault', route: '/vault' },
