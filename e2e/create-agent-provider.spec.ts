@@ -20,7 +20,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 2. start_agent starts it: the binary Settings name for codex runs, with the task, in the project;
  * 3. an agent on a cliPath of its own runs that binary, not the provider's;
  * 4. refused, each with its reason, and nothing made: an unknown provider (with the providers' ids), an API-key
- *    provider without its key, a cliPath that is not absolute, and one that is not executable.
+ *    provider without its key, a cliPath that is not absolute, one that is not executable, and plan on a provider
+ *    that has none (the Audit's Low 2 on #407).
  * The artefact: values.json (each tool's answer, agents.json's records, each launch) and launches.jsonl.
  */
 
@@ -145,8 +146,11 @@ setInterval(() => {}, 1 << 30);
     const keyless = await tool('create_agent', { name: 'X', provider: 'openrouter' });
     const relative = await tool('create_agent', { name: 'X', cliPath: 'my-cli' });
     const notExecutable = await tool('create_agent', { name: 'X', cliPath: plainFile });
-    keep({ unknown, keyless, relative, notExecutable, finalRecords: records().map((a) => ({ id: a.id, provider: a.provider, cliPath: a.cliPath })) });
-    for (const refused of [unknown, keyless, relative, notExecutable]) expect(refused.isError).toBe(true);
+    // Plan on a provider that has none ran as normal, and edited once it had asked (the Audit's Low 2 on #407).
+    const planless = await tool('create_agent', { name: 'X', provider: 'codex', permissionMode: 'plan' });
+    keep({ unknown, keyless, relative, notExecutable, planless, finalRecords: records().map((a) => ({ id: a.id, provider: a.provider, cliPath: a.cliPath })) });
+    for (const refused of [unknown, keyless, relative, notExecutable, planless]) expect(refused.isError).toBe(true);
+    expect(planless.text).toContain('has no plan mode here: plan would run as manual');
     expect(unknown.text).toContain('Unknown provider "nope". Providers: amp, claude, codex,');
     expect(unknown.text).toContain('custom-openai');
     expect(keyless.text).toContain('No API key configured for provider "openrouter"');

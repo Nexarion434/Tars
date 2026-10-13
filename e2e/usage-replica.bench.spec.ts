@@ -15,7 +15,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * a copy of the real fleet's (none started), and the ten largest transcripts grow by one usage line every 5 s each.
  * The window shows Usage, and two more windows show Agents and Projects, as they poll beside it. Measured:
  * - how long Usage takes from its opening to its numbers (its "Still adding up" state gone);
- * - each claude:getData and usage:by-provider answer, timed in the main process around its handler;
+ * - each claude:getData, usage:by-provider and usage:tasks answer (the cost of each task, which the page asks again
+ *   at each new figure), timed in the main process around its handler;
  * - the main process's heap, and each window's renderer heap, every 30 s.
  * USAGE_BENCH_MINUTES sets the length (default 10). Self-contained, so the same file runs on the 1.9.5 tag. Nothing
  * of the real home is written. Run on purpose: `USAGE_BENCH=1 TARS_HEAP_BENCH=1 npx playwright test --project=bench
@@ -44,9 +45,16 @@ test('the Usage page with the machine\'s own transcripts and fleet, Agents and P
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(list.map((a) => ({ ...a, status: 'idle', cliPath: '/usr/bin/false' })), null, 2));
     const projects = [...new Set(list.map((a) => a.projectPath as string).filter(Boolean))];
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify(projects));
-    for (const f of ['usage-ledger.json', 'token-stats.json']) {
+    // What the page reads beside the transcripts: the usage ledger, the status line's stats, and the task ledger
+    // (the cost of each task, #311) with its texts.
+    for (const f of ['usage-ledger.json', 'token-stats.json', 'task-ledger.jsonl']) {
       const from = path.join(REAL_HOME, '.dorothy', f);
       if (fs.existsSync(from)) fs.copyFileSync(from, path.join(dir, f));
+    }
+    const texts = path.join(REAL_HOME, '.tars-private', 'task-texts.jsonl');
+    if (fs.existsSync(texts)) {
+      fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
+      fs.copyFileSync(texts, path.join(home, '.tars-private', 'task-texts.jsonl'));
     }
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
@@ -76,7 +84,7 @@ test('the Usage page with the machine\'s own transcripts and fleet, Agents and P
         const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (...a: unknown[]) => unknown> })._invokeHandlers;
         const g = globalThis as unknown as { __usageBench: Array<{ channel: string; at: number; ms: number; bytes: number }> };
         g.__usageBench = [];
-        for (const channel of ['claude:getData', 'usage:by-provider']) {
+        for (const channel of ['claude:getData', 'usage:by-provider', 'usage:tasks']) {
           const original = handlers.get(channel);
           if (!original) continue;
           handlers.set(channel, async (...args: unknown[]) => {
