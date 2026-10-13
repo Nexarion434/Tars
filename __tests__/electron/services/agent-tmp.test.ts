@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as net from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { TMP_ROOT, agentTmpEnv, enforceTmpRetention, shortIdOf } from '../../../electron/services/agent-tmp';
 import { DATA_DIR } from '../../../electron/constants';
@@ -45,6 +46,8 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  *     `c/cc-socks/<pid>.sock`, dated its start and never touched, and a server an agent starts keeps one in `t/` (tmux,
  *     an editor, ssh). While its agent runs, a unit holding a socket or a FIFO is kept, and in `c/` only an ended
  *     session's folder is a leftover.
+ * 14b. The other way round: a socket or a FIFO its server left behind, its agent stopped, stays forever. The 7-day
+ *     rule takes it as any unit.
  * 15. (L1) A unit measured old, then written to, goes at the next pass on the date measured before: the measure is
  *     reused only while it says the unit is young.
  * 16. (L3) A unit written between its measure and its deletion (a pass can take 100 s) goes anyway: its top's date is
@@ -305,7 +308,6 @@ describe('13. what a pass walks', () => {
 
 describe("14. what a running agent's CLI still uses", () => {
   const W = () => shortIdOf('worker');
-  const net = (process.getBuiltinModule('node:net') as typeof import('node:net'));
   it.skipIf(process.platform === 'win32')('keeps a socket or a FIFO two days old, and what in c/ is not a session folder', async () => {
     // A short root: a Unix socket's path is limited to about 104 bytes.
     const short = fs.mkdtempSync('/tmp/tt-');
@@ -319,6 +321,7 @@ describe("14. what a running agent's CLI still uses", () => {
       fs.mkdirSync(path.join(root, W(), 't', 'tmux-501'), { recursive: true });
       execFileSync('mkfifo', [path.join(root, W(), 't', 'tmux-501', 'default')]);
       put(`${W()}/c/claude-501/bash-edit-diff/x.diff`, 10, 3);
+      put(`${W()}/c/claude-501/bundled-skills/2.1.296/a9c9/SKILL.md`, 10, 3);
       put(`${W()}/t/leftover/a.txt`, 10, 3);
       for (const p of [sock, path.join(root, W(), 't', 'tmux-501', 'default')]) {
         const at = new Date(NOW - 2 * DAY);
@@ -330,6 +333,7 @@ describe("14. what a running agent's CLI still uses", () => {
       expect(fs.existsSync(sock), 'the CLI\'s messaging socket').toBe(true);
       expect(exists(`${W()}/t/tmux-501/default`), 'a FIFO a server listens on').toBe(true);
       expect(exists(`${W()}/c/claude-501/bash-edit-diff/x.diff`), 'c/ outside a session folder').toBe(true);
+      expect(exists(`${W()}/c/claude-501/bundled-skills/2.1.296/a9c9/SKILL.md`), 'a skill Claude Code unpacked').toBe(true);
       expect(exists(`${W()}/t/leftover`)).toBe(false);
     } finally {
       server.close();
@@ -338,14 +342,51 @@ describe("14. what a running agent's CLI still uses", () => {
   });
 });
 
+describe('14b. a dead socket', () => {
+  const W = () => shortIdOf('worker');
+  it.skipIf(process.platform === 'win32')('goes with the 7-day rule once its agent has stopped', async () => {
+    const short = fs.mkdtempSync('/tmp/tt-');
+    root = path.join(short, 'tmp');
+    fs.mkdirSync(path.join(root, W(), 'c', 'cc-socks'), { recursive: true });
+    fs.mkdirSync(path.join(root, W(), 't', 'tmux-501'), { recursive: true });
+    const sock = path.join(root, W(), 'c', 'cc-socks', '4242.sock');
+    const fifo = path.join(root, W(), 't', 'tmux-501', 'default');
+    try {
+      // A socket its server left behind: bound, then the process gone.
+      const server = net.createServer();
+      await new Promise<void>((r) => server.listen(sock, r));
+      await new Promise<void>((r) => server.close(() => r()));
+      if (!fs.existsSync(sock)) {
+        // Node unlinked it on close: leave a socket of the same kind behind by hand.
+        execFileSync('python3', ['-c', `import socket; s=socket.socket(socket.AF_UNIX); s.bind(${JSON.stringify(sock)})`]);
+      }
+      execFileSync('mkfifo', [fifo]);
+      for (const p of [sock, fifo]) {
+        const at = new Date(NOW - 8 * DAY);
+        fs.lutimesSync(p, at, at);
+      }
+      age(`${W()}/c/cc-socks`, 8);
+      age(`${W()}/t/tmux-501`, 8);
+      await enforceTmpRetention(deps());
+      expect(fs.existsSync(sock), 'a dead socket of a stopped agent').toBe(false);
+      expect(fs.existsSync(fifo), 'a dead FIFO of a stopped agent').toBe(false);
+    } finally {
+      fs.rmSync(short, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('15, 16. dates that moved', () => {
   const W = () => shortIdOf('worker');
   it('15. does not delete, on a date measured before, a unit written since', async () => {
-    put(`${W()}/t/kept-while-stopped/a.txt`, 10, 2);
+    const file = put(`${W()}/t/kept-while-stopped/deep/a.txt`, 10, 2);
     await enforceTmpRetention(deps());
     expect(exists(`${W()}/t/kept-while-stopped`)).toBe(true);
-    // Its agent starts and writes to it; the next pass, an hour on, is within the 6 hours.
-    put(`${W()}/t/kept-while-stopped/b.txt`, 10, -1 / 24);
+    // Its agent starts and writes into the file it has: no folder's date moves,
+    // the file's alone. The next pass, an hour on, is within the 6 hours.
+    fs.appendFileSync(file, 'x');
+    const at = new Date(NOW + 3_600_000);
+    fs.utimesSync(file, at, at);
     await enforceTmpRetention(deps({ now: () => NOW + 3_600_000, liveAgentIds: () => ['worker'] }));
     expect(exists(`${W()}/t/kept-while-stopped`)).toBe(true);
   });

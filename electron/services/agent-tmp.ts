@@ -120,6 +120,12 @@ interface Unit {
   bytes: number;
   /** Its newest modification, itself and everything under it. */
   newest: number;
+  /**
+   * It holds a socket or a FIFO, itself or under it: what a running server
+   * listens on (claude's messaging socket in `c/cc-socks`, a tmux, an editor),
+   * whose date never moves while it is used (the Audit's M1 on #384).
+   */
+  live?: boolean;
 }
 
 export interface RetentionResult {
@@ -131,10 +137,10 @@ export interface RetentionResult {
 }
 
 /** Each unit's last measure, and when it was taken, kept between passes. */
-const measures = new Map<string, { bytes: number; newest: number; at: number }>();
+const measures = new Map<string, { bytes: number; newest: number; live: boolean; at: number }>();
 
 /** Size and newest date of what is under `p`, never through a link; null when it cannot be read. */
-async function measure(p: string): Promise<{ bytes: number; newest: number } | null> {
+async function measure(p: string): Promise<{ bytes: number; newest: number; live: boolean } | null> {
   let st: fs.Stats;
   try {
     st = await fs.promises.lstat(p);
@@ -143,6 +149,7 @@ async function measure(p: string): Promise<{ bytes: number; newest: number } | n
   }
   let bytes = st.isDirectory() ? 0 : (typeof st.blocks === 'number' ? st.blocks * 512 : st.size);
   let newest = st.mtimeMs;
+  let live = st.isSocket() || st.isFIFO();
   if (st.isDirectory()) {
     let names: string[];
     try {
@@ -155,9 +162,10 @@ async function measure(p: string): Promise<{ bytes: number; newest: number } | n
       if (!inner) return null;
       bytes += inner.bytes;
       newest = Math.max(newest, inner.newest);
+      live = live || inner.live;
     }
   }
-  return { bytes, newest };
+  return { bytes, newest, live };
 }
 
 async function childrenOf(dir: string): Promise<string[]> {
@@ -268,7 +276,7 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
     // Weighed from the last pass while it cannot be deletable yet: touched
     // within the shortest limit, so not old enough for any rule before then.
     if (last && last.newest > now - TMP_LIVE_IDLE_MS && now - last.at < TMP_REMEASURE_MS) {
-      units.push({ path: p, owner, bytes: last.bytes, newest: last.newest });
+      units.push({ path: p, owner, bytes: last.bytes, newest: last.newest, live: last.live });
       continue;
     }
     const m = await measure(p);
@@ -295,6 +303,16 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
       log(`[agent-tmp] ${root} was moved or changed into a link during the pass: nothing more is deleted until the next one`);
       return false;
     }
+    // Its top's date, read again: a pass can take a minute and more between
+    // its measures and its deletions, and a unit written meanwhile stays (L3).
+    try {
+      if ((await fs.promises.lstat(resolved)).mtimeMs > unit.newest) {
+        log(`[agent-tmp] ${resolved} changed since it was weighed: kept`);
+        return false;
+      }
+    } catch {
+      return false;
+    }
     try {
       await fs.promises.rm(resolved, { recursive: true, force: true });
     } catch (err) {
@@ -308,11 +326,31 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
     return true;
   };
 
+  // A project's folder is its absolute path, every other character a dash:
+  // `-Users-demo-tars`, `C--Users-demo-tars` on Windows. Beside them Claude
+  // Code keeps `bash-edit-diff` and `bundled-skills/<version>/<hash>`, as deep.
+  const PROJECT_FOLDER = /^(-|[A-Za-z]--)/;
+  /**
+   * What a running agent no longer uses: an entry of its `t/`, or the folder
+   * of a Claude Code session in its `c/` that it neither runs nor would
+   * resume, holding nothing a server listens on. What else is in `c/` (the
+   * messaging sockets' folder, Claude Code's own diffs, its bundled skills) is
+   * Claude Code's, kept while it runs. A session the agent runs is known from its record: a
+   * nested CLI that took the record would leave the real one's folder
+   * unprotected, which #380 closes (L2).
+   */
+  const isLeftover = (unit: Unit): boolean => {
+    if (unit.live) return false;
+    const parts = path.relative(root, unit.path).split(path.sep);
+    if (parts[1] === 't') return parts.length === 3;
+    return parts[1] === 'c' && parts.length === 5 && PROJECT_FOLDER.test(parts[3])
+      && !isLiveSession(unit.path, unit.owner, live);
+  };
   const kept: Unit[] = [];
   for (const unit of units) {
     const mine = unit.owner && live.has(unit.owner);
     if (!mine && unit.newest < now - TMP_MAX_AGE_MS && (await remove(unit, 'untouched for 7 days'))) continue;
-    if (mine && !isLiveSession(unit.path, unit.owner, live) && unit.newest < now - TMP_LIVE_IDLE_MS
+    if (mine && isLeftover(unit) && unit.newest < now - TMP_LIVE_IDLE_MS
       && (await remove(unit, 'untouched for a day, its agent running'))) continue;
     kept.push(unit);
   }
