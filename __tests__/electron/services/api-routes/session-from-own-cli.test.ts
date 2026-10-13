@@ -18,7 +18,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *    set the agent running, then idle, though the agent's own CLI is in
  *    another state. Refused at once or after the process table answers, such
  *    a post must answer stale and change nothing; the terminal's own CLI,
- *    once the table says so, must still drive the status.
+ *    once the table says so, must still drive the status. On every route its
+ *    hooks post to: its Stop's answer became the agent's last output, its
+ *    Stop and its task-completed ended the agent's work, its notification
+ *    raised an alert in the agent's name.
  */
 
 vi.mock('electron', () => ({ app: { getPath: () => '/Users/test', getAppPath: () => process.cwd() }, BrowserWindow: vi.fn() }));
@@ -49,11 +52,12 @@ const ctx = {
   initAgentPtyCallback: vi.fn(async () => 'x'), agentStatusEmitter: { emit: vi.fn(), on: vi.fn() },
 } as unknown as RouteContext;
 
-function post(a: RouteApp, body: Record<string, unknown>, cliPid?: number): Record<string, unknown> {
-  const route = (a as unknown as { routes: Array<{ pattern: unknown; handler: (req: RouteRequest, send: unknown) => unknown }> }).routes.find((r) => r.pattern === '/api/hooks/status')!;
-  let answer: Record<string, unknown> = {};
+function post(a: RouteApp, body: Record<string, unknown>, cliPid?: number, to = '/api/hooks/status'): Record<string, unknown> {
+  const route = (a as unknown as { routes: Array<{ pattern: unknown; handler: (req: RouteRequest, send: unknown) => unknown }> }).routes.find((r) => r.pattern === to)!;
+  // Filled when the route answers, which may be after it awaits the process table.
+  const answer: Record<string, unknown> = {};
   const raw = { headers: cliPid === undefined ? {} : { 'x-tars-cli-pid': String(cliPid) } };
-  route.handler({ body, params: {}, raw } as unknown as RouteRequest, ((payload: Record<string, unknown>) => { answer = payload; }) as never);
+  void route.handler({ body, params: {}, raw } as unknown as RouteRequest, ((payload: Record<string, unknown>) => { Object.assign(answer, payload); }) as never);
   return answer;
 }
 const settle = () => new Promise((r) => setTimeout(r, 300));
@@ -127,5 +131,20 @@ describe('a post from a CLI that is not the terminal\'s, for an agent nobody own
     await settle();
     expect(a.currentSessionId).toBe(sid('own'));
     expect(a.status).toBe('running');
+  });
+});
+
+describe('the other routes a nested CLI\'s hooks post to, for an agent nobody owns', () => {
+  it('3. leave the last output, the status and the alerts as they were', async () => {
+    const a = agent({ status: 'running', lastCleanOutput: 'its own answer' });
+    const routes = app(); registerHooksRoutes(routes, ctx);
+    const said = post(routes, { agent_id: 'a1', session_id: sid('nested'), hook: 'Stop', output: 'ok' }, NESTED, '/api/hooks/output');
+    const done = post(routes, { agent_id: 'a1', session_id: sid('nested') }, NESTED, '/api/hooks/task-completed');
+    const stopped = post(routes, { agent_id: 'a1', session_id: sid('nested'), hook: 'Stop' }, NESTED, '/api/hooks/agent-stopped');
+    const alert = post(routes, { agent_id: 'a1', session_id: sid('nested'), type: 'permission_prompt', message: 'nested asks' }, NESTED, '/api/hooks/notification');
+    await settle();
+    expect(a.lastCleanOutput).toBe('its own answer');
+    expect(a.status).toBe('running');
+    for (const answer of [said, done, stopped, alert]) expect(answer).toMatchObject({ stale: true });
   });
 });
