@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import { CHAT_ROOMS, recordPageErrors, SCREENSHOT_TOLERANCE, volatileMasks } from './surfaces.mjs';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, seedSandbox, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -58,7 +58,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  fs.rmSync(sandboxHome, { recursive: true, force: true });
+  await removeHome(sandboxHome);
 });
 
 for (const surface of CHAT_ROOMS as ChatSurface[]) {

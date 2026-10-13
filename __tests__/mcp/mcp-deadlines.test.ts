@@ -56,6 +56,11 @@ const NAMES = ['mcp-vault (Tars)', 'mcp-socialdata (SocialData)', 'mcp-x (X)'];
 const CLIENTS = new Map<string, [RegExp, () => Promise<unknown>]>();
 
 beforeAll(async () => {
+  // A vault client with no token of its own, whatever the shell running this
+  // suite carries (an agent's terminal has one): an agent token is first
+  // proven to the port (mcp-proves-tars.test.ts), a call this file does not count.
+  delete process.env.CLAUDE_MGR_API_TOKEN;
+  delete process.env.TARS_INSTANCE_ID;
   fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
   fs.writeFileSync(SETTINGS, JSON.stringify({
     socialDataApiKey: 'key', xApiKey: 'k', xApiSecret: 's', xAccessToken: 't', xAccessTokenSecret: 'ts', xPostingEnabled: true,
@@ -70,9 +75,16 @@ beforeAll(async () => {
 
 beforeEach(() => { sent.length = 0; });
 
+/** Until the client has sent its request: a client may look something up first. */
+async function sentOne(): Promise<void> {
+  for (let i = 0; i < 50 && sent.length === 0; i++) await new Promise(resolve => setImmediate(resolve));
+}
+
 /** What became of a call 200 ms after its deadline passed: its error, or that it is still waiting. */
 async function afterTheDeadline(call: () => Promise<unknown>): Promise<{ deadline: unknown; outcome: unknown; req: FakeRequest }> {
   const pending = call();
+  // The vault client looks up the token it presents before it sends (tars-api.ts tokenToPresent).
+  await sentOne();
   expect(sent).toHaveLength(1);
   const { options, req } = sent[0];
   req.emit('timeout');
@@ -87,6 +99,7 @@ describe('the MCP servers that call out, when the host does not answer', () => {
   it.each(NAMES)('%s sets a deadline in proportion (1, 4)', async (name) => {
     const [, call] = CLIENTS.get(name)!;
     void call().catch(() => {});
+    await sentOne();
     const deadline = sent[0]?.options.timeout;
     expect(typeof deadline, `${name} sets no deadline`).toBe('number');
     expect(deadline as number, name).toBeGreaterThanOrEqual(10_000);

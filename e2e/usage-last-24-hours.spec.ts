@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
-import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, stepShot } from './fixture.mjs';
+import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -195,6 +195,6 @@ test('the Usage page shows the last 24 hours, hour by hour, from both sources, C
     expect(errors, errors.join('\n')).toEqual([]);
   } finally {
     await app.close().catch(() => { /* gone */ });
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeHome(home);
   }
 });
