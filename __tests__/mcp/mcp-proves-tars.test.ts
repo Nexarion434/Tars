@@ -27,12 +27,19 @@ import { moveTestHome } from '../setup/test-home';
  * 5. A CLI Tars did not start (no token in its environment) loses the shared
  *    token it has always presented.
  * 6. A token with no TARS_INSTANCE_ID beside it is sent unproven.
+ * 7. (The Audit's Low on #376's delta) The proof waits less than the call it
+ *    guards: a Tars whose main thread is held past that answers the challenge
+ *    late, the call leaves with no token and gets a 401 once Tars is back,
+ *    where it used to wait. A port that never answers gets nothing however
+ *    long the wait, so the proof waits as long as its call.
  */
 
 const INSTANCE = crypto.randomBytes(16).toString('hex');
 const TOKEN = 'token-of-a1s-terminal';
 const SHARED = 'the-shared-token';
 let mode: 'tars' | 'squatter' = 'tars';
+/** How long the server takes to answer the challenge: a Tars whose main thread is held. */
+let healthDelayMs = 0;
 const received: Array<{ path: string; authorization?: string }> = [];
 let server: http.Server;
 let url: string;
@@ -50,7 +57,8 @@ beforeAll(async () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (u.pathname === '/api/health') {
         const instance = mode === 'tars' ? INSTANCE : 'someone-else';
-        res.end(JSON.stringify({ ok: true, proof: crypto.createHash('sha256').update(`${instance}:${u.searchParams.get('challenge') ?? ''}`).digest('hex') }));
+        const answer = JSON.stringify({ ok: true, proof: crypto.createHash('sha256').update(`${instance}:${u.searchParams.get('challenge') ?? ''}`).digest('hex') });
+        setTimeout(() => res.end(answer), healthDelayMs);
         return;
       }
       res.end(JSON.stringify({ success: true, agents: [] }));
@@ -135,6 +143,19 @@ describe("the MCP servers' calls to Tars", () => {
     expect(calls().map((r) => r.authorization)).toEqual([`Bearer ${SHARED}`, `Bearer ${SHARED}`]);
     expect(received.some((r) => r.path === '/api/health')).toBe(false);
   });
+
+  it('7. a Tars that answers the challenge after 6 s still gets the token', async () => {
+    mode = 'tars';
+    healthDelayMs = 6_000;
+    try {
+      const all = await clients({ CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE });
+      received.length = 0;
+      await Promise.all(all.map(([, call]) => call()));
+      expect(calls().map((r) => r.authorization)).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN}`, `Bearer ${TOKEN}`]);
+    } finally {
+      healthDelayMs = 0;
+    }
+  }, 30_000);
 
   it('6. a token with no instance id beside it is not sent', async () => {
     mode = 'tars';
