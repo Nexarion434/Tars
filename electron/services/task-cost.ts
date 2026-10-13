@@ -62,6 +62,11 @@ const ZERO: Counts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, write1h
 const fileCache = new Map<string, { mtimeMs: number; size: number; lines: TimedLine[] }>();
 const FILE_CACHE_MAX = 32;
 
+/** Forgets every transcript read, for a test that starts over. */
+export function clearTaskCostCache(): void {
+  fileCache.clear();
+}
+
 async function timedLinesOf(file: string): Promise<{ mtimeMs: number; lines: TimedLine[] } | null> {
   let stat: fs.Stats;
   try {
