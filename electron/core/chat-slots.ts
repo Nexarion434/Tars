@@ -107,3 +107,22 @@ export function recordedRunner<A extends RecordedRunnerFacts>(
     : agent.kind === 'chat' && agent.chatId === chat.id;
   return own ? { agent } : { why: 'not_its_own' };
 }
+
+/**
+ * The agents marked as a chat's runner that no chat names (the Audit's L1 on
+ * #379): `kind: 'chat'` comes from agents.json, in ~/.dorothy, which every
+ * agent may write, and it gives the orchestrator's powers. At launch these go
+ * back to plain workers; a runner Tars makes later is its own.
+ */
+export function unconfirmedRunners<A extends RecordedRunnerFacts>(
+  fleet: ReadonlyMap<string, A>,
+  chatOf: (chatId: string) => { id: string; number: number; projectPath: string; runnerId: string | null } | undefined,
+): A[] {
+  return [...fleet.values()].filter((agent) => {
+    if (agent.kind !== 'chat') return false;
+    const chat = agent.chatId ? chatOf(agent.chatId) : undefined;
+    if (!chat) return true;
+    const found = recordedRunner(chat, fleet);
+    return !('agent' in found) || found.agent.id !== agent.id;
+  });
+}

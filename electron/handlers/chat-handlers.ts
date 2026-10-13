@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DATA_DIR } from '../constants';
 import { agentStatusEmitter } from '../services/agent-events';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
-import { chatsWorking, isLive, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, tearDownRunner } from '../services/chat-runners';
+import { chatsWorking, isLive, removeRunnerOf, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, stopRunnerOf } from '../services/chat-runners';
 import { getProvider } from '../providers';
 import { setOrchestratorFollower } from '../core/chat-identity';
 import type { AgentStatus } from '../types';
@@ -135,7 +135,12 @@ export function registerChatHandlers(deps: { agents: Map<string, AgentStatus>; f
     const workOut = (chat: Chat) => workOutOf(runnerOf(chat)?.id ?? null, agents.values());
     const refused = store.removalRefusal(chatId, workOut);
     if (refused) return refused;
-    const torn = await tearDownRunner(store.get(chatId)!);
+    // Stopped first, then checked again: what it asked for while it stopped
+    // would stay filed by a requester that is gone (the Audit's L6 on #379).
+    await stopRunnerOf(store.get(chatId)!);
+    const late = store.removalRefusal(chatId, workOut);
+    if (late) return late;
+    const torn = await removeRunnerOf(store.get(chatId)!);
     const removed = store.remove(chatId, workOut);
     return 'error' in removed ? removed : { ...removed, ...torn };
   });
