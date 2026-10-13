@@ -19,6 +19,7 @@ import { AgentDialogSidebar } from './AgentDialogSidebar';
 import { AgentDialogSuperAgentSidebar } from './AgentDialogSuperAgentSidebar';
 import { useAgentDialogTerminal } from './useAgentDialogTerminal';
 import { useQuickTerminal } from './useQuickTerminal';
+import type { AgentPermissionMode } from '@/types/agent';
 
 /** Width of the permanent right rail. The design does not let it collapse. */
 const RAIL_WIDTH = 312;
@@ -62,7 +63,7 @@ export default function AgentTerminalDialog({
   const [gitBranch, setGitBranch] = useState('');
 
   // Settings panel state
-  const [editPermissionMode, setEditPermissionMode] = useState<'normal' | 'auto' | 'bypass'>('auto');
+  const [editPermissionMode, setEditPermissionMode] = useState<AgentPermissionMode>('auto');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [customSecondaryPath, setCustomSecondaryPath] = useState('');
 
@@ -189,7 +190,7 @@ export default function AgentTerminalDialog({
 
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
-  const handleSavePermissionMode = useCallback(async (value: 'normal' | 'auto' | 'bypass') => {
+  const handleSavePermissionMode = useCallback(async (value: AgentPermissionMode) => {
     if (!agent) return;
     setIsSavingSettings(true);
     try {
