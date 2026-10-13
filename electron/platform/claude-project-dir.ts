@@ -54,24 +54,28 @@ export function claudeProjectDirNames(projectPath: string, platform: NodeJS.Plat
 
 /**
  * The folder a session's transcript is looked for in (utils/resume-session.ts,
- * which every reader of a transcript goes through). win32: Claude's own name,
- * the only one Claude writes there (the old rule kept a Windows path's `:`
- * and `\`, `C:\Users\x` stayed `C:\Users\x`). darwin/linux: `/` and `.` to
- * `-`, the rule Tars has always read transcripts under there, unchanged.
+ * which every reader of a transcript goes through): Claude's own name, the
+ * only one Claude writes, on every platform. darwin/linux read `/` and `.` to
+ * `-` until 2026-10-13, which is Claude's name only for a path with no other
+ * character: a project whose path held an underscore, a space or a tilde
+ * never resumed its conversation (measured on claude 2.1.296:
+ * `/private/tmp/tars naming_~probe` is `-private-tmp-tars-naming--probe`).
+ * `platform` is kept for the callers that pass it.
  */
-export function transcriptProjectDirName(projectPath: string, platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? encodeClaudeProjectDir(projectPath) : projectPath.replace(/[/.]/g, '-');
+export function transcriptProjectDirName(projectPath: string, _platform: NodeJS.Platform = process.platform): string {
+  return encodeClaudeProjectDir(projectPath);
 }
 
 /**
  * The folder Memory gives a Tars project Claude has no folder for yet, where
- * it creates the project's MEMORY.md (memory-service). win32: Claude's own
- * name, the one Claude reads (the old rule kept a Windows path's `:` and `\`).
- * darwin/linux: `/` and `.` to `-`, the rule Memory has always used there,
- * unchanged.
+ * it creates the project's MEMORY.md (memory-service): Claude's own name, the
+ * one Claude reads, on every platform. darwin/linux used `/` and `.` to `-`
+ * until 2026-10-13, and a project whose path held any other character got a
+ * MEMORY.md Claude never read; that file is still listed, through the old
+ * spellings claudeProjectDirNames keeps.
  */
-export function memoryProjectDirName(projectPath: string, platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? encodeClaudeProjectDir(projectPath) : projectPath.replace(/[/.]/g, '-');
+export function memoryProjectDirName(projectPath: string, _platform: NodeJS.Platform = process.platform): string {
+  return encodeClaudeProjectDir(projectPath);
 }
 
 /**
@@ -79,12 +83,12 @@ export function memoryProjectDirName(projectPath: string, platform: NodeJS.Platf
  * reads each folder back to a path (memory-service). win32: a folder one of
  * them names is that project, whatever the disk makes of it (the decoder
  * cannot tell `a b` from `a-b` when both exist, and the listing showed the
- * project once under the guess and again empty). darwin/linux: none, every
- * folder is decoded as it always was.
+ * project once under the guess and again empty). On darwin and linux too
+ * since 2026-10-13: Claude's name for `/Users/me/my_proj` decodes to
+ * `/Users/me/my/proj`, which is not the project.
  */
 export function knownProjectsByFolder(projectPaths: string[], platform: NodeJS.Platform = process.platform): Map<string, string> {
   const byFolder = new Map<string, string>();
-  if (platform !== 'win32') return byFolder;
   for (const known of projectPaths) {
     for (const name of known ? claudeProjectDirNames(known, platform) : []) if (!byFolder.has(name)) byFolder.set(name, known);
   }
