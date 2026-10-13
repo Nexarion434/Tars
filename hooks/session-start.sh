@@ -66,12 +66,9 @@ echo "[$(date)] SESSION_START curl result: $RESULT" >> "$HOOK_LOG"
 
 # The /api/agents and /api/memory endpoints require a token (only /api/health
 # and /api/local-file are exempt).
-# The CLI's own token: it names this agent. The shared file only when Tars
-# did not start this CLI and gave it none.
-API_TOKEN="${CLAUDE_MGR_API_TOKEN:-}"
-if [ -z "$API_TOKEN" ] && [ -f "$HOME/.dorothy/api-token" ]; then
-  API_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
-fi
+# The CLI's own token, once its port proved it is this CLI's Tars; the shared
+# file only when Tars did not start this CLI and gave it none (tars-hook.sh).
+API_TOKEN="$TARS_READ_TOKEN"
 
 # Identity + team roster bootstrap: injected into EVERY fresh session so the
 # agent knows who it is, which project it belongs to, and (for orchestrators)
@@ -83,8 +80,11 @@ if [ -n "$CLAUDE_AGENT_ID" ] && [ -n "$API_TOKEN" ]; then
 fi
 
 # Get memory context for this agent/project
-CONTEXT=$(curl -s --connect-timeout 2 --max-time 3 -H @<(printf "Authorization: Bearer %s" "$API_TOKEN") \
-  "$API_URL/api/memory/context?agent_id=$AGENT_ID&project_path=$PROJECT_PATH" 2>/dev/null)
+CONTEXT=""
+if [ -n "$API_TOKEN" ]; then
+  CONTEXT=$(curl -s --connect-timeout 2 --max-time 3 -H @<(printf "Authorization: Bearer %s" "$API_TOKEN") \
+    "$API_URL/api/memory/context?agent_id=$AGENT_ID&project_path=$PROJECT_PATH" 2>/dev/null)
+fi
 MEMORY_CONTENT=""
 if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "null" ] && [ "$CONTEXT" != "{}" ]; then
   MEMORY_CONTENT=$(echo "$CONTEXT" | jq -r '.context // empty' 2>/dev/null)

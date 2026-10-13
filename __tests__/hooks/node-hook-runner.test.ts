@@ -280,9 +280,19 @@ const CASES: Case[] = [
     payload: { session_id: S, cwd: PROJECT, source: 'resume' },
     env: { CLAUDE_MGR_API_TOKEN: 'tok-1' },
     respond: ({ path: p }) => (p === '/api/memory/context' ? { body: JSON.stringify({ context: 'No previous context found for this agent/project.' }) } : {}),
+    // No instance to prove: its token reads nothing either (the Audit's Info on #355).
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: S, session_id: S, status: 'idle', source: 'resume', hook: 'SessionStart', cli_pid: '' } },
-      { method: 'GET', path: '/api/memory/context', auth: BEARER, query: { agent_id: S, project_path: PROJECT } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'SessionStart on a port that does not prove the CLI\'s instance: no token on the post, no bootstrap, no memory read (the Audit\'s Info on #355)',
+    event: 'session-start',
+    payload: { session_id: S, cwd: PROJECT, source: 'startup' },
+    env: { ...AGENT, TARS_INSTANCE_ID: 'not-the-instance-this-port-knows' },
+    requests: [
+      { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
     ],
     stdout: CONTINUE,
   },

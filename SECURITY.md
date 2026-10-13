@@ -104,7 +104,11 @@ per run (`tarsInstanceId`, in memory, never written) and hands it to each CLI be
 token (`TARS_INSTANCE_ID`). As it starts, a hook sends a fresh random challenge to
 `/api/health` and sends the token only when the answer is sha256 of the id and the
 challenge; with no id, no answer within 5 s (longer than any post waits: a Tars whose main thread is held a few seconds still gets its token) or a wrong one, it posts without a token.
-The same listener got the challenge and a post with no Authorization. The id is as
+The same listener got the challenge and a post with no Authorization. Until 2026-10-12 the reads
+a hook makes with the token (the agent's bootstrap and its memory context at SessionStart, the memory
+post after a write, in both runners) went out without that check: the squatter got the token there
+(the Audit's Info on #355). They take the same check now (`TARS_READ_TOKEN`, `tokenForReads`); a
+CLI whose port does not prove its instance reads nothing, and not with the shared token either. The id is as
 readable as the token by a process of the same user (`ps -Eww`), and no more: this
 closes the port to other accounts and to a replay, not to that.
 Upgrading from 1.7.9: quitting kills every agent terminal, so no CLI started by 1.7.9
@@ -201,6 +205,23 @@ leaves the toolchain alive and still does not stop it. What every profile does
 stop is `/bin/ps`, which is setuid root and therefore cannot be executed under
 any sandbox at all: the convenient route is closed, the syscall behind it is
 not.
+
+**Gemini's redaction is let through on purpose.** Gemini CLI withholds from
+the processes it starts every variable whose name looks like a secret, and
+`CLAUDE_MGR_API_TOKEN` matches. Without it a Gemini agent's hooks could not
+report to Tars at all, so Tars adds that one name to
+`security.environmentVariableRedaction.allowed` in `~/.gemini/settings.json`
+(`allowAgentToken`, `electron/utils/gemini-node-hooks.ts`): on win32 since
+#355, on every platform since 1.9.6. What that exposes: the agent's token now
+reaches Gemini's hooks, the commands its shell tool runs, and every stdio MCP
+server Gemini starts, third-party ones included, which Gemini always withheld
+it from before. No narrower option exists: the allowance is one list in one
+settings file shared by every Gemini agent, and anything a hook is given
+from that file is the same for all of them, so it cannot carry a token minted
+per terminal. It
+is no loss under this section: every one of those processes runs as the same
+user and could already read the token from the CLI's environment, as measured
+above.
 
 **The honest statement.** Per-agent tokens ended impersonation *by naming*: an
 agent can no longer become a colleague by writing a header. They do not, and
