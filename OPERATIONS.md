@@ -1822,6 +1822,11 @@ continuing its conversation (`--resume <session> --fork-session`), unless someth
 A turn can end with work still running in the background (Claude Code refuses a long foreground
 `sleep` and runs it in the background, and orchestrators run monitors that way). That work
 reports back as a turn of its own; the restart waits for it, reading the session's transcript.
+A task that ends while a turn runs is recorded there differently: Claude Code 2.1.296 writes its
+`<task-notification>` as a `queue-operation` `enqueue` and an `attachment` of type `queued_command`,
+never as a user line, and Tars reads both (`pendingBackgroundWork`). Before 2.0.0 it read user
+lines only: such a task stayed running for Tars, every rest of the agent told its requester that
+background work was still running, and the requester's background list never emptied.
 
 A restart that waits tells every window what it waits on (`agent:restart-pending`, and
 `agent:pendingRestarts` for a window opened since), and the log says it (`[restart]`); the agent's
