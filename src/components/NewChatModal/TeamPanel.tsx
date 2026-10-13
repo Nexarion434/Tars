@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentPermissionMode } from '@/types/agent';
+import type { TeamPermissionMode } from '@/types/agent';
 import { tildePath } from '@/lib/display-path';
 import type { TeamTemplate, TeamTemplateMember } from '@/types/electron';
 import { Button, Dropdown, PanelCaption, Textarea } from '@/components/ui';
@@ -33,8 +33,8 @@ export function TeamPanel(props: {
 
   optionsOpen: boolean;
   onToggleOptions: () => void;
-  permissionOverride: AgentPermissionMode;
-  onPermissionOverride: (m: AgentPermissionMode) => void;
+  permissionOverride: TeamPermissionMode;
+  onPermissionOverride: (m: TeamPermissionMode) => void;
   startOnDeploy: boolean;
   onToggleStartOnDeploy: () => void;
 }) {

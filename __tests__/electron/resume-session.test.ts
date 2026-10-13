@@ -57,9 +57,10 @@ describe('finding the transcript', () => {
     // dash: the drive's colon and every backslash too. The old rule kept them,
     // and named a folder Claude never writes.
     expect(encodeProjectDirName('C:\\Users\\you\\my project.x', 'win32')).toBe('C--Users-you-my-project-x');
-    // darwin/linux: `/` and `.` alone, as Tars always read transcripts there.
-    expect(encodeProjectDirName('/Users/you/my project.x', 'darwin')).toBe('-Users-you-my project-x');
-    expect(encodeProjectDirName('/home/you/my_project', 'linux')).toBe('-home-you-my_project');
+    // darwin/linux: Claude Code's own rule too (measured on 2.1.296, 2026-10-13):
+    // the `/` and `.` Tars read before missed every other character.
+    expect(encodeProjectDirName('/Users/you/my project.x', 'darwin')).toBe('-Users-you-my-project-x');
+    expect(encodeProjectDirName('/home/you/my_project', 'linux')).toBe('-home-you-my-project');
   });
 
   it('resumes when the transcript is on disk', () => {

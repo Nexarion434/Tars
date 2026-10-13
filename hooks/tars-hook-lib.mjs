@@ -136,8 +136,11 @@ export function bearer(token) {
 }
 
 /** The Authorization header of a post: none at all for a null token, as curl sends none when tars_auth prints nothing. */
-export function authHeader(token) {
-  return token === null ? {} : { Authorization: bearer(token) };
+export function authHeader(token, env = process.env) {
+  if (token === null) return {};
+  // Which CLI posts, as tars-hook.sh's tars_auth sends it: CLAUDE_PID, digits only.
+  const pid = /^[0-9]+$/.test(env.CLAUDE_PID ?? '') ? { 'X-Tars-Cli-Pid': env.CLAUDE_PID } : {};
+  return { Authorization: bearer(token), ...pid };
 }
 
 /**

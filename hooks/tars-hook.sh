@@ -44,8 +44,15 @@ if [ -n "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -n "${TARS_INSTANCE_ID:-}" ]; then
   fi
   unset tars_challenge tars_proof tars_expected
 fi
+# And which CLI posts, on every post (Tars adopts an agent nobody owns only
+# from its terminal's own CLI): Claude Code's CLAUDE_PID, digits or nothing.
+TARS_CLI_PID="${CLAUDE_PID:-}"
+[[ "$TARS_CLI_PID" =~ ^[0-9]+$ ]] || TARS_CLI_PID=""
 tars_auth() {
-  if [ "$TARS_TOKEN_OK" = yes ]; then printf "Authorization: Bearer %s" "$CLAUDE_MGR_API_TOKEN"; fi
+  if [ "$TARS_TOKEN_OK" = yes ]; then
+    printf "Authorization: Bearer %s" "$CLAUDE_MGR_API_TOKEN"
+    if [ -n "$TARS_CLI_PID" ]; then printf "\nX-Tars-Cli-Pid: %s" "$TARS_CLI_PID"; fi
+  fi
 }
 
 # The token a hook's reads present (the bootstrap, the memory context, the
