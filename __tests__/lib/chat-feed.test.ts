@@ -46,6 +46,16 @@ import type { ChatEvent, ChatHistory, ChatItem, ChatView } from '../../src/types
  * Added after the code, for a mutant of the same bench that survived (R1):
  * 18. a re-read that begins right after the lines held, with none in common,
  *     drops the pages read before it.
+ *
+ * Written before the fix, from the Audit's gate of #371's third delta (a
+ * Medium on #378): #371 tells a line again, the same id, when a line that
+ * landed late in an earlier session moved it one place on.
+ * 19. a line told again at another place keeps the place it held, and the
+ *     thread reads hello, in b, late in a, where the transcripts say hello,
+ *     late in a, in b;
+ * 20. a line told at the place of one held goes after it, though that one
+ *     has moved on and is told again next: the thread reads out of order
+ *     until it is.
  */
 
 const VIEW = (id: string, title = 'Main'): ChatView => ({
@@ -203,5 +213,27 @@ describe('chat feed', () => {
     s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(8) }));
     s = applySnapshot(s, history(20, range(7, 12), 13));
     expect(places(s)).toEqual(range(0, 12).map(i => i.n));
+  });
+
+  // #371's own sequence (its test 12): session a gains a line after session
+  // b's was told, and every line after it is told again one place on.
+  it('moves a line told again at another place to that place (19)', () => {
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0, 'hello', 'h'), item(1, 'in b', 'b')]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(1, 'late in a', 'late') }));
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2, 'in b', 'b') }));
+    expect(texts(s)).toEqual(['hello', 'late in a', 'in b']);
+    expect(places(s)).toEqual([0, 1, 2]);
+  });
+
+  it('puts a line told at the place of one held before it, as that one has moved on (20)', () => {
+    const inOrder = ['hello', 'late in a', 'the divider', 'in b'];
+    let s = applySnapshot(emptyFeed('c1'), history(10, [item(0, 'hello', 'h'), item(1, 'the divider', 'd'), item(2, 'in b', 'b')]));
+    s = applyEvent(s, ev(11, 'c1', { type: 'item', item: item(1, 'late in a', 'late') }));
+    expect(texts(s), 'the late line alone told').toEqual(inOrder);
+    s = applyEvent(s, ev(12, 'c1', { type: 'item', item: item(2, 'the divider', 'd') }));
+    expect(texts(s), 'the divider told again').toEqual(inOrder);
+    s = applyEvent(s, ev(13, 'c1', { type: 'item', item: item(3, 'in b', 'b') }));
+    expect(texts(s)).toEqual(inOrder);
+    expect(places(s)).toEqual([0, 1, 2, 3]);
   });
 });
