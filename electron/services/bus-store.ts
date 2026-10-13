@@ -547,7 +547,11 @@ export function publishAgentMessage(input: {
 
   const room = getRoom(input.roomId);
   if (!room) return { published: false, reason: 'no_open_thread', detail: 'That room does not exist.' };
-  if (!room.memberIds.includes(input.agentId)) {
+  // A chat's runner is no member (what crosses the room reaches Main), but the
+  // chat speaks there, as itself, in its own project's room (4.6, PR F).
+  const poster = agents.get(input.agentId);
+  const runsAChatHere = !!poster && room.kind === 'project' && poster.projectPath === room.projectPath && !!chatNameOf(poster);
+  if (!room.memberIds.includes(input.agentId) && !runsAChatHere) {
     return { published: false, reason: 'not_a_member', detail: 'Only the agents of this room can post in it.' };
   }
 
