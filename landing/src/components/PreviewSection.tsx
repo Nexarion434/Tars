@@ -8,11 +8,11 @@
 const POINTS = [
   {
     title: 'Every chat, in one list',
-    body: 'The sidebar lists your projects’ chats, pinned, active, working, snoozed or settled, each with its state, and filters them by project. Main is the conversation your orchestrator already had.',
+    body: 'The sidebar lists your projects’ chats, pinned, active, working, snoozed or settled, each with its state, filters them by project, and says how many work of the most your Mac runs at once. Main is the conversation your orchestrator already had.',
   },
   {
     title: 'A chat’s conversation, live',
-    body: 'Read from the orchestrator’s own transcripts and followed as it happens: what it says, the tools it calls, the work it hands to its team, and what it asks you.',
+    body: 'Write to its orchestrator there, and read the conversation from its own transcripts as it happens: what it says, the tools it calls, the work it hands to its team, and what it asks you. A new chat’s first message starts its own orchestrator.',
   },
   {
     title: 'A page for each project',
