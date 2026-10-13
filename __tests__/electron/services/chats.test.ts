@@ -84,6 +84,21 @@
  *     last), or adds a session it already has.
  * 38. It rebinds a chat other than Main, another project's Main, or brings back a Main the user deleted.
  * 39. It writes when Main already runs on the orchestrator, or does not say what it rebound.
+ * 40. (GATE-PR371-DELTA5, Info) A session is recorded without the folder its CLI ran in: after Main follows a new
+ *     orchestrator, a session the former one ran in its own worktree is looked for in the new one's folders only,
+ *     and reads as gone while its file is there. The folder is recorded with the session when it is taken, and
+ *     never replaced by a later note of it.
+ * 41. A session the record already holds, from before folders were recorded, never gets its folder.
+ * 42. A folder outside the project (another project's, a relative one, one climbing out with "..") is recorded:
+ *     chats.json is agents' to write, and the folder chooses which transcripts a chat shows.
+ * 43. The folders do not survive a launch, or a folder in the file for a session the chat does not hold is kept.
+ * 44. A file whose folders are malformed loses the chat, where only its folders should go.
+ * 45. (GATE-PR391, L2) The folder is recorded only as Tars saved it, and Claude Code files a transcript under the
+ *     folder's real path: for a project reached through a link (/var on macOS, a linked checkout), once the worktree
+ *     is gone (prune removed it) its real spelling can no longer be found, and the session reads as gone again.
+ * 46. (GATE-PR391-DELTA, L1, probe PB) A linked project whose target is missing at a launch loses the real spellings
+ *     recorded for it, for good: they cannot be checked against a real path that cannot be read, the repair drops
+ *     them and writes the file, and they are not back when the target is.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -730,5 +745,106 @@ describe("Main follows the project's orchestrator (the orchestrator's decision, 
     const before = bytes();
     expect(store.followOrchestrators([orch()])).toEqual([]);
     expect(bytes()).toEqual(before);
+  });
+});
+
+describe("the folder each session's CLI ran in", () => {
+  const worktree = () => path.join(projA, '.worktrees', 'lead-old');
+
+  it('40. is recorded with the session when it is taken, and never replaced', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    expect(store.noteSession('o1', SESSION_B, worktree())).toBe(true);
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: [worktree()] });
+    expect(store.noteSession('o1', SESSION_B, projA)).toBe(false);
+    expect(main(store).sessionFolders).toEqual({ [SESSION_B]: [worktree()] });
+  });
+
+  it('45. is recorded in its real spelling too, which Claude Code files transcripts under (GATE-PR391, L2)', () => {
+    // The project reached through a link, as Tars saved it: /var on macOS, a linked checkout.
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(path.join(real, '.worktrees', 'lead-old'), { recursive: true });
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    const store = open();
+    store.ensureMains([orch({ projectPath: link })]);
+    expect(store.noteSession('o1', SESSION_B, path.join(link, '.worktrees', 'lead-old'))).toBe(true);
+    expect(main(store, link).sessionFolders?.[SESSION_B]).toEqual([
+      path.join(link, '.worktrees', 'lead-old'), path.join(fs.realpathSync(real), '.worktrees', 'lead-old'),
+    ]);
+    // Kept once the worktree is gone (prune removed it): read back from the file, both spellings.
+    fs.rmSync(path.join(real, '.worktrees'), { recursive: true, force: true });
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toHaveLength(2);
+  });
+
+  it('41. is filled in for a session the record already holds without one', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    expect(main(store).sessionIds).toEqual([SESSION_A]);
+    expect(store.noteSession('o1', SESSION_A, projA)).toBe(true);
+    expect(main(store).sessionFolders?.[SESSION_A]?.[0]).toBe(projA);
+    expect(main(store).sessionIds).toEqual([SESSION_A]);
+  });
+
+  it('42. is the project or a folder inside it, and nothing else', () => {
+    const store = open();
+    store.ensureMains([orch()]);
+    // Literal: path.join would normalise the climb before the call (GATE-PR391, L1).
+    for (const outside of [projB, 'relative/folder', `${projA}/../b`, `${projA}/.worktrees/../../b`, `${projA}-sibling`, '']) {
+      store.noteSession('o1', SESSION_B, outside);
+      expect(main(store).sessionFolders?.[SESSION_B], outside).toBeUndefined();
+    }
+    expect(main(store).sessionIds).toContain(SESSION_B);
+  });
+
+  it('43. survives a launch, for the sessions the chat holds only', () => {
+    writeFile({
+      version: 1, numbers: { [projA]: 1 },
+      chats: [record({ sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: [worktree()], [SESSION_B]: [projA] } })],
+    });
+    expect(main(open()).sessionFolders).toEqual({ [SESSION_A]: [worktree()] });
+  });
+
+  it('44. a malformed one is dropped, the chat kept', () => {
+    for (const bad of [{ [SESSION_A]: 7 }, 'x', [worktree()], { [SESSION_A]: [projB] }, { [SESSION_A]: [`${projA}/../b`] }]) {
+      writeFile({ version: 1, numbers: { [projA]: 1 }, chats: [record({ sessionFolders: bad as never })] });
+      const chat = main(open());
+      expect(chat, JSON.stringify(bad)).toBeDefined();
+      expect(chat.sessionFolders ?? {}).toEqual({});
+    }
+  });
+});
+
+describe('a linked project whose target is away at a launch', () => {
+  it('46. keeps the spellings recorded for it, and checks them again once its real path reads', () => {
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(path.join(real, '.worktrees', 'lead-old'), { recursive: true });
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    const store = open();
+    store.ensureMains([orch({ projectPath: link })]);
+    store.noteSession('o1', SESSION_B, path.join(link, '.worktrees', 'lead-old'));
+    const recorded = main(store, link).sessionFolders?.[SESSION_B];
+    expect(recorded).toHaveLength(2);
+
+    // The target away (a volume unmounted, a checkout moved): the link dangles at this launch.
+    const away = path.join(dir, 'real-project-away');
+    fs.renameSync(real, away);
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toEqual(recorded);
+    // The target back: the next launch still has both.
+    fs.renameSync(away, real);
+    expect(main(open(), link).sessionFolders?.[SESSION_B]).toEqual(recorded);
+  });
+
+  it('46. drops a relative or climbing spelling written while the target is away (GATE-PR391-DELTA2, Info)', () => {
+    const real = path.join(dir, 'real-project');
+    fs.mkdirSync(real);
+    const link = path.join(dir, 'linked-project');
+    fs.symlinkSync(real, link);
+    fs.renameSync(real, path.join(dir, 'real-project-away'));
+    writeFile({ version: 1, numbers: { [link]: 1 }, chats: [record({
+      projectPath: link, sessionIds: [SESSION_A], sessionFolders: { [SESSION_A]: ['relative/folder', `${link}/../escape`] },
+    })] });
+    expect(main(open(), link).sessionFolders ?? {}).toEqual({});
   });
 });
