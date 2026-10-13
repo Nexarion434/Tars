@@ -366,16 +366,15 @@ describe('what the folder\'s own .git says', () => {
   });
 
   it('18. keeps an orphan with more below it than the search looks through', async () => {
+    // One past a bound of 100: the 50 001 files the real bound takes timed out
+    // under load (30 s, then afterEach's 10 s, at a load average of 176).
     const many = wts('huge', 'many');
     fs.mkdirSync(many, { recursive: true });
-    for (let i = 0; i <= 50_000; i++) fs.writeFileSync(path.join(many, String(i)), '');
-    try {
-      expect((await listOrphanFolders({ projects: [project], owned: [] })).folders).toEqual([]);
-    } finally {
-      // Deleted within this test's time: on Windows the 50 001 files took longer than afterEach's 10 s.
-      fs.rmSync(wts('huge'), { recursive: true, force: true });
-    }
-  }, 120_000);
+    for (let i = 0; i <= 100; i++) fs.writeFileSync(path.join(many, String(i)), '');
+    expect((await listOrphanFolders({ projects: [project], owned: [], searchLimit: 100 })).folders).toEqual([]);
+    // And under the bound, the same folder is offered: the bound is what keeps it.
+    expect((await listOrphanFolders({ projects: [project], owned: [], searchLimit: 1_000 })).folders.map((f) => f.name)).toEqual(['huge']);
+  });
 
   it('14. reads the processes again before each folder goes', async () => {
     file(wts('big', 'x.bin'), 300_000);
