@@ -17,7 +17,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * Driven through the real app, on the Projects page's shell (Terminal.tsx), as
  * terminal-wheel.spec.ts does: the shell's profile hands the terminal to a
- * printer that writes two OSC 8 links, a https one and a file: one.
+ * printer that writes two OSC 8 links, a https one and a file: one, then a
+ * URL as plain text, which the web links addon makes a link.
  * shell.openExternal is replaced in the main process by a recorder, so nothing
  * opens on the machine running the test. Playwright dismisses any dialog and
  * records it here: the old build's warning is one.
@@ -25,10 +26,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
 
 const WEB = 'https://github.com/cooper-labs-tech/ward/pull/21';
 const FILE = 'file:///C:/Windows/System32/calc.exe';
+/** Printed as plain text, as a dev server or `git push` prints one: no OSC 8 around it. */
+const PLAIN = 'http://localhost:3000/plain';
 
 const osc8 = (url: string, text: string) => `\\x1b]8;;${url}\\x07${text}\\x1b]8;;\\x07`;
 const PRINTER = `#!${process.execPath}
-process.stdout.write('${osc8(WEB, 'the pull request')}\\r\\n\\r\\n${osc8(FILE, 'a local file')}\\r\\n');
+process.stdout.write('${osc8(WEB, 'the pull request')}\\r\\n\\r\\n${osc8(FILE, 'a local file')}\\r\\n\\r\\nready at ${PLAIN} now\\r\\n');
 process.stdin.resume();
 `;
 
@@ -44,7 +47,7 @@ fi
 const onWindows = process.platform === 'win32';
 const GIT_BASH = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe');
 
-test('a click on a web link in a terminal opens it in the browser, with no warning, and a file: link opens nothing', async () => {
+test('a click on a web link in a terminal, marked or plain, opens it in the browser, with no warning, and a file: link opens nothing', async () => {
   test.setTimeout(120_000);
   test.skip(onWindows && !fs.existsSync(GIT_BASH), `Windows runs the printer through Git for Windows' bash, and there is none at ${GIT_BASH}`);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-links-'));
@@ -96,6 +99,7 @@ test('a click on a web link in a terminal opens it in the browser, with no warni
     const rows = page.locator('.xterm-rows');
     await expect(rows).toContainText('the pull request', { timeout: 20_000 });
     await expect(rows).toContainText('a local file');
+    await expect(rows).toContainText(PLAIN);
 
     // Hovered first: xterm finds the link under the pointer on its move, then a click activates it.
     await rows.getByText('the pull request').hover();
@@ -108,9 +112,20 @@ test('a click on a web link in a terminal opens it in the browser, with no warni
     await rows.getByText('a local file').click();
     // Long enough for a click to cross IPC: the web link's arrived well inside it.
     await page.waitForTimeout(1_000);
+    expect(await opened(), 'a file: link was handed to the system').toEqual([WEB]);
+
+    // The plain URL, clicked on its first characters: the row's text holds more than it.
+    const plain = rows.getByText(PLAIN, { exact: false });
+    const box = (await plain.boundingBox())!;
+    const at = { x: box.x + 90, y: box.y + box.height / 2 };
+    await page.mouse.move(at.x, at.y);
+    await page.waitForTimeout(300);
+    await page.mouse.click(at.x, at.y);
+    await expect.poll(opened, { timeout: 5_000 }).toEqual([WEB, PLAIN]);
+
     const values = { opened: await opened(), dialogs };
     recordValues(values);
-    expect(values.opened, 'only the web page was handed to the system').toEqual([WEB]);
+    expect(values.opened, 'only the web pages were handed to the system').toEqual([WEB, PLAIN]);
     expect(values.dialogs, 'a warning was shown').toEqual([]);
   } finally {
     await app.close();
