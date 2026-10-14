@@ -24,11 +24,13 @@ export const terminalLinkHandler: ILinkHandler = {
 /**
  * Makes the http and https URLs a program prints as plain text clickable too
  * (a dev server's address, the link `git push` gives), through the same main
- * process check. Loaded on demand: the addon's bundle reads `self` when it is
- * imported, which the server render has not. A terminal disposed before it
- * arrives gets nothing.
+ * process check. Loaded on demand, and only where there is a window: the
+ * addon's bundle reads `self` when it is imported, which neither the server
+ * render nor a test running a terminal hook under Node has (an unhandled
+ * rejection there). A terminal disposed before it arrives gets nothing.
  */
 export async function addWebLinks(term: Terminal): Promise<void> {
+  if (typeof self === 'undefined') return;
   const { WebLinksAddon } = await import('xterm-addon-web-links');
   try {
     term.loadAddon(new WebLinksAddon((_event, uri) => openLink(uri)));
