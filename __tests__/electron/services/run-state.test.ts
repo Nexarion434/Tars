@@ -186,10 +186,13 @@ describe('the run record', () => {
       expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({ pid: SECOND, startedAt: T0 + 3_600_000 });
     });
 
-    it('14. a record that does not say when its process started: it ended', () => {
-      fs.writeFileSync(file, firstRecord().replace(`"processStart":"${FIRST_START}",`, ''));
+    it('14. a record that does not say when its process started: it ended, whether its pid\'s start can be read or not', () => {
+      const old = firstRecord().replace(`"processStart":"${FIRST_START}",`, '');
+      fs.writeFileSync(file, old);
       clock = T0 + 60_000;
       expect(beginRun(second([FIRST]))).toMatchObject({ startedAt: T0 });
+      fs.writeFileSync(file, old);
+      expect(beginRun(second([FIRST], undefined, SECOND, { [SECOND]: 'darwin:Thu Oct  5 01:01:00 2026' }))).toMatchObject({ startedAt: T0 });
     });
 
     it('15. a live pid whose start cannot be read now: another Tars, and it is said', () => {
