@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { World } from '../process-world';
 
 /**
  * A delegated run's processes all end, the one born while the stop read ps included (the QA's B1 on #358).
@@ -19,66 +20,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  *    is ended.
  * 7. (added with the code, for the mutant that reads again only once) The tree is read again once only: a process
  *    the late one starts during that read is left, as the late one was.
- * The processes are a table in memory, ps's lines and what each signal does to the processes of a group, so the race
- * is the same at every run and on every host: what is born during a read is born right after its snapshot.
+ * The processes are a table in memory (process-world.ts), ps's lines and what each signal does to the processes of a
+ * group, so the race is the same at every run and on every host: what is born during a read is born right after its
+ * snapshot.
  */
-
-interface Proc { pid: number; ppid: number; pgid: number; state: 'running' | 'stopped' | 'dead'; term: boolean }
-
-/** A process table and the signals a group gets, as the kernel keeps them. */
-class World {
-  readonly procs = new Map<number, Proc>();
-  readonly signals: Array<{ target: number; sig: string }> = [];
-  reads = 0;
-  private readonly afterRead = new Map<number, () => void>();
-  private everyRead: (() => void) | undefined;
-
-  add(pid: number, ppid: number, pgid: number): void {
-    this.procs.set(pid, { pid, ppid, pgid, state: 'running', term: false });
-  }
-
-  /** What happens right after the `read`-th snapshot, while ps is still running. */
-  after(read: number, then: () => void): void {
-    this.afterRead.set(read, then);
-  }
-
-  afterEach(then: () => void): void {
-    this.everyRead = then;
-  }
-
-  /** ps -A -o pid=,ppid=,pgid=,stat=,etime= */
-  print(): string {
-    const out = [...this.procs.values()].filter(p => p.state !== 'dead')
-      .map(p => `${p.pid} ${p.ppid} ${p.pgid} ${p.state === 'stopped' ? 'T' : 'S'} 00:01`).join('\n');
-    this.reads += 1;
-    this.afterRead.get(this.reads)?.();
-    this.everyRead?.();
-    return out;
-  }
-
-  kill(target: number, sig: string | number): true {
-    this.signals.push({ target, sig: String(sig) });
-    const members = [...this.procs.values()].filter(p => p.state !== 'dead' && (target < 0 ? p.pgid === -target : p.pid === target));
-    if (!members.length) throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
-    for (const p of members) {
-      if (sig === 'SIGKILL') this.end(p);
-      else if (sig === 'SIGSTOP') p.state = 'stopped';
-      else if (sig === 'SIGCONT') { p.state = 'running'; if (p.term) this.end(p); }
-      else if (sig === 'SIGTERM') { if (p.state === 'stopped') p.term = true; else this.end(p); }
-    }
-    return true;
-  }
-
-  private end(p: Proc): void {
-    p.state = 'dead';
-    for (const child of this.procs.values()) if (child.state !== 'dead' && child.ppid === p.pid) child.ppid = 1;
-  }
-
-  alive(pid: number): boolean {
-    const p = this.procs.get(pid);
-    return !!p && p.state !== 'dead';
-  }
-}
 
 const state = vi.hoisted(() => ({ world: undefined as unknown as { print(): string }, taskkills: [] as string[][] }));
 vi.mock('child_process', async (importOriginal) => {
