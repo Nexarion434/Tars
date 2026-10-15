@@ -1,0 +1,106 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { appendSample, readSamples, cleanSample, HEALTH_KEEP_MS, HEALTH_MAX_BYTES, type HealthSample } from '../../../electron/services/health/samples';
+import { hasPosixModes } from '../../setup/platform-limits';
+
+/**
+ * The health samples Tars keeps on this machine (2.0.3, Noah's go of 2026-10-15 on monitoring options 1 and 2): every
+ * 5 minutes the main process's memory, its event loop delay, its slowest IPC handlers, how many agents there are and
+ * run, and the page open. Kept 24 hours, in a bounded file, numbers only; they leave only with the report of an abrupt
+ * end, or when the user sends a diagnostic.
+ *
+ * How it fails, written before the code:
+ * 1. A sample older than 24 hours is kept, or sent.
+ * 2. The file grows without bound (samples written faster than planned, a clock that jumps): it must stay under its
+ *    size, the oldest dropped first.
+ * 3. A line that is not a sample (a broken write, a hand edit, an agent's write: the file is in ~/.dorothy) is read
+ *    back and sent: a string field holding a path, a name or a conversation.
+ * 4. A channel name that is not one (spaces, a slash, a path, too long) or a page that is not a bare path (a query, a
+ *    home folder, too long) is kept.
+ * 5. A number that is not one (NaN, negative, Infinity, a string) is kept.
+ * 6. A sample dated in the future (a clock set back) stays for good.
+ * 7. A file that cannot be read or parsed throws, at start or at a sample.
+ * 8. The file is readable by other users (POSIX: 0600).
+ */
+
+const NOW = Date.UTC(2026, 9, 15, 12, 0, 0);
+let dir: string;
+let file: string;
+
+const sample = (at: number, over: Partial<HealthSample> = {}): HealthSample => ({
+  at, heapUsedMb: 120, heapTotalMb: 180, rssMb: 400, loopP50Ms: 11, loopP95Ms: 30,
+  slowest: [{ channel: 'usage:tasks', ms: 118 }, { channel: 'claude:getData', ms: 10 }],
+  agents: 45, running: 3, page: '/usage', ...over,
+});
+
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-health-'));
+  file = path.join(dir, 'health-samples.jsonl');
+});
+afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+describe('the health samples file', () => {
+  it('1. keeps 24 hours, no more', () => {
+    for (let h = 30; h >= 0; h -= 1) appendSample(file, sample(NOW - h * 3_600_000), NOW - h * 3_600_000);
+    const kept = readSamples(file, NOW);
+    expect(kept.length).toBe(25);
+    expect(Math.min(...kept.map((s) => s.at))).toBeGreaterThanOrEqual(NOW - HEALTH_KEEP_MS);
+  });
+
+  it('2. stays under its size, the oldest dropped first', () => {
+    for (let i = 0; i < 4_000; i += 1) appendSample(file, sample(NOW - (4_000 - i) * 1_000), NOW - (4_000 - i) * 1_000);
+    expect(fs.statSync(file).size).toBeLessThanOrEqual(HEALTH_MAX_BYTES);
+    const kept = readSamples(file, NOW);
+    expect(kept.at(-1)!.at).toBe(NOW - 1_000);
+    expect(kept.length).toBeGreaterThan(100);
+  });
+
+  it('3. a line that is not a sample is never read back', () => {
+    appendSample(file, sample(NOW - 60_000), NOW - 60_000);
+    fs.appendFileSync(file, 'not json\n');
+    fs.appendFileSync(file, `${JSON.stringify({ ...sample(NOW - 30_000), note: '/Users/noah/secret plans' })}\n`);
+    fs.appendFileSync(file, `${JSON.stringify({ ...sample(NOW - 20_000), page: 'the user said: ship it tonight' })}\n`);
+    const kept = readSamples(file, NOW);
+    expect(JSON.stringify(kept)).not.toContain('noah');
+    expect(JSON.stringify(kept)).not.toContain('ship it');
+    expect(kept.every((s) => Object.keys(s).sort().join() === Object.keys(sample(0)).sort().join())).toBe(true);
+  });
+
+  it('4. channels and pages that are not one are dropped', () => {
+    const odd = cleanSample(sample(NOW, {
+      slowest: [{ channel: 'agent:start', ms: 5 }, { channel: 'rm -rf /', ms: 9 }, { channel: '/Users/noah/x', ms: 9 }, { channel: 'x'.repeat(80), ms: 9 }],
+      page: '/agents?id=secret',
+    }));
+    expect(odd!.slowest).toEqual([{ channel: 'agent:start', ms: 5 }]);
+    expect(odd!.page).toBeNull();
+    expect(cleanSample(sample(NOW, { page: '/Users/noah/projects' }))!.page).toBeNull();
+    expect(cleanSample(sample(NOW, { page: '/settings/error-reports' }))!.page).toBe('/settings/error-reports');
+  });
+
+  it('5. numbers that are not numbers make no sample', () => {
+    for (const bad of [{ heapUsedMb: NaN }, { rssMb: -1 }, { loopP95Ms: Infinity }, { agents: '3' as unknown as number }, { at: 'now' as unknown as number }]) {
+      expect(cleanSample(sample(NOW, bad))).toBeNull();
+    }
+  });
+
+  it('6. a sample from the future is not kept', () => {
+    appendSample(file, sample(NOW + 3 * 3_600_000), NOW);
+    appendSample(file, sample(NOW - 60_000), NOW);
+    expect(readSamples(file, NOW).map((s) => s.at)).toEqual([NOW - 60_000]);
+  });
+
+  it('7. a file that cannot be read or parsed throws nothing', () => {
+    fs.writeFileSync(file, '\u0000\u0001garbage');
+    expect(() => appendSample(file, sample(NOW), NOW)).not.toThrow();
+    expect(readSamples(file, NOW).map((s) => s.at)).toEqual([NOW]);
+    expect(readSamples(path.join(dir, 'none', 'nothing.jsonl'), NOW)).toEqual([]);
+    expect(() => appendSample(path.join(dir, 'none', 'nothing.jsonl'), sample(NOW), NOW)).not.toThrow();
+  });
+
+  it.skipIf(!hasPosixModes())('8. readable by its owner only', () => {
+    appendSample(file, sample(NOW), NOW);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+});
