@@ -3,13 +3,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import { spawn } from 'child_process';
 import * as zlib from 'zlib';
 import type { AddressInfo } from 'net';
 import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * Tars's health, reported (2.0.3, Noah's go of 2026-10-15 on monitoring options 1 and 2), in the real app, against a
+ * Tars's health, reported (2.0.3, the maintainer's go of 2026-10-15 on monitoring options 1 and 2), in the real app, against a
  * stand-in of Sentry that records every envelope.
  *
  * With "Send error reports" on: Tars samples its health (every second here, DOROTHY_HEALTH_EVERY_MS); it is killed
@@ -21,7 +22,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * diagnostic says why.
  * A second Tars on the same home while the first runs (macOS and Linux hold no single-instance lock; the Audit's M1 on
  * #418, its probe): no abrupt end is reported, and the record stays the first's, so a kill of the first while the
- * second runs is reported once, at the next launch after both.
+ * second runs is reported once, at the next launch after both. And a crashed Tars whose pid another process of the user
+ * took (the Audit's Low on that fix) is still reported, and the next run keeps its own record.
  * The artefact: values.json with every event the stand-in received and every answer.
  */
 
@@ -245,6 +247,41 @@ test('a second Tars on the same home reports no abrupt end while the first runs,
   } finally {
     await second?.close().catch(() => {});
     await first?.close().catch(() => {});
+    await sentry.close();
+    await removeHome(home);
+  }
+});
+
+test('a crashed Tars whose pid another process took is reported, and the next run keeps its own record', async () => {
+  test.setTimeout(180_000);
+  test.skip(onWindows, 'the single-instance lock: a live pid in the record is never another Tars there');
+  const sentry = await startFakeSentry();
+  const values: Record<string, unknown> = {};
+  const port = Number(apiPort(31432));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-health3-'));
+  const { samplesFile } = seed(home, true);
+  const record = path.join(home, '.tars-private', 'run-state.json');
+  // A process of this user, alive as the next Tars starts: the one that took the crashed Tars's pid.
+  const taker = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore' });
+  let app: ElectronApplication | undefined;
+  try {
+    ({ app } = await boot(home, sentry.dsn, port));
+    await expect.poll(() => samplesIn(samplesFile).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+    await kill(app);
+    const crashed = JSON.parse(fs.readFileSync(record, 'utf8')) as { pid: number; processStart?: string };
+    values.crashedRecord = { pid: crashed.pid, processStart: crashed.processStart };
+    expect(crashed.processStart, 'the record keeps when its process started').toEqual(expect.any(String));
+    fs.writeFileSync(record, JSON.stringify({ ...crashed, pid: taker.pid }));
+
+    ({ app } = await boot(home, sentry.dsn, port));
+    await expect.poll(() => sentry.ofKind('abrupt-end').length, { timeout: 30_000, message: 'the crash reported, the live pid not taken for a Tars' }).toBe(1);
+    const now = JSON.parse(fs.readFileSync(record, 'utf8')) as { pid: number };
+    values.recordAfter = now;
+    expect(now.pid, 'the record is this run\'s').toBe(app.process().pid);
+    recordValues({ ...values, events: sentry.events });
+  } finally {
+    taker.kill();
+    await app?.close().catch(() => {});
     await sentry.close();
     await removeHome(home);
   }
