@@ -70,7 +70,9 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
   const stub = spawn(process.execPath, [path.join(WT, 'e2e', 'live', 'fake-messages-api.mjs')], {
     env: { PATH: process.env.PATH, FAKE_PORT: String(STUB), FAKE_LOG }, stdio: 'ignore',
   });
-  type Req = { last?: string; effort?: string | null; side?: boolean };
+  type Req = { last?: string; tail?: string; effort?: string | null; side?: boolean };
+  /** A turn that carries `word`: at its start, or at its end behind a local command's caveat. */
+  const carries = (r: Req, word: string) => !r.side && [r.last, r.tail].some((text) => (text ?? '').includes(word));
   const requests = () => (fs.existsSync(FAKE_LOG) ? fs.readFileSync(FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Req) : []);
   const values: Record<string, unknown> = { claude: CLAUDE };
   const seen: Array<{ step: string; agent: string; sent: string | null; own: string; settings: string }> = [];
@@ -103,8 +105,8 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
       const turn = async (step: string, id: string, word: string, own: string) => {
         await expect.poll(async () => (await agentOf(id)).status, { timeout: 60_000 }).toMatch(/^(idle|waiting|completed)$/);
         expect(await type(id, word)).not.toBeNull();
-        await expect.poll(() => requests().some((r) => !r.side && (r.last ?? '').includes(word)), { timeout: 90_000, message: `${step}: ${word} reached the model` }).toBe(true);
-        const sent = requests().filter((r) => !r.side && (r.last ?? '').includes(word)).at(-1)!.effort ?? null;
+        await expect.poll(() => requests().some((r) => carries(r, word)), { timeout: 90_000, message: `${step}: ${word} reached the model` }).toBe(true);
+        const sent = requests().filter((r) => carries(r, word)).at(-1)!.effort ?? null;
         seen.push({ step, agent: id, sent, own, settings: settingsLevel() });
         values.seen = seen;
         recordValues(values);
