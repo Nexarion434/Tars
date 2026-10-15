@@ -27,8 +27,9 @@ import type { AppSettings, AgentStatus } from './types';
 
 // Constants
 import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
-import { timeIpcHandlers, startHealthMonitor, pageOf } from './services/health/monitor';
-import { readSamples } from './services/health/samples';
+import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
+import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
+import { APP_PAGES } from './services/health/pages';
 import { abruptEndPayload } from './services/health/abrupt-end';
 import { crashTypeSince } from './platform/crash-type';
 import { registerDiagnosticHandlers } from './handlers/diagnostic-handlers';
@@ -531,21 +532,19 @@ app.whenReady().then(async () => {
   // before this run's record replaces it (services/run-state.ts).
   previousRun = beginRun({ appVersion: app.getVersion() });
   // A run that did not quit is reported once, at this launch, when error
-  // reports are on: its version, uptime, the OS's crash type, its last health
-  // sample (services/health/abrupt-end.ts). Read before this run's first sample.
-  if (previousRun) {
-    const payload = abruptEndPayload(previousRun, readSamples(HEALTH_FILE), crashTypeSince(previousRun.startedAt));
-    void errorReports.sendHealth('abrupt-end', payload as unknown as Record<string, unknown>).then((result) => {
-      if (!result.sent) console.log(`[health] the abrupt end of the last run was not reported: ${result.reason}`);
-    });
-  }
+  // reports are on (services/health/abrupt-end.ts): its samples are read here,
+  // before this run's first, and sent once every handler is registered, below.
+  const lastRunSamples = previousRun ? readSamples(HEALTH_FILE) : [];
+  // What leaves names only the channels this Tars registered and the app's
+  // pages: the samples file is in ~/.dorothy, which agents may write.
+  const healthWords: Vocabulary = { channels: ipcChannels.known(), pages: APP_PAGES };
   startHealthMonitor({
     file: HEALTH_FILE,
     everyMs: healthEveryMs(),
     agents: () => ({ total: agents.size, running: [...agents.values()].filter((a) => a.status === 'running').length }),
     page: () => pageOf(getMainWindow()?.webContents.getURL()),
   });
-  registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE });
+  registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE, known: healthWords });
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -659,6 +658,15 @@ app.whenReady().then(async () => {
   // What the last run owed, its waiting room messages, the run record, and,
   // after an abrupt stop, the agents that were working resumed with a note
   // (services/restart-recovery.ts). After the launcher and the API are up.
+  // The abrupt end of the last run: its version, uptime, the OS's crash type,
+  // its last health sample, now that every handler is registered.
+  if (previousRun) {
+    const samples = lastRunSamples.map((s) => onlyKnown(s, healthWords));
+    const payload = abruptEndPayload(previousRun, samples, crashTypeSince(previousRun.startedAt));
+    void errorReports.sendHealth('abrupt-end', payload as unknown as Record<string, unknown>).then((result) => {
+      if (!result.sent) console.log(`[health] the abrupt end of the last run was not reported: ${result.reason}`);
+    });
+  }
   const restarted = startRestartRecovery(previousRun);
   recovery = restarted;
   startAgentWatch();

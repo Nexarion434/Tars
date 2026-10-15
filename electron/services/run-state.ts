@@ -1,5 +1,7 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import { privatePath } from '../constants';
+import { processExists } from '../platform/process-exists';
 import { writeSecretFileSync } from '../utils/secret-file';
 
 /**
@@ -15,6 +17,14 @@ import { writeSecretFileSync } from '../utils/secret-file';
  * In ~/.tars-private (0600), which no agent is handed: in ~/.dorothy, a record
  * any agent wrote made Tars start, at the next launch, whatever agents it
  * named, at-rest ones of any project included (the Audit's gate of #310).
+ *
+ * An open record is also what a Tars that still runs leaves: macOS and Linux
+ * hold no single-instance lock (core/desktop-lifecycle.ts), so a second Tars
+ * can start on the same home (the Audit's M1 on #418). The record's run
+ * ended only if its process is gone, or the machine booted since it was last
+ * heard of (its pid may be another process's by now). Otherwise this is the
+ * second Tars: it reads no previous run, so it reports no abrupt end and
+ * resumes nobody, and it leaves the record to the first.
  */
 
 export const RUN_STATE_FILE = privatePath('run-state.json');
@@ -107,15 +117,30 @@ function read(file: string): RunRecord | null {
   }
 }
 
+/** Whether the run of an open record is still going: its Tars runs, here, now. */
+function stillRuns(previous: RunRecord, opts: Options, now: number): boolean {
+  const own = opts.pid ?? process.pid;
+  if (previous.pid <= 0 || previous.pid === own) return false;
+  const bootedAt = opts.bootedAt ?? now - os.uptime() * 1000;
+  if (bootedAt > previous.lastWriteAt) return false;
+  return (opts.isAlive ?? processExists)(previous.pid);
+}
+
 /**
  * Reads how the last run ended, then opens this one. Null when it ended
  * cleanly, when there was none, or when its record cannot be read: only a
- * record that is known to be open means a crash.
+ * record that is known to be open means a crash. Null too when its Tars still
+ * runs: then this run keeps no record (see above).
  */
 export function beginRun(opts: Options = {}): PreviousRun | null {
   const file = opts.file ?? RUN_STATE_FILE;
   const now = (opts.now ?? Date.now)();
   const previous = read(file);
+  if (previous && !previous.cleanExit && stillRuns(previous, opts, now)) {
+    console.warn(`[run-state] another Tars (pid ${previous.pid}) runs on this home: no abrupt end read, nothing resumed, its record left to it`);
+    current = null;
+    return null;
+  }
   current = {
     version: 1, ...(opts.appVersion ? { appVersion: opts.appVersion } : {}),
     pid: opts.pid ?? process.pid, startedAt: now, lastWriteAt: now, cleanExit: false, resumed: [], working: [],
