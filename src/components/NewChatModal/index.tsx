@@ -422,7 +422,7 @@ export default function NewChatModal({
     for (const member of selectedMembers) {
       const agentDisplayName = deployedMemberName(member.name, projectPath);
       if (existingNames.has(agentDisplayName)) {
-        issues.push(`${member.name}: already deployed on this project - skipped.`);
+        issues.push(`${member.name}: already deployed on this project, so it was skipped.`);
         continue;
       }
       try {
