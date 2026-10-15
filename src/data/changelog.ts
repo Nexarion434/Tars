@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-15',
+    updates: [
+      'On the Usage page by agent, the note under the rows says which tasks a row adds up: those begun in the timeframe, each at its own cost. The charts above count by turn and also hold a task begun earlier, what came before 1.9.3, and Claude Code sessions Tars did not start, which are in no row.',
+      'In New team (+ Team on the Agents page), a member whose worktree git cannot make, on a branch already checked out in the project say, is listed with git\'s own reason, as an agent\'s settings give it since 2.0.2: it read git\'s whole command line and the reason of a second try as a new branch ("a branch named ... already exists").',
+      'A task delegated to an agent no longer leaves a process running once it ends: a command the agent\'s CLI was starting just as the run ended, stopped or finished, was left behind with nothing in Tars to end it. Measured with the delegation test on a Mac: 2.0.2 left one behind in 2 runs out of 5, and none is left in 5 runs out of 5.',
+    ],
+  },
+  {
     id: 59,
     version: '2.0.2',
     date: '2026-10-13',
