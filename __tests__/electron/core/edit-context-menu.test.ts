@@ -39,6 +39,7 @@ vi.mock('electron', () => ({
 
 import { editMenuTemplate, installEditContextMenu } from '../../../electron/core/edit-context-menu';
 
+const HOST = process.platform;
 const FLAGS = { canUndo: false, canRedo: false, canCut: false, canCopy: false, canPaste: false, canDelete: false, canSelectAll: false, canEditRichly: false };
 const params = (p: { isEditable?: boolean; selectionText?: string; editFlags?: Partial<typeof FLAGS> }) => ({
   isEditable: p.isEditable ?? false,
@@ -92,7 +93,7 @@ describe('installed on a window', () => {
     popups.length = 0;
     const win = { id: 'main' };
     const wc = fakeContents(win);
-    installEditContextMenu(wc as unknown as Electron.WebContents, 'win32');
+    installEditContextMenu(wc as unknown as Electron.WebContents);
 
     wc.rightClick(params({}));
     expect(popups).toHaveLength(0);
@@ -107,7 +108,12 @@ describe('installed on a window', () => {
     popups.length = 0;
     const win = { id: 'main' };
     const wc = fakeContents(win);
-    installEditContextMenu(wc as unknown as Electron.WebContents, platform);
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    try {
+      installEditContextMenu(wc as unknown as Electron.WebContents);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
+    }
 
     wc.rightClick(params({ isEditable: true, editFlags: { canPaste: true } }));
     expect(popups).toHaveLength(1);

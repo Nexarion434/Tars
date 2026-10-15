@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * The Windows app lifecycle, installed on Windows and nowhere else
@@ -88,9 +88,17 @@ async function load() {
 
 const explained = { explained: () => true, markExplained: () => {} };
 
+const HOST = process.platform;
+/** claimSingleInstance reads no platform: each case says which one it stands for. */
+const onPlatform = (platform: NodeJS.Platform) => Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+
 beforeEach(() => {
   calls.length = 0;
   appListeners.clear();
+});
+
+afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
 });
 
 describe('darwin and linux: the lock, and nothing else of the Windows lifecycle', () => {
@@ -99,7 +107,8 @@ describe('darwin and linux: the lock, and nothing else of the Windows lifecycle'
       const { installDesktopShell, claimSingleInstance } = await load();
       const win = fakeWindow();
       const shutdown = vi.fn();
-      expect(claimSingleInstance(() => {}, platform)).toBe(true);
+      onPlatform(platform);
+      expect(claimSingleInstance(() => {})).toBe(true);
       installDesktopShell({
         getMainWindow: () => win as never, explanation: explained, onSessionEnd: shutdown, platform,
       });
@@ -115,11 +124,12 @@ describe('one Tars per profile, on every platform', () => {
       const { claimSingleInstance } = await load();
       const { app } = await import('electron');
       const reveal = vi.fn();
+      onPlatform(platform);
       vi.mocked(app.requestSingleInstanceLock).mockReturnValueOnce(false);
-      expect(claimSingleInstance(reveal, platform), 'the second').toBe(false);
+      expect(claimSingleInstance(reveal), 'the second').toBe(false);
       expect(calls).not.toContain('app.on:second-instance');
       calls.length = 0;
-      expect(claimSingleInstance(reveal, platform), 'the first').toBe(true);
+      expect(claimSingleInstance(reveal), 'the first').toBe(true);
       app.emit('second-instance');
       expect(reveal).toHaveBeenCalledTimes(1);
     });
@@ -130,7 +140,8 @@ describe('win32', () => {
   it('takes the lock, sets the AUMID, removes the menu, and listens for the end', async () => {
     const { installDesktopShell, claimSingleInstance } = await load();
     const win = fakeWindow();
-    expect(claimSingleInstance(() => {}, 'win32')).toBe(true);
+    onPlatform('win32');
+    expect(claimSingleInstance(() => {})).toBe(true);
     installDesktopShell({ getMainWindow: () => win as never, explanation: explained, onSessionEnd: () => {}, platform: 'win32' });
     for (const c of ['requestSingleInstanceLock', 'app.on:second-instance', 'setAppUserModelId', 'setApplicationMenu',
       'app.on:before-quit', 'win.on:close', 'win.on:session-end']) {
