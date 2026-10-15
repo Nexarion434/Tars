@@ -290,7 +290,7 @@ function chatJournal(paths) {
   const tars = room(paths.tars);
   threads.push({ id: 't-tars', roomId: tars, anchorMessageId: 'm-tars-1', state: 'open', round: 2, agentMessageCount: 2, openedAt: ISO(0, 9) });
   messages.push(
-    msg('m-tars-1', tars, 't-tars', 'human', 'human', 'JeanBrasse', 'The scroll lock drops a line when a panel is resized. Take it between you.', ISO(0, 9), ['a1', 'a2']),
+    msg('m-tars-1', tars, 't-tars', 'human', 'human', 'User', 'The scroll lock drops a line when a panel is resized. Take it between you.', ISO(0, 9), ['a1', 'a2']),
     msg('m-tars-2', tars, 't-tars', 'agent', 'a1', 'Orchestrator', 'It is in the fit handler: the resize runs before the row count has settled.', ISO(0, 10), ['a2']),
     msg('m-tars-3', tars, 't-tars', 'agent', 'a2', 'Frontend Engineer', 'Then I hold the write until the fit resolves, and add the test that caught it.', ISO(0, 11)),
   );
@@ -308,7 +308,7 @@ function chatJournal(paths) {
   // 1212-capital: the bound reached, ten agent messages and no human since.
   const capital = room(paths.capital);
   threads.push({ id: 't-cap', roomId: capital, anchorMessageId: 'm-cap-0', state: 'bounded', round: 5, agentMessageCount: 10, openedAt: ISO(1, 14) });
-  messages.push(msg('m-cap-0', capital, 't-cap', 'human', 'human', 'JeanBrasse', 'Why is the migration refusing the connection? Work it out between you.', ISO(1, 14), ['a5', 'a6']));
+  messages.push(msg('m-cap-0', capital, 't-cap', 'human', 'human', 'User', 'Why is the migration refusing the connection? Work it out between you.', ISO(1, 14), ['a5', 'a6']));
   const capitalTurns = [
     ['a5', 'Database migration and schema review', 'The socket is refused at 5432, so nothing of mine ever opened.', 'a6'],
     ['a6', 'Audit', 'The port is right. Check whether the server is listening on the socket file instead.', 'a5'],
@@ -319,7 +319,7 @@ function chatJournal(paths) {
     ['a5', 'Database migration and schema review', 'Done locally, the connection opens. I have not touched the committed config.', 'a6'],
     ['a6', 'Audit', 'Leave it uncommitted: that path is this machine, not the project.', 'a5'],
     ['a5', 'Database migration and schema review', 'Agreed. The migration runs clean against the local server now.', 'a6'],
-    ['a6', 'Audit', 'Nothing left on my side. This needs JeanBrasse to say which server the project assumes.', 'a5'],
+    ['a6', 'Audit', 'Nothing left on my side. This needs the user to say which server the project assumes.', 'a5'],
   ];
   capitalTurns.forEach(([id, name, text, to], i) => {
     messages.push(msg(`m-cap-${i + 1}`, capital, 't-cap', 'agent', id, name, text, ISO(1, 15 + i), [to]));
@@ -330,7 +330,7 @@ function chatJournal(paths) {
   const atlas = room(paths.atlas);
   threads.push({ id: 't-atlas', roomId: atlas, anchorMessageId: 'm-atlas-1', state: 'open', round: 1, agentMessageCount: 1, openedAt: ISO(2, 11) });
   messages.push(
-    msg('m-atlas-1', atlas, 't-atlas', 'human', 'human', 'JeanBrasse', 'Read the onboarding copy and tell me what a new reader would not understand.', ISO(2, 11), ['c1']),
+    msg('m-atlas-1', atlas, 't-atlas', 'human', 'human', 'User', 'Read the onboarding copy and tell me what a new reader would not understand.', ISO(2, 11), ['c1']),
     msg('m-atlas-2', atlas, 't-atlas', 'agent', 'c1', 'Atlas Writer', 'Three paragraphs assume the reader already has an account. I have marked them.', ISO(2, 12)),
   );
   deliveries.push(delivered('m-atlas-1', 'c1', ISO(2, 11)));
@@ -343,16 +343,16 @@ function chatJournal(paths) {
     { id: 't-orion-new', roomId: orion, anchorMessageId: 'm-orion-4', state: 'open', round: 1, agentMessageCount: 0, openedAt: ISO(0, 16) },
   );
   messages.push(
-    msg('m-orion-1', orion, 't-orion-old', 'human', 'human', 'JeanBrasse', 'Pick the cache strategy for the feed and tell me which one you took.', ISO(0, 13), ['c4', 'c5']),
+    msg('m-orion-1', orion, 't-orion-old', 'human', 'human', 'User', 'Pick the cache strategy for the feed and tell me which one you took.', ISO(0, 13), ['c4', 'c5']),
     msg('m-orion-2', orion, 't-orion-old', 'agent', 'c4', 'Orion Lead', 'I would cache per user, since the feed differs for everyone who reads it.', ISO(0, 14), ['c5']),
     msg('m-orion-3', orion, 't-orion-old', 'agent', 'c5', 'Orion Second', 'Per user multiplies the store by the user count. I would cache the parts instead.', ISO(0, 15), ['c4']),
-    msg('m-orion-4', orion, 't-orion-new', 'human', 'human', 'JeanBrasse', 'Stop there, both of you. Cache the parts, and measure it before you tune it.', ISO(0, 16), ['c4', 'c5']),
+    msg('m-orion-4', orion, 't-orion-new', 'human', 'human', 'User', 'Stop there, both of you. Cache the parts, and measure it before you tune it.', ISO(0, 16), ['c4', 'c5']),
   );
   deliveries.push(
     delivered('m-orion-2', 'c5', ISO(0, 14)),
     {
       messageId: 'm-orion-3', targetAgentId: 'c4', state: 'dropped', queuedAt: ISO(0, 15), refusedAt: ISO(0, 16),
-      reasonCode: 'thread_replaced', reason: 'a newer message from JeanBrasse replaced the exchange this was queued for',
+      reasonCode: 'thread_replaced', reason: 'a newer message from the user replaced the exchange this was queued for',
     },
     { messageId: 'm-orion-4', targetAgentId: 'c4', state: 'queued', queuedAt: ISO(0, 16) },
     { messageId: 'm-orion-4', targetAgentId: 'c5', state: 'queued', queuedAt: ISO(0, 16) },

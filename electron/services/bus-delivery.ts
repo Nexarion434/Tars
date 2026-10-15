@@ -364,7 +364,7 @@ export async function sendNow(params: {
   if (!text && !files.attachments.length) return { success: false, interrupted: false, error: 'A message needs text' };
 
   const { message, thread, supersededThreadId } = appendMessage({
-    roomId: room.id, authorKind: 'human', authorId: 'human', authorName: 'JeanBrasse',
+    roomId: room.id, authorKind: 'human', authorId: 'human', authorName: 'User',
     text, mentions: [agentId], attachments: files.attachments,
   });
   forgetStaged(files.attachments);

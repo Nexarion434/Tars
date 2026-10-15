@@ -47,7 +47,7 @@ describe('projectName', () => {
       expect(projectName('/Users/demo/a\\b', platform)).toBe('a\\b');
       expect(projectName('relative/name', platform)).toBe('name');
       expect(projectName('/', platform)).toBe('');
-      for (const p of ['/Users/demo/atlas/', '/home/jeanbrasse/atlas//', 'C:\\x\\atlas\\', '//', 'a//b']) {
+      for (const p of ['/Users/demo/atlas/', '/home/demo/atlas//', 'C:\\x\\atlas\\', '//', 'a//b']) {
         expect(projectName(p, platform), p).toBe(p.split('/').pop());
       }
     }

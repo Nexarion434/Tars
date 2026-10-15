@@ -40,7 +40,7 @@ let ptyManager: typeof import('../../../electron/core/pty-manager');
 let events: typeof import('../../../electron/services/agent-events');
 
 const message = (id: string, text: string) => ({
-  id, roomId: 'room-tars', threadId: 'th-1', authorKind: 'human', authorId: 'human', authorName: 'JeanBrasse',
+  id, roomId: 'room-tars', threadId: 'th-1', authorKind: 'human', authorId: 'human', authorName: 'User',
   text, mentions: ['w'], createdAt: '2026-10-05T01:40:00.000Z',
 });
 const row = (messageId: string, state: string) => ({ messageId, targetAgentId: 'w', state, queuedAt: '2026-10-05T01:40:00.000Z' });

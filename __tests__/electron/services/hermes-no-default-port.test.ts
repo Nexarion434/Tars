@@ -80,7 +80,7 @@ const BROKEN: Array<[string, string]> = [
   ['not JSON', '{"mode": "local", "localPort": 9119'],
   ['an object with no mode', '{}'],
   ['local with no port', '{"mode":"local","authMode":"token"}'],
-  ['ssh with no host', '{"mode":"ssh","ssh":{"user":"jeanbrasse"}}'],
+  ['ssh with no host', '{"mode":"ssh","ssh":{"user":"demo"}}'],
 ];
 
 describe('usableHermesConnection, what the overseer and the memory hub use', () => {
@@ -97,7 +97,7 @@ describe('usableHermesConnection, what the overseer and the memory hub use', () 
   it('is the file\'s gateway when Settings wrote one, in each mode', () => {
     writeConnection('{"mode":"local","localPort":9,"authMode":"token","token":"t"}');
     expect(usableHermesConnection()).toMatchObject({ mode: 'local', localPort: 9, token: 't' });
-    writeConnection('{"mode":"ssh","ssh":{"host":"hermes.example","user":"jeanbrasse"},"authMode":"token"}');
+    writeConnection('{"mode":"ssh","ssh":{"host":"hermes.example","user":"demo"},"authMode":"token"}');
     expect(usableHermesConnection()).toMatchObject({ mode: 'ssh', ssh: { host: 'hermes.example' } });
     writeConnection('{"mode":"remote","url":"https://hermes.example","authMode":"oauth"}');
     expect(usableHermesConnection()).toMatchObject({ mode: 'remote', url: 'https://hermes.example' });

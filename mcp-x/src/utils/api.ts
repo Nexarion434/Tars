@@ -24,7 +24,7 @@ function readSettings(): Record<string, unknown> | null | undefined {
 export function assertPostingEnabled(): void {
   if (readSettings()?.xPostingEnabled !== true) {
     throw new Error(
-      "Posting is off in Tars Settings > X (Twitter), so nothing was sent. JeanBrasse turns it on there when agents may post, reply and delete."
+      "Posting is off in Tars Settings > X (Twitter), so nothing was sent. The user turns it on there when agents may post, reply and delete."
     );
   }
 }

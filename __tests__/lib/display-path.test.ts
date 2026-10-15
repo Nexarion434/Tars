@@ -63,11 +63,11 @@ const old = {
 
 const POSIX = [
   '/Users/demo/Projects/tars',
-  '/home/jeanbrasse/tars',
+  '/home/demo/tars',
   '/Users/demo',
   '/Users/demo/',
   '/Users/demo/atlas/',
-  '/home/jeanbrasse/atlas//',
+  '/home/demo/atlas//',
   '/Users/Shared/tars',
   '/Users/demo/a\\b',
   '/Users/demo/C:\\x',

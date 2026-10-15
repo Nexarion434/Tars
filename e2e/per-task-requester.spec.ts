@@ -135,7 +135,7 @@ test("each result goes back to the agent that asked for that piece of work", asy
 
     // 2. A turn JeanBrasse types takes nothing.
     await hook({ status: 'running', event: 'UserPromptSubmit', current_task: 'fix the typo in the README first' });
-    steps.jeanbrasseTurn = await worker();
+    steps.userTurn = await worker();
     expect((await worker()).requestedBy).toMatchObject({ agentId: 'o1', taskRef: refA });
     expect((await worker()).queue.map((q: string[]) => q[0])).toEqual([refA, refB]);
 
@@ -299,7 +299,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
     await hook({ status: 'running', event: 'UserPromptSubmit', current_task: 'what does this function return' });
     await hook({ status: 'idle', hook: 'Stop' });
     await new Promise(r => setTimeout(r, 8000));
-    steps.afterNoah = { leadTold: told('o1'), botTold: told('b1'), o1: read('o1'), worker: await worker() };
+    steps.afterUser = { leadTold: told('o1'), botTold: told('b1'), o1: read('o1'), worker: await worker() };
 
     recordValues({ steps, received: { w1: read('w1'), o1: read('o1'), b1: read('b1') } });
     expect(leadToldOfA, 'Lead is told when turn A ends').toBe(true);

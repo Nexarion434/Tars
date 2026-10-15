@@ -81,7 +81,7 @@ function persisted(): { role: string; text: string }[] {
 }
 
 /** JeanBrasse's conversation, exactly as it sat on his disk. */
-function seedNoahsConversation(): void {
+function seedUsersConversation(): void {
   fs.copyFileSync(FIXTURE, OVERSEER_FILE);
 }
 
@@ -154,14 +154,14 @@ beforeEach(async () => {
 
 describe("JeanBrasse's stuck conversation", () => {
   it('really is stuck, which is the precondition for the rest', () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     const texts = persisted().filter(m => m.role === 'overseer').map(m => m.text);
 
     expect(texts.filter(t => t === STUCK).length).toBeGreaterThan(150);
   });
 
   it('stops being recited back to the model', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
 
     await overseer.askOverseer('ca dit quoi?');
 
@@ -195,7 +195,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('loses nothing from the disk in the process', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     const before = persisted().length;
 
     await overseer.askOverseer('ca dit quoi?');
@@ -207,7 +207,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('does not record the same answer once more, and says so instead', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     nextReply = JSON.stringify({ say: STUCK, action: null });
 
     const result = await overseer.askOverseer('ca dit quoi?');
@@ -223,7 +223,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('accepts a genuinely new answer on the very next turn', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     nextReply = JSON.stringify({ say: 'Backend errored on the schema migration ten minutes ago and nothing has picked it up.', action: null });
 
     const result = await overseer.askOverseer('ca dit quoi?');
@@ -303,7 +303,7 @@ describe('an overseer that is still allowed to talk', () => {
 
 describe('the fleet as it is now', () => {
   it('is put after the conversation, so it reads last before the question', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     putAgent('running');
 
     await overseer.askOverseer('ca dit quoi?');
@@ -311,7 +311,7 @@ describe('the fleet as it is now', () => {
     const prompt = promptsSent[promptsSent.length - 1];
     // A day of history used to sit between the snapshot and the question.
     expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeGreaterThan(prompt.indexOf('=== CONVERSATION SO FAR'));
-    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeLessThan(prompt.indexOf('=== JEANBRASSE ==='));
+    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeLessThan(prompt.indexOf('=== USER ==='));
   }, 30000);
 
   it('is labelled as now, and the conversation as the past', async () => {

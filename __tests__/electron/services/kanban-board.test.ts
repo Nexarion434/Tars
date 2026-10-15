@@ -123,7 +123,7 @@ describe('1. a task an agent creates arrives parked, and never where Hermes take
   // every platform by __tests__/electron/platform/path-compare.test.ts.
   it.runIf(process.platform === 'win32')('on Windows, takes its worktree and any spelling of its project, and still refuses a neighbour', async () => {
     const win: KanbanCaller = { ...dune, projectPath: 'C:\\Users\\demo\\tars' };
-    for (const asked of ['C:\\Users\\demo\\tars\\.worktrees\\p138', 'c:\\users\\jeanbrasse\\TARS', 'C:/Users/demo/tars/', '\\\\?\\C:\\Users\\demo\\tars\\.worktrees\\x']) {
+    for (const asked of ['C:\\Users\\demo\\tars\\.worktrees\\p138', 'c:\\users\\demo\\TARS', 'C:/Users/demo/tars/', '\\\\?\\C:\\Users\\demo\\tars\\.worktrees\\x']) {
       const r = await createParkedTask(h, win, { title: 'T', description: 'D', projectPath: asked });
       expect(r.ok ? 'ok' : `${r.status} ${r.error}`, asked).toBe('ok');
       expect(h.tasks.get(r.ok ? r.value.id : '')!.tenant).toBe(win.projectPath);
@@ -221,7 +221,7 @@ describe('5. handing a task to Hermes is JeanBrasse\'s choice', () => {
     const id = await parked();
     const r = await moveTask(h, dune, id, 'planned');
     expect(r.ok).toBe(false);
-    expect(r.ok ? '' : r.error).toMatch(/JeanBrasse/);
+    expect(r.ok ? '' : r.error).toMatch(/the user/);
     expect(h.tasks.get(id)!.status).toBe('scheduled');
   });
 });
@@ -509,9 +509,9 @@ describe('16. an agent deletes only a task it filed and nobody claimed, or one i
   });
 
   it('refuses a scheduled task JeanBrasse gave to a Hermes profile, and a task Hermes finished', async () => {
-    const jeanbrasses = await boardTask('scheduled', 'coder');
+    const usersTask = await boardTask('scheduled', 'coder');
     const hermesDone = await boardTask('done', 'coder');
-    for (const id of [jeanbrasses, hermesDone]) {
+    for (const id of [usersTask, hermesDone]) {
       const r = await deleteTask(h, dune, id);
       expect(r.ok).toBe(false);
       expect(r.ok ? 0 : r.status).toBe(409);

@@ -127,7 +127,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 ### QA Agent
 - **Owns**: `__tests__/`, `e2e/`, `vitest.config.mts`, `playwright.config.ts`
 - **Read-only** everywhere else: report defects, do not patch them
-- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint` and `npm run lint:design` are clean, `npm run e2e:auto` shows no new visual diff and no page error, and a feature's own E2E spec passes and leaves its artefact (Workflow Rule 3)
+- **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint`, `npm run lint:design` and `npm run check:names` are clean, `npm run e2e:auto` shows no new visual diff and no page error, and a feature's own E2E spec passes and leaves its artefact (Workflow Rule 3)
 - **Refused at the gate**: a unit test written after the code it tests, a test that restates a constant, a test that only checks a mock was called, and a spec nobody has seen turn red on the old build or a mutant
 - `npm run e2e:auto` decides from the diff whether the surfaces can have moved, and runs the full suite whenever they can. It skips only when every changed file is outside the running app (`__tests__/`, `mcp-*/`, `hooks/`, `scripts/`, root markdown), and says so at length when it does. Anything it cannot classify runs. `electron/` always runs: the suite boots the real app against a seeded home, so a main process change can and does move a screenshot
 - Reach for `npm run e2e` directly to force the full suite, and `npm run e2e:guard` when a surface was added
@@ -240,6 +240,7 @@ npx tsc -p electron/tsconfig.json        # main process (also emits electron/dis
 npm test                                 # vitest, __tests__/**/*.test.ts
 npm run lint                             # eslint
 npm run lint:design                      # radius / shadows / gradients / raw palette / hex
+npm run check:names                      # no private name; its list lives outside the repo, and without it the check passes
 npm run e2e:guard                        # every inventory page is covered by the manifest
 npm run e2e                              # Playwright drives the real Electron app, 41 surfaces
 ```

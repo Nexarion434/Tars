@@ -155,10 +155,10 @@ describe('win32', () => {
   });
 
   it('5. dedupes case-insensitively and across a trailing backslash, keeping the first spelling', () => {
-    const out = buildFullPath(['c:\\windows\\SYSTEM32\\', 'C:\\Users\\owner las\\.local\\bin'], { env, platform: 'win32' });
+    const out = buildFullPath(['c:\\windows\\SYSTEM32\\', 'C:\\Users\\sam lee\\.local\\bin'], { env, platform: 'win32' });
     const entries = out.split(';');
     expect(entries.filter((e) => /system32/i.test(e))).toEqual(['c:\\windows\\SYSTEM32\\']);
-    expect(entries.filter((e) => /\.local\\bin/i.test(e))).toEqual(['C:\\Users\\owner las\\.local\\bin']);
+    expect(entries.filter((e) => /\.local\\bin/i.test(e))).toEqual(['C:\\Users\\sam lee\\.local\\bin']);
     expect(entries).toHaveLength(6);
   });
 
