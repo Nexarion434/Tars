@@ -143,6 +143,9 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
 
     // ── Send a diagnostic ──
     await expect.poll(() => samplesIn(samplesFile).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
+    // A line as an agent could write it (~/.dorothy is theirs too): words in a channel's and a page's pattern.
+    const planted = { ...samplesIn(samplesFile).at(-1)!, at: Date.now() - 500, slowest: [{ channel: 'ship-it-tonight', ms: 5 }], page: '/acme-merger' };
+    fs.appendFileSync(samplesFile, `${JSON.stringify(planted)}\n`);
     if (onWindows) {
       values.diagnosticWindows = await diagnostic(page);
       expect(values.diagnosticWindows).toEqual({ sent: false, reason: expect.stringContaining('Windows') });
@@ -160,7 +163,10 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
       const received = sent[0].contexts!.tars!.samples as Sample[];
       expect(received.length).toBe((values.diagnosticSent as Answer).samples);
       const onDisk = new Map(samplesIn(samplesFile).map((s) => [s.at, s]));
-      for (const s of received) expect(s, `the sample of ${new Date(s.at).toISOString()} as on disk`).toEqual(onDisk.get(s.at));
+      for (const s of received.filter((r) => r.at !== planted.at)) expect(s, `the sample of ${new Date(s.at).toISOString()} as on disk`).toEqual(onDisk.get(s.at));
+      // The planted line leaves without its words: no channel this Tars registered, no page of the app.
+      expect(received.find((r) => r.at === planted.at)).toEqual({ ...planted, slowest: [], page: null });
+      expect(sentry.raw.join('\n')).not.toMatch(/ship-it-tonight|acme-merger/);
       expect(received.some((s) => s.slowest.length > 0), 'a sample with its slowest handlers').toBe(true);
       values.diagnosticAgain = await diagnostic(page);
       expect(values.diagnosticAgain).toEqual({ sent: false, reason: expect.stringContaining('already sent') });

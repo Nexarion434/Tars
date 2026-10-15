@@ -25,6 +25,7 @@ export { killTree, KillTreeError, type KillTreeResult, type KillTreeDeps, type K
 export { samePath, isUnder, isInsideWorktreesDir, isFilesystemRoot, pathKey } from './path-compare';
 export { isUnsafePathSegment } from './windows-names';
 export { errorReportsAvailable } from './error-reports';
+export { processExists } from './process-exists';
 export { projectName } from './project-name';
 export {
   encodeClaudeProjectDir, claudeProjectDirNames, decodeWindowsClaudeProjectDir, memoryProjectDirName, knownProjectsByFolder,

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { readSamples } from '../services/health/samples';
+import { readSamples, type Vocabulary } from '../services/health/samples';
 import type { ErrorReports } from '../services/error-reports';
 
 /**
@@ -15,10 +15,18 @@ export type DiagnosticAnswer =
 
 export const NO_SAMPLE = 'Nothing has been recorded yet: Tars records its health every 5 minutes.';
 
-export async function sendDiagnostic(deps: { reports: Pick<ErrorReports, 'refusal' | 'sendHealth'>; samplesFile: string; now?: () => number }): Promise<DiagnosticAnswer> {
+interface DiagnosticDeps {
+  reports: Pick<ErrorReports, 'refusal' | 'sendHealth'>;
+  samplesFile: string;
+  /** What a sample may name when it leaves: the channels registered, the app's pages. */
+  known?: Vocabulary;
+  now?: () => number;
+}
+
+export async function sendDiagnostic(deps: DiagnosticDeps): Promise<DiagnosticAnswer> {
   const refused = deps.reports.refusal();
   if (refused) return { sent: false, reason: refused };
-  const samples = readSamples(deps.samplesFile, (deps.now ?? Date.now)());
+  const samples = readSamples(deps.samplesFile, (deps.now ?? Date.now)(), deps.known);
   if (samples.length === 0) return { sent: false, reason: NO_SAMPLE };
   const result = await deps.reports.sendHealth('diagnostic', { samples });
   if (!result.sent) return result;
@@ -30,6 +38,6 @@ export async function sendDiagnostic(deps: { reports: Pick<ErrorReports, 'refusa
   };
 }
 
-export function registerDiagnosticHandlers(deps: { reports: Pick<ErrorReports, 'refusal' | 'sendHealth'>; samplesFile: string }): void {
+export function registerDiagnosticHandlers(deps: Omit<DiagnosticDeps, 'now'>): void {
   ipcMain.handle('diagnostic:send', () => sendDiagnostic(deps));
 }

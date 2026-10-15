@@ -26,11 +26,15 @@ export class SlowCalls {
 
 export const slowCalls = new SlowCalls();
 
-/** The channels this process registered: what a sample may name when it leaves. Stub: written failures first. */
+/**
+ * The channels this process registered: what a sample may name when it
+ * leaves (samples.ts, Vocabulary). The samples file is in ~/.dorothy, which
+ * agents may write, so a word in the channel's pattern is not one of them.
+ */
 export class IpcChannels {
   private channels = new Set<string>();
 
-  add(channel: string): void { void channel; }
+  add(channel: string): void { this.channels.add(channel); }
 
   known(): ReadonlySet<string> { return this.channels; }
 }
@@ -45,16 +49,18 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown;
  * handler is registered (main.ts, first thing).
  */
 export function timeIpcHandlers(ipc: { handle: (channel: string, fn: Handler) => void }, calls = slowCalls, channels = ipcChannels): void {
-  void channels;
   const register = ipc.handle.bind(ipc);
-  ipc.handle = (channel: string, fn: Handler) => register(channel, async (event: unknown, ...args: unknown[]) => {
-    const start = performance.now();
-    try {
-      return await fn(event, ...args);
-    } finally {
-      calls.note(channel, performance.now() - start);
-    }
-  });
+  ipc.handle = (channel: string, fn: Handler) => {
+    channels.add(channel);
+    return register(channel, async (event: unknown, ...args: unknown[]) => {
+      const start = performance.now();
+      try {
+        return await fn(event, ...args);
+      } finally {
+        calls.note(channel, performance.now() - start);
+      }
+    });
+  };
 }
 
 export interface HealthMonitorOptions {

@@ -81,15 +81,30 @@ function inWindow(sample: HealthSample, now: number): boolean {
   return sample.at >= now - HEALTH_KEEP_MS && sample.at <= now + FUTURE_SLACK_MS;
 }
 
-/** The samples of the last 24 hours, oldest first; none when the file is missing or unreadable. */
-/** What a sample may name when it leaves: the channels this Tars registered, the app's pages. */
+/**
+ * What a sample may name when it leaves: the channels this Tars registered,
+ * the app's pages. The file is in ~/.dorothy, which agents may write: a line
+ * that passes cleanSample holds words in a channel's or a page's pattern,
+ * which are only kept when they are one of these.
+ */
 export interface Vocabulary {
   channels: ReadonlySet<string>;
   pages: ReadonlySet<string>;
 }
 
+export function onlyKnown(sample: HealthSample, known: Vocabulary): HealthSample {
+  return {
+    ...sample,
+    slowest: sample.slowest.filter((c) => known.channels.has(c.channel)),
+    page: sample.page !== null && known.pages.has(sample.page) ? sample.page : null,
+  };
+}
+
+/**
+ * The samples of the last 24 hours, oldest first; none when the file is
+ * missing or unreadable. With `known`, only the words it holds: what leaves.
+ */
 export function readSamples(file: string, now = Date.now(), known?: Vocabulary): HealthSample[] {
-  void known;
   let text: string;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -102,7 +117,7 @@ export function readSamples(file: string, now = Date.now(), known?: Vocabulary):
     let parsed: unknown;
     try { parsed = JSON.parse(line); } catch { continue; }
     const sample = cleanSample(parsed);
-    if (sample && inWindow(sample, now)) out.push(sample);
+    if (sample && inWindow(sample, now)) out.push(known ? onlyKnown(sample, known) : sample);
   }
   return out.sort((a, b) => a.at - b.at);
 }
