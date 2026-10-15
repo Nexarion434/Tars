@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-15',
     updates: [
       'A task delegated to an agent no longer leaves a process running once it ends: a command the agent\'s CLI was starting just as the run ended, stopped or finished, was left behind with nothing in Tars to end it. Measured with the delegation test on a Mac: 2.0.2 left one behind in 2 runs out of 5, and none is left in 5 runs out of 5.',
+      'Stopping an agent now ends the commands its CLI was starting at that moment too: one started while the stop read the agent\'s processes was left running once the CLI had ended, with nothing in Tars to end it. Measured on a Mac with a CLI that starts a command every 5 ms: 2.0.2 left 6 to 9 of them behind in 4 stops out of 5, and none is left in 5 stops out of 5.',
     ],
   },
   {
