@@ -11,6 +11,7 @@ export const CHANGELOG: Release[] = [
     version: '2.0.3',
     date: '2026-10-15',
     updates: [
+      'In New agent, an agent whose worktree git cannot make, on a branch the project has checked out say, is not created and the dialog says why, in git\'s words, keeping what you chose: it stayed open and said nothing. In New team, the member\'s line reads that reason right after its name, without the words Electron put before it.',
       'In New team (+ Team on the Agents page), a member whose worktree git cannot make, on a branch already checked out in the project say, is listed with git\'s own reason, as an agent\'s settings give it since 2.0.2: it read git\'s whole command line and the reason of a second try as a new branch ("a branch named ... already exists").',
     ],
   },
