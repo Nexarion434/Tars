@@ -565,6 +565,9 @@ app.whenReady().then(async () => {
       restartRunnersOf(agentId, ['claudeAccount']);
     },
   });
+  // Back from a terminal where a login may have changed a sign-in: Settings
+  // shows what Claude Code says now (handlers/claude-accounts-handlers.ts).
+  app.on('browser-window-focus', () => claudeAccounts.whenShown());
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
   setAccountEnvResolver((agentId, cwd, purpose) => {
