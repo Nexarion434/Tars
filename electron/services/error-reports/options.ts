@@ -30,6 +30,10 @@ export interface ErrorReportDeps {
   budget: ReportBudget;
   /** The network: the Electron SDK's transport in the app, a recorder in a test. */
   makeTransport: (options: never) => Transport;
+  /** Event ids the budget already counted (a health report, index.ts sendHealth): not counted twice. */
+  preAdmitted?: Set<string>;
+  /** Told each event's answer from Sentry: its HTTP status, 0 when none came. */
+  onSent?: (eventId: string, status: number) => void;
 }
 
 function gated(base: Transport, deps: ErrorReportDeps): Transport {
@@ -39,7 +43,18 @@ function gated(base: Transport, deps: ErrorReportDeps): Transport {
       const sent = new Promise(resolve => setImmediate(resolve)).then(() => {
         if (!deps.isEnabled()) return {};
         const kept = keepErrorsOnly(envelope as never, deps.facts());
-        return kept ? base.send(kept) : {};
+        if (!kept) return {};
+        const id = typeof kept[0].event_id === 'string' ? kept[0].event_id : undefined;
+        return Promise.resolve(base.send(kept)).then(
+          (answer) => {
+            if (id) deps.onSent?.(id, Number((answer as { statusCode?: unknown })?.statusCode) || 0);
+            return answer;
+          },
+          (err) => {
+            if (id) deps.onSent?.(id, 0);
+            throw err;
+          },
+        );
       });
       pending.add(sent);
       void sent.finally(() => pending.delete(sent));
@@ -65,7 +80,9 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     beforeSend(event: unknown) {
       if (!deps.isEnabled()) return null;
       const report = toReport(event, deps.facts());
-      if (!report || !deps.budget.admit(reportFingerprint(report))) return null;
+      if (!report) return null;
+      if (report.event_id && deps.preAdmitted?.has(report.event_id)) return report as never;
+      if (!deps.budget.admit(reportFingerprint(report))) return null;
       return report as never;
     },
     transport: (options: never) => gated(deps.makeTransport(options), deps) as never,
