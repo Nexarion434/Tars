@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, execFileSync } from 'child_process';
-import { launchSandboxed, recordValues } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort, PORT_OFFSET } from './ports.mjs';
 
 /**
@@ -18,7 +18,8 @@ import { DEV_URL, apiPort, PORT_OFFSET } from './ports.mjs';
  *    A still sends max;
  * 3. B, started at high, is typed `/effort low`, which saves low in settings.json: A still sends max, B sends low;
  * 4. B, its session last run at low and its record now max, is put to sleep (sleepNow, the pass's own) and woken: the CLI resumes that session
- *    (`--resume`, no fork) with `--effort max` and sends max, not its last level and not the saved one.
+ *    (`--resume`, no fork) with `--effort max` and sends max, not its last level and not the saved one. The session is read once the woken
+ *    CLI has taken its turn, so that a fork, or a session of its own, has registered: it must be the one B slept in.
  * The artefact: values.json (each request's effort), the stub's log, and the app trace.
  */
 
@@ -69,7 +70,9 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
   const stub = spawn(process.execPath, [path.join(WT, 'e2e', 'live', 'fake-messages-api.mjs')], {
     env: { PATH: process.env.PATH, FAKE_PORT: String(STUB), FAKE_LOG }, stdio: 'ignore',
   });
-  type Req = { last?: string; effort?: string | null; side?: boolean };
+  type Req = { last?: string; tail?: string; effort?: string | null; side?: boolean };
+  /** A turn that carries `word`: at its start, or at its end behind a local command's caveat. */
+  const carries = (r: Req, word: string) => !r.side && [r.last, r.tail].some((text) => (text ?? '').includes(word));
   const requests = () => (fs.existsSync(FAKE_LOG) ? fs.readFileSync(FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Req) : []);
   const values: Record<string, unknown> = { claude: CLAUDE };
   const seen: Array<{ step: string; agent: string; sent: string | null; own: string; settings: string }> = [];
@@ -102,8 +105,8 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
       const turn = async (step: string, id: string, word: string, own: string) => {
         await expect.poll(async () => (await agentOf(id)).status, { timeout: 60_000 }).toMatch(/^(idle|waiting|completed)$/);
         expect(await type(id, word)).not.toBeNull();
-        await expect.poll(() => requests().some((r) => !r.side && (r.last ?? '').includes(word)), { timeout: 90_000, message: `${step}: ${word} reached the model` }).toBe(true);
-        const sent = requests().filter((r) => !r.side && (r.last ?? '').includes(word)).at(-1)!.effort ?? null;
+        await expect.poll(() => requests().some((r) => carries(r, word)), { timeout: 90_000, message: `${step}: ${word} reached the model` }).toBe(true);
+        const sent = requests().filter((r) => carries(r, word)).at(-1)!.effort ?? null;
         seen.push({ step, agent: id, sent, own, settings: settingsLevel() });
         values.seen = seen;
         recordValues(values);
@@ -154,8 +157,10 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
       await expect.poll(async () => (await agentOf('b')).status, { timeout: 30_000 }).toBe('asleep');
       expect(await call('wake', 'b')).toMatchObject({ success: true });
       await running('b');
-      values.wakeResumed = { before: sid, after: (await agentOf('b')).currentSessionId };
       await turn('wake, last run at low, record max', 'b', 'EFFB3', 'max');
+      values.wakeResumed = { before: sid, after: (await agentOf('b')).currentSessionId };
+      recordValues(values);
+      expect.soft(values.wakeResumed, 'wake: B resumed the session it slept in, not a fork or a new one').toEqual({ before: sid, after: sid });
     } finally {
       values.requests = requests();
       recordValues(values);
@@ -163,6 +168,7 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
     }
   } finally {
     stub.kill();
-    fs.rmSync(home, { recursive: true, force: true });
+    // removeHome retries: a real claude can write ~/.claude.json after app.close() (the QA's Info on #404).
+    await removeHome(home);
   }
 });
