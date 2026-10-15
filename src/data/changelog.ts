@@ -12,6 +12,7 @@ export const CHANGELOG: Release[] = [
     date: '2026-10-15',
     updates: [
       'On the Usage page by agent, the note under the rows says which tasks a row adds up: those begun in the timeframe, each at its own cost. The charts above count by turn and also hold a task begun earlier, what came before 1.9.3, and Claude Code sessions Tars did not start, which are in no row.',
+      'In New team (+ Team on the Agents page), a member whose worktree git cannot make, on a branch already checked out in the project say, is listed with git\'s own reason, as an agent\'s settings give it since 2.0.2: it read git\'s whole command line and the reason of a second try as a new branch ("a branch named ... already exists").',
     ],
   },
   {
