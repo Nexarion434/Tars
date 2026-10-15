@@ -72,6 +72,9 @@ interface Options {
   isAlive?: (pid: number) => boolean;
   /** When the machine last booted, epoch ms. */
   bootedAt?: number;
+  /** When the process under a pid started (platform/process-start.ts). */
+  startOf?: (pid: number) => string | null;
+  platform?: NodeJS.Platform;
 }
 
 /** Within this long of its start, a run that resumed agents and stopped is a loop, not a crash to recover from. */
