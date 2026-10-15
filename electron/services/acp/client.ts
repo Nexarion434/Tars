@@ -272,6 +272,31 @@ export class ProcessTree {
     }
   }
 
+  /**
+   * Holds the tree still while it is read again (FREEZE_READS): every group
+   * known is stopped (SIGSTOP), then the tree grows from `read`, until a read
+   * adds no group. Whoever calls it continues them (SIGCONT) once its own
+   * signal is sent, so that each stopped process takes it as it goes on.
+   */
+  freeze(read: () => ProcessRow[] | undefined): void {
+    for (let round = 0; round < FREEZE_READS; round++) {
+      const stopped = new Set(this.targets);
+      this.signal('SIGSTOP');
+      this.grow(read());
+      if (this.targets.every(group => stopped.has(group))) return;
+    }
+  }
+
+  /** The same, with a read that gives the event loop back: a delegated run's stop, while Tars goes on. */
+  async freezeAsync(read: () => Promise<ProcessRow[] | undefined>): Promise<void> {
+    for (let round = 0; round < FREEZE_READS; round++) {
+      const stopped = new Set(this.targets);
+      this.signal('SIGSTOP');
+      this.grow(await read());
+      if (this.targets.every(group => stopped.has(group))) return;
+    }
+  }
+
   /** Whether a live process is left in any of the groups. A zombie is not: its
    *  parent, Tars for the process it spawned, reaps it once the thread is free. */
   anyLeft(table: ProcessRow[] | undefined): boolean {
@@ -289,12 +314,7 @@ export class ProcessTree {
 async function endProcessTree(root: number): Promise<void> {
   const tree = new ProcessTree([root]);
   tree.grow(await processTable());
-  for (let read = 0; read < FREEZE_READS; read++) {
-    const stopped = new Set(tree.targets);
-    tree.signal('SIGSTOP');
-    tree.grow(await processTable());
-    if (tree.targets.every(group => stopped.has(group))) break;
-  }
+  await tree.freezeAsync(processTable);
   // A stopped process takes its SIGTERM as it continues.
   tree.signal('SIGTERM');
   tree.signal('SIGCONT');
@@ -381,12 +401,7 @@ export function endProcessTreesNow(roots: number[]): void {
   const tree = new ProcessTree(roots);
   tree.grow(read(graceEnds));
   // Held still while read again, as the stop does (FREEZE_READS).
-  for (let round = 0; round < FREEZE_READS; round++) {
-    const stopped = new Set(tree.targets);
-    tree.signal('SIGSTOP');
-    tree.grow(read(graceEnds));
-    if (tree.targets.every(group => stopped.has(group))) break;
-  }
+  tree.freeze(() => read(graceEnds));
   tree.signal('SIGTERM');
   tree.signal('SIGCONT');
   const pause = new Int32Array(new SharedArrayBuffer(4));
