@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-15',
+    updates: [
+      'In New team (+ Team on the Agents page), a member whose worktree git cannot make, on a branch already checked out in the project say, is listed with git\'s own reason, as an agent\'s settings give it since 2.0.2: it read git\'s whole command line and the reason of a second try as a new branch ("a branch named ... already exists").',
+    ],
+  },
+  {
     id: 59,
     version: '2.0.2',
     date: '2026-10-13',
