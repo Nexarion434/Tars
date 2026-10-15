@@ -249,3 +249,8 @@ export function keepErrorsOnly(envelope: Envelope, facts: ReportFacts): Envelope
   if (sdk && typeof sdk.name === 'string' && typeof sdk.version === 'string') outHeader.sdk = { name: sdk.name, version: sdk.version };
   return [outHeader, kept];
 }
+
+/** Stub, for the cases written first. */
+export function healthEvent(_kind: 'abrupt-end' | 'diagnostic', _payload: Record<string, unknown>): Record<string, unknown> {
+  return { exception: { values: [{ type: 'Error', value: 'stub' }] } };
+}
