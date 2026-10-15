@@ -65,6 +65,8 @@ export interface ClaudeAccountsHandlerDeps {
    * that cuts nothing.
    */
   onAgentAccountChanged?: (agentId: string) => void;
+  /** Epoch ms; Date.now unless a test sets the clock. */
+  now?: () => number;
 }
 
 /**
@@ -91,7 +93,7 @@ function failure(err: unknown): { success: false; error: string } {
  * work it started in the background have finished: what a caller waits on
  * before reading the result, instead of a delay.
  */
-export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps): { idle: () => Promise<void>; refreshAll: () => Promise<void> } {
+export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps): { idle: () => Promise<void>; refreshAll: () => Promise<void>; whenShown: () => void } {
   const { getAppSettings, agents, saveAgents, loginPtys, onAgentAccountChanged } = deps;
 
   const background = new Set<Promise<unknown>>();
@@ -515,6 +517,7 @@ export function registerClaudeAccountsHandlers(deps: ClaudeAccountsHandlerDeps):
   }, 30_000);
   firstProbe.unref?.();
 
-  return { idle, refreshAll: () => checkAll() };
+  // Stub: written failures first.
+  return { idle, refreshAll: () => checkAll(), whenShown: () => {} };
 
 }
