@@ -261,17 +261,20 @@ test('a crashed Tars whose pid another process took is reported, and the next ru
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-health3-'));
   const { samplesFile } = seed(home, true);
   const record = path.join(home, '.tars-private', 'run-state.json');
-  // A process of this user, alive as the next Tars starts: the one that took the crashed Tars's pid.
-  const taker = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore' });
+  let taker: ReturnType<typeof spawn> | undefined;
   let app: ElectronApplication | undefined;
   try {
     ({ app } = await boot(home, sentry.dsn, port));
     await expect.poll(() => samplesIn(samplesFile).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
     await kill(app);
+    // A process of this user, alive as the next Tars starts: the one that took the crashed Tars's pid. Started after
+    // the crash, as such a process is (macOS reads a start to the second: one started with Tars would read as Tars).
+    taker = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore' });
     const crashed = JSON.parse(fs.readFileSync(record, 'utf8')) as { pid: number; processStart?: string };
     values.crashedRecord = { pid: crashed.pid, processStart: crashed.processStart };
     expect(crashed.processStart, 'the record keeps when its process started').toEqual(expect.any(String));
     fs.writeFileSync(record, JSON.stringify({ ...crashed, pid: taker.pid }));
+    values.taker = { pid: taker.pid };
 
     ({ app } = await boot(home, sentry.dsn, port));
     await expect.poll(() => sentry.ofKind('abrupt-end').length, { timeout: 30_000, message: 'the crash reported, the live pid not taken for a Tars' }).toBe(1);
@@ -280,7 +283,7 @@ test('a crashed Tars whose pid another process took is reported, and the next ru
     expect(now.pid, 'the record is this run\'s').toBe(app.process().pid);
     recordValues({ ...values, events: sentry.events });
   } finally {
-    taker.kill();
+    taker?.kill();
     await app?.close().catch(() => {});
     await sentry.close();
     await removeHome(home);
