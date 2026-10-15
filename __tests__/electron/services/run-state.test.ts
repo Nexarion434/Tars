@@ -22,6 +22,14 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 6. The record carries more than it needs: a task's text past 200 characters.
  * 7. (the Audit's gate of #310) The record sits where an agent can write it (~/.dorothy, in every agent's --add-dir):
  *    a record an agent wrote makes Tars start, at the next launch, whatever agents it names, at-rest ones included.
+ * And from the Audit's M1 on #418 (2026-10-15): macOS and Linux hold no single-instance lock, so a second Tars can run
+ * on the same home (Linux: any second launch; macOS: open -n, another copy, a dev run on the real home).
+ * 8. A Tars that still runs is read as one that ended abruptly: a false report, and its working agents resumed by the
+ *    second Tars while the first still runs them.
+ * 9. The second Tars takes the record over: the first's working agents, its clean quit or its crash are then lost.
+ * 10. Over-correction: a crash before a reboot is missed because, after the reboot, another process took its pid.
+ * 11. Over-correction: the record names this very process's pid (reused after a reboot) and reads as another Tars.
+ * 12. Over-correction: a record with no pid reads as a running Tars, and its crash is never reported.
  */
 
 let file: string;
@@ -119,6 +127,53 @@ describe('the run record', () => {
     clock += 5 * 60_000;
     recordRun([agent('w', 'running')], opts());
     expect(beginRun(opts())).toMatchObject({ resumedAndCrashedAgain: false });
+  });
+
+  describe('a second Tars on the same home', () => {
+    const FIRST = 100;
+    const SECOND = 200;
+    const firstRecord = () => JSON.stringify({
+      version: 1, appVersion: '2.0.3', pid: FIRST, startedAt: T0, lastWriteAt: T0 + 30_000, cleanExit: false, resumed: [],
+      working: [{ agentId: 'w', status: 'running', sessionId: 'sess-w' }],
+    });
+    const second = (alive: number[], bootedAt = T0 - 86_400_000, pid = SECOND) =>
+      ({ file, now: () => clock, pid, bootedAt, isAlive: (p: number) => alive.includes(p) });
+
+    it('8-9. while the first runs: no abrupt end, and its record stays its own', () => {
+      fs.writeFileSync(file, firstRecord());
+      clock = T0 + 60_000;
+      expect(beginRun(second([FIRST]))).toBeNull();
+      recordRun([agent('x', 'running')], second([FIRST]));
+      recordResumed(['x'], second([FIRST]));
+      endRun(second([FIRST]));
+      expect(fs.readFileSync(file, 'utf8')).toBe(firstRecord());
+    });
+
+    it('8. once the first is gone, its run ended abruptly', () => {
+      fs.writeFileSync(file, firstRecord());
+      clock = T0 + 60_000;
+      expect(beginRun(second([]))).toMatchObject({ startedAt: T0, lastWriteAt: T0 + 30_000, working: [{ agentId: 'w' }] });
+    });
+
+    it('10. a reboot since its last write: it ended, whoever holds its pid now', () => {
+      fs.writeFileSync(file, firstRecord());
+      clock = T0 + 3_600_000;
+      expect(beginRun(second([FIRST], T0 + 60_000))).toMatchObject({ startedAt: T0 });
+    });
+
+    it('11. its pid is this process: it ended', () => {
+      fs.writeFileSync(file, firstRecord());
+      clock = T0 + 60_000;
+      expect(beginRun(second([FIRST], undefined, FIRST))).toMatchObject({ startedAt: T0 });
+    });
+
+    it('12. a record with no pid: it ended, and nobody is asked', () => {
+      fs.writeFileSync(file, firstRecord().replace(`"pid":${FIRST}`, '"pid":0'));
+      clock = T0 + 60_000;
+      const asked: number[] = [];
+      expect(beginRun({ ...second([]), isAlive: (p: number) => { asked.push(p); return true; } })).toMatchObject({ startedAt: T0 });
+      expect(asked).toEqual([]);
+    });
   });
 
   it("6. a task's text is cut to 200 characters", () => {

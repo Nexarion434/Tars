@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SlowCalls, timeIpcHandlers } from '../../../electron/services/health/monitor';
+import { SlowCalls, timeIpcHandlers, IpcChannels } from '../../../electron/services/health/monitor';
 import { abruptEndPayload } from '../../../electron/services/health/abrupt-end';
 import type { HealthSample } from '../../../electron/services/health/samples';
 
@@ -17,6 +17,8 @@ import type { HealthSample } from '../../../electron/services/health/samples';
  * 5. A sample from before that run started is taken for its last.
  * 6. The uptime stops at the run record's last write, hours before the end, when a later sample says it ran on.
  * 7. A run record that does not say its version gives a version anyway.
+ * And from the Audit's Low 1 on #418
+ * 8. A channel this Tars never registered is taken as one of its own (what leaves is checked against this list).
  */
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
@@ -26,6 +28,15 @@ function fakeIpc() {
 }
 
 describe('the IPC handlers, timed where they are registered', () => {
+  it('8. the channels registered are known, and only those', () => {
+    const ipc = fakeIpc();
+    const channels = new IpcChannels();
+    timeIpcHandlers(ipc, new SlowCalls(), channels);
+    ipc.handle('usage:tasks', () => 1);
+    ipc.handle('diagnostic:send', () => 2);
+    expect([...channels.known()].sort()).toEqual(['diagnostic:send', 'usage:tasks']);
+  });
+
   it('1. a handler answers and fails as it did', async () => {
     const ipc = fakeIpc();
     const calls = new SlowCalls();

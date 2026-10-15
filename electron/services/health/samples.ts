@@ -82,7 +82,14 @@ function inWindow(sample: HealthSample, now: number): boolean {
 }
 
 /** The samples of the last 24 hours, oldest first; none when the file is missing or unreadable. */
-export function readSamples(file: string, now = Date.now()): HealthSample[] {
+/** What a sample may name when it leaves: the channels this Tars registered, the app's pages. */
+export interface Vocabulary {
+  channels: ReadonlySet<string>;
+  pages: ReadonlySet<string>;
+}
+
+export function readSamples(file: string, now = Date.now(), known?: Vocabulary): HealthSample[] {
+  void known;
   let text: string;
   try {
     text = fs.readFileSync(file, 'utf8');

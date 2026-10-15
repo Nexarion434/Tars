@@ -19,6 +19,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * refused for 24 hours. A clean quit, then a launch: no report. With the switch off: a kill and a launch send nothing,
  * and the diagnostic is refused with the reason. On Windows error reports are not offered: nothing is sent, and the
  * diagnostic says why.
+ * A second Tars on the same home while the first runs (macOS and Linux hold no single-instance lock; the Audit's M1 on
+ * #418, its probe): no abrupt end is reported, and the record stays the first's, so a kill of the first while the
+ * second runs is reported once, at the next launch after both.
  * The artefact: values.json with every event the stand-in received and every answer.
  */
 
@@ -197,3 +200,47 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
     await sentry.close();
   }
 });
+
+test('a second Tars on the same home reports no abrupt end while the first runs, and the record stays the first\'s', async () => {
+  test.setTimeout(240_000);
+  const sentry = await startFakeSentry();
+  const values: Record<string, unknown> = {};
+  const port = Number(apiPort(31432)); // and 31433 for the second Tars
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-health2-'));
+  const { samplesFile } = seed(home, true);
+  let first: ElectronApplication | undefined;
+  let second: ElectronApplication | undefined;
+  try {
+    ({ app: first } = await boot(home, sentry.dsn, port));
+    await expect.poll(() => samplesIn(samplesFile).length, { timeout: 30_000, message: 'the first Tars samples' }).toBeGreaterThanOrEqual(1);
+    ({ app: second } = await boot(home, sentry.dsn, port + 1));
+    await new Promise((r) => setTimeout(r, 10_000));
+    values.firstStillAlive = first.process().exitCode === null;
+    values.secondAlive = second.process().exitCode === null;
+    values.abruptEndsWhileBothRun = sentry.ofKind('abrupt-end');
+    recordValues(values);
+    expect(values.firstStillAlive, 'the first Tars still runs').toBe(true);
+    expect(sentry.ofKind('abrupt-end'), 'no abrupt end reported while the first Tars runs').toEqual([]);
+
+    // The first ends abruptly while the second runs; the second quits; the next launch reports the first's end, once.
+    await kill(first);
+    first = undefined;
+    await second.close();
+    second = undefined;
+    ({ app: first } = await boot(home, sentry.dsn, port));
+    if (onWindows) {
+      await first.firstWindow().then((p) => p.waitForTimeout(5_000));
+      expect(sentry.events).toEqual([]);
+    } else {
+      await expect.poll(() => sentry.ofKind('abrupt-end').length, { timeout: 30_000, message: "the first's abrupt end, reported at the next launch" }).toBe(1);
+      values.abruptEndAfter = sentry.ofKind('abrupt-end')[0];
+    }
+    recordValues({ ...values, events: sentry.events });
+  } finally {
+    await second?.close().catch(() => {});
+    await first?.close().catch(() => {});
+    await sentry.close();
+    await removeHome(home);
+  }
+});
+
