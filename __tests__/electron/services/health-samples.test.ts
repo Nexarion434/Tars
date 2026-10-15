@@ -50,7 +50,10 @@ describe('the health samples file', () => {
   });
 
   it('2. stays under its size, the oldest dropped first', () => {
-    for (let i = 0; i < 4_000; i += 1) appendSample(file, sample(NOW - (4_000 - i) * 1_000), NOW - (4_000 - i) * 1_000);
+    // A file grown past its bound (samples written every second, by a runaway or a hand), then one more sample.
+    fs.writeFileSync(file, Array.from({ length: 4_000 }, (_, i) => JSON.stringify(sample(NOW - (4_000 - i) * 1_000))).join('\n') + '\n');
+    expect(fs.statSync(file).size).toBeGreaterThan(HEALTH_MAX_BYTES);
+    appendSample(file, sample(NOW - 1_000), NOW);
     expect(fs.statSync(file).size).toBeLessThanOrEqual(HEALTH_MAX_BYTES);
     const kept = readSamples(file, NOW);
     expect(kept.at(-1)!.at).toBe(NOW - 1_000);
