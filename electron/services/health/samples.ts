@@ -4,7 +4,8 @@ import { writeSecretFileSync } from '../../utils/secret-file';
 /**
  * The health samples Tars keeps on this machine (2.0.3, monitoring option 2):
  * one every 5 minutes (monitor.ts), 24 hours of them, in a bounded file under
- * ~/.dorothy, numbers only. They leave only attached to the report of an
+ * ~/.dorothy: numbers, with the names of Tars's own calls and pages, no
+ * content, no file path, no name. They leave only attached to the report of an
  * abrupt end, or when the user sends a diagnostic (error-reports).
  *
  * The file is in ~/.dorothy, which every agent may write: whatever is read

@@ -17,7 +17,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
 /**
  * The health samples Tars keeps on this machine (2.0.3, Noah's go of 2026-10-15 on monitoring options 1 and 2): every
  * 5 minutes the main process's memory, its event loop delay, its slowest IPC handlers, how many agents there are and
- * run, and the page open. Kept 24 hours, in a bounded file, numbers only; they leave only with the report of an abrupt
+ * run, and the page open. Kept 24 hours, in a bounded file, numbers with the names of Tars's own calls and pages; they leave only with the report of an abrupt
  * end, or when the user sends a diagnostic.
  *
  * How it fails, written before the code:

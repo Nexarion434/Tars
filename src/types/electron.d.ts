@@ -2341,7 +2341,7 @@ export interface ElectronAPI {
 
   // "Send a diagnostic" (electron/handlers/diagnostic-handlers.ts).
   diagnostic: {
-    /** Sends the last 24 hours of health samples (numbers only) once; refused with the reason, a sentence shown as is. */
+    /** Sends the last 24 hours of health samples (numbers, with the names of Tars's own calls and pages) once; refused with the reason, a sentence shown as is. */
     send: () => Promise<DiagnosticAnswer>;
   };
 
