@@ -58,6 +58,10 @@ interface Options {
   pid?: number;
   /** The app's version, recorded with the run. */
   appVersion?: string;
+  /** Whether a process of this user runs under a pid (platform/process-exists.ts). */
+  isAlive?: (pid: number) => boolean;
+  /** When the machine last booted, epoch ms. */
+  bootedAt?: number;
 }
 
 /** Within this long of its start, a run that resumed agents and stopped is a loop, not a crash to recover from. */

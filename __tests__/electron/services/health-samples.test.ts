@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { appendSample, readSamples, cleanSample, HEALTH_KEEP_MS, HEALTH_MAX_BYTES, type HealthSample } from '../../../electron/services/health/samples';
+import { APP_PAGES } from '../../../electron/services/health/pages';
 import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
@@ -23,6 +24,11 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 6. A sample dated in the future (a clock set back) stays for good.
  * 7. A file that cannot be read or parsed throws, at start or at a sample.
  * 8. The file is readable by other users (POSIX: 0600).
+ * And from the Audit's Low 1 on #418: the file is in ~/.dorothy, which agents may write.
+ * 9. A channel or a page that only looks like one (a word an agent chose, in the pattern) leaves with a diagnostic or
+ *    an abrupt end: what leaves must hold only the channels this Tars registered and the app's own pages.
+ * 10. The list of the app's pages drifts from the app: a page added in src/app is dropped from every sample, or a
+ *    page removed stays allowed.
  */
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0);
@@ -105,5 +111,27 @@ describe('the health samples file', () => {
   it.skipIf(!hasPosixModes())('8. readable by its owner only', () => {
     appendSample(file, sample(NOW), NOW);
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('9. what is read to leave holds only the channels registered and the pages of the app', () => {
+    appendSample(file, sample(NOW - 60_000, {
+      slowest: [{ channel: 'usage:tasks', ms: 118 }, { channel: 'ship-it-tonight', ms: 50 }, { channel: 'acme:merger', ms: 9 }],
+      page: '/usage',
+    }), NOW);
+    appendSample(file, sample(NOW - 30_000, { page: '/secret-plans' }), NOW);
+    const known = { channels: new Set(['usage:tasks', 'claude:getData']), pages: APP_PAGES };
+    const kept = readSamples(file, NOW, known);
+    expect(kept.map((s) => s.slowest)).toEqual([[{ channel: 'usage:tasks', ms: 118 }], [{ channel: 'usage:tasks', ms: 118 }, { channel: 'claude:getData', ms: 10 }]]);
+    expect(kept.map((s) => s.page)).toEqual(['/usage', null]);
+    // Read with no vocabulary (this machine's own file), the sample is as it was written.
+    expect(readSamples(file, NOW)[0].slowest).toHaveLength(3);
+  });
+
+  it('10. the pages of the app are the routes of src/app, and /', () => {
+    const app = path.resolve(__dirname, '../../../src/app');
+    const routes = fs.readdirSync(app, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && fs.existsSync(path.join(app, d.name, 'page.tsx')))
+      .map((d) => `/${d.name}`);
+    expect([...APP_PAGES].sort()).toEqual(['/', ...routes].sort());
   });
 });

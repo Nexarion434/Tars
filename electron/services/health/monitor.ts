@@ -26,6 +26,17 @@ export class SlowCalls {
 
 export const slowCalls = new SlowCalls();
 
+/** The channels this process registered: what a sample may name when it leaves. Stub: written failures first. */
+export class IpcChannels {
+  private channels = new Set<string>();
+
+  add(channel: string): void { void channel; }
+
+  known(): ReadonlySet<string> { return this.channels; }
+}
+
+export const ipcChannels = new IpcChannels();
+
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
 /**
@@ -33,7 +44,8 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown;
  * answer and its failure pass through as they were. Called before any
  * handler is registered (main.ts, first thing).
  */
-export function timeIpcHandlers(ipc: { handle: (channel: string, fn: Handler) => void }, calls = slowCalls): void {
+export function timeIpcHandlers(ipc: { handle: (channel: string, fn: Handler) => void }, calls = slowCalls, channels = ipcChannels): void {
+  void channels;
   const register = ipc.handle.bind(ipc);
   ipc.handle = (channel: string, fn: Handler) => register(channel, async (event: unknown, ...args: unknown[]) => {
     const start = performance.now();
