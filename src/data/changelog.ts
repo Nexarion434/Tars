@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-15',
+    updates: [
+      'On the Usage page by agent, the note under the rows says which tasks a row adds up: those begun in the timeframe, each at its whole cost. What an agent spent on a task begun earlier is in the charts above, which count by turn, and in no row.',
+    ],
+  },
+  {
     id: 59,
     version: '2.0.2',
     date: '2026-10-13',
