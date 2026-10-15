@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as childProcess from 'child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { appendSample, readSamples, cleanSample, HEALTH_KEEP_MS, HEALTH_MAX_BYTES, type HealthSample } from '../../../electron/services/health/samples';
 import { APP_PAGES } from '../../../electron/services/health/pages';
+import { closeSecretsToOtherAccounts } from '../../../electron/utils/secret-file';
+
+// Real programs unless a case says otherwise: case 11 stands in for whoami and icacls on a stubbed win32.
+vi.mock('child_process', async (importOriginal) => {
+  const real = await importOriginal<typeof import('child_process')>();
+  return { ...real, execFileSync: vi.fn(real.execFileSync), execFile: vi.fn(real.execFile) };
+});
 import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
@@ -29,6 +37,10 @@ import { hasPosixModes } from '../../setup/platform-limits';
  *    an abrupt end: what leaves must hold only the channels this Tars registered and the app's own pages.
  * 10. The list of the app's pages drifts from the app: a page added in src/app is dropped from every sample, or a
  *    page removed stays allowed.
+ * And from the Audit's gate of #421: the privacy page says the file is readable by the user's account only.
+ * 11. On Windows it is not: Node ignores the mode there, and a plain write keeps the list ~/.dorothy hands down. Named
+ *    at startup with the other owner-only files, each write must be born closed (in the closed staging directory,
+ *    made the user's and SYSTEM's alone before the rename), and an icacls that fails must not lose the sample.
  */
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0);
@@ -133,5 +145,63 @@ describe('the health samples file', () => {
       .filter((d) => d.isDirectory() && fs.existsSync(path.join(app, d.name, 'page.tsx')))
       .map((d) => `/${d.name}`);
     expect([...APP_PAGES].sort()).toEqual(['/', ...routes].sort());
+  });
+
+  describe('11. on Windows (stubbed), readable by its owner only', () => {
+    const SID = 'S-1-5-21-1111-2222-3333-1001';
+    const HOST = process.platform;
+    let icacls: string[][];
+    let failIcacls: boolean;
+    beforeEach(() => {
+      icacls = [];
+      failIcacls = false;
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      const answer = (file: string, args: readonly string[]): string => {
+        if (file.endsWith('whoami.exe')) return `"host\\someone","${SID}"\r\n`;
+        if (file.endsWith('icacls.exe')) {
+          icacls.push([...args]);
+          if (failIcacls && args.includes('/inheritance:r') && !String(args[0]).endsWith('.staging')) throw Object.assign(new Error('icacls failed'), { status: 5 });
+          return '';
+        }
+        throw new Error(`unexpected ${file}`);
+      };
+      vi.mocked(childProcess.execFileSync).mockImplementation(((file: string, args: readonly string[]) => answer(file, args)) as never);
+      vi.mocked(childProcess.execFile).mockImplementation(((file: string, args: readonly string[], _o: unknown, cb: (e: Error | null, out: string, err: string) => void) => {
+        try { cb(null, answer(file, args), ''); } catch (e) { cb(e as Error, '', ''); }
+        return { stdin: null };
+      }) as never);
+    });
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: HOST, configurable: true });
+      vi.mocked(childProcess.execFileSync).mockReset();
+      vi.mocked(childProcess.execFile).mockReset();
+    });
+
+    it('each write is born in the closed staging directory, the user and SYSTEM only, then renamed', async () => {
+      const priv = path.join(dir, 'private');
+      await closeSecretsToOtherAccounts([file], priv);
+      icacls = [];
+      appendSample(file, sample(NOW - 60_000), NOW);
+      const closed = icacls.filter((a) => a.includes('/inheritance:r'));
+      expect(closed.length, 'one icacls per write').toBe(1);
+      expect(path.dirname(closed[0][0])).toBe(path.join(priv, '.staging'));
+      expect(closed[0].slice(1)).toEqual(['/inheritance:r', '/grant:r', `*${SID}:(F)`, '*S-1-5-18:(F)']);
+      expect(readSamples(file, NOW).map((s) => s.at)).toEqual([NOW - 60_000]);
+      expect(fs.readdirSync(path.join(priv, '.staging'))).toEqual([]);
+    });
+
+    it('an icacls that fails is said, and the sample lands all the same', async () => {
+      const priv = path.join(dir, 'private');
+      await closeSecretsToOtherAccounts([file], priv);
+      failIcacls = true;
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(() => appendSample(file, sample(NOW - 60_000), NOW)).not.toThrow();
+        expect(readSamples(file, NOW).map((s) => s.at)).toEqual([NOW - 60_000]);
+        expect(warn.mock.calls.flat().join(' ')).toMatch(/\[secret-acl\].*keeps the access list its folder hands down/);
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });
