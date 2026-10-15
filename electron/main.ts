@@ -483,7 +483,7 @@ app.whenReady().then(async () => {
   // Narrow the credential files on installs that predate the 0600 write.
   // A `mode` passed to writeFileSync only applies at creation, so an
   // app-settings.json already sitting at 0644 would keep it forever.
-  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
+  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
     ensureSecretFileMode(secret);
   }
   // And the directory itself with everything in it: the fleet, the board, the
@@ -500,7 +500,9 @@ app.whenReady().then(async () => {
   migrateWebhookSecretOutOfAgentReach();
   // Windows: the modes above do nothing there; an access list does the same,
   // set in the background (it never rejects, each failure is logged).
-  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
+  // The health samples too: the privacy page says they are readable by the
+  // user's account only.
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
