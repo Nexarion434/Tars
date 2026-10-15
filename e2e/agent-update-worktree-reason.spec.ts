@@ -71,6 +71,8 @@ process.stdin.on('data', () => {});
 process.stdin.resume();
 `;
 
+test.skip(process.platform === 'win32', 'a French git exists on Windows (Git for Windows is translated), but neither stand-in of this spec can: Tars starts git there as a program the PATH names (git.exe by its full path once #358 is in, else a bare git that libuv completes with .com or .exe only), which no script can be, and the agents\' CLI here is a #! script, which Windows does not start. What the French case holds, makeAgentWorktree\'s LC_ALL=C, is the same code on every platform; this runs on macOS and Linux');
+
 test('a worktree git cannot make is not saved, and the answer is git\'s own reason', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-update-wt-'));
@@ -110,7 +112,7 @@ test('a worktree git cannot make is not saved, and the answer is git\'s own reas
   const app = await launchSandboxed(electron, home, {
     env: {
       NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31436), DOROTHY_E2E: '1',
-      PATH: `${gitDir}:${process.env.PATH}`, LANG: 'fr_FR.UTF-8', LC_ALL: '', LC_MESSAGES: '',
+      PATH: `${gitDir}${path.delimiter}${process.env.PATH}`, LANG: 'fr_FR.UTF-8', LC_ALL: '', LC_MESSAGES: '',
     },
   });
   const values: Record<string, unknown> = {};
