@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { writeAtomicSync } from '../../utils/secret-file';
+import { writeSecretFileSync } from '../../utils/secret-file';
 
 /**
  * The health samples Tars keeps on this machine (2.0.3, monitoring option 2):
@@ -131,7 +131,9 @@ export function appendSample(file: string, sample: HealthSample, now = Date.now(
   let bytes = lines.reduce((sum, l) => sum + Buffer.byteLength(l) + 1, 0);
   while (bytes > HEALTH_MAX_BYTES && lines.length > 1) bytes -= Buffer.byteLength(lines.shift()!) + 1;
   try {
-    writeAtomicSync(file, `${lines.join('\n')}\n`, 0o600);
+    // 0600 on macOS and Linux; on Windows, born closed to every account but
+    // the user's and SYSTEM, once main.ts names the file at startup.
+    writeSecretFileSync(file, `${lines.join('\n')}\n`);
   } catch (err) {
     console.warn('[health] could not write a sample:', (err as Error).message);
   }
