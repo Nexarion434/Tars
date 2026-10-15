@@ -27,9 +27,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   of that agent's rows in the task view, and of the tokens and costs
  *   usage.tasks gave for the window: own costs, so the lead's delegations are
  *   counted once, in the agents that did them.
- * - The window rule (the Audit's Low 1 on #408): a row holds the tasks begun
- *   in the timeframe, each at its whole cost, and the note under the rows says
- *   so. The lead's task begun half a minute before the 14 days wrote its reply
+ * - The window rule (the Audit's Low 1 on #408, its words at #416's gate): a
+ *   row holds the tasks begun in the timeframe, each at its own cost, and the
+ *   note under the rows says so, and what the charts hold that no row does. The lead's task begun half a minute before the 14 days wrote its reply
  *   inside them: the charts above count it, by turn, and no row does, so the
  *   total cost is the rows' sum and that task's own cost.
  * - The agent picked in the task view steps aside in the agent view and is
@@ -189,7 +189,7 @@ test('the usage page shows its tasks by agent, each agent the sum of its own tas
     await expect(panel.locator('[data-agent-row]')).toHaveCount(5);
     await expect(panel.locator('[data-task-row]')).toHaveCount(0);
     await expect(panel).toContainText('5 agents · 1 task not counted');
-    await expect(panel).toContainText('A row adds up the agent\'s tasks begun in this timeframe, each at its whole cost. What it spent on a task begun earlier, or before Tars recorded tasks (1.9.3), is in the charts above, which count by turn, and in no row.');
+    await expect(panel).toContainText('A row adds up the agent\'s tasks begun in this timeframe, each at its own cost from its first turn to its last. The charts above count by turn, and also hold what no row does: a task begun earlier, what came before Tars recorded tasks (1.9.3), and Claude Code sessions Tars did not start.');
     await expect(panel.getByRole('button', { name: 'Show the tasks of one agent' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Show the tasks of one project' })).toBeVisible();
     const agents = await agentRows();

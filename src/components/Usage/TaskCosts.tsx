@@ -39,12 +39,13 @@ const NOT_COUNTED_NOTE =
   'Not counted: a CLI in a terminal that writes no transcript, such as Codex or Gemini. Over ACP, a task is counted at what the run reports.';
 
 /**
- * What an agent's row holds: its tasks begun in the timeframe, as the task view
- * lists them, so neither a task begun earlier nor anything from before Tars
- * recorded tasks (the Audit's Low 1 on #408).
+ * What an agent's row holds: its tasks begun in the timeframe, each at its own
+ * cost, as the task view lists them. The charts above read every transcript, by
+ * turn, so they also hold a task begun earlier, what came before Tars recorded
+ * tasks, and Claude Code sessions Tars did not start (the Audit, #408 and #416).
  */
 const AGENT_ROWS_NOTE =
-  'A row adds up the agent\'s tasks begun in this timeframe, each at its whole cost. What it spent on a task begun earlier, or before Tars recorded tasks (1.9.3), is in the charts above, which count by turn, and in no row.';
+  'A row adds up the agent\'s tasks begun in this timeframe, each at its own cost from its first turn to its last. The charts above count by turn, and also hold what no row does: a task begun earlier, what came before Tars recorded tasks (1.9.3), and Claude Code sessions Tars did not start.';
 
 /** The header cells: 10px uppercase, as a panel's caption. */
 const HEAD = 'pb-1.5 font-normal text-[10px] uppercase tracking-[0.08em] text-muted-foreground border-b border-border';
