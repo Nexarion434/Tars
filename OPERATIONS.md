@@ -217,7 +217,17 @@ moves `next dev` (3100) and every suite's API port together. Unset, nothing move
 Stand-ins a spec may point the app at, read only under `DOROTHY_E2E=1`: `TARS_CHAT_RAM_GB` (the RAM the
 chats' limit is computed from) and `DOROTHY_TELEGRAM_API_URL` (`http://127.0.0.1:<port>` and nothing
 else: a stand-in of Telegram's Bot API, which the bot's token travels to in every request's path;
-`e2e/chat-senders.spec.ts`).
+`e2e/chat-senders.spec.ts`), and `DOROTHY_HEALTH_EVERY_MS` (how often the health samples are taken,
+200 ms at least; `e2e/health-reports.spec.ts` takes one a second). And one read by any development run,
+never by a packaged Tars (`app.isPackaged`): `DOROTHY_ERROR_REPORTS_DSN`, where error reports go, a
+stand-in of Sentry that records the envelopes (`e2e/health-reports.spec.ts`).
+
+**Tars's health, on this machine.** Every 5 minutes Tars appends a sample to
+`~/.dorothy/health-samples.jsonl` (`0600`): the main process's heap and RSS, its event loop delay
+(p50, p95), the three slowest IPC handlers of the 5 minutes, the agents and how many run, the page
+open. 24 hours rolling, 256 KB at most, numbers only (`services/health/`). To see how a session
+went before a crash, read that file; nothing in it leaves unless error reports are on (SPECS.md,
+Error reports).
 
 ### Unit tests: `npm test`
 
