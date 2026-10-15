@@ -21,6 +21,8 @@ import { World } from '../process-world';
  *    survives the quit, as in any terminal app.
  * 7. On win32 a group is stopped, continued or hung up: there are no process groups, and the tree is not read
  *    from ps (its end is #358's taskkill).
+ * 8. (added with the code, for the mutant that hangs up the shells alone) Continued, the CLI starts one command more
+ *    before its shell's hangup reaches it, which the shell relays only once it runs again: that command is left.
  * The processes are a table in memory (process-world.ts): what is born during a read is born right after its
  * snapshot, so the race is the same at every run and on every host.
  */
@@ -54,6 +56,7 @@ const LATE = 80_003;
 const QUICK = 80_101;
 const QUICK_JOB = 80_102;
 const NOHUP = 80_103;
+const ONE_MORE = 80_004;
 
 /** An agent's terminal: its shell, the CLI the shell runs as a job, and a command the CLI starts during the first read. */
 function agentTerminal(world: World, late: { ignores?: string[] } = {}): void {
@@ -140,6 +143,19 @@ describe.each(['darwin', 'linux'] as const)('on %s', (platform) => {
     await endTerminalTree(terminalOf(SHELL), 300);
     expect(world.alive(LATE), 'the deaf command started during the read').toBe(false);
     expectNothingLeftStopped();
+  });
+});
+
+describe.each(['darwin', 'linux'] as const)('on %s, a CLI that goes on', (platform) => {
+  it('8. continued, the CLI is hung up already: it starts nothing more', async () => {
+    const w = new World();
+    w.add(process.pid, 1, TARS_GROUP);
+    w.add(SHELL, process.pid, SHELL, { jobs: [CLI] });
+    w.add(CLI, SHELL, CLI, { onContinue: () => w.add(ONE_MORE, CLI, ONE_MORE) });
+    use(w, platform);
+    await endTerminalTree(terminalOf(SHELL), 1_000);
+    expect(world.alive(ONE_MORE), 'a command started as the CLI went on').toBe(false);
+    expect(world.alive(CLI)).toBe(false);
   });
 });
 

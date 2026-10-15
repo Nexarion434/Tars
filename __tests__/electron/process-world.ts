@@ -6,7 +6,8 @@
  *
  * What a signal does, as the kernel does it: SIGKILL ends a process, stopped or not; SIGSTOP stops it; SIGCONT lets it
  * go on, and it then takes what it was sent meanwhile; SIGTERM and SIGHUP end it unless it ignores them, and a shell
- * that gets SIGHUP sends it to its jobs first, as bash does. An ended process's children go to init (ppid 1).
+ * that gets SIGHUP sends it to its jobs, as bash does, once it runs again (a microtask later here), not at once. An
+ * ended process's children go to init (ppid 1).
  */
 export interface Proc {
   pid: number;
@@ -19,6 +20,8 @@ export interface Proc {
   ignores: string[];
   /** A shell's jobs: the groups it sends SIGHUP to on its own hangup. */
   jobs: number[];
+  /** What it does as it goes on after SIGCONT, when nothing it was sent ended it: a CLI starting one command more. */
+  onContinue?: () => void;
 }
 
 export class World {
@@ -29,8 +32,8 @@ export class World {
   private everyRead: (() => void) | undefined;
   private readonly deaths = new Map<number, Array<() => void>>();
 
-  add(pid: number, ppid: number, pgid: number, opts: { ignores?: string[]; jobs?: number[] } = {}): void {
-    this.procs.set(pid, { pid, ppid, pgid, state: 'running', pending: [], ignores: opts.ignores ?? [], jobs: opts.jobs ?? [] });
+  add(pid: number, ppid: number, pgid: number, opts: { ignores?: string[]; jobs?: number[]; onContinue?: () => void } = {}): void {
+    this.procs.set(pid, { pid, ppid, pgid, state: 'running', pending: [], ignores: opts.ignores ?? [], jobs: opts.jobs ?? [], onContinue: opts.onContinue });
   }
 
   /** What happens right after the `read`-th snapshot, while ps is still running. */
@@ -77,11 +80,15 @@ export class World {
     if (sig === 'SIGCONT') {
       p.state = 'running';
       for (const held of p.pending.splice(0)) this.deliver(p, held);
+      if (p.state === 'running') p.onContinue?.();
       return;
     }
     if (p.state === 'stopped') { p.pending.push(sig); return; }
     if (p.ignores.includes(sig)) return;
-    if (sig === 'SIGHUP') for (const job of p.jobs) { try { this.send(-job, 'SIGHUP'); } catch { /* the job is gone */ } }
+    if (sig === 'SIGHUP' && p.jobs.length) {
+      const jobs = [...p.jobs];
+      queueMicrotask(() => { for (const job of jobs) { try { this.send(-job, 'SIGHUP'); } catch { /* the job is gone */ } } });
+    }
     this.end(p);
   }
 
