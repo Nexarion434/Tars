@@ -36,10 +36,14 @@ export interface PreviousRun {
   working: WorkingRecord[];
   /** It resumed agents and stopped again within two minutes: not a reason to resume them again. */
   resumedAndCrashedAgain: boolean;
+  /** The version of Tars that ran, `2.0.2`; null for a record written before 2.0.3. */
+  version: string | null;
 }
 
 interface RunRecord {
   version: 1;
+  /** The app's version, for the report of an abrupt end (services/health/abrupt-end.ts). */
+  appVersion?: string;
   pid: number;
   startedAt: number;
   lastWriteAt: number;
@@ -52,6 +56,8 @@ interface Options {
   file?: string;
   now?: () => number;
   pid?: number;
+  /** The app's version, recorded with the run. */
+  appVersion?: string;
 }
 
 /** Within this long of its start, a run that resumed agents and stopped is a loop, not a crash to recover from. */
@@ -82,6 +88,7 @@ function read(file: string): RunRecord | null {
     if (!parsed || parsed.version !== 1 || typeof parsed.startedAt !== 'number' || typeof parsed.lastWriteAt !== 'number') return null;
     return {
       version: 1,
+      ...(typeof parsed.appVersion === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,4}(?:-[0-9A-Za-z.]{1,20})?$/.test(parsed.appVersion) ? { appVersion: parsed.appVersion } : {}),
       pid: Number(parsed.pid) || 0,
       startedAt: parsed.startedAt,
       lastWriteAt: parsed.lastWriteAt,
@@ -105,7 +112,10 @@ export function beginRun(opts: Options = {}): PreviousRun | null {
   const file = opts.file ?? RUN_STATE_FILE;
   const now = (opts.now ?? Date.now)();
   const previous = read(file);
-  current = { version: 1, pid: opts.pid ?? process.pid, startedAt: now, lastWriteAt: now, cleanExit: false, resumed: [], working: [] };
+  current = {
+    version: 1, ...(opts.appVersion ? { appVersion: opts.appVersion } : {}),
+    pid: opts.pid ?? process.pid, startedAt: now, lastWriteAt: now, cleanExit: false, resumed: [], working: [],
+  };
   write(opts);
   if (!previous || previous.cleanExit) return null;
   return {
@@ -113,6 +123,7 @@ export function beginRun(opts: Options = {}): PreviousRun | null {
     lastWriteAt: previous.lastWriteAt,
     working: previous.working,
     resumedAndCrashedAgain: previous.resumed.length > 0 && previous.lastWriteAt - previous.startedAt < RESUME_LOOP_MS,
+    version: previous.appVersion ?? null,
   };
 }
 
