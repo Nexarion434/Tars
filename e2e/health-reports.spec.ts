@@ -76,7 +76,8 @@ function seed(home: string, reportsOn: boolean) {
   return { samplesFile: path.join(dir, 'health-samples.jsonl') };
 }
 
-const samplesIn = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { page: string | null }) : []);
+type Sample = { at: number; page: string | null; slowest: Array<{ channel: string; ms: number }> } & Record<string, unknown>;
+const samplesIn = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Sample) : []);
 
 async function boot(home: string, dsn: string, port: number): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await launchSandboxed(electron, home, {
@@ -105,8 +106,11 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
   const { samplesFile } = seed(home, true);
   try {
     let { app, page } = await boot(home, sentry.dsn, port);
-    await expect.poll(() => samplesIn(samplesFile).filter((s) => s.page === '/usage').length, { timeout: 30_000, message: 'samples taken on /usage' }).toBeGreaterThanOrEqual(2);
+    // Samples with IPC calls in them: the page polls, so some window has a slowest handler.
+    await expect.poll(() => samplesIn(samplesFile).filter((s) => s.page === '/usage' && s.slowest.length > 0).length, { timeout: 30_000, message: 'samples taken on /usage, with their slowest handlers' }).toBeGreaterThanOrEqual(2);
     await kill(app);
+    // What that run left on disk, before the next run samples.
+    const leftByThatRun = samplesIn(samplesFile);
 
     ({ app, page } = await boot(home, sentry.dsn, port));
     if (onWindows) {
@@ -121,6 +125,8 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
       expect(report.exception!.values![0].type).toBe('TarsEndedAbruptly');
       expect(tars.previousVersion).toBe(version);
       expect(typeof tars.uptimeMinutes).toBe('number');
+      // The last sample of that run, whole, its slowest handlers included, as it is on disk: nothing lost on the wire.
+      expect(tars.lastSample).toEqual(leftByThatRun.at(-1));
       expect(tars.lastSample).toMatchObject({ page: '/usage', agents: 2, running: 0 });
       expect(Object.keys(tars).sort()).toEqual(['crashType', 'lastSample', 'previousVersion', 'uptimeMinutes']);
       // Nothing of this machine in what left.
@@ -147,7 +153,12 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
       expect((values.diagnosticSent as Answer).samples).toBeGreaterThanOrEqual(3);
       const sent = sentry.ofKind('diagnostic');
       expect(sent.length).toBe(1);
-      expect((sent[0].contexts!.tars!.samples as unknown[]).length).toBe((values.diagnosticSent as Answer).samples);
+      // As many samples as the window was told, each whole, as it is on disk.
+      const received = sent[0].contexts!.tars!.samples as Sample[];
+      expect(received.length).toBe((values.diagnosticSent as Answer).samples);
+      const onDisk = new Map(samplesIn(samplesFile).map((s) => [s.at, s]));
+      for (const s of received) expect(s, `the sample of ${new Date(s.at).toISOString()} as on disk`).toEqual(onDisk.get(s.at));
+      expect(received.some((s) => s.slowest.length > 0), 'a sample with its slowest handlers').toBe(true);
       values.diagnosticAgain = await diagnostic(page);
       expect(values.diagnosticAgain).toEqual({ sent: false, reason: expect.stringContaining('already sent') });
       expect(sentry.ofKind('diagnostic').length).toBe(1);
