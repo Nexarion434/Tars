@@ -15,7 +15,7 @@ vi.mock('child_process', async (importOriginal) => {
 import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
- * The health samples Tars keeps on this machine (2.0.3, JeanBrasse's go of 2026-10-15 on monitoring options 1 and 2): every
+ * The health samples Tars keeps on this machine (2.0.3, the maintainer's go of 2026-10-15 on monitoring options 1 and 2): every
  * 5 minutes the main process's memory, its event loop delay, its slowest IPC handlers, how many agents there are and
  * run, and the page open. Kept 24 hours, in a bounded file, numbers with the names of Tars's own calls and pages; they leave only with the report of an abrupt
  * end, or when the user sends a diagnostic.
@@ -81,22 +81,22 @@ describe('the health samples file', () => {
   it('3. a line that is not a sample is never read back', () => {
     appendSample(file, sample(NOW - 60_000), NOW - 60_000);
     fs.appendFileSync(file, 'not json\n');
-    fs.appendFileSync(file, `${JSON.stringify({ ...sample(NOW - 30_000), note: '/Users/demo/secret plans' })}\n`);
+    fs.appendFileSync(file, `${JSON.stringify({ ...sample(NOW - 30_000), note: '/Users/someone/secret plans' })}\n`);
     fs.appendFileSync(file, `${JSON.stringify({ ...sample(NOW - 20_000), page: 'the user said: ship it tonight' })}\n`);
     const kept = readSamples(file, NOW);
-    expect(JSON.stringify(kept)).not.toContain('jeanbrasse');
+    expect(JSON.stringify(kept)).not.toContain('someone');
     expect(JSON.stringify(kept)).not.toContain('ship it');
     expect(kept.every((s) => Object.keys(s).sort().join() === Object.keys(sample(0)).sort().join())).toBe(true);
   });
 
   it('4. channels and pages that are not one are dropped', () => {
     const odd = cleanSample(sample(NOW, {
-      slowest: [{ channel: 'agent:start', ms: 5 }, { channel: 'rm -rf /', ms: 9 }, { channel: '/Users/demo/x', ms: 9 }, { channel: 'x'.repeat(80), ms: 9 }],
+      slowest: [{ channel: 'agent:start', ms: 5 }, { channel: 'rm -rf /', ms: 9 }, { channel: '/Users/someone/x', ms: 9 }, { channel: 'x'.repeat(80), ms: 9 }],
       page: '/agents?id=secret',
     }));
     expect(odd!.slowest).toEqual([{ channel: 'agent:start', ms: 5 }]);
     expect(odd!.page).toBeNull();
-    expect(cleanSample(sample(NOW, { page: '/Users/demo/projects' }))!.page).toBeNull();
+    expect(cleanSample(sample(NOW, { page: '/Users/someone/projects' }))!.page).toBeNull();
     expect(cleanSample(sample(NOW, { page: '/settings/error-reports' }))!.page).toBe('/settings/error-reports');
   });
 

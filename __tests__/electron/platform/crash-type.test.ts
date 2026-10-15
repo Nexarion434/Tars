@@ -25,7 +25,7 @@ const START = Date.UTC(2026, 9, 13, 0, 0, 0);
 
 function ips(name: string, at: number, type: string | null, bundle = BUNDLE, body?: string): void {
   const header = JSON.stringify({ app_name: 'Tars', bundleID: bundle, app_version: '2.0.2', bug_type: '309' });
-  const content = body ?? JSON.stringify({ exception: type ? { type, signal: 'SIGTRAP', codes: '0x1' } : undefined, threads: [{ frames: ['/Users/demo/x'] }] });
+  const content = body ?? JSON.stringify({ exception: type ? { type, signal: 'SIGTRAP', codes: '0x1' } : undefined, threads: [{ frames: ['/Users/someone/x'] }] });
   const file = path.join(dir, name);
   fs.writeFileSync(file, `${header}\n${content}`);
   fs.utimesSync(file, new Date(at), new Date(at));
@@ -55,7 +55,7 @@ describe('the crash type of a run that ended abruptly', () => {
   it('4. a report that is not what macOS writes gives nothing, and throws nothing', () => {
     ips('Tars-a.ips', START + 1_000, null);
     ips('Tars-b.ips', START + 2_000, null, BUNDLE, '{broken');
-    ips('Tars-c.ips', START + 3_000, 'segfault at /Users/demo');
+    ips('Tars-c.ips', START + 3_000, 'segfault at /Users/someone');
     fs.writeFileSync(path.join(dir, 'Tars-d.ips'), 'one line only');
     expect(() => crashTypeSince(START, 'darwin', dir)).not.toThrow();
     expect(crashTypeSince(START, 'darwin', dir)).toBeNull();
