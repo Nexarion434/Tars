@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-15',
+    updates: [
+      'Tars keeps a record of its own health on this computer: every 5 minutes, its memory, how long it took to answer, its slowest requests, how many agents run and the page open, numbers only, the last 24 hours kept in ~/.dorothy/health-samples.jsonl. With Send error reports on, a run that ended without quitting (a crash, a forced quit, a power cut) is reported once at the next launch, with its version, how long it ran, the crash type macOS gave, and its last record, and the last 24 hours can be sent as a diagnostic, once a day. Nothing of it leaves while that switch is off, and nothing on Windows.',
+    ],
+  },
+  {
     id: 59,
     version: '2.0.2',
     date: '2026-10-13',
