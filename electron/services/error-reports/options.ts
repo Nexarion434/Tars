@@ -34,6 +34,14 @@ export interface ErrorReportDeps {
   preAdmitted?: Set<string>;
   /** Told each event's answer from Sentry: its HTTP status, 0 when none came. */
   onSent?: (eventId: string, status: number) => void;
+  /**
+   * A health report's numbers, by event id, put back after the SDK's
+   * normalization: it cuts what an event holds below a depth of 3, and a
+   * diagnostic's samples (contexts.tars.samples[i]) or the slowest handlers
+   * of an abrupt end's last sample sit deeper. Raising the depth for every
+   * event would move the cut, not remove it.
+   */
+  healthPayloads?: Map<string, Record<string, unknown>>;
 }
 
 function gated(base: Transport, deps: ErrorReportDeps): Transport {
@@ -72,10 +80,6 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     dsn: deps.dsn,
     release: deps.facts().release,
     sendDefaultPii: false,
-    // A diagnostic's samples sit at contexts.tars.samples[i].slowest[j]: at the
-    // default depth of 3 each sample became "[Object]" and left as nothing.
-    // Every event is rebuilt field by field (report.ts) whatever its depth.
-    normalizeDepth: 6,
     sendClientReports: false,
     enableLogs: false,
     maxBreadcrumbs: 0,
@@ -83,7 +87,12 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     beforeSendTransaction: () => null,
     beforeSend(event: unknown) {
       if (!deps.isEnabled()) return null;
-      const report = toReport(event, deps.facts());
+      const id = (event as { event_id?: unknown } | null)?.event_id;
+      const payload = typeof id === 'string' ? deps.healthPayloads?.get(id) : undefined;
+      const whole = payload
+        ? { ...(event as Record<string, unknown>), contexts: { ...((event as { contexts?: object }).contexts ?? {}), tars: payload } }
+        : event;
+      const report = toReport(whole, deps.facts());
       if (!report) return null;
       if (report.event_id && deps.preAdmitted?.has(report.event_id)) return report as never;
       if (!deps.budget.admit(reportFingerprint(report))) return null;
@@ -94,7 +103,6 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     dsn: string;
     release: string;
     sendDefaultPii: false;
-    normalizeDepth: number;
     sendClientReports: false;
     enableLogs: false;
     maxBreadcrumbs: 0;
