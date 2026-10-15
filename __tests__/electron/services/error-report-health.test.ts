@@ -20,7 +20,7 @@ import type { HealthSample } from '../../../electron/services/health/samples';
  */
 
 const facts: ReportFacts = {
-  installId: '0f8fad5b-d9cb-469f-a165-70867728950e', release: 'tars@2.0.3', home: '/Users/noah', host: 'MacBook-Pro-de-Noah',
+  installId: '0f8fad5b-d9cb-469f-a165-70867728950e', release: 'tars@2.0.3', home: '/Users/someone', host: 'MacBook-Pro-de-Someone',
   os: { name: 'macOS', version: '15.4' }, electron: '44.0.0',
 };
 const sample = (at: number, over: Partial<HealthSample> = {}): HealthSample => ({
@@ -38,7 +38,7 @@ describe('the reports of Tars\'s health', () => {
     expect(report.tags).toEqual({ process: 'main', kind: 'abrupt-end' });
     expect(report.contexts.tars).toEqual({ previousVersion: '2.0.2', uptimeMinutes: 312, crashType: 'EXC_BREAKPOINT', lastSample: sample(T) });
     expect(report.exception.values[0].type).toBe('TarsEndedAbruptly');
-    expect(JSON.stringify(report)).not.toMatch(/noah|MacBook/i);
+    expect(JSON.stringify(report)).not.toMatch(/someone|MacBook/i);
   });
 
   it('1. a diagnostic keeps its samples', () => {
@@ -49,7 +49,7 @@ describe('the reports of Tars\'s health', () => {
 
   it('2. only numbers and the listed words ride in contexts.tars', () => {
     const report = toReport(abrupt({
-      previousVersion: '/Users/noah/Tars.app', crashType: 'segfault in /Users/noah/x', note: 'hello',
+      previousVersion: '/Users/someone/Tars.app', crashType: 'segfault in /Users/someone/x', note: 'hello',
       lastSample: { ...sample(T), page: 'the conversation' },
     }), facts)!;
     expect(report.contexts.tars).toEqual({ previousVersion: null, uptimeMinutes: 312, crashType: null, lastSample: { ...sample(T), page: null } });
