@@ -293,8 +293,8 @@ const MAX_SAMPLES = HEALTH_KEEP_MS / 300_000 + 12;
  * as one error: once a day.
  */
 export function healthEvent(kind: HealthKind, payload: Record<string, unknown>): Record<string, unknown> {
+  // No `type`: the SDK runs beforeSend only for an event without one (an error).
   return {
-    type: 'event',
     platform: 'node',
     level: kind === 'abrupt-end' ? 'error' : 'warning',
     timestamp: Date.now() / 1000,

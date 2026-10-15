@@ -135,6 +135,7 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
   let sentryOf: typeof import('@sentry/electron/main') | undefined;
   let budgetOf: ReportBudget | undefined;
   const preAdmitted = new Set<string>();
+  const healthPayloads = new Map<string, Record<string, unknown>>();
   const answers = new Map<string, number>();
   const sync = (): Promise<void> => {
     if (starting) return starting;
@@ -152,6 +153,7 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
             budget,
             makeTransport: sentry.makeElectronTransport as never,
             preAdmitted,
+            healthPayloads,
             onSent: (eventId, status) => { answers.set(eventId, status); },
           }),
           defaultIntegrations: false,
@@ -193,6 +195,7 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
     const at = budget.admitAt(fingerprint);
     if (at === null) return { sent: false, reason: HEALTH_REFUSALS.budget };
     preAdmitted.add(id);
+    healthPayloads.set(id, payload);
     try {
       sentry.captureEvent(event as never, { event_id: id } as never);
       const flushed = await sentry.flush(HEALTH_SEND_MS);
@@ -202,6 +205,7 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
       return { sent: false, reason: HEALTH_REFUSALS.unreachable };
     } finally {
       preAdmitted.delete(id);
+      healthPayloads.delete(id);
       answers.delete(id);
     }
   };
