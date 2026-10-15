@@ -72,6 +72,10 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     dsn: deps.dsn,
     release: deps.facts().release,
     sendDefaultPii: false,
+    // A diagnostic's samples sit at contexts.tars.samples[i].slowest[j]: at the
+    // default depth of 3 each sample became "[Object]" and left as nothing.
+    // Every event is rebuilt field by field (report.ts) whatever its depth.
+    normalizeDepth: 6,
     sendClientReports: false,
     enableLogs: false,
     maxBreadcrumbs: 0,
@@ -90,6 +94,7 @@ export function errorReportOptions(deps: ErrorReportDeps) {
     dsn: string;
     release: string;
     sendDefaultPii: false;
+    normalizeDepth: number;
     sendClientReports: false;
     enableLogs: false;
     maxBreadcrumbs: 0;
