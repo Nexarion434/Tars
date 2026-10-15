@@ -443,9 +443,9 @@ function moveLocalKanbanToHermes() {
 
 // ============== App Initialization ==============
 
-// Windows: one Tars per profile. A second launch shows the first one's window
-// and ends here: it has read app-settings.json and nothing else, and it writes
-// nothing and starts nothing. Always true elsewhere.
+// One Tars per profile, on every platform. A second launch shows the first
+// one's window and ends here: it has read app-settings.json and nothing else,
+// and it writes nothing and starts nothing.
 const isPrimaryInstance = claimSingleInstance(revealMainWindow);
 if (!isPrimaryInstance) app.exit(0);
 
