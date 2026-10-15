@@ -7,6 +7,14 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 60,
+    version: '2.0.3',
+    date: '2026-10-15',
+    updates: [
+      'A task delegated to an agent no longer leaves a process running once it ends: a command the agent\'s CLI was starting just as the run ended, stopped or finished, was left behind with nothing in Tars to end it. Measured with the delegation test on a Mac: 2.0.2 left one behind in 2 runs out of 5, and none is left in 5 runs out of 5.',
+    ],
+  },
+  {
     id: 59,
     version: '2.0.2',
     date: '2026-10-13',
