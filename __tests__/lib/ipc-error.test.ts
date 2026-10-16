@@ -64,6 +64,6 @@ describe('an empty reason (4)', () => {
 describe('one line, the right way round (5)', () => {
   it('flattens what breaks or turns the line', () => {
     expect(ipcReason(new Error(`${WRAPPED}\nhint: use --force`), 'x')).toBe("The worktree could not be made: 'main' is already checked out at '/Users/me/projects/tars' hint: use --force");
-    expect(ipcReason(new Error("Error invoking remote method 'agent:create': Error: at '/p/a‮b'"), 'x')).toBe("at '/p/a b'");
+    expect(ipcReason(new Error("Error invoking remote method 'agent:create': Error: at '/p/a\u202Eb'"), 'x')).toBe("at '/p/a b'");
   });
 });
