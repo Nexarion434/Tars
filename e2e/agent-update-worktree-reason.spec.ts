@@ -71,7 +71,7 @@ process.stdin.on('data', () => {});
 process.stdin.resume();
 `;
 
-test.skip(process.platform === 'win32', 'a French git exists on Windows (Git for Windows is translated), but neither stand-in of this spec can: Tars starts git there as a program the PATH names (git.exe by its full path once #358 is in, else a bare git that libuv completes with .com or .exe only), which no script can be, and the agents\' CLI here is a #! script, which Windows does not start. What the French case holds, makeAgentWorktree\'s LC_ALL=C, is the same code on every platform; this runs on macOS and Linux');
+test.skip(process.platform === 'win32', 'every case of this spec, not only the French one: neither of its stand-ins can run on Windows. Tars starts git there as a program the PATH names (git.exe by its full path once #358 is in, else a bare git that libuv completes with .com or .exe only), which no script can be, and the agents\' CLI here is a #! script, which Windows does not start. The refusals, the refused save and the create path wait on a .cmd stand-in. makeAgentWorktree\'s LC_ALL=C is held on every host, Windows included, by __tests__/electron/handlers/agent-worktree-locale.test.ts; whether Git for Windows honours it waits on a run there');
 
 test('a worktree git cannot make is not saved, and the answer is git\'s own reason', async () => {
   test.setTimeout(180_000);
