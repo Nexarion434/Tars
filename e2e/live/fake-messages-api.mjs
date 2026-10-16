@@ -110,8 +110,10 @@ http.createServer((req, res) => {
     const last = messages.slice(k + 1).map(textOf).join('\n').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
     const side = String(model).includes('haiku');
     // The command the turn carries, which Claude Code follows with context of its
-    // own: logging the end of the turn would lose it.
-    log({ url: req.url, model, stream: !!json.stream, side, effort: json.output_config?.effort ?? null, last: (last.match(/LINES \d+ \w+/) || [last.slice(0, 200)])[0] });
+    // own: logging the end of the turn would lose it. And the end as well: the
+    // caveat of a local command run just before (`/effort low`, claude 2.1.300)
+    // can open the turn, ahead of what was typed after it.
+    log({ url: req.url, model, stream: !!json.stream, side, effort: json.output_config?.effort ?? null, last: (last.match(/LINES \d+ \w+/) || [last.slice(0, 200)])[0], tail: last.slice(-200) });
     if (!json.stream) {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({
