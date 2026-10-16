@@ -117,11 +117,8 @@ describe.each(['darwin', 'linux', 'win32'] as const)('the worktree git, as %s', 
   it('3. keeps the rest of the environment as it is', async () => {
     await create(platform);
 
-    for (const call of gitCalls) {
-      const { LC_ALL: _set, ...rest } = call.env ?? {};
-      const { LC_ALL: _host, ...hostRest } = process.env;
-      expect(rest, call.args.join(' ')).toEqual(hostRest);
-    }
+    const withoutLocale = (env: NodeJS.ProcessEnv | undefined) => Object.fromEntries(Object.entries(env ?? {}).filter(([key]) => key !== 'LC_ALL'));
+    for (const call of gitCalls) expect(withoutLocale(call.env), call.args.join(' ')).toEqual(withoutLocale(process.env));
   });
 
   it('4. tells the window git\'s own refusal, without its progress or "fatal: "', async () => {
