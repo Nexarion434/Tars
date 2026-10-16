@@ -11,6 +11,9 @@ export const CHANGELOG: Release[] = [
     version: '2.0.3',
     date: '2026-10-15',
     updates: [
+      'On the Usage page by agent, the note under the rows says which tasks a row adds up: those begun in the timeframe, each at its own cost. The charts above count by turn and also hold a task begun earlier, what came before 1.9.3, and Claude Code sessions Tars did not start, which are in no row.',
+      'In New team (+ Team on the Agents page), a member whose worktree git cannot make, on a branch already checked out in the project say, is listed with git\'s own reason, as an agent\'s settings give it since 2.0.2: it read git\'s whole command line and the reason of a second try as a new branch ("a branch named ... already exists").',
+      'A task delegated to an agent no longer leaves a process running once it ends: a command the agent\'s CLI was starting just as the run ended, stopped or finished, was left behind with nothing in Tars to end it. Measured with the delegation test on a Mac: 2.0.2 left one behind in 2 runs out of 5, and none is left in 5 runs out of 5.',
       'Tars keeps a record of its own health on this computer: every 5 minutes, its memory, how long it took to answer, its slowest requests, how many agents run and the page open: numbers, with the names of Tars\'s own calls and pages, no content, no file path, no name. The last 24 hours are kept in ~/.dorothy/health-samples.jsonl. With Send error reports on, a run that ended without quitting (a crash, a forced quit, a power cut) is reported once at the next launch, with its version, how long it ran, the crash type macOS gave, and its last record, and the last 24 hours can be sent as a diagnostic, once a day. Nothing of it leaves while that switch is off, and nothing on Windows.',
     ],
   },
