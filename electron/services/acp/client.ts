@@ -154,6 +154,18 @@ function lastWords(stderr: string): string {
 /** How long a stopped run's processes get to end on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 2_000;
 
+/**
+ * How many times the end of a tree reads it again, every group it knows
+ * stopped (SIGSTOP), before it signals, until a read adds no group. A process
+ * started while the first ps ran was in no read, and its parent could die at
+ * the SIGTERM before any read saw it: in a group of its own, reparented to
+ * launchd, nothing tied it to the run any more (the QA's B1 on #358: 22 runs
+ * out of 22 on its bench, and acp-delegation.spec.ts red 3 runs out of 5).
+ * Stopped, a parent starts nothing more, and what it started is under it at
+ * the next read. A tree that keeps growing is ended as far as the reads saw.
+ */
+const FREEZE_READS = 5;
+
 type ProcessRow = { pid: number; ppid: number; pgid: number; zombie: boolean; age?: number };
 const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat=,etime='];
 
@@ -200,16 +212,19 @@ export function processTableNow(timeoutMs: number): ProcessRow[] | undefined {
  * on (wedged, SIGSTOPped by the Audit on #191) left its `zsh -c` and `sleep`
  * alive, reparented to launchd, once npm, the adapter and claude had died with
  * their group. So the tree is read from ps before the first signal, while the
- * parents that tie those groups to the run are still alive, and read again
- * before the last, from every process already known, for what was started in
- * between. Tars's own group, and init's, are never signalled. With no ps, the
- * roots' own groups still are.
+ * parents that tie those groups to the run are still alive, its groups held
+ * still while it is read again (FREEZE_READS), and read again before the
+ * last, from every process already known, for what was started in between.
+ * Tars's own group, and init's, are never signalled. With no ps, the roots'
+ * own groups still are.
  */
 export class ProcessTree {
   private readonly known: Set<number>;
   private readonly groups: Set<number>;
   private ownGroup: number | undefined;
   private firstReadAt: number | undefined;
+  /** Taken over by the quit (absorb): the quit's signals end it, and its own send nothing more. */
+  private retired = false;
 
   constructor(roots: number[]) {
     this.known = new Set(roots);
@@ -254,8 +269,46 @@ export class ProcessTree {
   }
 
   signal(sig: NodeJS.Signals): void {
+    if (this.retired) return;
     for (const group of this.targets) {
       try { process.kill(-group, sig); } catch { /* the group is gone */ }
+    }
+  }
+
+  /**
+   * Makes another tree's processes and groups this one's, and retires it: a
+   * stop still on its way when Tars quits is the quit's to end, and once the
+   * quit has, that stop must not signal the tree again, where a new process
+   * may have taken a group's id by then.
+   */
+  absorb(other: ProcessTree): void {
+    for (const pid of other.known) this.known.add(pid);
+    for (const group of other.groups) this.groups.add(group);
+    other.retired = true;
+  }
+
+  /**
+   * Holds the tree still while it is read again (FREEZE_READS): every group
+   * known is stopped (SIGSTOP), then the tree grows from `read`, until a read
+   * adds no group. Whoever calls it continues them (SIGCONT) once its own
+   * signal is sent, so that each stopped process takes it as it goes on.
+   */
+  freeze(read: () => ProcessRow[] | undefined): void {
+    for (let round = 0; round < FREEZE_READS; round++) {
+      const stopped = new Set(this.targets);
+      this.signal('SIGSTOP');
+      this.grow(read());
+      if (this.targets.every(group => stopped.has(group))) return;
+    }
+  }
+
+  /** The same, with a read that gives the event loop back: a delegated run's stop, while Tars goes on. */
+  async freezeAsync(read: () => Promise<ProcessRow[] | undefined>): Promise<void> {
+    for (let round = 0; round < FREEZE_READS; round++) {
+      const stopped = new Set(this.targets);
+      this.signal('SIGSTOP');
+      this.grow(await read());
+      if (this.targets.every(group => stopped.has(group))) return;
     }
   }
 
@@ -268,16 +321,33 @@ export class ProcessTree {
   }
 }
 
-/** Ends the process `root` leads and everything under it: SIGTERM, then SIGKILL two seconds on. */
+/**
+ * Ends the process `root` leads and everything under it: its groups stopped
+ * and read again until the tree stops growing (FREEZE_READS), SIGTERM, then
+ * SIGKILL two seconds on.
+ */
 async function endProcessTree(root: number): Promise<void> {
   const tree = new ProcessTree([root]);
+  stopsUnderway.add(tree);
   tree.grow(await processTable());
+  await tree.freezeAsync(processTable);
+  // A stopped process takes its SIGTERM as it continues.
   tree.signal('SIGTERM');
+  tree.signal('SIGCONT');
   const last = setTimeout(() => {
-    void processTable().then(table => { tree.grow(table); tree.signal('SIGKILL'); });
+    void processTable().then(table => { tree.grow(table); tree.signal('SIGKILL'); }).finally(() => stopsUnderway.delete(tree));
   }, STOP_GRACE_MS);
   last.unref();
 }
+
+/**
+ * The trees a stop is ending, from its first read until its SIGKILL. Tars's
+ * quit ends them as its own (endProcessTreesNow): it is handed the runs still
+ * running only, and a stop caught between its SIGSTOP and its SIGCONT would
+ * leave its groups stopped for good, an orphaned one included, and lose its
+ * SIGKILL with the app (the Audit's Low 1 on #422).
+ */
+const stopsUnderway = new Set<ProcessTree>();
 
 /**
  * win32's stop: the process Tars spawned and everything under it, by
@@ -334,8 +404,9 @@ const QUIT_POLL_MS = 50;
 
 /**
  * Ends the processes these roots lead, and everything under them, before it
- * returns: SIGTERM, a wait of at most QUIT_GRACE_MS that ends as soon as
- * nothing is left, then SIGKILL. For the quit, where the stop's timer would
+ * returns: their groups held still while read again (FREEZE_READS), SIGTERM,
+ * a wait of at most QUIT_GRACE_MS that ends as soon as nothing is left, then
+ * SIGKILL. For the quit, where the stop's timer would
  * never fire (measured on #197: a wedged run was whole 14 s after the quit).
  *
  * Every read of ps shares one deadline, a second and a half from the start:
@@ -344,7 +415,7 @@ const QUIT_POLL_MS = 50;
  * groups already known still get their signals.
  */
 export function endProcessTreesNow(roots: number[]): void {
-  if (roots.length === 0) return;
+  if (roots.length === 0 && stopsUnderway.size === 0) return;
   const graceEnds = Date.now() + QUIT_GRACE_MS;
   const deadline = graceEnds + QUIT_LAST_READ_MS;
   if (process.platform === 'win32') return endProcessTreesOnWindowsNow(roots, deadline);
@@ -353,8 +424,13 @@ export function endProcessTreesNow(roots: number[]): void {
     return left > 20 ? processTableNow(left) : undefined;
   };
   const tree = new ProcessTree(roots);
+  for (const stopping of stopsUnderway) tree.absorb(stopping);
+  stopsUnderway.clear();
   tree.grow(read(graceEnds));
+  // Held still while read again, as the stop does (FREEZE_READS).
+  tree.freeze(() => read(graceEnds));
   tree.signal('SIGTERM');
+  tree.signal('SIGCONT');
   const pause = new Int32Array(new SharedArrayBuffer(4));
   while (Date.now() < graceEnds) {
     if (!tree.anyLeft(read(graceEnds))) return;
