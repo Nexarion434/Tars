@@ -33,6 +33,10 @@
  * 10. A worker's note reads as an order: no label, or typed into the
  *    recipient's turn; or a worker's report to whoever leads it becomes a note.
  * 11. A name in a note's label puts a line of its own in Tars's voice.
+ * 12. A caller following a queued task by its id loses it once it leaves the
+ *     queue: between its turn and the ledger naming its run, after it started,
+ *     or when its run failed before starting, which would leave it waiting
+ *     for a task that never comes.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -125,6 +129,26 @@ describe('the queue of one agent', () => {
     expect(q.mayCancel(task.ref, 'w2', fleet), 'a worker that did not ask').toBe(false);
     expect(q.mayCancel(task.ref, 'other', fleet), "another project's orchestrator").toBe(false);
     expect(q.mayCancel('t-00000000', 'lead', fleet), 'no such task').toBe(false);
+  });
+
+  it('12. a queued task is followed by its id: queued, starting, started as the ledger task, or failed before starting', () => {
+    const q = createOneTaskQueue();
+    q.runStarted('a', { since: T0 });
+    const one = q.enqueue('a', { title: 'one' }, T0);
+    const two = q.enqueue('a', { title: 'two' }, T0);
+    expect(q.lookup(one.ref)).toMatchObject({ state: 'queued', task: { ref: one.ref } });
+    q.runEnded('a');
+    expect(q.takeTurn('a', one.ref, undefined)).toBe(true);
+    expect(q.lookup(one.ref)).toMatchObject({ state: 'starting' });
+    q.runNamed('a', 'ledger-1');
+    expect(q.lookup(one.ref)).toMatchObject({ state: 'started', taskId: 'ledger-1' });
+    q.runEnded('a');
+    expect(q.lookup(one.ref), 'still found once its run ended').toMatchObject({ state: 'started', taskId: 'ledger-1' });
+    expect(q.takeTurn('a', two.ref, undefined)).toBe(true);
+    q.notStarted(two.ref, 'the ACP launch failed');
+    q.runEnded('a');
+    expect(q.lookup(two.ref)).toMatchObject({ state: 'failed', error: 'the ACP launch failed' });
+    expect(q.lookup('t-00000000')).toBeUndefined();
   });
 
   it('7. what a task waits behind is said: which task, from whom, since when', () => {
