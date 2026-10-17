@@ -810,9 +810,13 @@ function noteNeedsSession(agent: AgentStatus): Record<string, unknown> {
   };
 }
 
-/** A turn in the agent's terminal: its CLI up, and working or asking (core/one-task.ts). */
+/**
+ * A turn in the agent's terminal: its CLI up, and working or asking (a
+ * permission, a question) (core/one-task.ts). `waiting` on the idle prompt is
+ * Claude Code's word for a CLI at rest at its prompt: no turn.
+ */
 function terminalTurn(agent: AgentStatus): Busy | undefined {
-  if (agent.status !== 'running' && agent.status !== 'waiting') return undefined;
+  if (agent.status !== 'running' && !(agent.status === 'waiting' && agent.waitingReason !== 'idle')) return undefined;
   if (!cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) return undefined;
   const since = Date.parse(agent.workHandedAt ?? agent.lastActivity ?? '') || Date.now();
   return { kind: 'turn', ...(agent.requestedBy?.agentId ? { requesterId: agent.requestedBy.agentId } : {}), since };
