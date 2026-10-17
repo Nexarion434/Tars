@@ -571,6 +571,18 @@ export interface HermesSshConfig {
  * (the dashboard token was refused); no-connection (no Hermes connection saved). `waiting`: sends Hermes has not
  * taken yet, which go when it does.
  */
+/** Tars's Hermes session as the main process watches it (electron/services/hermes-session-watch.ts). */
+export interface HermesSessionState {
+  /** `none`: no Hermes configured, or one that asks for no sign-in. */
+  session: 'none' | 'signed-in' | 'signed-out' | 'unreachable';
+  version?: string;
+  /** The rules of this Hermes version were not measured: a task an agent claims stays scheduled. */
+  unmeasured: boolean;
+  /** The sentence to show, the same the kanban tools answer with. */
+  message?: string;
+  checkedAt?: string;
+}
+
 export interface HermesRelayStatus {
   enabled: boolean;
   state: 'off' | 'ready' | 'unreachable' | 'not-configured' | 'plugin-missing' | 'unauthorized' | 'no-connection';
@@ -2108,6 +2120,9 @@ export interface ElectronAPI {
     /** The relay's state now; `onRelayStatus` hears each change of it. */
     relayStatus: () => Promise<HermesRelayStatus>;
     onRelayStatus: (callback: (status: HermesRelayStatus) => void) => () => void;
+    /** Tars's Hermes session now; `onSessionState` hears each change of it. */
+    sessionState: () => Promise<HermesSessionState>;
+    onSessionState: (callback: (state: HermesSessionState) => void) => () => void;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;

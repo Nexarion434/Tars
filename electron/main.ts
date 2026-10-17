@@ -147,7 +147,9 @@ import { agentStatusEmitter } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
-import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
+import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
+import { probeHermes } from './services/hermes-client';
 import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
@@ -459,6 +461,29 @@ function moveLocalKanbanToHermes() {
   }, err => console.warn('[kanban] local board to Hermes: not attempted:', err));
 }
 
+/**
+ * Tars's Hermes session, asked every half hour (services/hermes-session-watch.ts):
+ * each check is a signed-in request, which keeps the session renewed, and finds it
+ * when the gateway ended it. Only for a gateway a connection file names: none is
+ * asked for a sandbox or a test home with no file.
+ */
+const HERMES_SESSION_EVERY_MS = 30 * 60_000;
+
+function startHermesSessionWatch() {
+  const watch = createHermesSessionWatch({
+    check: async () => {
+      const configured = configuredHermesConnection();
+      if (!configured || 'unusable' in configured) return { configured: false, reachable: false, authRequired: false, signedIn: false };
+      const p = await probeHermes(configured.conn);
+      return { configured: true, reachable: p.reachable, authRequired: p.authRequired, signedIn: p.signedIn, version: p.version };
+    },
+    everyMs: HERMES_SESSION_EVERY_MS,
+    onChange: state => broadcastToAllWindows('hermes:session:state', state),
+  });
+  setHermesSessionWatch(watch);
+  watch.start();
+}
+
 // ============== App Initialization ==============
 
 // One Tars per profile, on every platform. A second launch shows the first
@@ -649,6 +674,7 @@ app.whenReady().then(async () => {
     initAgentPty: (agent: AgentStatus) => initAgentPty(agent, getMainWindow(), handleStatusChangeNotificationWrapper, saveAgents),
   });
   onRelayStatus(status => broadcastToAllWindows('hermes:relay:status', status));
+  startHermesSessionWatch();
 
   // Initialize services
   initTelegramBot();

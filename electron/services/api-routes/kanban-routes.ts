@@ -20,6 +20,7 @@ import type { NoteDelivery } from '../error-triage';
 import type { AgentStatus } from '../../types';
 import { carriedSince, type CarriedKanban } from '../carry-over';
 import { envelopeValue } from '../../utils/envelope-value';
+import { hermesSessionWatch } from '../hermes-session-watch';
 
 /**
  * The Hermes board through hermes-client, null when nobody configured one, and
@@ -48,13 +49,19 @@ export function hermesKanban(): KanbanHermes | HermesUnusable | null {
   const configured = configuredHermesConnection();
   if (!configured || 'unusable' in configured) return configured;
   const { conn } = configured;
+  // A call refused for the session tells the window at once, not at the watch's next check.
+  const told = async <R extends { success: boolean; needsSignIn?: boolean }>(reply: Promise<R>): Promise<R> => {
+    const r = await reply;
+    if (!r.success && r.needsSignIn) hermesSessionWatch()?.refused();
+    return r;
+  };
   return {
-    board: tenant => fetchHermesBoard(conn, undefined, tenant),
-    get: id => getHermesTask(conn, id),
-    create: task => createHermesTask(conn, task),
-    update: (id, patch) => updateHermesTask(conn, id, patch),
-    remove: id => deleteHermesTask(conn, id),
-    comment: (id, body) => addHermesTaskComment(conn, id, body),
+    board: tenant => told(fetchHermesBoard(conn, undefined, tenant)),
+    get: id => told(getHermesTask(conn, id)),
+    create: task => told(createHermesTask(conn, task)),
+    update: (id, patch) => told(updateHermesTask(conn, id, patch)),
+    remove: id => told(deleteHermesTask(conn, id)),
+    comment: (id, body) => told(addHermesTaskComment(conn, id, body)),
     version: () => versionOf(conn),
   };
 }
