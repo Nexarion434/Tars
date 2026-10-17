@@ -257,7 +257,8 @@ type RunAnswer = {
   usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; costUSD?: number | null };
   costUSD?: number;
   error?: string;
-  model?: { asked: string; taken: boolean };
+  /** A model asked for this run: taken or not, the agent's own, the model it ran on (none: its CLI's default). */
+  model?: { asked: string; taken: boolean; own?: string; ranOn?: string };
 };
 
 /** How long run-task may take to say the run started: one segment, as every wait. */
@@ -267,6 +268,15 @@ const RUN_START_WAIT_SECONDS = WAIT_SEGMENT_SECONDS;
 function answerOf(err: unknown): { status: number; body: Record<string, unknown> } | null {
   const e = err as { status?: unknown; body?: unknown } | null;
   return e && typeof e.status === "number" ? { status: e.status, body: (e.body ?? {}) as Record<string, unknown> } : null;
+}
+
+/** What became of a model asked for the run, when the agent did not take it: said as it happened. */
+function modelNoteOf(model: RunAnswer["model"]): string {
+  if (!model || model.taken) return "";
+  const head = `\nThis run is not on ${model.asked}: the agent did not take it`;
+  if (model.ranOn) return `${head}, and ran on its own model, ${model.ranOn}.`;
+  if (model.own) return `${head}, nor its own model, ${model.own}: it ran on its CLI's default model.`;
+  return `${head}, and has no model of its own: it ran on its CLI's default model.`;
 }
 
 /** A run's end, said for the caller: its answer, then how it ended and what it cost. */
@@ -311,10 +321,15 @@ function runText(run: RunAnswer, modelNote: string): ToolResult {
  */
 async function runOverAcp(
   id: string, prompt: string, model: string | undefined, timeoutSeconds: number, clientRequestId: string,
+  allowCrossProject: boolean | undefined,
 ): Promise<ToolResult | null> {
   const deadline = Date.now() + (timeoutSeconds + 60) * 1000;
   const follow = `follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again`;
-  const body = { task: prompt, timeoutSeconds, clientRequestId, answer: "started", ...(model ? { model } : {}) };
+  // allowCrossProject as /dispatch carries it: run-task asks the same guard.
+  const body = {
+    task: prompt, timeoutSeconds, clientRequestId, answer: "started",
+    ...(model ? { model } : {}), ...(allowCrossProject ? { allowCrossProject } : {}),
+  };
 
   let started: RunAnswer | undefined;
   let failingSince = 0;
@@ -348,9 +363,7 @@ async function runOverAcp(
     }
   }
 
-  const modelNote = started.model && !started.model.taken
-    ? `\nThis run is not on ${started.model.asked}: the agent did not take it, and ran on its own model.`
-    : "";
+  const modelNote = modelNoteOf(started.model);
   // An answer that is already the end (a duplicate of a run that ended, or
   // an older Tars that answers at the end): said as it is.
   if (started.outcome !== "running" && (started.text !== undefined || !started.taskId)) return runText(started, modelNote);
@@ -608,7 +621,7 @@ const AGENT_TOOLS: Tool[] = [
     schema: {
       id: z.string().describe("The agent ID"),
       prompt: z.string().describe("The task or instruction for the agent to work on"),
-      model: z.string().optional().describe("Optional model for this task only; the agent's saved model is not changed, and the result says when the agent did not take it. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
+      model: z.string().optional().describe("Optional model for the session this call starts; the agent's saved model is not changed. Used only when the agent has no session open: one already running or waiting gets the prompt typed in as a message, and the model is ignored without a word. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
       clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's outcome, and nothing is sent twice. Omitted: one is made for this call."),
     },
@@ -792,7 +805,7 @@ const AGENT_TOOLS: Tool[] = [
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
-      model: z.string().optional().describe("Optional model for this task only; the agent's saved model is not changed, and the result says when the agent did not take it. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
+      model: z.string().optional().describe("Optional model for this task only; the agent's saved model is not changed. Run over ACP (the usual path), the result says when the agent did not take it and which model the run went on instead: the agent's own, or its CLI's default. Typed into its terminal instead (a provider with no ACP mode, or an ACP launch that failed), it is used only when the agent has no session open, for the session started, and ignored without a word otherwise. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
       clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this delegation. Calling again with the same id answers with the first call's task (task_status reads it), and nothing is run twice. Omitted: one is made for this call."),
@@ -808,7 +821,7 @@ const AGENT_TOOLS: Tool[] = [
         // returns the agent's actual answer, why the turn ended and what it
         // cost. Falls back to the terminal dispatch below only when Tars
         // answered that no run started.
-        const acp = await runOverAcp(id, prompt, model, timeoutSeconds, clientRequestId);
+        const acp = await runOverAcp(id, prompt, model, timeoutSeconds, clientRequestId, allowCrossProject);
         if (acp) return acp;
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
