@@ -100,3 +100,50 @@ export function totalsByAgent(tasks: TaskEntry[], accountLabels: Record<string, 
       || b.tasks - a.tasks
       || a.agentId.localeCompare(b.agentId));
 }
+
+/** The columns of the agent view a header sorts by: every one but the agent's own name (JeanBrasse, 18/10). */
+export type AgentSortKey = 'project' | 'provider' | 'tasks' | 'time' | 'tokens' | 'cost';
+
+export interface AgentSort {
+  key: AgentSortKey;
+  /** Highest first, the first click; lowest first, the second. */
+  direction: 'descending' | 'ascending';
+}
+
+/** The sort a click on a header gives: highest first, then lowest first, then none, the default order back. Another header starts at highest first. */
+export function nextAgentSort(current: AgentSort | null, key: AgentSortKey): AgentSort | null {
+  if (!current || current.key !== key) return { key, direction: 'descending' };
+  return current.direction === 'descending' ? { key, direction: 'ascending' } : null;
+}
+
+/** A row's value in a column: what the row shows, compared as what it is. Null for a row without one. */
+function sortValue(row: AgentTotal, key: AgentSortKey): number | string | null {
+  switch (key) {
+    case 'project': return row.projectPath ? projectName(row.projectPath) : null;
+    case 'provider': return row.providers[0] ?? null;
+    case 'tasks': return row.tasks;
+    case 'time': return row.durationMs;
+    case 'tokens': return row.tokens;
+    case 'cost': return row.costUSD;
+  }
+}
+
+/**
+ * The rows in a column's order, as a new array: highest first or lowest
+ * first, a row without the value last either way, rows of equal value in the
+ * order given, which is the default one. Figures by their values, words by
+ * their letters whatever their case.
+ */
+export function sortAgentRows(rows: AgentTotal[], sort: AgentSort | null): AgentTotal[] {
+  if (!sort) return [...rows];
+  const sign = sort.direction === 'descending' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const x = sortValue(a, sort.key);
+    const y = sortValue(b, sort.key);
+    if (x === null || y === null) return (x === null ? 1 : 0) - (y === null ? 1 : 0);
+    const order = typeof x === 'number' && typeof y === 'number'
+      ? x - y
+      : String(x).localeCompare(String(y), undefined, { sensitivity: 'base', numeric: true });
+    return sign * order;
+  });
+}
