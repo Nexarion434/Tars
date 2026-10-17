@@ -93,6 +93,7 @@ import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-ledger';
 import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
+import { oneTaskQueue } from '../../../../electron/core/one-task';
 import { transcriptPath } from '../../../../electron/utils/resume-session';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -131,7 +132,10 @@ beforeEach(() => {
   } as RouteContext);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A task left open by a test ends with its agent: the next test's queue is free.
+  agents.clear();
+  await until(() => ['dev', 'oc', 'lead'].every((id) => !oneTaskQueue.busyRun(id) && !oneTaskQueue.queued(id).length));
   stopTaskWatch();
 });
 
@@ -166,7 +170,7 @@ function liveAgent(id: string, over: Partial<AgentStatus> = {}): AgentStatus {
   const ptyId = `pty-${id}`;
   (ptyProcesses as Map<string, unknown>).set(ptyId, { id: ptyId, pid: 4242, write: vi.fn(), onExit: vi.fn(), onData: vi.fn() });
   const agent = {
-    id, name: id, status: 'waiting', waitingReason: 'idle', provider: 'claude', projectPath: project(),
+    id, name: id, status: 'waiting', waitingReason: 'idle', provider: 'claude', projectPath: project(), ptyCwd: project(),
     skills: [], output: [], lastActivity: new Date().toISOString(), ptyId, currentSessionId: `sid-${id}`,
     ...over,
   } as AgentStatus;

@@ -843,3 +843,27 @@ export function noteHandOff(agentId: string, handOff: HandOff): void {
     console.warn('[task-ledger] hand-off not recorded:', (err as Error).message);
   }
 }
+
+/** Told the task each turn opened or was counted in: a delegation into a terminal follows its own (2.0.4). */
+type TurnWatcher = (agentId: string, taskId: string, prompt: string | undefined) => void;
+const turnWatchers = new Set<TurnWatcher>();
+
+export function watchTurns(watcher: TurnWatcher): () => void {
+  turnWatchers.add(watcher);
+  return () => { turnWatchers.delete(watcher); };
+}
+
+/**
+ * A turn began (UserPromptSubmit, hooks-routes.ts): recorded, never thrown,
+ * and the task it went into told to whoever follows one. Returns that task.
+ */
+export function noteTurn(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): string | undefined {
+  let taskId: string | undefined;
+  try {
+    taskId = live?.turnStarted(agent, turn);
+  } catch (err) {
+    console.warn('[task-ledger] turn not recorded:', (err as Error).message);
+  }
+  if (taskId) for (const watcher of [...turnWatchers]) watcher(agent.id, taskId, turn.text);
+  return taskId;
+}
