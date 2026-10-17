@@ -64,8 +64,9 @@ export class CodexProvider implements CLIProvider {
     }
 
     // Prompt with skills directive
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // No task, no prompt: the skills line alone was a turn nobody asked for.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       const skillsList = params.skills.join(', ');
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
