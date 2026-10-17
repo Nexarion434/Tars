@@ -1638,9 +1638,14 @@ The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`,
 `update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
 the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
 and never write a file. When Hermes is not configured, refuses, or does not answer, each tool's error
-says what happened, that nothing was written (or what was), and what to do: the user connects or
-signs in to Hermes in Tars (Settings, Hermes); the agent says so once, keeps the task in its project
-folder's `notes/`, and goes on (2.0.4; a bare `Hermes refused: Unauthorized` before).
+says what happened, what was written, and what to do: the user connects or signs in to Hermes in
+Tars (Settings, Hermes); the agent says so once, keeps the task in its project folder's `notes/`, and
+goes on (2.0.4; a bare `Hermes refused: Unauthorized` before). "Nothing was written" is said only
+when it is known: Hermes refused, or the connection was never taken (`ECONNREFUSED`, `ENOTFOUND`,
+`EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH`). An answer lost after the request went (a timeout, a
+reset) says Hermes may have done it and to read the task on the board first, and a task created
+whose parking failed is named, with "Do not create it again": it is `ready` on the Tars lane, where
+Hermes does not start it, until the user parks it on the Kanban page.
 `electron/services/kanban-board.ts` decides where a task sits:
 
 | State | On the Hermes board | Who takes it |
