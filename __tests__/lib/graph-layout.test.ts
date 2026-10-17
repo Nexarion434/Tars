@@ -8,6 +8,7 @@ import {
   fitZoom,
   keepAnchor,
   layoutRings,
+  ringOrder,
   stageBox,
   zoomBounds,
 } from '../../src/lib/graph-layout';
@@ -44,7 +45,14 @@ import {
  *     than the canvas, so its left and top cannot be scrolled to, or not
  *     centred while it is smaller;
  * 11. a zoom at the pointer or at the middle moving the point under it, or
- *     scrolling past the stage's ends.
+ *     scrolling past the stage's ends;
+ * 12. the order round each ring: agents listed as they came rather than by
+ *     their project's place in the middle, so a project's agents scatter round
+ *     the ring and its edges cross the graph; a file or a tool not next to the
+ *     first agent that reads it, or in no steady order beside it; a node no
+ *     agent reads put first; a ring missing from the middle shifting the rings
+ *     after it inwards. On main the owner was found by reading every edge for
+ *     each comparison of the sort: 997 files and 7,000 edges took seconds.
  */
 
 type Box = { id: string; x: number; y: number };
@@ -261,5 +269,55 @@ describe('a zoom keeps the point under it (11)', () => {
     const far = keepAnchor({ x: 1_000, y: 600 }, { left: 3_048 - 1_000, top: 3_048 - 600 }, view, to, from);
     expect(far.left).toBeLessThanOrEqual(from.box.width - view.width);
     expect(far.top).toBeLessThanOrEqual(from.box.height - view.height);
+  });
+});
+
+describe('the order round each ring (12)', () => {
+  const nodes = [
+    { id: 'p:a', ring: 0, label: 'a' }, { id: 'p:b', ring: 0, label: 'b' },
+    { id: 'late', ring: 1, label: 'late' }, { id: 'first', ring: 1, label: 'first' }, { id: 'second', ring: 1, label: 'second' },
+    { id: 'f:zeta', ring: 2, label: 'zeta' }, { id: 'f:alpha', ring: 2, label: 'alpha' }, { id: 'f:own', ring: 2, label: 'own' },
+    { id: 'f:none', ring: 2, label: 'aaa' },
+    { id: 't:mcp', ring: 3, label: 'mcp' }, { id: 't:skill', ring: 3, label: 'skill' },
+  ];
+  const edges = [
+    { source: 'p:b', target: 'late' }, { source: 'p:a', target: 'first' }, { source: 'p:a', target: 'second' },
+    { source: 'late', target: 'f:own' },
+    { source: 'second', target: 'f:zeta' }, { source: 'second', target: 'f:alpha' }, { source: 'first', target: 'f:zeta' },
+    { source: 'late', target: 't:mcp' }, { source: 'first', target: 't:mcp' }, { source: 'second', target: 't:skill' },
+  ];
+
+  it('keeps the middle in the order given, and puts each project\'s agents together, in its place', () => {
+    const rings = ringOrder(nodes, edges);
+    expect(rings[0]).toEqual(['p:a', 'p:b']);
+    expect(rings[1]).toEqual(['first', 'second', 'late']);
+  });
+
+  it('puts a file or a tool beside the first agent that reads it, by name beside the same agent, and one nobody reads last', () => {
+    const rings = ringOrder(nodes, edges);
+    expect(rings[2]).toEqual(['f:zeta', 'f:alpha', 'f:own', 'f:none']);
+    expect(rings[3]).toEqual(['t:mcp', 't:skill']);
+  });
+
+  it('keeps a ring missing from the middle as an empty ring, so the rings after it stay outside', () => {
+    expect(ringOrder([{ id: 'p', ring: 0, label: 'p' }, { id: 't', ring: 3, label: 't' }], [])).toEqual([['p'], [], [], ['t']]);
+    expect(ringOrder([], [])).toEqual([]);
+  });
+
+  it('orders a thousand files and seven thousand edges in well under a second', () => {
+    const many = [
+      ...names('project', 7).map(id => ({ id, ring: 0, label: id })),
+      ...names('agent', 50).map(id => ({ id, ring: 1, label: id })),
+      ...names('file', 1005).map(id => ({ id, ring: 2, label: id })),
+    ];
+    const links = [
+      ...names('agent', 50).map((id, i) => ({ source: `project-${i % 7}`, target: id })),
+      ...names('agent', 50).flatMap((id, i) => names('file', 1005).filter((_, f) => f % 7 === i % 7).map(target => ({ source: id, target }))),
+    ];
+    expect(links.length).toBeGreaterThan(7_000);
+    const started = performance.now();
+    const rings = ringOrder(many, links);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(rings[2]).toHaveLength(1005);
   });
 });
