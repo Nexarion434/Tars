@@ -28,11 +28,14 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. a run over ACP (delegate_task) gets it in its prompt;
  * 5. the folder exists, outside the project, with tools/, notes/ and reports/;
  * 6. an opencode worker started from the window (agent:start, the launcher behind the Dashboard's Start, a wake and a
- *    restart) gets the section in its prompt, with a task and without one (the Audit's M1 on #448).
+ *    restart) gets the section in its prompt with a task (the Audit's M1 on #448); without one it starts on no prompt,
+ *    and the section goes in with the first message Tars types into it, under Tars's own line, and not with the next
+ *    (the Audit's N1 on #448).
  * Each of 3, 4 and 6 carries the section once.
  * Red on 9df7c099: tars_guide is no tool, and no identity carries the section or a folder. Red on 9bd12b6c: 6, the
- * window's launcher gave a CLI without Claude's SessionStart hook its memory but not the section.
- * The artefact: values.json (each tool's answer, both bootstraps, the stand-in's launches and prompts, the folder's
+ * window's launcher gave a CLI without Claude's SessionStart hook its memory but not the section. Red on 8e7c000c:
+ * 6's start without a task, which was `opencode run '<section>'`, and its first message, which had no section.
+ * The artefact: values.json (each tool's answer, both bootstraps, the stand-in's launches, prompts and typed messages, the folder's
  * listing), a screenshot of the Agents page, the app's trace with E2E_TRACE=on.
  */
 
@@ -42,8 +45,16 @@ const fs = require('fs');
 const log = (entry) => fs.appendFileSync(process.env.STAND_IN_LOG, JSON.stringify({ at: new Date().toISOString(), agent: process.env.CLAUDE_AGENT_ID || null, ...entry }) + '\n');
 if (process.argv[2] !== 'acp') {
   log({ terminal: process.argv.slice(2) });
+  // Its screen: every message Tars types in, recorded at its Enter.
+  let typed = '';
+  process.stdin.setRawMode(true);
+  process.stdin.on('data', (chunk) => {
+    for (const ch of String(chunk)) {
+      if (ch === '\r') { log({ typed }); typed = ''; } else typed += ch;
+    }
+  });
+  process.stdin.resume();
   process.stdout.write('opencode ready\r\n');
-  setInterval(() => {}, 1 << 30);
 } else {
   log({ launched: process.argv.slice(2) });
   let buf = '';
@@ -219,12 +230,31 @@ for (const newInterface of [false, true]) {
       }
       const argvOf = (id: string) => (entries().find((e) => e.terminal && e.agent === id)!.terminal as string[]).join(' ');
       keep({ fromWindow, windowArgv: argvOf('win'), dashboardArgv: argvOf('dash') });
-      for (const id of ['win', 'dash']) {
-        expect.soft(once(argvOf(id)), argvOf(id)).toBe(1);
-        expect.soft(argvOf(id)).toContain(folder!);
-        expect.soft(argvOf(id)).toContain('assign_task');
-      }
+      expect.soft(once(argvOf('win')), argvOf('win')).toBe(1);
+      expect.soft(argvOf('win')).toContain(folder!);
+      expect.soft(argvOf('win')).toContain('assign_task');
       expect.soft(argvOf('win')).toContain('WINDOW>> read the guide');
+      // Without a task, no prompt: `opencode run '<prompt>'` runs once and exits (the Audit's N1 on #448).
+      const dashArgv = entries().find((e) => e.terminal && e.agent === 'dash')!.terminal as string[];
+      expect.soft(dashArgv, argvOf('dash')).not.toContain('run');
+      expect.soft(once(argvOf('dash')), argvOf('dash')).toBe(0);
+      // The section goes in with the first task Tars types into that session, and with that one only.
+      const typedTo = (id: string) => entries().filter((e) => typeof e.typed === 'string' && e.agent === id).map((e) => e.typed as string);
+      const firstSent = await tool('send_message', { id: 'dash', message: 'DASH>> first task' });
+      await expect.poll(() => typedTo('dash').length, { timeout: 30_000 }).toBe(1);
+      const secondSent = await tool('send_message', { id: 'dash', message: 'DASH>> second task' });
+      await expect.poll(() => typedTo('dash').length, { timeout: 30_000 }).toBe(2);
+      const [dashFirst = '', dashSecond = ''] = typedTo('dash');
+      keep({ firstSent, secondSent, dashFirst, dashSecond });
+      expect.soft(firstSent.isError, firstSent.text).toBe(false);
+      expect.soft(dashFirst).toContain('DASH>> first task');
+      expect.soft(once(dashFirst), dashFirst).toBe(1);
+      expect.soft(dashFirst).toContain(folder!);
+      expect.soft(dashFirst).toContain('assign_task');
+      expect.soft(dashFirst.indexOf('Message from Tars: '), dashFirst).toBe(0);
+      expect.soft(dashFirst.indexOf('DASH>> first task')).toBeGreaterThan(dashFirst.indexOf(SECTION));
+      expect.soft(dashSecond).toContain('DASH>> second task');
+      expect.soft(once(dashSecond), dashSecond).toBe(0);
 
       // 5. The folder, outside the project.
       const listing = fs.readdirSync(folder!).sort();
