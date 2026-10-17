@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   TARS_LANE, laneOf, HERMES_SIGNED_OUT, TARS_TASK_MARK, MEASURED_HERMES_VERSIONS, measuredHermes,
   listTasks, getTask, createParkedTask, claimTask, reportProgress, completeTask, moveTask, deleteTask,
-  migrateLocalTasks, type KanbanCaller,
+  migrateLocalTasks, fileParkedTask, type KanbanCaller,
 } from '../../../electron/services/kanban-board';
 import { FakeHermes } from '../../fixtures/fake-hermes';
 
@@ -44,6 +44,8 @@ import { FakeHermes } from '../../fixtures/fake-hermes';
  *     released or reported on, or its release goes through a Hermes lane;
  * 22. a version string that only starts like a measured one ("0.21.5.1",
  *     "0.21.10", a canary) is taken as measured; or no version at all is;
+ * 18b. a task Tars files itself (fileParkedTask: the error triage's, the local board's)
+ *     carries no mark, or carries it twice;
  * 23. a note Tars writes on the board beside a claim or a release ("Claimed by",
  *     "Released by") is refused, and the tool says nothing of it: the board then
  *     shows no trace of who took the task, while the agent was told all went well.
@@ -115,6 +117,22 @@ describe('18. every task Tars files says it is Tars\'s agents\'', () => {
     const out = await migrateLocalTasks(h, file, path.join(dir, 'moved.json'));
     expect(out.moved).toBe(1);
     expect([...h.tasks.values()][0].body).toContain(TARS_TASK_MARK);
+  });
+});
+
+describe('18b. a task Tars files itself carries the mark once', () => {
+  it('marks what fileParkedTask files, the error triage\'s included, and never twice', async () => {
+    const r = await fileParkedTask(h, { title: 'TypeError in agent-watch', body: 'Seen 3 times since 02:10.', tenant: TARS, key: 'tars-sentry:1' });
+    expect(r.ok).toBe(true);
+    const body = [...h.tasks.values()][0].body ?? '';
+    expect(body.startsWith('Seen 3 times since 02:10.')).toBe(true);
+    expect(body.split(TARS_TASK_MARK).length - 1).toBe(1);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-free-'));
+    const file = path.join(dir, 'kanban-tasks.json');
+    fs.writeFileSync(file, JSON.stringify([{ id: 'l2', title: 'Old', column: 'backlog', projectPath: TARS }]));
+    await migrateLocalTasks(h, file, path.join(dir, 'moved.json'));
+    const moved = [...h.tasks.values()].find(t => t.title === 'Old')!.body ?? '';
+    expect(moved.split(TARS_TASK_MARK).length - 1).toBe(1);
   });
 });
 
