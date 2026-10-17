@@ -5,7 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
+import { problem, registerTools, text, tool, type Tool, type ToolResult } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
 
 /** What each refusal of POST /api/tasks/:ref/cancel means, for the agent that asked (core/task-cancel.ts). */
@@ -270,7 +270,7 @@ function answerOf(err: unknown): { status: number; body: Record<string, unknown>
 }
 
 /** A run's end, said for the caller: its answer, then how it ended and what it cost. */
-function runText(run: RunAnswer, modelNote: string): { content: { type: "text"; text: string }[]; isError: boolean } {
+function runText(run: RunAnswer, modelNote: string): ToolResult {
   const tokens = run.usage?.totalTokens ?? ((run.usage?.inputTokens ?? 0) + (run.usage?.outputTokens ?? 0));
   const cost = typeof run.costUSD === "number" ? run.costUSD : run.usage?.costUSD;
   const meta = [
@@ -311,7 +311,7 @@ function runText(run: RunAnswer, modelNote: string): { content: { type: "text"; 
  */
 async function runOverAcp(
   id: string, prompt: string, model: string | undefined, timeoutSeconds: number, clientRequestId: string,
-): Promise<{ content: { type: "text"; text: string }[]; isError: boolean } | null> {
+): Promise<ToolResult | null> {
   const deadline = Date.now() + (timeoutSeconds + 60) * 1000;
   const follow = `follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again`;
   const body = { task: prompt, timeoutSeconds, clientRequestId, answer: "started", ...(model ? { model } : {}) };
@@ -332,8 +332,10 @@ async function runOverAcp(
         // The id names another request: this one did nothing, and typing it
         // under the same id is refused as well.
         if (answer.body.code === "clientRequestId_conflict") return problem((err as Error).message);
-        // Any other answer is a run that did not start: the terminal may take it.
-        return null;
+        // No ACP mode, or a launch that failed before the run started: the
+        // terminal may take it. Any other answer is the answer.
+        if (answer.body.retryWithDispatch === true || (answer.status === 502 && answer.body.started !== true)) return null;
+        return problem(`Not delegated: ${(err as Error).message}`);
       }
       // No answer at all: the run may have started. Ask again, for a while.
       const now = Date.now();

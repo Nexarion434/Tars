@@ -36,7 +36,8 @@ import type { AddressInfo } from 'node:net';
  *  F8. Tars answered that no run started (retryWithDispatch, or 502 with
  *      started false), and the tool does NOT fall back to the terminal.
  *  F9. Tars answered with a refusal that is not "no run" (a clientRequestId
- *      conflict, a permission escalation denied) and the tool dispatches
+ *      conflict, a permission escalation denied, a cross-project refusal, a
+ *      server error, a 502 that says a run started) and the tool dispatches
  *      anyway.
  *  F10. delegate_task's model never reaches the run: run-task's body has no
  *      model.
@@ -228,6 +229,9 @@ describe('delegate_task falls back to the terminal only when Tars said no run st
   it.each([
     ['a clientRequestId conflict', answered(409, { error: 'clientRequestId x was already used for another request: nothing was sent.', code: 'clientRequestId_conflict' })],
     ['a permission escalation denied', answered(409, { error: 'held to plan', code: 'permission_escalation_denied', retryWithDispatch: false })],
+    ['a cross-project refusal', answered(403, { error: 'agent a1 belongs to another project' })],
+    ['a server error', answered(500, { error: 'Internal error' })],
+    ['a 502 that says a run started', answered(502, { error: 'the run broke', started: true })],
   ])('8. (F9) %s: nothing is typed, and the refusal is the answer', async (_label, refusal) => {
     mockApiRequest.mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/run-task')) throw refusal;
