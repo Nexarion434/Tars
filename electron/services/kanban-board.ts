@@ -553,6 +553,19 @@ async function asCreated(h: KanbanHermes, id: string): Promise<boolean | null> {
 }
 
 /**
+ * A body with Tars's mark, once, whoever files it (the error triage, the move of
+ * the local board): before a last "Filed by" line, which stays the last line, as
+ * the filer's line always is.
+ */
+function marked(body: string): string {
+  if (body.includes(TARS_TASK_MARK)) return body;
+  const lines = body.trimEnd().split('\n');
+  const last = lines[lines.length - 1] ?? '';
+  if (!last.startsWith('Filed by ')) return [body.trimEnd(), TARS_TASK_MARK].filter(Boolean).join('\n\n');
+  return [...lines.slice(0, -1), TARS_TASK_MARK, last].join('\n');
+}
+
+/**
  * A task Tars files itself, parked on a project: created on the Tars lane under
  * an idempotency key, then parked. The key hands back the task a previous run
  * created, whatever became of it since: claimed, run by Hermes, dragged back,
@@ -566,8 +579,9 @@ export async function fileParkedTask(
   h: KanbanHermes,
   task: { title: string; body: string; tenant: string; priority?: 'low' | 'medium' | 'high'; key: string },
 ): Promise<{ ok: true; id: string; parkedNow: boolean } | { ok: false; error: string }> {
+  const body = marked(task.body);
   const created = await h.create({
-    title: task.title, body: task.body, tenant: task.tenant, assignee: TARS_LANE,
+    title: task.title, body, tenant: task.tenant, assignee: TARS_LANE,
     priority: PRIORITY_TO_HERMES[task.priority ?? 'medium'] ?? 0,
     idempotency_key: task.key,
   });
