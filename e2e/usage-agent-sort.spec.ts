@@ -178,7 +178,10 @@ for (const newInterface of [false, true]) {
         return read();
       };
       const header = (name: string) => panel.getByRole('columnheader', { name, exact: true });
-      const label = (name: string) => header(name).getByText(name, { exact: true });
+      // What a click lands on: the header's button, or on a build with none,
+      // the header itself, so that build is read sorting nothing rather than
+      // waiting for a button.
+      const label = async (name: string) => ((await header(name).getByRole('button').count()) > 0 ? header(name).getByRole('button') : header(name));
       const sorts = async () => Object.fromEntries(await Promise.all(COLUMNS.map(async c => [c.header, await header(c.header).getAttribute('aria-sort')])));
       const shot = async (name: string) => {
         await panel.scrollIntoViewIfNeeded();
@@ -201,7 +204,7 @@ for (const newInterface of [false, true]) {
       for (const c of COLUMNS) {
         const turns: Array<{ click: number; ariaSort: string | null; agents: string[]; values: string[] }> = [];
         for (const [click, want, direction] of [[1, c.highest, 'descending'], [2, c.lowest, 'ascending'], [3, DEFAULT, 'none']] as const) {
-          await label(c.header).click();
+          await (await label(c.header)).click();
           const now = await settle([...want]);
           const ariaSort = await header(c.header).getAttribute('aria-sort');
           turns.push({ click, ariaSort, agents: now.map(r => r.agent), values: now.map(r => (r as Record<string, string>)[c.cell]) });
@@ -218,22 +221,22 @@ for (const newInterface of [false, true]) {
       seen.clicks = clicks;
 
       // Another header starts at highest first, wherever the first one was.
-      await label('Tokens').click();
-      await label('Tokens').click();
-      await label('Cost').click();
+      await (await label('Tokens')).click();
+      await (await label('Tokens')).click();
+      await (await label('Cost')).click();
       const another = await settle(COLUMNS[5].highest);
       seen.anotherHeader = { agents: another.map(r => r.agent), sorts: await sorts() };
       expect.soft(await header('Cost').getAttribute('aria-sort'), 'Cost after Tokens').toBe('descending');
       expect.soft(await header('Tokens').getAttribute('aria-sort'), 'Tokens after Cost').toBe('none');
       expect.soft(another.map(r => r.agent)).toEqual(COLUMNS[5].highest);
-      await label('Cost').click();
-      await label('Cost').click();
+      await (await label('Cost')).click();
+      await (await label('Cost')).click();
       expect.soft((await settle(DEFAULT)).map(r => r.agent), 'Cost, back to the default order').toEqual(DEFAULT);
 
       // The keyboard: Enter, then Space, then Enter, on Time.
       const keys: Array<{ key: string; ariaSort: string | null; agents: string[] }> = [];
       for (const [key, want, direction] of [['Enter', COLUMNS[3].highest, 'descending'], ['Space', COLUMNS[3].lowest, 'ascending'], ['Enter', DEFAULT, 'none']] as const) {
-        await label('Time').focus();
+        await (await label('Time')).focus();
         await page.keyboard.press(key);
         const now = await settle([...want]);
         const ariaSort = await header('Time').getAttribute('aria-sort');
@@ -250,8 +253,9 @@ for (const newInterface of [false, true]) {
       await expect(lightPanel).toBeVisible({ timeout: 90_000 });
       await expect(lightPanel.locator('[data-agent-row]')).toHaveCount(6, { timeout: 60_000 });
       const provider = lightPanel.getByRole('columnheader', { name: 'Provider', exact: true });
-      await provider.getByText('Provider', { exact: true }).click();
-      await provider.getByText('Provider', { exact: true }).click();
+      const providerTarget = (await provider.getByRole('button').count()) > 0 ? provider.getByRole('button') : provider;
+      await providerTarget.click();
+      await providerTarget.click();
       await expect.soft(provider).toHaveAttribute('aria-sort', 'ascending');
       await lightPanel.scrollIntoViewIfNeeded();
       await stepShot(page, `${tag}04-provider-ascending-light`);
