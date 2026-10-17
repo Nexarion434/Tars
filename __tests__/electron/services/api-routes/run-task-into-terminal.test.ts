@@ -42,6 +42,9 @@ import { EventEmitter } from 'node:events';
  *      already open, which a model cannot change.
  *  D12. A CLI whose turns Tars cannot see (no hook: codex, opencode, amp, pi,
  *      grok) is followed for ever, or said to have answered what it did not.
+ *  D13. Another project's orchestrator that passed allowCrossProject: true is
+ *      refused, or its task goes anywhere but the target's terminal (moved
+ *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-terminal-'));
@@ -332,6 +335,19 @@ describe('a task delegated into the agent\'s own terminal', () => {
     expect(task.outcome).toBe('delivered');
     expect(String(task.error)).toMatch(/opencode/);
     expect(String(task.error)).toMatch(/cannot see when its turn ends/);
+  });
+});
+
+describe('a task from another project', () => {
+  it('(D13) allowed with allowCrossProject: true, goes into the target\'s terminal', async () => {
+    const lead = orchestrator();
+    lead.projectPath = path.join(tmp, 'another-project');
+    liveAgent('dev');
+    const { data, status } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'cross', answer: 'started', allowCrossProject: true }).answer;
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ ok: true, queued: false });
+    await until(() => typed.length === 1);
+    expect(typed[0]).toMatchObject({ ptyId: 'pty-dev', data: 'cross' });
   });
 });
 

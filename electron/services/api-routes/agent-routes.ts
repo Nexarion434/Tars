@@ -41,7 +41,7 @@ import { readFinalAnswer } from '../terminal-answer';
 import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
-import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
+import { levelOf, modeGapMark } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
 import { interruptTurn } from '../bus-delivery';
 import { broadcastToAllWindows } from '../../utils/broadcast';
@@ -918,6 +918,13 @@ function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundSt
 
 /** The model asked for a task, and whether its session took it, by the task's id and the ledger's. */
 const taskModels = new Map<string, { asked: string; taken: boolean; own?: string; ranOn?: string }>();
+/** A session started for a task undid somebody's stop: who, when and why, by the task's id and the ledger's. */
+type RestartNote = { stoppedBy?: string; stoppedAt?: string; stopReason?: string };
+const taskRestarts = new Map<string, RestartNote>();
+const keep = <T>(map: Map<string, T>, key: string, value: T) => {
+  map.set(key, value);
+  while (map.size > RUN_ENDS_KEPT) map.delete(map.keys().next().value as string);
+};
 /** Ledger tasks whose end is known and whose answer is still being read: their followers wait for it. */
 const answering = new Set<string>();
 
@@ -1005,6 +1012,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 async function runInTerminal(
   agent: AgentStatus, req: RouteRequest, ctx: RouteContext, job: { task: string; ref: string; model?: string },
+  onHanded: (start: Record<string, unknown>) => void,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const ledger = liveTaskLedger();
   const never = (why: string, status = 502, more: Record<string, unknown> = {}) => {
@@ -1025,10 +1033,13 @@ async function runInTerminal(
     oneTaskQueue.runNamed(agent.id, taskId);
     const asked = taskModels.get(job.ref);
     if (asked) taskModels.set(taskId, asked);
+    const restart = taskRestarts.get(job.ref);
+    if (restart) taskRestarts.set(taskId, restart);
   });
   try {
     let refused: { data: Record<string, unknown>; status: number } | undefined;
     let mode: unknown;
+    let restart: RestartNote | undefined;
     let gaveUp = false;
     let typedRef: string | undefined;
     const callerId = resolveCallerId(req);
@@ -1047,19 +1058,28 @@ async function runInTerminal(
       onDropped: () => { gaveUp = true; },
     }, ctx, (data, status = 200) => {
       if (status >= 300) refused = { data: (data ?? {}) as Record<string, unknown>, status };
-      else mode = (data as { mode?: unknown } | undefined)?.mode;
+      else {
+        mode = (data as { mode?: unknown } | undefined)?.mode;
+        restart = (data as { restartedAfterStop?: RestartNote } | undefined)?.restartedAfterStop;
+      }
     });
     if (refused) return never(String(refused.data.error ?? 'the terminal refused it'), refused.status, { code: refused.data.code });
     if (job.model) {
       // A model applies to a session Tars starts for the task, never to one already open.
-      const info = { asked: job.model, taken: mode === 'start', ...(agent.model ? { own: agent.model } : {}) };
-      taskModels.set(job.ref, info);
-      while (taskModels.size > RUN_ENDS_KEPT) taskModels.delete(taskModels.keys().next().value as string);
+      keep(taskModels, job.ref, { asked: job.model, taken: mode === 'start', ...(agent.model ? { own: agent.model } : {}) });
     }
+    if (restart) keep(taskRestarts, job.ref, restart);
+    const handed = {
+      ...(taskModels.get(job.ref) ? { model: taskModels.get(job.ref) } : {}),
+      ...(restart ? { restartedAfterStop: restart } : {}),
+    };
     if (!turnsHeard(agent)) {
       oneTaskQueue.delivered(job.ref, deliveredText(agent));
-      return { status: 200, body: { ok: true, started: true, outcome: 'delivered', taskId: job.ref, error: deliveredText(agent) } };
+      const body = { ok: true, started: true, outcome: 'delivered', taskId: job.ref, error: deliveredText(agent), ...handed };
+      onHanded(body);
+      return { status: 200, body };
     }
+    onHanded(handed);
     const latest = Date.now() + TURN_START_MAX_MS;
     while (!turnTask) {
       if (gaveUp) return never('the terminal gave it up before it went in');
@@ -1107,6 +1127,7 @@ async function runInTerminal(
           ...(result ? { text: result } : {}), ...(usage ? { usage } : {}),
           ...(outcome === 'error' && agent.error ? { error: agent.error } : {}),
           ...(asked ? { model: asked } : {}),
+          ...(taskRestarts.get(taskId) ? { restartedAfterStop: taskRestarts.get(taskId) } : {}),
         },
       };
     } finally {
@@ -2020,10 +2041,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       };
       receipt.started(startBody);
       let answered = false;
-      if (answerAtStart) {
+      // Queued, it is answered now; taken at once, once it is in the
+      // terminal (a few seconds at most), with what its start said.
+      const answerNow = (more: Record<string, unknown> = {}) => {
+        if (!answerAtStart || answered) return;
         answered = true;
-        sendJson(startBody, 200);
-      }
+        sendJson({ ...startBody, ...more }, 200);
+      };
+      if (waits) answerNow();
       announceTask(agent.id);
       if (!(await waitTurn(agent, queued.ref))) {
         announceTask(agent.id);
@@ -2032,7 +2057,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       }
       announceTask(agent.id);
       try {
-        const end = await runInTerminal(agent, req, ctx, { task, ref: queued.ref, ...(typeof model === 'string' ? { model } : {}) });
+        const end = await runInTerminal(agent, req, ctx, { task, ref: queued.ref, ...(typeof model === 'string' ? { model } : {}) }, answerNow);
         receipt.update({ outcome: end.body.outcome, ok: end.body.ok, ...(end.body.taskId ? { taskId: end.body.taskId } : {}) });
         if (!answered) sendJson(end.body, end.status);
       } finally {
@@ -2127,6 +2152,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           ...(found.result !== undefined ? { result: found.result } : {}),
           ...(usage ? { usage } : {}),
           ...((model ?? taskModels.get(found.id)) ? { model: model ?? taskModels.get(found.id) } : {}),
+          ...(taskRestarts.get(found.id) ? { restartedAfterStop: taskRestarts.get(found.id) } : {}),
         },
       });
     } finally {

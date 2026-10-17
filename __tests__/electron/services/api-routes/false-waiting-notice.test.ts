@@ -11,7 +11,7 @@ import * as path from 'node:path';
  * own terminal, that 1212-Backend "is now waiting", while it had only begun.
  * What the logs of that evening show, and what each case below replays:
  *
- * - delegate_task tries ACP first, through /run-task, which sets `running`.
+ * - delegate_task tried ACP first (until 2.0.4), through /run-task, which set `running`.
  *   The ACP start failed (after 90 s in 1.7.6), /run-task put back the status
  *   the agent had before, `waiting` because idle, and agent-watch took that for
  *   a new wait. The note went to the orchestrator through the link left by a
@@ -65,17 +65,12 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
   assembleDigest: async () => '',
   wrapDigestForPrompt: (d: string) => d,
 }));
-vi.mock('../../../../electron/services/acp/delegate', () => ({
-  canDelegateOverAcp: () => true,
-  delegateOverAcp: vi.fn(),
-}));
 
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
 import { registerHooksRoutes } from '../../../../electron/services/api-routes/hooks-routes';
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
-import { delegateOverAcp } from '../../../../electron/services/acp/delegate';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { sid } from '../../../fixtures/session-id';
@@ -90,12 +85,6 @@ const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-false-waiting-projec
  *  prompt: 1,390 of 1,393 idle prompts after a Stop in a month of hook logs. */
 const IDLE_PROMPT_AFTER_MS = 60_000;
 
-type AcpOutcome = Awaited<ReturnType<typeof delegateOverAcp>>;
-const ACP_FAILED: AcpOutcome = {
-  ok: false, transport: 'acp', text: '', toolCalls: [],
-  error: 'initialize timed out after 90s',
-} as AcpOutcome;
-
 let restoreHome: () => void;
 let routes: RouteApp;
 let ctx: RouteContext;
@@ -106,7 +95,6 @@ beforeEach(() => {
   agents.clear();
   ptyProcesses.clear();
   vi.mocked(writeProgrammaticInput).mockClear();
-  vi.mocked(delegateOverAcp).mockReset();
   restoreHome = moveTestHome(home);
   expect(os.homedir(), 'HOME is not redirected, and a spawn would write the real ~/.claude.json').toBe(home);
 
@@ -252,14 +240,6 @@ const toolRan = () => status('be', sid('sess-be'), { status: 'running' });
 /** send_message and start_agent: /dispatch, on behalf of the orchestrator. */
 const dispatch = (message: string) => call('POST', '/api/agents/be/dispatch', { message }, 'orch');
 
-/** delegate_task's first attempt, over ACP. Left pending until `settle`. */
-function runTaskOverAcp(task: string) {
-  let settle!: (outcome: AcpOutcome) => void;
-  vi.mocked(delegateOverAcp).mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }));
-  const answered = call('POST', '/api/agents/be/run-task', { task }, 'orch');
-  return { answered, settle: (outcome: AcpOutcome) => settle(outcome) };
-}
-
 /** The window during which one note holds the next back. */
 const pause = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
@@ -274,29 +254,6 @@ async function oneDelegatedTaskEarlier() {
 }
 
 describe('the idle prompt of a rest that is already over', () => {
-  it('does not put an agent handed work since back to waiting, nor tell anyone it is', async () => {
-    // The agent finished a task thirty seconds ago and sits at its prompt: its
-    // idle prompt is due in thirty seconds.
-    await oneDelegatedTaskEarlier();
-    await pause(IDLE_PROMPT_AFTER_MS / 2);
-    const toldBefore = toldOrchestrator().length;
-
-    // delegate_task tries ACP first. /run-task sets `running` and leaves the
-    // agent's terminal alone, so the claude in it keeps counting its minute.
-    const run = runTaskOverAcp('BotID');
-    await pause(IDLE_PROMPT_AFTER_MS / 2);
-    expect(backend().status).toBe('running');
-
-    await idlePrompt();
-
-    expect(backend().status, 'an idle prompt raised before the work arrived put the working agent back to waiting').toBe('running');
-    expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told an agent that had just been handed work is waiting').toEqual([]);
-    expect(desktopSaysWaiting(), 'JeanBrasse was told the agent is waiting while it had just been handed work').toEqual([]);
-
-    run.settle({ ok: true, transport: 'acp', text: 'BotID is on', toolCalls: [] } as AcpOutcome);
-    await run.answered;
-  });
-
   it('does not either through /dispatch, which types into the session of an agent at rest for less than a minute', async () => {
     await oneDelegatedTaskEarlier();
     await pause(IDLE_PROMPT_AFTER_MS / 2);
@@ -396,65 +353,6 @@ describe('a task typed into an agent in the middle of a turn', () => {
     await turnEnds('task two: done');
     await pause(500);
     expect(toldOrchestrator(), 'the end of the task typed in during the turn never reached the orchestrator').toHaveLength(2);
-  });
-});
-
-describe('a failed attempt over ACP', () => {
-  it('puts the agent back where it was without telling anyone it is waiting (the BotID note)', async () => {
-    // 17:30: a first delegation, finished at 17:33, and the idle prompt a
-    // minute later. The agent then rested in `waiting` for 85 minutes.
-    await oneDelegatedTaskEarlier();
-    await pause(IDLE_PROMPT_AFTER_MS);
-    await idlePrompt();
-    await pause(85 * 60_000);
-    expect(backend().status).toBe('waiting');
-    const toldBefore = toldOrchestrator().length;
-
-    // 18:58:31: delegate_task. The ACP start fails, here at once and in 1.7.6
-    // after 90 s, and the route puts back the status the agent had.
-    const run = runTaskOverAcp('BotID');
-    await pause(1_000);
-    run.settle(ACP_FAILED);
-    await run.answered;
-
-    expect(backend().status).toBe('waiting');
-    expect(toldOrchestrator().slice(toldBefore), 'a failed ACP start was announced to the orchestrator as the agent waiting').toEqual([]);
-
-    // delegate_task falls back on the terminal: the task is typed, the turn
-    // runs, and its end is told once.
-    await dispatch('BotID');
-    await pause(500);
-    await turnStarts('BotID');
-    await pause(5_000);
-    expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told about the agent while it worked').toEqual([]);
-    await turnEnds('BotID: done');
-    await pause(500);
-    const notes = toldOrchestrator().slice(toldBefore);
-    expect(notes, 'the end of the task it handed over never reached the orchestrator').toHaveLength(1);
-    expect(notes[0]).toContain('1212-Backend');
-  });
-
-  it('does not put an agent back to waiting over a task typed into its terminal while the attempt was still out', async () => {
-    await oneDelegatedTaskEarlier();
-    await pause(IDLE_PROMPT_AFTER_MS);
-    await idlePrompt();
-    await pause(10 * 60_000);
-    const toldBefore = toldOrchestrator().length;
-
-    // The MCP client gives up on /run-task before the server does and types
-    // the task into the terminal instead. The turn starts.
-    const run = runTaskOverAcp('BotID');
-    await pause(1_000);
-    await dispatch('BotID');
-    await pause(500);
-    await turnStarts('BotID');
-
-    // Then the ACP attempt fails, and its route restores the status it saw.
-    run.settle(ACP_FAILED);
-    await run.answered;
-
-    expect(backend().status, 'the failed attempt wrote its old status over a turn in progress').toBe('running');
-    expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told the agent is waiting in the middle of its turn').toEqual([]);
   });
 });
 

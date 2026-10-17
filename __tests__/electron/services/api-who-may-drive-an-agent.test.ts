@@ -75,17 +75,9 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-// /run-task hands its task to the CLI over ACP. The transport is replaced, as
-// node-pty is: what is asked here is whether the route lets a call through,
-// and a call it let through is one that reached this.
-vi.mock('../../../electron/services/acp/delegate', () => ({
-  canDelegateOverAcp: () => true,
-  delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
-}));
 
 import * as pty from 'node-pty';
 import type { AgentStatus } from '../../../electron/types';
-import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
 // The launch these hold is darwin and linux's: a line typed into the shell, or
 // `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
@@ -205,7 +197,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(delegateOverAcp).mockClear();
+  vi.mocked(pty.spawn).mockClear();
   agents.clear();
   ptyProcesses.clear();
   putAgent(ALPHA);
@@ -804,7 +796,7 @@ describe('an agent keeps exactly the rights it had', () => {
   });
 });
 
-describe('/run-task, the delegation that answers with what the agent did', () => {
+describe('/run-task, the delegation that hands a task to the agent\'s terminal', () => {
   // It gives an agent work as surely as /dispatch does, over ACP rather than
   // the terminal, and no test asked who may call it: the QA's gate of this lot
   // took its guard out and the whole suite stayed green (24f1889).
@@ -820,7 +812,7 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
       expect(String(body.error), who).toContain(refusal);
     }
 
-    expect(vi.mocked(delegateOverAcp), 'a refused caller had a task run').not.toHaveBeenCalled();
+    expect(vi.mocked(pty.spawn), 'a refused caller had a task run').not.toHaveBeenCalled();
     expect(beta.status, 'a refused caller set the agent running').toBe('idle');
     expect(beta.currentTask).toBeUndefined();
   });
@@ -832,35 +824,22 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
     putAgent({ id: 'agent-beta-2', projectPath: BETA.projectPath }).role = 'orchestrator';
     const sameProject = tokens.mintAgentToken('agent-beta-2');
 
-    const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+    // Into the agent's own terminal since 2.0.4, its CLI at its prompt.
+    const beta = agents.get(BETA.id)!;
+    const { written } = liveTerminal(beta);
+    beta.status = 'waiting';
+    beta.waitingReason = 'idle';
+    const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over', answer: 'started' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(body.text).toBe('done');
-    expect(vi.mocked(delegateOverAcp)).toHaveBeenCalledWith(expect.objectContaining({
-      agent: agents.get(BETA.id), task: 'take this over',
-    }));
+    expect(String(body.taskId)).toMatch(/^t-[0-9a-f]{8}$/);
+    expect(written.join('')).toContain('take this over');
+    beta.status = 'stopped';
   });
   // A run that started is an answer however it ended; 502 is what tells
   // delegate_task it may type the task into the terminal instead, and after a
   // run that started that runs it twice (sessions that died while they
   // waited, 2026-09-23). Written before the route changed.
-  it('answers 200 for a run that started and was stopped at its limit, 502 only for one that never started', async () => {
-    putAgent({ id: 'agent-beta-3', projectPath: BETA.projectPath }).role = 'orchestrator';
-    const sameProject = tokens.mintAgentToken('agent-beta-3');
-    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
-      ok: false, transport: 'acp', started: true, stopReason: 'turn_limit', text: 'half', toolCalls: ['pnpm build'],
-      error: "stopped at the run's limit of 3600 s while the agent was still working",
-    } as never);
-    const stopped = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
-    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
-      ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'spawn npx ENOENT',
-    } as never);
-    const neverStarted = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
-
-    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
-    expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
-    expect(neverStarted.status).toBe(502);
-  });
 });
 
 /**

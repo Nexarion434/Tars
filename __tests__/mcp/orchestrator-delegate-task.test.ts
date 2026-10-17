@@ -1,15 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ============================================================================
-// delegate_task's auto-continue path: when the target agent hits a
-// non-permission "waiting" state (Claude Code asking "should I continue?"),
-// delegate_task answers "Yes, continue" on the caller's behalf so the
-// orchestrator does not have to notice and nudge it itself.
-//
-// Bug: the retry loop was capped at exactly one attempt. An agent that asks
-// a second (or third) confirmation question mid-task made delegate_task give
-// up and report "still waiting", pushing the retry back onto the calling
-// orchestrator - which is precisely the "have to ask 15 times" complaint.
+// delegate_task never hands a task twice, and keeps its caller listening.
+// Its auto-continue path ("Yes, continue" typed for a waiting agent) went
+// with the terminal fallback in 2.0.4: the task goes into the agent's own
+// terminal through run-task, and a question the agent asks is its answer.
 // ============================================================================
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -34,103 +29,6 @@ function makeFakeServer() {
 beforeEach(() => {
   mockApiRequest = vi.fn();
   vi.resetModules();
-});
-
-describe('delegate_task auto-continue', () => {
-  async function loadDelegateTask() {
-    const { registerAgentTools } = await import('../../mcp-orchestrator/src/tools/agents.js');
-    const server = makeFakeServer();
-    registerAgentTools(server as never);
-    return server.tools.get('delegate_task')!;
-  }
-
-  it('keeps auto-continuing through repeated confirmation prompts until the agent completes', async () => {
-    const delegateTask = await loadDelegateTask();
-
-    mockApiRequest.mockImplementation(async (endpoint: string, method?: string) => {
-      // No ACP mode for this agent: falls straight to the /dispatch path.
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) {
-        return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
-      }
-      if (endpoint.includes('/wait')) {
-        // Asks for confirmation THREE times in a row before actually
-        // finishing - a realistic Claude Code session mid multi-step task.
-        const calls = mockApiRequest.mock.calls.filter(c => String(c[0]).includes('/wait')).length;
-        if (calls <= 3) return { status: 'waiting', waitingReason: 'idle' };
-        return { status: 'completed', lastCleanOutput: 'all done' };
-      }
-      if (!method || method === 'GET') {
-        return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'all done' } };
-      }
-      return {};
-    });
-
-    const result = await delegateTask({ id: 'a1', prompt: 'do the multi-step task', timeoutSeconds: 300 }) as {
-      content: { text: string }[];
-      isError?: boolean;
-    };
-
-    // Must have auto-answered every confirmation, not just the first, and
-    // ultimately report completion rather than giving up mid-task.
-    const dispatchCalls = mockApiRequest.mock.calls.filter(c => String(c[0]).includes('/dispatch'));
-    expect(dispatchCalls.length).toBeGreaterThanOrEqual(4); // 1 initial + 3 auto-continues
-    expect(result.isError).not.toBe(true);
-    expect(result.content[0].text).toContain('completed');
-    expect(result.content[0].text).not.toContain('still waiting');
-  });
-
-  it('still bails out immediately on a permission dialog rather than typing into it', async () => {
-    const delegateTask = await loadDelegateTask();
-
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) {
-        return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
-      }
-      if (endpoint.includes('/wait')) {
-        return { status: 'waiting', waitingReason: 'permission' };
-      }
-      return { agent: { status: 'waiting', name: 'Worker' } };
-    });
-
-    const result = await delegateTask({ id: 'a1', prompt: 'do something risky', timeoutSeconds: 300 }) as {
-      content: { text: string }[];
-      isError?: boolean;
-    };
-
-    const dispatchCalls = mockApiRequest.mock.calls.filter(c => String(c[0]).includes('/dispatch'));
-    // Exactly the one initial dispatch - never auto-answer a permission dialog.
-    expect(dispatchCalls.length).toBe(1);
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('PERMISSION dialog');
-  });
-
-  it('eventually gives up and hands back to the orchestrator if an agent never stops asking', async () => {
-    const delegateTask = await loadDelegateTask();
-
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) {
-        return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
-      }
-      if (endpoint.includes('/wait')) {
-        return { status: 'waiting', waitingReason: 'idle' };
-      }
-      return { agent: { status: 'waiting', name: 'Worker' } };
-    });
-
-    const result = await delegateTask({ id: 'a1', prompt: 'never finishes', timeoutSeconds: 60 }) as {
-      content: { text: string }[];
-      isError?: boolean;
-    };
-
-    // Bounded, not infinite: some cap must still exist.
-    const dispatchCalls = mockApiRequest.mock.calls.filter(c => String(c[0]).includes('/dispatch'));
-    expect(dispatchCalls.length).toBeGreaterThan(1);
-    expect(dispatchCalls.length).toBeLessThan(20);
-    expect(result.content[0].text.toLowerCase()).toContain('waiting');
-  });
 });
 
 describe('delegate_task after an ACP run that started (sessions that died while they waited, 2026-09-23)', () => {
@@ -189,26 +87,6 @@ describe('delegate_task after an ACP run that started (sessions that died while 
     expect(result.content[0].text).toContain('(the agent produced no text)');
   });
 
-  it('says which background work the run stopped when the agent answered', async () => {
-    const delegateTask = await loadDelegateTask();
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) {
-        return { ok: true, started: true, stopReason: 'end_turn', text: 'Builds are running.', toolCalls: ['pnpm build'], backgroundStopped: ['pnpm build', 'Monitor'] };
-      }
-      throw new Error(`unexpected ${endpoint}`);
-    });
-
-    // Asked again with the same id for the grace period, never typed (2.0.4).
-    vi.useFakeTimers();
-    const pending = delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 600 }) as Promise<Result>;
-    await vi.advanceTimersByTimeAsync(200_000);
-    const result = await pending;
-    vi.useRealTimers();
-
-    expect(dispatched()).toBe(0);
-    expect(result.content[0].text).toMatch(/stopped when the run ended: pnpm build, Monitor/);
-  });
-
   it('does not send the brief again when its own wait runs out while the run works', async () => {
     const delegateTask = await loadDelegateTask();
     mockApiRequest.mockImplementation(async (endpoint: string) => {
@@ -232,19 +110,6 @@ describe('delegate_task after an ACP run that started (sessions that died while 
     expect(result.content[0].text).toMatch(/may still be working/);
   });
 
-  it('still falls back to the terminal when no run started', async () => {
-    const delegateTask = await loadDelegateTask();
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('spawn npx ENOENT'), { status: 502, body: { error: 'spawn npx ENOENT', started: false } });
-      if (endpoint.includes('/dispatch')) return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
-      if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'all done' };
-      return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'all done' } };
-    });
-
-    await delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 300 });
-
-    expect(dispatched()).toBe(1);
-  });
 });
 
 describe('delegate_task keeps its caller listening while it waits', () => {
@@ -317,43 +182,3 @@ describe('delegate_task keeps its caller listening while it waits', () => {
   });
 });
 
-describe('the run of a delegation whose caller gave no timeout (the Audit\'s M2 on #448)', () => {
-  // How this fails, written before the code: the default was 300 s, so an
-  // orchestrator that delegated a 40 minute build without timeoutSeconds had
-  // the run cut at five minutes in the middle of its work ("stopped at the
-  // run's limit of 300 s"), while the guide said a run of an hour was fine.
-  // The default is run-task's own ceiling, an hour; a caller's value is kept.
-  async function loadDelegateTask() {
-    const { registerAgentTools } = await import('../../mcp-orchestrator/src/tools/agents.js');
-    const server = makeFakeServer();
-    registerAgentTools(server as never);
-    return server.tools.get('delegate_task')!;
-  }
-  const asked = () => mockApiRequest.mock.calls
-    .filter(c => String(c[0]).includes('/run-task'))
-    .map(c => (c[2] as { timeoutSeconds?: number }).timeoutSeconds);
-
-  it('asks run-task for an hour, the most it gives', async () => {
-    const delegateTask = await loadDelegateTask();
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) return { ok: true, started: true, stopReason: 'end_turn', text: 'built', toolCalls: [] };
-      throw new Error(`unexpected ${endpoint}`);
-    });
-
-    await delegateTask({ id: 'a1', prompt: 'run the 40 minute build' });
-
-    expect(asked()).toEqual([3600]);
-  });
-
-  it('keeps the timeout a caller gave', async () => {
-    const delegateTask = await loadDelegateTask();
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) return { ok: true, started: true, stopReason: 'end_turn', text: 'done', toolCalls: [] };
-      throw new Error(`unexpected ${endpoint}`);
-    });
-
-    await delegateTask({ id: 'a1', prompt: 'a short check', timeoutSeconds: 120 });
-
-    expect(asked()).toEqual([120]);
-  });
-});
