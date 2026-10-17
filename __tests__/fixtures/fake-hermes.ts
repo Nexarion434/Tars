@@ -35,6 +35,8 @@ export class FakeHermes implements KanbanHermes {
   signedOut = false;
   /** Hermes 0.21.5: `done` without a result or a summary is refused (measured, 400). */
   requireDoneEvidence = false;
+  /** Comments refused, the rest accepted: a note Tars writes beside a move. */
+  refuseComments = false;
 
   async version() { return this.hermesVersion; }
   private unauthorized() { return { success: false as const, error: 'Unauthorized', needsSignIn: true }; }
@@ -120,6 +122,7 @@ export class FakeHermes implements KanbanHermes {
   async comment(id: string, body: string) {
     await this.tick();
     if (this.signedOut) return this.unauthorized();
+    if (this.refuseComments) return { success: false as const, error: 'the gateway is restarting' };
     const c = this.comments.get(id) ?? []; c.push({ body }); this.comments.set(id, c);
     return { success: true as const };
   }

@@ -43,7 +43,10 @@ import { FakeHermes } from '../../fixtures/fake-hermes';
  * 21. on such a Hermes, a task claimed `scheduled` can then not be finished,
  *     released or reported on, or its release goes through a Hermes lane;
  * 22. a version string that only starts like a measured one ("0.21.5.1",
- *     "0.21.10", a canary) is taken as measured; or no version at all is.
+ *     "0.21.10", a canary) is taken as measured; or no version at all is;
+ * 23. a note Tars writes on the board beside a claim or a release ("Claimed by",
+ *     "Released by") is refused, and the tool says nothing of it: the board then
+ *     shows no trace of who took the task, while the agent was told all went well.
  */
 
 const TARS = '/Users/you/tars';
@@ -193,5 +196,24 @@ describe('22. which versions count as measured', () => {
     for (const v of ['0.21.5.1', '0.21.10', '0.21.51', '0.21.4', '0.21.5+canary.20260929', '0.22.0', '', undefined]) {
       expect(measuredHermes(v)).toBe(false);
     }
+  });
+});
+
+describe('23. a note Tars could not write on the board is said, never pretended', () => {
+  it('says the claim was made and its note was not written, and the same for a release', async () => {
+    const id = await filed();
+    h.refuseComments = true;
+    const claimed = await claimTask(h, dune, id);
+    expect(claimed.ok).toBe(true);
+    if (claimed.ok) {
+      expect(claimed.value.heldByCaller).toBe(true);
+      expect(claimed.value.note).toMatch(/not written/);
+    }
+    const released = await moveTask(h, dune, id, 'backlog');
+    expect(released.ok).toBe(true);
+    if (released.ok) expect(released.value.note).toMatch(/not written/);
+    h.refuseComments = false;
+    const again = await claimTask(h, dove, id);
+    expect(again.ok && again.value.note).toBeFalsy();
   });
 });
