@@ -35,6 +35,8 @@ export interface Busy {
   taskRef?: string;
   requesterId?: string;
   since: number;
+  /** The task's first line, for the window's banner (2.0.4). */
+  title?: string;
 }
 
 export interface QueuedTask {
@@ -45,7 +47,7 @@ export interface QueuedTask {
   queuedAt: number;
 }
 
-type Taken = { task: QueuedTask; taskId?: string; error?: string };
+type Taken = { task: QueuedTask; taskId?: string; error?: string; delivered?: string };
 
 /** Who may cancel: the fleet as the queue reads it. */
 type FleetMember = { id: string; role?: string; kind?: string; projectPath?: string };
@@ -78,9 +80,15 @@ export interface OneTaskQueue {
     | { state: 'starting'; task: QueuedTask }
     | { state: 'started'; task: QueuedTask; taskId: string }
     | { state: 'failed'; task: QueuedTask; error: string }
+    | { state: 'delivered'; task: QueuedTask; note: string }
     | undefined;
   /** The run of a task taken from the queue ended before it started: no ledger task will follow. */
   notStarted(ref: string, error: string): void;
+  /**
+   * Typed into a CLI whose turns Tars cannot see (no hook): it went in, and
+   * nothing more will be known of it here (2.0.4). `note` says what is not read.
+   */
+  delivered(ref: string, note: string): void;
   queued(agentId: string): QueuedTask[];
   mayCancel(ref: string, callerId: string | undefined, fleet: ReadonlyMap<string, FleetMember>): boolean;
   /** Out of the line, never to start: still known by its ref, as failed with `why`, to whoever follows it. */
@@ -145,7 +153,7 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       const task = line[0];
       leave(task);
       remember(ref, { task });
-      runs.set(agentId, { kind: 'run', taskRef: ref, ...(task.requesterId ? { requesterId: task.requesterId } : {}), since: now });
+      runs.set(agentId, { kind: 'run', taskRef: ref, ...(task.requesterId ? { requesterId: task.requesterId } : {}), since: now, title: task.title });
       return true;
     },
     find,
@@ -156,11 +164,16 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       if (!was) return undefined;
       if (was.taskId) return { state: 'started', task: was.task, taskId: was.taskId };
       if (was.error !== undefined) return { state: 'failed', task: was.task, error: was.error };
+      if (was.delivered !== undefined) return { state: 'delivered', task: was.task, note: was.delivered };
       return { state: 'starting', task: was.task };
     },
     notStarted(ref, error) {
       const was = taken.get(ref);
       if (was && !was.taskId) was.error = error;
+    },
+    delivered(ref, note) {
+      const was = taken.get(ref);
+      if (was && !was.taskId && was.error === undefined) was.delivered = note;
     },
     queued(agentId) {
       return [...lineOf(agentId)];
