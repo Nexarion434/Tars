@@ -203,7 +203,8 @@ setInterval(() => {}, 1 << 30);
     await ok(dune('update_task_progress', { task_id: a, progress: 60 }));
     const read = await ok(dove('get_task', { task_id: a }));
     expect(read.text).toContain('Progress: 60%');
-    expect(read.text).toContain(TARS_TASK_MARK);
+    // Soft, as the body checks below: on a build without the mark, the run goes on and says what else fails.
+    expect.soft(read.text, "Tars's mark, as an agent reads the task").toContain(TARS_TASK_MARK);
     expect((await ok(dune('mark_task_done', { task_id: a, summary: '' }))).text).toContain('is done');
     // Released, claimed by the other agent, finished with a summary.
     await ok(dove('move_task', { task_id: b, column: 'backlog' }));
@@ -246,7 +247,7 @@ setInterval(() => {}, 1 << 30);
       expect(r.status).toBe(200);
       const detail = await r.json() as { task: { status: string; body: string; assignee: string | null }; events?: Array<{ kind: string }> };
       finals[id] = { status: detail.task.status, assignee: detail.task.assignee, events: (detail.events ?? []).map(e => e.kind) };
-      expect(detail.task.body).toContain(TARS_TASK_MARK);
+      expect.soft(detail.task.body, `Tars's mark in ${id}'s body on Hermes`).toContain(TARS_TASK_MARK);
       expect((detail.events ?? []).map(e => e.kind).filter(k => ['promoted', 'claimed', 'spawned', 'decomposed'].includes(k))).toEqual([]);
     }
     keep({ finals });
