@@ -28,7 +28,7 @@ import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
-import { agentGuideSection, guideIndex, guideTopic } from '../agent-guide';
+import { agentGuideSection, guideForPrompt, guideIndex, guideTopic } from '../agent-guide';
 import { ensureProjectFiles } from '../../utils/project-files';
 import { app } from 'electron';
 import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
@@ -276,7 +276,8 @@ async function spawnAgentSessionInSlot(
   // never becomes a turn.
   // And how Tars works (services/agent-guide.ts): a claude terminal gets it
   // in its bootstrap, a CLI without that hook here.
-  const guideBlock = needsPromptInjection(cliProvider.configDir) ? `\n\n${agentGuideSection(agent)}` : '';
+  const guide = guideForPrompt(agent, cliProvider.configDir);
+  const guideBlock = guide ? `\n\n${guide}` : '';
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
   // Build the CLI command through the provider so non-claude CLIs (codex,
@@ -1322,7 +1323,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
     const project = callerProject(req);
-    const text = guideTopic(topic, version, project ? ensureProjectFiles(project) : null);
+    const folder = project ? ensureProjectFiles(project) : { dir: null, why: 'no agent is named by the token that asked' };
+    const text = guideTopic(topic, version, folder.dir, folder.why);
     if (!text) {
       sendJson({ error: `No topic "${topic}" in the guide of Tars ${version}.\n${guideIndex(version)}` }, 404);
       return;

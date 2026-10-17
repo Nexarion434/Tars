@@ -20,6 +20,7 @@
 import type { AgentStatus } from '../types';
 import { hasOrchestratorPowers } from '../core/agent-role';
 import { ensureProjectFiles } from '../utils/project-files';
+import { needsPromptInjection } from './memory-hub';
 
 export type GuideRole = 'orchestrator' | 'worker';
 
@@ -39,7 +40,8 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator'],
     text: [
       'You delegate to the agents of your own project: `list_agents` shows them, `whoami` shows you. Another project is refused unless the tool takes allowCrossProject and you set it.',
-      '`delegate_task` is the usual way: it runs the task over ACP when the agent\'s CLI has an ACP mode, and returns the agent\'s answer, its stop reason, tokens, cost and a taskId. Tars answers as soon as the run has started, and the tool follows it in steps of two minutes, so a run of an hour is fine.',
+      '`delegate_task` is the usual way: it runs the task over ACP when the agent\'s CLI has an ACP mode, and returns the agent\'s answer, its stop reason, tokens, cost and a taskId. Tars answers as soon as the run has started, and the tool follows it in steps of two minutes.',
+      'The run is stopped at timeoutSeconds: 3600 s (an hour) when you give none, which is also the most it can be. A run stopped there ends in the middle of its work: split a task that needs longer, and give a short one less.',
       'If delegate_task says the run may still be working (Tars was out of reach for a while), do not send the task again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting to be typed into a terminal can be taken back with `task_cancel`.',
       'A `model` given to delegate_task is for that run only; the agent keeps its own. When the agent does not take it, the run goes on the agent\'s own model and the answer says so and names the model it ran on.',
       'Without ACP (or with no run started) the task is typed into the agent\'s terminal: `start_agent`, then `wait_for_agent` and `get_agent_output`. `get_agent` gives an agent\'s whole record.',
@@ -77,7 +79,8 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       'File a task with `create_task` when there is work nobody holds yet: a follow-up you found, a defect outside your task, something the user should decide. It arrives parked in the backlog, where Hermes never starts it.',
       'Claim a task with `assign_task` before you work on it (one at a time); report with `update_task_progress`; finish it with `mark_task_done` and a one to three sentence summary. `move_task` moves a task you hold between backlog, ongoing and done; planned is the user\'s: it hands a task to Hermes, and only the user does that. `list_tasks` and `get_task` read the board; `delete_task` removes a task you filed by mistake.',
       'An orchestrator files the work it splits, so the user sees it on the board, and its workers claim and finish their own.',
-      'When Hermes is not configured, refuses or does not answer, nothing was written, and the tool says so: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s notes/, and go on with the work; do not call the tool again in a loop.',
+      'When Hermes is not configured, refuses or cannot be reached, the tool says so and what was written: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s notes/, and go on with the work; do not call the tool again in a loop.',
+      'When the error names a task that was created, or says Hermes may have done what you asked before its answer was lost, read the board (`get_task`, `list_tasks`) before writing again: never create a task twice.',
     ].join('\n'),
   },
   {
@@ -87,7 +90,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     text: [
       'Tars keeps a folder for your project, outside the repository: {folder}',
       'tools/ for scripts and benches worth running again, notes/ for what the next session should know, reports/ for what you hand over. Every agent of the project shares it, and Tars never deletes it.',
-      'Keep nothing there that belongs in the repository, and nothing secret.',
+      'Durable files go there: never create folders at the top of your home folder. Keep nothing there that belongs in the repository, and nothing secret.',
       'Your temporary folder ($TMPDIR) is scratch: a session or a cleanup can empty it. Do not keep work under ~/Documents either: it can be evicted to the cloud and a read then blocks.',
     ].join('\n'),
   },
@@ -97,7 +100,8 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'A worker asks its requester, not the user: end your turn with the question in your report, or `send_message` to "requester".',
-      'An orchestrator asks the user with `ask_user`, on their Telegram through their Hermes, and waits for the answer. A request that came from Telegram, Slack or Discord is answered there: `send_telegram`, `send_slack`, `send_discord`; files go with `send_telegram_document`, `send_telegram_photo`, `send_telegram_video`.',
+      'An orchestrator asks the user with `ask_user`, from its terminal: Tars sends the question to their Telegram through their Hermes, which takes the relay to Hermes on (Settings, Hermes), and the tool returns at once. Their answer is typed into your terminal later, after the line "Message from the user via Telegram:". Do not wait for it in a loop: go on with other work, or end your turn. A delegated run cannot ask (it has no terminal for the answer): it puts the question in its answer.',
+      'A request that came from Telegram, Slack or Discord is answered there: `send_telegram`, `send_slack`, `send_discord`. With the relay on, `send_telegram` goes to the user through Hermes and the file tools are gone; with it off, files go with `send_telegram_document`, `send_telegram_photo`, `send_telegram_video`.',
       'Ask only what you cannot decide: otherwise decide, say what you assumed, and go on.',
     ].join('\n'),
   },
@@ -106,7 +110,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     title: 'Memory and the vault',
     roles: ['orchestrator', 'worker'],
     text: [
-      '`memory_search` searches what the team remembers: the project\'s memory notes and the memory backends the user connected; `memory_read` reads one note, `memory_write` writes one, `memory_sources` lists where memory comes from.',
+      '`memory_search` searches what the team remembers: the project\'s memory notes and the memory backends the user connected; `memory_read` returns the project\'s whole digest (its memory notes, the recent activity of other sessions, the Hermes memory), `memory_write` records a fact, `memory_sources` lists where memory comes from.',
       'The vault holds documents the whole fleet shares, by folder: `vault_list_folders`, `vault_create_folder`, `vault_delete_folder`, `vault_list_documents`, `vault_search`, `vault_get_document`, `vault_create_document`, `vault_update_document`, `vault_delete_document`, `vault_attach_file`.',
     ].join('\n'),
   },
@@ -201,8 +205,11 @@ export function toolsNamedIn(text: string): string[] {
   return [...text.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map(m => m[1]);
 }
 
-const withFolder = (text: string, folder: string | null) =>
-  text.replace(/\{folder\}/g, folder ?? '(none: your project has no absolute path)');
+/** Why a project has no folder, when nobody said: the one reason a path alone gives. */
+const NOT_ABSOLUTE = 'its path is not absolute';
+
+const withFolder = (text: string, folder: string | null, why?: string) =>
+  text.replace(/\{folder\}/g, folder ?? `(none: ${why ?? NOT_ABSOLUTE})`);
 
 /** The list of topics, as tars_guide gives it without one. */
 export function guideIndex(version: string): string {
@@ -212,11 +219,11 @@ export function guideIndex(version: string): string {
   ].join('\n');
 }
 
-/** One topic, stamped with the version; null for a topic that does not exist. */
-export function guideTopic(id: string, version: string, folder: string | null): string | null {
+/** One topic, stamped with the version; null for a topic that does not exist. `why`: the project has no folder. */
+export function guideTopic(id: string, version: string, folder: string | null, why?: string): string | null {
   const topic = GUIDE_TOPICS.find(t => t.id === id.trim().toLowerCase());
   if (!topic) return null;
-  return `Tars ${version}, ${topic.title}\n\n${withFolder(topic.text, folder)}`;
+  return `Tars ${version}, ${topic.title}\n\n${withFolder(topic.text, folder, why)}`;
 }
 
 /**
@@ -224,16 +231,17 @@ export function guideTopic(id: string, version: string, folder: string | null): 
  * folder, and where the details are. Kept to a few lines on purpose: every
  * session of every agent carries it.
  */
-export function identitySection(role: GuideRole, folder: string | null): string[] {
+export function identitySection(role: GuideRole, folder: string | null, why?: string): string[] {
   const where = folder
-    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, notes/, reports/). Keep scripts, notes and reports worth keeping there, never in a temporary folder or under ~/Documents.`
-    : `- Your project has no folder kept by Tars (its path is not absolute): keep what must last in the repository or ask your requester.`;
+    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, notes/, reports/). Keep scripts, notes and reports worth keeping there, never in a temporary folder, under ~/Documents or in a folder you create at the top of your home folder.`
+    : `- Your project has no folder kept by Tars (${why ?? NOT_ABSOLUTE}): keep what must last in the repository or ask your requester.`;
   const lines = [`## How Tars works`];
   if (role === 'orchestrator') {
     lines.push(
-      `- delegate_task runs a task over ACP and returns the agent's answer, even after an hour. If it says the run may still be working, read it with task_status: never send it twice. Its model is for that run only, and the answer says when the agent did not take it.`,
+      `- delegate_task runs a task over ACP and returns the agent's answer. The run stops at timeoutSeconds: 3600 s when you give none, and at most. If it says the run may still be working, read it with task_status: never send it twice. Its model is for that run only, and the answer says when the agent did not take it.`,
       `- send_message modes: auto, queue, steer, restart. HELD means it waits for the terminal and goes in by itself.`,
-      `- The kanban is the project's Hermes board (one lane per agent): file the work you split with create_task, so the user sees it. Ask the user with ask_user.`,
+      `- The kanban is the project's Hermes board (one lane per agent): file the work you split with create_task, so the user sees it.`,
+      `- ask_user puts a question to the user from your terminal and returns at once: their answer is typed in later. Do not wait for it.`,
     );
   } else {
     lines.push(
@@ -258,5 +266,18 @@ export function identitySection(role: GuideRole, folder: string | null): string[
  */
 export function agentGuideSection(agent: AgentStatus): string {
   const role: GuideRole = hasOrchestratorPowers(agent) ? 'orchestrator' : 'worker';
-  return identitySection(role, ensureProjectFiles(agent.projectPath)).join('\n');
+  const folder = ensureProjectFiles(agent.projectPath);
+  return identitySection(role, folder.dir, folder.why).join('\n');
+}
+
+/**
+ * The section for the prompt a session starts on, once: a CLI whose config
+ * folder is not Claude's has no SessionStart hook to fetch the bootstrap, so
+ * it gets it here; a claude CLI, in a terminal or over ACP, gets it from its
+ * bootstrap, and nothing here. Every launch that builds a CLI's first prompt
+ * reads it: spawnAgentSession, the window's (Start, a wake, a restart), the
+ * bots', and a run over ACP.
+ */
+export function guideForPrompt(agent: AgentStatus, providerConfigDir: string): string {
+  return needsPromptInjection(providerConfigDir) ? agentGuideSection(agent) : '';
 }

@@ -24,9 +24,13 @@ export const PROJECT_FILES_SUBDIRS = ['tools', 'notes', 'reports'] as const;
 /** Names Windows keeps for devices, whatever follows them. */
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com\d|lpt\d)$/;
 
-/** A file name every system takes: lower case letters, digits and dashes, 40 at most. */
+/**
+ * A file name every system takes: lower case letters, digits and dashes, 40 at
+ * most. An accented letter keeps its letter: NFKD writes it as the letter and a
+ * combining mark, and the mark goes (`Été` is `ete`, not `e-te`).
+ */
 function slugOf(name: string): string {
-  const slug = name.normalize('NFKD').toLowerCase()
+  const slug = name.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
     .slice(0, 40).replace(/-+$/, '');
   if (!slug) return 'project';
@@ -48,19 +52,23 @@ export function projectFilesDir(projectPath: string, platform: NodeJS.Platform =
   return key ? path.join(DATA_DIR, PROJECT_FILES_DIR_NAME, key) : null;
 }
 
+/** A project's folder, or why it has none, as an agent's identity says it. */
+export type ProjectFolder = { dir: string; why?: undefined } | { dir: null; why: string };
+
 /**
  * A project's folder, made if it is not there: what is in it is left as it is.
- * Null when the path is not absolute or the folder cannot be made, which an
- * agent's identity then says rather than naming a folder that is not there.
+ * None when the path is not absolute or the folder cannot be made (a full disk,
+ * a folder Tars may not write), and why, which an agent's identity then says
+ * rather than naming a folder that is not there or blaming the project's path.
  */
-export function ensureProjectFiles(projectPath: string): string | null {
+export function ensureProjectFiles(projectPath: string): ProjectFolder {
   const dir = projectFilesDir(projectPath);
-  if (!dir) return null;
+  if (!dir) return { dir: null, why: 'its path is not absolute' };
   try {
     for (const sub of PROJECT_FILES_SUBDIRS) fs.mkdirSync(path.join(dir, sub), { recursive: true });
-    return dir;
+    return { dir };
   } catch (err) {
     console.warn(`[project-files] ${dir} could not be made:`, (err as Error).message);
-    return null;
+    return { dir: null, why: `${dir} could not be made: ${(err as Error).message}` };
   }
 }
