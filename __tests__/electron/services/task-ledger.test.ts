@@ -74,6 +74,11 @@ import { hasPosixModes } from '../../setup/platform-limits';
  *     or is listed again at every start after.
  * 35. A task cannot be found by its id once Tars started again, or comes back without its result.
  * 36. Rewritten past its bound, the ledger keeps the results of the tasks it dropped, or loses those it kept.
+ * 37. (2.0.4, a delegation into the agent's own terminal) The turn a delegation opens cannot be told: turnStarted
+ *     names no task, or names another than the one it opened or counted the turn in.
+ * 38. A terminal task's answer and why it ended are not kept: lost at a restart, written to ~/.dorothy, cut at the
+ *     8000 characters a run over ACP kept, or accepted for a task still running, an ACP run, or a task that is not
+ *     there; a stop reason that is not one is kept as it came.
  */
 
 const T0 = Date.UTC(2026, 9, 4, 18, 0, 0);
@@ -714,5 +719,57 @@ describe('a delegated run over ACP, from its start (PR B)', () => {
     for (const id of kept) expect(again.task(id)!.result).toMatch(/^RESULT-/);
     const results = fs.readFileSync(resultFile, 'utf8');
     for (const id of ids.filter((id) => !kept.includes(id))) expect(results).not.toContain(id);
+  });
+});
+
+describe('a delegation into the agent\'s own terminal (2.0.4)', () => {
+  it('37. turnStarted names the task the turn opened, and the one it was counted in', () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'lead', text: 'review the notes' });
+    const opened = ledger.turnStarted(agent(), { sessionId: 's1', text: 'review the notes' });
+    expect(opened).toBe(ledger.openTaskOf('worker-1')!.id);
+    clock += 1_000;
+    expect(ledger.turnStarted(agent(), { sessionId: 's1', text: 'and go on' })).toBe(opened);
+    ledger.stateChanged(agent({ status: 'idle' }));
+    clock += 1_000;
+    const next = ledger.turnStarted(agent(), { sessionId: 's1', text: 'the next task' });
+    expect(next).not.toBe(opened);
+    expect(ledger.task(next!)).toMatchObject({ outcome: 'running', startedAt: clock });
+  });
+
+  it('38. its answer and why it ended are kept, in full, beside the texts, after a restart too', () => {
+    const ledger = open();
+    ledger.handedOff('worker-1', { source: 'agent', requesterAgentId: 'lead', text: 'review the notes' });
+    const id = ledger.turnStarted(agent(), { sessionId: 's1', text: 'review the notes' })!;
+    const long = 'x'.repeat(20_000);
+    // Not while it runs: its end is the ledger's to read, from the agent's rest.
+    ledger.terminalEnded(id, { result: long, stopReason: 'end_turn' });
+    expect(ledger.task(id)!.result).toBeUndefined();
+    clock += 5_000;
+    ledger.stateChanged(agent({ status: 'idle' }));
+    ledger.terminalEnded(id, { result: long, stopReason: 'end_turn' });
+    expect(ledger.task(id)).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', endedAt: T0 + 5_000 });
+    expect(ledger.task(id)!.result).toHaveLength(20_000);
+    expect(open().task(id)).toMatchObject({ stopReason: 'end_turn', result: long });
+    expect(fs.readFileSync(file, 'utf8')).not.toContain('xxxx');
+    expect(fs.readFileSync(resultFile, 'utf8')).toContain(long);
+    // Once: a second end changes nothing.
+    ledger.terminalEnded(id, { result: 'another', stopReason: 'interrupted' });
+    expect(open().task(id)).toMatchObject({ stopReason: 'end_turn', result: long });
+  });
+
+  it('38. refused for an ACP run, a task that is not there, and a stop reason that is not one', () => {
+    const ledger = open();
+    const acp = ledger.acpStarted({ agent: agent(), text: 'run', startedAt: clock });
+    ledger.acpEnded(acp, { outcome: 'completed', stopReason: 'end_turn', result: 'acp answer', usage: null, costUSD: null });
+    ledger.terminalEnded(acp, { result: 'not mine', stopReason: 'interrupted' });
+    expect(ledger.task(acp)).toMatchObject({ stopReason: 'end_turn', result: 'acp answer' });
+    expect(() => ledger.terminalEnded('nope', { result: 'x', stopReason: 'end_turn' })).not.toThrow();
+    ledger.handedOff('worker-1', { source: 'tars', text: 'go' });
+    const id = ledger.turnStarted(agent(), { sessionId: 's1', text: 'go' })!;
+    ledger.stateChanged(agent({ status: 'error' }));
+    ledger.terminalEnded(id, { stopReason: '../../etc' });
+    expect(open().task(id)).toMatchObject({ outcome: 'error', stopReason: 'unknown' });
+    expect(open().task(id)!.result).toBeUndefined();
   });
 });
