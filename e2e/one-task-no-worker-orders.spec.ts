@@ -42,8 +42,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  */
 
 const RUN_S = 6;
+const HOLD_S = 120;
 
-/** A fake ACP agent, launched as `opencode acp`: each prompt answered after RUN_S, every step logged with its pid. */
+/**
+ * A fake ACP agent, launched as `opencode acp`: each prompt answered after RUN_S, every step logged with its pid.
+ * TASK-HOLD is held for HOLD_S: the run a restart of Tars cuts, with a task queued behind it.
+ */
 const FAKE_ACP = String.raw`
 const fs = require('fs');
 const log = (entry) => fs.appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + '\n');
@@ -70,7 +74,7 @@ function handle(msg) {
       log({ answered: task });
       send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: msg.params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answer for ' + task } } } });
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } } });
-    }, ${RUN_S} * 1000);
+    }, (task === 'TASK-HOLD' ? ${HOLD_S} : ${RUN_S}) * 1000);
   }
   if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, result: {} });
 }
