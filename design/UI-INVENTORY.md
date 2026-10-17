@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 173 root frames.
-`design/chat-design.pen` holds 72 of those, the other hundred and one being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 175 root frames.
+`design/chat-design.pen` holds 72 of those, the other hundred and three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -118,7 +118,7 @@ does not read this table.
 | Surface | Frames |
 |---|---|
 | The Usage page's activity card, under the four tiles: one square per local day over the last 53 weeks, Monday to Sunday, in five steps of the accent; the period's totals above the grid (tokens, cost, active days, longest streak, most used model); a day's tooltip with its tokens per model (the six largest, then +N others) and its cost | `tars-redesign.pen`: Usage · activity |
-| Its states: no usage yet, loading, and the narrowest window (1200 by 800), where the grid scrolls inside its card and the page does not | `tars-redesign.pen`: Usage · activity · no usage yet, Usage · activity · loading, Usage · activity · narrowest window |
+| Its states: no usage yet, loading, the narrowest window (1200 by 800), where the squares keep 16 px and the grid scrolls inside its card while the page does not, and a wide window (1920 by 1080), where the squares stop at 22 px and the grid sits centred in its card; in between, the squares grow with the card so the grid ends at its right edge | `tars-redesign.pen`: Usage · activity · no usage yet, Usage · activity · loading, Usage · activity · narrowest window, Usage · activity · wide window |
 
 Each frame has its `· light` copy below it. Usage · activity · notes says what each
 part shows and what the Backend would provide.
