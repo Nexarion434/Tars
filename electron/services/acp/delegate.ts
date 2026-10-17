@@ -47,6 +47,8 @@ export interface DelegationResult {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
   costUSD?: number;
   error?: string;
+  /** A model asked for this run only (delegate_task's `model`), and whether the agent took it. */
+  model?: { asked: string; taken: boolean };
   /** `permission_escalation_denied`: held to a mode the agent does not offer, it did not run. */
   code?: string;
 }
@@ -164,8 +166,13 @@ export async function delegateOverAcp(opts: {
    * agent's own (core/permission-ceiling.ts). Absent: the agent's own.
    */
   permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
+  /**
+   * A model for this run only, in place of the agent's own: the agent's saved
+   * model is not changed. Absent: the agent's own.
+   */
+  model?: string;
   /** Called once the run has started, before its turn: the moment it is a task (task-ledger.ts acpStarted). */
-  onStarted?: () => void;
+  onStarted?: (run: { model?: { asked: string; taken: boolean } }) => void;
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
   const { agent, task, appSettings, onEvent } = opts;
@@ -261,6 +268,7 @@ export async function delegateOverAcp(opts: {
   const escaped = () => (breach ? { ok: false, code: 'permission_escalation_denied', stopReason: 'permission_escalation_denied' } : {});
 
   let started = false;
+  let runModel: { asked: string; taken: boolean } | undefined;
   try {
     await session.start();
     // The agent's own model and effort. A launch in a terminal puts them on the
@@ -268,17 +276,21 @@ export async function delegateOverAcp(opts: {
     // through the options the agent offers, model first because the effort
     // levels on offer depend on the model. Without this every delegation ran
     // on the adapter's default model and effort, whatever the agent was set to.
-    const model = agent.model && agent.model !== 'default' ? agent.model : undefined;
-    if (model && !(await session.setConfigOption('model', model))) {
+    // A model asked for this run alone comes first, and is said back either way.
+    const asked = opts.model?.trim() && opts.model.trim() !== 'default' ? opts.model.trim() : undefined;
+    const model = asked ?? (agent.model && agent.model !== 'default' ? agent.model : undefined);
+    const taken = model ? await session.setConfigOption('model', model) : true;
+    if (!taken) {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not on ${model}, the agent did not take it`);
     }
+    if (asked) runModel = { asked, taken };
     const effort = safeEffort(agent.effort);
     if (effort && !(await session.setConfigOption('effort', effort))) {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
     }
     started = true;
     try {
-      opts.onStarted?.();
+      opts.onStarted?.({ ...(runModel ? { model: runModel } : {}) });
     } catch (err) {
       console.warn('[acp] the start of a run was not recorded:', (err as Error).message);
     }
@@ -297,6 +309,7 @@ export async function delegateOverAcp(opts: {
         ok: false,
         transport: 'acp',
         started: true,
+        ...(runModel ? { model: runModel } : {}),
         stopReason: 'turn_limit',
         text: partial.text,
         toolCalls: partial.toolCalls.map(t => t.title),
@@ -312,7 +325,7 @@ export async function delegateOverAcp(opts: {
       recordUsage({
         agentId: agent.id,
         provider: agent.provider ?? 'claude',
-        model: agent.model,
+        model: runModel?.taken ? runModel.asked : agent.model,
         inputTokens: turn.usage?.inputTokens ?? 0,
         outputTokens: turn.usage?.outputTokens ?? 0,
         cachedReadTokens: turn.usage?.cachedReadTokens,
@@ -326,6 +339,7 @@ export async function delegateOverAcp(opts: {
       ok: turn.stopReason === 'end_turn',
       transport: 'acp',
       started: true,
+      ...(runModel ? { model: runModel } : {}),
       stopReason: turn.stopReason,
       text: turn.text,
       toolCalls: turn.toolCalls.map(t => t.title),

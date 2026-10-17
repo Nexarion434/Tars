@@ -137,8 +137,10 @@ describe('a delegated run, and its status', () => {
     });
     const delegated = await (await tool('delegate_task'))({ id: 'oc', prompt: 'review the notes', clientRequestId: 'cr-acp-0001' });
     expect(bodiesOf('/dispatch')).toHaveLength(0);
+    // Since 2.0.4 the run is waited on in the ledger: its end is the answer.
     expect(text(delegated)).toContain(taskId);
-    expect(text(delegated)).toMatch(/task_status/);
+    expect(text(delegated)).toContain('reviewed');
+    mockApiRequest.mockClear();
 
     const status = await tool('task_status');
     expect(text(await status({ taskId }))).toContain('reviewed');

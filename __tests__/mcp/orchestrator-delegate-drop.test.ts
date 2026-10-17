@@ -1,0 +1,277 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+/**
+ * delegate_task after its connection to Tars was dropped (2.0.4).
+ *
+ * The defect: delegate_task held ONE POST /api/agents/:id/run-task open for
+ * the whole ACP run, and the route only answered when the run ended. Node's
+ * fetch (undici) cuts a request that has no response headers after 300 s as
+ * `TypeError: fetch failed`, which is not an AbortError, and the tool read it
+ * as "no run started": it typed the same task into the agent's terminal (a
+ * second copy, five minutes after the first), or, since receipts, was refused
+ * 409 clientRequestId_conflict and told its caller nothing had been sent while
+ * the run kept working.
+ *
+ * Every way this can fail, written before the code:
+ *  F1. A transport failure on run-task (fetch failed, reset, refused, our own
+ *      wait running out) is read as "no run started" and the task goes to
+ *      /dispatch: typed a second time, or refused as a conflict.
+ *  F2. A request waits longer than one segment: run-task held for the whole
+ *      run, or a wait on the task held past undici's 300 s.
+ *  F3. After a transport failure the tool gives up at once instead of asking
+ *      Tars again about the same clientRequestId, so a run that started is
+ *      reported as lost while it works.
+ *  F4. Asking again starts a second run: the retry carries another
+ *      clientRequestId, or another payload.
+ *  F5. Tars unreachable past the grace period: the tool throws, or says
+ *      nothing was sent, instead of saying the run may still be working and
+ *      how to follow it (task_status with the id).
+ *  F6. The run that started is waited on, but its real end (answer, stop
+ *      reason, tokens, cost, task id) is not what the caller gets, or a run
+ *      that ended badly is not flagged as an error.
+ *  F7. A run still going at the caller's deadline is reported as done, or the
+ *      tool falls back to the terminal then.
+ *  F8. Tars answered that no run started (retryWithDispatch, or 502 with
+ *      started false), and the tool does NOT fall back to the terminal.
+ *  F9. Tars answered with a refusal that is not "no run" (a clientRequestId
+ *      conflict, a permission escalation denied) and the tool dispatches
+ *      anyway.
+ *  F10. delegate_task's model never reaches the run: run-task's body has no
+ *      model.
+ *  F11. The agent did not take the model, and the result does not say so.
+ *  F12. undici's real cut is not what the tool classifies: the error it
+ *      raises is assumed to be an AbortError, or to carry an HTTP status.
+ */
+
+vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  getCallerIdentity: () => ({ agentId: '', projectPath: '' }),
+}));
+
+let mockApiRequest: ReturnType<typeof vi.fn>;
+
+function makeFakeServer() {
+  const tools = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
+  return {
+    tools,
+    tool(name: string, _desc: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) {
+      tools.set(name, handler);
+    },
+  };
+}
+
+async function loadDelegateTask() {
+  const { registerAgentTools } = await import('../../mcp-orchestrator/src/tools/agents.js');
+  const server = makeFakeServer();
+  registerAgentTools(server as never);
+  return server.tools.get('delegate_task')!;
+}
+
+/** What undici raises when it cuts a request: a TypeError, no status. */
+function fetchFailed(): Error {
+  return new TypeError('fetch failed');
+}
+
+/** What apiRequest raises when Tars answered with a refusal. */
+function answered(status: number, body: Record<string, unknown>): Error {
+  return Object.assign(new Error(String(body.error ?? `API error: ${status}`)), { status, body });
+}
+
+type Result = { content: { text: string }[]; isError?: boolean };
+const calls = (part: string) => mockApiRequest.mock.calls.filter((c) => String(c[0]).includes(part));
+
+const ENDED = { id: 't-1', agentId: 'a1', outcome: 'completed', stopReason: 'end_turn', result: 'the real answer', usage: { inputTokens: 100, outputTokens: 20, costUSD: 0.5 }, toolCalls: ['Read'] };
+
+beforeEach(() => {
+  mockApiRequest = vi.fn();
+  vi.resetModules();
+  vi.useRealTimers();
+});
+
+describe('delegate_task never types a task after a run may have started', () => {
+  it('1. (F1, F3, F4, F6) run-task cut by the transport: asks again with the same id and payload, waits on the run, returns its real end, never dispatches', async () => {
+    let runTaskCalls = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) {
+        runTaskCalls += 1;
+        if (runTaskCalls === 1) throw fetchFailed();
+        return { started: true, duplicate: true, outcome: 'running', taskId: 't-1' };
+      }
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: ENDED };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600, clientRequestId: 'req-fixed-1' }) as Result;
+
+    expect(calls('/dispatch')).toHaveLength(0);
+    const bodies = calls('/run-task').map((c) => c[2] as Record<string, unknown>);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[0].clientRequestId).toBe('req-fixed-1');
+    expect(result.isError).toBe(false);
+    expect(result.content[0].text).toContain('the real answer');
+    expect(result.content[0].text).toContain('ended: end_turn');
+    expect(result.content[0].text).toContain('120 tokens');
+    expect(result.content[0].text).toContain('$0.5000');
+    expect(result.content[0].text).toContain('task t-1');
+  });
+
+  it('2. (F2) no request waits longer than a segment well under 300 s, whatever the timeout asked', async () => {
+    let waits = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      if (endpoint.startsWith('/api/tasks/t-1')) {
+        waits += 1;
+        return { task: waits < 3 ? { ...ENDED, outcome: 'running' } : ENDED, timeout: waits < 3 };
+      }
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 3600 });
+
+    for (const c of mockApiRequest.mock.calls) {
+      const timeoutMs = c[3] as number | undefined;
+      expect(timeoutMs, String(c[0])).toBeDefined();
+      expect(timeoutMs!, String(c[0])).toBeLessThanOrEqual(180_000);
+      const wait = /[?&]wait=(\d+)/.exec(String(c[0]));
+      if (wait) expect(Number(wait[1])).toBeLessThanOrEqual(120);
+    }
+    expect(calls('/run-task')[0][2]).toMatchObject({ answer: 'started' });
+  });
+
+  it('3. (F5) Tars unreachable past the grace period: says the run may still be working and how to follow it, never dispatches', async () => {
+    vi.useFakeTimers();
+    mockApiRequest.mockImplementation(async () => { throw fetchFailed(); });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600, clientRequestId: 'req-fixed-3' }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(calls('/run-task').length).toBeGreaterThan(1);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/may still be working/);
+    expect(result.content[0].text).toContain('task_status({ clientRequestId: "req-fixed-3" })');
+    expect(result.content[0].text).not.toMatch(/nothing was sent/);
+  });
+
+  it('4. (F5) the wait on a started run loses Tars past the grace period: names the task to follow, never dispatches', async () => {
+    vi.useFakeTimers();
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      throw fetchFailed();
+    });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600, clientRequestId: 'req-fixed-4' }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/may still be working/);
+    expect(result.content[0].text).toContain('t-1');
+  });
+
+  it('5. (F7) a run still going at the deadline is said to be running, with how to follow it, and nothing is dispatched', async () => {
+    vi.useFakeTimers();
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      if (endpoint.startsWith('/api/tasks/t-1')) {
+        await new Promise((r) => setTimeout(r, 10_000));
+        return { task: { ...ENDED, outcome: 'running' }, timeout: true };
+      }
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 30 }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/still working/);
+    expect(result.content[0].text).toContain('task_status');
+  });
+
+  it('6. (F6) a run that ended badly is flagged as an error, with its reason', async () => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: { ...ENDED, outcome: 'stopped', stopReason: 'turn_limit', error: 'stopped at the run\'s limit', backgroundStopped: ['npm test'] } };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it' }) as Result;
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('ended: turn_limit');
+    expect(result.content[0].text).toContain('stopped at the run\'s limit');
+    expect(result.content[0].text).toContain('npm test');
+  });
+});
+
+describe('delegate_task falls back to the terminal only when Tars said no run started', () => {
+  function dispatchAnswers() {
+    return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
+  }
+
+  it.each([
+    ['409 retryWithDispatch', answered(409, { error: 'opencode has no ACP mode; use /dispatch', retryWithDispatch: true })],
+    ['502 started false', answered(502, { error: 'launch failed', started: false })],
+  ])('7. (F8) %s: the task goes to the terminal', async (_label, refusal) => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw refusal;
+      if (endpoint.includes('/dispatch')) return dispatchAnswers();
+      if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'typed and done' };
+      return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'typed and done' } };
+    });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'sonnet' }) as Result;
+    expect(calls('/run-task')).toHaveLength(1);
+    expect(calls('/dispatch')).toHaveLength(1);
+    expect(result.content[0].text).toContain('typed and done');
+  });
+
+  it.each([
+    ['a clientRequestId conflict', answered(409, { error: 'clientRequestId x was already used for another request: nothing was sent.', code: 'clientRequestId_conflict' })],
+    ['a permission escalation denied', answered(409, { error: 'held to plan', code: 'permission_escalation_denied', retryWithDispatch: false })],
+  ])('8. (F9) %s: nothing is typed, and the refusal is the answer', async (_label, refusal) => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw refusal;
+      if (endpoint.includes('/dispatch')) return dispatchAnswers();
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it' }) as Result;
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe('delegate_task\'s model', () => {
+  it('9. (F10, F11) reaches the run, and a model the agent did not take is said', async () => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1', model: { asked: 'haiku', taken: false } };
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: ENDED };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'haiku' }) as Result;
+    expect(calls('/run-task')[0][2]).toMatchObject({ model: 'haiku' });
+    expect(result.content[0].text).toMatch(/not on haiku/);
+  });
+});
+
+describe('undici\'s own cut, as the tool meets it', () => {
+  it('10. (F12) a request with no response headers past headersTimeout is a TypeError "fetch failed", no AbortError and no status', async () => {
+    const server = http.createServer(() => { /* never answers */ });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    const { Agent } = await import('undici');
+    const dispatcher = new Agent({ headersTimeout: 300 });
+    try {
+      const err = await fetch(`http://127.0.0.1:${port}/api/agents/a1/run-task`, { method: 'POST', body: '{}', dispatcher } as RequestInit)
+        .then(() => null, (e: unknown) => e as Error & { status?: number; cause?: { code?: string } });
+      expect(err).toBeInstanceOf(TypeError);
+      expect(err!.name).not.toBe('AbortError');
+      expect(err!.message).toBe('fetch failed');
+      expect(err!.cause?.code).toBe('UND_ERR_HEADERS_TIMEOUT');
+      expect(err!.status).toBeUndefined();
+    } finally {
+      await dispatcher.close();
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+    }
+  });
+});

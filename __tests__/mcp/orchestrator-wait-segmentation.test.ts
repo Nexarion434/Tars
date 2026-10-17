@@ -199,7 +199,7 @@ describe('delegate_task, which waits the same way', () => {
     const delegateTask = await loadTool('delegate_task');
     let waits = 0;
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
       if (endpoint.includes('/dispatch')) {
         return { success: true, mode: 'message', agent: { id: 'w', name: 'Worker', status: 'running' } };
       }
