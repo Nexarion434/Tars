@@ -1647,6 +1647,38 @@ Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` 
 dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
 neither is a place to park.
 
+Measured again on 18/10 on Hermes 0.21.5, the version the gateway runs (tag `v2026.9.24` of the
+Hermes repository), and on 0.21.1 (`v2026.9.7`), each with its own router and dispatcher ticking
+in a throwaway `HERMES_HOME` (`__tests__/fixtures/hermes-kanban-bench.py`). The same rules hold,
+plus these: the dispatcher spawns `review` as it spawns `ready`, and only for an assignee that is
+an existing Hermes profile; a task cannot be created `scheduled`, nor moved from `scheduled` to
+`done`, `blocked` or `review` (409); 0.21.5 refuses `done` with no result and no summary (400), so
+`mark_task_done` writes one when the agent gave none.
+
+- **Every task Tars files says it is Tars's agents'**: a line before `Filed by`, "Tars task: it
+  belongs to Tars's agents, ... Hermes does not take, start, promote or decompose it.", for
+  whoever reads the board, Hermes's own assistant included.
+- **A Hermes whose version was not measured** (`MEASURED_HERMES_VERSIONS` in `kanban-board.ts`,
+  read from `/api/status` once a minute): a claim moves the lane only and the task stays
+  `scheduled`, the one state safe on every version measured. Finishing it goes through `ready`
+  on the agent's lane, then `done`. `hermes:session:state` says the version is unmeasured.
+- **The session**: Tars asks the gateway every half hour, signed in (`services/hermes-session-watch.ts`,
+  started by `main.ts`). On 0.21.5's `basic` provider the access token lives 12 hours and the
+  refresh token 30 days, and the gateway mints a new refresh token at each refresh, so these
+  checks keep the session valid for as long as Tars runs. They also find it ended: a kanban call
+  refused for the session says so at once, and every kanban tool then answers "Tars is signed
+  out of Hermes: sign in again in Settings, Hermes. ...". `hermes:session:state` carries it
+  (`signed-in`, `signed-out`, `unreachable`, `none`) with that sentence, pushed at each change.
+  What no check can renew: a `basic` provider with no `dashboard.basic_auth.secret` (or
+  `HERMES_DASHBOARD_BASIC_AUTH_SECRET`) signs with a key drawn at each start of the gateway, so
+  every restart of Hermes ends every session. Set the secret on the Hermes server to keep them.
+- **A note that could not be written**: the "Claimed by" and "Released by" comments, when the
+  gateway refuses them, are said in the tool's answer, never dropped.
+- **Against a real Hermes**: `TARS_HERMES_TREE=<a Hermes source tree> TARS_HERMES_PYTHON=<its
+  python> npx vitest run __tests__/electron/services/kanban-hermes-live.test.ts`: two agents
+  file, claim, report, finish, release and delete while the dispatcher ticks, and none of their
+  tasks is spawned, promoted or listed for decomposition. Skipped where no Hermes is.
+
 - **An agent files a task**: `create_task` parks it on the agent's own project. If the project
   has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
 - **An agent takes one**: `assign_task` with no `agent_id`. A claim is atomic among Tars's

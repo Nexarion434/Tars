@@ -17,6 +17,8 @@ export const CHANGELOG: Release[] = [
       'When Hermes no longer accepts Tars\'s session, every kanban tool now says so in the same sentence, with what to do: sign in again in Settings, Hermes. Each tool used to answer "Hermes refused: Unauthorized", and a task created just before the refusal is said to be created and not parked.',
       'Every task an agent files on the Kanban board now says in its description that it belongs to Tars\'s agents and that Hermes does not take it, for whoever reads the board, Hermes\'s own assistant included. On a Hermes whose version Tars has not measured, a task an agent takes stays out of the states Hermes acts on; measured: Hermes 0.21.1 and 0.21.5, whose dispatcher ran beside agents filing, taking and finishing tasks and took none of them.',
       'mark_task_done without a summary now finishes the task on Hermes 0.21.5, which refuses to close a task with no summary: Tars writes one.',
+      'Tars now asks Hermes every half hour, signed in. With Hermes\'s basic sign-in, each answer renews the session, so it lasts as long as Tars runs, and a session Hermes has ended is found at the next check, or at once by a kanban call: on 17/10 every kanban call answered "Unauthorized" and nothing said so. A restart of Hermes still ends every session when its basic sign-in has no fixed secret (dashboard.basic_auth.secret on the Hermes server).',
+      'A kanban claim or release whose note on the board Hermes refused now says so: the claim stood and the note was dropped without a word.',
     ],
   },
   {
