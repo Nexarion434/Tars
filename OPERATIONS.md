@@ -1677,7 +1677,14 @@ an existing Hermes profile; a task cannot be created `scheduled`, nor moved from
 - **Against a real Hermes**: `TARS_HERMES_TREE=<a Hermes source tree> TARS_HERMES_PYTHON=<its
   python> npx vitest run __tests__/electron/services/kanban-hermes-live.test.ts`: two agents
   file, claim, report, finish, release and delete while the dispatcher ticks, and none of their
-  tasks is spawned, promoted or listed for decomposition. Skipped where no Hermes is.
+  tasks is spawned, promoted or listed for decomposition. Skipped where no Hermes is. In the
+  real app, with the same two variables: `npx playwright test e2e/kanban-hermes.live.spec.ts`
+  (through `pw-slot.sh`). Each agent's own kanban server (`mcp-kanban/dist/bundle.js`, built
+  first) runs with the identity Tars hands it; two agents of one project file, list, read,
+  claim, report, finish (one with no summary), release, hand a task to each other and delete
+  their own, an agent of another project sees none of them, the task handed over starts its
+  agent's CLI, and over at least six ticks after the last write the dispatcher spawns, promotes
+  and decomposes none. It leaves `values.json` and Hermes's own `ticks.jsonl`.
 
 - **An agent files a task**: `create_task` parks it on the agent's own project. If the project
   has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
