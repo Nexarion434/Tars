@@ -110,14 +110,16 @@ test('Tars renews its Hermes session by asking it, and the window is told at onc
     expect(signed.success).toBe(true);
     await expect.poll(async () => (await pushed()).at(-1)?.session, { timeout: 15_000 }).toBe('signed-in');
     expect(await now()).toMatchObject({ session: 'signed-in', version: '0.21.5', unmeasured: false });
-    await expect.poll(() => rotation, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
-    // Each check presents the cookie the answer before it rotated: the rotated
-    // ones were kept, so the session is renewed by the checks themselves.
+    await expect.poll(() => rotation, { timeout: 15_000 }).toBeGreaterThanOrEqual(5);
+    // The checks present the cookies the answers rotated: the rotated ones were
+    // kept, so the session is renewed by the checks themselves. The first two
+    // can both carry the sign-in's own cookie: a sign-in starts a check and its
+    // own probe together, each sent before the other's answer came back.
     const authed = requests.filter(r => r.path.endsWith('(rotated)'));
-    expect(authed.length).toBeGreaterThanOrEqual(3);
     const values = authed.map(r => /hermes_session_at=([^;]+)/.exec(r.cookie)?.[1]);
-    expect(values.slice(-2).every(v => v && v !== 'first.0')).toBe(true);
     seen.renewed = values;
+    expect(values.at(-1)).toMatch(/^first\.[1-9][0-9]*$/);
+    expect(new Set(values.filter(v => v !== 'first.0')).size).toBeGreaterThanOrEqual(2);
 
     // A version whose rules were not measured: told.
     version = '0.22.0';
