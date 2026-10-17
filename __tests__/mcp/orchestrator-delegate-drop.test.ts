@@ -44,6 +44,14 @@ import type { AddressInfo } from 'node:net';
  *  F11. The agent did not take the model, and the result does not say so.
  *  F12. undici's real cut is not what the tool classifies: the error it
  *      raises is assumed to be an AbortError, or to carry an HTTP status.
+ *
+ * Added after the Audit's gate on f09ad4c9, before their fixes:
+ *  F13. allowCrossProject: true never reaches run-task, so Tars refuses the
+ *      run 403 as cross-project and that refusal is the result: the caller
+ *      passed the flag and nothing runs (M1).
+ *  F14. The agent did not take the model, and the result says it ran on its
+ *      own model whether or not it did: the agent's own model is not named,
+ *      or is claimed when it was not taken either (M2).
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -254,6 +262,62 @@ describe('delegate_task\'s model', () => {
     const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'haiku' }) as Result;
     expect(calls('/run-task')[0][2]).toMatchObject({ model: 'haiku' });
     expect(result.content[0].text).toMatch(/not on haiku/);
+  });
+});
+
+describe('delegate_task\'s model, refused', () => {
+  function refusedThen(model: Record<string, unknown>) {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1', model };
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: ENDED };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+  }
+
+  it('9b. (F14) ran on the agent\'s own model: says which', async () => {
+    refusedThen({ asked: 'gpt-5', taken: false, own: 'opus', ranOn: 'opus' });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
+    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and ran on its own model, opus\./);
+  });
+
+  it('9c. (F14) its own model not taken either: says it ran on its CLI\'s default, never on its own', async () => {
+    refusedThen({ asked: 'gpt-5', taken: false, own: 'opus' });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
+    expect(result.content[0].text).not.toMatch(/ran on its own model/);
+    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, nor its own model, opus: it ran on its CLI's default model\./);
+  });
+
+  it('9d. (F14) no model of its own: says it ran on its CLI\'s default', async () => {
+    refusedThen({ asked: 'gpt-5', taken: false });
+    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
+    expect(result.content[0].text).not.toMatch(/ran on its own model/);
+    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and has no model of its own: it ran on its CLI's default model\./);
+  });
+});
+
+describe('delegate_task to another project, allowed', () => {
+  it('11. (F13) allowCrossProject: true reaches run-task, the run starts, and its end is the answer; without it, still refused', async () => {
+    // Tars as mayActIn answers (agent-routes.ts): 403 unless the body says allowCrossProject: true.
+    mockApiRequest.mockImplementation(async (endpoint: string, _method: string, body?: Record<string, unknown>) => {
+      if (endpoint.includes('/run-task') || endpoint.includes('/dispatch')) {
+        if (body?.allowCrossProject !== true) throw answered(403, { error: 'Cross-project access denied: agent "a1" belongs to project /other.' });
+        if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      }
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: ENDED };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const allowed = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', allowCrossProject: true }) as Result;
+    expect(calls('/run-task')[0][2]).toMatchObject({ allowCrossProject: true });
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(allowed.isError, allowed.content[0].text).toBe(false);
+    expect(allowed.content[0].text).toContain('the real answer');
+
+    mockApiRequest.mockClear();
+    const refused = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it' }) as Result;
+    expect(calls('/run-task')[0][2]).not.toHaveProperty('allowCrossProject');
+    expect(calls('/dispatch')).toHaveLength(0);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toMatch(/Cross-project access denied/);
   });
 });
 
