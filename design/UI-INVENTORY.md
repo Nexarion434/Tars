@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 175 root frames.
-`design/chat-design.pen` holds 72 of those, the other hundred and three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 182 root frames.
+`design/chat-design.pen` holds 72 of those, the other hundred and ten being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -228,6 +228,24 @@ read the transcript instead, is gone since 1.9.2.
 | Left fullscreen · notice | The line a panel shows when its claude left fullscreen and the wheel can no longer scroll it, with restart (and its light copy) |
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
 | Permission asked of Tars | The question Claude Code would put to its permission dialog, asked of Tars by the state mod instead: the line a panel shows, with allow, deny with a reason and ask in terminal; a call too long for that line, shown whole in the panel before allow; the same question in full in the agent's window, with why Claude Code asks and the rule that asked under the call, and on its card; too late, when the question went back first (and its light copy) |
+
+## The task banner above an agent's terminal (drawn only)
+
+A task someone gives an agent (delegate_task, a chat, Tars, a channel) goes into the
+agent's own terminal, the permanent one, and runs there as one of its turns. Drawn on
+2026-10-18 and not built yet: while the agent works on such a task, a banner above its
+terminal says who gave it, since when, its first line, how many tasks wait and from
+whom, and offers stop task. The first column names no route, so `npm run e2e:guard`
+does not read this table.
+
+| Surface | Frames |
+|---|---|
+| The banner on the Dashboard's panel, in both shells: a task in hand with nothing waiting; two waiting, and the list the count opens; 660, 582 and 420 wide; the smallest pane, 3x3 in a 1200 by 800 window | `tars-redesign.pen`: Task banner · above the agent's terminal, Task banner · Dashboard, a panel on a given task |
+| The agent's window: the banner over its terminal column | `tars-redesign.pen`: Task banner · above the agent's terminal |
+| The new interface's project page, which shows no terminal: the agent's row in the team carries the banner, with the senders of what waits on a third line | `tars-redesign.pen`: Task banner · new interface, the project page's team |
+
+Each frame has its `· light` copy beside it. Task banner · notes, what the Backend
+sends lists the fields, the push and the call the window needs from the main process.
 
 ## States every data surface must show
 
