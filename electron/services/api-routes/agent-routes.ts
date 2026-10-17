@@ -38,6 +38,7 @@ import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
+import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
 import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
@@ -914,33 +915,6 @@ function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundSt
 }
 
 /* ── A task in the agent's own terminal (2.0.4) ───────────────────────────── */
-
-/** A task's first line, for the window's banner and the queue: 100 characters at most. */
-function firstLineOf(task: string): string {
-  return Array.from(task.trim().split(/\r?\n|\r/)[0] ?? '').slice(0, 100).join('');
-}
-
-/**
- * What the window's banner shows above an agent's terminal (design PR #451):
- * the task in hand (who gave it, since when, its first line) and those that
- * wait, in the order they will run. The window counts the elapsed time.
- */
-export function taskBannerOf(agentId: string): {
-  task: { ref: string; from: string; startedAt: string; firstLine: string } | null;
-  waiting: Array<{ ref: string; from: string; queuedAt: string; firstLine: string }>;
-} {
-  const from = (requesterId?: string) => (requesterId ? agents.get(requesterId)?.name || requesterId : 'Tars');
-  const run = oneTaskQueue.busyRun(agentId);
-  return {
-    task: run?.taskRef ? { ref: run.taskRef, from: from(run.requesterId), startedAt: new Date(run.since).toISOString(), firstLine: run.title ?? '' } : null,
-    waiting: oneTaskQueue.queued(agentId).map((t) => ({ ref: t.ref, from: from(t.requesterId), queuedAt: new Date(t.queuedAt).toISOString(), firstLine: t.title })),
-  };
-}
-
-/** Pushed to the window whenever the task in hand or the line changes: `agent:task`. */
-function announceTask(agentId: string): void {
-  broadcastToAllWindows('agent:task', { agentId, ...taskBannerOf(agentId) });
-}
 
 /** The model asked for a task, and whether its session took it, by the task's id and the ledger's. */
 const taskModels = new Map<string, { asked: string; taken: boolean; own?: string; ranOn?: string }>();

@@ -7,6 +7,7 @@ import { envelopeValue } from '../../utils/envelope-value';
 import { liveChatStore } from '../../handlers/chat-handlers';
 import { tellCancelled } from '../agent-watch';
 import { emitAgentStatus } from '../agent-events';
+import { announceTask } from '../task-banner';
 import type { RouteApp } from './types';
 
 /**
@@ -39,6 +40,7 @@ export function registerTaskRoutes(app_: RouteApp): void {
         return;
       }
       oneTaskQueue.cancel(queued.ref);
+      announceTask(queued.agentId);
       const worker = agents.get(queued.agentId);
       console.log(`[tasks] ${queued.ref} queued for ${worker?.name || queued.agentId} cancelled by ${callerId ?? 'Tars'}`);
       sendJson({ success: true, cancelled: queued.ref, queuedRun: true, worker: { id: queued.agentId, name: worker?.name } });

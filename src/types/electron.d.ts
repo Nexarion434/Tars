@@ -376,6 +376,14 @@ export interface AgentWaitingOn {
   text: string;
 }
 
+/** The banner above an agent's terminal (electron/services/task-banner.ts). */
+export interface AgentTaskBanner {
+  /** The task in hand: its id, who gave it ('Tars' for the window, a bot or Tars itself), since when, its first line. */
+  task: { ref: string; from: string; startedAt: string; firstLine: string } | null;
+  /** The tasks that wait, in the order they will run. */
+  waiting: Array<{ ref: string; from: string; queuedAt: string; firstLine: string }>;
+}
+
 export interface AgentStatus {
   id: string;
   /** 'stopped': ended by a stop, with stoppedBy, stoppedAt and stopReason, until it is started again.
@@ -444,6 +452,9 @@ export interface AgentStatus {
    *  from the hook that reports it; gone as soon as `status` changes. Not set
    *  for the idle prompt. */
   waitingOn?: AgentWaitingOn;
+  /** Set by agent:list and agent:get: the task in hand and the tasks that wait
+   *  (design PR #451's banner), as `agent:task` pushes it. */
+  taskBanner?: AgentTaskBanner;
   /** Set by agent:list, agent:get and agents:tick: a launch is on its way and
    *  its session is not up yet (a restart, a start from a window, a bot's cold
    *  start, a session the API starts). Main's own window (sessionStarting,
@@ -1272,6 +1283,10 @@ export interface ElectronAPI {
     onToolUse: (callback: (event: AgentEvent) => void) => () => void;
     queue: (agentId: string) => Promise<AgentQueueView | { error: 'not_found'; reason: string }>;
     onQueue: (callback: (view: AgentQueueView) => void) => () => void;
+    /** The banner's stop: that task only. In hand, its turn ends and the session stays; waiting, it leaves the line. */
+    stopTask: (agentId: string, ref: string) => Promise<{ success: boolean; stopped?: 'turn' | 'queued'; error?: string }>;
+    /** Pushed whenever an agent's task in hand or its line changes. */
+    onTask: (callback: (event: AgentTaskBanner & { agentId: string }) => void) => () => void;
     onStatus?: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => () => void;
     onTick?: (callback: (agents: AgentTickItem[]) => void) => () => void;
     /** What is waiting right now, for a panel that opened after the wait
