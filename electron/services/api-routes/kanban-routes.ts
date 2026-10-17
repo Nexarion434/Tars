@@ -6,7 +6,7 @@ import { ptyProcesses } from '../../core/pty-manager';
 import { cliRunningIn } from '../../core/agent-pty';
 import { configuredHermesConnection } from '../hermes-config';
 import {
-  addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, updateHermesTask,
+  addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, hermesVersion, updateHermesTask,
 } from '../hermes-client';
 import {
   claimTask, completeTask, createParkedTask, deleteTask, getTask, handOffNote, landingNote, listTasks, moveTask,
@@ -31,6 +31,19 @@ import { envelopeValue } from '../../utils/envelope-value';
  * kanban-tasks.json and no connection of its own, or a broken one, would have
  * moved its tasks onto that board at launch.
  */
+/** The connected Hermes's version, asked once a minute at most: a claim reads it, and a claim is a few calls already. */
+const versionAsked = new Map<string, { at: number; version: Promise<string | undefined> }>();
+const VERSION_FOR_MS = 60_000;
+
+function versionOf(conn: Parameters<typeof hermesVersion>[0]): Promise<string | undefined> {
+  const key = JSON.stringify([conn.mode, conn.url ?? '', conn.localPort ?? '']);
+  const known = versionAsked.get(key);
+  if (known && Date.now() - known.at < VERSION_FOR_MS) return known.version;
+  const version = hermesVersion(conn);
+  versionAsked.set(key, { at: Date.now(), version });
+  return version;
+}
+
 export function hermesKanban(): KanbanHermes | HermesUnusable | null {
   const configured = configuredHermesConnection();
   if (!configured || 'unusable' in configured) return configured;
@@ -42,6 +55,7 @@ export function hermesKanban(): KanbanHermes | HermesUnusable | null {
     update: (id, patch) => updateHermesTask(conn, id, patch),
     remove: id => deleteHermesTask(conn, id),
     comment: (id, body) => addHermesTaskComment(conn, id, body),
+    version: () => versionOf(conn),
   };
 }
 

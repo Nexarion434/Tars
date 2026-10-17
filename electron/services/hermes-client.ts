@@ -335,6 +335,19 @@ export async function probeHermes(conn: HermesConnection): Promise<HermesStatus 
   }
 }
 
+/** The version the gateway names on its public /api/status, undefined when it names none or does not answer. */
+export async function hermesVersion(conn: HermesConnection): Promise<string | undefined> {
+  const baseUrl = resolveHermesBaseUrl(conn);
+  if (!baseUrl) return undefined;
+  try {
+    const { status, body } = await hermesRequest(baseUrl, '/api/status', { token: sessionToken(conn) });
+    const version = status === 200 ? (body as { version?: unknown } | null)?.version : undefined;
+    return typeof version === 'string' && version ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function signInHermes(
   conn: HermesConnection,
   credentials: { provider?: string; username: string; password: string },
