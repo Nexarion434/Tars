@@ -2138,9 +2138,12 @@ A run is set to its model, then the agent's effort, with `session/set_config_opt
 session is open, when the agent offers those options. Its model is the one `delegate_task` was
 given for this task (run-task's `model`), else the agent's own; the agent's saved model is never
 changed by it (2.0.4). A value it refuses is logged as
-`[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway;
-for a model given with the task, the answer's `model: { asked, taken: false }` says so, and so does
-`delegate_task`'s result (`This run is not on <model>`).
+`[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway.
+A model given with the task and refused is followed by the agent's own; the answer's
+`model: { asked, taken: false, own, ranOn }` says which one the run is on (`ranOn` absent: neither
+was taken, and the run is on the CLI's default), and so does `delegate_task`'s result
+(`This run is not on <model>: ...`). The turn's usage is filed under `ranOn`, the model the session
+took, and under no model when it took none (the Usage page then names the provider).
 
 ---
 
