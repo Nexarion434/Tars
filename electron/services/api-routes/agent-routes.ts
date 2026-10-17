@@ -787,6 +787,29 @@ function mayActIn(req: RouteRequest, driver: Driver, projectPath: string, what: 
  */
 const agentDispatchLocks = new Map<string, Promise<unknown>>();
 
+/** A model run-task takes for one run (delegate_task's `model`). */
+const RUN_MODEL = /^[A-Za-z0-9._:/[\]-]{1,100}$/;
+/** The longest GET /api/tasks/:id?wait= holds a request: one segment, well under undici's 300 s. */
+const TASK_WAIT_MAX_S = 120;
+const TASK_WAIT_STEP_MS = 500;
+/**
+ * What a run answered beyond what the ledger keeps (its tools, what it left
+ * running, its error), for the caller that waits on its task: the run-task
+ * request that started it was answered at the start. In memory, the latest
+ * RUN_ENDS_KEPT: after a relaunch the ledger's own record is the answer.
+ */
+const runEnds = new Map<string, { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }>();
+const RUN_ENDS_KEPT = 200;
+function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }): void {
+  runEnds.set(taskId, {
+    ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
+    ...(result.backgroundStopped?.length ? { backgroundStopped: result.backgroundStopped } : {}),
+    ...(result.error ? { error: result.error } : {}),
+    ...(typeof result.costUSD === 'number' ? { costUSD: result.costUSD } : {}),
+  });
+  while (runEnds.size > RUN_ENDS_KEPT) runEnds.delete(runEnds.keys().next().value as string);
+}
+
 /**
  * How a message goes in (ORCHESTRATOR-PER-CHAT.md v2.2, 4.4 item 4): `auto`
  * as always (typed at rest, typed into a running turn, held behind a draft),
@@ -1574,13 +1597,22 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
-    const { task, timeoutSeconds } = req.body as { task?: string; timeoutSeconds?: number };
+    const { task, timeoutSeconds, model, answer } = req.body as { task?: string; timeoutSeconds?: number; model?: unknown; answer?: unknown };
     if (!task?.trim()) {
       sendJson({ error: 'task is required' }, 400);
       return;
     }
+    // A model for this run only: the agent's saved one is not changed.
+    if (model !== undefined && (typeof model !== 'string' || !RUN_MODEL.test(model))) {
+      sendJson({ error: 'model is 1 to 100 letters, digits, dots, colons, dashes, slashes, underscores or brackets.', code: 'invalid_model' }, 400);
+      return;
+    }
+    // `answer: 'started'`: answered as soon as the run has started, and the
+    // run waited on in the ledger (GET /api/tasks/:id?wait=). Held to the
+    // run's end, the request outlived undici's 300 s on any long task.
+    const answerAtStart = answer === 'started';
 
-    await withReceipt(req, sendJson, { route: 'run-task', agentId: agent.id, payload: { task } }, async (sendJson, receipt) => {
+    await withReceipt(req, sendJson, { route: 'run-task', agentId: agent.id, payload: { task, ...(model ? { model } : {}) } }, async (sendJson, receipt) => {
       if (!canDelegateOverAcp(agent)) {
         sendJson({ error: `${agent.provider ?? 'this provider'} has no ACP mode; use /dispatch`, retryWithDispatch: true }, 409);
         return;
@@ -1610,19 +1642,27 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       // quit mid-run leaves it, and its asker is told at the next launch. A
       // run that never started did no work.
       let taskId: string | undefined;
+      let answered = false;
       const result = await delegateOverAcp({
         agent,
         task,
         appSettings: ctx.getAppSettings(),
         timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
         permissionMode: runMode,
-        onStarted: () => {
+        ...(typeof model === 'string' ? { model } : {}),
+        onStarted: (run) => {
           try {
             taskId = liveTaskLedger()?.acpStarted({ agent, requesterAgentId: requester, text: task, startedAt: Date.parse(handedAt) });
           } catch (err) {
             console.warn('[task-ledger] ACP run not recorded:', (err as Error).message);
           }
-          receipt.started({ started: true, outcome: 'running', ...(taskId ? { taskId } : {}) });
+          const startedBody = { ok: true, started: true, outcome: 'running', ...(taskId ? { taskId } : {}), ...(run.model ? { model: run.model } : {}) };
+          receipt.started(startedBody);
+          // Only with a task to wait on: without one the caller could follow nothing.
+          if (answerAtStart && taskId) {
+            answered = true;
+            sendJson({ ...startedBody, permissionMode: runMode }, 200);
+          }
         },
       });
 
@@ -1660,7 +1700,10 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           console.warn('[task-ledger] the end of an ACP run not recorded:', (err as Error).message);
         }
         receipt.update({ outcome, ok: result.ok, ...(result.stopReason ? { stopReason: result.stopReason } : {}) });
+        noteRunEnd(taskId, result);
       }
+      // Answered at its start: the caller reads its end from the ledger.
+      if (answered) return;
 
       // Held to a mode the agent does not offer: it did not run, and typing
       // the task into the terminal instead would run it in the agent's own,
@@ -1684,7 +1727,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
    * agent that ran it, or by Tars. Anybody else is answered as if it did not
    * exist. By clientRequestId: the caller's own receipt names the task.
    */
-  app_.get(/^\/api\/tasks(?:\/([^/]+))?$/, (req, sendJson) => {
+  app_.get(/^\/api\/tasks(?:\/([^/]+))?$/, async (req, sendJson) => {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
     const callerId = driver.kind === 'agent' ? driver.agent.id : undefined;
@@ -1698,13 +1741,28 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       const taskId = liveReceipts().find({ caller: callerId ?? 'tars', id: requestId })?.outcome.body.taskId;
       id = typeof taskId === 'string' ? taskId : '';
     }
-    const found = id ? liveTaskLedger()?.task(id) : undefined;
+    let found = id ? liveTaskLedger()?.task(id) : undefined;
     if (!found || (callerId && callerId !== found.requesterAgentId && callerId !== found.agentId)) {
       sendJson({ error: 'No such task.' }, 404);
       return;
     }
+    // `?wait=<s>`: held until the task ends, for one segment at most (120 s,
+    // well under undici's 300 s), and answered `timeout: true` if it has not.
+    const waitS = Math.min(Math.max(Number(req.url.searchParams.get('wait')) || 0, 0), TASK_WAIT_MAX_S);
+    let timedOut = false;
+    if (waitS > 0 && found.outcome === 'running') {
+      const until = Date.now() + waitS * 1000;
+      while (found && found.outcome === 'running' && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
+        found = liveTaskLedger()?.task(found.id) ?? found;
+      }
+      timedOut = found.outcome === 'running';
+    }
+    const end = runEnds.get(found.id);
     sendJson({
+      ...(timedOut ? { timeout: true } : {}),
       task: {
+        ...(end ?? {}),
         id: found.id, agentId: found.agentId, requesterAgentId: found.requesterAgentId, source: found.source,
         outcome: found.outcome, startedAt: found.startedAt, endedAt: found.endedAt,
         ...(found.stopReason ? { stopReason: found.stopReason } : {}),

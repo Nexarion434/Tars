@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -194,6 +194,7 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "undici": "6.28.0",
     "vitest": "^4.0.18",
     "wait-on": "^8.0.1"
   },

@@ -7,6 +7,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 61,
+    version: '2.0.4',
+    date: '2026-10-17',
+    updates: [
+      'An orchestrator\'s delegate_task no longer types a task into the agent\'s terminal while the same task already runs: on a task of more than five minutes, the connection that waited for the run was cut, delegate_task read that as a run that never started, and typed the brief into the terminal, so the task ran twice, or, since 1.9.6, said nothing had been sent while the run went on. Tars now answers as soon as the run has started, and delegate_task follows it in steps of two minutes at most; when it cannot reach Tars, it asks again about the same delegation and, after a minute and a half, says the run may still be working and how to follow it with task_status. It types the task into the terminal only when Tars said no run started.',
+      'The model given to delegate_task now reaches a delegated run, for that run only: the agent keeps its own model. When the agent does not take the one asked, the run goes on the agent\'s own model, and the answer says so and names the model it ran on, or says it ran on its CLI\'s default when the agent did not take its own either. The Usage page counts the turn under the model it actually ran on. The run went on the agent\'s own model, whatever was asked.',
+      'delegate_task to an agent of another project, allowed with allowCrossProject, now runs the same way and returns the agent\'s answer: it was typed into that agent\'s terminal.',
+    ],
+  },
+  {
     id: 60,
     version: '2.0.3',
     date: '2026-10-17',

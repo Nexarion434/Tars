@@ -5,7 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
+import { problem, registerTools, text, tool, type Tool, type ToolResult } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
 
 /** What each refusal of POST /api/tasks/:ref/cancel means, for the agent that asked (core/task-cancel.ts). */
@@ -242,6 +242,164 @@ async function waitForAgentStatus(id: string, timeoutSeconds: number): Promise<W
   }
 }
 
+/** A delegated run's answer, as run-task or the ledger gives it. */
+type RunAnswer = {
+  ok?: boolean;
+  started?: boolean;
+  duplicate?: boolean;
+  taskId?: string;
+  outcome?: string;
+  stopReason?: string;
+  text?: string;
+  result?: string;
+  toolCalls?: string[];
+  backgroundStopped?: string[];
+  usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; costUSD?: number | null };
+  costUSD?: number;
+  error?: string;
+  /** A model asked for this run: taken or not, the agent's own, the model it ran on (none: its CLI's default). */
+  model?: { asked: string; taken: boolean; own?: string; ranOn?: string };
+};
+
+/** How long run-task may take to say the run started: one segment, as every wait. */
+const RUN_START_WAIT_SECONDS = WAIT_SEGMENT_SECONDS;
+
+/** Tars answered (a status came back), as opposed to a request that never got an answer. */
+function answerOf(err: unknown): { status: number; body: Record<string, unknown> } | null {
+  const e = err as { status?: unknown; body?: unknown } | null;
+  return e && typeof e.status === "number" ? { status: e.status, body: (e.body ?? {}) as Record<string, unknown> } : null;
+}
+
+/** What became of a model asked for the run, when the agent did not take it: said as it happened. */
+function modelNoteOf(model: RunAnswer["model"]): string {
+  if (!model || model.taken) return "";
+  const head = `\nThis run is not on ${model.asked}: the agent did not take it`;
+  if (model.ranOn) return `${head}, and ran on its own model, ${model.ranOn}.`;
+  if (model.own) return `${head}, nor its own model, ${model.own}: it ran on its CLI's default model.`;
+  return `${head}, and has no model of its own: it ran on its CLI's default model.`;
+}
+
+/** A run's end, said for the caller: its answer, then how it ended and what it cost. */
+function runText(run: RunAnswer, modelNote: string): ToolResult {
+  const tokens = run.usage?.totalTokens ?? ((run.usage?.inputTokens ?? 0) + (run.usage?.outputTokens ?? 0));
+  const cost = typeof run.costUSD === "number" ? run.costUSD : run.usage?.costUSD;
+  const meta = [
+    run.stopReason ? `ended: ${run.stopReason}` : "",
+    run.toolCalls?.length ? `tools: ${run.toolCalls.slice(0, 8).join(", ")}` : "",
+    tokens ? `${tokens} tokens` : "",
+    typeof cost === "number" ? `$${cost.toFixed(4)}` : "",
+    run.taskId ? `task ${run.taskId}` : "",
+  ].filter(Boolean).join(" | ");
+  // A run is one turn: what the agent left running when it answered was
+  // stopped with it, and nothing brings it back for that work.
+  const left = run.backgroundStopped?.length
+    ? `\nstopped when the run ended: ${run.backgroundStopped.join(", ")}. Re-delegate what still needs doing.`
+    : "";
+  const ok = run.ok ?? run.outcome === "completed";
+  const why = !ok && run.error ? `\n${run.error}` : "";
+  return {
+    content: [{ type: "text", text: `${run.text || run.result || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}${modelNote}` }],
+    isError: !ok,
+  };
+}
+
+/**
+ * The task over ACP, or null when Tars answered that no run started (no ACP
+ * mode, or a launch that failed): only then may it be typed into the terminal.
+ *
+ * No request here waits more than a segment. run-task answers once the run
+ * has started (`answer: 'started'`), and the run is then waited on in the
+ * ledger, segment by segment, as waitForAgentStatus waits on a status. One
+ * request held for the whole run was cut by undici at 300 s as "fetch
+ * failed", which read as "no run started", and the task was typed into the
+ * terminal as well: it ran twice (another project, 2026-10-17).
+ *
+ * A request that got no answer (cut, reset, refused, or out of time) is asked
+ * again with the same clientRequestId and payload: the receipt answers with
+ * the first call's run, waits for it if it is still starting, and starts one
+ * only if the first did nothing. Never a dispatch once a run may have started.
+ */
+async function runOverAcp(
+  id: string, prompt: string, model: string | undefined, timeoutSeconds: number, clientRequestId: string,
+  allowCrossProject: boolean | undefined,
+): Promise<ToolResult | null> {
+  const deadline = Date.now() + (timeoutSeconds + 60) * 1000;
+  const follow = `follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again`;
+  // allowCrossProject as /dispatch carries it: run-task asks the same guard.
+  const body = {
+    task: prompt, timeoutSeconds, clientRequestId, answer: "started",
+    ...(model ? { model } : {}), ...(allowCrossProject ? { allowCrossProject } : {}),
+  };
+
+  let started: RunAnswer | undefined;
+  let failingSince = 0;
+  let backoffMs = FAILURE_BACKOFF_START_MS;
+  while (!started) {
+    try {
+      started = (await apiRequest(`/api/agents/${id}/run-task`, "POST", body, (RUN_START_WAIT_SECONDS + 30) * 1000)) as RunAnswer;
+    } catch (err) {
+      const answer = answerOf(err);
+      if (answer) {
+        // Held to a mode the agent does not offer (the ceiling for delegated
+        // runs): typing the task into its terminal would run it in the
+        // agent's own, broader mode.
+        if (answer.body.code === "permission_escalation_denied") return problem(`Not delegated: ${(err as Error).message}`);
+        // The id names another request: this one did nothing, and typing it
+        // under the same id is refused as well.
+        if (answer.body.code === "clientRequestId_conflict") return problem((err as Error).message);
+        // No ACP mode, or a launch that failed before the run started: the
+        // terminal may take it. Any other answer is the answer.
+        if (answer.body.retryWithDispatch === true || (answer.status === 502 && answer.body.started !== true)) return null;
+        return problem(`Not delegated: ${(err as Error).message}`);
+      }
+      // No answer at all: the run may have started. Ask again, for a while.
+      const now = Date.now();
+      if (!failingSince) failingSince = now;
+      if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        return problem(`Tars could not be reached about this delegation to agent ${id} (${(err as Error).message}). The run may still be working: ${follow}.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
+      backoffMs = Math.min(backoffMs * 2, FAILURE_BACKOFF_MAX_MS);
+    }
+  }
+
+  const modelNote = modelNoteOf(started.model);
+  // An answer that is already the end (a duplicate of a run that ended, or
+  // an older Tars that answers at the end): said as it is.
+  if (started.outcome !== "running" && (started.text !== undefined || !started.taskId)) return runText(started, modelNote);
+  if (!started.taskId) {
+    return problem(`The run on agent ${id} started but Tars named no task for it. It may still be working: ${follow}.`);
+  }
+
+  const taskId = started.taskId;
+  failingSince = 0;
+  backoffMs = FAILURE_BACKOFF_START_MS;
+  for (;;) {
+    const remainingSec = Math.ceil((deadline - Date.now()) / 1000);
+    if (remainingSec <= 0) {
+      return problem(`Task ${taskId} on agent ${id} is still working after ${timeoutSeconds + 60} s: ${follow}. Nothing else was started.`);
+    }
+    const segment = Math.min(WAIT_SEGMENT_SECONDS, remainingSec);
+    const askedAt = Date.now();
+    try {
+      const found = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}?wait=${segment}`, "GET", undefined, (segment + 30) * 1000)) as { task: RunAnswer & { id: string } };
+      failingSince = 0;
+      backoffMs = FAILURE_BACKOFF_START_MS;
+      if (found.task.outcome !== "running") return runText({ ...found.task, taskId }, modelNote);
+      // Not held open (an older Tars, or a wait answered at once): no hot loop.
+      if (Date.now() - askedAt < segment * 500) await new Promise((r) => setTimeout(r, 1000));
+    } catch (err) {
+      const now = Date.now();
+      if (!failingSince) failingSince = now;
+      if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        return problem(`Tars could not be reached while task ${taskId} ran on agent ${id} (${(err as Error).message}). The run may still be working: ${follow}.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
+      backoffMs = Math.min(backoffMs * 2, FAILURE_BACKOFF_MAX_MS);
+    }
+  }
+}
+
 /**
  * Fetch the agent's captured clean output, retrying briefly: the Stop hook
  * posts output and status through separate HTTP calls, so the status event
@@ -463,7 +621,7 @@ const AGENT_TOOLS: Tool[] = [
     schema: {
       id: z.string().describe("The agent ID"),
       prompt: z.string().describe("The task or instruction for the agent to work on"),
-      model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
+      model: z.string().optional().describe("Optional model for the session this call starts; the agent's saved model is not changed. Used only when the agent has no session open: one already running or waiting gets the prompt typed in as a message, and the model is ignored without a word. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
       clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's outcome, and nothing is sent twice. Omitted: one is made for this call."),
     },
@@ -647,7 +805,7 @@ const AGENT_TOOLS: Tool[] = [
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
-      model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
+      model: z.string().optional().describe("Optional model for this task only; the agent's saved model is not changed. Run over ACP (the usual path), the result says when the agent did not take it and which model the run went on instead: the agent's own, or its CLI's default. Typed into its terminal instead (a provider with no ACP mode, or an ACP launch that failed), it is used only when the agent has no session open, for the session started, and ignored without a word otherwise. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
       timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
       clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this delegation. Calling again with the same id answers with the first call's task (task_status reads it), and nothing is run twice. Omitted: one is made for this call."),
@@ -661,82 +819,10 @@ const AGENT_TOOLS: Tool[] = [
       try {
         // Preferred path: run the task over the Agent Client Protocol, which
         // returns the agent's actual answer, why the turn ended and what it
-        // cost. Falls back to the terminal dispatch below for CLIs that have
-        // no ACP mode, or when the run itself could not start.
-        try {
-          const acp = (await apiRequest(
-            `/api/agents/${id}/run-task`,
-            "POST",
-            { task: prompt, timeoutSeconds, clientRequestId },
-            (timeoutSeconds + 60) * 1000,
-          )) as {
-            ok?: boolean;
-            started?: boolean;
-            duplicate?: boolean;
-            taskId?: string;
-            outcome?: string;
-            stopReason?: string;
-            text?: string;
-            toolCalls?: string[];
-            backgroundStopped?: string[];
-            usage?: { totalTokens?: number };
-            costUSD?: number;
-            error?: string;
-            retryWithDispatch?: boolean;
-          };
-
-          // An earlier call with this id started the run: its task is the
-          // answer, read from the ledger once it has ended (4.4 item 3).
-          if (acp?.duplicate && acp.started) {
-            if (acp.outcome === "running" || !acp.taskId) {
-              return text(`This delegation already runs from an earlier call (clientRequestId ${clientRequestId}${acp.taskId ? `, task ${acp.taskId}` : ""}): nothing was started again. Follow it with task_status.`);
-            }
-            const found = (await apiRequest(`/api/tasks/${acp.taskId}`)) as { task: TaskView };
-            return { content: [{ type: "text", text: taskText(found.task) }], isError: found.task.outcome !== "completed" };
-          }
-
-          // A run that started is the answer, however it ended. Falling back
-          // to the terminal after one typed the same brief into a second
-          // session: the task ran twice (Parallel project, 2026-09-23).
-          if (acp && !acp.retryWithDispatch && (acp.ok || acp.text || acp.started)) {
-            const meta = [
-              acp.stopReason ? `ended: ${acp.stopReason}` : "",
-              acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
-              acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
-              typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
-              acp.taskId ? `task ${acp.taskId}` : "",
-            ].filter(Boolean).join(" | ");
-            // A run is one turn: what the agent left running when it answered
-            // was stopped with it, and nothing brings it back for that work.
-            const left = acp.backgroundStopped?.length
-              ? `\nstopped when the run ended: ${acp.backgroundStopped.join(", ")}. Re-delegate what still needs doing.`
-              : "";
-            const why = !acp.ok && acp.error ? `\n${acp.error}` : "";
-
-            return {
-              content: [{
-                type: "text",
-                text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}`,
-              }],
-              isError: !acp.ok,
-            };
-          }
-        } catch (err) {
-          // This call's own wait ran out: the run it started may still be
-          // working, and typing the brief into the terminal as well would run
-          // the task twice.
-          if (err instanceof Error && err.name === "AbortError") {
-            return problem(`No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again.`);
-          }
-          // Held to a mode the agent does not offer (the ceiling for delegated
-          // runs): typing the task into its terminal would run it in the
-          // agent's own, broader mode.
-          if (err instanceof Error && /permission_escalation_denied/.test(err.message)) {
-            return problem(`Not delegated: ${err.message}`);
-          }
-          // No run started (this CLI has no ACP mode, or its launch failed).
-          // The terminal path still works.
-        }
+        // cost. Falls back to the terminal dispatch below only when Tars
+        // answered that no run started.
+        const acp = await runOverAcp(id, prompt, model, timeoutSeconds, clientRequestId, allowCrossProject);
+        if (acp) return acp;
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
         // lock, so a stale status can never route the prompt to a dead PTY.

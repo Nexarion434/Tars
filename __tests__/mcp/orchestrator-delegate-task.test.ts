@@ -49,7 +49,7 @@ describe('delegate_task auto-continue', () => {
 
     mockApiRequest.mockImplementation(async (endpoint: string, method?: string) => {
       // No ACP mode for this agent: falls straight to the /dispatch path.
-      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
       if (endpoint.includes('/dispatch')) {
         return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
       }
@@ -84,7 +84,7 @@ describe('delegate_task auto-continue', () => {
     const delegateTask = await loadDelegateTask();
 
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
       if (endpoint.includes('/dispatch')) {
         return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
       }
@@ -110,7 +110,7 @@ describe('delegate_task auto-continue', () => {
     const delegateTask = await loadDelegateTask();
 
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
       if (endpoint.includes('/dispatch')) {
         return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
       }
@@ -198,7 +198,12 @@ describe('delegate_task after an ACP run that started (sessions that died while 
       throw new Error(`unexpected ${endpoint}`);
     });
 
-    const result = await delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 600 }) as Result;
+    // Asked again with the same id for the grace period, never typed (2.0.4).
+    vi.useFakeTimers();
+    const pending = delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 600 }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+    vi.useRealTimers();
 
     expect(dispatched()).toBe(0);
     expect(result.content[0].text).toMatch(/stopped when the run ended: pnpm build, Monitor/);
@@ -215,7 +220,12 @@ describe('delegate_task after an ACP run that started (sessions that died while 
       throw new Error(`unexpected ${endpoint}`);
     });
 
-    const result = await delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 600 }) as Result;
+    // Asked again with the same id for the grace period, never typed (2.0.4).
+    vi.useFakeTimers();
+    const pending = delegateTask({ id: 'a1', prompt: 'upgrade', timeoutSeconds: 600 }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+    vi.useRealTimers();
 
     expect(dispatched()).toBe(0);
     expect(result.isError).toBe(true);
@@ -225,7 +235,7 @@ describe('delegate_task after an ACP run that started (sessions that died while 
   it('still falls back to the terminal when no run started', async () => {
     const delegateTask = await loadDelegateTask();
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw new Error('spawn npx ENOENT');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('spawn npx ENOENT'), { status: 502, body: { error: 'spawn npx ENOENT', started: false } });
       if (endpoint.includes('/dispatch')) return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
       if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'all done' };
       return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'all done' } };

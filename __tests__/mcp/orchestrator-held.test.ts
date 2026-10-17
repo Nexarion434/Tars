@@ -44,7 +44,7 @@ const text = (result: unknown) => (result as { content: { text: string }[] }).co
 /** /dispatch as the route answers a message it has queued. */
 function dispatchAnswers(answer: Record<string, unknown>) {
   mockApiRequest.mockImplementation(async (endpoint: string) => {
-    if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+    if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
     if (endpoint.includes('/dispatch')) {
       return { success: true, agent: { id: 'a1', name: 'Tars-QA', status: 'running' }, ...answer };
     }
@@ -97,7 +97,7 @@ describe('the answer delegate_task types when the agent stops at a question', ()
     let dispatches = 0;
     let waits = 0;
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw new Error('no ACP mode');
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
       if (endpoint.includes('/dispatch')) {
         dispatches++;
         return dispatches === 1

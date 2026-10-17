@@ -138,8 +138,11 @@ export async function apiRequest(
     const response = await fetch(url, options);
     const data = await response.json();
 
+    // Tars answered: the status and the body go with the error, so that a
+    // caller can tell an answer (a refusal, "no run started") from a request
+    // that never got one, which carries neither.
     if (!response.ok) {
-      throw new Error((data as { error?: string }).error || `API error: ${response.status}`);
+      throw Object.assign(new Error((data as { error?: string }).error || `API error: ${response.status}`), { status: response.status, body: data });
     }
 
     return data;

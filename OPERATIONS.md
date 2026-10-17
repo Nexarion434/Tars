@@ -949,6 +949,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
 | POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| GET | `/api/tasks/:id` · `/api/tasks?clientRequestId=` (a delegated task as the ledger keeps it; `?wait=<s>` holds the request until the task ends, 120 s at most, and answers `timeout: true` if it has not: what `delegate_task` waits on, segment after segment, since run-task answers once the run has started, with `answer: 'started'`) |
 | POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
 | POST | `/api/hooks/{output,status,task-completed,agent-stopped,notification}` |
@@ -2104,6 +2105,8 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 | an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
+| a delegated task ran twice, its second copy typed into the agent's terminal five minutes after the first, or `delegate_task` answered `clientRequestId ... was already used for another request: nothing was sent` while the run kept working | an orchestrator server older than 2.0.4: it held one `run-task` request for the whole run, Node's fetch cut it at 300 s (`fetch failed`), and the tool took that for "no run started". Since 2.0.4 run-task answers once the run has started and no request waits more than 150 s; a request that gets no answer is asked again under the same `clientRequestId`, and the terminal is used only when Tars answered that no run started (`retryWithDispatch`, or `502` with `started: false`). An agent started before the update keeps its old server until its CLI restarts |
+| `delegate_task` says the run may still be working | Tars did not answer for 90 s (asked again with backoff), or the run outlived `timeoutSeconds + 60`. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
 | a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
@@ -2131,9 +2134,16 @@ rm ~/.dorothy/acp-registry.json    # force a refresh on next boot
 Provider → registry id: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`,
 `pi`. A provider absent from that map has no ACP path and runs over PTY only.
 
-A run is set to the agent's model, then its effort, with `session/set_config_option` once the
-session is open, when the agent offers those options. A value it refuses is logged as
+A run is set to its model, then the agent's effort, with `session/set_config_option` once the
+session is open, when the agent offers those options. Its model is the one `delegate_task` was
+given for this task (run-task's `model`), else the agent's own; the agent's saved model is never
+changed by it (2.0.4). A value it refuses is logged as
 `[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway.
+A model given with the task and refused is followed by the agent's own; the answer's
+`model: { asked, taken: false, own, ranOn }` says which one the run is on (`ranOn` absent: neither
+was taken, and the run is on the CLI's default), and so does `delegate_task`'s result
+(`This run is not on <model>: ...`). The turn's usage is filed under `ranOn`, the model the session
+took, and under no model when it took none (the Usage page then names the provider).
 
 ---
 
