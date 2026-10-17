@@ -38,6 +38,7 @@ import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
+import { accountDir } from '../claude-accounts/registry';
 import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
@@ -968,9 +969,14 @@ function followTask(workerId: string, askerId: string): () => void {
   };
 }
 
-/** Whether Tars hears this CLI's turns begin and end: claude (and the providers that run it), and gemini. */
+/**
+ * Whether Tars hears this CLI's turns begin with the prompt they run (the
+ * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
+ * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
+ * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ */
 function turnsHeard(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude' || agent.provider === 'gemini';
+  return getProvider(agent.provider).binaryName === 'claude';
 }
 
 /** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
@@ -998,6 +1004,16 @@ async function terminalUsage(task: TaskWithResult): Promise<Record<string, unkno
     };
   } catch (err) {
     console.warn('[run-task] what a task used could not be read:', (err as Error).message);
+    return undefined;
+  }
+}
+
+/** The folder of the Claude account a task ran on, after the first; undefined for account 1 (~/.claude). */
+function accountFolderOf(accountId: string | null): string | undefined {
+  if (!accountId || accountId === 'default') return undefined;
+  try {
+    return accountDir(accountId);
+  } catch {
     return undefined;
   }
 }
@@ -1115,7 +1131,8 @@ async function runInTerminal(
       const ended = ledger?.task(taskId);
       const outcome = ended?.outcome === 'running' || !ended ? 'stopped' : ended.outcome;
       const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
-      const result = (ended && transcriptRead(agent) ? await readFinalAnswer(ended) : null) ?? agent.lastCleanOutput ?? undefined;
+      const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
+        ?? agent.lastCleanOutput ?? undefined;
       if (outcome === 'error' && agent.error) noteRunEnd(taskId, { error: agent.error });
       ledger?.terminalEnded(taskId, { ...(result ? { result } : {}), stopReason });
       const done = ledger?.task(taskId);

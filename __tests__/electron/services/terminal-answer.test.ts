@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { finalAnswerOf, readFinalAnswer } from '../../../electron/services/terminal-answer';
-import { transcriptPath } from '../../../electron/utils/resume-session';
+import { encodeProjectDirName, transcriptPath } from '../../../electron/utils/resume-session';
 
 /**
  * The answer delegate_task returns for a task typed into an agent's permanent
@@ -31,6 +31,10 @@ import { transcriptPath } from '../../../electron/utils/resume-session';
  *     session's answer is returned, not the last;
  * 11. a transcript that is not there (another CLI, a session never written)
  *     throws instead of giving null.
+ * 12. an agent on a Claude account other than the first runs with that
+ *     account's folder as CLAUDE_CONFIG_DIR, which keeps its transcripts:
+ *     looked for under ~/.claude alone, its answer is never found, and the
+ *     hooks' 4000 byte copy is returned instead (added before its code).
  */
 
 const T0 = Date.parse('2026-10-18T03:00:00.000Z');
@@ -135,6 +139,19 @@ describe('the final answer of a task, read from its sessions\' transcripts', () 
     fs.mkdirSync(tree);
     write(homeDir, tree, 's1', [assistant(2, 'a', [text('from the worktree')])]);
     expect(await readFinalAnswer({ sessionIds: ['s1'], projectPath: project, worktreePath: tree, startedAt: T0, endedAt: T0 + 60_000 }, homeDir)).toBe('from the worktree');
+  });
+
+  it('is read from the folder of the Claude account the agent runs on (12)', async () => {
+    const homeDir = home();
+    const project = path.join(homeDir, 'p');
+    fs.mkdirSync(project);
+    const accountHome = path.join(homeDir, 'acct');
+    const file = path.join(accountHome, 'projects', encodeProjectDirName(project), 's1.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, assistant(2, 'a', [text('from account two')]) + '\n');
+    const task = { sessionIds: ['s1'], projectPath: project, worktreePath: null, startedAt: T0, endedAt: T0 + 60_000 };
+    expect(await readFinalAnswer(task, homeDir)).toBeNull();
+    expect(await readFinalAnswer({ ...task, configDir: accountHome }, homeDir)).toBe('from account two');
   });
 
   it('is null, and throws nothing, when no transcript is there (11)', async () => {

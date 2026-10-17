@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as readline from 'readline';
-import { transcriptPath, transcriptRoots } from '../utils/resume-session';
+import * as path from 'path';
+import { encodeProjectDirName, transcriptPath, transcriptRoots } from '../utils/resume-session';
 
 /**
  * The answer delegate_task returns for a task typed into an agent's permanent
@@ -83,18 +84,26 @@ async function answerInFile(file: string, window: Window): Promise<string | null
 /**
  * The final answer of a terminal task, from its sessions' transcripts, the
  * latest session that answered first; null when none is there to read (a CLI
- * that writes no such transcript, a session never written).
+ * that writes no such transcript, a session never written). `configDir` is
+ * the CLAUDE_CONFIG_DIR its CLI ran with (a Claude account after the first),
+ * which keeps its transcripts under projects/ instead of ~/.claude.
  */
 export async function readFinalAnswer(
-  task: { sessionIds: string[]; projectPath: string | null; worktreePath: string | null; startedAt: number; endedAt: number | null },
+  task: { sessionIds: string[]; projectPath: string | null; worktreePath: string | null; startedAt: number; endedAt: number | null; configDir?: string },
   homeDir = os.homedir(),
 ): Promise<string | null> {
   const window = { since: task.startedAt, until: (task.endedAt ?? Date.now()) + END_SLACK_MS };
   const roots = transcriptRoots(task.worktreePath ?? undefined, task.projectPath ?? undefined);
   for (const sessionId of [...task.sessionIds].reverse()) {
     for (const root of roots) {
-      const answer = await answerInFile(transcriptPath(root, sessionId, homeDir), window);
-      if (answer !== null) return answer;
+      const files = [
+        ...(task.configDir ? [path.join(task.configDir, 'projects', encodeProjectDirName(root), `${sessionId}.jsonl`)] : []),
+        transcriptPath(root, sessionId, homeDir),
+      ];
+      for (const file of files) {
+        const answer = await answerInFile(file, window);
+        if (answer !== null) return answer;
+      }
     }
   }
   return null;
