@@ -16,6 +16,7 @@ import { hasOrchestratorPowers } from '../../core/agent-role';
 import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 import { agentTmpEnvOrNone } from '../agent-tmp';
+import { agentGuideSection } from '../agent-guide';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -311,7 +312,9 @@ export async function delegateOverAcp(opts: {
     }
     let turn: TurnResult;
     try {
-      turn = await session.prompt(task, opts.timeoutMs);
+      // How Tars works, for its role, and its project's folder (services/agent-guide.ts):
+      // a run has no bootstrap of its own to carry it.
+      turn = await session.prompt(`${agentGuideSection(agent)}\n\n${task}`, opts.timeoutMs);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!/session\/prompt timed out/.test(message)) throw err;
