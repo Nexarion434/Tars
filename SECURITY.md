@@ -77,11 +77,12 @@ Creation now follows the rule the other routes follow.
 **What this is.** A guard against mistakes, and against a *casual* reader of the
 token file. It is not isolation: see §3.
 
-**Who hands work (2.0.4).** After the project, the routes that hand an agent work
-(`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer` or a `restart`) ask
-the caller's role (`core/one-task.ts`): Tars's own pass, an agent with the
-orchestrator's powers, or the agent itself; a worker is refused, and what it sends
-another worker is typed in as a labelled note once that agent's turn ends. The role
+**Who hands work, and who stops (2.0.4).** After the project, the routes that hand an
+agent work (`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer`) and those
+that end its CLI (`/stop`, `DELETE /api/agents/:id`, a `restart`) ask the caller's
+role (`core/one-task.ts`): Tars's own pass, an agent with the orchestrator's powers,
+or the agent itself; a worker is refused, and what it sends another worker is typed
+in as a labelled note once that agent's turn ends. The role
 is read from the fleet, which the token names, never from a header. It is still a
 guard against an agent's mistake, not a boundary: a worker that edits
 `~/.dorothy/agents.json` can give itself the orchestrator's role for the next
