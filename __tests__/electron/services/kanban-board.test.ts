@@ -285,6 +285,34 @@ describe('8. Hermes not configured or unreachable', () => {
   });
 });
 
+describe('8b. every refusal of Hermes says what to do (2.0.4)', () => {
+  // Written before the code. How it can fail: an agent reads "Hermes refused:
+  // Unauthorized" and retries in a loop, or gives up on the task, or files it
+  // nowhere, because nothing says that only the user can fix it, where, and
+  // that nothing was written.
+  const says = (r: { ok: boolean; error?: string }) => {
+    expect(r.ok).toBe(false);
+    const error = (r as { error: string }).error;
+    expect(error).toMatch(/Settings, Hermes/);
+    expect(error).toMatch(/[Nn]othing was written/);
+    expect(error).toMatch(/notes\//);
+  };
+
+  it('when Hermes refuses (a token it no longer takes)', async () => {
+    const refusing = { board: async () => ({ success: false, error: 'Unauthorized' }) } as unknown as FakeHermes;
+    const r = await listTasks(refusing, dune, {});
+    says(r);
+    expect(r.ok ? '' : r.error).toMatch(/Unauthorized/);
+  });
+
+  it('when Hermes does not answer, is not configured, or its connection cannot be used', async () => {
+    h.down = true;
+    says(await listTasks(h, dune, {}));
+    says(await listTasks(null, dune, {}));
+    says(await listTasks({ unusable: 'its file is not JSON.' }, dune, {}));
+  });
+});
+
 describe('9. ids and prefixes', () => {
   it('matches a prefix within the agent\'s project only, and refuses an ambiguous one', async () => {
     const a = await parked(dune, 'A');
