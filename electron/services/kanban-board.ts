@@ -129,6 +129,8 @@ export interface AgentTask {
   priority: 'low' | 'medium' | 'high';
   description: string;
   heldByCaller: boolean;
+  /** What Tars could not write beside the move: its note on the board, said rather than dropped. */
+  note?: string;
 }
 
 export interface AgentTaskDetail extends AgentTask {
@@ -139,6 +141,13 @@ export interface AgentTaskDetail extends AgentTask {
 export type KanbanResult<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
 
 const fail = (status: number, error: string): { ok: false; status: number; error: string } => ({ ok: false, status, error });
+
+/** A note on the board beside a move: null once written, else what to say of it. */
+async function noteOnBoard(h: KanbanHermes, id: string, body: string, what: string): Promise<string | null> {
+  const r = await h.comment(id, body).catch((err: unknown) => ({ success: false as const, error: err instanceof Error ? err.message : String(err), needsSignIn: false }));
+  if (r.success) return null;
+  return `${what} is made, and its note on the board ("${body}") was not written: ${r.needsSignIn ? HERMES_SIGNED_OUT : `${r.error || 'no reason given'}.`}`;
+}
 
 // ── Names ─────────────────────────────────────────────────────────────────
 
@@ -428,8 +437,8 @@ export async function claimTask(
       }
       if (holder.name) claimedNames.set(holder.agentId.toLowerCase(), holder.name);
       const by = holder === caller ? '' : ` (handed by ${caller.name || caller.agentId})`;
-      await h.comment(t.id, `Claimed by ${holder.name || holder.agentId}, Tars agent ${holder.agentId}${by}.`).catch(() => undefined);
-      return { ok: true as const, value: toAgentTask(after, caller) };
+      const note = await noteOnBoard(h, t.id, `Claimed by ${holder.name || holder.agentId}, Tars agent ${holder.agentId}${by}.`, 'The claim');
+      return { ok: true as const, value: { ...toAgentTask(after, caller), ...(note ? { note } : {}) } };
     });
   });
 }
@@ -486,8 +495,8 @@ async function release(h: KanbanHermes, caller: KanbanCaller, t: HermesTask): Pr
   }
   const lane = await h.update(t.id, { assignee: TARS_LANE });
   if (!lane.success) return refused(lane);
-  await h.comment(t.id, `Released by ${caller.name || caller.agentId}, back to the parked tasks.`).catch(() => undefined);
-  return { ok: true, value: toAgentTask(taskIn(lane.task), caller) };
+  const note = await noteOnBoard(h, t.id, `Released by ${caller.name || caller.agentId}, back to the parked tasks.`, 'The release');
+  return { ok: true, value: { ...toAgentTask(taskIn(lane.task), caller), ...(note ? { note } : {}) } };
 }
 
 export async function moveTask(h: Conn, caller: KanbanCaller, idOrPrefix: string, column: AgentColumn): Promise<KanbanResult<AgentTask>> {
