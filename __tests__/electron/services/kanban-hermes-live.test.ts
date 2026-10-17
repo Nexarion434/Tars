@@ -7,7 +7,7 @@ import {
   addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, hermesVersion, updateHermesTask,
 } from '../../../electron/services/hermes-client';
 import {
-  TARS_TASK_MARK, claimTask, completeTask, createParkedTask, deleteTask, listTasks, moveTask, reportProgress,
+  TARS_TASK_MARK, claimTask, completeTask, createParkedTask, deleteTask, getTask, listTasks, moveTask, reportProgress,
   type KanbanCaller, type KanbanHermes,
 } from '../../../electron/services/kanban-board';
 import type { HermesConnection } from '../../../electron/types/hermes';
@@ -15,8 +15,8 @@ import type { HermesConnection } from '../../../electron/types/hermes';
 /**
  * Against a real Hermes: its own kanban router and its own dispatcher, ticking
  * every half second in a throwaway HERMES_HOME (__tests__/fixtures/hermes-kanban-bench.py).
- * Two agents of one project file, list, claim, report on, finish, release and
- * delete tasks through Tars's kanban code, and Hermes's dispatcher, promotion
+ * Two agents of one project file, list, read, claim, hand to each other, report
+ * on, finish, release and delete tasks through Tars's kanban code, and Hermes's dispatcher, promotion
  * and decomposer never take one of them.
  *
  * Runs where a Hermes checkout is: TARS_HERMES_TREE (a Hermes source tree, a
@@ -95,10 +95,17 @@ describe.skipIf(!live)('the kanban against a real Hermes, its dispatcher ticking
     expect(ok(await claimTask(h, dove, b)).heldByCaller).toBe(true);
     expect((await claimTask(h, dove, a)).ok).toBe(false);
     ok(await reportProgress(h, dune, a, 60));
+    const detail = ok(await getTask(h, dove, a));
+    expect(detail.comments.some(c => c.startsWith('Progress: 60%'))).toBe(true);
+    expect(detail.description).toContain(TARS_TASK_MARK);
     ok(await completeTask(h, dune, a, ''));
     ok(await moveTask(h, dove, b, 'backlog'));
     ok(await claimTask(h, dune, b));
     ok(await completeTask(h, dune, b, 'Spec written.'));
+    // Handed to another agent of the project: claimed on its lane.
+    const handed = ok(await claimTask(h, dune, c, dove));
+    expect(handed.heldByCaller).toBe(false);
+    ok(await moveTask(h, dove, c, 'backlog'));
     ok(await deleteTask(h, dove, c));
 
     // Several ticks after the last write, so that "nothing taken" means something.
