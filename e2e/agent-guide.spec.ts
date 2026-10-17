@@ -16,7 +16,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The real app on a sandbox HOME, and the real orchestrator MCP server (mcp-orchestrator/dist/bundle.js) run with the
  * identity Tars hands agent `lead`, spoken to over stdio as Claude Code speaks to it. `oc` and `acp` are opencode
  * workers whose CLI is a stand-in: in a terminal it records its command line, launched as `opencode acp` it is an ACP
- * agent that records every prompt. `w` is a claude worker, whose terminal reads its identity from the bootstrap route
+ * agent that records every prompt; `win` and `dash` are opencode workers started from the window. `w` is a claude worker, whose terminal reads its identity from the bootstrap route
  * (hooks/session-start.sh, tars-hook.mjs): read here with w's own token, as its hook does.
  *
  * Asserted, once with the classic shell and once with the new interface:
@@ -26,8 +26,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    with the project's folder;
  * 3. an opencode worker started in a terminal (start_agent) gets the section in its prompt;
  * 4. a run over ACP (delegate_task) gets it in its prompt;
- * 5. the folder exists, outside the project, with tools/, notes/ and reports/.
- * Red on 9df7c099: tars_guide is no tool, and no identity carries the section or a folder.
+ * 5. the folder exists, outside the project, with tools/, notes/ and reports/;
+ * 6. an opencode worker started from the window (agent:start, the launcher behind the Dashboard's Start, a wake and a
+ *    restart) gets the section in its prompt, with a task and without one (the Audit's M1 on #448).
+ * Each of 3, 4 and 6 carries the section once.
+ * Red on 9df7c099: tars_guide is no tool, and no identity carries the section or a folder. Red on 9bd12b6c: 6, the
+ * window's launcher gave a CLI without Claude's SessionStart hook its memory but not the section.
  * The artefact: values.json (each tool's answer, both bootstraps, the stand-in's launches and prompts, the folder's
  * listing), a screenshot of the Agents page, the app's trace with E2E_TRACE=on.
  */
@@ -87,6 +91,7 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
       agent('lead', 'Project Lead', 'orchestrator', 'claude'), agent('w', 'Writer', 'worker', 'claude'),
       agent('oc', 'Terminal Worker', 'worker', 'opencode'), agent('acp', 'Run Worker', 'worker', 'opencode'),
+      agent('win', 'Window Worker', 'worker', 'opencode'), agent('dash', 'Dashboard Worker', 'worker', 'opencode'),
     ], null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
@@ -98,6 +103,7 @@ for (const newInterface of [false, true]) {
     const dist = path.resolve('electron', 'dist');
     const values: Record<string, unknown> = { newInterface, home, project };
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
+    const once = (text: string) => text.split(SECTION).length - 1;
     const entries = () => (fs.existsSync(standInLog) ? fs.readFileSync(standInLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
     const app: ElectronApplication = await launchSandboxed(electron, home, {
@@ -189,7 +195,7 @@ for (const newInterface of [false, true]) {
       await expect.poll(() => entries().filter((e) => e.terminal && e.agent === 'oc').length, { timeout: 30_000 }).toBe(1);
       const terminalArgv = (entries().find((e) => e.terminal && e.agent === 'oc')!.terminal as string[]).join(' ');
       expect.soft(terminalArgv).toContain('TERMINAL>> read the guide');
-      expect.soft(terminalArgv).toContain(SECTION);
+      expect.soft(once(terminalArgv), terminalArgv).toBe(1);
       expect.soft(terminalArgv).toContain(folder!);
 
       // 4. A run over ACP.
@@ -201,8 +207,24 @@ for (const newInterface of [false, true]) {
       keep({ standIn: entries() });
       expect.soft(prompts.length).toBe(1);
       expect.soft(prompts[0] ?? '').toContain('ACP>> read the guide');
-      expect.soft(prompts[0] ?? '').toContain(SECTION);
+      expect.soft(once(prompts[0] ?? ''), prompts[0]).toBe(1);
       expect.soft(prompts[0] ?? '').toContain(folder!);
+
+      // 6. Opencode workers started from the window, with a task and without one.
+      type Api = { electronAPI: { agent: { start: (p: { id: string; prompt: string }) => Promise<unknown> } } };
+      const fromWindow: Record<string, unknown> = {};
+      for (const [id, prompt] of [['win', 'WINDOW>> read the guide'], ['dash', '']] as const) {
+        fromWindow[id] = await page.evaluate((p) => (window as unknown as Api).electronAPI.agent.start(p), { id, prompt });
+        await expect.poll(() => entries().filter((e) => e.terminal && e.agent === id).length, { timeout: 30_000 }).toBe(1);
+      }
+      const argvOf = (id: string) => (entries().find((e) => e.terminal && e.agent === id)!.terminal as string[]).join(' ');
+      keep({ fromWindow, windowArgv: argvOf('win'), dashboardArgv: argvOf('dash') });
+      for (const id of ['win', 'dash']) {
+        expect.soft(once(argvOf(id)), argvOf(id)).toBe(1);
+        expect.soft(argvOf(id)).toContain(folder!);
+        expect.soft(argvOf(id)).toContain('assign_task');
+      }
+      expect.soft(argvOf('win')).toContain('WINDOW>> read the guide');
 
       // 5. The folder, outside the project.
       const listing = fs.readdirSync(folder!).sort();

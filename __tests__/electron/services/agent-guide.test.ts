@@ -27,6 +27,20 @@ import {
  * 9. a topic is not stamped with the version of the Tars that answers, or an
  *    unknown topic answers something instead of nothing;
  * 10. an em or en dash reaches what agents read (CLAUDE.md, "No em dashes").
+ *
+ * Added at the Audit of #448, before their fixes:
+ * 11. a folder Tars could not make is blamed on the project's path ("not
+ *     absolute"), and the agent is told something false about its project (L6);
+ * 12. the guide says a delegated run of an hour is fine while delegate_task's
+ *     default cuts it at 300 s, and never names timeoutSeconds nor its ceiling (M2):
+ *     the default and the ceiling it states must be the code's;
+ * 13. the guide says ask_user waits for the answer (it returns at once, and the
+ *     answer is typed into the terminal later), offers it to a delegated run (which
+ *     is refused) or without the relay, offers the Telegram file tools the relay
+ *     takes away (L1), and says memory_read reads one note (it returns the
+ *     project's whole digest) (L2);
+ * 14. the guide lets an agent make folders at the top of the home folder, or keep
+ *     durable files anywhere but the project folder (the maintainer, 2026-10-18).
  */
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -134,5 +148,55 @@ describe('tars_guide answers', () => {
       guideIndex('2.0.4'),
     ].join('\n');
     expect(all).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+describe('what the guide says is what the code does (the Audit of #448)', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const topic = (id: string) => GUIDE_TOPICS.find(t => t.id === id)!.text;
+  const lead = identitySection('orchestrator', '/f').join('\n');
+
+  it('names the reason a folder could not be made, not the path (11)', () => {
+    const why = 'Tars could not make /h/.dorothy/project-files/demo-0123456789: ENOSPC: no space left on device';
+    const none = identitySection('worker', null, why).join('\n');
+    expect(none).toContain('ENOSPC');
+    expect(none).not.toMatch(/absolute/);
+    expect(guideTopic('project-folder', '2.0.4', null, why)).toContain('ENOSPC');
+    // Without a reason given, the one there is: the path.
+    expect(identitySection('worker', null).join('\n')).toMatch(/not absolute/);
+  });
+
+  it('states delegate_task\'s default run and its ceiling, as the code has them (12)', () => {
+    const fallback = Number(/prompt, model, timeoutSeconds = (\d+)/.exec(read('mcp-orchestrator/src/tools/agents.ts'))?.[1]);
+    const ceilingMs = /timeoutMs: Math\.min\(Math\.max\(\(timeoutSeconds \?\? \d+\) \* 1000, [\d_]+\), ([\d_]+)\)/
+      .exec(read('electron/services/api-routes/agent-routes.ts'))?.[1];
+    const ceiling = Number(ceilingMs?.replace(/_/g, '')) / 1000;
+    expect(fallback, 'the default was not found in delegate_task').toBeGreaterThan(0);
+    expect(ceiling, 'the ceiling was not found in run-task').toBeGreaterThan(0);
+    // An hour by default, which is all run-task gives: a delegation is not cut mid-work unless asked.
+    expect(fallback).toBe(ceiling);
+    for (const text of [topic('delegation'), lead]) {
+      expect(text).toContain('timeoutSeconds');
+      expect(text).toContain(`${fallback} s`);
+    }
+  });
+
+  it('says ask_user returns at once, from a terminal, through the relay; and what memory_read returns (13)', () => {
+    const asking = topic('asking-the-user');
+    expect(asking).not.toMatch(/waits for the answer/);
+    expect(asking).toMatch(/returns at once/);
+    expect(asking).toMatch(/delegated run/);
+    expect(asking).toMatch(/relay/);
+    expect(asking).toMatch(/[Ww]ith the relay on, .*send_telegram_document/s);
+    expect(lead).toMatch(/ask_user.*returns at once/);
+    const memory = topic('memory-and-vault');
+    expect(memory).not.toMatch(/memory_read` reads one note/);
+    expect(memory).toMatch(/memory_read` returns the project's whole digest/);
+  });
+
+  it('keeps durable files in the project folder, and no folder at the top of the home folder (14)', () => {
+    for (const text of [topic('project-folder'), identitySection('worker', '/f').join('\n')]) {
+      expect(text).toMatch(/top of (the|your) home folder/);
+    }
   });
 });

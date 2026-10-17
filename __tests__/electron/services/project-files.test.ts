@@ -23,6 +23,12 @@ import { projectFilesKey, projectFilesDir, ensureProjectFiles, PROJECT_FILES_DIR
  *    (iCloud evicts it), or clashes with ~/.dorothy/projects.json;
  * 8. a relative path is given a folder relative to wherever Tars runs;
  * 9. making it again empties or replaces what is there (it is never deleted).
+ * 10. an accented name (café) loses its letters instead of keeping them without
+ *     the accent: two projects that differ by an accent read alike, and the
+ *     folder's name is not the project's (the Audit's mutant M2 on #448);
+ * 11. a folder that cannot be made (a full disk, a permission, a file in its
+ *     place) is blamed on the project's path, "not absolute", and the agent is
+ *     told something false about its project (the Audit's L6 on #448).
  */
 
 describe('the key of a project folder', () => {
@@ -56,6 +62,13 @@ describe('the key of a project folder', () => {
     expect(projectFilesKey('C:\\work\\CON', 'win32')).not.toMatch(/^con-/);
   });
 
+  it('keeps an accented letter without its accent (10)', () => {
+    expect(projectFilesKey('/home/u/caf\u00e9', 'linux')).toMatch(/^cafe-[0-9a-f]{10}$/);
+    // The same name typed decomposed (e and a combining accent), as macOS may give it.
+    expect(projectFilesKey('/home/u/cafe\u0301', 'linux')).toMatch(/^cafe-[0-9a-f]{10}$/);
+    expect(projectFilesKey('/home/u/\u00c9t\u00e9 2026', 'darwin')).toMatch(/^ete-2026-[0-9a-f]{10}$/);
+  });
+
   it('is the same on every call (5)', () => {
     expect(projectFilesKey('/home/u/app', 'linux')).toBe('app-' + projectFilesKey('/home/u/app', 'linux')!.slice(-10));
     expect(projectFilesKey('/home/u/app', 'linux')).toBe(projectFilesKey('/home/u/app', 'linux'));
@@ -82,12 +95,27 @@ describe('the project folder on disk', () => {
 
   it('is made with tools, notes and reports, and making it again keeps what is there (9)', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'project-files-'));
-    const dir = ensureProjectFiles(project)!;
+    const dir = ensureProjectFiles(project).dir!;
     expect(dir).toBe(projectFilesDir(project));
     for (const sub of ['tools', 'notes', 'reports']) expect(fs.statSync(path.join(dir, sub)).isDirectory()).toBe(true);
     fs.writeFileSync(path.join(dir, 'notes', 'kept.md'), 'kept');
-    expect(ensureProjectFiles(project)).toBe(dir);
+    expect(ensureProjectFiles(project).dir).toBe(dir);
     expect(fs.readFileSync(path.join(dir, 'notes', 'kept.md'), 'utf8')).toBe('kept');
-    expect(ensureProjectFiles('relative/app')).toBeNull();
+    expect(ensureProjectFiles('relative/app')).toEqual({ dir: null, why: 'its path is not absolute' });
+  });
+
+  it('says why when it cannot be made, and does not blame the path (11)', () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'project-files-unmade-'));
+    const dir = projectFilesDir(project)!;
+    // A file where the folder goes: mkdir fails as it does on a full disk or a
+    // folder Tars may not write, with the path absolute and fine.
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    fs.writeFileSync(dir, 'in the way');
+    const made = ensureProjectFiles(project);
+    expect(made.dir).toBeNull();
+    expect(made.why).toContain(dir);
+    expect(made.why).toMatch(/could not be made/);
+    expect(made.why).not.toMatch(/absolute/);
+    fs.rmSync(dir);
   });
 });
