@@ -6,7 +6,7 @@ import { execFileSync } from 'child_process';
 import { launchSandboxed, recordValues } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 import { startFakeRelay, type FakeRelay } from '../__tests__/fixtures/fake-tars-relay';
-import { BOT_TOKEN, JEANBRASSE, startFakeTelegram } from '../__tests__/fixtures/fake-telegram';
+import { BOT_TOKEN, OWNER_ID, startFakeTelegram } from '../__tests__/fixtures/fake-telegram';
 
 /**
  * Who writes to "the project's orchestrator" reaches the project's inbox chat, Telegram names a chat by its number,
@@ -123,7 +123,7 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9',
     telegramEnabled: true, telegramBotToken: BOT_TOKEN, telegramAuthToken: 'e2e-auth-token',
-    telegramAuthorizedChatIds: [String(JEANBRASSE)], telegramChatId: String(JEANBRASSE), hermesRelayEnabled: false,
+    telegramAuthorizedChatIds: [String(OWNER_ID)], telegramChatId: String(OWNER_ID), hermesRelayEnabled: false,
   }));
 
   const telegram = await startFakeTelegram();

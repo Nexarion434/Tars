@@ -1398,7 +1398,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // create_agent sends no role. Decided on 2026-09-23, for every caller.
     if (role === 'orchestrator') {
       sendJson({
-        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; JeanBrasse can make it the orchestrator there.',
+        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; the user can make it the orchestrator there.',
       }, 403);
       return;
     }

@@ -261,7 +261,7 @@ function heldElsewhere(t: HermesTask, caller: KanbanCaller): string | null {
   const agent = nameOfLane(t.assignee);
   if (agent) return `Task ${t.id} is claimed by ${agent}: only that agent can act on it.`;
   if (t.status !== PARKED && t.status !== 'done') {
-    return `Task ${t.id} is Hermes's (${t.status}${t.assignee && t.assignee !== TARS_LANE ? `, ${t.assignee}` : ''}): only JeanBrasse moves it back.`;
+    return `Task ${t.id} is Hermes's (${t.status}${t.assignee && t.assignee !== TARS_LANE ? `, ${t.assignee}` : ''}): only the user moves it back.`;
   }
   return null;
 }
@@ -290,7 +290,7 @@ function whyNotDeletable(t: HermesTask, caller: KanbanCaller): string | null {
   if (t.assignee === laneOf(caller.agentId)) return null;
   if (t.assignee === TARS_LANE && filerOf(t) === caller.agentId) return null;
   return heldElsewhere(t, caller)
-    ?? `Task ${t.id} is not yours to delete: an agent deletes a task it filed and nobody claimed, or one it claimed. JeanBrasse deletes the others on the Kanban page.`;
+    ?? `Task ${t.id} is not yours to delete: an agent deletes a task it filed and nobody claimed, or one it claimed. The user deletes the others on the Kanban page.`;
 }
 
 // ── The tools ─────────────────────────────────────────────────────────────
@@ -380,7 +380,7 @@ export async function claimTask(
       if (other) return fail(409, `Task ${t.id} is already claimed by ${other}.`);
       if (t.status === 'done' || t.status === 'archived') return fail(409, `Task ${t.id} is done.`);
       if (t.status !== PARKED || (t.assignee && t.assignee !== TARS_LANE)) {
-        return fail(409, `Task ${t.id} is not parked: Hermes has it (${t.status}${t.assignee ? `, ${t.assignee}` : ''}). Only JeanBrasse moves it back.`);
+        return fail(409, `Task ${t.id} is not parked: Hermes has it (${t.status}${t.assignee ? `, ${t.assignee}` : ''}). Only the user moves it back.`);
       }
       // The lane lands before the status, in the same request: `ready` on the
       // agent's lane, which Hermes skips, never `ready` on no lane.
@@ -445,7 +445,7 @@ async function release(h: KanbanHermes, caller: KanbanCaller, t: HermesTask): Pr
 
 export async function moveTask(h: Conn, caller: KanbanCaller, idOrPrefix: string, column: AgentColumn): Promise<KanbanResult<AgentTask>> {
   if (column === 'planned') {
-    return fail(403, 'Handing a task to Hermes is JeanBrasse\'s choice: he moves it on the Kanban page. An agent parks a task (backlog), claims it (ongoing) or finishes it (done).');
+    return fail(403, 'Handing a task to Hermes is the user\'s choice: they move it on the Kanban page. An agent parks a task (backlog), claims it (ongoing) or finishes it (done).');
   }
   if (column === 'ongoing') return claimTask(h, caller, idOrPrefix);
   if (column === 'done') return completeTask(h, caller, idOrPrefix, `Moved to done by ${caller.name || caller.agentId}.`);
@@ -604,7 +604,7 @@ export function handOffNote(task: AgentTask, by: KanbanCaller): { message: strin
 /** A task that landed on a project, told to its orchestrator as the agent that filed it. One line. */
 export function landingNote(filer: KanbanCaller, task: AgentTask): { message: string; sender: MessageSender } {
   return {
-    message: `Filed a task on this project's Kanban board: ${envelopeValue(task.title)} (${task.id}). It is parked, and Hermes will not take it. Hand it to one of your agents with assign_task (task_id ${task.id}, agent_id), or leave it for JeanBrasse.`,
+    message: `Filed a task on this project's Kanban board: ${envelopeValue(task.title)} (${task.id}). It is parked, and Hermes will not take it. Hand it to one of your agents with assign_task (task_id ${task.id}, agent_id), or leave it for the user.`,
     sender: { kind: 'agent', id: filer.agentId, name: filer.name },
   };
 }

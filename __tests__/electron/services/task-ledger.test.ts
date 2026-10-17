@@ -372,8 +372,8 @@ describe("a worker's report to the agent that leads it", () => {
     ledger.handedOff('third', { source: 'agent', requesterAgentId: 'lead', text: 'merge #305' });
     ledger.turnStarted(agent({ id: 'third' }), { sessionId: 'sess-third' });
 
-    const [jeanbrasses, gate, report, merge] = ledger.tasks();
-    expect(gate).toMatchObject({ agentId: 'worker', parentTaskId: jeanbrasses.id });
+    const [usersTask, gate, report, merge] = ledger.tasks();
+    expect(gate).toMatchObject({ agentId: 'worker', parentTaskId: usersTask.id });
     expect(report).toMatchObject({ agentId: 'lead', requesterAgentId: 'worker', parentTaskId: null, text: 'gate done, MERGE' });
     expect(merge).toMatchObject({ agentId: 'third', parentTaskId: report.id });
   });

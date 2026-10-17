@@ -13,9 +13,13 @@ import * as path from 'path';
  * back at JeanBrasse every time he tried to talk to it. Every guard passed, because
  * every guard was about a shape of text and the problem is a behaviour.
  *
- * The fixture is JeanBrasse's real conversation, taken off his disk. These assert
- * that it comes unstuck, and that a healthy conversation is untouched, rather
- * than that some helper rejects one particular sentence.
+ * The fixture has the shape of JeanBrasse's real conversation and none of its
+ * words (since 2026-10-17): the same turns in the same order, the stuck
+ * sentence and the placeholder echoes where they were, and each check-in on
+ * the same side of the 30-minute window as before. The user's lines and the
+ * overseer's few real answers are invented. These assert that it comes
+ * unstuck, and that a healthy conversation is untouched, rather than that some
+ * helper rejects one particular sentence.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-overseer-rep-'));
@@ -80,13 +84,13 @@ function persisted(): { role: string; text: string }[] {
   return JSON.parse(fs.readFileSync(OVERSEER_FILE, 'utf-8')).messages ?? [];
 }
 
-/** JeanBrasse's conversation, exactly as it sat on his disk. */
-function seedNoahsConversation(): void {
+/** The conversation, as the fixture holds it. */
+function seedUsersConversation(): void {
   fs.copyFileSync(FIXTURE, OVERSEER_FILE);
 }
 
 /**
- * JeanBrasse's conversation with the stuck sentence swapped for one nothing knows
+ * The same conversation with the stuck sentence swapped for one nothing knows
  * about.
  *
  * His actual sentence is now refused by name, because it was the example
@@ -103,7 +107,7 @@ function seedTheSameShapeWithNewWords(): void {
   raw.messages = raw.messages.map((m: { text: string }) => (
     m.text === STUCK ? { ...m, text: NOVEL } : m
   ));
-  // The fixture is a day old on disk. The last turn is stamped as just now,
+  // The fixture's turns are weeks old. The last turn is stamped as just now,
   // which is how the loop looked while JeanBrasse was watching it: the newest repeat
   // had arrived minutes ago.
   const last = raw.messages[raw.messages.length - 1];
@@ -154,14 +158,14 @@ beforeEach(async () => {
 
 describe("JeanBrasse's stuck conversation", () => {
   it('really is stuck, which is the precondition for the rest', () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     const texts = persisted().filter(m => m.role === 'overseer').map(m => m.text);
 
     expect(texts.filter(t => t === STUCK).length).toBeGreaterThan(150);
   });
 
   it('stops being recited back to the model', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
 
     await overseer.askOverseer('ca dit quoi?');
 
@@ -195,7 +199,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('loses nothing from the disk in the process', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     const before = persisted().length;
 
     await overseer.askOverseer('ca dit quoi?');
@@ -207,7 +211,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('does not record the same answer once more, and says so instead', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     nextReply = JSON.stringify({ say: STUCK, action: null });
 
     const result = await overseer.askOverseer('ca dit quoi?');
@@ -223,7 +227,7 @@ describe("JeanBrasse's stuck conversation", () => {
   }, 30000);
 
   it('accepts a genuinely new answer on the very next turn', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     nextReply = JSON.stringify({ say: 'Backend errored on the schema migration ten minutes ago and nothing has picked it up.', action: null });
 
     const result = await overseer.askOverseer('ca dit quoi?');
@@ -303,7 +307,7 @@ describe('an overseer that is still allowed to talk', () => {
 
 describe('the fleet as it is now', () => {
   it('is put after the conversation, so it reads last before the question', async () => {
-    seedNoahsConversation();
+    seedUsersConversation();
     putAgent('running');
 
     await overseer.askOverseer('ca dit quoi?');
@@ -311,7 +315,7 @@ describe('the fleet as it is now', () => {
     const prompt = promptsSent[promptsSent.length - 1];
     // A day of history used to sit between the snapshot and the question.
     expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeGreaterThan(prompt.indexOf('=== CONVERSATION SO FAR'));
-    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeLessThan(prompt.indexOf('=== JEANBRASSE ==='));
+    expect(prompt.indexOf('=== FLEET SNAPSHOT')).toBeLessThan(prompt.indexOf('=== USER ==='));
   }, 30000);
 
   it('is labelled as now, and the conversation as the past', async () => {

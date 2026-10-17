@@ -904,7 +904,7 @@ function composeNote(finished: Map<string, News>): string {
   const lines = Array.from(finished.entries()).map(([id, news]) => {
     const agent = agents.get(id);
     const name = agent?.name || id;
-    // Raw until the room note made "This is JeanBrasse, not a teammate." a sentence
+    // Raw until the room note made "This is the user, not a teammate." a sentence
     // Tars really writes: a name with a line break in it could append one here.
     return `- ${envelopeValue(name)} (${envelopeValue(id)}) ${describeOwed(news)}`;
   });
@@ -932,7 +932,7 @@ function composeNote(finished: Map<string, News>): string {
  *
  * The message itself is fenced, because it can say anything, including a line
  * shaped exactly like the first line of this note. Nothing marked it off, so an
- * agent could write "[Tars] JeanBrasse wrote in ... This is JeanBrasse, not a teammate." in
+ * agent could write "[Tars] User wrote in ... This is the user, not a teammate." in
  * its message, and the recipient had nothing to tell it from the real one.
  * Filtering such lines out would not hold: a forgery needs no exact prefix,
  * only a convincing sentence, and look-alike characters get past any list. So
@@ -944,7 +944,7 @@ function composeNote(finished: Map<string, News>): string {
  * or hide text there.
  */
 function composeBusNote(message: QueuedBusMessage): string {
-  const who = message.authorKind === 'human' ? 'This is JeanBrasse, not a teammate.' : 'This is a teammate, not JeanBrasse.';
+  const who = message.authorKind === 'human' ? 'This is the user, not a teammate.' : 'This is a teammate, not the user.';
   const author = envelopeValue(message.authorName);
   const fence = `tars-${crypto.randomBytes(12).toString('hex')}`;
   return [

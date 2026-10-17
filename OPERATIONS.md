@@ -385,6 +385,32 @@ lot: the Kanban table was dead code, the provider colours and marks moved into
 `src/components/ui/`, the terminal theme reads the tokens, and the `theme-color` tag was
 removed after measuring that nothing in the app listens for it.
 
+### Private names: `npm run check:names`
+
+```bash
+node scripts/check-private-names.mjs              # every hit, the name masked
+node scripts/check-private-names.mjs --quiet      # exit code only
+```
+
+The repository is public, and the names that must never appear in it (real first names, e-mail
+addresses) cannot be written into a check without publishing them. So the list lives outside it,
+in `~/.tars-private/private-names.txt` (`TARS_PRIVATE_NAMES` names another file), one entry per
+line, `#` for a comment. Without that file the check says it checked nothing and passes: CI and
+contributors have no list. A list that names nobody fails it, and so does a tree git cannot list.
+
+It reads every file git tracks or would add (`git ls-files --cached --others
+--exclude-standard`), as it stands on disk, and its path, which is published as much. A single word is found where it stands as a word,
+in any case: in prose, and in an identifier or a path, where camelCase, SCREAMING_CASE,
+snake_case, a dash, a plural `s` or an escape such as `%5c` or `\n` ends it. Inside another word
+it is that word, so a hash in `package-lock.json` holds no name. Anything else, an e-mail address
+or two words, is found exactly as written. Binary files are counted, not read: look at the
+pictures. Exit 1 lists each hit as `file:line:column` with the name masked, so the report can be
+pasted into a PR.
+
+What replaces a name: JeanBrasse, or "the maintainer", in prose; a neutral home in a path
+(`/Users/demo`, `C:\Users\owner`, `C:\Users\Sam Lee` where a test needs a space); the user in
+anything Tars says to an agent, a model or the window.
+
 ### CI
 
 `.github/workflows/ci.yml` runs on PRs to `main` and pushes to `main`: `ubuntu-latest`,

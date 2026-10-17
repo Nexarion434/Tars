@@ -15,7 +15,7 @@ import type { RelayMessage, RelayReply, RelaySendResult } from './hermes-relay';
  * Nothing outside can reach Tars, which listens on 127.0.0.1 only, so Tars
  * asks. Every 15 minutes, with a read-only token (`sentryAuthToken` in
  * app-settings.json, scope `event:read`), it lists the unresolved issues of the
- * Sentry project its own error reports go to (the DSN's), in the example-org
+ * Sentry project its own error reports go to (the DSN's), in the DSN's
  * organisation, EU region. Each issue it has not filed yet becomes a task on
  * the Hermes board of the project named in Settings (`sentryTriageProject`),
  * parked on the Tars lane, where Hermes never runs it, and the user is asked on
@@ -66,7 +66,8 @@ const PAGE = 100;
 const MAX_SEEN = 2000;
 
 const SENTRY_API = 'https://de.sentry.io/api/0';
-const SENTRY_ORG = 'example-org';
+/** The organisation, by its id: the DSN's host starts with `o` and that id. Sentry's API takes it for the slug. */
+const SENTRY_ORG = new URL(ERROR_REPORTS_DSN).hostname.split('.')[0].slice(1);
 /** The project Tars's reports go to: the last part of the DSN is its id. */
 const SENTRY_PROJECT = new URL(ERROR_REPORTS_DSN).pathname.replace(/\//g, '');
 const NO_TOKEN = 'no Sentry token in Settings';
@@ -270,7 +271,7 @@ function linkOf(issue: SentryIssue): string {
     const url = new URL(String(issue.permalink));
     if (url.protocol === 'https:' && (url.hostname === 'sentry.io' || url.hostname.endsWith('.sentry.io'))) return url.href;
   } catch { /* not a URL: the issue's own page below */ }
-  return `https://${SENTRY_ORG}.sentry.io/issues/${issue.id}/`;
+  return `https://sentry.io/organizations/${SENTRY_ORG}/issues/${issue.id}/`;
 }
 
 function titleOf(issue: SentryIssue): string {
@@ -304,7 +305,7 @@ function bodyOf(issue: SentryIssue): string {
     ...errorLines(issue),
     '---- end of the error ----',
     '',
-    "For the orchestrator of this project: hand this task to QA or the Audit with assign_task. Whoever holds it reproduces the error in a sandbox (a throwaway HOME, never JeanBrasse's own Tars nor his Hermes) and reports with mark_task_done: reproduced or not, the cause, the severity, the file and line, and the smallest fix. The task asks for that report only: nothing is changed, committed or merged for it.",
+    "For the orchestrator of this project: hand this task to QA or the Audit with assign_task. Whoever holds it reproduces the error in a sandbox (a throwaway HOME, never the user's own Tars nor their Hermes) and reports with mark_task_done: reproduced or not, the cause, the severity, the file and line, and the smallest fix. The task asks for that report only: nothing is changed, committed or merged for it.",
     '',
     'Filed by Tars (error triage).',
   ].join('\n');

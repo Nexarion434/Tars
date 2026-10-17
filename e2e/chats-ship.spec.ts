@@ -5,7 +5,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { launchSandboxed, recordValues } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
-import { BOT_TOKEN, JEANBRASSE, startFakeTelegram } from '../__tests__/fixtures/fake-telegram';
+import { BOT_TOKEN, OWNER_ID, startFakeTelegram } from '../__tests__/fixtures/fake-telegram';
 
 /**
  * Two things of the chats that ship to everyone (GATE-2.0.0-BULLETS), in the real app.
@@ -205,7 +205,7 @@ test('a project with only Main, the new interface off, reads on Telegram and in 
   const values: Record<string, unknown> = {};
   const { app, call, atRest } = await boot(home, project, port, { DOROTHY_TELEGRAM_API_URL: telegram.url }, {
     telegramEnabled: true, telegramBotToken: BOT_TOKEN, telegramAuthToken: 'e2e-auth-token',
-    telegramAuthorizedChatIds: [String(JEANBRASSE)], telegramChatId: String(JEANBRASSE), newInterface: false,
+    telegramAuthorizedChatIds: [String(OWNER_ID)], telegramChatId: String(OWNER_ID), newInterface: false,
   });
   try {
     const prompts = () => lines<{ id: string; prompt: string }>(path.join(home, 'prompts.jsonl'));

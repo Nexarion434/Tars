@@ -54,7 +54,7 @@ Description: ${t.description}${t.result ? `\nResult: ${t.result}` : ""}${t.comme
 
 export async function createTask(args: { title: string; description: string; project_path?: string; priority?: "low" | "medium" | "high"; labels?: string[] }): Promise<ToolResult> {
   const { task: t } = await apiRequest("POST", "/api/kanban/tasks", { ...args }) as { task: AgentTask };
-  return text(`Task created, parked on the Hermes board: [${t.id}] ${t.title}\nHermes will not start it. Claim it with assign_task to work on it, or leave it for JeanBrasse.`);
+  return text(`Task created, parked on the Hermes board: [${t.id}] ${t.title}\nHermes will not start it. Claim it with assign_task to work on it, or leave it for the user.`);
 }
 
 export async function updateTaskProgress(args: { task_id: string; progress: number }): Promise<ToolResult> {

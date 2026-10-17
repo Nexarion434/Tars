@@ -672,13 +672,13 @@ describe('an agent reporting to the agent that leads it', () => {
     // Any agent that handed it work leads it for that work, role or not.
     orchestrator.role = undefined;
     worker.requestedBy = { agentId: orchestrator.id, ptyId: worker.ptyId! };
-    const askedByNoah = { agentId: ALPHA.id, ptyId: orchestrator.ptyId! };
-    orchestrator.requestedBy = { ...askedByNoah };
+    const askedByUser = { agentId: ALPHA.id, ptyId: orchestrator.ptyId! };
+    orchestrator.requestedBy = { ...askedByUser };
 
     const { status, body } = await call('POST', `/api/agents/${orchestrator.id}/message`, bearer(workerToken), { message: 'done, PR #301 is up' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(orchestrator.requestedBy, 'the worker became its own orchestrator\'s requester').toEqual(askedByNoah);
+    expect(orchestrator.requestedBy, 'the worker became its own orchestrator\'s requester').toEqual(askedByUser);
   });
 
   it("2. answering its project's orchestrator, with no link, makes none", async () => {
