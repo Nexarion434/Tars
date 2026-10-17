@@ -166,6 +166,30 @@ function queuedText(task: TaskView): string {
     + `Follow it with task_status({ taskId: "${task.id}" }), or take it back with task_cancel({ taskId: "${task.id}" }).`;
 }
 
+/**
+ * A task that had not started when the wait on it lost Tars's answer. It waits
+ * its turn in Tars's memory only (one task at a time): a restart drops it, and
+ * keeping it across one is a later change. `err` is what the wait met:
+ * another Tars on the port (mcp-shared/src/tars-api.ts, `anotherTars`), this
+ * Tars no longer knowing it (404), or null for Tars out of reach past the
+ * grace period. Null when it is none of these.
+ */
+function notStartedText(task: TaskView, err: unknown): string | null {
+  if ((err as { anotherTars?: unknown } | null)?.anotherTars === true) {
+    return task.outcome === "starting"
+      ? `Tars restarted while task ${task.id} on agent ${task.agentId} was being started, so it may not have run. Tars keeps no task that waited its turn across a restart: unless Tars tells you it ran, ask for it again (delegate_task).`
+      : `Tars restarted while task ${task.id} waited its turn on agent ${task.agentId}${task.queuedAt ? ` (queued since ${task.queuedAt})` : ""}. A task waiting its turn is not kept across a restart: this one never started, and must be asked again (delegate_task).`;
+  }
+  if (answerOf(err)?.status === 404) {
+    return `Task ${task.id} on agent ${task.agentId} never started, and Tars no longer has it (${(err as Error).message}). Ask for it again if it still needs doing.`;
+  }
+  if (err === null) {
+    return `Tars could not be reached for ${FAILURE_GRACE_MS / 1000} s while task ${task.id} waited its turn on agent ${task.agentId}: it had not started. `
+      + `A task waiting its turn is not kept if Tars quits or restarts: once Tars answers, follow it with task_status({ taskId: "${task.id}" }), and ask for it again if Tars no longer has it.`;
+  }
+  return null;
+}
+
 /** A delegated task as the ledger keeps it, said for the caller. */
 function taskText(task: TaskView): string {
   if (task.outcome === "queued" || task.outcome === "starting") return queuedText(task);
@@ -422,9 +446,13 @@ async function runOverAcp(
       // Not held open (an older Tars, or a wait answered at once): no hot loop.
       if (Date.now() - askedAt < segment * 500) await new Promise((r) => setTimeout(r, 1000));
     } catch (err) {
+      // A task that had not started: lost with a restart, or no longer queued (notStartedText).
+      const lost = waiting ? notStartedText(waiting, err) : null;
+      if (lost) return problem(lost);
       const now = Date.now();
       if (!failingSince) failingSince = now;
       if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        if (waiting) return problem(`${notStartedText(waiting, null)} (${(err as Error).message})`);
         return problem(`Tars could not be reached while task ${taskId} ran on agent ${id} (${(err as Error).message}). The run may still be working: ${follow}.`);
       }
       await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
@@ -681,7 +709,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "stop_agent",
-    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; the user reads it in the window.",
+    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; the user reads it in the window. Only Tars, the user and the project's orchestrator stop an agent, and an agent may stop itself: a worker calling this on another agent is refused, and asks its orchestrator instead (send_message to \"orchestrator\"), saying why.",
     schema: {
       id: z.string().describe("The agent ID"),
       reason: z.string().min(1).describe("Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"),
@@ -700,7 +728,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "send_message",
-    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent. A worker never orders work from another agent: what a worker sends another worker arrives as a note for information, labelled so, typed in once that agent's turn has ended, never as a task, and never starting an agent that has no session open; steer and restart are refused to it. To get work done by another agent, a worker asks its orchestrator.",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent. A worker never orders work from another agent: what a worker sends another worker arrives as a note for information, labelled so, typed in once that agent's turn has ended, never as a task, and never starting an agent that has no session open; steer and restart are refused to it, as a stop is. To get work done by another agent, or to have it stopped, a worker asks its orchestrator.",
     schema: {
       id: z.string().describe("The agent ID, or \"requester\" for whoever asked you for your current task"),
       message: z.string().optional().describe("The message to send to the agent"),
@@ -773,7 +801,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "remove_agent",
-    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system.",
+    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system. Only Tars, the user and the project's orchestrator remove an agent, and an agent may remove itself: a worker calling this on another agent is refused, and asks its orchestrator instead.",
     schema: {
       id: z.string().describe("The agent ID"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
@@ -843,7 +871,7 @@ const AGENT_TOOLS: Tool[] = [
   // Composite: start, wait, then the output
   tool({
     name: "delegate_task",
-    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately. An agent runs one task at a time and never gets a second session: a task given to an agent already working (another delegation, or a turn in its terminal) waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your timeout ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
+    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately. An agent runs one task at a time and never gets a second session: a task given to an agent already working (another delegation, or a turn in its terminal) waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your timeout ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). A task still waiting its turn is not kept across a restart of Tars: it never started, and this says so, to ask for it again. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
@@ -975,7 +1003,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "task_status",
-    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too: queued behind the agent's work in hand (which task, from whom, since when), running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
+    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too (except a task that was still waiting its turn: a restart drops it before it starts, and it must be asked again): queued behind the agent's work in hand (which task, from whom, since when), running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
     schema: {
       taskId: z.string().optional().describe("The task's id"),
       clientRequestId: z.string().optional().describe("The clientRequestId the delegation was sent with"),

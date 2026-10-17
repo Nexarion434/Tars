@@ -100,7 +100,7 @@ const SITES: Site[] = [
   { file: 'electron/core/reply-target.ts', line: 'const lead = [...fleet.values()].find((a) => … && a.kind !== \'chat\' && a.projectPath === caller.projectPath);', is: 'identity', why: 'R5: the project\'s orchestrator a reply to "orchestrator" falls back to' },
   { file: 'electron/core/reply-target.ts', line: 'if (asker && asker.projectPath === caller.projectPath && (toRequester || …)) {', is: 'powers', why: 'R5: an asker with the orchestrator\'s powers takes a reply to "orchestrator", a chat\'s runner included' },
   { file: 'electron/core/one-task.ts', line: 'return !!caller && !!agent && … && caller.projectPath === agent.projectPath;', is: 'powers', why: 'who may take back a task waiting its turn: an asker with the orchestrator\'s powers in its project' },
-  { file: 'electron/core/one-task.ts', line: "if (caller.kind === 'tars' || caller.agent.id === target.id || …) return null;", is: 'powers', why: 'a worker never orders work from another agent: who hands an agent work' },
+  { file: 'electron/core/one-task.ts', line: "return caller.kind === 'tars' || caller.agent.id === target.id || …;", is: 'powers', why: 'a worker never orders work from another agent, nor stops one: who hands an agent work and stops it' },
   { file: 'electron/core/one-task.ts', line: 'return caller.requestedBy?.agentId === target.id || (… && target.projectPath === caller.projectPath);', is: 'powers', why: 'a worker writing to whoever leads it reports: not a note' },
   { file: 'electron/core/task-cancel.ts', line: '} else if (caller && … && caller.kind !== \'chat\' && caller.projectPath === worker.projectPath) {', is: 'identity', why: 'R6: the project\'s persistent orchestrator may cancel any chat\'s task, with a reason' },
 

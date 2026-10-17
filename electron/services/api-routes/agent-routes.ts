@@ -48,7 +48,7 @@ import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/age
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
-import { oneTaskQueue, workerOrderRefusal, isReportTo, noteFrom, behindText, type Busy } from '../../core/one-task';
+import { oneTaskQueue, workerOrderRefusal, workerStopRefusal, isReportTo, noteFrom, behindText, unknownTaskText, type Busy } from '../../core/one-task';
 import { chatIdentityOf, chatOfAsker, orchestratorMoved } from '../../core/chat-identity';
 
 /**
@@ -790,6 +790,23 @@ function mayHandWork(req: RouteRequest, agent: AgentStatus, sendJson: SendJson):
 }
 
 /**
+ * Stopping is reserved as handing work is (core/one-task.ts): the routes that
+ * end, restart or remove an agent's CLI ask this after the cross-project
+ * guard, and a worker is refused, told to ask its orchestrator.
+ */
+function mayStop(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
+  if (req.internal) return true;
+  const callerId = resolveCallerId(req);
+  const caller = callerId ? agents.get(callerId) : undefined;
+  // The cross-project guard, asked first, has refused a caller with no agent behind it.
+  if (!caller) return true;
+  const refusal = workerStopRefusal({ kind: 'agent', agent: caller }, agent);
+  if (!refusal) return true;
+  sendJson({ error: refusal, code: 'worker_may_not_stop' }, 403);
+  return false;
+}
+
+/**
  * The worker this call comes from when what it sends another agent is a note,
  * not a report to whoever leads it (core/one-task.ts, isReportTo).
  */
@@ -840,7 +857,7 @@ function busyText(agent: AgentStatus, ref?: string): string {
  */
 async function waitTurn(agent: AgentStatus, ref: string): Promise<boolean> {
   for (;;) {
-    if (!agents.has(agent.id)) { oneTaskQueue.cancel(ref); return false; }
+    if (!agents.has(agent.id)) { oneTaskQueue.cancel(ref, 'its agent was removed'); return false; }
     if (!oneTaskQueue.find(ref)) return false;
     if (oneTaskQueue.takeTurn(agent.id, ref, terminalTurn(agent))) return true;
     await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
@@ -1656,10 +1673,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
     // A worker never orders work (core/one-task.ts): a task (start_agent,
-    // delegate_task typed in), a steer or a restart from a worker is refused;
-    // anything else it sends another worker is a note, labelled so and typed
-    // in once that agent's turn is over. Its report to whoever leads it is not.
-    if ((intent === 'task' || askedMode === 'steer' || askedMode === 'restart') && !mayHandWork(req, agent, sendJson)) return;
+    // delegate_task typed in) or a steer from a worker is refused, and a
+    // restart, which stops the agent, is refused as a stop; anything else it
+    // sends another worker is a note, labelled so and typed in once that
+    // agent's turn is over. Its report to whoever leads it is not.
+    if (askedMode === 'restart' ? !mayStop(req, agent, sendJson) : (intent === 'task' || askedMode === 'steer') && !mayHandWork(req, agent, sendJson)) return;
     const noteBy = noteSender(req, agent);
     const message = noteBy ? noteFrom(noteBy.name || noteBy.id, asSent) : asSent;
     const mode: SendMode = noteBy ? 'queue' : askedMode;
@@ -1938,7 +1956,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     let found = id ? liveTaskLedger()?.task(queued?.state === 'started' ? queued.taskId : id) : undefined;
     if (!found || (callerId && callerId !== found.requesterAgentId && callerId !== found.agentId)) {
-      sendJson({ error: 'No such task.' }, 404);
+      // An id of the queue's shape: a task that waited its turn in another run of Tars.
+      sendJson({ error: /^t-[0-9a-f]{8}$/.test(id) ? unknownTaskText(oneTaskQueue.since) : 'No such task.' }, 404);
       return;
     }
     let timedOut = false;
@@ -1976,6 +1995,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
     if (!mayActIn(req, driver, agent.projectPath, `agent "${agent.name || agent.id}" belongs to project ${agent.projectPath}`, sendJson)) return;
+    if (!mayStop(req, agent, sendJson)) return;
     const reason = stopReasonOf((req.body as { reason?: unknown } | undefined)?.reason);
     if (!reason) {
       sendJson({ error: 'A reason is required: say in one line why this agent is stopped. It is kept with the agent and shown in the window.' }, 400);
@@ -2116,6 +2136,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
+    if (!mayStop(req, agent, sendJson)) return;
     await stopAcpRuns(agent.id, 'the agent was deleted');
     dropPermissionAsks(agent.id);
 

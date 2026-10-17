@@ -17,9 +17,13 @@ import { envelopeValue } from '../utils/envelope-value';
  *    (the project's orchestrator, a chat's runner) or the agent itself hand an
  *    agent work. A worker is refused, and told to ask its orchestrator; what
  *    it sends another worker arrives as a note, once that agent's turn ends.
+ *    Stopping, restarting or removing an agent is reserved to the same
+ *    callers (the maintainer's decision of the same day).
  *
  * In memory: a queued task has not started, and a quit of Tars drops it as it
- * drops the request that asked for it.
+ * drops the request that asked for it. Whoever follows it by its id after a
+ * restart is told so (unknownTaskText); keeping the queue across a restart is
+ * a later change.
  */
 
 /** What an agent is busy with: a run over ACP (queued first or not), or a turn in its terminal. */
@@ -47,6 +51,8 @@ type Taken = { task: QueuedTask; taskId?: string; error?: string };
 type FleetMember = { id: string; role?: string; kind?: string; projectPath?: string };
 
 export interface OneTaskQueue {
+  /** When this queue began, with this run of Tars: a task queued before it is gone. */
+  readonly since: number;
   /** A run is on the agent from now: the check and the mark are one step for a queued task (takeTurn). */
   runStarted(agentId: string, run: Omit<Busy, 'kind'>): void;
   /** The ledger named the run's task. */
@@ -77,13 +83,14 @@ export interface OneTaskQueue {
   notStarted(ref: string, error: string): void;
   queued(agentId: string): QueuedTask[];
   mayCancel(ref: string, callerId: string | undefined, fleet: ReadonlyMap<string, FleetMember>): boolean;
-  cancel(ref: string): QueuedTask | undefined;
+  /** Out of the line, never to start: still known by its ref, as failed with `why`, to whoever follows it. */
+  cancel(ref: string, why?: string): QueuedTask | undefined;
 }
 
-/** How many started tasks are remembered by their ref, for a caller that follows one late. */
+/** How many tasks that left the line are remembered by their ref, for a caller that follows one late. */
 const STARTED_KEPT = 200;
 
-export function createOneTaskQueue(): OneTaskQueue {
+export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
   const runs = new Map<string, Busy>();
   const lines = new Map<string, QueuedTask[]>();
   const taken = new Map<string, Taken>();
@@ -100,7 +107,12 @@ export function createOneTaskQueue(): OneTaskQueue {
     }
     return undefined;
   };
+  const remember = (ref: string, was: Taken) => {
+    taken.set(ref, was);
+    while (taken.size > STARTED_KEPT) taken.delete(taken.keys().next().value as string);
+  };
   return {
+    since,
     runStarted(agentId, run) {
       runs.set(agentId, { kind: 'run', ...run });
     },
@@ -132,8 +144,7 @@ export function createOneTaskQueue(): OneTaskQueue {
       if (line[0]?.ref !== ref || runs.has(agentId) || turn) return false;
       const task = line[0];
       leave(task);
-      taken.set(ref, { task });
-      while (taken.size > STARTED_KEPT) taken.delete(taken.keys().next().value as string);
+      remember(ref, { task });
       runs.set(agentId, { kind: 'run', taskRef: ref, ...(task.requesterId ? { requesterId: task.requesterId } : {}), since: now });
       return true;
     },
@@ -162,9 +173,11 @@ export function createOneTaskQueue(): OneTaskQueue {
       const agent = fleet.get(task.agentId);
       return !!caller && !!agent && hasOrchestratorPowers(caller) && caller.projectPath === agent.projectPath;
     },
-    cancel(ref) {
+    cancel(ref, why = 'it was cancelled') {
       const task = find(ref);
-      if (task) leave(task);
+      if (!task) return undefined;
+      leave(task);
+      remember(ref, { task, error: why });
       return task;
     },
   };
@@ -182,16 +195,43 @@ export function behindText(busy: Busy, nameOf: (id: string) => string | undefine
 /** The caller as the drive routes resolve it (agent-routes.ts, resolveDriver). */
 export type WorkCaller = { kind: 'tars' } | { kind: 'agent'; agent: { id: string; name?: string; role?: string; kind?: string } };
 
+/** Who hands `target` work, and stops it: Tars, an agent with an orchestrator's powers, or the agent itself. */
+function leads(caller: WorkCaller, target: { id: string }): boolean {
+  return caller.kind === 'tars' || caller.agent.id === target.id || hasOrchestratorPowers(caller.agent);
+}
+
 /**
  * Null when this caller may hand `target` work: Tars, an agent with an
  * orchestrator's powers, or the agent itself. Else the refusal a worker reads.
  */
 export function workerOrderRefusal(caller: WorkCaller, target: { id: string; name?: string }): string | null {
-  if (caller.kind === 'tars' || caller.agent.id === target.id || hasOrchestratorPowers(caller.agent)) return null;
+  if (leads(caller, target)) return null;
   const name = envelopeValue(target.name || target.id);
   return `A worker does not hand work to another agent: only Tars, the user's window and your project's orchestrator start ${name} `
     + `or give it a task. Ask your orchestrator for it (send_message to "orchestrator"), or send ${name} a note for information `
     + `with send_message: it reads it once its turn has ended, and it is not a task.`;
+}
+
+/**
+ * Null when this caller may stop, restart or remove `target` (its CLI ended,
+ * started again, or the agent deleted): the callers that hand it work. Else
+ * the refusal a worker reads.
+ */
+export function workerStopRefusal(caller: WorkCaller, target: { id: string; name?: string }): string | null {
+  if (leads(caller, target)) return null;
+  const name = envelopeValue(target.name || target.id);
+  return `A worker does not stop, restart or remove another agent: only Tars, the user's window and your project's orchestrator do. `
+    + `Ask your orchestrator to stop ${name} (send_message to "orchestrator"), and say why.`;
+}
+
+/**
+ * What a follower of a task id this run of Tars does not know is told. A task
+ * still waiting its turn when Tars quit was in this queue's memory only: gone,
+ * and never started.
+ */
+export function unknownTaskText(since: number): string {
+  return `No such task. This Tars started at ${new Date(since).toISOString()} and keeps no task that was still waiting its turn `
+    + 'before a restart: such a task never started, and must be asked again.';
 }
 
 /**
