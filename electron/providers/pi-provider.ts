@@ -44,8 +44,9 @@ export class PiProvider implements CLIProvider {
 
     // A delegated task arrives as params.prompt. Dropping it launched a bare
     // TUI and reported success while the task went nowhere.
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // No task, no prompt: the skills line alone was a turn nobody asked for.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
     if (finalPrompt) {
