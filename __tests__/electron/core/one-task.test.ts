@@ -241,7 +241,8 @@ describe('a task queued before Tars restarted', () => {
   it('15. the queue says since when it holds what it holds, and an id it does not know is told what became of one queued before', () => {
     const q = createOneTaskQueue(T0);
     expect(q.since).toBe(T0);
-    expect(createOneTaskQueue().since, 'now, by default').toBeGreaterThan(T0);
+    const before = Date.now();
+    expect(createOneTaskQueue().since, 'now, by default').toBeGreaterThanOrEqual(before);
     const text = unknownTaskText(q.since);
     expect(text).toMatch(/^No such task\./);
     expect(text).toContain('2026-10-18T01:00:00.000Z');
