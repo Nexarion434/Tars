@@ -37,14 +37,30 @@
  *     queue: between its turn and the ledger naming its run, after it started,
  *     or when its run failed before starting, which would leave it waiting
  *     for a task that never comes.
+ *
+ * Added with the maintainer's decision of the same day that stopping an agent
+ * is reserved like ordering work, before the code:
+ * 13. A worker stops, restarts or removes another agent; or the refusal does
+ *     not tell it to ask its orchestrator, or reads as the refusal of a task.
+ * 14. The orchestrator, a chat's runner, Tars's own pass, or the agent itself
+ *     are refused a stop.
+ * 15. A task queued before Tars restarted, followed by its id, is answered as
+ *     if the id were wrong: the queue does not say since when it holds what
+ *     it holds, so nothing can tell its asker the task was lost with the
+ *     restart, never started, and must be asked again.
+ * 16. A task taken out of the queue (cancelled, or its agent removed) is no
+ *     longer known by its id: its asker, following it between two waits, is
+ *     told there is no such task, or that a restart lost it.
  */
 import { describe, it, expect } from 'vitest';
 import {
   createOneTaskQueue,
   workerOrderRefusal,
+  workerStopRefusal,
   noteFrom,
   isReportTo,
   behindText,
+  unknownTaskText,
   type Busy,
 } from '../../../electron/core/one-task';
 
@@ -197,5 +213,57 @@ describe('a worker never orders work from another agent', () => {
     expect(note).toContain('the PR is ready');
     const label = note.slice(0, note.indexOf('the PR is ready'));
     expect(label.split('\n').length, 'the label is one line').toBe(1);
+  });
+});
+
+describe('a worker never stops another agent', () => {
+  const worker = { kind: 'agent' as const, agent: { id: 'w1', name: 'Backend', role: 'worker' } };
+
+  it('13. a worker is refused a stop, a restart or a removal, and told to ask its orchestrator', () => {
+    const refusal = workerStopRefusal(worker, { id: 'qa', name: 'QA' });
+    expect(refusal).toBeTruthy();
+    expect(refusal).toContain('Ask your orchestrator');
+    expect(refusal).toContain('send_message');
+    expect(refusal).toContain('"QA"');
+    expect(refusal).toMatch(/does not stop, restart or remove/);
+    expect(refusal, 'the refusal of a task').not.toBe(workerOrderRefusal(worker, { id: 'qa', name: 'QA' }));
+  });
+
+  it("14. the orchestrator, a chat's runner, Tars's own pass and the agent itself are not", () => {
+    expect(workerStopRefusal({ kind: 'agent', agent: { id: 'o', role: 'orchestrator' } }, { id: 'qa' })).toBeNull();
+    expect(workerStopRefusal({ kind: 'agent', agent: { id: 'c', role: 'worker', kind: 'chat' } }, { id: 'qa' })).toBeNull();
+    expect(workerStopRefusal({ kind: 'tars' }, { id: 'qa' })).toBeNull();
+    expect(workerStopRefusal(worker, { id: 'w1' }), 'itself').toBeNull();
+  });
+});
+
+describe('a task queued before Tars restarted', () => {
+  it('15. the queue says since when it holds what it holds, and an id it does not know is told what became of one queued before', () => {
+    const q = createOneTaskQueue(T0);
+    expect(q.since).toBe(T0);
+    expect(createOneTaskQueue().since, 'now, by default').toBeGreaterThan(T0);
+    const text = unknownTaskText(q.since);
+    expect(text).toMatch(/^No such task\./);
+    expect(text).toContain('2026-10-18T01:00:00.000Z');
+    expect(text).toContain('restart');
+    expect(text).toContain('never started');
+    expect(text).toContain('asked again');
+  });
+});
+
+describe('a task taken out of the queue', () => {
+  it('16. is still known by its id, as never started, with why', () => {
+    const q = createOneTaskQueue(T0);
+    q.runStarted('a', { since: T0 });
+    const one = q.enqueue('a', { requesterId: 'lead', title: 'one' }, T0);
+    const two = q.enqueue('a', { requesterId: 'lead', title: 'two' }, T0);
+    q.cancel(one.ref);
+    q.cancel(two.ref, 'its agent was removed');
+    expect(q.lookup(one.ref)).toMatchObject({ state: 'failed', task: { ref: one.ref }, error: 'it was cancelled' });
+    expect(q.lookup(two.ref)).toMatchObject({ state: 'failed', error: 'its agent was removed' });
+    expect(q.find(one.ref), 'no longer queued').toBeUndefined();
+    expect(q.mayCancel(one.ref, 'lead', new Map()), 'nor cancelled twice').toBe(false);
+    q.runEnded('a');
+    expect(q.takeTurn('a', one.ref, undefined), 'nor run').toBe(false);
   });
 });
