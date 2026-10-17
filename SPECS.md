@@ -374,6 +374,8 @@ Every prompt is prefixed with an identity header, because agents that don't know
  of your results: an orchestrator reads your final message.]
 ```
 
+Every agent also learns how Tars works from Tars (2.0.4). `electron/services/agent-guide.ts` is the one source: short topics (delegation and following a long run, messages and their modes, held and refused messages, the kanban, the project folder, asking the user, memory and the vault, the X tools, limits) and the topic of every tool the bundled MCP servers register. From it, `agentGuideSection(agent)` writes a section of at most 15 lines, `## How Tars works`, for the agent's role (an orchestrator, or a chat's runner, gets delegation, `task_status` and `ask_user`; a worker gets its requester and claiming and finishing kanban tasks), with the absolute path of its project's folder (`~/.dorothy/project-files/<name>-<hash>`, `electron/utils/project-files.ts`) and a pointer to `tars_guide`. Every session carries it: a claude terminal in its bootstrap (below), a CLI without Claude's SessionStart hook in the prompt `spawnAgentSession` builds, and a run over ACP in its prompt (`delegateOverAcp`). The `tars_guide` tool of mcp-orchestrator reads `GET /api/guide`: no topic, the list; a topic, its text, stamped with the Tars version. `__tests__/electron/services/agent-guide.test.ts` fails when a server registers a tool the guide has no topic for, or the guide names a tool no server has.
+
 ### Session ownership
 
 The contract is documented at the head of `electron/services/api-routes/hooks-routes.ts` and enforced in three places:
@@ -618,7 +620,7 @@ Memory is context, not a precondition. Any failure (a slow gateway, an unreadabl
 `hooks/session-start.sh` runs on every fresh Claude session and does three things in order:
 
 1. Registers the session id (`POST /api/hooks/status` with `source`), retrying once after 1 s: a lost registration would make the stale-session guard ignore every later post from that session.
-2. `GET /api/agents/:id/bootstrap`: identity, worktree, saved role prompt, the project's team roster with each teammate's status/branch/skills, and orchestration or working rules. This is what makes the "who am I / who is my team" handshake automatic instead of a ritual at the start of every session.
+2. `GET /api/agents/:id/bootstrap`: identity, worktree, saved role prompt, the project's team roster with each teammate's status/branch/skills, orchestration or working rules, and the `## How Tars works` section with the project's folder. This is what makes the "who am I / who is my team" handshake automatic instead of a ritual at the start of every session.
 3. `GET /api/memory/context?project_path=…` for the digest.
 
 Both are concatenated and returned as `hookSpecificOutput.additionalContext`. The API token is read from `~/.dorothy/api-token` and passed via `-H @<(printf …)` so it never appears in the process list.

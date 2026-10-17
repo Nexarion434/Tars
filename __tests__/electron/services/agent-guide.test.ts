@@ -133,6 +133,6 @@ describe('tars_guide answers', () => {
       ...identitySection('orchestrator', '/f').concat(identitySection('worker', null)),
       guideIndex('2.0.4'),
     ].join('\n');
-    expect(all).not.toMatch(/[–—]/);
+    expect(all).not.toMatch(/[\u2013\u2014]/);
   });
 });
