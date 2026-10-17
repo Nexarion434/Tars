@@ -465,9 +465,13 @@ function moveLocalKanbanToHermes() {
  * Tars's Hermes session, asked every half hour (services/hermes-session-watch.ts):
  * each check is a signed-in request, which keeps the session renewed, and finds it
  * when the gateway ended it. Only for a gateway a connection file names: none is
- * asked for a sandbox or a test home with no file.
+ * asked for a sandbox or a test home with no file. A test run may ask for a
+ * shorter period (DOROTHY_HERMES_SESSION_EVERY_MS, under DOROTHY_E2E only).
  */
-const HERMES_SESSION_EVERY_MS = 30 * 60_000;
+function hermesSessionEveryMs(): number {
+  const asked = Number(process.env.DOROTHY_HERMES_SESSION_EVERY_MS);
+  return process.env.DOROTHY_E2E === '1' && Number.isFinite(asked) && asked >= 200 ? asked : 30 * 60_000;
+}
 
 function startHermesSessionWatch() {
   const watch = createHermesSessionWatch({
@@ -477,7 +481,7 @@ function startHermesSessionWatch() {
       const p = await probeHermes(configured.conn);
       return { configured: true, reachable: p.reachable, authRequired: p.authRequired, signedIn: p.signedIn, version: p.version };
     },
-    everyMs: HERMES_SESSION_EVERY_MS,
+    everyMs: hermesSessionEveryMs(),
     onChange: state => broadcastToAllWindows('hermes:session:state', state),
   });
   setHermesSessionWatch(watch);
