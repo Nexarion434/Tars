@@ -6,7 +6,7 @@ import { BOX_H, BOX_W, fitZoom, keepAnchor, layoutRings, ringOrder, stageBox, zo
 import type { Point, StageBox } from '@/lib/graph-layout';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
-import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
+import { BrandSpinner, Button, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import type { StatusTone } from '@/components/ui';
 import { readClaudeData } from '@/hooks/useClaude';
 
@@ -21,6 +21,7 @@ interface NodeMeta {
   command?: string;      // for mcp nodes
   args?: string;         // for mcp nodes
   editable?: boolean;    // whether the panel allows editing
+  files?: Array<{ name: string; path: string; isEntrypoint?: boolean }>; // for projects - their memory files
 }
 
 interface GraphNode {
@@ -158,14 +159,18 @@ function buildGraph(
     : agents;
 
   // ── Project nodes (the middle of the diagram) ──
+  // A project's memory files are its one box (JeanBrasse, 18/10): one box per
+  // file made 997 boxes of fifty agents' memory, the graph a sixth of 1 %
+  // readable. A click on the project lists them, and each opens from there.
   for (const projectPath of [...new Set(relevantAgents.map(a => a.projectPath).filter(Boolean))]) {
     const memory = findMemory(memories, projectPath);
-    const fileCount = memory?.hasMemory ? memory.files?.length ?? 0 : 0;
+    const files = memory?.hasMemory ? memory.files ?? [] : [];
     addNode({
       id: `project:${projectPath}`,
       label: memory?.projectName || pathName(projectPath) || projectPath,
       kind: 'project',
-      sub: `${fileCount} memory file${fileCount === 1 ? '' : 's'}`,
+      sub: memoryFiles(files.length),
+      meta: { files: files.map(f => ({ name: f.name, path: f.path, isEntrypoint: f.isEntrypoint })) },
     });
   }
 
@@ -194,22 +199,6 @@ function buildGraph(
       addEdge(agent.id, skillId);
     }
 
-    // ── Memory files (MEMORY.md etc.) for this agent's project ──
-    const agentMemory = findMemory(memories, agent.projectPath ?? '');
-
-    if (agentMemory?.hasMemory && agentMemory.files?.length) {
-      agentMemory.files.forEach(file => {
-        const memId = `mem:${file.path}`;
-        if (!added.has(memId)) {
-          addNode({
-            id: memId, label: file.name, kind: 'memory', sub: KIND_SUB.memory,
-            meta: { filePath: file.path, editable: true },
-          });
-        }
-        addEdge(agent.id, memId);
-      });
-    }
-    // No fallback node - if there's no memory file, don't show one
   });
 
   // ── Instruction files (CLAUDE.md) ──
@@ -327,6 +316,8 @@ export default function AgentKnowledgeGraph() {
   // ── Side panel state ──
 
   const [panelNode, setPanelNode] = useState<GraphNode | null>(null);
+  /** The project whose memory files the panel lists, or whose file it shows: its way back to the list. */
+  const [panelProject, setPanelProject] = useState<GraphNode | null>(null);
   const [panelContent, setPanelContent] = useState('');
   const [panelDraft, setPanelDraft] = useState('');
   const [panelLoading, setPanelLoading] = useState(false);
@@ -521,9 +512,18 @@ export default function AgentKnowledgeGraph() {
   const handleNodeClick = useCallback((node: GraphNode) => {
     if (node.kind === 'agent') {
       setSelectedAgentId(prev => (prev === node.id ? null : node.id));
-    } else if (node.kind !== 'project') {
+    } else if (node.kind === 'project') {
+      setPanelProject(node);
+      setPanelNode(node);
+    } else {
+      setPanelProject(null);
       openPanel(node);
     }
+  }, [openPanel]);
+
+  /** A memory file of the project listed, opened in the panel as a file box opened before 2.0.4. */
+  const openMemoryFile = useCallback((file: { name: string; path: string }) => {
+    openPanel({ id: `mem:${file.path}`, label: file.name, kind: 'memory', sub: KIND_SUB.memory, meta: { filePath: file.path, editable: true } });
   }, [openPanel]);
 
   // The canvas's size, before the first paint and whenever it changes: the
@@ -798,14 +798,29 @@ export default function AgentKnowledgeGraph() {
                 </Button>
               </>
             )}
-            <Button size="sm" className="font-mono" onClick={() => setPanelNode(null)}>
+            <Button size="sm" className="font-mono" onClick={() => { setPanelNode(null); setPanelProject(null); }}>
               close
             </Button>
           </div>
 
+          {/* The way back to the project's list, on a row of its own: in the
+              header it left the file's name a few letters. */}
+          {panelProject && panelNode !== panelProject && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-border shrink-0">
+              <Button size="sm" className="font-mono" onClick={() => setPanelNode(panelProject)}>
+                files
+              </Button>
+              <span className="text-[11px] text-muted-foreground truncate">
+                {`${memoryFiles(panelProject.meta?.files?.length ?? 0)} of ${panelProject.label}`}
+              </span>
+            </div>
+          )}
+
           {/* Content */}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {panelLoading ? (
+            {panelNode.kind === 'project' ? (
+              <ProjectFiles project={panelNode} onOpen={openMemoryFile} />
+            ) : panelLoading ? (
               <div className="flex items-center justify-center h-full">
                 <BrandSpinner size={30} label="Loading content" />
               </div>
@@ -843,5 +858,42 @@ export default function AgentKnowledgeGraph() {
         </div>
       )}
     </Panel>
+  );
+}
+
+/** How many memory files a project holds, as its box and its list say it. */
+function memoryFiles(count: number): string {
+  return `${count} memory file${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * A project's memory files, listed in the side panel when its box is clicked
+ * (`Brain · Agents · a project's memory files`): the entrypoint first with its
+ * word under it, as the Projects tab lists them, each opening in the panel.
+ */
+function ProjectFiles({ project, onOpen }: { project: GraphNode; onOpen: (file: { name: string; path: string }) => void }) {
+  const files = project.meta?.files ?? [];
+  return (
+    <div className="flex flex-col">
+      <PanelCaption className="px-4 pt-3 pb-1">{memoryFiles(files.length)}</PanelCaption>
+      {files.length === 0 ? (
+        <p className="px-4 py-6 text-xs text-muted-foreground">No memory files yet</p>
+      ) : (
+        <ul aria-label={`Memory files of ${project.label}`} className="px-2 pb-2">
+          {files.map(file => (
+            <li key={file.path}>
+              <button
+                type="button"
+                onClick={() => onOpen(file)}
+                className="w-full text-left px-2 py-1.5 border border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <span className="block text-xs font-mono truncate">{file.name}</span>
+                {file.isEntrypoint && <span className="block text-[10px] text-muted-foreground mt-0.5">entrypoint</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
