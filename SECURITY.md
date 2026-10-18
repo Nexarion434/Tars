@@ -411,6 +411,15 @@ gateway with it and edit or delete any task (the audit's gate of #183). Since
 agent is handed; an agent in bypass, which runs as the user, can still read it
 there (no confinement, JeanBrasse's decision of 2026-09-23).
 
+Nor is the line every task Tars files carries since 2.0.4 ("Tars task: it belongs to Tars's
+agents, ..."): it is a label for whoever opens the task. Hermes's assistant, whose board listing does not
+show a task's description (0.21.5), can still finish, block, unblock or send to review a Tars task,
+and none of that starts anything on a `tars:` lane. What
+keeps Hermes's dispatcher off a Tars task is Hermes's own rules, measured on 0.21.1 and 0.21.5: a
+task parked `scheduled`, or `ready` on a `tars:` lane that is no Hermes profile, is neither
+spawned, promoted nor decomposed. Whoever can move a task on the gateway can still put one where
+Hermes acts.
+
 **The relay to the user's Telegram** (`services/hermes-relay.ts`, on with
 `hermesRelayEnabled`). Who can reply: the tars-relay plugin on the Hermes server
 keeps a message for Tars only from the one user its settings name, in their

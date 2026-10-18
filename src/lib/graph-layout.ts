@@ -22,8 +22,21 @@ const PITCH_X = BOX_W + 28;
 const PITCH_Y = BOX_H + 28;
 /** At least this far from the middle of the outermost box of a ring to the middle of a box of the next. */
 export const RING_GAP = 132;
-/** The room left around the graph when it is fitted to its canvas, on every side. */
+/** The room left beside the graph when it is fitted to its canvas, left and right. */
 export const FIT_MARGIN = 24;
+
+export interface Margins { top: number; right: number; bottom: number; left: number }
+
+/**
+ * The room kept round the graph at fit. Above and below, it is kept clear of
+ * what the canvas draws over the graph: the zoom controls in its top right
+ * corner (8 px down, 36 px tall) and the legend in its bottom left one (12 px
+ * up, two 11 px lines), with 8 px to spare. The bands run the canvas's whole
+ * width, so no box goes under either wherever it sits: with tight bounds and
+ * rings that start at the top, a small graph put boxes in those corners (the
+ * QA's L1 at the gate of #454).
+ */
+export const GRAPH_MARGINS: Margins = { top: 52, right: FIT_MARGIN, bottom: 56, left: FIT_MARGIN };
 /** The zoom goes down to 25 %, or to the fit when the whole graph needs less. */
 export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 2;
@@ -161,14 +174,14 @@ export function layoutRings(rings: string[][]): Layout {
 type Size = { width: number; height: number };
 
 /**
- * The zoom at which the whole graph fits the canvas with FIT_MARGIN on every
- * side, never above 100 %: a small graph is drawn at its size, a large one
- * as large as the canvas takes. Null while the canvas has no room (a tab not
- * shown yet), so the zoom stays as it is.
+ * The zoom at which the whole graph fits the canvas within its margins, never
+ * above 100 %: a small graph is drawn at its size, a large one as large as
+ * the canvas takes. Null while the canvas has no room (a tab not shown yet),
+ * so the zoom stays as it is.
  */
-export function fitZoom(graph: Size, view: Size, margin = FIT_MARGIN): number | null {
-  const roomW = view.width - 2 * margin;
-  const roomH = view.height - 2 * margin;
+export function fitZoom(graph: Size, view: Size, margins: Margins = GRAPH_MARGINS): number | null {
+  const roomW = view.width - margins.left - margins.right;
+  const roomH = view.height - margins.top - margins.bottom;
   if (!(roomW > 0 && roomH > 0)) return null;
   if (!(graph.width > 0 && graph.height > 0)) return 1;
   return Math.min(1, roomW / graph.width, roomH / graph.height);
@@ -182,17 +195,22 @@ export function zoomBounds(fit: number | null): { min: number; max: number } {
 export interface StageBox { width: number; height: number; left: number; top: number }
 
 /**
- * What the canvas scrolls over at a zoom: the graph and FIT_MARGIN around it,
- * at least the canvas itself, and where the graph's corner sits on it. A
- * graph smaller than the canvas is centred; a larger one starts at the margin,
- * never at a negative offset, so its left and top can be scrolled to.
+ * What the canvas scrolls over at a zoom: the graph and its margins, at least
+ * the canvas itself, and where the graph's corner sits on it. A graph smaller
+ * than the canvas is centred between its margins; a larger one starts at
+ * them, never at a negative offset, so its left and top can be scrolled to.
  */
-export function stageBox(graph: Size, view: Size, zoom: number, margin = FIT_MARGIN): StageBox {
+export function stageBox(graph: Size, view: Size, zoom: number, margins: Margins = GRAPH_MARGINS): StageBox {
   const w = graph.width * zoom;
   const h = graph.height * zoom;
-  const width = Math.max(view.width, w + 2 * margin);
-  const height = Math.max(view.height, h + 2 * margin);
-  return { width, height, left: (width - w) / 2, top: (height - h) / 2 };
+  const width = Math.max(view.width, w + margins.left + margins.right);
+  const height = Math.max(view.height, h + margins.top + margins.bottom);
+  return {
+    width,
+    height,
+    left: margins.left + (width - margins.left - margins.right - w) / 2,
+    top: margins.top + (height - margins.top - margins.bottom - h) / 2,
+  };
 }
 
 /**
