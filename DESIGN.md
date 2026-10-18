@@ -406,9 +406,10 @@ underline and no bar.
 `col header states`): the column's name in the header's 10px capitals on a
 26px button that overhangs its column by its own 6px padding, so the name stays
 in line with the values under it. Sorted, it is the selected cell's box,
-`surface-raised` and `border-strong`, with a 12px lucide `arrow-down` (highest
-first) or `arrow-up` (lowest first), before the name over a column of figures
-and after it over a column of words. Not sorted, no box, and the name lifts to
+`surface-raised` and `border-strong`, with a 12px lucide `arrow-down` (figures
+highest first, words Z to A) or `arrow-up` (figures lowest first, words A to Z,
+which a word column's first click gives), before the name over a column of
+figures and after it over a column of words. Not sorted, no box, and the name lifts to
 `text-primary` on hover. The `th` says `aria-sort`; the focus ring is the
 global one.
 
