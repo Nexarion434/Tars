@@ -139,8 +139,9 @@ export function settingsForWindow<T extends Partial<AppSettings>>(settings: T): 
 /**
  * A save from the window, merged into the settings the app holds. The window
  * holds no secret, so a field it leaves out, sends empty, or sends back as the
- * mask it was shown, keeps the key; a key typed in a page reaches it. Clearing one is secrets:set's (setSecret). The CLIs' keys
- * only ever change through cliKeys:set.
+ * mask it was shown, keeps the key; a key typed in a page reaches it.
+ * Clearing one is secrets:set's (setSecret). The CLIs' keys only ever change
+ * through cliKeys:set.
  */
 export function keepSecrets(current: AppSettings, incoming: Partial<AppSettings>): AppSettings {
   // What app:getSettings added: never saved.
