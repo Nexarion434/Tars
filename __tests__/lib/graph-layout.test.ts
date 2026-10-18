@@ -48,6 +48,11 @@ import {
  *     centred while it is smaller;
  * 11. a zoom at the pointer or at the middle moving the point under it, or
  *     scrolling past the stage's ends;
+ * 13. the canvas's overlays: at fit, a box under the zoom controls in the top
+ *     right corner or under the legend in the bottom left one, its name half
+ *     hidden and a click on it landing on the controls: the bands start at
+ *     the top and the bounds are tight, so a few boxes sit in the corners (the
+ *     QA's L1 of #454: 422 fits where main had none);
  * 12. the order round each ring: agents listed as they came rather than by
  *     their project's place in the middle, so a project's agents scatter round
  *     the ring and its edges cross the graph; a file or a tool not next to the
@@ -221,16 +226,17 @@ describe('the fit (8)', () => {
     expect(fitZoom({ width: 400, height: 300 }, { width: 1100, height: 700 })).toBe(1);
   });
 
-  it('scales a larger graph to the canvas less its margin, on the tighter side', () => {
+  it('scales a larger graph to the canvas less its margins, on the tighter side: 52 px kept above, 56 below', () => {
     const zoom = fitZoom({ width: 5_000, height: 4_000 }, { width: 1_100, height: 700 })!;
-    expect(zoom).toBeCloseTo((700 - 2 * FIT_MARGIN) / 4_000, 10);
+    expect(zoom).toBeCloseTo((700 - 52 - 56) / 4_000, 10);
     expect(5_000 * zoom + 2 * FIT_MARGIN).toBeLessThanOrEqual(1_100);
-    expect(4_000 * zoom + 2 * FIT_MARGIN).toBeLessThanOrEqual(700 + 1e-9);
+    expect(4_000 * zoom + 52 + 56).toBeLessThanOrEqual(700 + 1e-9);
   });
 
   it('gives no zoom while the canvas has no room, and 100 % for no graph', () => {
     expect(fitZoom({ width: 500, height: 500 }, { width: 0, height: 0 })).toBeNull();
     expect(fitZoom({ width: 500, height: 500 }, { width: 2 * FIT_MARGIN, height: 600 })).toBeNull();
+    expect(fitZoom({ width: 500, height: 500 }, { width: 900, height: 52 + 56 })).toBeNull();
     expect(fitZoom({ width: 0, height: 0 }, { width: 900, height: 600 })).toBe(1);
   });
 });
@@ -246,16 +252,16 @@ describe('the zoom range (9)', () => {
 });
 
 describe('the stage (10)', () => {
-  it('centres a graph smaller than the canvas', () => {
-    expect(stageBox({ width: 400, height: 200 }, { width: 1_000, height: 600 }, 1)).toEqual({ width: 1_000, height: 600, left: 300, top: 200 });
+  it('centres a graph smaller than the canvas between its margins', () => {
+    expect(stageBox({ width: 400, height: 200 }, { width: 1_000, height: 600 }, 1)).toEqual({ width: 1_000, height: 600, left: 300, top: 52 + (600 - 108 - 200) / 2 });
   });
 
-  it('keeps the margin on every side of a graph larger than the canvas, never a negative offset', () => {
+  it('keeps the margins round a graph larger than the canvas, never a negative offset', () => {
     expect(stageBox({ width: 3_000, height: 2_000 }, { width: 1_000, height: 600 }, 1)).toEqual({
-      width: 3_000 + 2 * FIT_MARGIN, height: 2_000 + 2 * FIT_MARGIN, left: FIT_MARGIN, top: FIT_MARGIN,
+      width: 3_000 + 2 * FIT_MARGIN, height: 2_000 + 52 + 56, left: FIT_MARGIN, top: 52,
     });
     expect(stageBox({ width: 3_000, height: 200 }, { width: 1_000, height: 600 }, 0.5)).toEqual({
-      width: 1_500 + 2 * FIT_MARGIN, height: 600, left: FIT_MARGIN, top: 250,
+      width: 1_500 + 2 * FIT_MARGIN, height: 600, left: FIT_MARGIN, top: 52 + (600 - 108 - 100) / 2,
     });
   });
 });
@@ -335,5 +341,55 @@ describe('the order round each ring (12)', () => {
     const rings = ringOrder(many, links);
     expect(performance.now() - started).toBeLessThan(500);
     expect(rings[2]).toHaveLength(1005);
+  });
+});
+
+describe('clear of the canvas\'s overlays at fit (13)', () => {
+  // As AgentKnowledgeGraph draws them: the zoom controls 8 px from the top right
+  // corner, 170 x 36; the legend's two 11 px lines 12 px from the bottom left one.
+  const underOverlays = (rings: string[][], view: { width: number; height: number }): string[] => {
+    const layout = layoutRings(rings);
+    const zoom = fitZoom(layout, view);
+    if (zoom === null) return [];
+    const box = stageBox(layout, view, zoom);
+    const overlays: Array<[string, { l: number; t: number; r: number; b: number }]> = [
+      ['the zoom controls', { l: view.width - 8 - 170, t: 8, r: view.width - 8, b: 8 + 36 }],
+      ['the legend', { l: 12, t: view.height - 12 - 36, r: 12 + 210, b: view.height - 12 }],
+    ];
+    const hits: string[] = [];
+    for (const [id, p] of layout.positions) {
+      const l = box.left + (p.x - BOX_W / 2) * zoom;
+      const t = box.top + (p.y - BOX_H / 2) * zoom;
+      const r = l + BOX_W * zoom;
+      const b = t + BOX_H * zoom;
+      for (const [name, o] of overlays) {
+        if (l < o.r && r > o.l && t < o.b && b > o.t) hits.push(`${id} under ${name} in ${view.width}x${view.height}`);
+      }
+    }
+    return hits;
+  };
+  // The canvas at 1440x900 and 1180x760 in the classic shell and in the new
+  // interface's card, and narrow, tall and wide ones.
+  const VIEWS = [[1172, 757], [912, 617], [1024, 589], [765, 449], [520, 800], [1600, 1000]].map(([width, height]) => ({ width, height }));
+
+  it('keeps every box of the QA\'s small fleet clear of both: one project, three agents, its CLAUDE.md, two servers', () => {
+    const rings = [['project'], names('agent', 3), ['claude-md'], names('server', 2)];
+    expect(VIEWS.flatMap(view => underOverlays(rings, view))).toEqual([]);
+  });
+
+  it('keeps every box clear of both for small and large graphs in every canvas', () => {
+    const hits: string[] = [];
+    for (const projects of [1, 2, 3]) {
+      for (const agents of [1, 2, 3, 4, 6, 8, 12, 50]) {
+        for (const files of [0, 1, 5, 40]) {
+          for (const tools of [0, 2, 5]) {
+            const rings = [names('project', projects), names('agent', agents), names('file', files), names('tool', tools)];
+            for (const view of VIEWS) hits.push(...underOverlays(rings, view));
+          }
+        }
+      }
+    }
+    hits.push(...VIEWS.flatMap(view => underOverlays(FLEET, view)));
+    expect(hits.slice(0, 5), `${hits.length} boxes under an overlay`).toEqual([]);
   });
 });

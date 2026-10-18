@@ -50,10 +50,11 @@ import type { TaskEntry } from '../../src/types/electron';
  *     (lowest first, or no sort) rather than starting at highest first;
  * 11. a column's order: the tasks compared as text (9 before 10), a time, a
  *     count of tokens or a cost compared as it is written (`1 h 05` before
- *     `29 min`, `$10.00` before `$9.00`) rather than by its value; a project
- *     compared by its whole path rather than the folder's name the row shows,
- *     or by case (`Zeta` before `alpha`); a provider by one the row does not
- *     show first;
+ *     `29 min`, `$10.00` before `$9.00`, `$1.5` before `$1.25`) rather than by
+ *     its value; a project compared by its whole path rather than the
+ *     folder's name the row shows, or by case (`Zeta` before `alpha`, `Tars`
+ *     apart from `tars`); the figures in a name read as letters (`account 10`
+ *     before `account 2`); a provider by one the row does not show first;
  * 12. a value the row does not have (no time, no tokens, nothing counted, no
  *     project) sorts first one way, as 0 or as -1, rather than last both ways;
  * 13. rows of equal value come in an order of their own, or reversed with the
@@ -292,6 +293,24 @@ describe('a column\'s order (11)', () => {
     ];
     expect(ids(sortAgentRows(rows, { key: 'project', direction: 'descending' }))).toEqual(['a', 'c', 'b']);
     expect(ids(sortAgentRows(rows, { key: 'project', direction: 'ascending' }))).toEqual(['b', 'c', 'a']);
+  });
+
+  it('compares costs with cents by their values, where text and numbers disagree (the gate of #454, U8)', () => {
+    const rows = [row('quarter', { costUSD: 1.25 }), row('half', { costUSD: 1.5 })];
+    expect(ids(sortAgentRows(rows, { key: 'cost', direction: 'descending' }))).toEqual(['half', 'quarter']);
+    expect(ids(sortAgentRows(rows, { key: 'cost', direction: 'ascending' }))).toEqual(['quarter', 'half']);
+  });
+
+  it('reads the figures in a name as numbers, account 2 before account 10 (U5)', () => {
+    const rows = [row('ten', { providers: ['Claude · account 10'] }), row('two', { providers: ['Claude · account 2'] })];
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'ascending' }))).toEqual(['two', 'ten']);
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'descending' }))).toEqual(['ten', 'two']);
+  });
+
+  it('takes two names that differ only by their case as equal, in the default order both ways (U4)', () => {
+    const rows = [row('upper', { projectPath: '/p/Tars' }), row('lower', { projectPath: '/q/tars' })];
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'ascending' }))).toEqual(['upper', 'lower']);
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'descending' }))).toEqual(['upper', 'lower']);
   });
 
   it('compares a provider by the one the row shows first, its account included', () => {
