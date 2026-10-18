@@ -4,7 +4,7 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 167 root frames.
+rather than a companion to it. `design/tars-redesign.pen` holds 199 root frames, 32 of them drawn for 2.0.4 and not built yet (listed at the end).
 `design/chat-design.pen` holds 72 of those, the other eighty-four being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
@@ -224,3 +224,20 @@ operation), empty, error, needs-sign-in, permission-denied.
 
 - Launch: mark, wordmark, boot steps, gateway handshake
 - Page load: skeleton in the real shape of the content
+
+## Drawn for 2.0.4, not built yet
+
+Frames of `design/tars-redesign.pen` for four features the app does not render yet. Each has its dark and light
+frames, the narrowest window (1200 by 800), its empty and error states, and a notes frame saying what the Backend
+must provide. Once a feature is built, its frames join the line of its page above, and a new section (Relay) joins
+`e2e/surfaces.mjs`.
+
+- Vault, each project's folder (`~/.dorothy/project-files/<key>`): Vault · project folders · a report, · a tool
+  (the report's light copy, the tool at the narrowest window), · states (and its light copy), · notes for the Backend.
+- Review, a project holding several repositories, one not under git, one whose folder is gone: Review · projects and
+  their repositories (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend.
+- Memory, one picture: Memory · one picture · Settings, Memory Backends (its light copy, the narrowest window),
+  · Brain, Backends (its light copy), · states (and its light copy), · notes for the Backend.
+- The Hermes relay in one click, a Relay section under Settings, Hermes: Relay · Hermes in one click · ready to
+  install, · installing, · installed, · a step failed (the light copies of ready, installed and failed; installing
+  at the narrowest window), · states (and its light copy), · notes for the Backend.
