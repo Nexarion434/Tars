@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -164,6 +165,22 @@ export function codexKeyConfig(settings: Partial<AppSettings> | undefined): stri
     '-c', 'model_provider=tars-key',
     '-c', 'model_providers.tars-key={name="OpenAI (key from Tars)", base_url="https://api.openai.com/v1", env_key="CODEX_API_KEY", wire_api="responses"}',
   ];
+}
+
+/** The CLI whose key an agent of this provider takes, or undefined (claude and the providers that run it take none of these). */
+export function cliKeyOf(provider: string | undefined): CliKeyId | undefined {
+  return CLI_KEYS.find((c) => c.provider === (provider ?? 'claude'))?.id;
+}
+
+/**
+ * A print of the key environment an agent's terminal gets: its CLI's key
+ * under its variable, or nothing. In memory only, to tell a shell spawned
+ * with other keys (core/agent-manager.ts, killStalePty).
+ */
+export function keyPrintOf(agent: { provider?: string; model?: string }, settings: Partial<AppSettings> | undefined): string {
+  const cli = cliKeyOf(agent.provider);
+  const env = cli ? keyEnvFor(cli, settings, { model: agent.model }) : {};
+  return createHash('sha256').update(JSON.stringify(Object.entries(env).sort())).digest('hex');
 }
 
 /** What the window may know of each CLI's key: whether one is set and where it goes, never the key. */

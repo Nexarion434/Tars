@@ -46,7 +46,7 @@ import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-sw
 import { messagesWaiting, oweToFirstMessage, writeHumanInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
-import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
+import { killStalePty, notePtyKeys, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { emitAgentStatus } from '../services/agent-events';
@@ -433,6 +433,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           ...providerEnvVars,
         },
       });
+      // The keys this shell's environment carries, for the start that reuses it (core/agent-manager.ts).
+      notePtyKeys(ptyProcess, { provider: config.provider, model: config.model } as AgentStatus, currentSettings);
       console.log(`PTY created successfully for agent ${id}, PID: ${ptyProcess.pid}`);
     } catch (err) {
       console.error(`Failed to create PTY for agent ${id}:`, err);
