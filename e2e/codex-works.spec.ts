@@ -142,6 +142,24 @@ for (const newInterface of [false, true]) {
         return { status: a?.status as string | undefined, waitingReason: a?.waitingReason as string | undefined, waitingOn: a?.waitingOn as unknown, error: a?.error as string | undefined, ptyId: a?.ptyId as string | undefined };
       }, { dist, id });
 
+      // Tars's servers in codex's config, written by Tars's own registration (setupMcpOrchestrator, run at every
+      // start of a packaged Tars). A development run finds no bundle under process.resourcesPath, the app's: the
+      // orchestrator's bundle is put where a packaged Tars holds it, for that call.
+      const resources = path.join(home, 'resources');
+      fs.mkdirSync(path.join(resources, 'mcp-orchestrator', 'dist'), { recursive: true });
+      fs.copyFileSync(path.resolve('mcp-orchestrator', 'dist', 'bundle.js'), path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js'));
+      await app.evaluate(async (_e, { dist, resources }) => {
+        const was = process.resourcesPath;
+        Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true, writable: true });
+        try {
+          await process.mainModule!.require(`${dist}/services/mcp-orchestrator.js`).setupMcpOrchestrator({});
+        } finally {
+          Object.defineProperty(process, 'resourcesPath', { value: was, configurable: true, writable: true });
+        }
+      }, { dist, resources });
+      const codexConfig = fs.existsSync(path.join(home, '.codex', 'config.toml')) ? fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8') : '';
+      keep({ codexConfig });
+
       // 2. The account's models, from codex's own cache.
       const models = (await page.evaluate(() => (window as unknown as Api).electronAPI.models.list('codex'))).models.map(m => m.id);
       keep({ models });
@@ -184,6 +202,9 @@ for (const newInterface of [false, true]) {
         const a = req(`${dist}/core/agent-manager.js`).agents.get(id);
         req(`${dist}/core/pty-manager.js`).ptyProcesses.get(a.ptyId)?.write('y');
       }, { dist, id: nora });
+      // Answered: its turn goes on, and ends. wait_for_agent asked while the status still read the dialog would
+      // say it again.
+      await expect.poll(async () => (await statusOf(nora)).status, { timeout: 30_000 }).not.toBe('waiting').catch(() => {});
       const noraDone = await lead('wait_for_agent', { id: nora, timeoutSeconds: 60 });
       keep({ noraDone });
       expect.soft(noraDone.text, "Nora's answer never came back after the approval").toContain(`ran echo c${nonce}`);
