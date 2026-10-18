@@ -308,7 +308,10 @@ export function codexDialogOnScreen(pty: IPty | undefined): string | undefined {
     const below = rows.slice(at + 1);
     if (!below.some(row => CODEX_DIALOG_ANSWER.test(row))) continue;
     const title = rows[at].replace(/^[^A-Za-z]+/, '');
-    const subject = below.find(row => row && !CODEX_DIALOG_OPTION.test(row) && !CODEX_DIALOG_ANSWER.test(row) && !/\b(?:enter|esc)\b/i.test(row));
+    // What it asks about lies between the title and its first option: below that, a row is an option or the end
+    // of one, carried onto a row of its own in a terminal narrower than the dialog.
+    const options = below.findIndex(row => CODEX_DIALOG_OPTION.test(row) || CODEX_DIALOG_ANSWER.test(row));
+    const subject = below.slice(0, options).find(row => row && !/\b(?:enter|esc)\b/i.test(row));
     return subject ? `${title} ${subject.replace(/^[│|]\s*/, '')}` : title;
   }
   return undefined;
