@@ -10,6 +10,10 @@ import { describe, it, expect, vi } from 'vitest';
  * dropped them, so a changed effort on an OpenRouter agent started it on a new
  * conversation without a word (the Audit's gate of #120). The binary resumes
  * wherever it is pointed, measured on 2.1.280 against a local Messages API.
+ *
+ * codex resumes too since 2.0.4, as codex takes it, measured on 0.163: `codex
+ * resume <id>` continues the session in its own rollout, and `codex fork <id>`
+ * goes on under a new session (codex-commands.test.ts has the whole argv).
  */
 
 // Read by the providers' modules as they load, so it is set before any import.
@@ -54,9 +58,14 @@ describe('the resume a restart asks for', () => {
     expect(await commandFor('openrouter', {})).not.toContain('--resume');
   });
 
+  it('reaches codex as codex takes it: codex fork for a restart, codex resume otherwise', async () => {
+    expect(await commandFor('codex', { resumeSessionId: SESSION, forkSession: true })).toMatch(new RegExp(`^'/usr/local/bin/cli' fork .*'${SESSION}'$`));
+    expect(await commandFor('codex', { resumeSessionId: SESSION })).toMatch(new RegExp(`^'/usr/local/bin/cli' resume .*'${SESSION}'$`));
+  });
+
   it('reaches no other CLI, whose resume flag nobody has verified', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
-    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude')) {
+    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude' && p.binaryName !== 'codex')) {
       const command = await commandFor(provider.id, { resumeSessionId: SESSION, forkSession: true });
       expect(command, provider.id).not.toContain(SESSION);
     }
