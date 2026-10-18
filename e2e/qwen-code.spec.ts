@@ -20,7 +20,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Its terminal records its argv, the names of its key variables (a sha256 of each value) and its settings file.
  *
  * Asserted, once with the classic shell and once with the new interface:
- * 1. qw's models are the sandbox's ~/.qwen/settings.json modelProviders, and that file is never written;
+ * 1. qw's models, as the window reads them (models.ofCli), are the sandbox's ~/.qwen/settings.json modelProviders,
+ *    and that file is never written;
  * 2. lead's delegate_task to qw starts its session with the task as -i, on its model, its approval mode (bypass:
  *    yolo), its effort (high, in its settings file, not on the command line), and its key under its model's envKey,
  *    in its environment only; its settings file carries every hook and Tars's MCP servers, no token and no key;
@@ -246,8 +247,8 @@ for (const newInterface of [false, true]) {
       let page = await open(app);
       const qwNow = async () => (await page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find((a) => a.id === 'qw')!;
 
-      // 1. Its models.
-      const models = await app.evaluate((_e, { dist }) => process.mainModule!.require(`${dist}/providers/index.js`).getProvider('qwen-code').getModels(), { dist });
+      // 1. Its models, as the window reads them (models:cli).
+      const models = await page.evaluate(() => (window as unknown as { electronAPI: { models: { ofCli(p: string): Promise<{ models: Array<{ id: string }> }> } } }).electronAPI.models.ofCli('qwen-code')).then((r) => r.models);
       keep({ models });
       expect.soft(models.map((m: { id: string }) => m.id)).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
 
