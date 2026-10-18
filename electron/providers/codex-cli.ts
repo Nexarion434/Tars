@@ -89,7 +89,7 @@ export interface CodexModel {
 export function codexModelsFrom(cache: unknown): CodexModel[] {
   const models = cache && typeof cache === 'object' ? (cache as { models?: unknown }).models : undefined;
   if (!Array.isArray(models)) return [];
-  const listed: Array<CodexModel & { priority: number }> = [];
+  const listed: Array<{ model: CodexModel; priority: number }> = [];
   for (const m of models) {
     if (!m || typeof m !== 'object') continue;
     const entry = m as Record<string, unknown>;
@@ -101,16 +101,18 @@ export function codexModelsFrom(cache: unknown): CodexModel[] {
         .filter((effort): effort is string => typeof effort === 'string')
       : [];
     listed.push({
-      id: entry.slug,
-      name: typeof entry.display_name === 'string' && entry.display_name ? entry.display_name : entry.slug,
-      description: typeof entry.description === 'string' ? entry.description : '',
-      ...(typeof entry.default_reasoning_level === 'string' ? { defaultEffort: entry.default_reasoning_level } : {}),
-      efforts,
-      ...(typeof entry.context_window === 'number' ? { contextWindow: entry.context_window } : {}),
+      model: {
+        id: entry.slug,
+        name: typeof entry.display_name === 'string' && entry.display_name ? entry.display_name : entry.slug,
+        description: typeof entry.description === 'string' ? entry.description : '',
+        ...(typeof entry.default_reasoning_level === 'string' ? { defaultEffort: entry.default_reasoning_level } : {}),
+        efforts,
+        ...(typeof entry.context_window === 'number' ? { contextWindow: entry.context_window } : {}),
+      },
       priority: typeof entry.priority === 'number' ? entry.priority : Number.MAX_SAFE_INTEGER,
     });
   }
-  return listed.sort((a, b) => a.priority - b.priority).map(({ priority: _priority, ...model }) => model);
+  return listed.sort((a, b) => a.priority - b.priority).map(entry => entry.model);
 }
 
 /** The account's models from the cache codex keeps in its home; none when codex has not written one. */
