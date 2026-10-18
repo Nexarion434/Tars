@@ -78,7 +78,8 @@ Creation now follows the rule the other routes follow.
 token file. It is not isolation: see §3.
 
 **Who hands work, and who stops (2.0.4).** After the project, the routes that hand an
-agent work (`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer`) and those
+agent work (`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer`, and the
+kanban's claim for another agent, `assign_task` with `agent_id`) and those
 that end its CLI (`/stop`, `DELETE /api/agents/:id`, a `restart`) ask the caller's
 role (`core/one-task.ts`): Tars's own pass, an agent with the orchestrator's powers,
 or the agent itself; a worker is refused, and what it sends another worker is typed
