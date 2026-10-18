@@ -9,7 +9,7 @@ import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
-import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
+import { Draft, clearKeys, confirmSubmitted, emptyDraft, escCutTheTurn, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
 import { AgentMessageWaiting } from '../types';
@@ -664,6 +664,22 @@ export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
 export function noteSubmitted(ptyProcess: pty.IPty): void {
   const state = inputOf(ptyProcess);
   state.draft = confirmSubmitted(state.draft);
+  if (state.queue.length > 0) pump(ptyProcess);
+  fieldChanged(ptyProcess);
+}
+
+/**
+ * A turn of this terminal's CLI was cut, the transcript says (lastInterruptAt):
+ * an Esc typed just before, with nothing after it, was that cut, and left the
+ * field as it was (input-draft.ts, escCutTheTurn). Until this, the field stayed
+ * unknown and the agent's next task waited behind it until somebody pressed
+ * Enter or Ctrl+C (found by qwen-code.spec.ts, the Audit's L1 on #461).
+ */
+export function noteTurnCut(ptyProcess: pty.IPty): void {
+  const state = inputOf(ptyProcess);
+  const before = state.draft;
+  state.draft = escCutTheTurn(state.draft);
+  if (state.draft === before) return;
   if (state.queue.length > 0) pump(ptyProcess);
   fieldChanged(ptyProcess);
 }

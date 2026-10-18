@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
+import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
@@ -1169,6 +1169,9 @@ async function runInTerminal(
         const cut = lastInterruptAt(agent);
         if (cut !== undefined && cut >= now.startedAt && ledger?.openTaskOf(agent.id)?.id === taskId) {
           interrupted = true;
+          // The Esc that cut it left the field as it was: what waits for the agent goes in.
+          const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+          if (terminal) noteTurnCut(terminal);
           ledger.stateChanged({ id: agent.id, status: 'stopped' });
           if (agent.status === 'running') {
             agent.status = 'idle';
