@@ -43,6 +43,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       '`delegate_task` is the usual way: it runs the task over ACP when the agent\'s CLI has an ACP mode, and returns the agent\'s answer, its stop reason, tokens, cost and a taskId. Tars answers as soon as the run has started, and the tool follows it in steps of two minutes.',
       'The run is stopped at timeoutSeconds: 3600 s (an hour) when you give none, which is also the most it can be. A run stopped there ends in the middle of its work: split a task that needs longer, and give a short one less.',
       'If delegate_task says the run may still be working (Tars was out of reach for a while), do not send the task again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting to be typed into a terminal can be taken back with `task_cancel`.',
+      'An agent runs one task at a time: a task given to an agent already working (a delegated task, or a turn in its terminal) waits its turn in its queue, and delegate_task keeps waiting for it. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now; `task_cancel` takes it back. A task still queued when Tars restarts is lost and never ran: ask for it again.',
       'A `model` given to delegate_task is for that run only; the agent keeps its own. When the agent does not take it, the run goes on the agent\'s own model and the answer says so and names the model it ran on.',
       'Without ACP (or with no run started) the task is typed into the agent\'s terminal: `start_agent`, then `wait_for_agent` and `get_agent_output`. `get_agent` gives an agent\'s whole record.',
       '`create_agent` adds an agent to your project, on any provider; `stop_agent` stops one with a reason the user reads; `remove_agent` deletes one for good.',
@@ -56,6 +57,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     text: [
       '`send_message` writes to an agent by id. To answer whoever asked you for your current task, send it to "requester": a chat of the project may have asked, not only the orchestrator.',
       'Its mode says how it goes in: auto (the default, typed at once, into a running turn too), queue (typed once the agent\'s turn ends), steer (its turn interrupted first; claude agents only), restart (the agent stopped and started again with the message). steer and restart are refused while the agent works on a task another agent asked for.',
+      'A worker hands no work to another agent and stops none: start_agent, delegate_task, steer, restart, stop_agent, remove_agent and assign_task for another agent are refused to it (worker_may_not_order, worker_may_not_stop): it asks its orchestrator. Its send_message to another worker arrives as a note for information, typed once that agent\'s turn and its delegated task end, never as a task, and never starting an agent with no session (note_needs_session). Its report to whoever leads it goes in as a report.',
       'Your project has a room: `room_read` reads what was said, `room_post` says something to the team when you have a result, a blocker or an answer. Do not post to acknowledge or to say you are starting.',
       'An agent that runs a chat may see the project\'s other chats with `chat_list`, read only, when the user allowed it.',
     ].join('\n'),
@@ -66,7 +68,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'HELD means your message waits for the agent\'s terminal (its input field is in use, or a dialog is open) and has not been typed in yet. It goes in by itself once the field is free, and Tars tells you again if it still waits a few minutes on. Do not send it a second time.',
-      'A refusal says why, often with a code: an agent of another project, a mode the agent cannot take (not_steerable), an agent busy on a task another chat or agent asked for (worker_busy_for_other_chat, worker_busy_for_other_requester), a clientRequestId already used for something else. Act on the reason; a retry of the same call gets the same answer.',
+      'A refusal says why, often with a code: an agent of another project, a mode the agent cannot take (not_steerable), an agent busy on a task another chat or agent asked for (worker_busy_for_other_chat, worker_busy_for_other_requester), an agent at work that a call which cannot wait would open a second session beside (agent_busy: send it with delegate_task or start_agent, which wait their turn), a worker ordering or stopping another agent (worker_may_not_order, worker_may_not_stop), a note to an agent with no session (note_needs_session), a clientRequestId already used for something else. Act on the reason; a retry of the same call gets the same answer.',
       'A message sent twice with the same clientRequestId is answered from the first one\'s receipt: nothing is typed twice.',
     ].join('\n'),
   },
@@ -246,6 +248,7 @@ export function identitySection(role: GuideRole, folder: string | null, why?: st
   } else {
     lines.push(
       `- Answer whoever asked you with send_message to "requester", or in your final report. HELD means your message waits for the terminal and goes in by itself.`,
+      `- You hand no work to another agent and stop none: ask your orchestrator (send_message to "orchestrator"). What you send another worker is a note for information.`,
       `- The kanban is the project's Hermes board (one lane per agent): claim a task with assign_task, finish it with mark_task_done, file a follow-up you find with create_task.`,
     );
   }
