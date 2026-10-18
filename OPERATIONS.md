@@ -1903,8 +1903,9 @@ The environment is `process.env` plus:
   `~/.nvm/versions/node/v22.0.0/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`,
   and every `~/.nvm/versions/node/*/bin` (`~/.grok/bin`, `~/Library/pnpm` and `~/.yarn/bin`
   are only in `detectCLIPaths()`'s probe list, not the PTY PATH);
-- provider env (`getPtyEnvVars`, this is where `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` are
-  injected for the nine providers that drive the `claude` binary against another API);
+- provider env (`getPtyEnvVars`, this is where `ANTHROPIC_BASE_URL` and the key as
+  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` blank, are injected for the thirteen providers that
+  drive the `claude` binary against another API: `keyProviderEnv`);
 - `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, so `~/.dorothy/CLAUDE.md` is loaded via
   `--add-dir`;
 - Tasmania env, when applicable.
