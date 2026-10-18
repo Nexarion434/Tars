@@ -35,6 +35,8 @@ import * as path from 'node:path';
  *      with the field gone they read every key as unset. A set secret reaches
  *      the window as a mask, never as itself, and the mask sent back by a save
  *      keeps the key; secretsSet says which are set; secrets:set clears one.
+ *      The Sentry token too, which keeps its own private file (sentry-token.ts)
+ *      and which app:getSettings still handed the page.
  */
 
 import {
@@ -169,5 +171,12 @@ describe('the secrets, in ~/.tars-private', () => {
     expect(cleared.ok && cleared.settings.deepSeekApiKey).toBe('');
     expect(setSecret(current, 'cliApiKeys', 'x').ok).toBe(false);
     expect(setSecret(current, 'telegramEnabled', 'x').ok).toBe(false);
+    const sentry = { ...current, sentryAuthToken: 'sntrys-e2e-1' } as AppSettings;
+    const sentryShown = settingsForWindow(sentry) as unknown as Record<string, unknown>;
+    expect(sentryShown.sentryAuthToken).toBe(SECRET_MASK);
+    expect((sentryShown.secretsSet as Record<string, boolean>).sentryAuthToken).toBe(true);
+    expect(keepSecrets(sentry, sentryShown as Partial<AppSettings>).sentryAuthToken).toBe('sntrys-e2e-1');
+    const sentryCleared = setSecret(sentry, 'sentryAuthToken', null);
+    expect(sentryCleared.ok && sentryCleared.settings.sentryAuthToken).toBe('');
   });
 });
