@@ -31,9 +31,13 @@ import * as path from 'node:path';
  *      environment sets it, unless that names one of Tars's own files.
  *  A7. Over-correction: without an administrator's file, the agent's file is
  *      not what it was.
+ *  A8. (The Audit's re-check at 4804a90f, written before its code.) Joining
+ *      lists widens an administrator's allowlist (tools.allowed, tools.core,
+ *      mcp.allowed) the day Tars writes the same key: only hooks are joined,
+ *      every other list is the administrator's alone.
  */
 
-import { qwenSystemSettingsFile, writeQwenAgentSettings, saveQwenHooks, setQwenMcpServer } from '../../../electron/services/qwen-code';
+import { qwenSystemSettingsFile, writeQwenAgentSettings, saveQwenHooks, setQwenMcpServer, underAdministrator } from '../../../electron/services/qwen-code';
 
 let dataDir: string;
 let admin: string;
@@ -109,5 +113,15 @@ describe('an agent of Qwen Code, and the administrator\'s system settings', () =
     expect(Object.keys(s).sort()).toEqual(['general', 'hooks', 'mcpServers', 'model']);
     expect(s.general).toEqual({ enableAutoUpdate: false });
     expect(Object.keys(s.mcpServers)).toEqual(['claude-mgr-orchestrator']);
+  });
+
+  it('A8. joins hooks and nothing else: an administrator\'s list is never widened by Tars\'s', () => {
+    const tars = { hooks: { Stop: [{ hooks: [{ command: 'tars-stop' }] }] }, tools: { allowed: ['read_file', 'run_shell_command'], core: ['edit'] }, mcp: { allowed: ['claude-mgr-orchestrator'] } };
+    const admin = { hooks: { Stop: [{ hooks: [{ command: 'audit-log stop' }] }] }, tools: { allowed: ['read_file'], core: ['read_file'] }, mcp: { allowed: ['company-docs'] } };
+    const merged = underAdministrator(tars, admin) as typeof tars;
+    expect(merged.tools.allowed).toEqual(['read_file']);
+    expect(merged.tools.core).toEqual(['read_file']);
+    expect(merged.mcp.allowed).toEqual(['company-docs']);
+    expect(merged.hooks.Stop.map((e) => e.hooks[0].command)).toEqual(['audit-log stop', 'tars-stop']);
   });
 });

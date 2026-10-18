@@ -34,7 +34,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 8. (the Audit's M1 on #461) an administrator's system settings file, named by QWEN_CODE_SYSTEM_SETTINGS_PATH in
  *    the environment Tars started with: qw's settings file of Tars's carries its controls, its values winning;
  * 9. (the Audit's L1) Esc in a qw turn: qwen sends no Stop and writes the cancel into its transcript (measured on
- *    0.25.2, 2026-10-18): the delegated task ends `interrupted`, and the next task goes in at once.
+ *    0.25.2, 2026-10-18): the delegated task ends `interrupted`, and the next task goes in at once. And (the Audit's
+ *    M2) qwen puts the cut prompt back into the empty field, as the stand-in does: the next task goes in alone;
+ * 10. (M2) a message the user typed during a turn, which qwen queued and moves back into the field on Esc: the next
+ *    task waits, never typed after the user's words, and goes in once the user has cleared the field.
+ * The stand-in's field is qwen's, as its code reads (0.25.2): keys and pastes into it, a backspace out, Ctrl+C
+ * clearing it, an Enter during a turn queueing it, and on Esc the queue back into the field, else the cut prompt.
  * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.dorothy/qwen-code/mcp-servers.json),
  * seeded on this checkout's bundle: a dev run finds no bundle under its resources and registers none, for any CLI.
  * Red on feat/cli-api-keys (24469620), before the provider: qwen-code is Claude, and none of this holds.
@@ -100,12 +105,17 @@ async function turn(prompt) {
     answer = 'answer for TASK-SENDBACK: reported';
   }
   if (task === 'TASK-LONG') {
-    // What qwen 0.25.2 does on Esc: the turn ends with no Stop, the request's end written as cancelled; its idle
-    // prompt notification comes a while later.
+    // What qwen 0.25.2 does on Esc: the turn ends with no Stop, the request's end written as cancelled; what the user
+    // queued meanwhile goes back into the field, else, the field empty, the cut prompt does; its idle prompt
+    // notification comes a while later.
     await new Promise((r) => { cancelTurn = r; setTimeout(r, 90000); });
     cancelTurn = null;
     write({ type: 'system', subtype: 'ui_telemetry', systemPayload: { uiEvent: { v: 1, kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: Date.now() } } });
-    log({ cancelled: task });
+    const popped = pending.splice(0).join('\n');
+    if (popped) buffer = buffer ? popped + '\n' + buffer : popped;
+    else if (buffer === '') buffer = prompt;
+    cut = true;
+    log({ cancelled: task, field: buffer });
     setTimeout(() => hook('Notification', { notification_type: 'idle_prompt', message: 'Qwen Code is waiting for your input', title: 'Qwen Code' }), 20000);
     return;
   }
@@ -125,17 +135,31 @@ process.stdout.write('qwen stand-in ready\n');
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 let queue = Promise.resolve();
 let cancelTurn = null;
+let running = false;
+let cut = false;
+/** What the user typed and sent during a turn: qwen queues it, and sends it once the turn ends. */
+const pending = [];
+const run = (line) => {
+  running = true;
+  queue = queue.then(() => turn(line)).then(() => {
+    running = false;
+    if (cut) { cut = false; return; }
+    if (pending.length) run(pending.splice(0).join('\n'));
+  });
+};
 const first = flag('-i');
-if (first) queue = queue.then(() => turn(first));
+if (first) run(first);
 let buffer = '';
 process.stdin.on('data', (d) => {
-  if (d.toString() === '\x1b' && cancelTurn) { cancelTurn(); return; }
-  buffer += d.toString();
+  const typed = d.toString();
+  if (typed === '\x1b' && cancelTurn) { cancelTurn(); return; }
+  for (const ch of typed.replace(/\x1b\[20[01]~/g, '')) buffer = ch === '\x7f' ? buffer.slice(0, -1) : ch === '\x03' ? '' : buffer + ch;
   let end;
   while ((end = buffer.search(/[\r\n]/)) !== -1) {
-    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
+    const line = buffer.slice(0, end);
     buffer = buffer.slice(end + 1);
-    if (line.trim()) queue = queue.then(() => turn(line));
+    if (!line.trim()) continue;
+    if (running) { pending.push(line); log({ queued: line }); } else run(line);
   }
 });
 process.stdin.resume();
@@ -208,7 +232,7 @@ function mcpAs(home: string, project: string, port: string, agentId: string, tok
 
 for (const newInterface of [false, true]) {
   test(`a qwen code agent does what a claude agent does${newInterface ? ' (new interface)' : ''}`, async () => {
-    test.setTimeout(420_000);
+    test.setTimeout(560_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qwen-'));
     const project = path.join(home, 'projects', 'demo');
     const dir = path.join(home, '.dorothy');
@@ -344,6 +368,28 @@ for (const newInterface of [false, true]) {
       expect.soft(cut.text).toContain('ended: interrupted');
       expect.soft(after.text).toContain('answer for TASK-AFTER');
       expect.soft(Date.now() - startedAfter, 'the next task waited for the idle notification').toBeLessThan(15_000);
+      expect.soft(records().filter((r) => r.turn === 'TASK-AFTER').map((r) => (r as { prompt?: string }).prompt ?? '').join('\n'), 'the cut task sent again with the next').not.toContain('TASK-LONG');
+
+      // 10. The user queued a message during the turn, which qwen moves back on Esc: the next task waits for them.
+      const sendInput = (input: string) => page.evaluate((i) => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } }).electronAPI.agent.sendInput({ id: 'qw', input: i }), input);
+      const long2 = lead.call('delegate_task', { id: 'qw', prompt: 'TASK-LONG write another long report', timeoutSeconds: 120 });
+      await expect.poll(() => records().filter((r) => r.turn === 'TASK-LONG').length, { timeout: 30_000 }).toBe(2);
+      for (const ch of 'my own idea') await sendInput(ch);
+      await sendInput('\r');
+      await expect.poll(() => records().some((r) => (r as { queued?: string }).queued === 'my own idea'), { timeout: 10_000 }).toBe(true);
+      await sendInput('\x1b');
+      const cut2 = await long2;
+      const held = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-HELD after the user', timeoutSeconds: 20 });
+      const heldTurnsBefore = records().filter((r) => r.turn === 'TASK-HELD');
+      // The user clears the field: the task goes in, alone.
+      await sendInput('\x03');
+      await expect.poll(() => records().filter((r) => r.turn === 'TASK-HELD').length, { timeout: 30_000 }).toBe(1);
+      const heldTurn = records().find((r) => r.turn === 'TASK-HELD') as { prompt?: string } | undefined;
+      keep({ cut2, held, heldTurnsBefore, heldTurn });
+      expect.soft(cut2.text).toContain('ended: interrupted');
+      expect.soft(heldTurnsBefore, 'the task typed after the user\'s words').toEqual([]);
+      expect.soft(held.text).toContain('has not begun');
+      expect.soft(heldTurn?.prompt ?? '', 'the user\'s words sent with the task').not.toContain('my own idea');
 
       // 7. Usage by task.
       const report = await page.evaluate(() => (window as unknown as Api).electronAPI.usage.tasks({ sinceDays: 1 }));
