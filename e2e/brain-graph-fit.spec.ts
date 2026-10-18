@@ -94,9 +94,15 @@ async function measure(page: Page, firstAgent: string, frame: Locator | null): P
     return { left: r.left, top: r.top, right: r.left + body.clientWidth, bottom: r.top + body.clientHeight };
   }) : null;
   return page.evaluate(({ firstAgent, frameBox }) => {
-    const first = [...document.querySelectorAll('button')].find(b => (b.textContent ?? '').startsWith(firstAgent));
-    let canvas: HTMLElement | null = first?.parentElement ?? null;
-    while (canvas && !/(auto|scroll)/.test(getComputedStyle(canvas).overflow + getComputedStyle(canvas).overflowX)) canvas = canvas.parentElement;
+    // Found once from the first agent's box, then kept by a mark: with one
+    // agent picked, that box is gone from the graph and the canvas is not.
+    let canvas = document.querySelector<HTMLElement>('[data-e2e-canvas="1"]');
+    if (!canvas) {
+      const first = [...document.querySelectorAll('button')].find(b => (b.textContent ?? '').startsWith(firstAgent));
+      canvas = first?.parentElement ?? null;
+      while (canvas && !/(auto|scroll)/.test(getComputedStyle(canvas).overflow + getComputedStyle(canvas).overflowX)) canvas = canvas.parentElement;
+      canvas?.setAttribute('data-e2e-canvas', '1');
+    }
     const zoom = document.querySelector('button[title="Back to 100%"]')?.textContent?.trim() ?? null;
     if (!canvas) {
       return { zoom, nodes: 0, outside: 0, examples: ['no canvas'], canvas: { left: 0, top: 0, width: 0, height: 0, scrollLeft: 0, scrollTop: 0, scrollWidth: 0, scrollHeight: 0 }, graph: { left: 0, top: 0, right: 0, bottom: 0 }, canvasCut: [] };
@@ -218,14 +224,8 @@ for (const newInterface of [false, true]) {
       // 4. At 100 %: the graph's start can be scrolled to, and a drag pans it.
       await scope.locator('button[title="Back to 100%"]').click();
       await expect.poll(async () => (await read()).zoom).toBe('100%');
-      const canvasOf = () => page.evaluate((firstAgent) => {
-        const firstNode = [...document.querySelectorAll('button')].find(b => (b.textContent ?? '').startsWith(firstAgent));
-        let el: HTMLElement | null = firstNode?.parentElement ?? null;
-        while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflow + getComputedStyle(el).overflowX)) el = el.parentElement;
-        return el ? el.getAttribute('data-e2e-canvas') ?? (el.setAttribute('data-e2e-canvas', '1'), '1') : null;
-      }, first);
-      expect(await canvasOf()).toBe('1');
       const canvas = page.locator('[data-e2e-canvas="1"]');
+      await expect(canvas, 'the canvas, marked by the first reading').toHaveCount(1);
       await canvas.evaluate(el => { el.scrollLeft = 0; el.scrollTop = 0; });
       await page.waitForTimeout(300);
       const start = await read();
@@ -266,6 +266,7 @@ for (const newInterface of [false, true]) {
       await expect.poll(async () => (await read()).nodes, { timeout: 30_000 }).toBeLessThan(NODES);
       const one = await settle('oneAgent');
       await stepShot(page, `${tag}05-one-agent`);
+      expect(one.nodes, 'the boxes of one agent: its project, itself, its files and its tools').toBeGreaterThan(400);
       expect.soft(one.outside, `boxes outside with one agent: ${one.examples.join('; ')}`).toBe(0);
       await page.locator('[data-e2e-canvas="1"] button', { hasText: ember }).click({ timeout: 20_000 });
       await expect(scope.getByText('Switching agent', { exact: true })).toHaveCount(0, { timeout: 30_000 });
