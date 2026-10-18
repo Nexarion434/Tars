@@ -77,6 +77,7 @@ DOROTHY_HERMES_SESSION_EVERY_MS # under DOROTHY_E2E only: how often Tars asks it
 DOROTHY_ERROR_REPORTS_DSN # a development run only: where error reports go (a stand-in of Sentry); a packaged Tars never reads it (app.isPackaged, services/error-reports/index.ts)
 ELECTRON_BUILD        # '1' switches next.config.ts to output: 'export' for packaging
 PATH SHELL HOME       # read when composing the PTY environment (buildFullPath, cli-paths detection)
+CODEX_HOME            # where codex keeps its config, sessions and model cache (else ~/.codex): Tars reads its sessions and model list there, and writes its MCP servers and the agents' folder trust into its config.toml
 APPLE_ID              # notarization; unset → scripts/notarize.js uses the 'Tars' keychain profile
 APPLE_APP_PASSWORD
 APPLE_TEAM_ID

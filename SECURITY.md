@@ -226,6 +226,8 @@ stop is `/bin/ps`, which is setuid root and therefore cannot be executed under
 any sandbox at all: the convenient route is closed, the syscall behind it is
 not.
 
+**codex hands its MCP servers what it is told to, by name.** Measured on codex-cli 0.163.0: a server gets HOME, PATH, TERM and the variables its config lists in `env_vars`, nothing else. Tars lists, in its own servers' sections of codex's config.toml, the names they read, the token among them: names only, so the token reaches them from the codex process's environment, where this section already says who can read it, and is written in no file and no command line.
+
 **Gemini's redaction is let through on purpose.** Gemini CLI withholds from
 the processes it starts every variable whose name looks like a secret, and
 `CLAUDE_MGR_API_TOKEN` matches. Without it a Gemini agent's hooks could not

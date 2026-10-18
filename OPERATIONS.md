@@ -1198,7 +1198,7 @@ Each provider writes to its own config, CLI-first with a file fallback:
 | provider(s) | config dir | mechanism |
 |---|---|---|
 | `claude` (+ `openrouter`, `deepseek`, `mimo`, `moonshot`, `qwen`, `zhipu`, `minimax`, `nvidia`, `nous-portal`, all share the `claude` binary and `~/.claude`) | `~/.claude` | `claude mcp add -s user …`, fallback `~/.claude/mcp.json`; presence checked in both `~/.claude/mcp.json` and `~/.claude.json` |
-| `codex` | `~/.codex` | fallback writes `[mcp_servers.<name>]` into `config.toml` |
+| `codex` | `$CODEX_HOME`, else `~/.codex` | Tars's seven servers: the `[mcp_servers.<name>]` section written by Tars, with `env_vars` naming what they read (`codex mcp add` cannot say it); another server: `codex mcp add`, fallback writes the section into `config.toml` |
 | `gemini` | `~/.gemini` | fallback writes `settings.json` |
 | `grok` | `~/.grok` | fallback writes `[mcp_servers.<name>]` into `config.toml` with `enabled = true` |
 | `opencode` | `~/.opencode` | |
@@ -1219,7 +1219,10 @@ jq '.mcpServers | keys' ~/.claude/mcp.json 2>/dev/null
 jq '.mcpServers | keys' ~/.claude.json
 
 # Codex / Grok
-grep -A3 '^\[mcp_servers\.' ~/.codex/config.toml
+grep -A4 '^\[mcp_servers\.' ~/.codex/config.toml   # codex: env_vars lists the agent's token among the names
+# codex: what Tars read of its turns, and the folders it trusted for the agents
+ls -t ~/.codex/sessions/$(date +%Y/%m/%d)/ | head
+grep -A1 '^\[projects\.' ~/.codex/config.toml
 grep -A3 '^\[mcp_servers\.' ~/.grok/config.toml
 
 # Gemini
