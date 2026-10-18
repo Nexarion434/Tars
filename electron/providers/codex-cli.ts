@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execCliSync } from './cli-exec';
+import { trustsTooMuch } from '../utils/trust-too-much';
 import type { AgentEffort } from '../types';
 
 /**
@@ -137,4 +138,31 @@ export function codexEffortArgs(effort: string | undefined, model: string | unde
     level = below ?? EFFORT_ORDER.find(e => takes.includes(e)) ?? effort;
   }
   return ['-c', `model_reasoning_effort=${level}`];
+}
+
+/**
+ * The agent's folder trusted in codex's config before its codex starts, as ensureProjectTrusted does for Claude Code.
+ * Measured on codex-cli 0.163.0: in a folder its config does not trust, codex first asks "Trust this folder?",
+ * writes no session and does nothing until someone answers, which nobody does in an agent's terminal; with
+ * `[projects."<folder>"] trust_level = "trusted"` the same launch ran its turn. Under the folder's real path, the
+ * one codex records (its session's cwd). A choice already in the config, trusted or not, is the user's and is left
+ * as it is; a folder that would trust every folder below it is refused (utils/trust-too-much.ts), and codex asks.
+ */
+export function ensureCodexProjectTrusted(projectPath: string, home: string = codexHome()): 'written' | 'already' | 'refused' | 'failed' {
+  if (!projectPath || trustsTooMuch(projectPath)) return 'refused';
+  let real: string;
+  try { real = fs.realpathSync(projectPath); } catch { return 'failed'; }
+  const file = path.join(home, 'config.toml');
+  let content = '';
+  try { content = fs.readFileSync(file, 'utf-8'); } catch { /* none yet */ }
+  const header = `[projects.${JSON.stringify(real).replace(/\u007f/g, '\\u007F')}]`;
+  if (content.includes(header)) return 'already';
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(file, `${content.trimEnd()}${content.trim() ? '\n\n' : ''}${header}\ntrust_level = "trusted"\n`);
+    return 'written';
+  } catch (err) {
+    console.warn(`[codex] ${real} not trusted in ${file}:`, err instanceof Error ? err.message : err);
+    return 'failed';
+  }
 }

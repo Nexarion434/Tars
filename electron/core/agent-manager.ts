@@ -31,6 +31,7 @@ import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
 import { wakeFromSleep } from './agent-asleep';
+import { trustsTooMuch } from '../utils/trust-too-much';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -158,34 +159,6 @@ export function ensureProjectTrusted(projectPath: string): void {
   } catch (err) {
     console.warn(`ensureProjectTrusted: failed to update ${claudeJsonPath}:`, err);
   }
-}
-
-/**
- * Whether marking this directory trusted would trust far more than a project.
- *
- * Claude Code reads `hasTrustDialogAccepted` for its working directory and
- * every directory above it, so the flag on $HOME trusts everything the account
- * owns and the flag on `/` trusts the machine. Refused: the root, the home
- * directory, anything above it, and a relative path, which names whatever the
- * app's working directory happens to be. Compared by the path given and by the
- * path the filesystem resolves, which follows a link and, on macOS, gives the
- * case the disk stores, so neither a link nor another spelling gets through.
- * Claude Code then shows its own dialog, which is the point of it.
- */
-function trustsTooMuch(projectPath: string): boolean {
-  if (!path.isAbsolute(projectPath)) return true;
-  const spellings = (p: string) => {
-    const resolved = path.resolve(p);
-    try {
-      return [resolved, fs.realpathSync.native(resolved)];
-    } catch {
-      return [resolved];
-    }
-  };
-  const homes = spellings(os.homedir());
-  return spellings(projectPath).some(dir =>
-    dir === path.parse(dir).root
-    || homes.some(home => home === dir || home.startsWith(dir + path.sep)));
 }
 
 export let agentsLoaded = false;

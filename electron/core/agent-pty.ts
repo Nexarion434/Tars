@@ -13,6 +13,7 @@ import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
 import { noteCodexLaunch } from '../services/codex-sessions';
+import { ensureCodexProjectTrusted } from '../providers/codex-cli';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -186,7 +187,12 @@ export function spawnAgentPty(opts: {
   if (agentId) rememberTerminalOwner(spawned, agentId);
   // codex reports no turn through a hook: its session log does, and the one
   // this terminal's codex begins is the agent's (services/codex-sessions.ts).
-  if (agentId && opts.binaryName === 'codex') noteCodexLaunch(agentId, opts.cwd);
+  if (agentId && opts.binaryName === 'codex') {
+    // And its folder trusted first: codex asks "Trust this folder?" in a new
+    // one, and waits there for good (providers/codex-cli.ts).
+    ensureCodexProjectTrusted(opts.cwd);
+    noteCodexLaunch(agentId, opts.cwd);
+  }
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {
