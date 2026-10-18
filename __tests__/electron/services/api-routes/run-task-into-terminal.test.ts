@@ -45,6 +45,20 @@ import { EventEmitter } from 'node:events';
  *  D13. Another project's orchestrator that passed allowCrossProject: true is
  *      refused, or its task goes anywhere but the target's terminal (moved
  *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
+ *
+ * Added after the Audit's gate of 6fb17592, before the code (2026-10-18):
+ *  D14. (H1) An earlier turn that left background work running keeps its
+ *      task open; the delegated task's turn is counted into that task, whose
+ *      requester is someone else: its asker reads 404 "never started" and asks
+ *      again, and the task runs twice.
+ *  D15. (M1) A delegated task that leaves a server running in the background
+ *      never ends: delegate_task never answers, and the agent's next task waits
+ *      in the line for as long as the server lives. Or it ends without saying
+ *      what it left running.
+ *  D16. (W1) A turn whose prompt carries another task's id is taken as this
+ *      task's turn.
+ *  D17. (W2) A task whose turn writes no text is answered with the previous
+ *      task's final message.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-terminal-'));
@@ -371,5 +385,97 @@ describe('the asker following its task', () => {
     expect(((await wait.answer).data.task as Record<string, unknown>).result).toBe('done');
     await new Promise((r) => setTimeout(r, 300));
     expect(typed.filter((t) => t.ptyId === 'pty-lead')).toEqual([]);
+  });
+});
+
+/** A background Bash the CLI started in its turn, as Claude Code writes its result. */
+function backgroundStarted(agent: AgentStatus, id: string, at = Date.now()) {
+  const file = transcriptPath(agent.projectPath, agent.currentSessionId!, os.homedir());
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date(at).toISOString(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `tu-${id}`, content: 'started' }] }, toolUseResult: { backgroundTaskId: id } }) + '\n');
+}
+
+describe('a delegated task and the background work of a turn (the Audit\'s gate of 6fb17592)', () => {
+  it('(D14) its turn opens a task of its own after an earlier turn that left background work: its asker follows it', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    turnBegins(dev, 'the user typed: start the dev server');
+    await new Promise((r) => setTimeout(r, 20));
+    backgroundStarted(dev, 'bgserver1');
+    reply(dev, 'Started the server in the background.');
+    rests(dev);
+    await new Promise((r) => setTimeout(r, 100));
+    const before = liveTaskLedger()!.openTaskOf('dev')?.id;
+    expect(before, 'the earlier task is open while its server runs').toBeDefined();
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'review the notes', answer: 'started' }).answer;
+    const ref = String(data.taskId);
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 50));
+    reply(dev, 'ANSWER-TO-REVIEW');
+    rests(dev);
+    const g = await call('GET', `/api/tasks/${ref}?wait=3`, 'lead').answer;
+    expect(g.status, JSON.stringify(g.data)).toBe(200);
+    const task = g.data.task as Record<string, unknown>;
+    expect(task).toMatchObject({ requesterAgentId: 'lead', outcome: 'completed', result: 'ANSWER-TO-REVIEW' });
+    expect(task.id, 'counted into the earlier task').not.toBe(before);
+    expect(liveTaskLedger()!.task(before!)?.endedAt, 'the earlier task still open').not.toBeNull();
+  });
+
+  it('(D15) it ends at its turn\'s rest with its answer and what it left running, and the next task is not held', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'start the server and report', answer: 'started' }).answer;
+    const ref = String(data.taskId);
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 20));
+    backgroundStarted(dev, 'bgserver2');
+    reply(dev, 'The server runs on :3000.');
+    rests(dev);
+    const g = await call('GET', `/api/tasks/${ref}?wait=3`, 'lead').answer;
+    const task = g.data.task as Record<string, unknown>;
+    expect(task, JSON.stringify(g.data)).toMatchObject({ outcome: 'completed', result: 'The server runs on :3000.', backgroundLeft: ['bgserver2'] });
+    const next = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'second task', answer: 'started' }).answer;
+    expect(next.data, 'held behind the server').toMatchObject({ queued: false, outcome: 'starting' });
+  });
+
+  it('(D16) a turn tagged with another task\'s id is not this task\'s', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'review the notes', answer: 'started' }).answer;
+    const ref = String(data.taskId);
+    await until(() => typed.length === 1);
+    turnBegins(dev, 'Message from agent "Lead" ("lead"), task t-0000dead: something else');
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await call('GET', `/api/tasks/${ref}`, 'lead').answer).data.task).toMatchObject({ id: ref, outcome: 'starting' });
+    rests(dev);
+    await new Promise((r) => setTimeout(r, 100));
+    turnBegins(dev, promptOf(typed[0]));
+    reply(dev, 'mine');
+    rests(dev);
+    const g = await call('GET', `/api/tasks/${ref}?wait=3`, 'lead').answer;
+    expect(g.data.task).toMatchObject({ outcome: 'completed', result: 'mine' });
+  });
+
+  it('(D17) a task whose turn writes no text is not answered with the task before it', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    const first = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'first', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    reply(dev, 'FIRST-ANSWER');
+    rests(dev);
+    expect(((await call('GET', `/api/tasks/${String(first.data.taskId)}?wait=3`, 'lead').answer).data.task as Record<string, unknown>).result).toBe('FIRST-ANSWER');
+    await new Promise((r) => setTimeout(r, 50));
+    const second = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'second', answer: 'started' }).answer;
+    await until(() => typed.length === 2);
+    turnBegins(dev, promptOf(typed[1]));
+    await new Promise((r) => setTimeout(r, 50));
+    rests(dev);
+    const g = await call('GET', `/api/tasks/${String(second.data.taskId)}?wait=3`, 'lead').answer;
+    const task = g.data.task as Record<string, unknown>;
+    expect(task.outcome).toBe('completed');
+    expect(task.result, 'the first task\'s answer').not.toBe('FIRST-ANSWER');
   });
 });

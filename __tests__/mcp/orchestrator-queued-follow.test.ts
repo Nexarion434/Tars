@@ -21,6 +21,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *    Since 2.0.4 delegate_task sends the task and nothing else: no
  *    auto-continue, no terminal fallback; the task goes into the agent's own
  *    terminal through run-task, and a question it asks is the agent's to put.
+ * 5. (the Audit's M1 on #453) A delegated task that left work running in the
+ *    background is answered without saying so: its asker believes it done
+ *    and cannot tell a server still runs.
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -102,4 +105,17 @@ describe('a task queued behind another, as the tools say to follow it', () => {
     expect(said).toContain('wait_for_agent');
     expect(said).not.toMatch(/queued|starts once it is free/);
   });
+
+  it('5. a task that left background work running says which, with its answer', async () => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { ok: true, started: false, queued: false, outcome: 'starting', taskId: 't-0000beef' };
+      if (endpoint.includes('/api/tasks/')) return { task: { id: 'task-1', agentId: 'a1', outcome: 'completed', stopReason: 'end_turn', result: 'The server runs on :3000.', backgroundLeft: ['bgserver2'] } };
+      return { agent: { id: 'a1', name: 'Worker', status: 'idle' } };
+    });
+    const said = ((await (await tool('delegate_task'))({ id: 'a1', prompt: 'start the server' })) as Result);
+    expect(said.isError).toBeFalsy();
+    expect(said.content[0].text).toContain('The server runs on :3000.');
+    expect(said.content[0].text).toContain('still running in the background: bgserver2');
+  });
 });
+

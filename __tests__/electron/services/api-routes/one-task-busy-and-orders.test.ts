@@ -85,6 +85,13 @@ import { EventEmitter } from 'node:events';
  * 23. A task whose turn came, held in the writer by a draft and taken back by
  *     its asker's cancel, keeps the turn for good: every later task to that
  *     agent queues behind a task that no longer exists, until Tars restarts.
+ *
+ * Added after the Audit's gate of 6fb17592 on #453, before the code:
+ * 24. (L1) The banner's stop on a task in hand whose turn has not begun (held
+ *     in the writer by a draft) sends Esc and says the turn stopped: the task
+ *     is not withdrawn and goes in later, or another turn is interrupted.
+ * 25. (L2) A task queued behind a delegated task whose CLI exited meanwhile is
+ *     never said started: no session is started for it, or it reads typed.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -120,6 +127,7 @@ import { agents, wireDialogProbe } from '../../../../electron/core/agent-manager
 import { ptyProcesses, resetTerminalInput, writeHumanInput } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
+import { stopTask } from '../../../../electron/services/task-banner';
 import { noteTurn } from '../../../../electron/services/task-ledger';
 import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
@@ -726,5 +734,45 @@ describe('a task that waited its turn and went in (L3)', () => {
     // Into the one session started for the task before it: no second one.
     expect(spawned).toHaveLength(1);
     expect(typedInto(spawned[0])).toContain('TASK-B');
+  });
+});
+
+describe('after the Audit\'s gate of 6fb17592 on #453', () => {
+  it('24. the banner\'s stop on a task held by a draft before its turn withdraws it, and interrupts nothing', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    // A draft in the field: the delegated task is held in the writer, its turn not begun.
+    writeHumanInput(terminal as never, '\x1b[A');
+    const a = call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const ref = String(a.answer()?.data.taskId);
+    expect(oneTaskQueue.busyRun('cl')?.taskRef).toBe(ref);
+    const before = typedInto(terminal);
+    expect(before).not.toContain('TASK-A');
+    const stopped = await stopTask('cl', ref);
+    expect(stopped, JSON.stringify(stopped)).toMatchObject({ success: true, stopped: 'queued' });
+    expect(typedInto(terminal).slice(before.length), 'Esc sent to a turn that is not this task\'s').not.toContain('\x1b');
+    await later(2000);
+    expect(oneTaskQueue.busyRun('cl'), 'the stopped task still holds the turn').toBeUndefined();
+    await later(10_000);
+    expect(typedInto(terminal), 'the stopped task went in later').not.toContain('TASK-A');
+  });
+
+  it('25. a task queued behind a delegated task whose CLI exited meanwhile starts a session: said started', { timeout: 30_000 }, async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    expect(runs).toHaveLength(1);
+    const b = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-B fix it', intent: 'task' }, 'orch');
+    await later(50);
+    await b.done;
+    expect(b.answer()?.data, JSON.stringify(b.answer())).toMatchObject({ mode: 'queued' });
+    const ref = String(b.answer()?.data.queuedTask);
+    // The task's turn ends, and the CLI exits: its terminal is a shell again.
+    terminal.process = 'bash';
+    runs[0].end();
+    await later(5000);
+    const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');
+    await seen.done;
+    expect(seen.answer()?.data.task, JSON.stringify(seen.answer())).toMatchObject({ id: ref, outcome: 'delivered', how: 'started' });
   });
 });
