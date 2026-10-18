@@ -36,8 +36,13 @@ export const SECRET_FIELDS = [
 export type SecretField = typeof SECRET_FIELDS[number];
 type Secrets = Partial<Pick<AppSettings, SecretField>>;
 
-/** The ones the window sets and clears through secrets:set; the CLIs' keys go through cliKeys:set. */
-export const WINDOW_SET_FIELDS = SECRET_FIELDS.filter((f) => f !== 'cliApiKeys' && f !== 'ampApiKey');
+/**
+ * The ones the window sets and clears through secrets:set, and is shown as a
+ * mask: the CLIs' keys go through cliKeys:set instead. The Sentry token keeps
+ * its own private file (sentry-token.ts) and is one of them.
+ */
+export const WINDOW_SET_FIELDS = [...SECRET_FIELDS.filter((f) => f !== 'cliApiKeys' && f !== 'ampApiKey'), 'sentryAuthToken'] as const;
+type WindowField = typeof WINDOW_SET_FIELDS[number];
 
 const isSecretField = (f: string): f is SecretField => (SECRET_FIELDS as readonly string[]).includes(f);
 
@@ -124,11 +129,11 @@ export const SECRET_MASK = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
  * set and '' when not, the CLIs' keys not at all (cliKeys:list says those),
  * and whether each is set.
  */
-export function settingsForWindow<T extends Partial<AppSettings>>(settings: T): Omit<T, SecretField> & { secretsSet: Record<SecretField, boolean> } {
-  const states = secretStates(settings);
+export function settingsForWindow<T extends Partial<AppSettings>>(settings: T): Omit<T, SecretField> & { secretsSet: Record<SecretField | WindowField, boolean> } {
+  const states = { ...secretStates(settings), sentryAuthToken: holds(settings.sentryAuthToken) };
   const masked: Record<string, string> = {};
   for (const f of WINDOW_SET_FIELDS) masked[f] = states[f] ? SECRET_MASK : '';
-  return { ...withoutSecrets(settings), ...masked, secretsSet: states } as Omit<T, SecretField> & { secretsSet: Record<SecretField, boolean> };
+  return { ...withoutSecrets(settings), ...masked, secretsSet: states } as Omit<T, SecretField> & { secretsSet: Record<SecretField | WindowField, boolean> };
 }
 
 /**
@@ -143,7 +148,7 @@ export function keepSecrets(current: AppSettings, incoming: Partial<AppSettings>
   void _states;
   const merged = { ...current, ...withoutSecrets(fields) } as AppSettings;
   const typed = incoming as Record<string, unknown>;
-  for (const f of SECRET_FIELDS) {
+  for (const f of [...SECRET_FIELDS, 'sentryAuthToken'] as const) {
     const value = f !== 'cliApiKeys' && f !== 'ampApiKey' && typeof typed[f] === 'string' && holds(typed[f]) && typed[f] !== SECRET_MASK
       ? String(typed[f]).trim() : undefined;
     if (value !== undefined) (merged as unknown as Record<string, unknown>)[f] = value;
