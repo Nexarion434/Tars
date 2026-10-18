@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { lastPathPart } from '@/lib/display-path';
 import { ipcReason } from '@/lib/ipc-error';
 import { isElectron } from '@/hooks/useElectron';
@@ -17,6 +18,9 @@ import { useTerminalContextMenu } from './hooks/useTerminalContextMenu';
 import { useTerminalDnd } from './hooks/useTerminalDnd';
 import { useProjectTabOrder } from './hooks/useProjectTabOrder';
 import { useHiddenAgents } from './hooks/useHiddenAgents';
+import { useBoardLayout } from './hooks/useBoardLayout';
+import { boardOrchestrator } from '@/lib/orchestrator-board';
+import { DASHBOARD_HEADER_ACTIONS_SLOT_ID } from '@/components/Dashboard/header-slot';
 import { getAutoLayout } from './constants';
 import type { LayoutPreset } from './types';
 import TerminalGrid from './components/TerminalGrid';
@@ -25,6 +29,7 @@ import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import BroadcastIndicator from './components/BroadcastIndicator';
 import ContextMenu from './components/ContextMenu';
+import BoardLayoutSwitch from './components/BoardLayoutSwitch';
 import 'xterm/css/xterm.css';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -249,6 +254,23 @@ export default function TerminalsView() {
   // The preset follows what is on screen: hiding a panel should re-flow the
   // board, not leave a gap where it was.
   const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout ?? getAutoLayout(visibleAgents.length);
+
+  // The orchestrator layout (t-c4ac3055, `Dashboard · orchestrator layout · notes`): a project's board with its
+  // orchestrator and another agent shows the orchestrator on two thirds of it and every other agent in a column,
+  // unless the equal grid was picked for that project. A custom tab keeps its preset.
+  const boardProject = tabManager.isProjectTabActive ? tabManager.activeProjectPath ?? null : null;
+  const boardLayout = useBoardLayout(boardProject);
+  const layoutOrchestrator = useMemo(() => boardOrchestrator(visibleAgents, !!boardProject), [visibleAgents, boardProject]);
+  const orchestratorId = layoutOrchestrator && boardLayout.layout === 'orchestrator' ? layoutOrchestrator : null;
+  const columnIds = useMemo(
+    () => (orchestratorId ? visibleAgents.filter(a => a.id !== orchestratorId).map(a => a.id) : []),
+    [visibleAgents, orchestratorId],
+  );
+  // The header's own element, once it is on the page: the switch is portalled there.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setHeaderSlot(document.getElementById(DASHBOARD_HEADER_ACTIONS_SLOT_ID));
+  }, []);
 
   // Agent IDs for grid
   const agentIds = useMemo(() => visibleAgents.map(a => a.id), [visibleAgents]);
@@ -478,10 +500,11 @@ export default function TerminalsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager/multiTerminal, not the objects themselves; see comment above
   }, [tabManager.customTabs, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.setActiveTab, multiTerminal.focusTerminal]);
 
-  // Keyboard shortcuts (must come after handler declarations to avoid TDZ)
+  // Keyboard shortcuts (must come after handler declarations to avoid TDZ). In the orchestrator layout every agent of
+  // the board is on it, the orchestrator first, then the column from the top.
   const visibleAgentIds = useMemo(
-    () => grid.visiblePanels.map(p => p.agentId),
-    [grid.visiblePanels]
+    () => (orchestratorId ? [orchestratorId, ...columnIds] : grid.visiblePanels.map(p => p.agentId)),
+    [orchestratorId, columnIds, grid.visiblePanels]
   );
   useEffect(() => { panelIdsRef.current = visibleAgentIds; }, [visibleAgentIds]);
 
@@ -496,6 +519,24 @@ export default function TerminalsView() {
     onCycleTab: handleCycleTab,
     isFullscreen: !!grid.fullscreenPanelId,
   });
+
+  // The keys go to the orchestrator when its layout opens: on the board's first show in it, and when the switch gives
+  // it back. Its terminal may still be starting: handleTerminalReady focuses it then. A click on another card takes
+  // the keys there, as on any board.
+  const focusTerminal = multiTerminal.focusTerminal;
+  const keysGivenTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!orchestratorId) {
+      keysGivenTo.current = null;
+      return;
+    }
+    const board = `${tabId}|${orchestratorId}`;
+    if (keysGivenTo.current === board) return;
+    keysGivenTo.current = board;
+    setFocusedPanelId(orchestratorId);
+    pendingFocusRef.current = orchestratorId;
+    focusTerminal(orchestratorId);
+  }, [orchestratorId, tabId, focusTerminal]);
 
   const handleClosePanel = useCallback(() => setPanelOpen(false), []);
 
@@ -651,6 +692,12 @@ export default function TerminalsView() {
         {/* Broadcast overlay */}
         <BroadcastIndicator active={broadcast.broadcastMode} />
 
+        {/* The board layout switch, in the Dashboard's header, on a board the orchestrator layout is for. */}
+        {headerSlot && layoutOrchestrator && createPortal(
+          <BoardLayoutSwitch value={boardLayout.layout} onChange={boardLayout.pick} />,
+          headerSlot,
+        )}
+
         {/* Project tabs - the board follows your project folders. First element
             of the frame: the layout and + Terminal controls live in the page
             header now, not in a toolbar above the strip. */}
@@ -689,6 +736,8 @@ export default function TerminalsView() {
             rglLayout={grid.rglLayout}
             cols={grid.cols}
             rows={grid.gridDefinition.rows}
+            orchestratorId={orchestratorId}
+            columnIds={columnIds}
             onDragStop={grid.onDragStop}
             broadcastMode={broadcast.broadcastMode}
             focusedPanelId={focusedPanelId}
