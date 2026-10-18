@@ -40,8 +40,13 @@ import { EventEmitter } from 'node:events';
  *      for ever as `starting`, and the queue stays held.
  *  D11. A model asked for one task is said taken while the agent's session was
  *      already open, which a model cannot change.
- *  D12. A CLI whose turns Tars cannot see (no hook: codex, opencode, amp, pi,
- *      grok) is followed for ever, or said to have answered what it did not.
+ *  D12. A CLI whose turns Tars cannot see (no hook: opencode, amp, pi, grok)
+ *      is followed for ever, or said to have answered what it did not.
+ *
+ * Added with codex's session log (fix/codex-works, 2026-10-18), before the code:
+ *  D18. codex, whose turns Tars reads from its session log and posts as the
+ *      hooks would (services/codex-sessions.ts), is said delivered as a CLI
+ *      Tars cannot see, or followed to its end without its answer.
  *  D13. Another project's orchestrator that passed allowCrossProject: true is
  *      refused, or its task goes anywhere but the target's terminal (moved
  *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
@@ -349,6 +354,23 @@ describe('a task delegated into the agent\'s own terminal', () => {
     expect(task.outcome).toBe('delivered');
     expect(String(task.error)).toMatch(/opencode/);
     expect(String(task.error)).toMatch(/cannot see when its turn ends/);
+  });
+});
+
+describe('a task delegated to a codex agent', () => {
+  it("(D18) is followed to its turn's end, as codex's session log tells it, and answered with its final message", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // The answer codex wrote at the turn's end (task_complete's last_agent_message), posted in full.
+    const long = `Done. ${'detail '.repeat(1200)}END`;
+    dev.lastCleanOutput = long;
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: long });
   });
 });
 
