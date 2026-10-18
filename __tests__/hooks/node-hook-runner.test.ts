@@ -320,15 +320,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'SessionStart with no CLI token reads without a token, the shared one neither, wherever it is',
+    name: 'SessionStart with no CLI token reads nothing, with the shared token neither, wherever it is',
     event: 'session-start',
     payload: { session_id: S, cwd: PROJECT },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
     setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
-      { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: undefined },
-      { method: 'GET', path: '/api/memory/context', auth: undefined, query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
     stdout: CONTINUE,
   },
@@ -405,14 +403,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'PostToolUse Bash with a description and no CLI token: the memory post goes without one',
+    name: 'PostToolUse Bash with a description and no CLI token: no memory post, with the shared token neither',
     event: 'post-tool-use',
     payload: { session_id: S, cwd: PROJECT, tool_name: 'Bash', tool_input: { command: 'npm test', description: 'Run tests' } },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
     setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
-      { method: 'POST', path: '/api/memory/remember', auth: undefined, body: { agent_id: 'agent-1', project_path: PROJECT, content: 'Ran command: Run tests (npm test)', type: 'command' } },
     ],
     stdout: CONTINUE,
   },

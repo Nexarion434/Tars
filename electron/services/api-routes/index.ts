@@ -3,6 +3,7 @@ import { registerHealthRoutes } from './health-routes';
 import { registerHooksRoutes } from './hooks-routes';
 import { registerAgentRoutes } from './agent-routes';
 import { registerTelegramRoutes } from './telegram-routes';
+import { registerIntegrationRoutes } from './integration-routes';
 import { registerChatReadRoutes } from './chat-read-routes';
 import { registerSlackRoutes } from './slack-routes';
 import { registerDiscordRoutes } from './discord-routes';
@@ -20,6 +21,7 @@ export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerHooksRoutes(app, ctx);
   registerAgentRoutes(app, ctx);
   registerTelegramRoutes(app, ctx);
+  registerIntegrationRoutes(app, ctx);
   registerChatReadRoutes(app, ctx);
   registerSlackRoutes(app, ctx);
   registerDiscordRoutes(app, ctx);
