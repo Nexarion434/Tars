@@ -27,7 +27,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. Nora, in normal mode, waits on codex's approval dialog: her status says she waits on a permission, then her
  *    answer comes back once it is answered; and before her call of a Tars tool, on the form codex 0.163 draws for
  *    it (measured with a probe server), named in her status, then her message reaches Claire once it is allowed;
- * 5. Mini, on gpt-5-codex-mini, fails with codex's own words, and Lead is told so.
+ * 5. Mini, on gpt-5-codex-mini, fails with codex's own words, and Lead is told so;
+ * 6. delegate_task to Cody gets its answer, read from codex's session log; a turn interrupted with Esc in Cody's
+ *    terminal (codex logs it turn_aborted) ends that task as interrupted, and Cody's next task is not held behind it.
  * Both shells. The artefact: values.json (each tool's answer, each launch's argv and effort, Claire's typed bytes, the
  * statuses seen) and the screenshot.
  */
@@ -201,6 +203,24 @@ for (const newInterface of [false, true]) {
       expect.soft(mcpSeen.find(e => e.handed)?.token, "the agent's token never reached the Tars server inside codex").toBe(true);
       expect.soft(typedIntoClaire(), "Claire never got Cody's message").toContain(`hello from codex b${nonce}`);
       expect.soft(typedIntoClaire(), 'the message is not from Cody').toContain('"Cody"');
+
+      // 6. delegate_task to Cody, its answer from codex's session log; then a turn interrupted with Esc.
+      const codyDelegated = await lead('delegate_task', { id: cody, prompt: `ECHO e${nonce}`, timeoutSeconds: 60 });
+      keep({ codyDelegated });
+      expect.soft(codyDelegated.text, "delegate_task never got Cody's answer").toContain(`echo e${nonce}`);
+      const held = lead('delegate_task', { id: cody, prompt: `HOLD f${nonce}`, timeoutSeconds: 60 });
+      await expect.poll(() => entries().some(e => e.turn && String(e.text).includes(`HOLD f${nonce}`)), { timeout: 20_000 }).toBe(true).catch(() => {});
+      await app.evaluate((_e, { dist, id }) => {
+        const req = process.mainModule!.require;
+        const a = req(`${dist}/core/agent-manager.js`).agents.get(id);
+        req(`${dist}/core/pty-manager.js`).ptyProcesses.get(a.ptyId)?.write('\x1b');
+      }, { dist, id: cody });
+      const cut = await held;
+      keep({ codyCut: cut, codyAfterCut: await statusOf(cody) });
+      expect.soft(cut.text, "Cody's interrupted task is not said interrupted").toContain('interrupted');
+      const codyNext = await lead('delegate_task', { id: cody, prompt: `ECHO g${nonce}`, timeoutSeconds: 60 });
+      keep({ codyNext });
+      expect.soft(codyNext.text, "Cody's next task after the interrupt").toContain(`echo g${nonce}`);
 
       // 4. Nora, in normal mode, waits on codex's approval, said in her status, then answers once it is answered.
       const nora = await make('Nora', { model: 'gpt-6-luna', permissionMode: 'normal' });

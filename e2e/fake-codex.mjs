@@ -10,6 +10,8 @@
 //   and the variables `env_vars` names (nothing else: measured with a probe server on 0.163), and calls
 //   send_message;
 // - it reads what is typed into it as codex's composer does: a bracketed paste, then Enter;
+// - `HOLD <tag>` works until Esc is pressed, then logs the turn as 0.163 does when it is interrupted: `turn_aborted`
+//   (reason `interrupted`), and no task_complete;
 // - in a folder its config.toml does not trust (`[projects."<real path>"] trust_level = "trusted"`), it first asks
 //   "Trust this folder?" and starts no session until it is answered.
 // Every launch and turn is logged to FAKE_CODEX_LOG, one JSON line each, with whether the agent's token was in its
@@ -105,6 +107,7 @@ function boot() {
 }
 
 let dialog = null; // the open approval: which one, and what answering it resolves
+let holding = null; // a turn at work until Esc
 function ask(tag) {
   out(`\n\n  Would you like to run the following command?\n\n  $ echo ${tag}\n\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for this command in this session (a)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel\n`);
   return new Promise((resolve) => { dialog = { kind: 'command', resolve }; });
@@ -176,6 +179,15 @@ async function turn(text) {
     write('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: null, error: { message: error } });
     return;
   }
+  const hold = /HOLD (\w+)/.exec(text);
+  if (hold) {
+    out(`\n• Working on ${hold[1]}\n`);
+    await new Promise((resolve) => { holding = resolve; });
+    out('\n■ Conversation interrupted: tell the model what to do differently.\n\n› ');
+    write('event_msg', { type: 'turn_aborted', turn_id: turnId, reason: 'interrupted' });
+    log({ aborted: true, tag: hold[1] });
+    return;
+  }
   let answer = 'ok';
   const approve = /APPROVE (\w+)/.exec(text);
   const send = /SEND (\S+) (.+)$/m.exec(text);
@@ -207,6 +219,7 @@ process.stdin.on('data', (chunk) => {
     else if (/[2n\x1b]/.test(data)) process.exit(0);
     return;
   }
+  if (holding && data === '\x1b') { const h = holding; holding = null; h(); return; }
   if (dialog) {
     const yes = dialog.kind === 'tool' ? /\r/ : /[y\r]/;
     const no = dialog.kind === 'tool' ? /\x1b/ : /[\x1bn]/;
