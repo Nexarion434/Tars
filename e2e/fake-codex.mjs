@@ -17,7 +17,9 @@
 // - started with no prompt, it writes no rollout before its first turn; `codex resume <id>` appends to that
 //   session's own rollout (a thread_settings_applied line at once, no session_meta), and `codex fork <id>` begins a
 //   new one whose session_meta names the session it forks (forked_from_id); `RECALL` answers with the first `ECHO`
-//   of the session, read back from its rollout: the conversation goes on across a restart of Tars.
+//   of the session, read back from its rollout: the conversation goes on across a restart of Tars;
+// - it holds its rollout open from its first line to its end, as 0.163 does (measured with lsof: at the file's first
+//   sight, through the turn and at rest), which is how Tars knows a session nobody named is its agent's.
 // Every launch and turn is logged to FAKE_CODEX_LOG, one JSON line each, with whether the agent's token was in its
 // environment, never the token.
 import fs from 'node:fs';
@@ -79,7 +81,7 @@ if (opts.approval && !['on-request', 'never'].includes(opts.approval)) {
 }
 const effort = opts.configs.map(c => /^model_reasoning_effort=(.+)$/.exec(c)?.[1]).find(Boolean)?.replace(/^"|"$/g, '') ?? null;
 const asks = !opts.approveForMe && !opts.bypass && opts.approval !== 'never';
-log({ launch: true, argv, cwd: process.cwd(), token: !!process.env.CLAUDE_MGR_API_TOKEN, model: opts.model, effort, asks });
+log({ launch: true, argv, cwd: process.cwd(), token: !!process.env.CLAUDE_MGR_API_TOKEN, model: opts.model, effort, asks, codexHome: process.env.CODEX_HOME ?? null });
 
 const home = process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex');
 const out = (text) => process.stdout.write(text.replace(/\n/g, '\r\n'));
@@ -111,7 +113,9 @@ function rolloutOf(id) {
   return null;
 }
 function appendTo(file) {
-  return (type, payload) => fs.appendFileSync(file, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
+  // Opened once, and held until the process ends, as codex holds its rollout.
+  const fd = fs.openSync(file, 'a');
+  return (type, payload) => fs.writeSync(fd, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
 }
 function newSession(extra = {}) {
   const started = new Date();

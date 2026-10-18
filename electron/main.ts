@@ -134,7 +134,8 @@ import { startTaskWatch, turnInterrupted } from './services/task-watch';
 import { cliRunningIn } from './core/agent-pty';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
-import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
+import { filesOpenBy, openFilesReadable } from './platform/open-files';
 import { startCodexSessionWatch } from './services/codex-sessions';
 import { terminalTokenOf } from './core/agent-tokens';
 import { codexDialogOnScreen } from './core/terminal-mirror';
@@ -758,6 +759,26 @@ app.whenReady().then(async () => {
       const agent = agents.get(agentId);
       const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
       return !!terminal && cliRunningIn(terminal);
+    },
+    // Whose own codex holds a new session's file, read once per session that
+    // names nobody: the codex under each waiting agent's terminal and what it
+    // started (the Audit's M1 on #465). Unknown where files cannot be read.
+    heldOpenBy: async (file, agentIds) => {
+      if (!openFilesReadable()) return undefined;
+      const procs = await readProcesses();
+      if (!procs) return undefined;
+      let real: string;
+      try { real = fs.realpathSync(file); } catch { return null; }
+      for (const agentId of agentIds) {
+        const agent = agents.get(agentId);
+        const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+        const codex = terminal ? cliProcess(terminal.pid, procs, 'codex') : undefined;
+        if (!codex) continue;
+        const open = await filesOpenBy(processTreeOf(codex.pid, procs));
+        if (open === undefined) return undefined;
+        if (open.has(real)) return agentId;
+      }
+      return null;
     },
   });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days

@@ -53,12 +53,7 @@ export function updateSharedJsonSync<T>(
   update: (current: T | undefined) => T | undefined,
   { createMode = 0o600 }: { createMode?: number } = {},
 ): SharedJsonOutcome {
-  // The file a link points at, so the rename replaces it and not the link.
-  const target = fs.existsSync(filePath) ? fs.realpathSync(filePath) : filePath;
-
-  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const before = readIfPresent(target);
-
+  return replaceShared(filePath, before => {
     let current: T | undefined;
     if (before !== undefined && before.trim()) {
       try {
@@ -76,14 +71,50 @@ export function updateSharedJsonSync<T>(
     const next = update(current);
     if (next === undefined) return 'unchanged';
     const contents = JSON.stringify(next, null, 2);
-    if (contents === unchanged) return 'unchanged';
+    return contents === unchanged ? 'unchanged' : { write: contents };
+  }, createMode);
+}
+
+/**
+ * updateSharedJsonSync for a file that is not JSON: codex's config.toml, which every codex reads at its start and
+ * rewrites when its user trusts a folder (providers/codex-cli.ts). The same care, and `update` says what the file
+ * becomes from what it holds (undefined: there is none), or undefined to leave it. A read that fails for any reason
+ * but the file's absence throws, and nothing is written: a config that could not be read was never one to replace.
+ */
+export function updateSharedTextSync(
+  filePath: string,
+  update: (current: string | undefined) => string | undefined,
+  { createMode = 0o600 }: { createMode?: number } = {},
+): Exclude<SharedJsonOutcome, 'unreadable'> {
+  return replaceShared(filePath, before => {
+    const next = update(before);
+    return next === undefined || next === before ? 'unchanged' : { write: next };
+  }, createMode) as Exclude<SharedJsonOutcome, 'unreadable'>;
+}
+
+/**
+ * The loop both share. `next` reads the file's text (undefined: there is none) and says what to write, or that
+ * nothing is to be; it runs again from the file as it is now if the file changed while the new one was written.
+ */
+function replaceShared(
+  filePath: string,
+  next: (before: string | undefined) => { write: string } | 'unchanged' | 'unreadable',
+  createMode: number,
+): SharedJsonOutcome {
+  // The file a link points at, so the rename replaces it and not the link.
+  const target = fs.existsSync(filePath) ? fs.realpathSync(filePath) : filePath;
+
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const before = readIfPresent(target);
+    const outcome = next(before);
+    if (outcome === 'unchanged' || outcome === 'unreadable') return outcome;
 
     // The file's own mode, given at creation: the umask can only narrow it.
     const mode = before !== undefined ? fs.statSync(target).mode & 0o777 : createMode;
     const tmp = `${target}.tars-${process.pid}.tmp`;
     try {
       if (!fs.existsSync(path.dirname(target))) fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(tmp, contents, { mode });
+      fs.writeFileSync(tmp, outcome.write, { mode });
 
       if (readIfPresent(target) !== before) {
         // Written to while this was being prepared: start again from that.

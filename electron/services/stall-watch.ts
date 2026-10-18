@@ -101,6 +101,13 @@ export function cliProcess(terminalPid: number, procs: Proc[], binary: 'claude' 
   return undefined;
 }
 
+/** A process and every process under it, nearest first: a CLI and what it started (codex's own binary under npm's node). */
+export function processTreeOf(pid: number, procs: Proc[]): number[] {
+  const tree = [pid];
+  for (let i = 0; i < tree.length && i < 512; i++) tree.push(...childrenOf(tree[i], procs).map(proc => proc.pid));
+  return tree;
+}
+
 /** The command of a live process under the CLI that is neither an MCP server nor caffeinate, if any. */
 export function toolAtWork(cliPid: number, procs: Proc[]): string | undefined {
   const queue = childrenOf(cliPid, procs);

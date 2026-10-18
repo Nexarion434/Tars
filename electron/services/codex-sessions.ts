@@ -17,10 +17,15 @@ import { codexHome, codexRolloutOf } from '../providers/codex-cli';
  * through the one state machine every agent goes through (hooks-routes.ts). codex-sessions.test.ts says each way
  * this goes wrong.
  *
- * Whose session is whose: a launch is noted when Tars spawns a codex terminal (spawnAgentPty). A new session in
- * that folder, begun after it, is that launch's. When several launches wait in one folder, Tars's identity line in
- * the session's first message ("(id <agent id>)", every task Tars hands a session) says which; without it, the
- * first launch takes the first session.
+ * Whose session is whose: a launch is noted when Tars spawns a codex terminal (spawnAgentPty), and a new session in
+ * its folder, begun after it, is that launch's only on evidence (the Audit's M1 on #465: the first session in the
+ * folder was taken, the user's own codex included, and its id then became the agent's, to resume): its first message
+ * carries the agent's identity line ("[Tars: you are agent ... (id <agent id>)", which every session Tars begins
+ * carries, agent-guide.ts), the agent's own codex holds its rollout open (measured on 0.163: from its first line to
+ * the codex's end, at rest included; platform/open-files.ts), or it is a fork of the agent's own session that the
+ * launch began. A first message naming another agent is nobody's, and so, where a process's files cannot be read
+ * (Windows), is one that names nobody. A new rollout is read from its head on, each byte once and only until its first
+ * message: never whole, at every tick.
  *
  * An approval codex waits on (normal mode asks before a command outside its sandbox, and before each call of an MCP
  * server's tool) is in no line of the log: it is read from the terminal's screen (terminal-mirror.ts,
@@ -33,7 +38,7 @@ export interface HookPost {
 }
 
 export type CodexEvent =
-  | { kind: 'session'; id: string; cwd: string; subagent: boolean; at: number }
+  | { kind: 'session'; id: string; cwd: string; subagent: boolean; at: number; forkedFrom?: string }
   | { kind: 'turn_started'; turnId: string }
   | { kind: 'user'; text: string }
   | { kind: 'turn_complete'; turnId: string; message: string | null; error: string | null }
@@ -66,7 +71,9 @@ export function codexEventOf(line: string): CodexEvent | null {
     if (!id || typeof p.cwd !== 'string') return null;
     const at = Date.parse(typeof p.timestamp === 'string' ? p.timestamp : typeof timestamp === 'string' ? timestamp : '');
     const subagent = !!p.source && typeof p.source === 'object' && 'subagent' in (p.source as object);
-    return { kind: 'session', id, cwd: p.cwd, subagent, at: Number.isFinite(at) ? at : 0 };
+    // `codex fork <id>` names the session it forks (measured on 0.163).
+    const forkedFrom = typeof p.forked_from_id === 'string' ? p.forked_from_id : undefined;
+    return { kind: 'session', id, cwd: p.cwd, subagent, at: Number.isFinite(at) ? at : 0, ...(forkedFrom ? { forkedFrom } : {}) };
   }
   if (type !== 'event_msg') return null;
   if (p.type === 'task_started') return { kind: 'turn_started', turnId: typeof p.turn_id === 'string' ? p.turn_id : '' };
@@ -104,6 +111,12 @@ export interface CodexSessionWatchDeps {
   resumableSessionOf?: (agentId: string) => string | undefined;
   /** Whether codex runs in the agent's terminal now (production: cliRunningIn). */
   codexRunning?: (agentId: string) => boolean;
+  /**
+   * Which of these agents' own codex holds this file open (production: the codex under each one's terminal and what it
+   * started, by lsof or /proc, platform/open-files.ts): its id, null for none of them, undefined where it cannot be
+   * known (Windows).
+   */
+  heldOpenBy?: (file: string, agentIds: string[]) => Promise<string | null | undefined>;
 }
 
 interface Launch {
@@ -117,7 +130,8 @@ interface Bound {
   agentId: string;
   sessionId: string;
   offset: number;
-  partial: string;
+  /** The last line read, with no end yet: its own bytes (linesOf). */
+  pending: Buffer;
   registered: boolean;
   turnOpen: boolean;
   startPosted: boolean;
@@ -134,32 +148,72 @@ const LAUNCH_SLACK_MS = 2_000;
  * before its first turn, which may come hours later.
  */
 const LAUNCH_TTL_MS = 10 * 60_000;
-/** How long a session waits for its first message to say whose it is, when several launches wait in its folder. */
+/** A new rollout not settled yet, read from its head on: what its first lines say, and where its reading stopped. */
+interface Head {
+  offset: number;
+  pending: Buffer;
+  session?: Extract<CodexEvent, { kind: 'session' }>;
+  firstUser?: string;
+  /** Its first line is not a session's: nobody's. */
+  notASession?: boolean;
+  /** Read HEAD_CAP_BYTES in with no first message. */
+  capped?: boolean;
+}
+
+/** How long a new session waits for its first message, which may say whose it is, before it is settled without it. */
 const IDENTITY_WAIT_MS = 10_000;
-const IDENTITY = /\(id ([0-9a-fA-F-]{8,})\)/;
+/** Tars's identity line (agent-guide.ts identityLine, and spawnAgentSession's header). */
+const IDENTITY = /\[Tars: you are agent ".*?" \(id ([0-9a-fA-F-]{8,})\)/;
+/**
+ * How far into a new rollout its first message is looked for. Measured on 0.163: at 43 KB, after session_meta (19 KB),
+ * codex's instructions and context; the project's AGENTS.md comes before it too, 32 KiB at most as codex reads it.
+ */
+const HEAD_CAP_BYTES = 1024 * 1024;
+/** How much of a rollout's head one read takes. */
+const HEAD_CHUNK_BYTES = 128 * 1024;
 
 function realOf(dir: string): string {
   try { return fs.realpathSync(dir); } catch { return path.resolve(dir); }
 }
 
-function readFrom(file: string, offset: number): { text: string; end: number } {
+/** The bytes of a file from `offset`, `max` of them at most. */
+function readFrom(file: string, offset: number, max = Infinity): Buffer {
   const fd = fs.openSync(file, 'r');
   try {
     const size = fs.fstatSync(fd).size;
-    if (size <= offset) return { text: '', end: offset };
-    const buffer = Buffer.alloc(size - offset);
-    fs.readSync(fd, buffer, 0, buffer.length, offset);
-    return { text: buffer.toString('utf8'), end: size };
+    if (size <= offset) return Buffer.alloc(0);
+    const buffer = Buffer.alloc(Math.min(size - offset, max));
+    const read = fs.readSync(fd, buffer, 0, buffer.length, offset);
+    return read === buffer.length ? buffer : buffer.subarray(0, read);
   } finally {
     fs.closeSync(fd);
   }
 }
 
+/**
+ * The whole lines of what was read, after what the last read left: a line codex is still writing waits for its end,
+ * kept as its own bytes (a copy, never a slice of the buffer it was read in: the heap rules), and a character cut
+ * between two reads is decoded whole once the rest of it comes.
+ */
+function linesOf(state: { pending: Buffer }, chunk: Buffer): string[] {
+  const data = state.pending.length ? Buffer.concat([state.pending, chunk]) : chunk;
+  const lines: string[] = [];
+  let start = 0;
+  for (let end = data.indexOf(0x0a, start); end >= 0; end = data.indexOf(0x0a, start)) {
+    lines.push(data.toString('utf8', start, end));
+    start = end + 1;
+  }
+  state.pending = Buffer.from(data.subarray(start));
+  return lines;
+}
+
 export class CodexSessionWatch {
   private launches: Launch[] = [];
   private bound = new Map<string, Bound>();
-  /** Files read and found nobody's (another folder, before any launch, a subagent): never read again. */
+  /** Files read and found nobody's (another folder, before any launch, a subagent, no evidence): never read again. */
   private nobodys = new Set<string>();
+  /** New rollouts not settled yet, each read on from where it stopped. */
+  private heads = new Map<string, Head>();
 
   constructor(private deps: CodexSessionWatchDeps) {}
 
@@ -220,7 +274,7 @@ export class CodexSessionWatch {
     const now = this.deps.now();
     this.launches = this.launches.filter(l => now - l.at < LAUNCH_TTL_MS || this.deps.codexRunning?.(l.agentId) === true);
     this.bindResumed();
-    this.bindNew(now);
+    await this.bindNew(now);
     for (const [file, b] of this.bound) await this.follow(file, b);
     for (const b of this.bound.values()) await this.lookForApproval(b);
   }
@@ -234,46 +288,88 @@ export class CodexSessionWatch {
       this.launches = this.launches.filter(l => l !== launch);
       this.nobodys.delete(launch.resume.file);
       this.bound.set(launch.resume.file, {
-        agentId: launch.agentId, sessionId: launch.resume.sessionId, offset: launch.resume.size, partial: '',
+        agentId: launch.agentId, sessionId: launch.resume.sessionId, offset: launch.resume.size, pending: Buffer.alloc(0),
         registered: false, turnOpen: false, startPosted: false, asking: false, resumed: true,
       });
     }
   }
 
-  private bindNew(now: number): void {
-    const candidates: Array<{ file: string; session: Extract<CodexEvent, { kind: 'session' }>; firstUser?: string }> = [];
-    for (const file of this.filesToRead()) {
-      let text: string;
-      try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
-      const lines = text.split('\n');
-      if (lines.length < 2) continue; // its first line is still being written
-      const session = codexEventOf(lines[0]);
-      if (!session || session.kind !== 'session') { this.nobodys.add(file); continue; }
-      const firstUser = lines.slice(1, -1).map(codexEventOf).find((e): e is Extract<CodexEvent, { kind: 'user' }> => e?.kind === 'user')?.text;
-      candidates.push({ file, session, firstUser });
-    }
-    for (const { file, session, firstUser } of candidates.sort((a, b) => a.session.at - b.session.at)) {
-      const cwd = realOf(session.cwd);
-      const waiting = this.launches.filter(l => l.cwd === cwd && session.at >= l.at - LAUNCH_SLACK_MS);
-      if (session.subagent || waiting.length === 0) {
-        // Nobody's for good once no launch waits for it: a subagent, another folder, or begun before any launch.
-        if (session.subagent || !this.launches.some(l => l.cwd === cwd)) this.nobodys.add(file);
-        else if (this.launches.every(l => session.at < l.at - LAUNCH_SLACK_MS)) this.nobodys.add(file);
-        continue;
+  private async bindNew(now: number): Promise<void> {
+    const files = this.filesToRead();
+    // What no launch waits for any more is not read on.
+    for (const file of this.heads.keys()) if (!files.includes(file)) this.heads.delete(file);
+    const read: Array<{ file: string; head: Head & { session: Extract<CodexEvent, { kind: 'session' }> } }> = [];
+    for (const file of files) {
+      let head = this.heads.get(file);
+      if (!head) {
+        head = { offset: 0, pending: Buffer.alloc(0) };
+        this.heads.set(file, head);
       }
-      const named = firstUser?.match(IDENTITY)?.[1];
-      let launch = named ? waiting.find(l => l.agentId === named) : undefined;
-      if (!launch) {
-        // Several launches and nothing said yet: the first message may still name one.
-        if (waiting.length > 1 && firstUser === undefined && now - session.at < IDENTITY_WAIT_MS) continue;
-        launch = waiting.sort((a, b) => a.at - b.at)[0];
-      }
-      this.launches = this.launches.filter(l => l !== launch);
-      this.bound.set(file, {
-        agentId: launch.agentId, sessionId: session.id, offset: 0, partial: '',
-        registered: false, turnOpen: false, startPosted: false, asking: false,
-      });
+      try { this.readHead(file, head); } catch { continue; } // gone, or not readable for now
+      if (head.notASession) this.settle(file, null);
+      else if (head.session) read.push({ file, head: head as Head & { session: Extract<CodexEvent, { kind: 'session' }> } });
     }
+    for (const { file, head } of read.sort((a, b) => a.head.session.at - b.head.session.at)) {
+      const launch = await this.launchOf(file, head, now);
+      if (launch === 'wait') continue;
+      this.settle(file, launch);
+      if (launch) {
+        this.launches = this.launches.filter(l => l !== launch);
+        this.bound.set(file, {
+          agentId: launch.agentId, sessionId: head.session.id, offset: 0, pending: Buffer.alloc(0),
+          registered: false, turnOpen: false, startPosted: false, asking: false,
+        });
+      }
+    }
+  }
+
+  /** A new rollout's head read on from where it stopped: up to its first message, or HEAD_CAP_BYTES. */
+  private readHead(file: string, head: Head): void {
+    while (head.firstUser === undefined && !head.capped && !head.notASession) {
+      const chunk = readFrom(file, head.offset, HEAD_CHUNK_BYTES);
+      if (!chunk.length) return;
+      head.offset += chunk.length;
+      for (const line of linesOf(head, chunk)) {
+        const event = codexEventOf(line);
+        if (!head.session) {
+          if (event?.kind !== 'session') { head.notASession = true; return; }
+          head.session = event;
+        } else if (event?.kind === 'user') {
+          head.firstUser = event.text;
+          break;
+        }
+      }
+      if (head.firstUser === undefined && head.offset >= HEAD_CAP_BYTES) head.capped = true;
+    }
+  }
+
+  /**
+   * The launch a new session is, on evidence only: a fork of the session the launch may resume, Tars's identity line in
+   * its first message, or its file held open by the agent's own codex. 'wait' while its first message may still come;
+   * null when no launch waits in its folder since before it began, when its first message names an agent no waiting
+   * launch is, or when no waiting agent's codex holds it, or that cannot be known.
+   */
+  private async launchOf(file: string, head: Head & { session: Extract<CodexEvent, { kind: 'session' }> }, now: number): Promise<Launch | null | 'wait'> {
+    const { session } = head;
+    if (session.subagent) return null;
+    const cwd = realOf(session.cwd);
+    const waiting = this.launches.filter(l => l.cwd === cwd && session.at >= l.at - LAUNCH_SLACK_MS);
+    if (waiting.length === 0) return null;
+    if (session.forkedFrom) {
+      const forker = waiting.find(l => l.resume?.sessionId === session.forkedFrom);
+      if (forker) return forker;
+    }
+    if (head.firstUser === undefined && !head.capped && now - session.at < IDENTITY_WAIT_MS) return 'wait';
+    const named = head.firstUser?.match(IDENTITY)?.[1]?.toLowerCase();
+    if (named) return waiting.find(l => l.agentId.toLowerCase() === named) ?? null;
+    const holder = await this.deps.heldOpenBy?.(file, waiting.map(l => l.agentId));
+    return (holder && waiting.find(l => l.agentId === holder)) || null;
+  }
+
+  /** A new rollout settled, bound or nobody's: its head is read no more. */
+  private settle(file: string, launch: Launch | null): void {
+    this.heads.delete(file);
+    if (!launch) this.nobodys.add(file);
   }
 
   private post(b: Bound, route: HookPost['path'], body: Record<string, unknown>): Promise<void> {
@@ -281,18 +377,16 @@ export class CodexSessionWatch {
   }
 
   private async follow(file: string, b: Bound): Promise<void> {
-    let read: { text: string; end: number };
-    try { read = readFrom(file, b.offset); } catch { return; }
-    if (!read.text) return;
-    b.offset = read.end;
+    let chunk: Buffer;
+    try { chunk = readFrom(file, b.offset); } catch { return; }
+    if (!chunk.length) return;
+    b.offset += chunk.length;
     if (b.resumed && !b.registered) {
       b.registered = true;
       await this.post(b, '/api/hooks/status', { status: 'running', source: 'resume' });
     }
-    const lines = (b.partial + read.text).split('\n');
-    // A last line with no end yet is still being written: it waits for the rest.
-    b.partial = lines.pop() ?? '';
-    for (const line of lines) {
+    // A last line with no end yet is still being written: it waits for the rest (linesOf).
+    for (const line of linesOf(b, chunk)) {
       const event = codexEventOf(line);
       if (!event) continue;
       if (event.kind === 'session') {
@@ -362,7 +456,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning' | 'heldOpenBy'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;

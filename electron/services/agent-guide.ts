@@ -280,13 +280,27 @@ export function agentGuideSection(agent: AgentStatus): string {
 }
 
 /**
+ * Who the agent is, in Tars's identity line, as spawnAgentSession's header
+ * begins it: what a CLI with no bootstrap to tell it learns first, and the line
+ * a codex session is bound to its agent by (services/codex-sessions.ts, the
+ * Audit's M1 on #465).
+ */
+export function identityLine(agent: AgentStatus): string {
+  const role = agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker';
+  return `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ${role} of project ${agent.projectPath}.]`;
+}
+
+/**
  * The section for the prompt a session starts on, once: a CLI whose config
  * folder is not Claude's has no SessionStart hook to fetch the bootstrap, so
- * it gets it here; a claude CLI, in a terminal or over ACP, gets it from its
- * bootstrap, and nothing here. Every launch that builds a CLI's first prompt
- * reads it: spawnAgentSession, the window's (Start, a wake, a restart), the
- * bots', and a run over ACP.
+ * it gets it here, after the agent's identity line; a claude CLI, in a
+ * terminal or over ACP, gets it from its bootstrap, and nothing here. Every
+ * launch that builds a CLI's first prompt reads it: spawnAgentSession (whose
+ * own header says who the agent is, `identity: false`), the window's (Start, a
+ * wake, a restart), the bots', and a run over ACP.
  */
-export function guideForPrompt(agent: AgentStatus, providerConfigDir: string): string {
-  return needsPromptInjection(providerConfigDir) ? agentGuideSection(agent) : '';
+export function guideForPrompt(agent: AgentStatus, providerConfigDir: string, opts: { identity?: boolean } = {}): string {
+  if (!needsPromptInjection(providerConfigDir)) return '';
+  const section = agentGuideSection(agent);
+  return opts.identity === false ? section : `${identityLine(agent)}\n\n${section}`;
 }

@@ -67,7 +67,16 @@ export class CodexProvider implements CLIProvider {
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
+    // The codex home Tars reads and writes, handed to the codex it starts (the
+    // Audit's L4 on #465): Tars trusts the folder and names its MCP servers'
+    // variables in that home's config.toml, and reads the sessions there, while
+    // a CODEX_HOME an rc file of the agent's shell sets sent codex elsewhere, to
+    // ask "Trust this folder?" for good. On macOS and Linux in the line, which no
+    // rc file runs after; on Windows, where the line's first word is the binary
+    // itself (platform/launch.ts) and nothing is sourced, in the terminal's
+    // environment (getPtyEnvVars).
+    let command = process.platform === 'win32' ? '' : `env CODEX_HOME=${shellQuote(this.configDir)} `;
+    command += `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
     // A session to go on with (measured on 0.163): `codex resume <id>` continues
     // it in its own rollout, with its conversation, and `codex fork <id>` under a
@@ -153,6 +162,8 @@ export class CodexProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // The home Tars reads and writes (buildInteractiveCommand says why).
+      CODEX_HOME: this.configDir,
       // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
       ...keyEnvFor('codex', appSettings),
     };

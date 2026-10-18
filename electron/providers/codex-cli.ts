@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { parse as parseToml } from 'smol-toml';
 import { execCliSync } from './cli-exec';
 import { trustsTooMuch } from '../utils/trust-too-much';
+import { updateSharedTextSync } from '../utils/shared-file';
 import type { AgentEffort } from '../types';
 
 /**
@@ -188,28 +190,56 @@ export function codexEffortArgs(effort: string | undefined, model: string | unde
 }
 
 /**
+ * config.toml with this folder trusted, from what it holds now (the Audit's L1 and L2 on #465). 'already' when it has
+ * a table for the folder under any writing of its key: codex writes a key holding a backslash or a double quote as a
+ * literal string (every path on Windows), and a dotted key under [projects] defines the table too. 'unreadable' when
+ * it is not TOML, or would not be with the table added (a `projects` written inline takes no table): a second table
+ * for one key is invalid TOML, and codex then refuses its whole config, every session of its user with it. Else the
+ * file with the table at its end, the rest as it was. Keys compare as TOML compares them, whole and exact, which is
+ * how codex looks a folder up: another case of a letter is another key, and Tars's own goes beside it.
+ */
+export function trustTableFor(content: string | undefined, folder: string): 'already' | 'unreadable' | { next: string } {
+  const text = content ?? '';
+  let parsed: Record<string, unknown>;
+  try { parsed = parseToml(text); } catch { return 'unreadable'; }
+  const projects = parsed.projects;
+  if (projects && typeof projects === 'object' && Object.prototype.hasOwnProperty.call(projects, folder)) return 'already';
+  const header = `[projects.${JSON.stringify(folder).replace(/\u007f/g, '\\u007F')}]`;
+  const next = `${text.trimEnd()}${text.trim() ? '\n\n' : ''}${header}\ntrust_level = "trusted"\n`;
+  try { parseToml(next); } catch { return 'unreadable'; }
+  return { next };
+}
+
+/**
  * The agent's folder trusted in codex's config before its codex starts, as ensureProjectTrusted does for Claude Code.
  * Measured on codex-cli 0.163.0: in a folder its config does not trust, codex first asks "Trust this folder?",
  * writes no session and does nothing until someone answers, which nobody does in an agent's terminal; with
  * `[projects."<folder>"] trust_level = "trusted"` the same launch ran its turn. Under the folder's real path, the
  * one codex records (its session's cwd). A choice already in the config, trusted or not, is the user's and is left
  * as it is; a folder that would trust every folder below it is refused (utils/trust-too-much.ts), and codex asks.
+ * The file is read before it is written, and only its absence reads as none; it is replaced whole, as Tars writes
+ * ~/.claude.json (utils/shared-file.ts): a codex starting meanwhile never reads half of it.
  */
 export function ensureCodexProjectTrusted(projectPath: string, home: string = codexHome()): 'written' | 'already' | 'refused' | 'failed' {
   if (!projectPath || trustsTooMuch(projectPath)) return 'refused';
   let real: string;
   try { real = fs.realpathSync(projectPath); } catch { return 'failed'; }
   const file = path.join(home, 'config.toml');
-  let content = '';
-  try { content = fs.readFileSync(file, 'utf-8'); } catch { /* none yet */ }
-  const header = `[projects.${JSON.stringify(real).replace(/\u007f/g, '\\u007F')}]`;
-  if (content.includes(header)) return 'already';
+  let found: 'already' | 'unreadable' | undefined;
   try {
-    fs.mkdirSync(home, { recursive: true });
-    fs.writeFileSync(file, `${content.trimEnd()}${content.trim() ? '\n\n' : ''}${header}\ntrust_level = "trusted"\n`);
-    return 'written';
+    const outcome = updateSharedTextSync(file, current => {
+      const table = trustTableFor(current, real);
+      found = typeof table === 'string' ? table : undefined;
+      return typeof table === 'string' ? undefined : table.next;
+    });
+    if (found === 'already') return 'already';
+    if (outcome === 'written') return 'written';
+    console.warn(found === 'unreadable'
+      ? `[codex] ${file} is not TOML Tars can add a table to: ${real} is not trusted there, and codex will ask`
+      : `[codex] ${real} not trusted in ${file}: the file kept changing while Tars wrote it`);
+    return 'failed';
   } catch (err) {
-    console.warn(`[codex] ${real} not trusted in ${file}:`, err instanceof Error ? err.message : err);
+    console.warn(`[codex] ${real} not trusted in ${file}: it could not be read`, err instanceof Error ? err.message : err);
     return 'failed';
   }
 }

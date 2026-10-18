@@ -282,7 +282,8 @@ async function spawnAgentSessionInSlot(
   // never becomes a turn.
   // And how Tars works (services/agent-guide.ts): a claude terminal gets it
   // in its bootstrap, a CLI without that hook here.
-  const guide = guideForPrompt(agent, cliProvider.configDir);
+  // Its own header says who the agent is: the guide without the line.
+  const guide = guideForPrompt(agent, cliProvider.configDir, { identity: false });
   const guideBlock = guide ? `\n\n${guide}` : '';
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
