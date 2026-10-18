@@ -12,8 +12,9 @@ import { EventEmitter } from 'node:events';
  * are fake ptys, and a run over ACP lasts until the test ends it.
  *
  * How it fails, written before the code (2026-10-18):
- * 1. (H1) An agent whose CLI tells Tars nothing of its turns (amp, codex,
- *    grok, opencode, pi: no end-of-turn hook) reads busy for ever once its
+ * 1. (H1) An agent whose CLI tells Tars nothing of its turns (amp, grok,
+ *    opencode, pi: no end-of-turn hook; codex's turns are read from its
+ *    session log since 2.0.4, case 1b) reads busy for ever once its
  *    terminal was handed a task: it stays `running` while its TUI is open,
  *    and every task delegated to it waits in its queue for ever.
  * 2. (H1) A claude agent whose Stop hook was lost, which the stall watch
@@ -203,13 +204,24 @@ afterEach(() => {
 });
 
 describe('what holds an agent, for every CLI (H1)', () => {
-  it('1. a codex worker whose terminal took a task, its TUI open and running, still gets a delegated task: the run starts', async () => {
-    withCli('cx', 'codex', 'running');
-    const a = call('POST', '/api/agents/cx/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+  it('1. a grok worker whose terminal took a task, its TUI open and running, still gets a delegated task: the run starts', async () => {
+    withCli('gk', 'grok', 'running');
+    const a = call('POST', '/api/agents/gk/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
     await later(50);
     expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ started: true });
     expect(a.answer()?.data.queued).toBeUndefined();
     expect(runs.map(r => r.task).join('\n')).toContain('TASK-A');
+  });
+
+  it('1b. a codex worker in a turn, which Tars sees end in codex\'s session log since 2.0.4, holds its line as claude does', async () => {
+    const { agent } = withCli('cx', 'codex', 'running');
+    const a = call('POST', '/api/agents/cx/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(50);
+    expect(a.answer()?.data).toMatchObject({ queued: true, outcome: 'queued' });
+    expect(runs).toHaveLength(0);
+    agent.status = 'idle';
+    await later(1500);
+    expect(runs, 'started once the turn ended').toHaveLength(1);
   });
 
   it('2. a claude worker the stall watch found doing nothing (its Stop lost) does not hold its line', async () => {
@@ -232,10 +244,10 @@ describe('what holds an agent, for every CLI (H1)', () => {
     expect(runs, 'started once the turn ended').toHaveLength(1);
   });
 
-  it('4. a worker\'s note to a codex worker, its TUI open, is typed in: no turn end is waited for that never comes', async () => {
-    const { terminal } = withCli('cx', 'codex', 'running');
+  it('4. a worker\'s note to a grok worker, its TUI open, is typed in: no turn end is waited for that never comes', async () => {
+    const { terminal } = withCli('gk', 'grok', 'running');
     member('w1');
-    const n = call('POST', '/api/agents/cx/dispatch', { message: 'NOTE-ONE the notes are in' }, 'w1');
+    const n = call('POST', '/api/agents/gk/dispatch', { message: 'NOTE-ONE the notes are in' }, 'w1');
     await later(3000);
     await n.done;
     expect(n.answer()?.data, JSON.stringify(n.answer())).toMatchObject({ success: true, note: true });
