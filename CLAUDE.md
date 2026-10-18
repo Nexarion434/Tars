@@ -94,7 +94,7 @@ CLAUDE_MGR_API_TOKEN  # minted per terminal by spawnAgentPty and per ACP run by 
 CLAUDE_MGR_API_TOKEN_FILE # a delegated run's MCP servers only: a 0600 file holding the run's token, removed with the run; the claude adapter writes their list into its command line, so the token never goes in it
 ANTHROPIC_BASE_URL    # every alt provider runs the claude binary with these two rewritten
 ANTHROPIC_AUTH_TOKEN  # the key, from app-settings.json, per provider (Tars's own token for the bridge's two), sent as a Bearer
-ANTHROPIC_API_KEY     # blanked for every alt provider: an interactive Claude Code asks before it uses one, and nothing answers in an agent's terminal; scheduled scripts (claude -p) still export it
+ANTHROPIC_API_KEY     # blanked for every alt provider: an interactive Claude Code asks before it uses one, and nothing answers in an agent's terminal; scheduled scripts (claude -p) blank it too, and start claude only with ANTHROPIC_AUTH_TOKEN set
 ANTHROPIC_MODEL
 CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder of the account an agent's CLI and its ACP runs start on, and of the account Settings signs in, checks or signs out (`claude auth login`, `auth status`, `auth logout`); removed for account 1 (~/.claude). Never set otherwise
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
