@@ -134,14 +134,17 @@ for (const newInterface of [false, true]) {
       const left = ['app-settings.json.avant-node-22.bak', 'app-settings.json.tmp', 'api-token', 'hermes-connection.json', 'hermes-session.json']
         .filter((f) => fs.existsSync(path.join(dir, f)));
       const moved = ['settings-secrets.json', 'api-token', 'hermes-connection.json', 'hermes-session.json'].filter((f) => fs.existsSync(path.join(priv, f)));
-      const modes = { file: fs.statSync(path.join(priv, 'settings-secrets.json')).mode & 0o777, dir: fs.statSync(priv).mode & 0o777 };
+      // Read softly, so that on a Tars without the move (the red witness) every check below still runs.
+      const modeOf = (p: string) => (fs.existsSync(p) ? fs.statSync(p).mode & 0o777 : null);
+      const modes = { file: modeOf(path.join(priv, 'settings-secrets.json')), dir: modeOf(priv) };
       const outside = filesHolding(home, ALL).map((p) => path.relative(home, p)).filter((p) => !p.startsWith('.tars-private'));
       keep({ left, moved, modes, outside });
       expect.soft(left).toEqual([]);
       expect.soft(moved).toEqual(['settings-secrets.json', 'api-token', 'hermes-connection.json', 'hermes-session.json']);
       expect.soft(modes).toEqual({ file: 0o600, dir: 0o700 });
       expect.soft(outside, 'files outside ~/.tars-private holding a key').toEqual([]);
-      const privateFile = fs.readFileSync(path.join(priv, 'settings-secrets.json'), 'utf8');
+      const readPrivate = () => (fs.existsSync(path.join(priv, 'settings-secrets.json')) ? fs.readFileSync(path.join(priv, 'settings-secrets.json'), 'utf8') : '');
+      const privateFile = readPrivate();
       for (const k of [...Object.values(SECRETS), CODEX_KEY, BACKUP_KEY]) expect.soft(privateFile.includes(k), `the private file holds ${k.slice(0, 12)}`).toBe(true);
 
       // 2, 3. What the window gets: whether each is set, never a value.
@@ -151,16 +154,16 @@ for (const newInterface of [false, true]) {
       for (const f of Object.keys(SECRETS)) expect.soft((shown.secretsSet as Record<string, boolean>)?.[f], `${f} is set`).toBe(true);
       expect.soft(String(shown.deepSeekApiKey)).toMatch(/^•+$/);
       await api((a) => a.appSettings.get().then((s) => a.appSettings.save(s)));
-      const afterSave = fs.readFileSync(path.join(priv, 'settings-secrets.json'), 'utf8');
+      const afterSave = readPrivate();
       for (const k of Object.values(SECRETS)) expect.soft(afterSave.includes(k), 'a save from the window keeps every key').toBe(true);
-      const setOne = await api((a) => a.secrets.set('jiraApiToken', 'e2e-jira-ffff'));
-      const clearOne = await api((a) => a.secrets.set('slackBotToken', null));
-      const refused = await api((a) => a.secrets.set('telegramEnabled', 'true'));
+      const setOne = await api((a) => a.secrets?.set('jiraApiToken', 'e2e-jira-ffff') ?? Promise.resolve('no secrets channel'));
+      const clearOne = await api((a) => a.secrets?.set('slackBotToken', null) ?? Promise.resolve('no secrets channel'));
+      const refused = await api((a) => a.secrets?.set('telegramEnabled', 'true') ?? Promise.resolve('no secrets channel'));
       keep({ setOne, clearOne, refused });
       expect.soft(setOne).toEqual({ success: true, set: true });
       expect.soft(clearOne).toEqual({ success: true, set: false });
       expect.soft(refused).toMatchObject({ success: false });
-      const afterSet = fs.readFileSync(path.join(priv, 'settings-secrets.json'), 'utf8');
+      const afterSet = readPrivate();
       expect.soft(afterSet.includes('e2e-jira-ffff') && !afterSet.includes(SECRETS.slackBotToken)).toBe(true);
       expect.soft(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8')).not.toContain('e2e-jira-ffff');
 
