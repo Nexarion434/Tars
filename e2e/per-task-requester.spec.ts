@@ -10,8 +10,13 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * piece of work (ORCHESTRATOR-PER-CHAT.md v2.2, PR A), in the real app.
  *
  * Three stand-in CLIs record every byte typed into them: a worker, and two
- * agents that ask it for work ("Lead" and "Bot"). The requests go through the
- * API with each asker's own token, as send_message does. The worker's turns
+ * agents that ask it for work: "Lead", the project's orchestrator, and "Bot",
+ * the runner of the project's chat "Bot", as a second asker of one worker is
+ * (since 2.0.4 a worker hands no work to another, core/one-task.ts). A runner
+ * takes its orchestrator's configuration at its launch, its CLI and its name
+ * with it ("Lead · Bot"), so the stand-in records under the id of the agent it
+ * runs for. The requests go through the API with each asker's own token, as
+ * send_message does. The worker's turns
  * are told to Tars through the real hook route with the worker's own token,
  * as Claude Code's UserPromptSubmit and Stop hooks do, the prompt being what
  * Tars typed.
@@ -41,6 +46,26 @@ import { DEV_URL, apiPort } from './ports.mjs';
 type Agent = { id: string; cliRunning?: boolean };
 type Api = { electronAPI: { agent: { start(p: { id: string; prompt: string }): Promise<unknown>; list(): Promise<Agent[]> } } };
 
+/** Bot's name once launched: its chat's runner takes it from the orchestrator and the chat (core/chat-slots.ts, runnerNameOf). */
+const BOT = 'Lead · Bot';
+const BOT_CHAT = 'b0b0b0b0-0000-4000-8000-000000000002';
+
+/** chats.json as Tars writes it: Main run by Lead, the project's orchestrator, and the chat "Bot" run by b1. */
+function chats(project: string): string {
+  const at = '2026-10-07T08:00:00.000Z';
+  const record = (id: string, number: number, title: string, runnerId: string, inbox: boolean) => ({
+    id, projectPath: project, number, title, titleSource: 'user', runnerId, sessionIds: [], pinned: false,
+    snoozedUntil: null, settledAt: null, inbox, createdAt: at, updatedAt: at, lastActivityAt: at,
+  });
+  return JSON.stringify({ version: 1, numbers: { [project]: 2 }, chats: [
+    record('c0ffee00-0000-4000-8000-000000000001', 1, 'Main', 'o1', true),
+    record(BOT_CHAT, 2, 'Bot', 'b1', false),
+  ] }, null, 2);
+}
+
+/** The askers' seeds: Lead the orchestrator, Bot a chat's runner. */
+const ASKERS: Record<string, Record<string, unknown>> = { o1: { role: 'orchestrator' }, b1: { kind: 'chat', chatId: BOT_CHAT } };
+
 test("each result goes back to the agent that asked for that piece of work", async () => {
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-per-task-'));
@@ -54,7 +79,7 @@ test("each result goes back to the agent that asked for that piece of work", asy
     fs.writeFileSync(cli, [
       `#!${process.execPath}`,
       "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
-      `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(file)}, d));`,
+      `process.stdin.on('data', d => require('fs').appendFileSync(require('path').join(${JSON.stringify(home)}, process.env.CLAUDE_AGENT_ID + '.received'), d));`,
       "process.stdout.write('stand-in ready\\n');",
       '',
     ].join('\n'), { mode: 0o755 });
@@ -64,9 +89,10 @@ test("each result goes back to the agent that asked for that piece of work", asy
   const agent = (id: 'w1' | 'o1' | 'b1', name: string) => ({
     id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: stand[id].cli,
-    createdAt: '2026-10-07T08:00:00.000Z', lastActivity: '2026-10-07T08:00:00.000Z',
+    createdAt: '2026-10-07T08:00:00.000Z', lastActivity: '2026-10-07T08:00:00.000Z', ...ASKERS[id],
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('w1', 'Worker'), agent('o1', 'Lead'), agent('b1', 'Bot')], null, 2));
+  fs.writeFileSync(path.join(dir, 'chats.json'), chats(project));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
@@ -76,7 +102,8 @@ test("each result goes back to the agent that asked for that piece of work", asy
   const steps: Record<string, unknown> = {};
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+    // Room for Main and Bot's chat whatever this machine's memory (services/chats.ts, chatLimitOf).
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', TARS_CHAT_RAM_GB: '20' },
   });
   try {
     const page = await app.firstWindow();
@@ -124,7 +151,7 @@ test("each result goes back to the agent that asked for that piece of work", asy
     await expect.poll(() => read('w1').includes('TASK-B'), { timeout: 20_000 }).toBe(true);
     const lines = read('w1').split(/\r|\n|\x1b\[20[01]~/).filter(l => /^Message from/.test(l));
     const refA = /^Message from agent "Lead" \("o1"\), task (t-[0-9a-f]{8}): /.exec(lines[0] ?? '')?.[1];
-    const refB = /^Message from agent "Bot" \("b1"\), task (t-[0-9a-f]{8}): /.exec(lines[1] ?? '')?.[1];
+    const refB = new RegExp(`^Message from agent "${BOT}" \\("b1"\\), task (t-[0-9a-f]{8}): `).exec(lines[1] ?? '')?.[1];
     steps.sent = { a, b, lines, refA, refB, worker: await worker() };
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
@@ -208,7 +235,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
     fs.writeFileSync(cli, [
       `#!${process.execPath}`,
       "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
-      `process.stdin.on('data', d => require('fs').appendFileSync(${JSON.stringify(file)}, d));`,
+      `process.stdin.on('data', d => require('fs').appendFileSync(require('path').join(${JSON.stringify(home)}, process.env.CLAUDE_AGENT_ID + '.received'), d));`,
       "process.stdout.write('stand-in ready\\n');",
       '',
     ].join('\n'), { mode: 0o755 });
@@ -218,9 +245,10 @@ test('a request sent during another request\'s turn: each end goes to its own as
   const agent = (id: 'w1' | 'o1' | 'b1', name: string) => ({
     id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: stand[id].cli,
-    createdAt: '2026-10-07T08:00:00.000Z', lastActivity: '2026-10-07T08:00:00.000Z',
+    createdAt: '2026-10-07T08:00:00.000Z', lastActivity: '2026-10-07T08:00:00.000Z', ...ASKERS[id],
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('w1', 'Worker'), agent('o1', 'Lead'), agent('b1', 'Bot')], null, 2));
+  fs.writeFileSync(path.join(dir, 'chats.json'), chats(project));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));
@@ -231,7 +259,8 @@ test('a request sent during another request\'s turn: each end goes to its own as
   const steps: Record<string, unknown> = {};
 
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+    // Room for Main and Bot's chat whatever this machine's memory (services/chats.ts, chatLimitOf).
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', TARS_CHAT_RAM_GB: '20' },
   });
   try {
     const page = await app.firstWindow();
@@ -280,7 +309,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
     await new Promise(r => setTimeout(r, 1100));
     const b = await api('/api/agents/w1/message', 'b1', { message: 'TASK-B write the release notes' });
     await expect.poll(() => read('w1').includes('TASK-B'), { timeout: 20_000 }).toBe(true);
-    steps.bDuringA = { b, line: lineOf('Bot'), worker: await worker() };
+    steps.bDuringA = { b, line: lineOf(BOT), worker: await worker() };
 
     // 3. Turn A ends.
     await hook({ status: 'idle', hook: 'Stop' });
@@ -289,7 +318,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
     steps.afterA = { leadToldOfA, o1: read('o1'), b1: read('b1'), worker: await worker() };
 
     // 4. Turn B runs and ends.
-    await hook({ status: 'running', event: 'UserPromptSubmit', current_task: `${lineOf('Bot')}` });
+    await hook({ status: 'running', event: 'UserPromptSubmit', current_task: `${lineOf(BOT)}` });
     await hook({ status: 'idle', hook: 'Stop' });
     await expect.poll(() => told('b1'), { timeout: 20_000 }).toBeGreaterThan(0);
     steps.afterB = { o1: read('o1'), b1: read('b1'), worker: await worker() };

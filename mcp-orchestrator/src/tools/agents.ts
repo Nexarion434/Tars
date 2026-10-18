@@ -33,7 +33,12 @@ type WaitResult = {
 
 type DispatchResult = {
   success: boolean;
-  mode: "message" | "start";
+  mode: "message" | "start" | "queued";
+  /** mode `queued`: the agent works on another task, and this one waits its turn (one task at a time). */
+  queuedBehind?: string;
+  queuedTask?: string;
+  /** A worker's message to another worker: typed in as a note for information, once that agent's turn ends. */
+  note?: boolean;
   /** Answered from the receipt of an earlier call with the same clientRequestId: nothing was sent again. */
   duplicate?: boolean;
   /** Sent in `queue` mode to an agent in a turn: it goes in once the turn ends. */
@@ -127,12 +132,14 @@ async function dispatchToAgent(
   message: string,
   model?: string,
   allowCrossProject?: boolean,
-  send: { clientRequestId?: string; mode?: SendMode; reason?: string } = {},
+  send: { clientRequestId?: string; mode?: SendMode; reason?: string; task?: boolean } = {},
 ): Promise<DispatchResult> {
   return (await sendOnce(`/api/agents/${id}/dispatch`, {
     message,
     model,
     allowCrossProject,
+    // A task, not a message: refused to a worker, which does not hand work to another agent.
+    ...(send.task ? { intent: "task" } : {}),
     ...(send.mode ? { mode: send.mode } : {}),
     ...(send.reason ? { reason: send.reason } : {}),
     ...(send.clientRequestId ? { clientRequestId: send.clientRequestId } : {}),
@@ -146,12 +153,56 @@ function duplicateNote(data: DispatchResult): string {
     : "";
 }
 
-type TaskView = { id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number; endedAt?: number | null };
+type TaskView = {
+  id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number | null; endedAt?: number | null;
+  /** Queued: what it waits behind, and since when (one task at a time per agent). */
+  queuedBehind?: string; queuedAt?: string; error?: string;
+  /** Delivered: a task that waited its turn and went into the agent's terminal, typed in or as a session started on it. */
+  how?: "typed" | "started"; deliveredAt?: string;
+};
+
+/** A task waiting its turn, said for its asker: behind which task, from whom, since when, and how to follow it. */
+function queuedText(task: TaskView): string {
+  return `Task ${task.id} is queued on agent ${task.agentId}${task.queuedAt ? ` since ${task.queuedAt}` : ""}`
+    + `${task.queuedBehind ? `, behind ${task.queuedBehind}` : ""}: an agent runs one task at a time, and this one starts once it is free. `
+    + `Follow it with task_status({ taskId: "${task.id}" }), or take it back with task_cancel({ taskId: "${task.id}" }).`;
+}
+
+/**
+ * A task that had not started when the wait on it lost Tars's answer. It waits
+ * its turn in Tars's memory only (one task at a time): a restart drops it, and
+ * keeping it across one is a later change. `err` is what the wait met:
+ * another Tars on the port (mcp-shared/src/tars-api.ts, `anotherTars`), this
+ * Tars no longer knowing it (404), or null for Tars out of reach past the
+ * grace period. Null when it is none of these.
+ */
+function notStartedText(task: TaskView, err: unknown): string | null {
+  if ((err as { anotherTars?: unknown } | null)?.anotherTars === true) {
+    return task.outcome === "starting"
+      ? `Tars restarted while task ${task.id} on agent ${task.agentId} was being started, so it may not have run. Tars keeps no task that waited its turn across a restart: unless Tars tells you it ran, ask for it again (delegate_task).`
+      : `Tars restarted while task ${task.id} waited its turn on agent ${task.agentId}${task.queuedAt ? ` (queued since ${task.queuedAt})` : ""}. A task waiting its turn is not kept across a restart: this one never started, and must be asked again (delegate_task).`;
+  }
+  if (answerOf(err)?.status === 404) {
+    return `Task ${task.id} on agent ${task.agentId} never started, and Tars no longer has it (${(err as Error).message}). Ask for it again if it still needs doing.`;
+  }
+  if (err === null) {
+    return `Tars could not be reached for ${FAILURE_GRACE_MS / 1000} s while task ${task.id} waited its turn on agent ${task.agentId}: it had not started. `
+      + `A task waiting its turn is not kept if Tars quits or restarts: once Tars answers, follow it with task_status({ taskId: "${task.id}" }), and ask for it again if Tars no longer has it.`;
+  }
+  return null;
+}
 
 /** A delegated task as the ledger keeps it, said for the caller. */
 function taskText(task: TaskView): string {
+  if (task.outcome === "queued" || task.outcome === "starting") return queuedText(task);
+  if (task.outcome === "delivered") {
+    return `Task ${task.id} on agent ${task.agentId} waited its turn and went into its terminal`
+      + `${task.how === "started" ? ", as the task of a session started on it" : ", typed into its session"}${task.deliveredAt ? ` at ${task.deliveredAt}` : ""}: `
+      + "it is that agent's work now. Follow it with wait_for_agent and get_agent_output.";
+  }
   const head = `Task ${task.id} on agent ${task.agentId}: ${task.outcome}${task.stopReason ? ` (${task.stopReason})` : ""}.`;
   if (task.outcome === "running") return `${head} It is still working: ask task_status again later.`;
+  if (task.error && !task.result) return `${head} ${task.error}`;
   return task.result ? `${head}\n\n${task.result}` : `${head} It left no answer.`;
 }
 
@@ -246,6 +297,10 @@ async function waitForAgentStatus(id: string, timeoutSeconds: number): Promise<W
 type RunAnswer = {
   ok?: boolean;
   started?: boolean;
+  /** Queued behind the agent's work in hand: `taskId` is the queued task's id. */
+  queued?: boolean;
+  queuedBehind?: string;
+  queuedAt?: string;
   duplicate?: boolean;
   taskId?: string;
   outcome?: string;
@@ -371,27 +426,40 @@ async function runOverAcp(
     return problem(`The run on agent ${id} started but Tars named no task for it. It may still be working: ${follow}.`);
   }
 
-  const taskId = started.taskId;
+  let taskId = started.taskId;
+  // Queued behind the agent's work in hand (one task at a time): waited on as
+  // a run is, and said as queued if the wait ends first.
+  let waiting: TaskView | undefined = started.outcome === "queued"
+    ? { id: taskId, agentId: id, outcome: "queued", queuedBehind: started.queuedBehind, queuedAt: started.queuedAt }
+    : undefined;
   failingSince = 0;
   backoffMs = FAILURE_BACKOFF_START_MS;
   for (;;) {
     const remainingSec = Math.ceil((deadline - Date.now()) / 1000);
     if (remainingSec <= 0) {
+      if (waiting) return text(`${queuedText(waiting)} delegate_task stopped waiting after ${timeoutSeconds + 60} s; nothing else was started.`);
       return problem(`Task ${taskId} on agent ${id} is still working after ${timeoutSeconds + 60} s: ${follow}. Nothing else was started.`);
     }
     const segment = Math.min(WAIT_SEGMENT_SECONDS, remainingSec);
     const askedAt = Date.now();
     try {
-      const found = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}?wait=${segment}`, "GET", undefined, (segment + 30) * 1000)) as { task: RunAnswer & { id: string } };
+      const found = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}?wait=${segment}`, "GET", undefined, (segment + 30) * 1000)) as { task: RunAnswer & TaskView };
       failingSince = 0;
       backoffMs = FAILURE_BACKOFF_START_MS;
-      if (found.task.outcome !== "running") return runText({ ...found.task, taskId }, modelNote);
+      waiting = found.task.outcome === "queued" || found.task.outcome === "starting" ? found.task : undefined;
+      // Started after waiting its turn: the ledger's task from here.
+      if (!waiting && found.task.id) taskId = found.task.id;
+      if (!waiting && found.task.outcome !== "running") return runText({ ...found.task, taskId }, modelNote);
       // Not held open (an older Tars, or a wait answered at once): no hot loop.
       if (Date.now() - askedAt < segment * 500) await new Promise((r) => setTimeout(r, 1000));
     } catch (err) {
+      // A task that had not started: lost with a restart, or no longer queued (notStartedText).
+      const lost = waiting ? notStartedText(waiting, err) : null;
+      if (lost) return problem(lost);
       const now = Date.now();
       if (!failingSince) failingSince = now;
       if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        if (waiting) return problem(`${notStartedText(waiting, null)} (${(err as Error).message})`);
         return problem(`Tars could not be reached while task ${taskId} ran on agent ${id} (${(err as Error).message}). The run may still be working: ${follow}.`);
       }
       await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
@@ -617,7 +685,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "start_agent",
-    description: "Start an agent with a specific task/prompt. If agent is already running/waiting, sends the prompt as a message instead. The agent runs with its own configured permission mode.",
+    description: "Start an agent with a specific task/prompt. If agent is already running/waiting, sends the prompt as a message instead. The agent runs with its own configured permission mode. An agent runs one task at a time: while it works on another task over ACP, this one waits its turn and starts once it is free. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID"),
       prompt: z.string().describe("The task or instruction for the agent to work on"),
@@ -627,11 +695,15 @@ const AGENT_TOOLS: Tool[] = [
     },
     failure: "starting agent",
     async run({ id, prompt, model, allowCrossProject, clientRequestId }) {
-      const data = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
+      const data = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId, task: true });
       const agentName = data.agent.name || id;
 
       if (data.held) {
         return text(heldText(agentName, "The task", data.heldReason) + duplicateNote(data));
+      }
+
+      if (data.mode === "queued") {
+        return text(`Agent "${agentName}" works on ${data.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${data.queuedTask ? ` as ${data.queuedTask}` : ""} and starts once it is free.${data.queuedTask ? ` task_status({ taskId: "${data.queuedTask}" }) follows it (wait_for_agent follows the agent's current task, not this one); task_cancel takes it back.` : " task_cancel takes it back."}${duplicateNote(data)}`);
       }
 
       if (data.mode === "message") {
@@ -644,7 +716,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "stop_agent",
-    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; the user reads it in the window.",
+    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; the user reads it in the window. Only Tars, the user and the project's orchestrator stop an agent, and an agent may stop itself: a worker calling this on another agent is refused, and asks its orchestrator instead (send_message to \"orchestrator\"), saying why.",
     schema: {
       id: z.string().describe("The agent ID"),
       reason: z.string().min(1).describe("Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"),
@@ -663,7 +735,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "send_message",
-    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent.",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent. A worker never orders work from another agent: what a worker sends another worker arrives as a note for information, labelled so, typed in once that agent's turn has ended, never as a task, and never starting an agent that has no session open; steer and restart are refused to it, as a stop is. To get work done by another agent, or to have it stopped, a worker asks its orchestrator.",
     schema: {
       id: z.string().describe("The agent ID, or \"requester\" for whoever asked you for your current task"),
       message: z.string().optional().describe("The message to send to the agent"),
@@ -689,6 +761,10 @@ const AGENT_TOOLS: Tool[] = [
         return text(heldText(agentName, "Your message", data.heldReason) + again);
       }
 
+      if (data.note) {
+        return text(`Sent to agent "${agentName}" as a note for information, not a task: ${data.queued ? "it goes in once its current turn ends" : "it is in its terminal"}. A worker does not hand work to another agent: if this needs doing, ask your orchestrator.${again}`);
+      }
+
       if (data.queued) {
         return text(`Queued for agent "${agentName}": it goes in once its current turn ends.${data.interrupted === false ? " Its turn could not be interrupted in time, so it waits for the end of it." : ""}${again}`);
       }
@@ -711,7 +787,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "task_cancel",
-    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal. Its id is the t-xxxxxxxx Tars named in the line it typed before your message. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
+    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal, or waits its turn behind that agent's work in hand (delegate_task and start_agent name it). Its id is the t-xxxxxxxx Tars named in the line it typed before your message, or in the answer that said it was queued. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
     schema: {
       taskId: z.string().describe("The task's id: t- and 8 hex characters"),
       reason: z.string().optional().describe("Why. Required when the task was asked for by another chat: that chat is told it."),
@@ -719,7 +795,8 @@ const AGENT_TOOLS: Tool[] = [
     failure: "cancelling the task",
     async run({ taskId, reason }) {
       try {
-        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string } };
+        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string }; queuedRun?: boolean };
+        if (data.queuedRun) return text(`Cancelled task ${taskId}: it was waiting its turn on ${data.worker?.name || "its agent"}, and never started.`);
         return text(`Cancelled task ${taskId}: it never went into ${data.worker?.name ? `${data.worker.name}'s` : "its agent's"} terminal.`);
       } catch (err) {
         const why = CANCEL_REFUSALS[(err as Error).message];
@@ -731,7 +808,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "remove_agent",
-    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system.",
+    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system. Only Tars, the user and the project's orchestrator remove an agent, and an agent may remove itself: a worker calling this on another agent is refused, and asks its orchestrator instead.",
     schema: {
       id: z.string().describe("The agent ID"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
@@ -801,7 +878,7 @@ const AGENT_TOOLS: Tool[] = [
   // Composite: start, wait, then the output
   tool({
     name: "delegate_task",
-    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately. A run lasts at most timeoutSeconds: an hour (3600 s) when you give none, which is also the ceiling.",
+    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately. A run lasts at most timeoutSeconds: an hour (3600 s) when you give none, which is also the ceiling. An agent runs one task at a time and never gets a second session: a task given to an agent already working (another delegation, or a turn in its terminal) waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your timeout ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). A task still waiting its turn is not kept across a restart of Tars: it never started, and this says so, to ask for it again. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
@@ -826,8 +903,14 @@ const AGENT_TOOLS: Tool[] = [
 
         // Atomic dispatch: the server decides message-vs-spawn under its own
         // lock, so a stale status can never route the prompt to a dead PTY.
-        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
+        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId, task: true });
         const agentName = dispatched.agent.name || id;
+
+        // Waiting its turn behind another task: a wait now would end with that
+        // task, not this one. Say it; wait_for_agent follows it.
+        if (dispatched.mode === "queued") {
+          return text(`Agent "${agentName}" works on ${dispatched.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${dispatched.queuedTask ? ` as ${dispatched.queuedTask}` : ""} and starts once it is free. delegate_task is not waiting on it: follow it with task_status${dispatched.queuedTask ? `({ taskId: "${dispatched.queuedTask}" })` : ""} (wait_for_agent follows the agent's current task, not this one), or take it back with task_cancel.`);
+        }
 
         // Not typed yet: waiting here would wait on a turn that has not
         // started, for as long as the field stays in use, and then report the
@@ -869,7 +952,11 @@ const AGENT_TOOLS: Tool[] = [
                 id,
                 "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
                 undefined,
-                allowCrossProject
+                allowCrossProject,
+                // The answer to the question its own task asked, not a task: as a task it
+                // waited in the agent's queue behind any task there, which waits for this
+                // very turn (the Audit's H-A on 9d9a7ad9).
+                {},
               );
             } catch {
               // Auto-continue itself failed (agent gone, network hiccup):
@@ -926,7 +1013,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "task_status",
-    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too: running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
+    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too (except a task that was still waiting its turn: a restart drops it before it starts, and it must be asked again): queued behind the agent's work in hand (which task, from whom, since when), running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
     schema: {
       taskId: z.string().optional().describe("The task's id"),
       clientRequestId: z.string().optional().describe("The clientRequestId the delegation was sent with"),

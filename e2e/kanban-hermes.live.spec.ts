@@ -23,9 +23,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 1. Dune and Dove file, list, read, claim, report on, finish (one with no summary: Hermes 0.21.5 refuses done with
  *    none), release and delete their own tasks, and no tool answers with an error;
  * 2. Kit, of another project, sees none of them, and can neither claim nor delete one;
- * 3. the task Lead hands to Dove reaches Dove: its CLI starts with the task. Handing a task to another agent is the
- *    orchestrator's: a worker's hand-off is refused by the role rule of the drive routes (#449, core/one-task.ts),
- *    and whichever of #449 and this spec's PR merges second adds that refusal here;
+ * 3. handing a task to another agent is the orchestrator's: Dune's hand-off to Dove is refused by the role rule of
+ *    the drive routes (core/one-task.ts, workerOrderRefusal), 403 worker_may_not_order, saying to ask its
+ *    orchestrator, and starts nothing; the task Lead hands to Dove reaches Dove: its CLI starts with the task;
  * 4. every task carries Tars's mark in its body, on Hermes itself;
  * 5. over at least six ticks of Hermes's dispatcher after the last write, none of them is spawned, promoted or
  *    listed for decomposition; at no tick does one sit in a state Hermes acts on (todo, triage, running, review,
@@ -217,7 +217,20 @@ setInterval(() => {}, 1 << 30);
     await ok(dune('assign_task', { task_id: b }));
     await ok(dune('mark_task_done', { task_id: b, summary: 'Spec written.' }));
 
-    // 3. Handed to Dove by the project's orchestrator: claimed on its lane, and its CLI starts with the task.
+    // 3. A worker's hand-off is refused, starts nothing and leaves the task unclaimed (the QA's probe of #452 with #449).
+    const workerHandOff = await dune('assign_task', { task_id: c, agent_id: DOVE });
+    const workerClaim = await fetch(`http://127.0.0.1:${port}/api/kanban/tasks/${c}/claim`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.tokens[0]}` }, body: JSON.stringify({ agent_id: DOVE }),
+    }).then(async (r) => ({ status: r.status, body: await r.json() as { code?: string; error?: string } }));
+    keep({ workerHandOff, workerClaim });
+    expect(workerHandOff.isError, workerHandOff.text).toBe(true);
+    expect(workerHandOff.text).toContain('A worker does not hand work to another agent');
+    expect(workerHandOff.text).toContain('Ask your orchestrator');
+    expect(workerClaim, JSON.stringify(workerClaim)).toMatchObject({ status: 403, body: { code: 'worker_may_not_order' } });
+    await sleep(1500);
+    expect(launches().filter(l => l.agent === DOVE).length, 'a refused hand-off started Dove').toBe(0);
+    expect((await ok(dove('get_task', { task_id: c }))).text, 'the refused hand-off left the task unclaimed').toContain('Held by: nobody');
+    // Handed to Dove by the project's orchestrator: claimed on its lane, and its CLI starts with the task.
     expect((await ok(lead('assign_task', { task_id: c, agent_id: DOVE }))).text).toContain('Tars types it into that agent');
     await expect.poll(() => launches().filter(l => l.agent === DOVE && l.argv.join(' ').includes(c)).length, { timeout: 30_000 }).toBe(1);
     keep({ launches: launches() });

@@ -1123,6 +1123,32 @@ before. Under an older build the first has a `/bin/bash -l -c cd …` parent, an
 
 ---
 
+## Orchestration: one task at a time, and who hands work
+
+Since 2.0.4 (`electron/core/one-task.ts`, after the cross-project guard):
+
+- An agent that is working (a run over ACP, or a turn in its terminal) gets no second session. A
+  `delegate_task` to it waits its turn: `run-task` answers `outcome: 'queued'` with a task id
+  (`t-xxxxxxxx`) and `queuedBehind`, and the tool waits on that id as on any run. Its answer, when
+  its timeout ends first, names the task it is queued behind, who asked for it and since when.
+  `task_status` reads it, `task_cancel` takes it back (its asker, an orchestrator of its project,
+  or Tars). A `/dispatch` that would start a session beside a run is queued the same way
+  (`mode: 'queued'`); `/start` and `/message` answer `409 agent_busy`.
+- Only Tars, the window and an agent with the orchestrator's powers hand an agent work. A worker's
+  `start_agent`, `delegate_task` or `steer` is `403 worker_may_not_order`, telling it to ask its
+  orchestrator. Stopping is reserved the same way: a worker's `stop_agent`, `remove_agent` or
+  `restart` of another agent is `403 worker_may_not_stop`; an agent may still stop itself. Its `send_message` to another worker goes in as a labelled note once that
+  agent's turn ends, or is `409 note_needs_session` when that agent has no session open. Its message
+  to whoever leads it is a report and goes in as before.
+
+| Symptom | Cause and fix |
+|---|---|
+| `delegate_task` says the task is queued on an agent behind another task | that agent was working: the task starts once it is free. Follow it with `task_status` on the id it names, or `task_cancel` it |
+| a worker is answered `worker_may_not_order` | a worker does not hand work to another agent: it asks its orchestrator (`send_message` to `orchestrator`) |
+| a worker is answered `worker_may_not_stop` | a worker does not stop, restart or remove another agent: it asks its orchestrator, saying why |
+| a worker's message arrives as `[Note for information from ...]` after the recipient's turn | the rule, not a fault: a worker's message to another worker is a note |
+| a queued task is gone after a restart of Tars | the queue is in memory: what had not started was dropped. The asker's `delegate_task` says so (Tars restarted, never started, ask again), and `task_status` on its id answers with the time this Tars started. Delegate it again |
+
 ## MCP servers
 
 Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and copied to
