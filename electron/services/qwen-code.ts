@@ -157,21 +157,89 @@ export function setQwenMcpServer(name: string, server: { command: string; args: 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /**
+ * Where qwen looks for its system settings, the file through which an
+ * administrator enforces controls over the user's and the project's settings
+ * (qwen 0.25.2's docs/configuration/settings.md): the platform's default, or
+ * the one QWEN_CODE_SYSTEM_SETTINGS_PATH names in the environment Tars was
+ * started with, unless that is one of Tars's own agent files (a Tars started
+ * from a Qwen Code agent's terminal inherits its path).
+ */
+export function qwenSystemSettingsFile(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, dataDir?: string): string {
+  const named = env.QWEN_CODE_SYSTEM_SETTINGS_PATH?.trim();
+  const own = path.join(qwenDataDir(dataDir), 'agents') + path.sep;
+  if (named && !path.resolve(named).startsWith(own)) return named;
+  if (platform === 'win32') return 'C:\\ProgramData\\qwen-code\\settings.json';
+  if (platform === 'darwin') return '/Library/Application Support/QwenCode/settings.json';
+  return '/etc/qwen-code/settings.json';
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Tars's settings with the administrator's over them: the administrator's
+ * value wins wherever both set one; an object is merged key by key, a list is
+ * both lists (theirs first: their hooks run, and Tars's), and an MCP server of
+ * the administrator's is theirs whole, whatever Tars names the same.
+ */
+function underAdministrator(tars: unknown, admin: unknown, where: string[] = []): unknown {
+  if (Array.isArray(tars) && Array.isArray(admin)) {
+    const seen = new Set(admin.map((a) => JSON.stringify(a)));
+    return [...admin, ...tars.filter((t) => !seen.has(JSON.stringify(t)))];
+  }
+  if (isPlain(tars) && isPlain(admin) && !(where.length === 2 && where[0] === 'mcpServers')) {
+    const out: Record<string, unknown> = { ...tars };
+    for (const [k, v] of Object.entries(admin)) out[k] = k in tars ? underAdministrator(tars[k], v, [...where, k]) : v;
+    return out;
+  }
+  return admin;
+}
+
+/** The administrator's settings, null when there are none; throws, saying why, when they cannot be read. */
+function administratorSettings(file: string): Record<string, unknown> | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+    throw new Error(`Qwen Code's system settings file ${file} cannot be read (${(err as NodeJS.ErrnoException)?.code ?? 'error'}): its administrator's controls would be lost, so Tars does not start a Qwen Code agent`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+  }
+  if (!isPlain(parsed)) {
+    throw new Error(`Qwen Code's system settings file ${file} is not a JSON object: its administrator's controls would be lost, so Tars does not start a Qwen Code agent`);
+  }
+  return parsed;
+}
+
+/**
  * The settings file of Tars's one agent runs with, its path for
  * QWEN_CODE_SYSTEM_SETTINGS_PATH: the hooks, Tars's MCP servers, the agent's
  * effort, and qwen's own updater off (Tars updates it once for the fleet,
  * cli-updater.ts). No token and no key: the identity and the key are in the
  * terminal's environment.
+ *
+ * That variable names qwen's system settings slot, which an administrator's
+ * file fills (the Audit's M1 on #461): pointed at Tars's file, the
+ * administrator's controls were dropped without a word. So their file, read
+ * again at each launch, goes over Tars's, their keys winning
+ * (underAdministrator); one that cannot be read stops the agent from starting,
+ * and says why. qwen 0.25.2 docs. `systemFile` is for tests.
  */
-export function writeQwenAgentSettings(agentId: string, opts: { effort?: string } = {}, dataDir?: string): string {
+export function writeQwenAgentSettings(agentId: string, opts: { effort?: string; systemFile?: string } = {}, dataDir?: string): string {
   const name = SAFE_ID.test(agentId) ? agentId : agentId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'agent';
   const file = path.join(qwenDataDir(dataDir), 'agents', `${name}.json`);
+  const admin = administratorSettings(opts.systemFile ?? qwenSystemSettingsFile(process.platform, process.env, dataDir));
   const effort = safeEffort(opts.effort);
-  writeJson(file, {
+  const tars = {
     hooks: readJson<HookTable>(hooksFile(dataDir), {}),
     mcpServers: qwenMcpServers(dataDir),
     ...(effort ? { model: { reasoningEffort: effort } } : {}),
     general: { enableAutoUpdate: false },
-  });
+  };
+  writeJson(file, admin ? underAdministrator(tars, admin) : tars);
   return file;
 }
