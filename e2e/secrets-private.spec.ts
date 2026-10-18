@@ -185,7 +185,10 @@ for (const newInterface of [false, true]) {
       }
       const served: Record<string, number> = {};
       for (const f of [attachment, path.join(dir, 'app-settings.json'), path.join(priv, 'settings-secrets.json')]) {
-        served[f] = await app.evaluate(async ({ net }, url) => (await net.fetch(url)).status, `local-file://${f}`);
+        // With a host: local-file is a standard scheme, so Chromium reads local-file:///var/... as the host
+        // `var` and the path /folders/..., and the empty-host form serves nothing at all. Any host keeps the
+        // path whole, which is how a page reached ~/.dorothy through it.
+        served[f] = await app.evaluate(async ({ net }, url) => (await net.fetch(url)).status, `local-file://h${f}`);
       }
       keep({ reads, served });
       for (const [f, r] of Object.entries(reads)) expect.soft((r as { content: string }).content, `read ${f}`).toBe('');
