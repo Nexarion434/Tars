@@ -348,7 +348,7 @@ function runText(run: RunAnswer, modelNote: string): ToolResult {
 
 /** A task typed into a CLI whose turns Tars cannot see: it went in, and that is all Tars knows. */
 function deliveredResult(taskId: string, note: string | undefined): ToolResult {
-  return text(`Task ${taskId} went into the agent's terminal. ${note ?? ""}`.trim());
+  return text(`Task ${taskId}: ${note ?? "it went into the agent's terminal."}`);
 }
 
 /**

@@ -207,6 +207,8 @@ for (const newInterface of [false, true]) {
 
       // 5. A CLI with no hook: its session is started with the task, and the task said delivered.
       const toOc = await tool('delegate_task', { id: 'oc', prompt: 'NOHOOK look at the logs', timeoutSeconds: 60 });
+      // Its CLI writes its first line a moment after Tars answered: read once it has.
+      await expect.poll(() => lines(path.join(home, 'no-hook.jsonl')).filter((e) => e.launched).length, { timeout: 30_000 }).toBe(1);
       // 6. The deprecated alias: answered at once with a task id, into the same terminal.
       const started = await tool('start_agent', { id: 'dev', prompt: 'ALIAS tidy the changelog' });
       await expect.poll(() => lines(path.join(home, 'stand-in.jsonl')).filter((e) => typeof e.turn === 'string' && e.turn.includes('ALIAS')).length, { timeout: 30_000 }).toBe(1);
@@ -249,7 +251,7 @@ for (const newInterface of [false, true]) {
       expect.soft(noHook.filter((e) => e.launched).length, 'launches of oc\'s CLI').toBe(1);
       expect.soft(JSON.stringify(noHook)).toContain('NOHOOK look at the logs');
       expect.soft(toOc.isError).toBe(false);
-      expect.soft(toOc.text).toMatch(/went into the agent's terminal/);
+      expect.soft(toOc.text).toMatch(/^Task t-[0-9a-f]{8}: The task went into Review Agent's terminal\./);
       expect.soft(toOc.text).toMatch(/cannot see when its turn ends/);
       expect.soft(toOc.text).not.toMatch(/\d tokens|\$\d/);
       // 6. The alias.
