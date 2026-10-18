@@ -421,3 +421,16 @@ export function computeProviderAvailability(
 export function getProviderDef(id: string): ProviderDef | undefined {
   return PROVIDER_REGISTRY.find((p) => p.id === id);
 }
+
+/** Ids that are not a word a reader knows, and the words their cards write instead. */
+const PROVIDER_WORDS: Record<string, string> = { 'qwen-code': 'Qwen Code' };
+
+/**
+ * The word an agent's card, its detail panel and its window's header write for its provider: the provider's own id,
+ * as the frames write it ("claude · fable 5 · main"), except Qwen Code's `qwen-code`, which reads Qwen Code, apart
+ * from the Qwen API's `qwen`. An agent with no provider is Claude's; an id not known yet reads as itself.
+ */
+export function providerWord(provider?: string | null): string {
+  if (!provider) return 'claude';
+  return PROVIDER_WORDS[provider] ?? provider;
+}

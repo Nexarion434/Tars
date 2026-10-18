@@ -12,6 +12,7 @@ import {
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import { lastPathPart } from '@/lib/display-path';
+import { providerWord } from '@/lib/providers';
 import type { AgentStatus } from '@/types/electron';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { AgentMark, BrandSpinner } from '@/components/ui';
@@ -43,7 +44,7 @@ export function AgentDetailPanel({
             <div className="flex items-center gap-2">
               <h3 className="font-semibold">{agent.name || lastPathPart(agent.projectPath)}</h3>
               {agent.provider && agent.provider !== 'claude' && agent.provider !== 'local' && (
-                <span className="font-mono text-[10.5px] text-muted-foreground">{agent.provider}</span>
+                <span className="font-mono text-[10.5px] text-muted-foreground">{providerWord(agent.provider)}</span>
               )}
               {agent.branchName && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-xs">

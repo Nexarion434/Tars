@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } fr
 import { isAbsolutePath, pathName, rendererPlatform, tildePath, toSlashes } from '@/lib/display-path';
 import { BOX_H, BOX_W, fitZoom, keepAnchor, layoutRings, ringOrder, stageBox, zoomBounds } from '@/lib/graph-layout';
 import type { Point, StageBox } from '@/lib/graph-layout';
+import { providerWord } from '@/lib/providers';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, PanelCaption, StatusSquare } from '@/components/ui';
@@ -180,7 +181,7 @@ function buildGraph(
       id: agent.id,
       label: agent.name || `Agent ${agent.id.slice(0, 6)}`,
       kind: 'agent',
-      sub: agent.model || agent.localModel || agent.provider || 'claude',
+      sub: agent.model || agent.localModel || providerWord(agent.provider),
       tone: agentTone(agent.status),
     });
 
