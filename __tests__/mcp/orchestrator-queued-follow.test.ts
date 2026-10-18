@@ -15,6 +15,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *    the same.
  * 3. task_status of a task that waited its turn and went into the agent's
  *    terminal says it is still queued, or says nothing of where it went.
+ * 4. (the Audit's H-A on 9d9a7ad9) delegate_task's auto-continue, the answer
+ *    to the question its own task asked, is sent as a task: it then waits in
+ *    the agent's queue behind any task there, which waits for that very turn.
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -65,6 +68,23 @@ describe('a task queued behind another, as the tools say to follow it', () => {
     expect(said).toContain('queued as t-0000beef');
     expect(said).toContain('task_status({ taskId: "t-0000beef" })');
     expect(said).not.toMatch(/use wait_for_agent to follow it/);
+  });
+
+  it('4. delegate_task\'s auto-continue is an answer, not a task: it carries no intent', async () => {
+    let waits = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) throw Object.assign(new Error('opencode has no ACP mode; use /dispatch'), { status: 409, body: { retryWithDispatch: true } });
+      if (endpoint.includes('/dispatch')) return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
+      if (endpoint.includes('/wait')) return (waits++ === 0) ? { status: 'waiting', waitingReason: 'question' } : { status: 'completed', lastCleanOutput: 'done' };
+      return { agent: { id: 'a1', name: 'Worker', status: 'completed', lastCleanOutput: 'done' } };
+    });
+    await (await tool('delegate_task'))({ id: 'a1', prompt: 'fix it' });
+    const dispatches = mockApiRequest.mock.calls.filter((c) => String(c[0]).includes('/dispatch'));
+    expect(dispatches.length, JSON.stringify(dispatches)).toBeGreaterThanOrEqual(2);
+    expect((dispatches[0][2] as { intent?: string }).intent, 'the task itself').toBe('task');
+    const answer = dispatches[1][2] as { message?: string; intent?: string };
+    expect(answer.message).toContain('continue');
+    expect(answer.intent, 'the answer sent as a task').toBeUndefined();
   });
 
   it('3. task_status of a task that waited its turn and went in: where it went, and how to follow it now', async () => {
