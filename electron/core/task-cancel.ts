@@ -33,6 +33,27 @@ export type CancelVerdict =
 
 const REF = /^t-[0-9a-f]{8}$/;
 
+export type CancelRight =
+  | { ok: true; by: 'requester' | 'lead' }
+  | { ok: false; error: 'not_your_task' | 'reason_required'; reason: string };
+
+/**
+ * Who may take back work `requesterId` asked of a worker of `workerProject`:
+ * the rule above, read by both cancels, a request held in a worker's queue
+ * (cancelVerdict) and a task waiting its turn (core/one-task.ts, the Audit's
+ * L2 on #449). Tars's own pass is the route's to let through.
+ */
+export function cancelRight(caller: CancelFleetMember | undefined, requesterId: string | undefined, workerProject: string, reason: unknown): CancelRight {
+  if (caller && requesterId === caller.id) return { ok: true, by: 'requester' };
+  if (caller && caller.role === 'orchestrator' && caller.kind !== 'chat' && caller.projectPath === workerProject) {
+    if (typeof reason !== 'string' || !reason.trim()) {
+      return { ok: false, error: 'reason_required', reason: 'Cancelling a task another chat asked for needs a reason: that chat is told it.' };
+    }
+    return { ok: true, by: 'lead' };
+  }
+  return { ok: false, error: 'not_your_task', reason: "This task was asked for by another chat: only it, or the project's orchestrator with a reason, may cancel it." };
+}
+
 export function cancelVerdict(ref: unknown, callerId: string | undefined, reason: unknown, fleet: Iterable<CancelFleetMember>): CancelVerdict {
   const members = [...fleet];
   if (typeof ref !== 'string' || !REF.test(ref)) {
@@ -46,19 +67,10 @@ export function cancelVerdict(ref: unknown, callerId: string | undefined, reason
   }
   if (!worker || !request) return { ok: false, error: 'not_found', reason: `No agent holds a task ${ref}: it ended, or was never asked.` };
   const caller = callerId ? members.find((m) => m.id === callerId) : undefined;
-  let by: 'requester' | 'lead';
-  if (caller && request.requesterAgentId === caller.id) {
-    by = 'requester';
-  } else if (caller && caller.role === 'orchestrator' && caller.kind !== 'chat' && caller.projectPath === worker.projectPath) {
-    if (typeof reason !== 'string' || !reason.trim()) {
-      return { ok: false, error: 'reason_required', reason: 'Cancelling a task another chat asked for needs a reason: that chat is told it.' };
-    }
-    by = 'lead';
-  } else {
-    return { ok: false, error: 'not_your_task', reason: "This task was asked for by another chat: only it, or the project's orchestrator with a reason, may cancel it." };
-  }
+  const right = cancelRight(caller, request.requesterAgentId, worker.projectPath, reason);
+  if (!right.ok) return right;
   if (request.state !== 'queued') {
     return { ok: false, error: 'already_delivered', reason: "This task is already in the worker's terminal, where Tars cannot take it back: stop the worker to end it." };
   }
-  return { ok: true, workerId: worker.id, request, by };
+  return { ok: true, workerId: worker.id, request, by: right.by };
 }

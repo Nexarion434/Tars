@@ -13,6 +13,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Stand-in CLIs record every byte typed into them. Requests go through the API
  * with each asker's own token, as the MCP tools send them; a worker's turns are
  * told through the hook route with its own token, as Claude Code's hooks do.
+ * Each asker has the powers that hand work since 2.0.4 (core/one-task.ts): the
+ * first is the project's orchestrator, and a second one the runner of one of
+ * its chats (chats.json, written by `runner` below).
  * An ACP run goes to a fake ACP agent launched as `opencode acp`, which records
  * the session mode Tars asks for.
  *
@@ -131,19 +134,34 @@ function sandbox(prefix: string) {
     projectPath: project, skills: [], cliPath: cliFor(id),
     createdAt: '2026-10-12T08:00:00.000Z', lastActivity: '2026-10-12T08:00:00.000Z', ...extra,
   });
+  /**
+   * chats.json with one chat, #2, run by `runnerId`, and the project's inbox:
+   * Main was deleted, so the orchestrator runs no chat, and what cuts its work
+   * is refused as another asker's (worker_busy_for_other_requester), as
+   * before 2.0.4 when the askers were workers.
+   */
+  const runner = (chatId: string, runnerId: string, title: string) => {
+    const at = '2026-10-12T08:00:00.000Z';
+    fs.writeFileSync(path.join(dir, 'chats.json'), JSON.stringify({ version: 1, numbers: { [project]: 2 }, chats: [{
+      id: chatId, projectPath: project, number: 2, title, titleSource: 'user', runnerId, sessionIds: [], pinned: false,
+      snoozedUntil: null, settledAt: null, inbox: true, createdAt: at, updatedAt: at, lastActivityAt: at,
+    }] }, null, 2));
+    return { kind: 'chat', chatId };
+  };
   const seed = (agents: object[], settings: Record<string, unknown> = {}) => {
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', ...settings }));
   };
-  return { home, project, dir, bin, read, agent, seed };
+  return { home, project, dir, bin, read, agent, runner, seed };
 }
 
 async function open(home: string, port: string, ids: string[]) {
   const dist = path.resolve('electron', 'dist');
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+    // A chat's runner started takes a slot: room for it whatever this machine's memory (services/chats.ts, chatLimitOf).
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', TARS_CHAT_RAM_GB: '20' },
   });
   const page = await app.firstWindow();
   await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
@@ -186,7 +204,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
   test.setTimeout(300_000);
   const s = sandbox('tars-e2e-receipts-');
   s.seed([
-    s.agent('w1', 'Worker'), s.agent('o1', 'Lead'), s.agent('b1', 'Bot'),
+    s.agent('w1', 'Worker'), s.agent('o1', 'Lead', { role: 'orchestrator' }), s.agent('b1', 'Bot', s.runner('b0b0b0b0-0000-4000-8000-000000000002', 'b1', 'Bot')),
     s.agent('cx', 'Codex Worker', { provider: 'codex' }),
   ]);
   const port = apiPort(31455);
@@ -290,8 +308,8 @@ test('a delegated run takes the narrower mode of its asker, a narrower sender is
   const modes = path.join(s.home, 'acp-modes.log');
   fs.writeFileSync(path.join(s.bin, 'opencode'), `#!${process.execPath}\n${FAKE_ACP(modes)}`, { mode: 0o755 });
   s.seed([
-    s.agent('p1', 'Planner', { permissionMode: 'plan' }),
-    s.agent('by', 'Builder', { permissionMode: 'bypass' }),
+    s.agent('p1', 'Planner', { permissionMode: 'plan', role: 'orchestrator' }),
+    s.agent('by', 'Builder', { permissionMode: 'bypass', ...s.runner('b0b0b0b0-0000-4000-8000-000000000003', 'by', 'Build') }),
     s.agent('wb', 'Bypass Worker', { permissionMode: 'bypass' }),
     s.agent('oc', 'Review Agent', { provider: 'opencode', permissionMode: 'bypass' }),
   ], { cliPaths: { additionalPaths: [s.bin] } });
@@ -300,7 +318,9 @@ test('a delegated run takes the narrower mode of its asker, a narrower sender is
   const values: Record<string, unknown> = {};
   const modesSet = () => (fs.existsSync(modes) ? fs.readFileSync(modes, 'utf8').split('\n').filter(Boolean) : []);
 
-  let opened = await open(s.home, port, ['p1', 'by', 'wb']);
+  // Builder is not started: a chat's runner takes its orchestrator's mode at its launch (services/chat-runners.ts),
+  // and this needs an asker in bypass beside one in plan. It asks through the API with its own token, as before.
+  let opened = await open(s.home, port, ['p1', 'wb']);
   let taskId = '';
   try {
     const tokens = await opened.tokensFor(['p1', 'by', 'wb', 'oc']);

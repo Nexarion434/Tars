@@ -7,7 +7,7 @@ import { useClaude } from '@/hooks/useClaude';
 import { Button, Dropdown, Panel, PanelCaption, SegmentedControl, SortHeader } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 import { fmtTokens, getModelDisplayName } from '@/lib/usage-format';
-import { USAGE_VIEW_KEY, agentViewFilter, nextAgentSort, projectName, sortAgentRows, totalsByAgent, usageViewOf, viewCounts } from '@/lib/agent-costs';
+import { USAGE_VIEW_KEY, agentViewFilter, nextAgentSort, projectName, sortAgentRows, sortsAsWords, totalsByAgent, usageViewOf, viewCounts } from '@/lib/agent-costs';
 import type { AgentSort, AgentSortKey, AgentTotal, UsageView } from '@/lib/agent-costs';
 import {
   TASKS_PAGE,
@@ -68,21 +68,25 @@ const MID = 'hidden xl:table-cell';
  */
 const AGENT_HEAD = 'pb-1 align-middle font-normal text-[10px] uppercase tracking-[0.08em] text-muted-foreground border-b border-border';
 
-/** The headers that sort the agent table, in its order: every column but the agent's name. */
+/** The headers of the agent table, in its order: every column sorts, the agent's own name too. */
 const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string; className: string; align: 'left' | 'right' }> = [
-  { key: 'project', label: 'Project', className: 'w-[130px]', align: 'left' },
-  { key: 'provider', label: 'Provider', className: `${MID} w-[150px]`, align: 'left' },
-  { key: 'tasks', label: 'Tasks', className: 'w-[70px] text-right', align: 'right' },
-  { key: 'time', label: 'Time', className: 'w-[74px] text-right', align: 'right' },
-  { key: 'tokens', label: 'Tokens', className: 'w-[74px] text-right', align: 'right' },
-  { key: 'cost', label: 'Cost', className: 'w-[100px] text-right', align: 'right' },
+  { key: 'agent', label: 'Agent', className: '', align: 'left' },
+  { key: 'project', label: 'Project', className: `${CELL} w-[130px]`, align: 'left' },
+  { key: 'provider', label: 'Provider', className: `${CELL} ${MID} w-[150px]`, align: 'left' },
+  { key: 'tasks', label: 'Tasks', className: `${CELL} w-[70px] text-right`, align: 'right' },
+  { key: 'time', label: 'Time', className: `${CELL} w-[74px] text-right`, align: 'right' },
+  { key: 'tokens', label: 'Tokens', className: `${CELL} w-[74px] text-right`, align: 'right' },
+  { key: 'cost', label: 'Cost', className: `${CELL} w-[100px] text-right`, align: 'right' },
 ];
 
-/** What the next click on a header does, said on hover. */
+/** What the next click on a header does, said on hover: words A to Z first, figures highest first. */
 function sortHint(label: string, sort: AgentSort | null, key: AgentSortKey): string {
   const next = nextAgentSort(sort, key);
   if (!next) return 'Back to the default order, the dearest first';
-  return `Sort by ${label.toLowerCase()}, ${next.direction === 'descending' ? 'highest' : 'lowest'} first`;
+  const way = sortsAsWords(key)
+    ? (next.direction === 'ascending' ? 'A to Z' : 'Z to A')
+    : `${next.direction === 'descending' ? 'highest' : 'lowest'} first`;
+  return `Sort by ${label.toLowerCase()}, ${way}`;
 }
 
 const countOf = (n: number) => (n === 1 ? '1 task' : `${n} tasks`);
@@ -383,22 +387,22 @@ function Averages({ which, caption, rows, nameOf, known, mono = false }: {
  * provider and account of its latest task with any other under it, its tasks
  * (the running ones said), the time of those that ended, its tokens and the
  * sum of its own costs, partial when a task of it is not counted. A click on
- * a column's header sorts the rows by it, highest first, a second lowest
- * first, a third gives the dearest first back (JeanBrasse, 18/10). The sort
- * lasts while the table does: a new reading of the tasks keeps it.
+ * a column's header sorts the rows by it, its words A to Z or its figures
+ * highest first, a second the other way, a third gives the dearest first back
+ * (JeanBrasse, 18/10). The sort lasts while the table does: a new reading of
+ * the tasks keeps it.
  */
 function AgentTable({ rows, names }: { rows: AgentTotal[]; names: Record<string, string> }) {
   const [sort, setSort] = useState<AgentSort | null>(null);
-  const shown = useMemo(() => sortAgentRows(rows, sort), [rows, sort]);
+  const shown = useMemo(() => sortAgentRows(rows, sort, names), [rows, sort, names]);
   return (
     <table className="w-full table-fixed border-collapse text-left">
       <thead>
         <tr>
-          <th className={AGENT_HEAD}>Agent</th>
           {AGENT_COLUMNS.map(column => {
             const direction = sort?.key === column.key ? sort.direction : null;
             return (
-              <th key={column.key} aria-sort={direction ?? 'none'} className={`${AGENT_HEAD} ${CELL} ${column.className}`}>
+              <th key={column.key} aria-sort={direction ?? 'none'} className={`${AGENT_HEAD} ${column.className}`}>
                 <SortHeader
                   label={column.label}
                   direction={direction}

@@ -142,7 +142,7 @@ beforeEach(() => {
   // The orchestrator, at rest at its prompt: free, so a note reaches it at
   // once and every assertion below reads what it was actually told.
   orchestratorTerminal = liveTerminal('pty-orch');
-  putAgent({ id: 'orch', name: 'Orchestrator', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-orch', currentSessionId: sid('sess-orch') });
+  putAgent({ id: 'orch', role: 'orchestrator', name: 'Orchestrator', status: 'waiting', waitingReason: 'idle', ptyId: 'pty-orch', currentSessionId: sid('sess-orch') });
   // The agent it delegates to, with a live claude session at its prompt for
   // more than a minute, so `waiting` because idle: /dispatch types into it.
   liveTerminal('pty-be');
@@ -441,18 +441,46 @@ describe('a failed attempt over ACP', () => {
     await pause(10 * 60_000);
     const toldBefore = toldOrchestrator().length;
 
-    // The MCP client gives up on /run-task before the server does and types
-    // the task into the terminal instead. The turn starts.
+    // The MCP client gives up on /run-task before the server does and sends
+    // the task to the terminal instead. The attempt still holds the agent, so
+    // the task waits its turn rather than going in beside it (one task at a
+    // time, core/one-task.ts; the Audit's M1 on #449).
+    const terminal = ptyProcesses.get('pty-be') as unknown as FakePty;
     const run = runTaskOverAcp('BotID');
     await pause(1_000);
-    await dispatch('BotID');
+    // As delegate_task's terminal path sends it: a task (intent 'task'), which waits its turn; a plain message keeps its mode.
+    const sent = await call('POST', '/api/agents/be/dispatch', { message: 'BotID', intent: 'task' }, 'orch');
+    expect((sent?.data as { mode?: string } | undefined)?.mode, 'typed in beside the attempt').toBe('queued');
     await pause(500);
-    await turnStarts('BotID');
+    expect(typedInto(terminal).join('\n')).not.toContain('BotID');
 
-    // Then the ACP attempt fails, and its route restores the status it saw.
+    // Then the ACP attempt fails, and its route restores the status it saw;
+    // the task goes in once it has, and its turn starts.
     run.settle(ACP_FAILED);
     await run.answered;
+    await pause(1_000);
+    expect(typedInto(terminal).join('\n'), 'the task never went in after the attempt').toContain('BotID');
+    await turnStarts('BotID');
 
+    expect(backend().status, 'the failed attempt wrote its old status over a turn in progress').toBe('running');
+    expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told the agent is waiting in the middle of its turn').toEqual([]);
+  });
+  // The QA's gate of 05e31fa4 (mutant G0): since a task sent during an attempt waits its turn, the guard that keeps a
+  // failed attempt from writing its old status over a turn begun meanwhile is reached by a plain message, which keeps
+  // its mode, auto, and goes in beside the attempt.
+  it('does not put an agent back to waiting over a message typed into its terminal while the attempt was still out', async () => {
+    await oneDelegatedTaskEarlier();
+    await pause(IDLE_PROMPT_AFTER_MS);
+    await idlePrompt();
+    await pause(10 * 60_000);
+    const toldBefore = toldOrchestrator().length;
+    const run = runTaskOverAcp('BotID');
+    await pause(1_000);
+    await dispatch('Also look at the logs');
+    await pause(500);
+    await turnStarts('Also look at the logs');
+    run.settle(ACP_FAILED);
+    await run.answered;
     expect(backend().status, 'the failed attempt wrote its old status over a turn in progress').toBe('running');
     expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told the agent is waiting in the middle of its turn').toEqual([]);
   });

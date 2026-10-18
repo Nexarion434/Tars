@@ -105,6 +105,8 @@ export function registerWebhookRoutes(app: RouteApp, ctx: RouteContext): void {
       permissionMode: body.permission_mode,
       from: 'Hermes',
       sender: { kind: 'channel', channel: 'Hermes' },
+      // Hermes dispatches a task: it waits its turn in the agent's queue (core/one-task.ts).
+      task: true,
     }, ctx, sendJson);
   });
 }

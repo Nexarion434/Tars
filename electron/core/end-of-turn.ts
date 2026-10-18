@@ -1,0 +1,22 @@
+import { getProvider } from '../providers';
+import type { AgentStatus } from '../types';
+
+/**
+ * Providers whose interactive session never leaves `running`.
+ *
+ * amp, codex, grok, opencode and pi have no native hooks, so their status only
+ * changes when the process exits: a queue that waits for them to be at rest
+ * would never drain. Read from the provider's own hook configuration rather
+ * than a list written out here, so a provider that gains hooks stops being an
+ * exception on the day it gains them, not on the day someone remembers.
+ *
+ * Here in core, beside the one-task rule that reads it too (core/one-task.ts);
+ * the room's bus reads it through services/bus-store.ts.
+ */
+export function hasEndOfTurn(agent: Pick<AgentStatus, 'provider'>): boolean {
+  try {
+    return getProvider(agent.provider).getHookConfig().supportsNativeHooks;
+  } catch {
+    return false;
+  }
+}

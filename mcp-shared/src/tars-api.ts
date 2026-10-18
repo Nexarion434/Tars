@@ -50,7 +50,7 @@ export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || tokenFromFile
 /** What the Tars that started this CLI proves it is with (tars-hook.sh): never sent. */
 const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
 /**
- * Whether the port at API_URL is the Tars that started this CLI: a fresh
+ * Whether the port at API_URL is the Tars that started this CLI (`this`): a fresh
  * challenge to /api/health, whose answer must be sha256("<id>:<challenge>"),
  * as the hooks ask it (tars-hook.sh, the Audit's table #11). While Tars is
  * down, or after a quit this CLI outlived, any process may hold the port, and
@@ -64,9 +64,13 @@ const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
  * answers gets nothing however long the wait, and a Tars whose main thread is
  * held past a shorter one had its caller's call leave with no token and come
  * back refused (the Audit's Low on #376's delta).
+ *
+ * `another` when the port answered without this CLI's proof: a Tars started
+ * since (Tars restarted while this CLI outlived it), or another process.
+ * `none` when nothing answered, or there is no instance to prove.
  */
-async function portIsThisCliTars(waitMs: number): Promise<boolean> {
-  if (!INSTANCE_ID) return false;
+async function portHolder(waitMs: number): Promise<"this" | "another" | "none"> {
+  if (!INSTANCE_ID) return "none";
   const challenge = randomBytes(16).toString("hex");
   const tars = new URL(API_URL);
   try {
@@ -78,9 +82,9 @@ async function portIsThisCliTars(waitMs: number): Promise<boolean> {
       timeout: waitMs,
     }, undefined, (err) => err);
     const proof = (JSON.parse(data) as { proof?: unknown }).proof;
-    return proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex");
+    return proof === createHash("sha256").update(`${INSTANCE_ID}:${challenge}`).digest("hex") ? "this" : "another";
   } catch {
-    return false;
+    return "none";
   }
 }
 
@@ -91,13 +95,21 @@ async function portIsThisCliTars(waitMs: number): Promise<boolean> {
  * token and no instance to prove: it presents the shared file, as before.
  */
 export async function tokenToPresent(waitMs: number = TARS_WAIT_MS): Promise<string | null> {
-  if (AGENT_API_TOKEN) return (await portIsThisCliTars(waitMs)) ? AGENT_API_TOKEN : null;
+  return (await credentials(waitMs)).token;
+}
+
+/** The token a call presents, and whether it was withheld because another Tars holds the port. */
+async function credentials(waitMs: number): Promise<{ token: string | null; anotherTars: boolean }> {
+  if (AGENT_API_TOKEN) {
+    const holder = await portHolder(waitMs);
+    return { token: holder === "this" ? AGENT_API_TOKEN : null, anotherTars: holder === "another" };
+  }
   try {
     if (fs.existsSync(API_TOKEN_FILE)) {
-      return fs.readFileSync(API_TOKEN_FILE, "utf-8").trim();
+      return { token: fs.readFileSync(API_TOKEN_FILE, "utf-8").trim(), anotherTars: false };
     }
   } catch { /* ignore */ }
-  return null;
+  return { token: null, anotherTars: false };
 }
 
 export async function apiRequest(
@@ -118,7 +130,7 @@ export async function apiRequest(
   // server-side long-poll resolves. The proof before it waits as long.
   const isLongPoll = endpoint.includes("/wait");
   const timeoutMs = timeoutMsOverride ?? (isLongPoll ? 600_000 : TARS_WAIT_MS);
-  const token = await tokenToPresent(timeoutMs);
+  const { token, anotherTars } = await credentials(timeoutMs);
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -151,9 +163,14 @@ export async function apiRequest(
 
     // Tars answered: the status and the body go with the error, so that a
     // caller can tell an answer (a refusal, "no run started") from a request
-    // that never got one, which carries neither.
+    // that never got one, which carries neither. Refused for going without
+    // the token another Tars was not given: `anotherTars`, so that a caller
+    // waiting on what the Tars that started this CLI held in memory (a task
+    // still queued, in delegate_task) can say it was lost with a restart.
     if (!response.ok) {
-      throw Object.assign(new Error((data as { error?: string }).error || `API error: ${response.status}`), { status: response.status, body: data });
+      throw Object.assign(new Error((data as { error?: string }).error || `API error: ${response.status}`), {
+        status: response.status, body: data, ...(anotherTars ? { anotherTars: true } : {}),
+      });
     }
 
     return data;
