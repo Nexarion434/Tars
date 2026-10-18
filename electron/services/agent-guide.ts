@@ -2,8 +2,8 @@
  * How Tars works, for an agent: the one source of it.
  *
  * Every agent learns the app from the Tars that runs it. Its identity block
- * (the bootstrap, the prompt of a CLI without Claude's SessionStart hook, the
- * prompt of a run over ACP) carries the short section identitySection writes,
+ * (the bootstrap, the prompt of a CLI without Claude's SessionStart hook)
+ * carries the short section identitySection writes,
  * for its role, and the tars_guide tool of mcp-orchestrator reads the topics
  * below through GET /api/guide, stamped with this Tars's version. Nothing
  * else explains the app to an agent: an orchestrator of another project once
@@ -40,13 +40,16 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator'],
     text: [
       'You delegate to the agents of your own project: `list_agents` shows them, `whoami` shows you. Another project is refused unless the tool takes allowCrossProject and you set it.',
-      '`delegate_task` is the usual way: it runs the task over ACP when the agent\'s CLI has an ACP mode, and returns the agent\'s answer, its stop reason, tokens, cost and a taskId. Tars answers as soon as the run has started, and the tool follows it in steps of two minutes.',
-      'The run is stopped at timeoutSeconds: 3600 s (an hour) when you give none, which is also the most it can be. A run stopped there ends in the middle of its work: split a task that needs longer, and give a short one less.',
-      'If delegate_task says the run may still be working (Tars was out of reach for a while), do not send the task again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting to be typed into a terminal can be taken back with `task_cancel`.',
-      'A `model` given to delegate_task is for that run only; the agent keeps its own. When the agent does not take it, the run goes on the agent\'s own model and the answer says so and names the model it ran on.',
-      'Without ACP (or with no run started) the task is typed into the agent\'s terminal: `start_agent`, then `wait_for_agent` and `get_agent_output`. `get_agent` gives an agent\'s whole record.',
+      '`delegate_task` is the way to hand work: the task goes into the agent\'s own terminal, the session its card shows, which keeps its conversation, its memory and its background work. With no CLI running there, Tars starts that session on its conversation, with the task. No temporary copy of the agent is ever made. Tars answers at once with a taskId, and the tool follows the task in steps of two minutes.',
+      'You get back the agent\'s full final message for the task, why it ended (completed, error, stopped, interrupted), and its tokens and cost. That is read from the session itself, and only where its CLI lets Tars read it: claude (and the API-key providers that run it) gives all of it, from its hooks and its transcript. gemini, codex, opencode, amp, pi and grok give Tars no prompt hook: the task goes into their terminal, in their interactive session, which stays after it (opencode and gemini started with it as their first prompt, amp with it typed in), and the tool says it was delivered, with no answer, tokens or cost. Read their terminal with `get_agent_output`, or ask them to report with send_message to "requester".',
+      'A task you delegate runs in the permission mode of the agent that receives it, whatever yours: from a sender in a narrower mode (plan, say) it arrives marked so, "(sender in plan mode, you in bypass mode)", which asks that agent and does not bind it. Delegate to an agent whose own mode fits the work.',
+      'One task at a time: an agent at work (a task in hand, or a turn in its terminal, which counts only on a CLI that tells Tars its turns end: not amp, codex, grok, opencode or pi) gets the task queued, and delegate_task keeps waiting and returns its real result, or says which task it waits behind, from whom and since when. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now. A task still queued when Tars restarts is lost and never ran: ask for it again.',
+      'timeoutSeconds is how long the tool waits: 3600 s (an hour) when you give none. The task is never stopped there: it goes on in the agent\'s terminal, and `task_status` reads its end later.',
+      'If delegate_task says the task may still be working (Tars was out of reach for a while), do not send it again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting its turn can be taken back with `task_cancel`.',
+      'A `model` given to delegate_task applies only when Tars starts the agent\'s session for the task; an open session keeps its own, and the answer says so.',
+      '`start_agent` is deprecated: it hands the task the same way and answers with its taskId without waiting. Use delegate_task. `wait_for_agent` waits on an agent\'s status, `get_agent_output` reads its terminal, `get_agent` gives its whole record.',
       '`create_agent` adds an agent to your project, on any provider; `stop_agent` stops one with a reason the user reads; `remove_agent` deletes one for good.',
-      'An orchestrator does not edit files: its runs are denied the editing tools. It splits the work, delegates, and reports.',
+      'An orchestrator does not edit files: its sessions are denied the editing tools. It splits the work, delegates, and reports.',
     ].join('\n'),
   },
   {
@@ -55,7 +58,9 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       '`send_message` writes to an agent by id. To answer whoever asked you for your current task, send it to "requester": a chat of the project may have asked, not only the orchestrator.',
+      'A task handed to you with delegate_task is typed into your own terminal, after a line naming who gave it and its task id. Your final message when your turn ends is the answer they get back, in full: put the result there.',
       'Its mode says how it goes in: auto (the default, typed at once, into a running turn too), queue (typed once the agent\'s turn ends), steer (its turn interrupted first; claude agents only), restart (the agent stopped and started again with the message). steer and restart are refused while the agent works on a task another agent asked for.',
+      'A worker hands no work to another agent and stops none: start_agent, delegate_task, steer, restart, stop_agent, remove_agent and assign_task for another agent are refused to it (worker_may_not_order, worker_may_not_stop): it asks its orchestrator. Its send_message to another worker, in auto or queue mode, arrives as a note for information, labelled `[Note for information from "<name>", a worker: it is not a task, ...]`, typed once that agent\'s delegated task ends, and its turn too on a CLI that tells Tars its turns end, never as a task; an agent with no session open gets nothing, and the answer says so (note_needs_session). Its report to whoever leads it goes in as a report.',
       'Your project has a room: `room_read` reads what was said, `room_post` says something to the team when you have a result, a blocker or an answer. Do not post to acknowledge or to say you are starting.',
       'An agent that runs a chat may see the project\'s other chats with `chat_list`, read only, when the user allowed it.',
     ].join('\n'),
@@ -66,7 +71,8 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'HELD means your message waits for the agent\'s terminal (its input field is in use, or a dialog is open) and has not been typed in yet. It goes in by itself once the field is free, and Tars tells you again if it still waits a few minutes on. Do not send it a second time.',
-      'A refusal says why, often with a code: an agent of another project, a mode the agent cannot take (not_steerable), an agent busy on a task another chat or agent asked for (worker_busy_for_other_chat, worker_busy_for_other_requester), a clientRequestId already used for something else. Act on the reason; a retry of the same call gets the same answer.',
+      'A refusal says why, often with a code: an agent of another project, a mode the agent cannot take (not_steerable), an agent busy on a task another chat or agent asked for (worker_busy_for_other_chat, worker_busy_for_other_requester), an agent at work that a call which cannot wait would open a second session beside (agent_busy: send it with delegate_task or start_agent, which wait their turn), a worker ordering or stopping another agent (worker_may_not_order, worker_may_not_stop), a note to an agent with no session (note_needs_session), a clientRequestId already used for something else. Act on the reason; a retry of the same call gets the same answer.',
+      'QUEUED is no refusal: the task waits behind the agent\'s current task (the answer says which, from whom, since when) and starts once the agent is free; follow it with task_status by its id. "cancelled while it waited" and "never started" mean it did not run. A task still waiting its turn when Tars restarts is lost, never started: ask for it again. "No agent holds a task" means it ended, or was never asked.',
       'A message sent twice with the same clientRequestId is answered from the first one\'s receipt: nothing is typed twice.',
     ].join('\n'),
   },
@@ -102,7 +108,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'A worker asks its requester, not the user: end your turn with the question in your report, or `send_message` to "requester".',
-      'An orchestrator asks the user with `ask_user`, from its terminal: Tars sends the question to their Telegram through their Hermes, which takes the relay to Hermes on (Settings, Hermes), and the tool returns at once. Their answer is typed into your terminal later, after the line "Message from the user via Telegram:". Do not wait for it in a loop: go on with other work, or end your turn. A delegated run cannot ask (it has no terminal for the answer): it puts the question in its answer.',
+      'An orchestrator asks the user with `ask_user`, from its terminal: Tars sends the question to their Telegram through their Hermes, which takes the relay to Hermes on (Settings, Hermes), and the tool returns at once. Their answer is typed into your terminal later, after the line "Message from the user via Telegram:". Do not wait for it in a loop: go on with other work, or end your turn.',
       'A request that came from Telegram, Slack or Discord is answered there: `send_telegram`, `send_slack`, `send_discord`. With the relay on, `send_telegram` goes to the user through Hermes and the file tools are gone; with it off, files go with `send_telegram_document`, `send_telegram_photo`, `send_telegram_video`.',
       'Ask only what you cannot decide: otherwise decide, say what you assumed, and go on.',
     ].join('\n'),
@@ -129,7 +135,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     title: 'Limits worth knowing',
     roles: ['orchestrator', 'worker'],
     text: [
-      'A delegated task ends with your turn: what you left running in the background is stopped and nothing brings you back. Wait for the builds and tests you started before you answer.',
+      'A delegated task ends with your turn: your final message then is its answer. Your session and its background work go on, but whoever gave you the task is told it is done: wait for the builds and tests you started before you answer.',
       'Your identity, your team and your project come from Tars and are current as of your session\'s start: `whoami` reads them again.',
       'You act in your own project. Tools that act on another project refuse unless they take allowCrossProject.',
       'An agent sleeps after 30 minutes without a turn; a message or a task wakes it.',
@@ -240,7 +246,7 @@ export function identitySection(role: GuideRole, folder: string | null, why?: st
   const lines = [`## How Tars works`];
   if (role === 'orchestrator') {
     lines.push(
-      `- delegate_task runs a task over ACP and returns the agent's answer. The run stops at timeoutSeconds: 3600 s when you give none, and at most. If it says the run may still be working, read it with task_status: never send it twice. Its model is for that run only, and the answer says when the agent did not take it.`,
+      `- delegate_task hands a task to the agent's own terminal and returns its full final answer, tokens and cost (claude; other CLIs: delivered only). timeoutSeconds is how long it waits: 3600 s when you give none; the task is never stopped there. If it says the task may still be working, read it with task_status: never send it twice. start_agent is deprecated.`,
       `- send_message modes: auto, queue, steer, restart. HELD means it waits for the terminal and goes in by itself.`,
       `- The kanban is the project's Hermes board (one lane per agent): file the work you split with create_task, so the user sees it.`,
       `- ask_user puts a question to the user from your terminal and returns at once: their answer is typed in later. Do not wait for it.`,
@@ -248,6 +254,7 @@ export function identitySection(role: GuideRole, folder: string | null, why?: st
   } else {
     lines.push(
       `- Answer whoever asked you with send_message to "requester", or in your final report. HELD means your message waits for the terminal and goes in by itself.`,
+      `- You hand no work to another agent and stop none: ask your orchestrator (send_message to "orchestrator"). What you send another worker is a note for information.`,
       `- The kanban is the project's Hermes board (one lane per agent): claim a task with assign_task, finish it with mark_task_done, file a follow-up you find with create_task.`,
     );
   }

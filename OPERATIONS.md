@@ -777,7 +777,7 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 | `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note, unless the Tars that wrote it still runs (its pid is a live process of yours that started when the record's `processStart` says, and the machine has not rebooted since; `ps -o lstart= -p <pid>` on macOS shows that start): a second Tars on the same home reads nothing from it and writes nothing to it. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: JeanBrasse's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
-| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated task answered (read from its terminal session since 2.0.4, a run over ACP before), `{ id, result }`, a terminal task's answer in full (1,000,000 characters at most), a run over ACP's 8,000, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
 | `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
@@ -1123,6 +1123,32 @@ before. Under an older build the first has a `/bin/bash -l -c cd …` parent, an
 
 ---
 
+## Orchestration: one task at a time, and who hands work
+
+Since 2.0.4 (`electron/core/one-task.ts`, after the cross-project guard):
+
+- An agent that is working (a delegated task in hand, or a turn in its terminal) gets no second session. A
+  `delegate_task` to it waits its turn: `run-task` answers `outcome: 'queued'` with a task id
+  (`t-xxxxxxxx`) and `queuedBehind`, and the tool waits on that id as on any run. Its answer, when
+  its timeout ends first, names the task it is queued behind, who asked for it and since when.
+  `task_status` reads it, `task_cancel` takes it back (its asker, an orchestrator of its project,
+  or Tars). A `/dispatch` that would start a session beside a run is queued the same way
+  (`mode: 'queued'`); `/start` and `/message` answer `409 agent_busy`.
+- Only Tars, the window and an agent with the orchestrator's powers hand an agent work. A worker's
+  `start_agent`, `delegate_task` or `steer` is `403 worker_may_not_order`, telling it to ask its
+  orchestrator. Stopping is reserved the same way: a worker's `stop_agent`, `remove_agent` or
+  `restart` of another agent is `403 worker_may_not_stop`; an agent may still stop itself. Its `send_message` to another worker goes in as a labelled note once that
+  agent's turn ends, or is `409 note_needs_session` when that agent has no session open. Its message
+  to whoever leads it is a report and goes in as before.
+
+| Symptom | Cause and fix |
+|---|---|
+| `delegate_task` says the task is queued on an agent behind another task | that agent was working: the task starts once it is free. Follow it with `task_status` on the id it names, or `task_cancel` it |
+| a worker is answered `worker_may_not_order` | a worker does not hand work to another agent: it asks its orchestrator (`send_message` to `orchestrator`) |
+| a worker is answered `worker_may_not_stop` | a worker does not stop, restart or remove another agent: it asks its orchestrator, saying why |
+| a worker's message arrives as `[Note for information from ...]` after the recipient's turn | the rule, not a fault: a worker's message to another worker is a note |
+| a queued task is gone after a restart of Tars | the queue is in memory: what had not started was dropped. The asker's `delegate_task` says so (Tars restarted, never started, ask again), and `task_status` on its id answers with the time this Tars started. Delegate it again |
+
 ## MCP servers
 
 Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and copied to
@@ -1401,9 +1427,9 @@ grep 'is going out now'
 
 `POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
-`send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
-`delegate_task` then returns at once rather than wait on a turn that has not begun
-(`wait_for_agent` follows it). The agent it was for does not read `running` until the message is
+`send_message` says it too, in a result that begins `HELD:` (`wait_for_agent` follows it).
+`delegate_task` and `start_agent` go through `run-task` since 2.0.4, which follows the task
+itself: held, it reads `starting` until it is typed in and its turn begins. The agent it was for does not read `running` until the message is
 in. If the message is still held three minutes on while that agent rests, the agent that sent it
 is told again by Tars: why it waits, and that only a person at that terminal ends the wait (stop
 and start the agent to drop it, then send it again).
@@ -1437,7 +1463,10 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | Symptom | Where to look |
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
-| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
+| a delegated agent "died while it waited", its work half done | before 2.0.4, `delegate_task` ran the task as one ACP turn in a temporary copy of the agent, stopped when it answered with its background work. Since 2.0.4 the task goes into the agent's own terminal and the session stays: if this is seen on 2.0.4, the orchestrator's MCP server is older (restart its CLI) |
+| `delegate_task` says a task was delivered, with no answer | the agent's CLI gives Tars no prompt hook (gemini, codex, opencode, amp, pi, grok): the task went into its terminal and Tars cannot see its turn end. Read the terminal (`get_agent_output`), or have it report with `send_message` to "requester" |
+| a delegated task's answer stops at 4000 characters | the transcript was not found, and the hooks' copy was returned: an API-key provider whose CLI keeps its transcripts outside `~/.claude` and the Claude account folders. `GET /api/tasks/<id>` shows what was read |
+| a delegated task never started: "its turn did not begin within 15 minutes" | the task was typed into the terminal but no UserPromptSubmit came: a field or a dialog held it, or the CLI's hooks are not installed. The queue moved on |
 | an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -2158,7 +2187,7 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 | an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
 | a delegated task ran twice, its second copy typed into the agent's terminal five minutes after the first, or `delegate_task` answered `clientRequestId ... was already used for another request: nothing was sent` while the run kept working | an orchestrator server older than 2.0.4: it held one `run-task` request for the whole run, Node's fetch cut it at 300 s (`fetch failed`), and the tool took that for "no run started". Since 2.0.4 run-task answers once the run has started and no request waits more than 150 s; a request that gets no answer is asked again under the same `clientRequestId`, and the terminal is used only when Tars answered that no run started (`retryWithDispatch`, or `502` with `started: false`). An agent started before the update keeps its old server until its CLI restarts |
-| `delegate_task` says the run may still be working | Tars did not answer for 90 s (asked again with backoff), or the run outlived `timeoutSeconds + 60`. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
+| `delegate_task` says the task may still be working | Tars did not answer for 90 s (asked again with backoff), or the task outlived `timeoutSeconds`, the tool's wait, which never stops it. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
 | a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
@@ -2166,6 +2195,10 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 ---
 
 ## ACP transport
+
+Since 2.0.4 no task is delegated over ACP: `delegate_task` and `start_agent` hand every task to
+the agent's own terminal (SPECS.md, A delegated task). What follows describes the code in
+`electron/services/acp/`, which no route calls any more, until its removal.
 
 `electron/services/acp/` drives CLIs over the Agent Client Protocol instead of typing into a
 terminal: the same JSON-RPC conversation for Claude Code, Codex, Gemini, Grok, opencode and

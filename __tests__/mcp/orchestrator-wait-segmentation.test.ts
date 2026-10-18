@@ -194,26 +194,3 @@ describe('a wait that outlasts the undici ceiling', () => {
   }, 20000);
 });
 
-describe('delegate_task, which waits the same way', () => {
-  it('segments its wait too, so a long delegation survives', async () => {
-    const delegateTask = await loadTool('delegate_task');
-    let waits = 0;
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('no ACP mode'), { status: 409, body: { error: 'no ACP mode', retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) {
-        return { success: true, mode: 'message', agent: { id: 'w', name: 'Worker', status: 'running' } };
-      }
-      if (endpoint.includes('/wait')) {
-        waits++;
-        return waits <= 4 ? { status: 'running', timeout: true } : { status: 'completed', lastCleanOutput: 'done' };
-      }
-      return { agent: { id: 'w', name: 'Worker', status: 'completed', lastCleanOutput: 'done' } };
-    });
-
-    await delegateTask({ id: 'w', prompt: 'migrate the schema', timeoutSeconds: 900 });
-
-    const asked = requestedWaits();
-    expect(asked.length).toBeGreaterThan(1);
-    for (const seconds of asked) expect(seconds).toBeLessThan(UNDICI_HEADERS_TIMEOUT_SEC);
-  });
-});

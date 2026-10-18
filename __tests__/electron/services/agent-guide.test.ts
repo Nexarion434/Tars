@@ -33,7 +33,9 @@ import {
  *     absolute"), and the agent is told something false about its project (L6);
  * 12. the guide says a delegated run of an hour is fine while delegate_task's
  *     default cuts it at 300 s, and never names timeoutSeconds nor its ceiling (M2):
- *     the default and the ceiling it states must be the code's;
+ *     the default and the ceiling it states must be the code's. Since 2.0.4
+ *     timeoutSeconds is the tool's wait and no task is stopped at it: the guide
+ *     must say so, and no ceiling be left in run-task;
  * 13. the guide says ask_user waits for the answer (it returns at once, and the
  *     answer is typed into the terminal later), offers it to a delegated run (which
  *     is refused) or without the relay, offers the Telegram file tools the relay
@@ -166,18 +168,15 @@ describe('what the guide says is what the code does (the Audit of #448)', () => 
     expect(identitySection('worker', null).join('\n')).toMatch(/not absolute/);
   });
 
-  it('states delegate_task\'s default run and its ceiling, as the code has them (12)', () => {
+  it('states how long delegate_task waits, as the code has it, and that the task is never stopped there (12)', () => {
+    // 2.0.4: timeoutSeconds bounds the tool's wait, never the task, which goes on in the agent's terminal.
     const fallback = Number(/prompt, model, timeoutSeconds = (\d+)/.exec(read('mcp-orchestrator/src/tools/agents.ts'))?.[1]);
-    const ceilingMs = /timeoutMs: Math\.min\(Math\.max\(\(timeoutSeconds \?\? \d+\) \* 1000, [\d_]+\), ([\d_]+)\)/
-      .exec(read('electron/services/api-routes/agent-routes.ts'))?.[1];
-    const ceiling = Number(ceilingMs?.replace(/_/g, '')) / 1000;
     expect(fallback, 'the default was not found in delegate_task').toBeGreaterThan(0);
-    expect(ceiling, 'the ceiling was not found in run-task').toBeGreaterThan(0);
-    // An hour by default, which is all run-task gives: a delegation is not cut mid-work unless asked.
-    expect(fallback).toBe(ceiling);
+    expect(read('electron/services/api-routes/agent-routes.ts')).not.toMatch(/timeoutSeconds/);
     for (const text of [topic('delegation'), lead]) {
       expect(text).toContain('timeoutSeconds');
       expect(text).toContain(`${fallback} s`);
+      expect(text).toMatch(/never stopped there/);
     }
   });
 
@@ -185,7 +184,8 @@ describe('what the guide says is what the code does (the Audit of #448)', () => 
     const asking = topic('asking-the-user');
     expect(asking).not.toMatch(/waits for the answer/);
     expect(asking).toMatch(/returns at once/);
-    expect(asking).toMatch(/delegated run/);
+    // A delegated task runs in the agent's own terminal since 2.0.4: it may ask.
+    expect(asking).not.toMatch(/delegated run cannot ask/);
     expect(asking).toMatch(/relay/);
     expect(asking).toMatch(/[Ww]ith the relay on, .*send_telegram_document/s);
     expect(lead).toMatch(/ask_user.*returns at once/);
