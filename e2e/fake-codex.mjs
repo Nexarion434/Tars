@@ -19,7 +19,11 @@
 //   new one whose session_meta names the session it forks (forked_from_id); `RECALL` answers with the first `ECHO`
 //   of the session, read back from its rollout: the conversation goes on across a restart of Tars;
 // - it holds its rollout open from its first line to its end, as 0.163 does (measured with lsof: at the file's first
-//   sight, through the turn and at rest), which is how Tars knows a session nobody named is its agent's.
+//   sight, through the turn and at rest), which is how Tars knows a session nobody named is its agent's;
+// - `--help` answers after FAKE_CODEX_HELP_MS, a codex slow to answer as under a heavy load (0 unless set);
+// - `codex login status` exits 0 "Logged in using ChatGPT" or 1 "Not logged in", as 0.163 does (measured). With
+//   FAKE_CODEX_SIGN_IN=1 it reads its login as codex does by default, from its home's auth.json, and a home with none
+//   shows 0.163's sign-in screen, waits for a key and writes no session (measured on 0.163); without, it is signed in.
 // Every launch and turn is logged to FAKE_CODEX_LOG, one JSON line each, with whether the agent's token was in its
 // environment, never the token.
 import fs from 'node:fs';
@@ -46,6 +50,19 @@ Options:
 `;
 
 const argv = process.argv.slice(2);
+const codexHomeNow = process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex');
+const signedIn = () => process.env.FAKE_CODEX_SIGN_IN !== '1' || fs.existsSync(path.join(codexHomeNow, 'auth.json'));
+if (argv[0] === 'login' && argv[1] === 'status') {
+  log({ login: 'status', codexHome: process.env.CODEX_HOME ?? null, signedIn: signedIn() });
+  process.stdout.write(signedIn() ? 'Logged in using ChatGPT\n' : 'Not logged in\n');
+  process.exit(signedIn() ? 0 : 1);
+}
+if (argv[0] === '--help' || argv[0] === '-h') {
+  log({ help: true });
+  await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_CODEX_HELP_MS) || 0));
+  process.stdout.write(HELP);
+  process.exit(0);
+}
 const WITH_VALUE = new Set(['-c', '--config', '-m', '--model', '-s', '--sandbox', '-a', '--ask-for-approval', '--add-dir', '-C', '--cd']);
 const FLAGS = new Set(['--approve-for-me', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen']);
 const opts = { configs: [], model: null, sandbox: null, approval: null, approveForMe: false, bypass: false, prompt: null, sub: null, session: null };
@@ -266,9 +283,11 @@ let busy = Promise.resolve();
 const queue = (text) => { busy = busy.then(() => turn(text)); };
 
 let typed = '';
+let signInShown = false;
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.on('data', (chunk) => {
   const data = chunk.toString('utf8');
+  if (signInShown) return;
   if (!booted) {
     if (/[1y\r]/.test(data)) boot();
     else if (/[2n\x1b]/.test(data)) process.exit(0);
@@ -292,7 +311,11 @@ process.stdin.on('data', (chunk) => {
 });
 process.stdin.resume();
 const cwd = fs.realpathSync(process.cwd());
-if (trusted(cwd)) boot();
+if (!signedIn()) {
+  signInShown = true;
+  log({ signInShown: true, codexHome: process.env.CODEX_HOME ?? null });
+  out("\n  Welcome to Codex, OpenAI's command-line coding agent\n\n  Sign in with ChatGPT to use Codex as part of your paid plan\n  or connect an API key for usage-based billing\n\n› 1. Sign in with ChatGPT\n     Usage included with Plus, Pro, Business, and Enterprise plans\n\n  2. Sign in with Device Code\n     Sign in from another device with a one-time code\n\n  3. Provide your own API key\n     Pay for what you use\n\n  Press enter to continue\n");
+} else if (trusted(cwd)) boot();
 else {
   log({ trustAsked: true, cwd });
   out('> You are in ' + cwd + '\n\n  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.\n\n› 1. Yes, continue\n  2. No, quit\n\n  Press enter to continue\n');
