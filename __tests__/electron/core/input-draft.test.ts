@@ -3,6 +3,7 @@ import {
   clearKeys,
   confirmSubmitted,
   emptyDraft,
+  escCutTheTurn,
   feedDraft,
   isKeystroke,
   restoreKeys,
@@ -188,5 +189,44 @@ describe('the keys that empty a field and put it back', () => {
     draft = feedDraft(draft, '\x1b[D'.repeat(4));
     const replayed = restoreKeys(draft).reduce(feedDraft, emptyDraft());
     expect(replayed).toEqual(draft);
+  });
+});
+
+/**
+ * An Esc that cut a turn (2.0.4, the Audit's L1 on #461, found by
+ * qwen-code.spec.ts). A lone Esc gives the field up: on an idle field it arms
+ * "Esc again to clear" or opens the rewind dialog. In the middle of a turn it
+ * cuts the turn instead (Claude Code, Qwen Code 0.25.2 measured on 2026-10-18)
+ * and leaves the field as it was; the transcript then says so. Until now the
+ * field stayed unknown, and the next task Tars had for the agent waited behind
+ * it until somebody pressed Enter or Ctrl+C.
+ *
+ * Every way it can fail, written before the code (2026-10-19):
+ *  E1. A lone Esc is taken as known: on an idle field it may have armed a clear.
+ *  E2. Once the turn is known to be cut by it, the field is still unknown, or
+ *      is not what it held before the Esc.
+ *  E3. A key typed after the Esc is not followed, yet the field is claimed
+ *      known again.
+ *  E4. Without an Esc, a field given up for another reason is claimed known.
+ */
+describe('an Esc that cut a turn', () => {
+  it('E1. a lone Esc gives the field up', () => {
+    expect(feedDraft(type('salut'), '\x1b').state).toBe('unknown');
+  });
+
+  it('E2. the turn cut by it, the field is what it held before the Esc', () => {
+    const cut = escCutTheTurn(feedDraft(type('salut'), '\x1b'));
+    expect(cut).toMatchObject({ text: 'salut', cursor: 5, state: 'known' });
+    expect(escCutTheTurn(feedDraft(emptyDraft(), '\x1b'))).toMatchObject({ text: '', cursor: 0, state: 'known' });
+  });
+
+  it('E3. a key after the Esc keeps the field unknown', () => {
+    expect(escCutTheTurn(feedDraft(feedDraft(type('salut'), '\x1b'), 'x')).state).toBe('unknown');
+    expect(escCutTheTurn(feedDraft(feedDraft(type('salut'), '\x1b'), '\x1b')).state).toBe('unknown');
+  });
+
+  it('E4. a field given up for another reason stays given up', () => {
+    expect(escCutTheTurn(feedDraft(type('salut'), '\x1bOP')).state).toBe('unknown');
+    expect(escCutTheTurn(type('salut'))).toMatchObject({ text: 'salut', state: 'known' });
   });
 });
