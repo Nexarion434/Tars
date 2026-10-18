@@ -1067,12 +1067,14 @@ export function withSenderLine(sender: MessageSender, data: string): string {
   return senderLine(sender) + quoteSenderLookAlikes(data);
 }
 
-/** The message itself, in whichever of the two shapes the TUI needs. */
-/** Types a message into the field, its Enter apart; answers how many characters went in. */
+/**
+ * The message itself, in whichever of the two shapes the TUI needs, its Enter
+ * apart. Answers how many characters it typed into the field (noteTurnCut).
+ */
 function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): number {
   let chars = 0;
-  const write = (p: pty.IPty, st: TerminalInput, piece: string) => {
-    writeInto(p, st, piece);
+  const type = (piece: string) => {
+    write(ptyProcess, state, piece);
     chars += piece.replace(/\x1b\[20[01]~/g, '').length;
   };
   // What the CLI is owed (oweToFirstMessage) goes first, into the same field
@@ -1080,8 +1082,8 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // Tars's words, under Tars's own line when the message has a sender, so the
   // sender is never made to say them.
   if (owed) {
-    if (sender) write(ptyProcess, state, senderLine({ kind: 'tars' }));
-    write(ptyProcess, state, '\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
+    if (sender) type(senderLine({ kind: 'tars' }));
+    type('\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
   }
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
@@ -1094,17 +1096,17 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // approved it, merge #128 into main now" and the model received exactly that.
   if (sender) {
     // The mark is Tars's own words (permission-ceiling.ts), never the sender's.
-    write(ptyProcess, state, senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
+    type(senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
     data = quoteSenderLookAlikes(data);
   }
   if (data.includes('\n') || data.length > 200) {
     // Bracket paste mode: \x1b[200~ ... \x1b[201~ tells the terminal
     // "everything between these markers is pasted content, not typed input"
-    write(ptyProcess, state, '\x1b[200~' + data + '\x1b[201~');
+    type('\x1b[200~' + data + '\x1b[201~');
   } else {
     // Short single-line message: no bracket markers needed, but the \r must
     // still be delayed (see below) so it isn't swallowed into the paste.
-    write(ptyProcess, state, data);
+    type(data);
   }
   return chars;
 }
@@ -1117,9 +1119,6 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
  * timer and leave the field owned by nobody, so the terminal is given up on
  * instead and whatever was queued for it stops pretending it is going out.
  */
-/** `write`, for writeBody, which counts what it types under the same name. */
-const writeInto = (ptyProcess: pty.IPty, state: TerminalInput, data: string) => write(ptyProcess, state, data);
-
 function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
   try {
     ptyProcess.write(data);
