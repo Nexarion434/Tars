@@ -22,6 +22,10 @@ import * as path from 'path';
  *    nothing to remove rewritten, or written without its 0600 mode.
  * 6. Done at every load, rewriting the user's files again and again: once, for an agents.json from before this.
  * 7. A fragment written where the cleaning reports: it says how many, never what.
+ * 8. The tail kept in the copies Claude Code makes of each file: its backups, `.claude.json.backup.<ms>` in the
+ *    folder's `backups/` (`~/.claude/backups/` for ~/.claude.json; five kept, 0600, measured on 2.1.302), and what a
+ *    write of its own it never finished left beside the file, `.claude.json.tmp.<pid>.<hex>` (five in a real home,
+ *    two of them empty); or one of those, empty or cut short, rewritten.
  */
 
 vi.mock('electron', () => ({
@@ -65,7 +69,8 @@ let manager: typeof import('../../../electron/core/agent-manager');
 let logged: string[];
 
 beforeEach(async () => {
-  for (const p of [DATA, path.join(HOME, '.tars-private'), path.join(HOME, '.claude-accounts'), CLAUDE_JSON]) fs.rmSync(p, { recursive: true, force: true });
+  for (const p of [DATA, path.join(HOME, '.tars-private'), path.join(HOME, '.claude-accounts'), path.join(HOME, '.claude'), CLAUDE_JSON]) fs.rmSync(p, { recursive: true, force: true });
+  for (const name of fs.readdirSync(HOME)) if (name.startsWith('.claude.json.tmp.')) fs.rmSync(path.join(HOME, name));
   fs.mkdirSync(DATA, { recursive: true });
   fs.writeFileSync(path.join(DATA, 'app-settings.json'), JSON.stringify({ deepSeekApiKey: DEEPSEEK, openRouterApiKey: OPENROUTER }));
   logged = [];
@@ -142,6 +147,41 @@ describe('the rejected keys Claude Code kept, at the same load', () => {
     expect(fs.statSync(CLAUDE_JSON).mode & 0o777).toBe(0o600);
     expect(JSON.parse(fs.readFileSync(ACCOUNT_JSON(), 'utf8')).customApiKeyResponses.rejected).toEqual([]);
     expect(fs.statSync(ACCOUNT_JSON()).mode & 0o777).toBe(0o600);
+  });
+
+  it("8. lose them in the copies Claude Code keeps of each file, and a copy it left empty or cut short stays as it is", () => {
+    writeAgents(AGENTS, 3, [agent('a1', [])]);
+    fs.writeFileSync(CLAUDE_JSON, JSON.stringify(config([]), null, 2), { mode: 0o600 });
+    fs.mkdirSync(path.join(HOME, '.tars-private'), { recursive: true });
+    fs.writeFileSync(path.join(HOME, '.tars-private', 'claude-accounts.json'), JSON.stringify({ enabled: true, accounts: [{ id: 'default' }, { id: ACCOUNT, label: 'Account 2' }] }));
+    fs.mkdirSync(path.dirname(ACCOUNT_JSON()), { recursive: true });
+    fs.writeFileSync(ACCOUNT_JSON(), JSON.stringify(config([]), null, 2), { mode: 0o600 });
+    const homeBackup = path.join(HOME, '.claude', 'backups', '.claude.json.backup.1792350644690');
+    const accountBackup = path.join(path.dirname(ACCOUNT_JSON()), 'backups', '.claude.json.backup.1792350644614');
+    const leftover = path.join(HOME, '.claude.json.tmp.78791.84efb0c4c9ae');
+    const accountLeftover = path.join(path.dirname(ACCOUNT_JSON()), '.claude.json.tmp.87662.f6a3bbbb8772');
+    const copies: Array<[string, string[]]> = [[homeBackup, [tail(DEEPSEEK), tail(USERS_OWN)]], [accountBackup, [tail(OPENROUTER)]],
+      [leftover, [tail(DEEPSEEK)]], [accountLeftover, [tail(DEEPSEEK)]]];
+    for (const [file, rejected] of copies) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(config(rejected), null, 2), { mode: 0o600 });
+    }
+    const empty = path.join(HOME, '.claude.json.tmp.45327.de5af454b2b8');
+    const cutShort = path.join(HOME, '.claude.json.tmp.81815.427406b7e72f');
+    const cut = JSON.stringify(config([tail(DEEPSEEK)]), null, 2).slice(0, -3);
+    fs.writeFileSync(empty, '', { mode: 0o600 });
+    fs.writeFileSync(cutShort, cut, { mode: 0o600 });
+
+    manager.loadAgents();
+
+    expect(JSON.parse(fs.readFileSync(homeBackup, 'utf8')).customApiKeyResponses.rejected).toEqual([tail(USERS_OWN)]);
+    for (const [file] of copies.slice(1)) expect(JSON.parse(fs.readFileSync(file, 'utf8')).customApiKeyResponses.rejected, file).toEqual([]);
+    for (const [file] of copies) {
+      expect(JSON.parse(fs.readFileSync(file, 'utf8')), file).toMatchObject({ numStartups: 7, theme: 'dark' });
+      expect(fs.statSync(file).mode & 0o777, file).toBe(0o600);
+    }
+    expect(fs.readFileSync(empty, 'utf8')).toBe('');
+    expect(fs.readFileSync(cutShort, 'utf8')).toBe(cut);
   });
 
   it('5. a file with nothing to remove is not written', () => {
