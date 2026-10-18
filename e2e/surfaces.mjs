@@ -245,8 +245,12 @@ export const VOLATILE = {
   },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
-    selector: 'text=/^[a-z][a-z-]* · \\d+\\.\\d+/',
-    why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly',
+    // Since one panel per CLI (#460), a version is printed after the command and
+    // nothing else: `claude 2.1.302` under each CLI of the list, `2.1.302` in the
+    // picked CLI's chip and at the head of its Command row, `codex codex-cli
+    // 0.163.0` where a CLI's --version names itself first.
+    selector: 'text=/^(?:[a-z][a-z-]* ){0,2}\\d+\\.\\d+/',
+    why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly, codex and amp as often',
   },
   'log-chunk-counts': {
     surfaces: ['logs'],
