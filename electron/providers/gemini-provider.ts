@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
+import { keyEnvFor } from '../services/cli-keys';
 import { DATA_DIR } from '../constants';
 import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
 import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
@@ -123,7 +124,7 @@ export class GeminiProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -134,6 +135,8 @@ export class GeminiProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('gemini', appSettings),
     };
   }
 

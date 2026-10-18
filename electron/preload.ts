@@ -408,6 +408,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('models:refresh'),
   },
 
+  // An API key per CLI (2.0.4, services/cli-keys.ts): the key goes in, never comes back.
+  cliKeys: {
+    list: () =>
+      ipcRenderer.invoke('cliKeys:list'),
+    set: (id: string, patch: { key?: string | null; envVar?: string | null }) =>
+      ipcRenderer.invoke('cliKeys:set', id, patch),
+  },
+
   appSettings: {
     get: () =>
       ipcRenderer.invoke('app:getSettings'),

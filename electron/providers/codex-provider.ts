@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
+import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -11,7 +12,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { shellQuote } from './cli-provider';
+import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
 
 export class CodexProvider implements CLIProvider {
   readonly id = 'codex' as const;
@@ -34,6 +35,13 @@ export class CodexProvider implements CLIProvider {
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
+
+    // A key from Settings: its interactive session reads none from its
+    // environment (0.163), so a model provider of Tars's names CODEX_API_KEY,
+    // by name only. None: Codex keeps its own login (services/cli-keys.ts).
+    for (const arg of codexKeyConfig(params.appSettings ?? (readAppSettingsFromDisk() as AppSettings))) {
+      command += ` ${shellQuote(arg)}`;
+    }
 
     // Model
     if (params.model) {
@@ -109,7 +117,7 @@ export class CodexProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -120,6 +128,8 @@ export class CodexProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('codex', appSettings),
     };
   }
 

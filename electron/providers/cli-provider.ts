@@ -51,6 +51,8 @@ export interface InteractiveCommandParams {
    * id is the tombstone the hooks routes refuse posts from.
    */
   forkSession?: boolean;
+  /** The settings the command is built with: read from disk when absent (codex's key, services/cli-keys.ts). */
+  appSettings?: AppSettings;
 }
 
 /**

@@ -1209,6 +1209,26 @@ export interface ChatLimit {
   working: number;
 }
 
+/** The CLIs that take an API key of their own from Tars (2.0.4). */
+export type CliKeyId = 'codex' | 'qwen-code' | 'gemini' | 'opencode' | 'pi' | 'grok' | 'amp' | 'omp' | 'cline' | 'kilo';
+
+/** A CLI's key as the window may know it: never the key (electron/types CliKeyState). */
+export interface CliKeyState {
+  id: CliKeyId;
+  label: string;
+  hasKey: boolean;
+  /** The variable its agents get the key under; null until one is named, for a CLI that reads one per model provider. */
+  envVar: string | null;
+  envVarFrom: 'chosen' | 'cli-config' | 'default' | 'none';
+  envVarFixed: boolean;
+  envVarRequired: boolean;
+  envVarChoices: string[];
+  /** Tars's provider for this CLI, or null while it has none yet. */
+  provider: string | null;
+  measured: string;
+  withoutKey: string;
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -1571,6 +1591,17 @@ export interface ElectronAPI {
     price: (modelId: string, provider?: string) => Promise<{ price: ModelCost | null }>;
     catalogStatus: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
     refresh: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
+  };
+
+  /**
+   * An API key per CLI (2.0.4): set here, kept by Tars, handed to that CLI's
+   * agents only, in their terminal's environment, at their next start. The
+   * key never comes back: list says whether one is set and where it goes.
+   */
+  cliKeys?: {
+    list: () => Promise<CliKeyState[]>;
+    /** `key`: a new key, null or '' to clear it. `envVar`: the variable to use, null for the CLI's own. */
+    set: (id: CliKeyId, patch: { key?: string | null; envVar?: string | null }) => Promise<{ success: boolean; error?: string; state?: CliKeyState }>;
   };
 
   appSettings?: {
