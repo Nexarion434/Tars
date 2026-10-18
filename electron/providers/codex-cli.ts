@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { parse as parseToml } from 'smol-toml';
-import { execCli } from './cli-exec';
+import { cliEnv, execCli } from './cli-exec';
+import { defaultShell } from '../utils/default-shell';
 import { trustsTooMuch } from '../utils/trust-too-much';
 import { updateSharedTextSync } from '../utils/shared-file';
 import type { AgentEffort } from '../types';
@@ -16,6 +18,103 @@ import type { AgentEffort } from '../types';
 /** Where codex keeps its config, its sessions and its model cache: CODEX_HOME, else ~/.codex, as codex reads it. */
 export function codexHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
   return env.CODEX_HOME?.trim() || path.join(homeDir, '.codex');
+}
+
+/**
+ * Whether codex is signed in in this home (the Audit's L7 on #465): its auth.json, where codex keeps a login by
+ * default, else codex's own `codex login status` run on that home, which reads its keyring too (measured on 0.163:
+ * exit 0 "Logged in using ChatGPT", exit 1 "Not logged in"). undefined when codex could not say: not there, hung past
+ * its time, or ended otherwise, a config it cannot read among them. Signed in, its answer names the account: it is
+ * looked at for "Not logged in" only, never kept or logged.
+ */
+export async function codexSignedIn(binaryPath: string, home: string, timeoutMs = 10_000): Promise<boolean | undefined> {
+  if (fs.existsSync(path.join(home, 'auth.json'))) return true;
+  try {
+    await execCli(binaryPath, ['login', 'status'], {
+      encoding: 'utf-8', timeout: timeoutMs, env: { ...((cliEnv() as NodeJS.ProcessEnv | undefined) ?? process.env), CODEX_HOME: home },
+    });
+    return true;
+  } catch (err) {
+    const { code, stdout, stderr } = err as { code?: unknown; stdout?: unknown; stderr?: unknown };
+    return code === 1 && /not logged in/i.test(`${String(stdout ?? '')}${String(stderr ?? '')}`) ? false : undefined;
+  }
+}
+
+/** The line a login shell prints its CODEX_HOME on, among whatever its rc files print. */
+const SHELL_MARK = '__TARS_CODEX_HOME__=';
+
+/** The CODEX_HOME a login shell printed on its marked line (the last one), or none when it sets none. */
+export function codexHomeFromShell(output: string): string | undefined {
+  let found: string | undefined;
+  for (const line of output.split(/\r?\n/)) {
+    const at = line.indexOf(SHELL_MARK);
+    if (at >= 0) found = line.slice(at + SHELL_MARK.length).trim();
+  }
+  return found || undefined;
+}
+
+const shellHomes = new Map<string, Promise<string | undefined>>();
+
+/**
+ * The CODEX_HOME the user's own shell sets, as a login shell of theirs prints it with its rc files run, which Tars
+ * started from the Dock or Finder never reads: once per run once it has answered, off the main thread, and a shell
+ * that failed or hung past 5 s is asked again next time. undefined when it sets none, and on Windows, which runs no
+ * rc file.
+ */
+export function loginShellCodexHome(shell: string = defaultShell(), platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
+  if (platform === 'win32') return Promise.resolve(undefined);
+  let asked = shellHomes.get(shell);
+  if (!asked) {
+    asked = new Promise<string | undefined>((resolve, reject) => {
+      const child = execFile(shell, ['-ilc', `printf '\\n%s%s\\n' '${SHELL_MARK}' "$CODEX_HOME"`], { timeout: 5_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+        if (err) reject(err);
+        else resolve(codexHomeFromShell(String(stdout)));
+      });
+      // An rc file that asks something (compinit's insecure folders) gets no answer, not a wait.
+      child.stdin?.end();
+    });
+    const kept = asked;
+    shellHomes.set(shell, kept);
+    kept.catch(() => { if (shellHomes.get(shell) === kept) shellHomes.delete(shell); });
+  }
+  return asked.catch(() => undefined);
+}
+
+/** A folder as the window names it: under the user's home, from ~. */
+function tilde(dir: string, homeDir: string): string {
+  return dir === homeDir || dir.startsWith(`${homeDir}${path.sep}`) ? `~${dir.slice(homeDir.length)}` : dir;
+}
+
+/** Two writings of one folder: the same real path, or the same resolved path where it does not exist. */
+function sameFolder(a: string, b: string): boolean {
+  const real = (dir: string) => { try { return fs.realpathSync(dir); } catch { return path.resolve(dir); } };
+  return real(a) === real(b);
+}
+
+/**
+ * Why codex agents start not signed in, when it is this (the Audit's L7 on #465). Tars hands the codex it starts its
+ * own home (`env CODEX_HOME=<home>` on the line, the Audit's L4), and a user whose rc files set another, where their
+ * login is, with Tars started from the Dock or Finder, gets codex agents codex asks to sign in: measured on 0.163,
+ * "Welcome to Codex ... Sign in with ChatGPT ... Press enter to continue", and no session written. The sentence for
+ * the agent's status, or undefined: Tars's home signed in, a key from Settings (which codex takes instead of a login),
+ * a shell that sets no other folder, that folder not signed in either, or a codex that could not say.
+ */
+export async function codexSignInGap(opts: {
+  binaryPath: string;
+  home: string;
+  keyed: boolean;
+  shellHome: () => Promise<string | undefined>;
+  homeDir?: string;
+  signedIn?: (binaryPath: string, home: string) => Promise<boolean | undefined>;
+}): Promise<string | undefined> {
+  if (opts.keyed) return undefined;
+  const signedIn = opts.signedIn ?? codexSignedIn;
+  if ((await signedIn(opts.binaryPath, opts.home)) !== false) return undefined;
+  const other = await opts.shellHome();
+  if (!other || sameFolder(other, opts.home)) return undefined;
+  if ((await signedIn(opts.binaryPath, other)) !== true) return undefined;
+  const homeDir = opts.homeDir ?? os.homedir();
+  return `codex asks to sign in: Tars starts it on ${tilde(opts.home, homeDir)}, and your login is in ${tilde(other, homeDir)}, the CODEX_HOME your shell sets. Sign in from this terminal, or give Tars that CODEX_HOME.`;
 }
 
 /** A codex session id: a UUID (codex's own are version 7), and the only thing a resume puts on a command line. */

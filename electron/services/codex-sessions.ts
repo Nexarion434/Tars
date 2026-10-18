@@ -30,7 +30,8 @@ import { codexHome, codexRolloutOf } from '../providers/codex-cli';
  *
  * An approval codex waits on (normal mode asks before a command outside its sandbox, and before each call of an MCP
  * server's tool) is in no line of the log: it is read from the terminal's screen (terminal-mirror.ts,
- * codexDialogOnScreen) while a turn is open.
+ * codexDialogOnScreen) while a turn is open. A codex that will ask to sign in writes no session at all: why is asked
+ * at its launch and said in the agent's status (the Audit's L7 on #465, codex-cli.ts codexSignInGap).
  */
 
 export interface HookPost {
@@ -123,6 +124,12 @@ export interface CodexSessionWatchDeps {
    * can, a lookup that learned nothing is asked again; where they cannot, it never will learn anything.
    */
   openFilesReadable?: () => boolean;
+  /**
+   * Why this agent's codex will start not signed in, when it will (production: codex-cli.ts codexSignInGap): asked off
+   * the main thread at each launch, and said, through notSignedIn, while that launch still waits for its session.
+   */
+  signInGapOf?: (agentId: string) => Promise<string | undefined>;
+  notSignedIn?: (agentId: string, text: string) => void;
 }
 
 interface Launch {
@@ -252,6 +259,12 @@ export class CodexSessionWatch {
       try { launch.resume = { sessionId: resumable, file, size: fs.statSync(file).size }; } catch { /* gone: a new session, then */ }
     }
     this.launches.push(launch);
+    // A codex that will ask to sign in writes no session: said while this launch waits, not once a session came or a
+    // later launch replaced it.
+    this.deps.signInGapOf?.(agentId).then(
+      text => { if (text && this.launches.includes(launch)) this.deps.notSignedIn?.(agentId, text); },
+      () => { /* nothing known to say */ },
+    );
   }
 
   /** Whether anything is waited on or followed: no codex agent, no reading. */
@@ -483,7 +496,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning' | 'heldOpenBy' | 'openFilesReadable'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning' | 'heldOpenBy' | 'openFilesReadable' | 'signInGapOf' | 'notSignedIn'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;

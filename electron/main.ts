@@ -137,6 +137,10 @@ import { endRestartRecovery, startRestartRecovery } from './services/restart-rec
 import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
 import { filesOpenBy, openFilesReadable } from './platform/open-files';
 import { startCodexSessionWatch } from './services/codex-sessions';
+import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
+import { codexKeyConfig } from './services/cli-keys';
+import { getProvider } from './providers';
+import { scheduleTick } from './utils/agents-tick';
 import { terminalTokenOf } from './core/agent-tokens';
 import { codexDialogOnScreen } from './core/terminal-mirror';
 import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
@@ -148,7 +152,7 @@ import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-bo
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
-import { agentStatusEmitter } from './services/agent-events';
+import { agentStatusEmitter, emitAgentStatus } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
@@ -781,6 +785,31 @@ app.whenReady().then(async () => {
         if (open.has(real)) return agentId;
       }
       return null;
+    },
+    // Why the agent's codex will start not signed in, asked at its launch (the
+    // Audit's L7 on #465): Tars hands codex its own home, and the user's login
+    // may be in the CODEX_HOME their shell sets. Said in its status: codex shows
+    // its sign-in screen and writes no session, so nothing else would say it.
+    signInGapOf: async (agentId) => {
+      const agent = agents.get(agentId);
+      if (!agent) return undefined;
+      return codexSignInGap({
+        binaryPath: agent.cliPath || getProvider(agent.provider).resolveBinaryPath(appSettings),
+        home: codexHome(),
+        keyed: codexKeyConfig(appSettings).length > 0,
+        shellHome: () => loginShellCodexHome(),
+      });
+    },
+    notSignedIn: (agentId, text) => {
+      const agent = agents.get(agentId);
+      if (!agent) return;
+      console.warn(`[codex] ${agent.name || agentId}: ${text}`);
+      agent.status = 'error';
+      agent.error = text;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      scheduleTick();
+      emitAgentStatus(agentId);
     },
   });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
