@@ -2011,6 +2011,13 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     return { models: modelsForProvider(provider) };
   });
 
+  // What a CLI offers itself, read from its own settings, never written
+  // (qwen-code: ~/.qwen/settings.json modelProviders). An unknown provider has none.
+  ipcMain.handle('models:cli', async (_event, { provider }: { provider: string }) => {
+    const known = getAllProviders().find((p) => p.id === provider);
+    return { models: known ? known.getModels() : [] };
+  });
+
   ipcMain.handle('models:price', async (_event, { modelId, provider }: { modelId: string; provider?: string }) => {
     await loadCatalog();
     return { price: priceFor(modelId, provider) };

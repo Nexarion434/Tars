@@ -407,6 +407,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   models: {
     list: (provider: string) =>
       ipcRenderer.invoke('models:list', { provider }),
+    // The models a CLI offers itself (Qwen Code: the user's ~/.qwen/settings.json modelProviders).
+    ofCli: (provider: string) =>
+      ipcRenderer.invoke('models:cli', { provider }),
     price: (modelId: string, provider?: string) =>
       ipcRenderer.invoke('models:price', { modelId, provider }),
     catalogStatus: () =>

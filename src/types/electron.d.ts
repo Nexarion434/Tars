@@ -1603,6 +1603,8 @@ export interface ElectronAPI {
   /** Live model + price catalogue, refreshed from models.dev. */
   models?: {
     list: (provider: string) => Promise<{ models: CatalogModel[] }>;
+    /** The models a CLI offers itself, read from its own settings (Qwen Code: ~/.qwen/settings.json modelProviders); none when it keeps none. */
+    ofCli: (provider: string) => Promise<{ models: Array<{ id: string; name: string; description: string }> }>;
     price: (modelId: string, provider?: string) => Promise<{ price: ModelCost | null }>;
     catalogStatus: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
     refresh: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
