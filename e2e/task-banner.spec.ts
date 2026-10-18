@@ -16,11 +16,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * transcript); a SLOW task holds its turn until Esc, which writes the interrupt into the transcript, as Claude Code does.
  *
  * Asserted, once with the classic shell and once with the new interface, on the Dashboard:
- * 1. lead delegates a SLOW task to dev, then a second one: dev's panel shows the banner, from Project Lead, with the
- *    first task's first line and "1 waiting", and the list it opens names the second task and who gave it;
- * 2. stop task ends that task only: the turn is interrupted, the session stays, and the banner shows the second task in hand;
- * 3. once the second is done, the banner goes.
- * Red on main (d96be134): no banner is drawn, though agent:list carries it.
+ * 1. lead delegates a SLOW task to dev, then a second SLOW one: dev's panel shows the banner, from Project Lead, with the
+ *    first task's first line and "1 waiting", and the list it opens names the second task and who gave it; the list
+ *    closes again. A banner 560 px wide or more says "Task from" (the frames' wide layout: its width is the pane's, the
+ *    padding not taken off), and stop task is drawn as the panel header's stop: 11 px, not in the main ink;
+ * 2. stop task ends that task only: the turn is interrupted and the session stays. Then the banner is the second task's
+ *    own: its first line, from Project Lead, since the time that task went in; and no banner shows the first task;
+ * 3. stop task on the second, once its turn runs: the banner goes.
+ * Red on main (d96be134): no banner is drawn, though agent:list carries it. Point 2 red on the QA's mutant of the banner
+ * that shows the first task it saw and never a later one (TaskBanner.tsx.mutant2, qa-451-1810): the QA's gate found it
+ * green when point 2 read the first banner, whose open list held the second task. Point 1's width and stop task red
+ * on 714f4add (the container measured inside the padding; stop task the app's small Button).
  * The artefact: values.json (the banner and the list as read, the tool answers, the stand-in's log), the screenshots.
  */
 
@@ -179,21 +185,38 @@ for (const newInterface of [false, true]) {
       // 1. A SLOW task in hand, a second one waiting: the banner says both.
       const first = tool('delegate_task', { id: 'dev', prompt: 'SLOW review the release notes', timeoutSeconds: 240, clientRequestId: `e2e-banner-1-${newInterface}` });
       await expect.poll(() => lines(path.join(home, 'stand-in.jsonl')).filter((e) => typeof e.turn === 'string' && e.turn.includes('SLOW')).length, { timeout: 60_000 }).toBe(1);
-      const second = tool('delegate_task', { id: 'dev', prompt: 'run the tests', timeoutSeconds: 240, clientRequestId: `e2e-banner-2-${newInterface}` });
+      const second = tool('delegate_task', { id: 'dev', prompt: 'SLOW run the tests', timeoutSeconds: 240, clientRequestId: `e2e-banner-2-${newInterface}` });
       await expect.poll(async () => (await get('dev'))?.taskBanner?.waiting.length ?? 0, { timeout: 30_000 }).toBe(1);
       const banner = page.locator('[data-task-banner]').filter({ hasText: 'SLOW review the release notes' });
       await expect.soft(banner, 'the banner shows the task in hand').toBeVisible({ timeout: 20_000 });
       const count = banner.getByRole('button', { name: /1 waiting/ });
       const seen: Record<string, unknown> = { bannerText: (await banner.count()) ? await banner.innerText() : null };
+      const list = page.getByRole('list', { name: 'Tasks waiting' });
       if (await count.count()) {
         await count.click();
-        const list = page.getByRole('list', { name: 'Tasks waiting' });
         seen.listText = (await list.count()) ? await list.innerText() : null;
       }
-      keep({ seen, devSession });
       await stepShot(page, '01-banner-one-waiting');
       expect.soft(String(seen.bannerText ?? ''), 'who gave it').toContain('Project Lead');
       expect.soft(String(seen.listText ?? ''), 'the list names the waiting task').toContain('run the tests');
+      // Closed again before stop task: open, the first banner's list holds the second task's line.
+      if (await count.count()) await count.click();
+      await expect.soft(list, 'the list closes again').toHaveCount(0);
+      // The frames' widths are the pane's: 560 px and up, "Task from ... since 14:02 · 4 min".
+      seen.bannerWidth = (await banner.boundingBox())?.width ?? null;
+      if ((seen.bannerWidth as number) >= 560) {
+        await expect.soft(banner.getByText('Task', { exact: true }), 'a banner 560 px wide or more says "Task from"').toBeVisible();
+      }
+      // stop task as the panel header draws its stop: 11 px, and not in the main ink the task's first line is in.
+      const stopButton = banner.getByRole('button', { name: 'stop task' });
+      seen.stopTask = await stopButton.evaluate((el) => {
+        const line = el.closest('[data-task-banner]')?.querySelector('p[title]');
+        return { fontSize: getComputedStyle(el).fontSize, color: getComputedStyle(el).color, lineColor: line ? getComputedStyle(line).color : null };
+      }).catch(() => null);
+      const stopStyle = seen.stopTask as { fontSize: string; color: string; lineColor: string | null } | null;
+      expect.soft(stopStyle?.fontSize, 'stop task at 11 px, as the header\'s stop').toBe('11px');
+      expect.soft(stopStyle && stopStyle.color !== stopStyle.lineColor, 'stop task in the grey of the header\'s stop, not the main ink').toBe(true);
+      keep({ seen, devSession });
 
       // 2. stop task: that task only. The turn ends, the session stays, the waiting task goes in.
       // Clicked once its turn runs, as Tars asks: a task typed into the terminal whose turn the CLI has not yet
@@ -202,15 +225,28 @@ for (const newInterface of [false, true]) {
       const slowAt = Date.parse(lines(path.join(home, 'stand-in.jsonl')).find((e) => typeof e.turn === 'string' && e.turn.includes('SLOW'))?.at ?? '');
       await expect.poll(async () => Date.parse((await get('dev'))?.lastTurnStartedAt ?? '') >= slowAt, { timeout: 30_000 }).toBe(true);
       if (await banner.count()) await banner.getByRole('button', { name: 'stop task' }).click();
-      const next = page.locator('[data-task-banner]').filter({ hasText: 'run the tests' });
-      await expect.soft(next, 'the waiting task is now in hand').toBeVisible({ timeout: 30_000 });
+      // The second task's own banner, not the first's: its first line, who gave it and since when.
+      const nextLine = page.locator('[data-task-banner] p[title="SLOW run the tests"]');
+      await expect(nextLine, 'the second task is in hand, in a banner of its own').toBeVisible({ timeout: 30_000 });
+      const next = page.locator('[data-task-banner]').filter({ has: nextLine });
+      await expect.soft(page.locator('[data-task-banner] p[title="SLOW review the release notes"]'), 'no banner shows the first task').toHaveCount(0);
+      const inHand = (await get('dev'))?.taskBanner?.task ?? null;
+      const clock = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+      const afterStop = { text: await next.innerText(), label: await next.getAttribute('aria-label'), task: inHand };
+      keep({ afterStop });
       await stepShot(page, '02-next-task-in-hand');
+      expect.soft(inHand?.firstLine, 'the task in hand is the second one').toBe('SLOW run the tests');
+      expect.soft(afterStop.label, 'the second task\'s sender').toBe('Task from Project Lead');
+      expect.soft(afterStop.text, 'the second task\'s time, when it went in').toContain(inHand ? clock(inHand.startedAt) : 'no task in hand');
       const one = await first;
-      keep({ one, afterStop: (await next.count()) ? await next.innerText() : null });
+      keep({ one });
       expect.soft(lines(path.join(home, 'stand-in.jsonl')).some((e) => e.esc === true), 'Esc reached the terminal').toBe(true);
       expect.soft((await get('dev'))?.currentSessionId, 'the session stays').toBe(devSession);
 
-      // 3. Once the second is done, the banner goes.
+      // 3. stop task on the second once its turn runs: the banner goes.
+      const secondAt = () => Date.parse(lines(path.join(home, 'stand-in.jsonl')).find((e) => typeof e.turn === 'string' && e.turn.includes('SLOW run the tests'))?.at ?? '');
+      await expect.poll(async () => { const at = secondAt(); return !Number.isNaN(at) && Date.parse((await get('dev'))?.lastTurnStartedAt ?? '') >= at; }, { timeout: 30_000 }).toBe(true);
+      if (await next.count()) await next.getByRole('button', { name: 'stop task' }).click();
       const two = await second;
       await expect.soft(page.locator('[data-task-banner]'), 'no task, no banner').toHaveCount(0, { timeout: 30_000 });
       keep({ two, standIn: lines(path.join(home, 'stand-in.jsonl')), pageErrors });
