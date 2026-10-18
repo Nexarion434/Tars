@@ -102,6 +102,8 @@ export interface CodexSessionWatchDeps {
   interrupted?: (agentId: string, sessionId: string) => void;
   /** The session the agent's launch may resume (production: its resumableSessionId, utils/resume-session.ts). */
   resumableSessionOf?: (agentId: string) => string | undefined;
+  /** Whether codex runs in the agent's terminal now (production: cliRunningIn). */
+  codexRunning?: (agentId: string) => boolean;
 }
 
 interface Launch {
@@ -126,7 +128,11 @@ interface Bound {
 
 /** A session's time may read a little before the launch Tars noted: the two clocks are read apart. */
 const LAUNCH_SLACK_MS = 2_000;
-/** A launch no session has matched in this long is given up on (a CLI that never started). */
+/**
+ * A launch no session has matched in this long is given up on, once its codex no longer runs (a CLI that never
+ * started, or that ended). Never while it runs: measured on 0.163, codex started with no prompt writes no rollout
+ * before its first turn, which may come hours later.
+ */
 const LAUNCH_TTL_MS = 10 * 60_000;
 /** How long a session waits for its first message to say whose it is, when several launches wait in its folder. */
 const IDENTITY_WAIT_MS = 10_000;
@@ -212,7 +218,7 @@ export class CodexSessionWatch {
 
   async tick(): Promise<void> {
     const now = this.deps.now();
-    this.launches = this.launches.filter(l => now - l.at < LAUNCH_TTL_MS);
+    this.launches = this.launches.filter(l => now - l.at < LAUNCH_TTL_MS || this.deps.codexRunning?.(l.agentId) === true);
     this.bindResumed();
     this.bindNew(now);
     for (const [file, b] of this.bound) await this.follow(file, b);
@@ -356,7 +362,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;
