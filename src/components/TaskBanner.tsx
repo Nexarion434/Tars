@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ListOrdered } from 'lucide-react';
+import { List } from 'lucide-react';
 import { Button, StatusSquare } from '@/components/ui';
 import type { AgentStatus } from '@/types/electron';
 import { useTaskBanner } from '@/hooks/useTaskBanner';
@@ -12,9 +12,11 @@ import { cleanLine, clockOf, elapsedSince, sendersOf } from '@/lib/task-banner';
  * (its Dashboard panel, its window): who gave it, since when and for how long,
  * its first line, the tasks waiting behind it, and stop task, which ends that
  * task only. Frames: `Task banner · above the agent's terminal` and its
- * Dashboard and window frames (design PR #451). Narrower than 400 px it keeps
- * the sender and the hour; under 560 px the waiting tasks' senders move into
- * their list.
+ * Dashboard and window frames (design PR #451), whose panes give its widths:
+ * from 560 px, "Task from <sender> since 14:02 · 4 min" and the waiting tasks'
+ * senders beside their count; under 560, "from <sender> since 14:02", the
+ * senders in their list only; under 400, the sender and the hour, and the
+ * count without its icon.
  */
 export default function TaskBanner({ agent }: { agent: AgentStatus }) {
   const banner = useTaskBanner(agent);
@@ -61,13 +63,14 @@ export default function TaskBanner({ agent }: { agent: AgentStatus }) {
       <div className="flex items-center gap-2 min-w-0">
         <StatusSquare tone="running" />
         <p className="min-w-0 truncate text-[11px] leading-tight text-muted-foreground">
-          <span className="hidden @min-[400px]:inline">Task from </span>
+          <span className="hidden @min-[560px]:inline">Task </span>
+          <span className="hidden @min-[400px]:inline">from </span>
           <span className="text-foreground font-medium">{from}</span>
           <span className="font-mono">
             {' '}
             <span className="hidden @min-[400px]:inline">since </span>
             {clockOf(task.startedAt)}
-            <span className="hidden @min-[400px]:inline"> · {elapsedSince(task.startedAt, now)}</span>
+            <span className="hidden @min-[560px]:inline"> · {elapsedSince(task.startedAt, now)}</span>
           </span>
         </p>
         <span className="flex-1" />
@@ -76,9 +79,9 @@ export default function TaskBanner({ agent }: { agent: AgentStatus }) {
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className={`h-[26px] shrink-0 flex items-center gap-1.5 px-2 border text-[11px] transition-colors ${open ? 'bg-background border-border-accent text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            className={`h-[26px] shrink-0 flex items-center gap-1.5 px-2 border text-[11px] transition-colors ${open ? 'bg-card border-border-accent text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
-            <ListOrdered size={12} />
+            <List size={12} className="hidden @min-[400px]:block" />
             <span>{waiting.length} waiting</span>
             <span className="hidden @min-[560px]:inline">· {sendersOf(waiting)}</span>
           </button>
@@ -90,23 +93,24 @@ export default function TaskBanner({ agent }: { agent: AgentStatus }) {
       <p className="mt-1 truncate text-[12px] leading-snug text-foreground" title={firstLine}>{firstLine}</p>
       {error && <p className="mt-1 text-[11px] text-danger">{error}</p>}
       {open && waiting.length > 0 && (
-        <div className="absolute right-3 top-full z-20 mt-1 w-[300px] max-w-[calc(100%-24px)] p-2 bg-secondary border border-border-accent">
-          <div className="flex items-center justify-between px-1 pb-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-            <span>Waiting · {waiting.length}</span>
-            <span className="normal-case tracking-normal">in the order they run</span>
+        <div className="absolute right-3 top-full z-20 mt-1 w-[320px] max-w-[calc(100%-24px)] bg-bg-elevated border border-border-accent">
+          <div className="flex items-center justify-between px-3 pt-[9px] pb-[7px] text-[10px] text-muted-foreground">
+            <span className="uppercase tracking-[0.08em]">Waiting · {waiting.length}</span>
+            <span className="font-mono">in the order they run</span>
           </div>
-          <ul aria-label="Tasks waiting" className="flex flex-col gap-1">
-            {waiting.map((w) => (
-              <li key={w.ref} className="px-1 py-1">
-                <p className="text-[11px] text-muted-foreground">
-                  from <span className="text-foreground">{cleanLine(w.from, 40)}</span>
-                  <span className="font-mono"> queued {clockOf(w.queuedAt)}</span>
+          <ul aria-label="Tasks waiting">
+            {waiting.map((w, i) => (
+              <li key={w.ref} className="flex flex-col gap-[3px] px-3 py-2 border-t border-border">
+                <p className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{i + 1}</span>
+                  <span className="min-w-0 truncate text-[11.5px] text-foreground">from {cleanLine(w.from, 40)}</span>
+                  <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">queued {clockOf(w.queuedAt)}</span>
                 </p>
                 <p className="truncate text-[12px] text-foreground">{cleanLine(w.firstLine, 100)}</p>
               </li>
             ))}
           </ul>
-          <p className="px-1 pt-1 text-[11px] text-muted-foreground">The first starts when this task ends.</p>
+          <p className="px-3 pt-[7px] pb-[9px] border-t border-border font-mono text-[10.5px] text-muted-foreground">the first starts when this task ends</p>
         </div>
       )}
     </div>
