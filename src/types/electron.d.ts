@@ -564,6 +564,18 @@ export interface HermesSshConfig {
   localPort?: number;
 }
 
+/** Tars's Hermes session as the main process watches it (electron/services/hermes-session-watch.ts). */
+export interface HermesSessionState {
+  /** `none`: no Hermes configured, or one that asks for no sign-in. */
+  session: 'none' | 'signed-in' | 'signed-out' | 'unreachable';
+  version?: string;
+  /** The rules of this Hermes version were not measured: a task an agent claims stays scheduled. */
+  unmeasured: boolean;
+  /** The sentence to show, the same the kanban tools answer with. */
+  message?: string;
+  checkedAt?: string;
+}
+
 /**
  * The relay to the user's Telegram through their Hermes (electron/services/hermes-relay.ts), as Settings, Hermes shows
  * it. `state`: off (the switch, hermesRelayEnabled, is off); ready; unreachable (Hermes did not answer); not-configured
@@ -2108,6 +2120,9 @@ export interface ElectronAPI {
     /** The relay's state now; `onRelayStatus` hears each change of it. */
     relayStatus: () => Promise<HermesRelayStatus>;
     onRelayStatus: (callback: (status: HermesRelayStatus) => void) => () => void;
+    /** Tars's Hermes session now; `onSessionState` hears each change of it. */
+    sessionState: () => Promise<HermesSessionState>;
+    onSessionState: (callback: (state: HermesSessionState) => void) => () => void;
     testConnection: (connection: HermesConnection) => Promise<{
       success: boolean;
       baseUrl?: string;
