@@ -226,14 +226,16 @@ export function terminalTurnOf(agent: TurnView, cliRunning: boolean): Busy | und
 
 /**
  * Whether a message sent to wait for the agent's rest (pty-manager.ts,
- * WriteOrigin.untilRest) still waits: a run holds the agent, tasks wait their
- * turn before it, or a turn Tars can see end runs in its terminal. Read by the
- * terminals' writer, so a note, or Tars's own word, never goes in beside a
- * run, whatever the agent's status reads (the Audit's M1 on #449); and never
- * waits for an end of turn a CLI without hooks never says.
+ * WriteOrigin.untilRest) still waits: a run holds the agent, or a turn Tars
+ * can see end runs in its terminal. Read by the terminals' writer, so a note,
+ * or Tars's own word, never goes in beside a run, whatever the agent's status
+ * reads (the Audit's M1 on #449); and never waits for an end of turn a CLI
+ * without hooks never says. Never for the tasks in line: they may wait for
+ * the very turn this message ends, an answer to a question (the Audit's H-A on
+ * 9d9a7ad9), and a note between two tasks goes in at the rest between them.
  */
 export function holdsMessages(agent: TurnView, queue: OneTaskQueue = oneTaskQueue): boolean {
-  if (queue.busyRun(agent.id) || queue.queued(agent.id).length > 0) return true;
+  if (queue.busyRun(agent.id)) return true;
   return agent.status === 'running' && hasEndOfTurn(agent) && !agent.stalledSince;
 }
 

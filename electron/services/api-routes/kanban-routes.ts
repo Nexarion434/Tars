@@ -147,7 +147,7 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): 'typed' | 
     ? `(${carriedSince(item.since)}${item.carriedFrom ? `, from ${envelopeValue(item.carriedFrom)}` : ''}) ${item.message}`
     : item.message;
   // A note is information, never a task in the agent's queue: it waits for a run of it to end (core/one-task.ts).
-  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender, information: item.purpose === 'note' }, ctx, (data, code) => {
+  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender, information: item.purpose === 'note', task: item.purpose === 'work' }, ctx, (data, code) => {
     status = code ?? 200;
     error = (data as { error?: string })?.error ?? '';
   }).then(() => {

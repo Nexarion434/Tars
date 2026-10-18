@@ -953,7 +953,10 @@ const AGENT_TOOLS: Tool[] = [
                 "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
                 undefined,
                 allowCrossProject,
-                { task: true },
+                // The answer to the question its own task asked, not a task: as a task it
+                // waited in the agent's queue behind any task there, which waits for this
+                // very turn (the Audit's H-A on 9d9a7ad9).
+                {},
               );
             } catch {
               // Auto-continue itself failed (agent gone, network hiccup):
