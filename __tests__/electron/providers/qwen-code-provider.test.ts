@@ -42,6 +42,9 @@ import * as path from 'node:path';
  *  Q10. Tars does not hear its turns (they read as never ending), or reads no
  *      answer, no tokens and no resume from its transcript, or reads the
  *      thinking as the answer.
+ *  Q11. (The Audit's L1 on #462, written before its code.) A model's baseUrl
+ *      carrying credentials (`https://user:key@host`, `?api_key=...`) reaches
+ *      the window whole in its description (models:cli).
  */
 
 import { getProvider } from '../../../electron/providers';
@@ -132,6 +135,19 @@ describe('the qwen-code provider', () => {
     expect(qwenModels()).toEqual([]);
     fs.rmSync(path.join(home(), '.qwen'), { recursive: true });
     expect(qwenModels()).toEqual([]);
+  });
+
+  it('Q11. a model\'s address reaches the window without its credentials', () => {
+    userSettings({ modelProviders: { openai: [
+      { id: 'm1', baseUrl: 'https://user:s3cret-key@llm.example.com/v1?api_key=s3cret-q&x=1#frag' },
+      { id: 'm2', baseUrl: 'not a url, s3cret-raw' },
+      { id: 'm3', baseUrl: 'https://api.deepseek.com' },
+    ] } });
+    const models = qwenModels();
+    expect(JSON.stringify(models)).not.toMatch(/s3cret|user/);
+    expect(models.find((m) => m.id === 'm1')?.description).toBe('openai, https://llm.example.com/v1');
+    expect(models.find((m) => m.id === 'm2')?.description).toBe('openai');
+    expect(models.find((m) => m.id === 'm3')?.description).toBe('openai, https://api.deepseek.com');
   });
 
   it('Q6. its key under its model\'s envKey, in its environment only', () => {
