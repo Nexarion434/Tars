@@ -11,7 +11,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The real codex in Tars, once (2.0.4): an agent created on codex, in auto at low effort on gpt-6-luna, is handed a
  * task with delegate_task, so Tars starts its codex with it in a project folder codex has never seen; it sends a
  * message to a claude agent through the Tars MCP server inside codex, with its own identity, and delegate_task
- * returns its answer, read from codex's session log.
+ * returns its answer, read from codex's session log. Then Tars quits and starts again on the same home, the window
+ * starts Cody as Start does, and his codex resumes his own session (`codex resume`): a task delegated then is
+ * answered from the conversation before the restart.
  *
  * codex is the user's own install (E2E_CODEX), signed in with the user's ChatGPT account through a link to
  * ~/.codex/auth.json in the sandbox's CODEX_HOME: never a copy, so a token codex refreshes is the one file, and the
@@ -19,8 +21,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * orchestrator, works through the real mcp-orchestrator over stdio; Claire is a claude worker whose terminal
  * records what is typed into it. codex-works.spec.ts proves each point with a stand-in; this is the real binary.
  *
- * Live: E2E_LIVE=1 and E2E_CODEX, a codex signed in with a ChatGPT account. Costs one or two turns on gpt-6-luna at
- * low effort. The artefact: values.json (the tools' answers, codex's own session log of the turns, Claire's bytes).
+ * Live: E2E_LIVE=1 and E2E_CODEX, a codex signed in with a ChatGPT account. Costs two or three turns on gpt-6-luna
+ * at low effort. The artefact: values.json (the tools' answers, codex's own session log of the turns, Claire's bytes).
  */
 
 const LEAD = 'dddd4444-0000-4000-8000-0000000000d4';
@@ -33,7 +35,7 @@ type Api = { electronAPI: { agent: { start(p: { id: string; prompt: string }): P
 
 test('the real codex starts in a new folder, answers, and messages a claude agent with its own identity', async () => {
   test.skip(process.env.E2E_LIVE !== '1' || !CODEX || !fs.existsSync(AUTH), 'live: E2E_LIVE=1, E2E_CODEX and a signed-in codex');
-  test.setTimeout(6 * 60_000);
+  test.setTimeout(9 * 60_000);
   const home = fs.mkdtempSync('/tmp/dorothy-e2e-codex-real-');
   const project = path.join(home, 'projects', 'demo');
   const dir = path.join(home, '.dorothy');
@@ -111,33 +113,37 @@ test('the real codex starts in a new folder, answers, and messages a claude agen
       finally { Object.defineProperty(process, 'resourcesPath', { value: was, configurable: true, writable: true }); }
     }, { dist, resources });
 
-    const mcp = spawn(process.execPath, [path.resolve('mcp-orchestrator', 'dist', 'bundle.js')], {
-      env: { PATH: process.env.PATH ?? '', HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, CLAUDE_MGR_API_TOKEN: identity.token, CLAUDE_AGENT_ID: LEAD, CLAUDE_PROJECT_PATH: project, TARS_INSTANCE_ID: identity.instance },
-    });
-    servers.push(mcp);
-    const replies = new Map<number, (msg: Reply) => void>();
-    let buffered = '';
-    mcp.stdout.on('data', (chunk) => {
-      buffered += chunk;
-      for (let at = buffered.indexOf('\n'); at >= 0; at = buffered.indexOf('\n')) {
-        const line = buffered.slice(0, at); buffered = buffered.slice(at + 1);
-        if (!line.trim()) continue;
-        const msg = JSON.parse(line);
-        if (typeof msg.id === 'number' && !msg.method) replies.get(msg.id)?.(msg);
-      }
-    });
-    let nextId = 1;
-    const rpc = (method: string, params: unknown) => new Promise<Reply>((resolve) => { const id = nextId++; replies.set(id, resolve); mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`); });
-    await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
-    mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
     const calls: Array<{ tool: string; text: string; isError: boolean }> = [];
-    const lead = async (tool: string, args: Record<string, unknown>) => {
-      const reply = await Promise.race([rpc('tools/call', { name: tool, arguments: args }), sleep(300_000).then(() => ({ error: `${tool} gave no answer in 300 s` }) as Reply)]);
-      const answer = { tool, text: reply.result?.content?.map(c => c.text ?? '').join('\n') ?? JSON.stringify(reply.error), isError: !!reply.result?.isError || !!reply.error };
-      calls.push(answer);
-      keep({ calls });
-      return answer;
+    /** Lead's tools through the real mcp-orchestrator, with the identity this run of Tars gave it. */
+    const connectLead = async (identity: { token: string; instance: string }) => {
+      const mcp = spawn(process.execPath, [path.resolve('mcp-orchestrator', 'dist', 'bundle.js')], {
+        env: { PATH: process.env.PATH ?? '', HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, CLAUDE_MGR_API_TOKEN: identity.token, CLAUDE_AGENT_ID: LEAD, CLAUDE_PROJECT_PATH: project, TARS_INSTANCE_ID: identity.instance },
+      });
+      servers.push(mcp);
+      const replies = new Map<number, (msg: Reply) => void>();
+      let buffered = '';
+      mcp.stdout.on('data', (chunk) => {
+        buffered += chunk;
+        for (let at = buffered.indexOf('\n'); at >= 0; at = buffered.indexOf('\n')) {
+          const line = buffered.slice(0, at); buffered = buffered.slice(at + 1);
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          if (typeof msg.id === 'number' && !msg.method) replies.get(msg.id)?.(msg);
+        }
+      });
+      let nextId = 1;
+      const rpc = (method: string, params: unknown) => new Promise<Reply>((resolve) => { const id = nextId++; replies.set(id, resolve); mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`); });
+      await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
+      mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+      return async (tool: string, args: Record<string, unknown>) => {
+        const reply = await Promise.race([rpc('tools/call', { name: tool, arguments: args }), sleep(300_000).then(() => ({ error: `${tool} gave no answer in 300 s` }) as Reply)]);
+        const answer = { tool, text: reply.result?.content?.map(c => c.text ?? '').join('\n') ?? JSON.stringify(reply.error), isError: !!reply.result?.isError || !!reply.error };
+        calls.push(answer);
+        keep({ calls });
+        return answer;
+      };
     };
+    const lead = await connectLead(identity);
 
     const nonce = randomBytes(4).toString('hex');
     const made = await lead('create_agent', { name: 'Cody', provider: 'codex', projectPath: project, model: 'gpt-6-luna', effort: 'low', permissionMode: 'auto' });
@@ -166,6 +172,38 @@ test('the real codex starts in a new folder, answers, and messages a claude agen
     expect.soft(typedIntoClaire(), 'the message is not from Cody').toContain('"Cody"');
     expect.soft(context?.model).toBe('gpt-6-luna');
     expect.soft(context?.collaboration_mode?.settings?.reasoning_effort, "the effort codex's own log shows").toBe('low');
+
+    // Tars quits and starts again on the same home; the window starts Cody, and his own codex session goes on.
+    const sessionOf = (id: string) => app!.evaluate((_e, { dist, id }) => {
+      const a = process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get(id);
+      return { current: a?.currentSessionId as string | undefined, resumable: a?.resumableSessionId as string | undefined };
+    }, { dist, id });
+    const kept = (await sessionOf(cody)).resumable;
+    for (const server of servers.splice(0)) server.kill();
+    await app.close();
+    app = await launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', CODEX_HOME: codexHome } });
+    const appLog2 = test.info().outputPath('app-2.log');
+    app.process().stdout?.on('data', (d) => fs.appendFileSync(appLog2, d));
+    app.process().stderr?.on('data', (d) => fs.appendFileSync(appLog2, d));
+    const page2: Page = await app.firstWindow();
+    const identity2 = await app.evaluate((_e, { dist, lead }) => {
+      const tokens = process.mainModule!.require(`${dist}/core/agent-tokens.js`);
+      return { token: tokens.mintRunToken(lead).token as string, instance: tokens.tarsInstanceId() as string };
+    }, { dist, lead: LEAD });
+    const lead2 = await connectLead(identity2);
+    await page2.evaluate((id) => (window as unknown as Api).electronAPI.agent.start({ id, prompt: '' }), cody);
+    await expect.poll(async () => (await page2.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find(a => a.id === cody)?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
+    await expect.poll(async () => (await sessionOf(cody)).current, { timeout: 30_000 }).toBe(kept).catch(() => {});
+    const resumedAs = await sessionOf(cody);
+    const again = await lead2('delegate_task', {
+      id: cody,
+      prompt: 'What exact text did you reply with to my previous task? Reply with exactly that text, then a space, then AGAIN',
+      timeoutSeconds: 240,
+    });
+    keep({ kept, resumedAs, again, authStillALink: fs.lstatSync(path.join(codexHome, 'auth.json')).isSymbolicLink() });
+    await stepShot(page2, 'real-codex-resumed');
+    expect.soft(resumedAs.current, 'Tars follows the session codex resumed').toBe(kept);
+    expect.soft(again.text, "Cody after the restart, in his own conversation").toContain(`DONE ${nonce} AGAIN`);
     expect(fs.lstatSync(path.join(codexHome, 'auth.json')).isSymbolicLink(), 'the sign-in link was replaced by a file').toBe(true);
   } finally {
     for (const server of servers) server.kill();

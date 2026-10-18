@@ -13,7 +13,11 @@
 // - `HOLD <tag>` works until Esc is pressed, then logs the turn as 0.163 does when it is interrupted: `turn_aborted`
 //   (reason `interrupted`), and no task_complete;
 // - in a folder its config.toml does not trust (`[projects."<real path>"] trust_level = "trusted"`), it first asks
-//   "Trust this folder?" and starts no session until it is answered.
+//   "Trust this folder?" and starts no session until it is answered;
+// - started with no prompt, it writes no rollout before its first turn; `codex resume <id>` appends to that
+//   session's own rollout (a thread_settings_applied line at once, no session_meta), and `codex fork <id>` begins a
+//   new one whose session_meta names the session it forks (forked_from_id); `RECALL` answers with the first `ECHO`
+//   of the session, read back from its rollout: the conversation goes on across a restart of Tars.
 // Every launch and turn is logged to FAKE_CODEX_LOG, one JSON line each, with whether the agent's token was in its
 // environment, never the token.
 import fs from 'node:fs';
@@ -42,9 +46,10 @@ Options:
 const argv = process.argv.slice(2);
 const WITH_VALUE = new Set(['-c', '--config', '-m', '--model', '-s', '--sandbox', '-a', '--ask-for-approval', '--add-dir', '-C', '--cd']);
 const FLAGS = new Set(['--approve-for-me', '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen']);
-const opts = { configs: [], model: null, sandbox: null, approval: null, approveForMe: false, bypass: false, prompt: null };
+const opts = { configs: [], model: null, sandbox: null, approval: null, approveForMe: false, bypass: false, prompt: null, sub: null, session: null };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
+  if (i === 0 && (a === 'resume' || a === 'fork')) { opts.sub = a; continue; }
   if (a === '--help' || a === '-h') { process.stdout.write(HELP); process.exit(0); }
   if (WITH_VALUE.has(a)) {
     const v = argv[++i];
@@ -64,7 +69,8 @@ for (let i = 0; i < argv.length; i++) {
     log({ launch: true, argv, refused: a });
     process.exit(2);
   }
-  opts.prompt = a;
+  if (opts.sub && opts.session === null) opts.session = a;
+  else opts.prompt = a;
 }
 if (opts.approval && !['on-request', 'never'].includes(opts.approval)) {
   process.stderr.write(`error: invalid value '${opts.approval}' for '--ask-for-approval <APPROVAL_POLICY>'\n  [possible values: on-request, never]\n`);
@@ -89,19 +95,53 @@ function trusted(dir) {
 }
 
 let booted = false;
-/** The session's log, once the session begins (after the trust question, when there is one). */
+/** The session's log, once the session begins (its first turn, or a resume or a fork at once). */
 let write = () => {};
-function boot() {
-  booted = true;
+let sessionId = null;
+let sessionFile = null;
+const pad = (n) => String(n).padStart(2, '0');
+/** A rollout of this home, by its session's id, in whichever day it began. */
+function rolloutOf(id) {
+  const sessions = path.join(home, 'sessions');
+  const list = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
+  for (const y of list(sessions)) for (const m of list(path.join(sessions, y))) for (const d of list(path.join(sessions, y, m))) {
+    const name = list(path.join(sessions, y, m, d)).find(n => n.endsWith(`-${id}.jsonl`));
+    if (name) return path.join(sessions, y, m, d, name);
+  }
+  return null;
+}
+function appendTo(file) {
+  return (type, payload) => fs.appendFileSync(file, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
+}
+function newSession(extra = {}) {
   const started = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
   const dir = path.join(home, 'sessions', String(started.getFullYear()), pad(started.getMonth() + 1), pad(started.getDate()));
   fs.mkdirSync(dir, { recursive: true });
-  const sessionId = randomUUID();
+  sessionId = randomUUID();
   const stamp = `${started.getFullYear()}-${pad(started.getMonth() + 1)}-${pad(started.getDate())}T${pad(started.getHours())}-${pad(started.getMinutes())}-${pad(started.getSeconds())}`;
-  const rollout = path.join(dir, `rollout-${stamp}-${sessionId}.jsonl`);
-  write = (type, payload) => fs.appendFileSync(rollout, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
-  write('session_meta', { id: sessionId, session_id: sessionId, cwd: process.cwd(), source: 'cli', originator: 'codex-tui', cli_version: '0.163.0', timestamp: started.toISOString() });
+  sessionFile = path.join(dir, `rollout-${stamp}-${sessionId}.jsonl`);
+  write = appendTo(sessionFile);
+  write('session_meta', { id: sessionId, session_id: sessionId, cwd: process.cwd(), source: 'cli', originator: 'codex-tui', cli_version: '0.163.0', timestamp: started.toISOString(), ...extra });
+}
+function boot() {
+  booted = true;
+  if (opts.sub) {
+    const file = opts.session ? rolloutOf(opts.session) : null;
+    if (!file) {
+      process.stderr.write(`Error: no saved session found with id ${opts.session}\n`);
+      log({ refused: `no session ${opts.session}` });
+      process.exit(1);
+    }
+    if (opts.sub === 'resume') {
+      sessionId = opts.session;
+      sessionFile = file;
+      write = appendTo(file);
+    } else {
+      newSession({ forked_from_id: opts.session });
+    }
+    write('event_msg', { type: 'thread_settings_applied' });
+    log({ session: sessionId, [opts.sub]: opts.session });
+  }
   out('>_ OpenAI Codex (v0.163.0)\n\n› ');
   if (opts.prompt) queue(opts.prompt);
 }
@@ -168,15 +208,26 @@ function sendThroughTars(to, message) {
 }
 
 async function turn(text) {
+  // codex begins a fresh session's rollout with its first turn, and not before (measured on 0.163).
+  if (!sessionFile) newSession();
   const turnId = randomUUID();
   write('event_msg', { type: 'task_started', turn_id: turnId });
   write('turn_context', { model: opts.model, approval_policy: opts.approval ?? 'on-request', collaboration_mode: { mode: 'default', settings: { model: opts.model, reasoning_effort: effort } } });
   write('event_msg', { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text }] } });
-  log({ turn: true, text: text.slice(-300), effort, model: opts.model });
+  log({ turn: true, text: text.slice(-300), effort, model: opts.model, session: sessionId });
   if (opts.model === 'gpt-5-codex-mini') {
     const error = JSON.stringify({ type: 'error', status: 400, error: { type: 'invalid_request_error', message: "The 'gpt-5-codex-mini' model is not supported when using Codex with a ChatGPT account." } });
     out(`\n■ ${error}\n\n› `);
     write('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: null, error: { message: error } });
+    return;
+  }
+  if (/\bRECALL\b/.test(text)) {
+    const first = fs.readFileSync(sessionFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .filter(l => l.type === 'event_msg' && l.payload?.type === 'item_completed' && l.payload.item?.type === 'UserMessage')
+      .map(l => l.payload.item.content.map(c => c.text ?? '').join('')).map(t => /ECHO (\w+)/.exec(t)?.[1]).find(Boolean);
+    const answer = `recall ${first ?? 'nothing'}`;
+    out(`\n• ${answer}\n\n› `);
+    write('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: answer });
     return;
   }
   const hold = /HOLD (\w+)/.exec(text);
