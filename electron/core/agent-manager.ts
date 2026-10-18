@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from './end-of-turn';
 import { agentRecovered, reportEvent } from '../services/event-reports';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -781,7 +782,7 @@ const TASK_START_GRACE_MS = 600_000;
  */
 export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined, task?: string): void {
   if (!ptyId) return;
-  if (getProvider(agent.provider).binaryName !== 'claude') return;
+  if (!hasClaudeHooks(agent)) return;
 
   // Only a real task is worth confirming: a start with none has nothing to lose.
   agent.pendingDelivery = task && task.trim()
@@ -1223,6 +1224,7 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
     agent.projectPath,
     agent.skills,
     savedSettings as unknown as AppSettings,
+    { model: agent.model, effort: agent.effort },
   );
 
   const ptyProcess = spawnAgentPty({

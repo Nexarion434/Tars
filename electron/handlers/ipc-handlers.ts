@@ -408,7 +408,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Get provider-specific env vars
     const agentProvider = getProvider(config.provider);
-    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings);
+    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings, { model: config.model, effort: config.effort });
 
     // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd so
     // bypass/auto-mode agents never see the first-launch trust prompt.
@@ -839,6 +839,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // not carry (see noteLaunch).
     const launched = launchSettings(agent);
     const command = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: resumeSessionId ?? undefined,
       forkSession,
       binaryPath,

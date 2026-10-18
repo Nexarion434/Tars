@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../core/end-of-turn';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, endTerminalTree, fieldInUse } from '../core/pty-manager';
@@ -6,7 +7,6 @@ import { cliLaunchedAt, sessionStarting } from '../core/agent-launch';
 import { fallAsleep, waitsOnItself } from '../core/agent-asleep';
 export { restPendingOf, waitsOnItself } from '../core/agent-asleep';
 import { terminalSnapshot } from '../core/terminal-mirror';
-import { getProvider } from '../providers';
 import { isSuperAgent } from '../utils';
 import { resolveResumeSessionId } from '../utils/resume-session';
 import { broadcastToAllWindows } from '../utils/broadcast';
@@ -113,7 +113,7 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
     // Tars resumes the claude binary's conversations, the providers that run
     // it included, and only once their transcript is on disk: what the wake
     // resumes is what this finds (consumeResumeSessionId).
-    resumable: getProvider(agent.provider).binaryName === 'claude' && resolveResumeSessionId(agent) !== null,
+    resumable: hasClaudeHooks(agent) && resolveResumeSessionId(agent) !== null,
     owed: holdsFor(agent.id)
       || owedKanban().some((k) => k.agentId === agent.id)
       || waitingDeliveries().some((d) => d.targetAgentId === agent.id)

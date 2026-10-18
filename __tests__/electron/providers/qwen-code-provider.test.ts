@@ -90,7 +90,7 @@ describe('the qwen-code provider', () => {
     const cmd = provider().buildInteractiveCommand({ ...base, prompt: 'review the notes', model: 'deepseek-v4-flash' });
     expect(cmd).toContain("-i 'review the notes'");
     expect(cmd).toContain("-m 'deepseek-v4-flash'");
-    expect(cmd).not.toMatch(/'\/opt\/qwen'.* 'review the notes'$/);
+    expect(cmd, 'a positional prompt runs one-shot').toMatch(/ -i 'review the notes'$/);
     expect(provider().buildInteractiveCommand(base)).not.toContain(' -i ');
     expect(() => provider().buildInteractiveCommand({ ...base, model: 'x; rm -rf /' })).toThrow();
   });

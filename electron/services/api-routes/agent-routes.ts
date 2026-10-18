@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../../core/end-of-turn';
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
 import { dropPermissionAsks } from '../permission-asks';
@@ -195,7 +196,7 @@ async function spawnAgentSessionInSlot(
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
-  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings);
+  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings, { model: opts.model ?? agent.model, effort: agent.effort });
 
   const keyRefusal = missingKeyRefusal(agent.provider, providerEnvVars);
   if (keyRefusal) {
@@ -290,6 +291,7 @@ async function spawnAgentSessionInSlot(
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
       binaryPath,
       prompt: taskPrompt,
@@ -1011,16 +1013,16 @@ function followTask(workerId: string, askerId: string): () => void {
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
  * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
- * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
+ * the providers that run it, and Qwen Code. Gemini's BeforeAgent hook posts `running` with no
  * prompt, and codex, opencode, amp, pi and grok have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasClaudeHooks(agent);
 }
 
-/** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
+/** Whether its final answer can be read from a transcript Tars knows: Claude Code's, Qwen Code's. */
 function transcriptRead(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasClaudeHooks(agent);
 }
 
 /** What the asker is told of a task typed into a CLI whose turns Tars cannot see. */

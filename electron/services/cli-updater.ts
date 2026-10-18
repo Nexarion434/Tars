@@ -116,8 +116,8 @@ const SCRATCH_STALE_MS = 60 * 60 * 1000;
 export const CLI_UPDATES_LOG = dataPath('cli-updates.log');
 
 /** The CLIs Tars updates, by the binary their providers run. */
-export type UpdatableCli = 'claude' | 'amp';
-const UPDATABLE: UpdatableCli[] = ['claude', 'amp'];
+export type UpdatableCli = 'claude' | 'amp' | 'qwen';
+const UPDATABLE: UpdatableCli[] = ['claude', 'amp', 'qwen'];
 
 export type CliUpdateOutcome = 'updated' | 'unchanged' | 'deferred' | 'failed' | 'skipped';
 
@@ -216,7 +216,33 @@ function inside(target: string, dir: string): boolean {
 type Install =
   | { kind: 'native'; launcher: string; binary: string; version: string }
   | { kind: 'npm'; launcher: string; binary: string; prefix: string; pkg: string; version: string }
-  | { kind: 'other'; launcher: string; binary: string };
+  | { kind: 'other'; launcher: string; binary: string }
+  /** Qwen Code's own installer: <root>/manifest.json, bin/qwen, its own node; `binary` is that node, which its sessions run. */
+  | { kind: 'qwen-standalone'; launcher: string; binary: string; root: string; version: string };
+
+/**
+ * Qwen Code's standalone install (its installer, 0.25.2): a launcher script
+ * that execs <root>/bin/qwen, or that bin/qwen itself, beside a manifest.json
+ * named @qwen-code/qwen-code, as qwen's own update reads it
+ * (isStandaloneInstallDir). Null for anything else.
+ */
+function qwenStandalone(launcher: string, binary: string): Extract<Install, { kind: 'qwen-standalone' }> | null {
+  const roots = [path.dirname(path.dirname(binary))];
+  try {
+    const head = fs.readFileSync(binary, 'utf8').slice(0, 4096);
+    const named = /exec\s+'([^']+)\/bin\/qwen'/.exec(head) ?? /exec\s+"([^"]+)\/bin\/qwen"/.exec(head);
+    if (named) roots.unshift(named[1]);
+  } catch {
+    return null;
+  }
+  for (const root of roots) {
+    const manifest = readJson(path.join(root, 'manifest.json'));
+    if (manifest?.name === '@qwen-code/qwen-code' && typeof manifest.version === 'string' && fs.existsSync(path.join(root, 'bin', 'qwen'))) {
+      return { kind: 'qwen-standalone', launcher, binary: path.join(root, 'node', 'bin', 'node'), root, version: manifest.version };
+    }
+  }
+  return null;
+}
 
 /**
  * How a CLI is installed, read from where its launcher really points.
@@ -246,7 +272,7 @@ export function classifyInstall(launcher: string): Install {
       return { kind: 'npm', launcher, binary, prefix, pkg, version: manifest.version };
     }
   }
-  return { kind: 'other', launcher, binary };
+  return qwenStandalone(launcher, binary) ?? { kind: 'other', launcher, binary };
 }
 
 /** Claude Code's reading of an environment flag: 1, true, yes or on. */
@@ -403,6 +429,32 @@ async function updateNpmGlobal(cli: string, install: Extract<Install, { kind: 'n
   }
 }
 
+/** Whether the user turned Qwen Code's own updates off (general.enableAutoUpdate in ~/.qwen/settings.json). */
+function qwenUpdatesOff(ctx: CliUpdateContext): string | null {
+  const general = readJson(path.join(ctx.home, '.qwen', 'settings.json'))?.general as Record<string, unknown> | undefined;
+  return general?.enableAutoUpdate === false ? 'general.enableAutoUpdate is false in ~/.qwen/settings.json' : null;
+}
+
+/**
+ * Qwen Code's standalone install, updated in place by its own `qwen update`
+ * (measured on 0.25.2), once for the fleet: never while a session runs its
+ * node, and judged by the version its manifest holds after, not by its words.
+ */
+async function updateQwenStandalone(install: Extract<Install, { kind: 'qwen-standalone' }>, ctx: CliUpdateContext): Promise<CliUpdateResult> {
+  const from = install.version;
+  const off = qwenUpdatesOff(ctx);
+  if (off) return { cli: 'qwen', outcome: 'skipped', from, detail: off };
+  const running = await processesUsing(install.binary, ctx);
+  if (running === null) return { cli: 'qwen', outcome: 'deferred', from, detail: `whether ${install.binary} is running could not be checked` };
+  if (running.length) return { cli: 'qwen', outcome: 'deferred', from, detail: `waiting for ${running.length === 1 ? 'the session' : `the ${running.length} sessions`} running it to end (pid ${running.join(', ')})` };
+  const run = await runFile(install.launcher, ['update'], ctx.env, INSTALL_TIMEOUT_MS, ctx.home);
+  const now = readJson(path.join(install.root, 'manifest.json'))?.version;
+  const took = `${(run.ms / 1000).toFixed(1)} s`;
+  if (typeof now === 'string' && now !== from) return { cli: 'qwen', outcome: 'updated', from, to: now, detail: `qwen update (${took})` };
+  if (run.code === 0) return { cli: 'qwen', outcome: 'unchanged', from, detail: lines(run.stdout).pop() ?? `qwen ${from} is the latest` };
+  return { cli: 'qwen', outcome: 'failed', from, detail: `qwen update: ${failure(run)}, ${took}` };
+}
+
 /** The deferral for an update whose binary is in use, or null when nothing runs it. */
 function runningFor(cli: string, from: string, latest: string, binary: string, running: number[] | null): CliUpdateResult | null {
   if (running === null) return { cli, outcome: 'deferred', from, detail: `${latest} is out, and whether ${binary} is running could not be checked` };
@@ -429,10 +481,13 @@ export async function updateCli(cli: string, command: string, ctx: CliUpdateCont
     : { cli, outcome: 'skipped', from, detail: `${install.binary} is outside ${ctx.home}, and Tars only updates what is installed under the home it runs in` };
   if (cli === 'claude' && install.kind === 'native') return outside(install.version) ?? updateNativeClaude(install, ctx);
   if (cli === 'amp' && install.kind === 'npm') return outside(install.version) ?? updateNpmGlobal(cli, install, ctx);
+  if (cli === 'qwen' && install.kind === 'qwen-standalone') return outside(install.version) ?? updateQwenStandalone(install, ctx);
+  // Installed with npm (@qwen-code/qwen-code) instead: the global npm update amp has.
+  if (cli === 'qwen' && install.kind === 'npm' && install.pkg === '@qwen-code/qwen-code') return outside(install.version) ?? updateNpmGlobal(cli, install, ctx);
 
-  const how = install.kind === 'native' ? 'the native installer' : install.kind === 'npm' ? `npm (${install.pkg})` : install.binary;
+  const how = install.kind === 'native' ? 'the native installer' : install.kind === 'npm' ? `npm (${install.pkg})` : install.kind === 'qwen-standalone' ? 'its own installer' : install.binary;
   const why = UPDATABLE.includes(cli as UpdatableCli)
-    ? 'Tars updates claude through its native installer and amp as a global npm package'
+    ? 'Tars updates claude through its native installer, amp as a global npm package and qwen through its own installer'
     : 'no update path for it has been measured';
   return { cli, outcome: 'skipped', detail: `installed through ${how}; ${why}. Update it yourself` };
 }

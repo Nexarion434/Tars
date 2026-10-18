@@ -38,7 +38,7 @@ export const CLI_KEYS: readonly CliKeySpec[] = [
     withoutKey: 'Its own login, `codex login`: ChatGPT, or a key it stored in ~/.codex/auth.json. With none, its sign-in screen in the agent\'s terminal.',
   },
   {
-    id: 'qwen-code', label: 'Qwen Code', provider: null, envVar: 'OPENAI_API_KEY', choices: PROVIDER_VARS,
+    id: 'qwen-code', label: 'Qwen Code', provider: 'qwen-code', envVar: 'OPENAI_API_KEY', choices: PROVIDER_VARS,
     measured: 'Qwen Code 0.25.2 (18/10): each model of modelProviders in ~/.qwen/settings.json names the variable its key is read from (envKey: DEEPSEEK_API_KEY here), which is the one used; a key in the agent\'s environment wins over the one its settings\' env holds (measured with a wrong key: 401). OPENAI_API_KEY when its model names none.',
     withoutKey: 'The key its settings.json env, or the shell, holds for that variable. With none, every request is refused (401).',
   },

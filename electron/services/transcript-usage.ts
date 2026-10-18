@@ -470,6 +470,7 @@ export async function readUsageLines(file: string): Promise<UsageLine[] | null> 
 
 /** One transcript line's usage, or null when it holds none. */
 function usageLineOf(line: string): UsageLine | null {
+  if (line.includes('"usageMetadata"')) return qwenUsageLineOf(line);
   if (!line.includes('"usage"')) return null;
 
   let entry: Record<string, unknown>;
@@ -506,6 +507,37 @@ function usageLineOf(line: string): UsageLine | null {
       searches: Number(
         (usage.server_tool_use as Record<string, unknown> | undefined)?.web_search_requests,
       ) || 0,
+    },
+  };
+}
+
+/**
+ * A reply of Qwen Code's transcript (2.0.4): `usageMetadata` on each
+ * assistant record, its model beside it. The prompt counts its cached part,
+ * which is read apart; the output is its candidates and its thoughts.
+ */
+function qwenUsageLineOf(line: string): UsageLine | null {
+  let entry: Record<string, unknown>;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const usage = entry.usageMetadata as Record<string, unknown> | undefined;
+  const model = typeof entry.model === 'string' ? entry.model : null;
+  if (entry.type !== 'assistant' || !usage || !model) return null;
+  if (model === '__proto__' || model === 'constructor' || model === 'prototype') return null;
+  const prompt = Number(usage.promptTokenCount) || 0;
+  const cached = Number(usage.cachedContentTokenCount) || 0;
+  return {
+    key: `qwen:${typeof entry.uuid === 'string' ? entry.uuid : ''}`,
+    model,
+    timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+    counts: {
+      input: Math.max(0, prompt - cached),
+      output: (Number(usage.candidatesTokenCount) || 0) + (Number(usage.thoughtsTokenCount) || 0),
+      cacheRead: cached,
+      cacheWrite: 0, write1h: 0, write5m: 0, searches: 0,
     },
   };
 }

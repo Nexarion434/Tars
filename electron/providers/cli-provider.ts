@@ -21,7 +21,15 @@ export function readAppSettingsFromDisk(): Partial<AppSettings> {
 /**
  * Parameters for building an interactive (PTY) agent command.
  */
+/** What a launch runs on, for getPtyEnvVars. */
+export interface PtyLaunch {
+  model?: string;
+  effort?: string;
+}
+
 export interface InteractiveCommandParams {
+  /** The agent it launches: a CLI whose settings Tars writes for each agent (Qwen Code) writes them again for this launch. */
+  agentId?: string;
   binaryPath: string;
   prompt: string;
   model?: string;
@@ -129,8 +137,13 @@ export interface CLIProvider {
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
-  /** Get environment variables to set for PTY sessions */
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string>;
+  /**
+   * Get environment variables to set for PTY sessions. `launch`: the model and
+   * effort this launch runs on, for a CLI that takes them through its
+   * environment (Qwen Code: its key's variable is its model's, its effort a
+   * setting).
+   */
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings, launch?: PtyLaunch): Record<string, string>;
 
   /** Get environment variable names to delete before spawning PTY */
   getEnvVarsToDelete(): string[];

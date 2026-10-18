@@ -69,9 +69,13 @@ export function transcriptRoots(...paths: Array<string | undefined>): string[] {
  * session id, or a transcript that is no longer on disk.
  */
 export function resolveResumeSessionId(
-  agent: { resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string; provider?: string },
   homeDir = os.homedir(),
 ): string | null {
+  // Qwen Code's transcripts are its own (services/qwen-code.ts, which this cannot import: it is below the providers).
+  const fileOf = agent.provider === 'qwen-code'
+    ? (root: string, id: string) => path.join(homeDir, '.qwen', 'projects', (process.platform === 'win32' ? root.toLowerCase() : root).replace(/[^a-zA-Z0-9]/g, '-'), 'chats', `${id}.jsonl`)
+    : (root: string, id: string) => transcriptPath(root, id, homeDir);
   // The session itself, or, while a fork has no transcript of its own yet, the
   // session it continues: the conversation is that one's, untouched.
   for (const candidate of [agent.resumableSessionId, agent.forkedFromSessionId]) {
@@ -88,7 +92,7 @@ export function resolveResumeSessionId(
     for (const root of roots) {
       for (const spelling of spellingsOf(root)) {
         try {
-          if (fs.existsSync(transcriptPath(spelling, sessionId, homeDir))) return sessionId;
+          if (fs.existsSync(fileOf(spelling, sessionId))) return sessionId;
         } catch {
           // An unreadable home directory is not a reason to fail the start.
         }
@@ -112,7 +116,7 @@ const startedThisRun = new Set<string>();
 /** The id to resume for this start, or null. Returns an id at most once per
  *  agent per app run. */
 export function consumeResumeSessionId(
-  agent: { id: string; resumableSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { id: string; resumableSessionId?: string; projectPath?: string; worktreePath?: string; provider?: string },
   homeDir?: string,
 ): string | null {
   const first = !startedThisRun.has(agent.id);

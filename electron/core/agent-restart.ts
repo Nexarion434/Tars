@@ -1,9 +1,9 @@
+import { hasClaudeHooks } from './end-of-turn';
 import { agents, saveAgents } from './agent-manager';
 import { ptyProcesses, fieldInUse, onFieldChange, type FieldInUse } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
 import { killPty } from './pty-kill';
 import { launchAgent, CLI_BOOT_MS, dialogOpen, noteCliLaunched, cliLaunchedAt } from './agent-launch';
-import { getProvider } from '../providers';
 import { agentStatusEmitter } from '../services/agent-events';
 import { holdsFor } from '../services/agent-watch';
 import { pendingBackgroundWork } from '../services/agent-truth';
@@ -316,7 +316,7 @@ function decide(agentId: string): RestartOutcome {
     say(agent, undefined, `${settings} changed, and its CLI was launched on the values it has now: nothing to restart`);
     return { action: 'next-launch', why: 'its CLI already runs on these values' };
   }
-  if (getProvider(agent.provider).binaryName !== 'claude') {
+  if (!hasClaudeHooks(agent)) {
     drop(agentId);
     say(agent, undefined, `${settings} changed: its CLI does not say when a turn ends, so the new values wait for its next launch`);
     return { action: 'next-launch', why: 'its CLI does not report the end of a turn' };

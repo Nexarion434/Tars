@@ -378,6 +378,7 @@ export async function startWithTask(
     const binaryPath = provider.resolveBinaryPath(fleet.settings());
     const mcpConfigPath = mcpConfigPathFor(provider);
     const command = provider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: opts.resume || asleep ? consumeResumeSessionId(agent) ?? undefined : undefined,
       binaryPath,
       prompt: withGuide(agent, provider, task),
@@ -497,6 +498,7 @@ export async function forwardToOrchestrator(
     // backticks became command substitutions and ran.
     const systemPromptFile = opts.systemPromptFile();
     const command = provider.buildInteractiveCommand({
+      agentId: orchestrator.id,
       resumeSessionId: opts.resume ? consumeResumeSessionId(orchestrator) ?? undefined : undefined,
       binaryPath,
       prompt: withGuide(orchestrator, provider, prompt),
