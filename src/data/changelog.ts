@@ -26,6 +26,8 @@ export const CHANGELOG: Release[] = [
       'mark_task_done without a summary now finishes the task on Hermes 0.21.5, which refuses to close a task with no summary: Tars writes one.',
       'Tars now asks Hermes every half hour, signed in. With Hermes\'s basic sign-in, each answer renews the session, so it lasts as long as Tars runs, and a session Hermes has ended is found at the next check, or at once by a kanban call: on 17/10 every kanban call answered "Unauthorized" and nothing said so. A restart of Hermes still ends every session when its basic sign-in has no fixed secret (dashboard.basic_auth.secret on the Hermes server).',
       'A kanban claim or release whose note on the board Hermes refused now says so: the claim stood and the note was dropped without a word.',
+      'An agent on an API-key provider (DeepSeek, OpenRouter and the models it carries, Moonshot, Zhipu, MiniMax, Ollama, Ollama Cloud, Venice or a custom OpenAI endpoint) now starts and takes its first task by itself. Claude Code stopped at launch to ask "Do you want to use this API key?", which nobody answers in an agent\'s terminal, and the first Enter typed there answered No. Tars now hands the key over as the auth token, as each provider\'s instructions for Claude Code have it: Claude Code does not ask about it, and nothing of the key is written in your Claude settings. Measured on Claude Code 2.1.302.',
+      'A task delegated over ACP no longer puts its agent\'s Tars token in a command line, which any account on the computer can read: the run\'s Tars tools read it from a file only you can open, removed when the task ends.',
     ],
   },
   {
