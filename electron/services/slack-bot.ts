@@ -1,3 +1,4 @@
+import { withoutCliKeys } from './cli-keys';
 import * as fs from 'fs';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
@@ -148,7 +149,7 @@ export function initSlackBot(
       if (settings.slackChannelId !== event.channel) {
         settings.slackChannelId = event.channel;
         onSettingsChanged(settings);
-        mainWindow?.webContents.send('settings:updated', settings);
+        mainWindow?.webContents.send('settings:updated', withoutCliKeys(settings));
       }
 
       await handleSlackCommand(text, event.channel, say, settings, mainWindow);
@@ -192,7 +193,7 @@ export function initSlackBot(
       if (settings.slackChannelId !== channel) {
         settings.slackChannelId = channel;
         onSettingsChanged(settings);
-        mainWindow?.webContents.send('settings:updated', settings);
+        mainWindow?.webContents.send('settings:updated', withoutCliKeys(settings));
       }
 
       await sendToSuperAgentFromSlack(channel, msg.text, say, settings, mainWindow);
