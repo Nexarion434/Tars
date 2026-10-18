@@ -465,6 +465,25 @@ describe('a failed attempt over ACP', () => {
     expect(backend().status, 'the failed attempt wrote its old status over a turn in progress').toBe('running');
     expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told the agent is waiting in the middle of its turn').toEqual([]);
   });
+  // The QA's gate of 05e31fa4 (mutant G0): since a task sent during an attempt waits its turn, the guard that keeps a
+  // failed attempt from writing its old status over a turn begun meanwhile is reached by a plain message, which keeps
+  // its mode, auto, and goes in beside the attempt.
+  it('does not put an agent back to waiting over a message typed into its terminal while the attempt was still out', async () => {
+    await oneDelegatedTaskEarlier();
+    await pause(IDLE_PROMPT_AFTER_MS);
+    await idlePrompt();
+    await pause(10 * 60_000);
+    const toldBefore = toldOrchestrator().length;
+    const run = runTaskOverAcp('BotID');
+    await pause(1_000);
+    await dispatch('Also look at the logs');
+    await pause(500);
+    await turnStarts('Also look at the logs');
+    run.settle(ACP_FAILED);
+    await run.answered;
+    expect(backend().status, 'the failed attempt wrote its old status over a turn in progress').toBe('running');
+    expect(toldOrchestrator().slice(toldBefore), 'the orchestrator was told the agent is waiting in the middle of its turn').toEqual([]);
+  });
 });
 
 describe('a permission prompt in the middle of a turn', () => {
