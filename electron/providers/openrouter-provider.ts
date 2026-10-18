@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL, GITHUB_REPO } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -148,8 +148,7 @@ export class OpenRouterProvider implements CLIProvider {
 
     const apiKey = appSettings?.openRouterApiKey;
     if (apiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = apiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, apiKey));
       // OpenRouter HTTP-Referer header (optional but recommended). The
       // repository, which the project owns: it said https://tars.app, a domain
       // it does not, and OpenRouter credits traffic to that name.

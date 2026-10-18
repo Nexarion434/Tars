@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -86,8 +86,7 @@ export class MiMoProvider implements CLIProvider {
     // This vendor has no Anthropic-compatible endpoint; the claude binary
     // can only reach its models through OpenRouter.
     if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
     return vars;
   }

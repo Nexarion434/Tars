@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -127,11 +127,9 @@ export class DeepSeekProvider implements CLIProvider {
     // Prefer direct DeepSeek endpoint when a DeepSeek key is set,
     // otherwise fall back to OpenRouter.
     if (appSettings?.deepSeekApiKey) {
-      vars.ANTHROPIC_BASE_URL = DEEPSEEK_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.deepSeekApiKey;
+      Object.assign(vars, keyProviderEnv(DEEPSEEK_BASE_URL, appSettings.deepSeekApiKey));
     } else if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
 
     return vars;

@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -134,14 +134,10 @@ export class OllamaCloudProvider implements CLIProvider {
     };
 
     if (appSettings?.ollamaCloudApiKey) {
-      vars.ANTHROPIC_BASE_URL = OLLAMA_CLOUD_BASE_URL;
       // See the file header: ollama.com's Anthropic-compatible endpoint wants
-      // this as a Bearer token, not as x-api-key.
-      vars.ANTHROPIC_AUTH_TOKEN = appSettings.ollamaCloudApiKey;
-      // Blank out any real Anthropic key inherited from the user's shell so
-      // the CLI cannot also send x-api-key alongside the bearer token to an
-      // endpoint that has nothing to do with that key.
-      vars.ANTHROPIC_API_KEY = '';
+      // the key as a Bearer token, not as x-api-key, as every key provider
+      // hands it over now (keyProviderEnv).
+      Object.assign(vars, keyProviderEnv(OLLAMA_CLOUD_BASE_URL, appSettings.ollamaCloudApiKey));
     }
 
     return vars;

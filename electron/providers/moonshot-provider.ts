@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -99,11 +99,9 @@ export class MoonshotProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
     };
     if (appSettings?.moonshotApiKey) {
-      vars.ANTHROPIC_BASE_URL = MOONSHOT_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.moonshotApiKey;
+      Object.assign(vars, keyProviderEnv(MOONSHOT_BASE_URL, appSettings.moonshotApiKey));
     } else if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
     return vars;
   }

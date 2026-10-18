@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
 import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -125,11 +125,9 @@ export class MiniMaxProvider implements CLIProvider {
     // Prefer direct MiniMax endpoint when a MiniMax key is set,
     // otherwise fall back to OpenRouter.
     if (appSettings?.minimaxApiKey) {
-      vars.ANTHROPIC_BASE_URL = MINIMAX_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.minimaxApiKey;
+      Object.assign(vars, keyProviderEnv(MINIMAX_BASE_URL, appSettings.minimaxApiKey));
     } else if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
 
     return vars;

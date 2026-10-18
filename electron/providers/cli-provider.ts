@@ -309,6 +309,30 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
   return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
 }
 
+/**
+ * What points the claude binary at a key provider's endpoint: its URL, and the
+ * key as ANTHROPIC_AUTH_TOKEN, which Claude Code sends as `Authorization:
+ * Bearer`. Never as ANTHROPIC_API_KEY: an interactive Claude Code asks before
+ * it uses an API key it finds in its environment ("Detected a custom API key
+ * in your environment. Do you want to use this API key?", No preselected), and
+ * nothing answers that in an agent's terminal, so no key-provider agent ever
+ * started by itself. The first Enter typed there, Tars's own included,
+ * answered No: the key was then refused for good in that folder's
+ * .claude.json, and a session with a subscription signed in went on with its
+ * OAuth token, sent to the vendor's URL. An auth token is never asked about,
+ * whichever Claude account folder the CLI reads, and is written nowhere
+ * (measured on claude 2.1.302). Every key provider's endpoint takes the
+ * Bearer: their own instructions for Claude Code say this variable.
+ *
+ * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
+ * would bring the question back, about itself, and go out as `x-api-key` to a
+ * vendor it has nothing to do with. Scheduled runs (`claude -p`) are never
+ * asked, and keep ANTHROPIC_API_KEY in their scripts.
+ */
+export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
+  return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
+}
+
 export function safeEffort(effort: string | undefined): string | undefined {
   if (!effort) return undefined;
   return EFFORT_VALUES.has(effort) ? effort : undefined;
