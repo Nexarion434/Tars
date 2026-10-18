@@ -45,8 +45,8 @@ const DIFFS = new Set(['diff', 'log', 'show', 'whatchanged', 'format-patch', 'st
 /** What Tars's environment hands git, and nothing else: no GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_PARAMETERS, editor or askpass. */
 const PASSED = ['PATH', 'Path', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'SystemRoot', 'SYSTEMROOT', 'ComSpec', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE'];
 
-export function safeGitEnv(base: NodeJS.ProcessEnv = process.env, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+export function safeGitEnv(base: GitEnv = process.env, extra: GitEnv = {}): NodeJS.ProcessEnv {
+  const env: GitEnv = {};
   for (const k of PASSED) if (base[k] !== undefined) env[k] = base[k];
   // The caller's own (LC_ALL=C, a throwaway GIT_INDEX_FILE of Tars's), never one that points git elsewhere or runs a program.
   for (const [k, v] of Object.entries(extra)) {
@@ -56,7 +56,7 @@ export function safeGitEnv(base: NodeJS.ProcessEnv = process.env, extra: NodeJS.
   env.GIT_CONFIG_NOSYSTEM = '1';
   env.GIT_TERMINAL_PROMPT = '0';
   env.GIT_OPTIONAL_LOCKS = '0';
-  return env;
+  return env as NodeJS.ProcessEnv;
 }
 
 /** Where the subcommand is in `args`, past the global options before it (-C <dir>, -c <k=v>, --no-pager...). */
@@ -74,7 +74,7 @@ function subcommandAt(args: string[]): number {
 function filterOverrides(names: string): string[] {
   const filters = new Set<string>();
   for (const key of names.split('\0')) {
-    const m = /^filter\.(.+)\.[^.]+$/s.exec(key.trim());
+    const m = /^filter\.([\s\S]+)\.[^.]+$/.exec(key.trim());
     if (m) filters.add(m[1]);
   }
   return [...filters].flatMap((f) => [
@@ -101,8 +101,11 @@ const needsFilters = (args: string[]) => {
   return !NO_CONTENT.has(args[at]);
 };
 
+/** What a call adds to git's environment (LC_ALL=C, a throwaway index). */
+type GitEnv = Record<string, string | undefined>;
+
 export interface SafeGitOptions {
-  env?: NodeJS.ProcessEnv;
+  env?: GitEnv;
   maxBuffer?: number;
   timeout?: number;
 }

@@ -15,7 +15,7 @@ import * as path from 'path';
  */
 
 /** git, through safe-git (no hook, filter or fsmonitor of the repository's); `env`: what this call adds, a throwaway index. */
-function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<string> {
+function git(cwd: string, args: string[], env: Record<string, string | undefined> = {}): Promise<string> {
   return safeGit(cwd, args, { env, maxBuffer: 16 * 1024 * 1024 }).then(
     ({ stdout }) => stdout.trim(),
     (err: { stderr?: string; message?: string }) => { throw new Error(`git ${args[0]} failed: ${String(err.stderr || err.message).trim().slice(0, 300)}`); },
