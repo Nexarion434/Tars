@@ -8,8 +8,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * The Usage page by agent, sorted by a column's header (JeanBrasse, 18/10, for
- * 2.0.4): a click on Project, Provider, Tasks, Time, Tokens or Cost sorts the
- * rows by it, highest first; a second click, lowest first; a third gives the
+ * 2.0.4): a click on Agent, Project or Provider sorts the rows A to Z, and on
+ * Tasks, Time, Tokens or Cost highest first (his decision of 18/10: words read
+ * A to Z first); a second click turns the order round; a third gives the
  * default order back, the dearest first. The header shows which column and
  * which way, as a box (`Usage · cost per agent`, its header states, and the
  * light copy), says it to a screen reader with aria-sort, and takes Enter and
@@ -38,14 +39,18 @@ const M = 60_000;
 const SPLASH = 'div.fixed.inset-0.z-\\[200\\]';
 
 const DEFAULT = ['Bo', 'Eve', 'Ada', 'Di', 'Cy', 'Fox'];
-const COLUMNS: Array<{ header: string; cell: string; highest: string[]; lowest: string[] }> = [
-  { header: 'Project', cell: 'project', highest: ['Ada', 'Di', 'Bo', 'Fox', 'Eve', 'Cy'], lowest: ['Cy', 'Eve', 'Bo', 'Fox', 'Ada', 'Di'] },
-  { header: 'Provider', cell: 'provider', highest: ['Cy', 'Fox', 'Bo', 'Eve', 'Ada', 'Di'], lowest: ['Di', 'Eve', 'Ada', 'Bo', 'Cy', 'Fox'] },
-  { header: 'Tasks', cell: 'tasks', highest: ['Di', 'Ada', 'Cy', 'Bo', 'Eve', 'Fox'], lowest: ['Bo', 'Eve', 'Fox', 'Cy', 'Ada', 'Di'] },
-  { header: 'Time', cell: 'time', highest: ['Bo', 'Ada', 'Fox', 'Cy', 'Di', 'Eve'], lowest: ['Eve', 'Di', 'Cy', 'Fox', 'Ada', 'Bo'] },
-  { header: 'Tokens', cell: 'tokens', highest: ['Eve', 'Bo', 'Ada', 'Di', 'Cy', 'Fox'], lowest: ['Di', 'Ada', 'Bo', 'Eve', 'Cy', 'Fox'] },
-  { header: 'Cost', cell: 'cost', highest: ['Bo', 'Eve', 'Ada', 'Di', 'Cy', 'Fox'], lowest: ['Di', 'Ada', 'Eve', 'Bo', 'Cy', 'Fox'] },
+/** Each column, the order its first click gives and the way it goes, then the order its second gives. */
+const COLUMNS: Array<{ header: string; cell: string; first: string[]; firstSort: 'ascending' | 'descending'; second: string[] }> = [
+  { header: 'Agent', cell: 'agent', first: ['Ada', 'Bo', 'Cy', 'Di', 'Eve', 'Fox'], firstSort: 'ascending', second: ['Fox', 'Eve', 'Di', 'Cy', 'Bo', 'Ada'] },
+  { header: 'Project', cell: 'project', first: ['Cy', 'Eve', 'Bo', 'Fox', 'Ada', 'Di'], firstSort: 'ascending', second: ['Ada', 'Di', 'Bo', 'Fox', 'Eve', 'Cy'] },
+  { header: 'Provider', cell: 'provider', first: ['Di', 'Eve', 'Ada', 'Bo', 'Cy', 'Fox'], firstSort: 'ascending', second: ['Cy', 'Fox', 'Bo', 'Eve', 'Ada', 'Di'] },
+  { header: 'Tasks', cell: 'tasks', first: ['Di', 'Ada', 'Cy', 'Bo', 'Eve', 'Fox'], firstSort: 'descending', second: ['Bo', 'Eve', 'Fox', 'Cy', 'Ada', 'Di'] },
+  { header: 'Time', cell: 'time', first: ['Bo', 'Ada', 'Fox', 'Cy', 'Di', 'Eve'], firstSort: 'descending', second: ['Eve', 'Di', 'Cy', 'Fox', 'Ada', 'Bo'] },
+  { header: 'Tokens', cell: 'tokens', first: ['Eve', 'Bo', 'Ada', 'Di', 'Cy', 'Fox'], firstSort: 'descending', second: ['Di', 'Ada', 'Bo', 'Eve', 'Cy', 'Fox'] },
+  { header: 'Cost', cell: 'cost', first: ['Bo', 'Eve', 'Ada', 'Di', 'Cy', 'Fox'], firstSort: 'descending', second: ['Di', 'Ada', 'Eve', 'Bo', 'Cy', 'Fox'] },
 ];
+const col = (header: string) => COLUMNS.find(c => c.header === header)!;
+const other = (sort: 'ascending' | 'descending') => (sort === 'ascending' ? 'descending' : 'ascending');
 /** What each agent's row says, column by column, as the table above writes it. */
 const ROWS: Record<string, Record<string, string>> = {
   Ada: { project: 'tars', provider: 'Claude · Main', tasks: '3', time: '50 min', tokens: '1.2M', cost: '$1.50' },
@@ -121,7 +126,7 @@ function seed(home: string, newInterface: boolean): void {
 }
 
 for (const newInterface of [false, true]) {
-  test(`usage by agent: each header sorts highest first, then lowest first, then gives the default order back${newInterface ? ' (new interface)' : ''}`, async () => {
+  test(`usage by agent: each header sorts its words A to Z or its figures highest first, then the other way, then gives the default order back${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(300_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-usage-sort-'));
     seed(home, newInterface);
@@ -193,9 +198,7 @@ for (const newInterface of [false, true]) {
       seen.defaultRows = first;
       expect(first.map(r => r.agent)).toEqual(DEFAULT);
       for (const r of first) expect({ ...r, agent: undefined }, r.agent).toEqual({ ...ROWS[r.agent], agent: undefined });
-      // Agent is the row's name, not one of the six: no sort on it.
-      await expect(header('Agent')).not.toHaveAttribute('aria-sort', /./);
-      await expect(header('Agent').getByRole('button')).toHaveCount(0);
+      // Every column sorts, the agent's own name too.
       for (const c of COLUMNS) await expect.soft(header(c.header), c.header).toHaveAttribute('aria-sort', 'none');
       await shot('01-default-order');
 
@@ -203,39 +206,45 @@ for (const newInterface of [false, true]) {
       const clicks: Record<string, unknown> = {};
       for (const c of COLUMNS) {
         const turns: Array<{ click: number; ariaSort: string | null; agents: string[]; values: string[] }> = [];
-        for (const [click, want, direction] of [[1, c.highest, 'descending'], [2, c.lowest, 'ascending'], [3, DEFAULT, 'none']] as const) {
+        const valueOf = (a: string) => (c.cell === 'agent' ? a : ROWS[a][c.cell]);
+        for (const [click, want, direction] of [[1, c.first, c.firstSort], [2, c.second, other(c.firstSort)], [3, DEFAULT, 'none']] as const) {
           await (await label(c.header)).click();
           const now = await settle([...want]);
           const ariaSort = await header(c.header).getAttribute('aria-sort');
           turns.push({ click, ariaSort, agents: now.map(r => r.agent), values: now.map(r => (r as Record<string, string>)[c.cell]) });
           expect.soft(ariaSort, `${c.header}, click ${click}: aria-sort`).toBe(direction);
           expect.soft(now.map(r => r.agent), `${c.header}, click ${click}: the order`).toEqual(want);
-          expect.soft(now.map(r => (r as Record<string, string>)[c.cell]), `${c.header}, click ${click}: the values`).toEqual(want.map(a => ROWS[a][c.cell]));
+          expect.soft(now.map(r => (r as Record<string, string>)[c.cell]), `${c.header}, click ${click}: the values`).toEqual(want.map(valueOf));
           // One column sorted at a time, and none once the default order is back.
           const others = Object.entries(await sorts()).filter(([name]) => name !== c.header).map(([, v]) => v);
           expect.soft(others, `${c.header}, click ${click}: the other headers`).toEqual(others.map(() => 'none'));
-          if (click < 3 && (c.header === 'Tokens' || c.header === 'Project')) await shot(`02-${c.cell}-${direction}`);
+          if (click < 3 && (c.header === 'Tokens' || c.header === 'Project' || c.header === 'Agent')) await shot(`02-${c.cell}-${direction}`);
         }
         clicks[c.header] = turns;
       }
       seen.clicks = clicks;
 
-      // Another header starts at highest first, wherever the first one was.
+      // Another header starts at its own first order, wherever the first one was.
       await (await label('Tokens')).click();
       await (await label('Tokens')).click();
       await (await label('Cost')).click();
-      const another = await settle(COLUMNS[5].highest);
+      const another = await settle(col('Cost').first);
       seen.anotherHeader = { agents: another.map(r => r.agent), sorts: await sorts() };
       expect.soft(await header('Cost').getAttribute('aria-sort'), 'Cost after Tokens').toBe('descending');
       expect.soft(await header('Tokens').getAttribute('aria-sort'), 'Tokens after Cost').toBe('none');
-      expect.soft(another.map(r => r.agent)).toEqual(COLUMNS[5].highest);
-      await (await label('Cost')).click();
-      await (await label('Cost')).click();
-      expect.soft((await settle(DEFAULT)).map(r => r.agent), 'Cost, back to the default order').toEqual(DEFAULT);
+      expect.soft(another.map(r => r.agent)).toEqual(col('Cost').first);
+      await (await label('Project')).click();
+      const words = await settle(col('Project').first);
+      seen.wordsAfterFigures = { agents: words.map(r => r.agent), sorts: await sorts() };
+      expect.soft(await header('Project').getAttribute('aria-sort'), 'Project after Cost').toBe('ascending');
+      expect.soft(words.map(r => r.agent), 'Project after Cost: A to Z').toEqual(col('Project').first);
+      await (await label('Project')).click();
+      await (await label('Project')).click();
+      expect.soft((await settle(DEFAULT)).map(r => r.agent), 'Project, back to the default order').toEqual(DEFAULT);
 
       // The keyboard: Enter, then Space, then Enter, on Time.
       const keys: Array<{ key: string; ariaSort: string | null; agents: string[] }> = [];
-      for (const [key, want, direction] of [['Enter', COLUMNS[3].highest, 'descending'], ['Space', COLUMNS[3].lowest, 'ascending'], ['Enter', DEFAULT, 'none']] as const) {
+      for (const [key, want, direction] of [['Enter', col('Time').first, 'descending'], ['Space', col('Time').second, 'ascending'], ['Enter', DEFAULT, 'none']] as const) {
         await (await label('Time')).focus();
         await page.keyboard.press(key);
         const now = await settle([...want]);
@@ -247,7 +256,7 @@ for (const newInterface of [false, true]) {
       }
       seen.keyboard = keys;
 
-      // Light, as its copy of the frame draws the header: Provider, lowest first.
+      // Light, as its copy of the frame draws the header: Provider, A to Z.
       await page.evaluate(() => localStorage.setItem('tars-theme', 'light'));
       const lightPanel = await open(page);
       await expect(lightPanel).toBeVisible({ timeout: 90_000 });
@@ -255,10 +264,9 @@ for (const newInterface of [false, true]) {
       const provider = lightPanel.getByRole('columnheader', { name: 'Provider', exact: true });
       const providerTarget = (await provider.getByRole('button').count()) > 0 ? provider.getByRole('button') : provider;
       await providerTarget.click();
-      await providerTarget.click();
       await expect.soft(provider).toHaveAttribute('aria-sort', 'ascending');
       await lightPanel.scrollIntoViewIfNeeded();
-      await stepShot(page, `${tag}04-provider-ascending-light`);
+      await stepShot(page, `${tag}04-provider-a-to-z-light`);
       await page.evaluate(() => localStorage.setItem('tars-theme', 'dark'));
 
       expect(errors, errors.join('\n')).toEqual([]);

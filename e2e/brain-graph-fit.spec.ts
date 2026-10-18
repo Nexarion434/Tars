@@ -10,10 +10,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Brain's agent graph with a fleet like the maintainer's (JeanBrasse, 18/10,
  * for 2.0.4: about fifty agents, and even at 25 % the circle was too large to
  * see or to move around in). Fifty agents in seven projects, 997 memory files
- * (two projects hold 410 and 278 of them, as on the maintainer's Mac, where
- * each file is a box of the graph), a CLAUDE.md per project, ten skills and
- * seven MCP servers: 1,078 boxes. On main they drew a ring 65,000 px wide and
- * the zoom stopped at 25 %.
+ * (two projects hold 410 and 278 of them, as on the maintainer's Mac), a
+ * CLAUDE.md per project, ten skills and seven MCP servers. Before 2.0.4 each
+ * memory file was a box: 1,078 boxes, a ring 65,000 px wide, the zoom stopped
+ * at 25 %. Then 13 % fitted. Now a project's memory files are its one box
+ * (JeanBrasse, 18/10): 81 boxes, fitted near 36 % at 1440x900, and a click on
+ * a project opens the list of its files, each of which opens.
  *
  * In the classic shell at /memory, and with the new interface on, in the card
  * More opens:
@@ -24,7 +26,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - at 100 %, dragging the canvas moves the graph with the pointer, and
  *   scrolled to its start, the graph's left and top edges can be reached;
  * - one agent clicked, its smaller graph fits too, and clicked again, the
- *   whole graph is back, fitted.
+ *   whole graph is back, fitted;
+ * - a project clicked, the panel lists its memory files; one clicked, the
+ *   panel shows it; files goes back to the list.
  * Frames: `Brain · Agents`, and `Brain · Agents · fifty agents, fitted`.
  *
  * The artefact: values.json with what each step measured (the zoom, the
@@ -40,8 +44,8 @@ const SKILLS = ['react-practices', 'web-guidelines', 'frontend-design', 'postgre
 const SERVERS = 7;
 const AGENTS = PROJECTS.reduce((n, [, agents]) => n + agents, 0);
 const FILES = PROJECTS.reduce((n, [, , files]) => n + files, 0);
-/** Projects, agents, memory files, one CLAUDE.md per project, skills, servers. */
-const NODES = PROJECTS.length + AGENTS + FILES + PROJECTS.length + SKILLS.length + SERVERS;
+/** Projects, agents, one CLAUDE.md per project, skills, servers: a project's memory files are its own box. */
+const NODES = PROJECTS.length + AGENTS + PROJECTS.length + SKILLS.length + SERVERS;
 const title = (name: string) => name[0].toUpperCase() + name.slice(1);
 const agentName = (project: string, i: number) => `${title(project)} ${String(i + 1).padStart(2, '0')}`;
 
@@ -191,7 +195,7 @@ for (const newInterface of [false, true]) {
       };
 
       // The whole graph, laid out: every box of it, once nothing covers it.
-      await expect.poll(async () => (await read()).nodes, { timeout: 120_000 }).toBe(NODES);
+      await expect.poll(async () => (await read()).nodes, { timeout: 120_000 }).toBeGreaterThanOrEqual(NODES);
       await expect(scope.getByText('Switching agent', { exact: true })).toHaveCount(0, { timeout: 30_000 });
 
       // 1. At open.
@@ -201,6 +205,8 @@ for (const newInterface of [false, true]) {
       expect.soft(atOpen.outside, `boxes outside the canvas at open: ${atOpen.examples.join('; ')}`).toBe(0);
       expect.soft(atOpen.canvasCut, 'the canvas whole at open').toEqual([]);
       expect.soft(parseInt(atOpen.zoom ?? '0', 10), 'no more than 100 %').toBeLessThanOrEqual(100);
+      // Near 36 % in the classic shell's canvas at 1440x900, 26 % in the card's smaller one.
+      expect.soft(parseInt(atOpen.zoom ?? '0', 10), 'fitted near a third, not at 13 %').toBeGreaterThanOrEqual(newInterface ? 24 : 33);
 
       // 2. After a resize, smaller then back.
       await page.setViewportSize({ width: 1180, height: 760 });
@@ -273,16 +279,33 @@ for (const newInterface of [false, true]) {
       const ember = agentName('ember', 0);
       await page.locator('[data-e2e-canvas="1"] button', { hasText: ember }).click({ timeout: 20_000 });
       await expect(scope.getByText('Switching agent', { exact: true })).toHaveCount(0, { timeout: 30_000 });
-      await expect.poll(async () => (await read()).nodes, { timeout: 30_000 }).toBeLessThan(NODES);
+      await expect.poll(async () => (await read()).nodes, { timeout: 30_000 }).toBeLessThan(atOpen.nodes);
       const one = await settle('oneAgent');
       await stepShot(page, `${tag}05-one-agent`);
-      expect(one.nodes, 'the boxes of one agent: its project, itself, its files and its tools').toBeGreaterThan(400);
+      expect.soft(one.nodes, 'the boxes of one agent: its project, itself, the CLAUDE.md files and its tools').toBeLessThan(40);
       expect.soft(one.outside, `boxes outside with one agent: ${one.examples.join('; ')}`).toBe(0);
       await page.locator('[data-e2e-canvas="1"] button', { hasText: ember }).click({ timeout: 20_000 });
       await expect(scope.getByText('Switching agent', { exact: true })).toHaveCount(0, { timeout: 30_000 });
-      await expect.poll(async () => (await read()).nodes, { timeout: 30_000 }).toBe(NODES);
+      await expect.poll(async () => (await read()).nodes, { timeout: 30_000 }).toBe(atOpen.nodes);
       const all = await settle('allAgentsAgain');
       expect.soft(all.outside, 'boxes outside with every agent back').toBe(0);
+
+      // 6. A project's memory files: its box opens their list, a file opens, files goes back.
+      const box = page.locator('[data-e2e-canvas="1"] button', { hasText: /^ember\s*410 memory files$/ });
+      await box.click({ timeout: 20_000 });
+      const list = page.getByRole('list', { name: 'Memory files of ember' });
+      await expect.soft(list.getByRole('button'), 'the project\'s 410 files listed').toHaveCount(410, { timeout: 10_000 });
+      seen.projectFiles = { listed: await list.getByRole('button').count() };
+      await stepShot(page, `${tag}06-project-memory-files`);
+      if (await list.count()) {
+        await list.getByRole('button', { name: /^note-007\.md/ }).click();
+        await expect.soft(page.getByText('A note of ember, number 7.'), 'the file opened in the panel').toBeVisible({ timeout: 10_000 });
+        await stepShot(page, `${tag}07-a-memory-file`);
+        await page.getByRole('button', { name: 'files', exact: true }).click();
+        await expect.soft(list.getByRole('button'), 'back to the list').toHaveCount(410, { timeout: 10_000 });
+        await page.getByRole('button', { name: 'close', exact: true }).click();
+        await expect.soft(list, 'the panel closed').toHaveCount(0);
+      }
 
       expect(errors, errors.join('\n')).toEqual([]);
     } finally {

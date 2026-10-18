@@ -44,10 +44,13 @@ import type { TaskEntry } from '../../src/types/electron';
  * Sorting by a column's header (JeanBrasse, 18/10, for 2.0.4: a click sorts
  * highest first, a second lowest first, a third gives the default order back),
  * written before its code. How it can fail:
- * 10. the clicks: a first click sorts lowest first or not at all, a second does
- *     not turn the order round, a third leaves a sort rather than the default
- *     order; a click on another header goes on with the first one's turn
- *     (lowest first, or no sort) rather than starting at highest first;
+ * 10. the clicks: a first click on a column of figures sorts lowest first or
+ *     not at all, a first click on a column of words (Agent, Project,
+ *     Provider) sorts Z to A rather than A to Z (JeanBrasse, 18/10: words A
+ *     to Z first, figures highest first), a second does not turn the order
+ *     round, a third leaves a sort rather than the default order; a click on
+ *     another header goes on with the first one's turn rather than starting
+ *     at its own first order;
  * 11. a column's order: the tasks compared as text (9 before 10), a time, a
  *     count of tokens or a cost compared as it is written (`1 h 05` before
  *     `29 min`, `$10.00` before `$9.00`, `$1.5` before `$1.25`) rather than by
@@ -61,7 +64,11 @@ import type { TaskEntry } from '../../src/types/electron';
  *     direction, rather than in the default order;
  * 14. the rows themselves: the sort reorders the array it is given, so the
  *     third click has no default order to give back, or a row is lost or
- *     listed twice.
+ *     listed twice;
+ * 15. the agent's own name: not sortable, compared by the agent's id rather
+ *     than the name its row shows, by case or with its figures read as
+ *     letters, or a deleted agent sorted among the names as "deleted agent"
+ *     rather than last both ways.
  */
 
 const DAY = 86_400_000;
@@ -256,22 +263,36 @@ function row(agentId: string, over: Partial<AgentTotal> = {}): AgentTotal {
   };
 }
 const ids = (rows: AgentTotal[]) => rows.map(r => r.agentId);
-const KEYS: AgentSortKey[] = ['project', 'provider', 'tasks', 'time', 'tokens', 'cost'];
+const FIGURES: AgentSortKey[] = ['tasks', 'time', 'tokens', 'cost'];
+const WORDS: AgentSortKey[] = ['agent', 'project', 'provider'];
+const KEYS: AgentSortKey[] = [...WORDS, ...FIGURES];
 
 describe('the clicks on a header (10)', () => {
-  it('sorts highest first, then lowest first, then gives the default order back', () => {
-    for (const key of KEYS) {
+  it('sorts a column of figures highest first, then lowest first, then gives the default order back', () => {
+    for (const key of FIGURES) {
       const first = nextAgentSort(null, key);
-      expect(first).toEqual({ key, direction: 'descending' });
+      expect(first, key).toEqual({ key, direction: 'descending' });
       const second = nextAgentSort(first, key);
-      expect(second).toEqual({ key, direction: 'ascending' });
-      expect(nextAgentSort(second, key)).toBeNull();
+      expect(second, key).toEqual({ key, direction: 'ascending' });
+      expect(nextAgentSort(second, key), key).toBeNull();
     }
   });
 
-  it('starts another header at highest first, wherever the first one was', () => {
+  it('sorts a column of words A to Z, then Z to A, then gives the default order back', () => {
+    for (const key of WORDS) {
+      const first = nextAgentSort(null, key);
+      expect(first, key).toEqual({ key, direction: 'ascending' });
+      const second = nextAgentSort(first, key);
+      expect(second, key).toEqual({ key, direction: 'descending' });
+      expect(nextAgentSort(second, key), key).toBeNull();
+    }
+  });
+
+  it('starts another header at its own first order, wherever the first one was', () => {
     expect(nextAgentSort({ key: 'cost', direction: 'descending' }, 'tokens')).toEqual({ key: 'tokens', direction: 'descending' });
     expect(nextAgentSort({ key: 'cost', direction: 'ascending' }, 'tokens')).toEqual({ key: 'tokens', direction: 'descending' });
+    expect(nextAgentSort({ key: 'cost', direction: 'descending' }, 'project')).toEqual({ key: 'project', direction: 'ascending' });
+    expect(nextAgentSort({ key: 'project', direction: 'descending' }, 'agent')).toEqual({ key: 'agent', direction: 'ascending' });
   });
 });
 
@@ -368,5 +389,21 @@ describe('the rows themselves (14)', () => {
     }
     expect(ids(rows)).toEqual(before);
     expect(ids(sortAgentRows(rows, null))).toEqual(before);
+  });
+});
+
+describe('the agent\'s own name (15)', () => {
+  const names = { b: 'bo', a: 'Ada', ten: 'Agent 10', two: 'Agent 2' };
+  const rows = [row('b'), row('gone'), row('ten'), row('a'), row('two')];
+
+  it('sorts by the name the row shows, whatever its case, its figures as numbers', () => {
+    expect(ids(sortAgentRows(rows, { key: 'agent', direction: 'ascending' }, names))).toEqual(['a', 'two', 'ten', 'b', 'gone']);
+    expect(ids(sortAgentRows(rows, { key: 'agent', direction: 'descending' }, names))).toEqual(['b', 'ten', 'two', 'a', 'gone']);
+  });
+
+  it('puts an agent since deleted last both ways, as a row without the value', () => {
+    for (const direction of ['ascending', 'descending'] as const) {
+      expect(ids(sortAgentRows(rows, { key: 'agent', direction }, names)).at(-1), direction).toBe('gone');
+    }
   });
 });
