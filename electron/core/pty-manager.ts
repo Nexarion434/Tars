@@ -808,9 +808,16 @@ function pump(ptyProcess: pty.IPty): void {
   // waits for one. Looked at again every FIELD_PROBE_MS, as a dialog is.
   const head = state.queue[0];
   if (head.origin?.untilRest && turnProbe && head.origin.agentId && turnRunning(head.origin.agentId)) {
-    noteHeld(state, 'it waits for the turn to end');
-    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
-    return;
+    // A message that does not wait for rest goes past one that does: a task
+    // whose turn has come, or an answer typed now, would otherwise wait for the
+    // very rest it opens (the Audit's M-A on #449).
+    const passing = state.queue.findIndex(item => !item.origin?.untilRest);
+    if (passing < 0) {
+      noteHeld(state, 'it waits for the turn to end');
+      state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+      return;
+    }
+    state.queue.unshift(...state.queue.splice(passing, 1));
   }
 
   const left = pauseLeft(state);

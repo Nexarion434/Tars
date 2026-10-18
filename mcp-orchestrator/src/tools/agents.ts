@@ -155,6 +155,8 @@ type TaskView = {
   id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number | null; endedAt?: number | null;
   /** Queued: what it waits behind, and since when (one task at a time per agent). */
   queuedBehind?: string; queuedAt?: string; error?: string;
+  /** Delivered: a task that waited its turn and went into the agent's terminal, typed in or as a session started on it. */
+  how?: "typed" | "started"; deliveredAt?: string;
 };
 
 /** A task waiting its turn, said for its asker: behind which task, from whom, since when, and how to follow it. */
@@ -194,6 +196,11 @@ function notStartedText(task: TaskView, err: unknown): string | null {
 /** A delegated task as the ledger keeps it, said for the caller. */
 function taskText(task: TaskView): string {
   if (task.outcome === "queued" || task.outcome === "starting") return queuedText(task);
+  if (task.outcome === "delivered") {
+    return `Task ${task.id} on agent ${task.agentId} waited its turn and went into its terminal`
+      + `${task.how === "started" ? ", as the task of a session started on it" : ", typed into its session"}${task.deliveredAt ? ` at ${task.deliveredAt}` : ""}: `
+      + "it is that agent's work now. Follow it with wait_for_agent and get_agent_output.";
+  }
   const head = `Task ${task.id} on agent ${task.agentId}: ${task.outcome}${task.stopReason ? ` (${task.stopReason})` : ""}.`;
   if (task.outcome === "running") return `${head} It is still working: ask task_status again later.`;
   if (task.outcome === "delivered") return `Task ${task.id} on agent ${task.agentId}: delivered. ${task.error ?? ""}`.trim();
@@ -826,7 +833,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "delegate_task",
-    description: "Delegate a task to an agent and wait for its answer: the primary tool for handing work. The task goes into the agent's own permanent terminal, the session its card shows, which keeps its conversation, its memory and its background work; with no CLI running there, Tars starts that session on its conversation with the task. You get back the agent's full final answer for this task, why it ended (completed, error, stopped, interrupted), and its tokens and cost where its CLI lets Tars read them (claude: all of them; other CLIs: see the guide's delegation topic). An agent runs one task at a time: a task given to an agent already working waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your wait ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). The task is never stopped when your wait ends: it goes on in the agent's terminal. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
+    description: "Delegate a task to an agent and wait for its answer: the primary tool for handing work. The task goes into the agent's own permanent terminal, the session its card shows, which keeps its conversation, its memory and its background work; with no CLI running there, Tars starts that session on its conversation with the task. You get back the agent's full final answer for this task, why it ended (completed, error, stopped, interrupted), and its tokens and cost where its CLI lets Tars read them (claude: all of them; other CLIs: see the guide's delegation topic). An agent runs one task at a time: a task given to an agent already working waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your wait ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). The task is never stopped when your wait ends: it goes on in the agent's terminal. A task still waiting its turn is not kept across a restart of Tars: it never started, and this says so, to ask for it again. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),

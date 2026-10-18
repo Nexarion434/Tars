@@ -595,6 +595,8 @@ describe('a call that is refused changes nothing', () => {
       for (const [who, token] of [['the shared token', sharedToken], ['an agent of another project', betaToken]] as const) {
         const res = await call('POST', `/api/agents/${worker.id}/${route}`, bearer(token), body);
         expect(res.status, `${who}: ${JSON.stringify(res.body)}`).toBe(403);
+        // Refused by the cross-project guard, not by the role rule a worker of another project meets after it (2.0.4).
+        if (token === betaToken) expect(String(res.body.error), `${who}: ${JSON.stringify(res.body)}`).toContain('Cross-project access denied');
         expect(worker.requestedBy, `${who} was refused and still rewrote who is owed the result`).toEqual(owed);
       }
       expect(terminal.written).toEqual([]);
@@ -649,7 +651,10 @@ describe('an agent reporting to the agent that leads it', () => {
   // round. How it fails, written before the code (2026-10-04):
   // 1. a worker messaging the orchestrator that delegated to it becomes its requester;
   // 2. a worker messaging its project's orchestrator, with no link, does too;
-  // 3. over-correction: a message to a peer, which is delegation, records no link.
+  // 3. over-correction: a message to a peer, which was delegation, records no
+  //    link. Since 2.0.4 a worker's message to a peer is a note for
+  //    information (core/one-task.ts), which hands nothing over: what fails
+  //    now is a note that records a link, or that is not said to be a note.
   // And for the chats' runners (ORCHESTRATOR-PER-CHAT.md 4.2, PR D), written
   // before the code (2026-10-12):
   // 4. a worker messaging a chat's runner, which has the orchestrator's powers
@@ -716,15 +721,19 @@ describe('an agent reporting to the agent that leads it', () => {
   });
 });
 
+// ALPHA is a worker: since 2.0.4 (core/one-task.ts) what it sends another
+// agent of its project reaches it as a note for information, never as work.
 describe('an agent keeps exactly the rights it had', () => {
-  it('drives an agent of its own project', async () => {
+  it('reaches an agent of its own project, a worker with a note', async () => {
     const other = putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath });
     const terminal = liveTerminal(other);
 
     const { status, body } = await call('POST', `/api/agents/${other.id}/dispatch`, bearer(alphaToken), { message: 'your turn' });
 
     expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.note, JSON.stringify(body)).toBe(true);
     expect(terminal.written.join('')).toContain('your turn');
+    expect(terminal.written.join('')).toContain('Note for information from');
   });
 
   it('is still refused another project\'s, with the message it has always had', async () => {
@@ -734,7 +743,7 @@ describe('an agent keeps exactly the rights it had', () => {
     expect(String(body.error)).toContain('Cross-project access denied');
   });
 
-  it('still crosses deliberately with allowCrossProject', async () => {
+  it('still crosses deliberately with allowCrossProject, a worker with a note', async () => {
     const beta = agents.get(BETA.id)!;
     const terminal = liveTerminal(beta);
 
@@ -743,6 +752,7 @@ describe('an agent keeps exactly the rights it had', () => {
     });
 
     expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.note, JSON.stringify(body)).toBe(true);
     expect(terminal.written.join('')).toContain('go');
   });
 

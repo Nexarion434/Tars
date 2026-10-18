@@ -34,9 +34,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * d. Tars's own pass still hands oc a task, and the window still starts an agent (qa).
  * e. Stopping is reserved as handing work is: dev's stop_agent on qa is refused with the message that it asks its
  *    orchestrator, and qa's CLI keeps running; lead's stop_agent on qa stops it, filed under lead.
+ * g. A task behind the task in hand (the Audit's gate of #449, M1 and L3): while a task of lead's works in oc's
+ *    terminal, lead's start_agent to oc is answered queued, with its id; it is not typed in beside that turn, goes in
+ *    once the turn answered, and task_status by its id reads its own answer. A CLI that tells Tars nothing of its
+ *    turns (nh, an opencode stand-in with no hook) given a task does not hold its agent: lead's next task to nh goes in
+ *    too (H1). dev's kanban claim of a task for qa is refused, with the code of an order (M2). Until 2.0.4 the task in
+ *    hand was a run over ACP and the queued one went into a terminal open beside it.
  * f. A task waiting its turn is in Tars's memory only: lead delegates to oc while a run of Tars's holds it, Tars quits
  *    and starts again on the same home, and lead's delegate_task says that Tars restarted and that the task never
  *    started and must be asked again; task_status asked of the new Tars says the same; the task never runs.
+ * Red on f9966e6e for g (as #449 wrote it, over ACP): the task is typed into oc's terminal beside the run, the next
+ * delegate_task waits behind "a turn in its terminal" until its timeout, and dev's claim is answered by the board.
  * Red on 9df7c099 (2.0.4 before #449): the two runs overlap, the worker's calls go through, the message is
  * typed into qa's turn with no label. Red on 36822724 for e and f: dev stops qa, and the delegation waits 90 s after
  * the restart, then says Tars could not be reached and the run may still be working.
@@ -160,6 +168,11 @@ for (const newInterface of [false, true]) {
     const turnsLog = path.join(home, 'oc-turns.jsonl');
     const ocCli = path.join(bin, 'claude');
     fs.writeFileSync(ocCli, `#!${process.execPath}\n${TURN_STAND_IN(turnsLog)}`, { mode: 0o755 });
+    // nh's CLI, an opencode stand-in with no hook: it records how it was started and every byte typed into it.
+    const nhFile = path.join(home, 'nh.log');
+    const nhCli = path.join(bin, 'opencode');
+    fs.writeFileSync(nhCli, `#!${process.execPath}\nconst fs = require('fs');\nfs.appendFileSync(${JSON.stringify(nhFile)}, JSON.stringify(process.argv.slice(2)) + '\\n');\nif (process.stdin.isTTY) process.stdin.setRawMode(true);\nprocess.stdin.on('data', (d) => fs.appendFileSync(${JSON.stringify(nhFile)}, d));\nprocess.stdout.write('opencode ready' + String.fromCharCode(10));\n`, { mode: 0o755 });
+    const nhLog = () => (fs.existsSync(nhFile) ? fs.readFileSync(nhFile, 'utf8') : '');
     const qaReceived = path.join(home, 'qa.received');
     const qaCli = path.join(home, 'qa-cli.cjs');
     fs.writeFileSync(qaCli, STAND_IN(qaReceived), { mode: 0o755 });
@@ -172,6 +185,7 @@ for (const newInterface of [false, true]) {
       agent('oc', 'Review Agent', 'worker', 'claude', { cliPath: ocCli }),
       agent('dev', 'Dev Agent', 'worker', 'claude'),
       agent('qa', 'QA Agent', 'worker', 'claude', { cliPath: qaCli }),
+      agent('nh', 'No Hook Agent', 'worker', 'opencode', { cliPath: nhCli }),
     ], null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
@@ -333,6 +347,39 @@ for (const newInterface of [false, true]) {
       expect.soft(leadStop.isError, leadStop.text).toBe(false);
       expect.soft(leadStop.text).toContain('Stopped agent qa');
       expect.soft(qaAfterLeadStop, "qa after the orchestrator's stop").toMatchObject({ status: 'stopped', stoppedBy: 'Project Lead', stopReason: 'the e2e stops qa', cliRunning: false });
+
+      // g. A task queued behind the task in hand on oc, and a CLI with no hook given two tasks.
+      const gone = lead.call('delegate_task', { id: 'oc', prompt: 'TASK-GONE review the docs', timeoutSeconds: 120 });
+      await expect.poll(() => ocTurns().some((e) => e.prompt === 'TASK-GONE'), { timeout: 30_000 }).toBe(true);
+      const typedTask = await lead.call('start_agent', { id: 'oc', prompt: 'TASK-TYPED fix the docs' });
+      await new Promise((r) => setTimeout(r, 1500));
+      const typedDuringRun = ocTurns().some((e) => e.prompt === 'TASK-TYPED');
+      const goneAnswer = await gone;
+      await expect.poll(() => ocTurns().some((e) => e.answered === 'TASK-TYPED'), { timeout: 60_000 }).toBe(true).catch(() => undefined);
+      const typedRef = /Task (t-[0-9a-f]{8}) is queued/.exec(typedTask.text)?.[1] ?? '';
+      const typedStatus = typedRef ? await lead.call('task_status', { taskId: typedRef }) : null;
+      const nhOne = await lead.call('delegate_task', { id: 'nh', prompt: 'TASK-NHONE read the logs', timeoutSeconds: 60 });
+      const nhTwo = await lead.call('delegate_task', { id: 'nh', prompt: 'TASK-NHTWO read the tests', timeoutSeconds: 60 });
+      await expect.poll(() => nhLog().includes('TASK-NHTWO'), { timeout: 30_000 }).toBe(true).catch(() => undefined);
+      const devClaim = await api('/api/kanban/tasks/t_0123abcd/claim', ids.dev, { agent_id: 'qa' }, 'dev');
+      keep({ g: { typedTask, typedDuringRun, goneAnswer, typedRef, typedStatus, nhOne, nhTwo, nhLog: nhLog().slice(-3000), devClaim } });
+      expect.soft(typedTask.isError, typedTask.text).toBe(false);
+      expect.soft(typedTask.text).toMatch(/Task t-[0-9a-f]{8} is queued on agent oc/);
+      expect.soft(typedTask.text).toContain('task_status');
+      expect.soft(typedDuringRun, "typed into oc's terminal beside the task in hand").toBe(false);
+      expect.soft(goneAnswer.text).toContain('answer for TASK-GONE');
+      const turnsNow = ocTurns();
+      const atNow = (key: 'prompt' | 'answered', task: string) => turnsNow.find((e) => e[key] === task)?.at ?? NaN;
+      expect.soft(atNow('prompt', 'TASK-TYPED'), 'the queued task went in once the task in hand answered').toBeGreaterThanOrEqual(atNow('answered', 'TASK-GONE'));
+      expect.soft(typedStatus?.isError ?? true, typedStatus?.text).toBe(false);
+      expect.soft(typedStatus?.text ?? '', 'task_status by the queued id reads its own answer').toContain('answer for TASK-TYPED');
+      expect.soft(nhOne.isError, nhOne.text).toBe(false);
+      expect.soft(nhOne.text).toContain("went into No Hook Agent's terminal");
+      expect.soft(nhTwo.isError, nhTwo.text).toBe(false);
+      expect.soft(nhTwo.text, 'the first task held an agent whose CLI says nothing of its turns').toContain("went into No Hook Agent's terminal");
+      expect.soft(nhLog(), 'both tasks reached nh').toContain('TASK-NHTWO');
+      expect.soft(devClaim.status, JSON.stringify(devClaim.body)).toBe(403);
+      expect.soft(devClaim.body.code).toBe('worker_may_not_order');
 
       // f. Tars restarts while lead's task waits its turn on oc, behind a run of Tars's own.
       const hold = api('/api/agents/oc/run-task', ids.tars, { task: 'TASK-HOLD keep oc busy' }).catch((err: unknown) => ({ status: 0, body: { error: String(err) } }));
