@@ -127,14 +127,16 @@ for (const newInterface of [false, true]) {
       await stepShot(first.page, newInterface ? 'before-restart-new-interface' : 'before-restart');
 
       // 2. Tars quits, and starts again on the same home.
+      const launchedBefore = entries().filter(e => e.launch).length;
       for (const server of servers.splice(0)) server.kill();
       await app!.close();
       app = undefined;
       const second = await startTars(2);
       await second.page.evaluate((id) => (window as unknown as Api).electronAPI.agent.start({ id, prompt: '' }), codyId);
       await expect.poll(async () => (await second.page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find(a => a.id === codyId)?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
+      await expect.poll(() => entries().filter(e => e.launch).length, { timeout: 15_000 }).toBeGreaterThan(launchedBefore).catch(() => {});
       const launches = entries().filter(e => e.launch);
-      const resumedLaunch = launches.at(-1)?.argv as string[] | undefined;
+      const resumedLaunch = launches.length > launchedBefore ? launches.at(-1)?.argv as string[] | undefined : undefined;
       await expect.poll(async () => (await cody(codyId)).currentSessionId, { timeout: 20_000 }).toBe(session).catch(() => {});
       const afterStart = await cody(codyId);
       keep({ launches: launches.map(l => l.argv), afterStart });
@@ -168,10 +170,12 @@ for (const newInterface of [false, true]) {
         return outcome.some(o => o.agentId === codyId && o.slept);
       }, { timeout: 30_000, intervals: [1000] }).toBe(true).catch(() => {});
       const asleep = await cody(codyId);
+      const launchedAsleep = entries().filter(e => e.launch).length;
       const woken = await second.tool('delegate_task', { id: codyId, prompt: 'RECALL', timeoutSeconds: 60 });
       keep({ passes, asleep, woken, launchesAfterWake: entries().filter(e => e.launch).map(l => l.argv), rolloutsAfterWake: rollouts() });
       expect.soft(asleep.status, 'Cody put to sleep at rest').toBe('asleep');
-      expect.soft(entries().filter(e => e.launch).at(-1)?.argv as string[] | undefined ?? [], 'his codex once woken').toEqual(expect.arrayContaining(['resume', session]));
+      const wake = entries().filter(e => e.launch);
+      expect.soft(wake.length > launchedAsleep ? wake.at(-1)?.argv as string[] : [], 'his codex once woken').toEqual(expect.arrayContaining(['resume', session]));
       expect.soft(woken.text, 'the task that woke him, in his same conversation').toContain(`recall r${nonce}`);
       expect.soft(rollouts(), 'still one rollout').toEqual(values.rolloutsBefore as string[]);
       keep({ entries: entries() });
