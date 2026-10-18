@@ -323237,33 +323237,6 @@
             },
             {
               "type": "frame",
-              "id": "D8EkI",
-              "name": "button files",
-              "height": 26,
-              "fill": "$surface",
-              "stroke": "$border",
-              "strokeWidth": 1,
-              "padding": [
-                0,
-                10
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "W0fQf4",
-                  "name": "t",
-                  "fill": "$text-primary",
-                  "content": "files",
-                  "lineHeight": 1.4,
-                  "fontFamily": "$font-mono",
-                  "fontSize": 12,
-                  "fontWeight": "normal"
-                }
-              ]
-            },
-            {
-              "type": "frame",
               "id": "cNFVf",
               "name": "button edit",
               "height": 26,
@@ -323342,6 +323315,62 @@
                   "fontWeight": "normal"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bw7ZX",
+          "name": "back to the list",
+          "width": "fill_container",
+          "stroke": "$border",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "gap": 8,
+          "padding": [
+            8,
+            16
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "Xp5JX",
+              "name": "button files",
+              "height": 26,
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Cstru",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "content": "files",
+                  "lineHeight": 1.4,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "BCvTZ",
+              "name": "which list",
+              "fill": "$text-muted",
+              "content": "13 memory files of tars",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-ui",
+              "fontSize": 11,
+              "fontWeight": "normal"
             }
           ]
         },
