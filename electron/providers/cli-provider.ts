@@ -284,9 +284,12 @@ export function shellQuote(value: string): string {
  * flag is worse than none: it would look enforced and silently do nothing.
  * Until one is verified against the real binary, an orchestrator on those runs
  * on its persona alone, and the app says so rather than implying otherwise.
+ * Qwen Code (qwen 0.25.2) has one, verified: `--exclude-tools edit write_file
+ * agent` takes its edit, write and sub-agent tools away.
  */
 export function enforcesOrchestratorMode(binaryName: string): boolean {
-  return binaryName === 'claude';
+  // Qwen Code's --exclude-tools, its ToolNames read in 0.25.2 (services/qwen-code.ts).
+  return binaryName === 'claude' || binaryName === 'qwen';
 }
 
 /**
