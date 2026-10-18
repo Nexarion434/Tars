@@ -66,9 +66,12 @@ export class CodexProvider implements CLIProvider {
     return appSettings.cliPaths?.codex || 'codex';
   }
 
-  /** The installed codex's flags, read off the main thread before a launch builds its line (codex-cli.ts). */
-  async prepareLaunch(binaryPath: string): Promise<void> {
-    await readCodexFlags(binaryPath);
+  /**
+   * The installed codex's flags, read off the main thread before a launch builds its line (codex-cli.ts): in auto
+   * only, the one mode whose flag depends on them.
+   */
+  async prepareLaunch(binaryPath: string, permissionMode?: string): Promise<void> {
+    if (permissionMode === 'auto') await readCodexFlags(binaryPath);
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {

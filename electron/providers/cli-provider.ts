@@ -122,10 +122,11 @@ export interface CLIProvider {
   resolveBinaryPath(appSettings: AppSettings): string;
 
   /**
-   * What the line needs read from the CLI itself, read off the main thread: every launch path awaits it before it
-   * calls buildInteractiveCommand (codex's own flags, the Audit's L6 on #465). Absent: nothing to read.
+   * What the line for this binary in this mode needs read from the CLI itself, read off the main thread: every launch
+   * path awaits it before it calls buildInteractiveCommand (codex's own flags in auto, the Audit's L6 on #465).
+   * Absent: nothing to read.
    */
-  prepareLaunch?(binaryPath: string): Promise<void>;
+  prepareLaunch?(binaryPath: string, permissionMode?: string): Promise<void>;
 
   /** Build command string for interactive PTY sessions */
   buildInteractiveCommand(params: InteractiveCommandParams): string;

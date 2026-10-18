@@ -291,7 +291,7 @@ async function spawnAgentSessionInSlot(
   // gemini, grok, opencode, pi) get their own syntax instead of claude flags,
   // once what its line needs is read from the CLI (codex's flags), off the
   // main thread.
-  await cliProvider.prepareLaunch?.(binaryPath);
+  await cliProvider.prepareLaunch?.(binaryPath, effectiveMode);
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
