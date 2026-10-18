@@ -141,6 +141,12 @@ function scheduledParams(homeDir: string) {
 function scriptParams(homeDir: string) {
   const projectPath = path.join(homeDir, 'the project');
   fs.mkdirSync(projectPath, { recursive: true });
+  // A key provider's script runs nothing without its key (2.0.4: read from
+  // ~/.tars-private), so every key it may read is there.
+  const keys = ['openRouterApiKey', 'deepSeekApiKey', 'moonshotApiKey', 'zhipuApiKey', 'minimaxApiKey', 'ollamaCloudApiKey'];
+  fs.mkdirSync(path.join(homeDir, '.tars-private'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.tars-private', 'settings-secrets.json'), JSON.stringify(Object.fromEntries(keys.map(k => [k, 'k'])), null, 2));
+  fs.writeFileSync(path.join(homeDir, '.tars-private', 'api-token'), 'tok');
   const binaryPath = cliUnder(homeDir);
   return {
     binaryPath,

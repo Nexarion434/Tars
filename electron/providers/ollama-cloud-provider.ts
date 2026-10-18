@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, scheduledKeyLines } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 export const OLLAMA_CLOUD_BASE_URL = 'https://ollama.com'; // claude appends /v1/messages
@@ -222,8 +222,7 @@ echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
 export CLAUDE_PROVIDER="ollama-cloud"
 export ANTHROPIC_BASE_URL="${OLLAMA_CLOUD_BASE_URL}"
-export ANTHROPIC_AUTH_TOKEN="$(jq -r '.ollamaCloudApiKey // empty' "${DATA_DIR_SHELL}/app-settings.json")"
-export ANTHROPIC_API_KEY=""
+${scheduledKeyLines('ollamaCloudApiKey', params.logPath, 'ANTHROPIC_AUTH_TOKEN')}""
 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

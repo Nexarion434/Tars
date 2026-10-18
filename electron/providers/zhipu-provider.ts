@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, scheduledKeyLines } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const ZHIPU_BASE_URL = 'https://open.bigmodel.cn/api/anthropic'; // Anthropic-compatible endpoint
@@ -152,8 +152,8 @@ export class ZhipuProvider implements CLIProvider {
     const settings = readAppSettingsFromDisk();
     const direct = !!settings.zhipuApiKey;
     const schedBase = direct ? ZHIPU_BASE_URL : OPENROUTER_BASE_URL;
-    const schedKeyJq = direct ? '.zhipuApiKey' : '.openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
+    const schedKeyField = direct ? 'zhipuApiKey' : 'openRouterApiKey';
+    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\n${scheduledKeyLines(schedKeyField, params.logPath)}\n`;
 
     return `#!/bin/bash
 export HOME=${shellQuote(params.homeDir)}

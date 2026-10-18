@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, scheduledKeyLines } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic'; // Anthropic-compatible endpoint
@@ -202,8 +202,8 @@ export class DeepSeekProvider implements CLIProvider {
     const settings = readAppSettingsFromDisk();
     const direct = !!settings.deepSeekApiKey;
     const schedBase = direct ? DEEPSEEK_BASE_URL : OPENROUTER_BASE_URL;
-    const schedKeyJq = direct ? '.deepSeekApiKey' : '.openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
+    const schedKeyField = direct ? 'deepSeekApiKey' : 'openRouterApiKey';
+    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\n${scheduledKeyLines(schedKeyField, params.logPath)}\n`;
 
     return `#!/bin/bash
 export HOME=${shellQuote(params.homeDir)}

@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL, OPENAI_BRIDGE_PORT } from '../constants';
+import { readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, scheduledKeyLines } from './cli-provider';
+import { DATA_DIR, OPENAI_BRIDGE_PORT } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 // claude appends /v1/messages; "custom" is this provider's fixed path segment
@@ -212,7 +212,7 @@ echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
 export CLAUDE_PROVIDER="custom-openai"
 export ANTHROPIC_BASE_URL="${CUSTOM_BRIDGE_BASE_URL}"
-export ANTHROPIC_API_KEY="$(cat "${DATA_DIR_SHELL}/api-token" 2>/dev/null)"
+${scheduledKeyLines('api-token', params.logPath)}
 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

@@ -14,6 +14,23 @@ import type {
 } from './cli-provider';
 import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
 
+/**
+ * What a Tars MCP server reads of its agent's environment: its own token, the
+ * instance it proves the port with, who it is, where its project is, the API's
+ * address, and whether its chats read each other. Codex hands its servers none
+ * of its environment but TERM, SHELL, TMPDIR, USER, PATH, HOME and LOGNAME
+ * (measured on codex 0.148, 2026-10-13): without the names here, a codex
+ * agent's Tars tools presented the shared ~/.dorothy/api-token, which since
+ * 2.0.4 is out of every agent's reach, and got a 401. Names only: the values
+ * stay in the agent's own environment (`codex mcp get` lists them masked).
+ */
+const AGENT_ENV_VARS = [
+  'CLAUDE_MGR_API_TOKEN', 'TARS_INSTANCE_ID', 'CLAUDE_AGENT_ID', 'CLAUDE_AGENT_NAME', 'CLAUDE_PROJECT_PATH',
+  'CLAUDE_MGR_API_URL', 'TARS_CHATS_READ',
+];
+/** The bundled servers (mcp-orchestrator.ts): a server of the user's own is handed none of it. */
+const isTarsServer = (name: string) => /^(claude-mgr-|tars-|dorothy-)/.test(name);
+
 export class CodexProvider implements CLIProvider {
   readonly id = 'codex' as const;
   readonly displayName = 'Codex CLI';
@@ -166,6 +183,7 @@ export class CodexProvider implements CLIProvider {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
+      this.forwardAgentEnv(name);
       console.log(`[codex] Registered MCP server ${name} via codex mcp add`);
       return;
     } catch (err) {
@@ -194,7 +212,7 @@ export class CodexProvider implements CLIProvider {
     // quote or control character to escape.
     const sectionKey = this.escapeTomlKey(name);
     const argsToml = args.map(a => this.tomlString(a)).join(', ');
-    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n`;
+    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n${this.envVarsLine(name)}`;
 
     content = content.trimEnd() + '\n' + section;
     fs.writeFileSync(configPath, content);
@@ -237,10 +255,41 @@ export class CodexProvider implements CLIProvider {
       const sectionKey = this.escapeTomlKey(name);
       const headerRegex = new RegExp(`\\[mcp_servers\\.${sectionKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`);
       if (!headerRegex.test(content)) return false;
+      // Registered before 2.0.4, a Tars server forwards none of the agent's variables: it is registered again.
+      if (isTarsServer(name) && !this.sectionOf(content, name).includes('"CLAUDE_MGR_API_TOKEN"')) return false;
       // The path as written: escaped, so a Windows path reads back doubled.
       return content.includes(expectedServerPath) || content.includes(this.tomlString(expectedServerPath).slice(1, -1));
     } catch {
       return false;
+    }
+  }
+
+  /** `env_vars = [...]` for a Tars server, with its newline; nothing for another. */
+  private envVarsLine(name: string): string {
+    return isTarsServer(name) ? `env_vars = [${AGENT_ENV_VARS.map((v) => this.tomlString(v)).join(', ')}]\n` : '';
+  }
+
+  private sectionOf(content: string, name: string): string {
+    const escapedKey = this.escapeTomlKey(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\[mcp_servers\\.${escapedKey}\\]\\n(?:(?!\\[)[^\\n]*\\n?)*`).exec(content)?.[0] ?? '';
+  }
+
+  /**
+   * After `codex mcp add`, which takes static values only (--env): the names
+   * of the variables codex is to hand a Tars server from the agent's own
+   * environment. Written under the server's header, once.
+   */
+  private forwardAgentEnv(name: string): void {
+    if (!isTarsServer(name)) return;
+    const configPath = path.join(this.configDir, 'config.toml');
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const section = this.sectionOf(content, name);
+      if (!section || section.includes('env_vars')) return;
+      const header = section.slice(0, section.indexOf('\n') + 1);
+      fs.writeFileSync(configPath, content.replace(section, header + this.envVarsLine(name) + section.slice(header.length)));
+    } catch (err) {
+      console.warn(`[codex] could not name the agent's variables for ${name}: ${cliFailureText(err)}`);
     }
   }
 
