@@ -1,4 +1,4 @@
-import { test, _electron as electron, type Page } from '@playwright/test';
+import { expect, test, _electron as electron, type Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -20,6 +20,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - every IPC call the Usage page made meanwhile: channel, milliseconds in the main process, bytes returned;
  * - each of the page's calls made again from the window and timed there (the main process plus the transfer);
  * - how many agents, tasks and models the data holds over the default timeframe.
+ *
+ * And one rule it holds the page to, cold: the tasks' reading (usage:tasks) is asked once the transcripts' figures
+ * (claude:getData) have answered, never beside their first scan. Asked together (86ce2fed), the two readings shared the
+ * main process's one thread and slowed each other: the scan took 36.5 and 46.7 s instead of 20.4 and 21.7, and the
+ * figures showed 16 to 20 s later than before the change.
  */
 
 const REAL = process.env.E2E_USAGE_REAL_HOME ?? '';
@@ -123,7 +128,12 @@ test('the Usage page on real data: when each card shows, and every call it makes
 
       const t0 = await page.evaluate(() => performance.timeOrigin);
       const cold = await watch(page, t0);
-      scenarios.cold = { fromLaunchMs: Math.round(t0 - launched), shown: cold, calls: callsBetween(await logged(), t0, Date.now()) };
+      const coldCalls = callsBetween(await logged(), t0, Date.now());
+      const figures = coldCalls.find((c) => c.channel === 'claude:getData');
+      const tasksAsked = coldCalls.find((c) => c.channel === 'usage:tasks');
+      const tasksAfterFigures = !!figures && !!tasksAsked && tasksAsked.at >= figures.at + figures.ms;
+      scenarios.cold = { fromLaunchMs: Math.round(t0 - launched), shown: cold, calls: coldCalls, tasksAfterFigures };
+      expect.soft(tasksAfterFigures, 'cold, usage:tasks is asked once claude:getData has answered').toBe(true);
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       const t1 = await page.evaluate(() => performance.timeOrigin);
