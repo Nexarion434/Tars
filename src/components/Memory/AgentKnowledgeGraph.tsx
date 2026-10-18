@@ -169,7 +169,7 @@ function buildGraph(
       id: `project:${projectPath}`,
       label: memory?.projectName || pathName(projectPath) || projectPath,
       kind: 'project',
-      sub: `${files.length} memory file${files.length === 1 ? '' : 's'}`,
+      sub: memoryFiles(files.length),
       meta: { files: files.map(f => ({ name: f.name, path: f.path, isEntrypoint: f.isEntrypoint })) },
     });
   }
@@ -778,11 +778,6 @@ export default function AgentKnowledgeGraph() {
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
             <span className="flex-1 text-sm font-medium text-foreground truncate">{panelNode.label}</span>
-            {panelProject && panelNode !== panelProject && (
-              <Button size="sm" className="font-mono" onClick={() => setPanelNode(panelProject)}>
-                files
-              </Button>
-            )}
             {panelNode.meta?.editable && (
               <>
                 <Button
@@ -807,6 +802,19 @@ export default function AgentKnowledgeGraph() {
               close
             </Button>
           </div>
+
+          {/* The way back to the project's list, on a row of its own: in the
+              header it left the file's name a few letters. */}
+          {panelProject && panelNode !== panelProject && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-border shrink-0">
+              <Button size="sm" className="font-mono" onClick={() => setPanelNode(panelProject)}>
+                files
+              </Button>
+              <span className="text-[11px] text-muted-foreground truncate">
+                {`${memoryFiles(panelProject.meta?.files?.length ?? 0)} of ${panelProject.label}`}
+              </span>
+            </div>
+          )}
 
           {/* Content */}
           <div className="flex-1 min-h-0 overflow-y-auto">
@@ -853,6 +861,11 @@ export default function AgentKnowledgeGraph() {
   );
 }
 
+/** How many memory files a project holds, as its box and its list say it. */
+function memoryFiles(count: number): string {
+  return `${count} memory file${count === 1 ? '' : 's'}`;
+}
+
 /**
  * A project's memory files, listed in the side panel when its box is clicked
  * (`Brain · Agents · a project's memory files`): the entrypoint first with its
@@ -862,7 +875,7 @@ function ProjectFiles({ project, onOpen }: { project: GraphNode; onOpen: (file: 
   const files = project.meta?.files ?? [];
   return (
     <div className="flex flex-col">
-      <PanelCaption className="px-4 pt-3 pb-1">{`${files.length} memory file${files.length === 1 ? '' : 's'}`}</PanelCaption>
+      <PanelCaption className="px-4 pt-3 pb-1">{memoryFiles(files.length)}</PanelCaption>
       {files.length === 0 ? (
         <p className="px-4 py-6 text-xs text-muted-foreground">No memory files yet</p>
       ) : (
