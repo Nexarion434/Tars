@@ -1066,9 +1066,14 @@ export interface DispatchOpts {
    * whose id goes in the sender line and which the write delivers.
    */
   onAccepted?: () => string | undefined | void;
-  /** Typed into a live session: once it is written into the terminal, or once the terminal gives it up (WriteOrigin). */
+  /**
+   * Typed into a live session: once it is written into the terminal, once the
+   * terminal gives it up, or once a cancel takes it back before it went in
+   * (WriteOrigin).
+   */
   onWritten?: () => void;
   onDropped?: () => void;
+  onWithdrawn?: () => void;
   /** `queue` mode: written only once the agent's turn is over (WriteOrigin.untilRest). */
   untilRest?: boolean;
   /** Typed after the sender line: its sender runs in a narrower mode (core/permission-ceiling.ts). */
@@ -1214,7 +1219,7 @@ async function performDispatchLocked(
       onWritten: () => { handedOver(delivered(agent, taskRef)); opts.onWritten?.(); },
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
       // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
-      onWithdrawn: () => cancelRetell?.(),
+      onWithdrawn: () => { cancelRetell?.(); opts.onWithdrawn?.(); },
       taskRef,
       untilRest,
       mark: opts.mark,
@@ -1300,13 +1305,17 @@ function queueDispatch(agent: AgentStatus, opts: DispatchOpts, ctx: RouteContext
         ...opts, onAccepted: () => taskRef, turnTaken: true,
         onWritten: () => { settle('typed'); opts.onWritten?.(); },
         onDropped: () => { settle(null, 'its terminal gave it up'); opts.onDropped?.(); },
+        // Taken back by its asker while held there: the turn it kept is given
+        // back, or every later task waited behind one that no longer exists
+        // (the Audit's M-B on 8f4f1fd7).
+        onWithdrawn: () => { settle(null, 'it was cancelled'); opts.onWithdrawn?.(); },
       }, ctx, (data, status = 200) => {
         answer ??= { data: (data ?? {}) as { mode?: unknown; error?: unknown; held?: unknown; queued?: unknown }, status };
       });
     } finally {
       const ok = !!answer && answer.status < 300;
       if (ok && answer!.data.mode === 'start') settle('started');
-      // Held in its terminal: settled when it is written, or given up.
+      // Held in its terminal: settled when it is written, given up, or cancelled.
       else if (!(ok && answer!.data.mode === 'message' && (answer!.data.held === true || answer!.data.queued === true))) {
         settle(null, typeof answer?.data.error === 'string' ? answer.data.error : 'its terminal did not take it');
       }
