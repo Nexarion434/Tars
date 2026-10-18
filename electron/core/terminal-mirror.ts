@@ -268,7 +268,41 @@ export function dialogOnScreen(pty: IPty | undefined): boolean {
     const text = buffer.getLine(y)?.translateToString(true).trim() ?? '';
     if (text) rows.push(text);
   }
-  return rows.some(row => /\bEsc\s+to\s+cancel\b/.test(row));
+  return rows.some(row => /\bEsc\s+to\s+cancel\b/.test(row)) || codexDialogOnScreen(pty) !== undefined;
+}
+
+/** codex's approval dialogs, by their titles (codex-cli 0.163.0's own strings). */
+const CODEX_DIALOG_TITLES = [
+  /Would you like to run the following command\?/,
+  /Would you like to make the following edits\?/,
+  /Would you like to grant these permissions\?/,
+  /Do you want to approve network access to\b/,
+  /Would you like to send input to terminal\b/,
+];
+/** And one of its answers under the title: a sentence in the conversation is not a dialog. */
+const CODEX_DIALOG_ANSWER = /\b(?:Yes, proceed|Yes, just this once|Yes, and don't ask again|No, and tell Codex what to do differently|No, continue without)\b/;
+
+/**
+ * codex's approval dialog on the screen of `pty`, as one line (its title and what it asks about), or undefined.
+ * codex asks before a command, an edit, a permission or network access in normal mode, and says so in no file:
+ * the screen is where Tars sees it (services/codex-sessions.ts), and where a writer must not type, since an Enter
+ * answers it (dialogOnScreen).
+ */
+export function codexDialogOnScreen(pty: IPty | undefined): string | undefined {
+  const mirror = pty && mirrors.get(pty);
+  if (!mirror) return undefined;
+  const buffer = mirror.term.buffer.active;
+  const rows: string[] = [];
+  for (let y = buffer.viewportY; y < buffer.viewportY + mirror.term.rows; y++) {
+    rows.push(buffer.getLine(y)?.translateToString(true).trim() ?? '');
+  }
+  const at = rows.findIndex(row => CODEX_DIALOG_TITLES.some(title => title.test(row)));
+  if (at < 0) return undefined;
+  const below = rows.slice(at + 1);
+  if (!below.some(row => CODEX_DIALOG_ANSWER.test(row))) return undefined;
+  const title = rows[at].replace(/^[^A-Za-z]+/, '');
+  const subject = below.find(row => row && !CODEX_DIALOG_ANSWER.test(row) && !/\b(?:enter|esc)\b/i.test(row));
+  return subject ? `${title} ${subject.replace(/^[│|]\s*/, '')}` : title;
 }
 
 /**

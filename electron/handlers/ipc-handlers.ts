@@ -75,6 +75,7 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
+import { readCodexModels } from '../providers/codex-cli';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -1977,6 +1978,15 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     if (provider === 'custom-openai') {
       const model = getAppSettings().customOpenAIModel?.trim();
       return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
+    }
+    // The models of the account codex is signed in with, from codex's own
+    // list: models.dev's OpenAI list offered gpt-5-codex-mini, which codex
+    // refuses for a ChatGPT account (codex-cli.ts).
+    if (provider === 'codex') {
+      const listed = readCodexModels();
+      if (listed.length > 0) {
+        return { models: listed.map(m => ({ id: m.id, name: m.name, description: m.description, effortValues: m.efforts, contextWindow: m.contextWindow })) };
+      }
     }
     await loadCatalog();
     return { models: modelsForProvider(provider) };

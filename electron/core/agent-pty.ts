@@ -12,6 +12,7 @@ import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
+import { noteCodexLaunch } from '../services/codex-sessions';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -183,6 +184,9 @@ export function spawnAgentPty(opts: {
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // codex reports no turn through a hook: its session log does, and the one
+  // this terminal's codex begins is the agent's (services/codex-sessions.ts).
+  if (agentId && opts.binaryName === 'codex') noteCodexLaunch(agentId, opts.cwd);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {

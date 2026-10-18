@@ -63,6 +63,9 @@ export interface ScheduledCommandParams {
   mcpConfigPath?: string;
   outputFormat?: string;
   verbose?: boolean;
+  /** The agent's model and effort, for a provider whose builder takes them (codex). */
+  model?: string;
+  effort?: AgentEffort;
 }
 
 /**
@@ -72,6 +75,7 @@ export interface OneShotCommandParams {
   binaryPath: string;
   prompt: string;
   model?: string;
+  effort?: AgentEffort;
 }
 
 /**
@@ -90,6 +94,12 @@ export interface HookConfig {
   supportsNativeHooks: boolean;
   configDir: string;
   settingsFile: string;
+  /**
+   * The CLI's turns reach Tars by another way than hooks Tars installs: codex's session log, which Tars reads and
+   * reports as the hooks would (services/codex-sessions.ts). A provider with either has an end of turn
+   * (core/end-of-turn.ts).
+   */
+  turnsReported?: boolean;
 }
 
 /**
@@ -133,14 +143,18 @@ export interface CLIProvider {
   /** MCP configuration strategy: 'flag' = pass via CLI flag, 'config-file' = write to config file */
   getMcpConfigStrategy(): 'flag' | 'config-file';
 
-  /** Register an MCP server with this provider's configuration */
-  registerMcpServer(name: string, command: string, args: string[]): Promise<void>;
+  /**
+   * Register an MCP server with this provider's configuration. `envVars`: the names of variables the server is to
+   * be handed from the CLI's own environment, for a CLI that hands its servers only what it is told to (codex);
+   * the others hand theirs everything and ignore it.
+   */
+  registerMcpServer(name: string, command: string, args: string[], envVars?: readonly string[]): Promise<void>;
 
   /** Remove an MCP server from this provider's configuration */
   removeMcpServer(name: string): Promise<void>;
 
-  /** Check if an MCP server is registered with the expected server path */
-  isMcpServerRegistered(name: string, expectedServerPath: string): boolean;
+  /** Check if an MCP server is registered with the expected server path (and, where the CLI needs them, `envVars`) */
+  isMcpServerRegistered(name: string, expectedServerPath: string, envVars?: readonly string[]): boolean;
 
   /** Directories where this provider reads skills from */
   getSkillDirectories(): string[];
@@ -169,6 +183,9 @@ export interface CLIProvider {
     homeDir: string;
     /** Optional skills list to inject as a prompt prefix (same as interactive sessions) */
     skills?: string[];
+    /** The agent's model and effort, for a provider whose script takes them (codex). */
+    model?: string;
+    effort?: AgentEffort;
   }): string;
 }
 

@@ -26,7 +26,7 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
+import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
 import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
 import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
 import { APP_PAGES } from './services/health/pages';
@@ -134,6 +134,9 @@ import { startTaskWatch } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startCodexSessionWatch } from './services/codex-sessions';
+import { terminalTokenOf } from './core/agent-tokens';
+import { codexDialogOnScreen } from './core/terminal-mirror';
 import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
@@ -728,6 +731,27 @@ app.whenReady().then(async () => {
   startStallWatch();
   // Agents with no turn for 30 minutes sleep, orchestrators never (services/agent-sleep.ts).
   startSleepWatch();
+  // codex's turns, read from its session log and posted as its terminal's hooks
+  // would post them, with that terminal's own token (services/codex-sessions.ts).
+  startCodexSessionWatch({
+    post: async (agentId, { path: route, body }) => {
+      const token = terminalTokenOf(agentId);
+      if (!token) return;
+      try {
+        await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        console.warn(`[codex-sessions] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+      }
+    },
+    dialogTitle: (agentId) => {
+      const agent = agents.get(agentId);
+      return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+    },
+  });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
   // first pass forward, for the e2e.
