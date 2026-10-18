@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { isAbsolutePath, pathName, rendererPlatform, tildePath, toSlashes } from '@/lib/display-path';
+import { BOX_H, BOX_W, fitZoom, keepAnchor, layoutRings, ringOrder, stageBox, zoomBounds } from '@/lib/graph-layout';
+import type { Point, StageBox } from '@/lib/graph-layout';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, StatusSquare } from '@/components/ui';
@@ -31,9 +33,6 @@ interface GraphNode {
   meta?: NodeMeta;
 }
 
-/** A node once the static layout has given it a place in the diagram. */
-type PlacedNode = GraphNode & { x: number; y: number };
-
 interface GraphEdge {
   source: string;
   target: string;
@@ -50,20 +49,13 @@ interface GraphData {
 // circles that moved for a second every time anything changed. It is a box
 // diagram now - the same nodes and the same edges, but placed once, in rings
 // around the project, so the picture is the same every time you open it.
+// Where each box goes, and how much of the graph the canvas shows, is
+// src/lib/graph-layout.ts.
 
-const BOX_W = 176;
-const BOX_H = 46;
+/** A zoom button's step: a quarter more or less, so a graph fitted at 10 % is as quick to read as one at 50 %. */
+const ZOOM_STEP = 1.25;
 
-/** Map zoom range. 25% shows a forty-agent graph whole; 200% reads a label. */
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 2;
-const ZOOM_STEP = 0.1;
-const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-/** Horizontal breathing room between two boxes sharing a ring. */
-const BOX_GAP = 28;
-/** Minimum distance between one ring and the next. */
-const RING_GAP = 132;
-
+/** The ring of each kind of node, from the middle out. */
 const RING_OF: Record<NodeKind, number> = {
   project: 0,
   agent: 1,
@@ -90,66 +82,6 @@ function agentTone(status: AgentStatus['status']): StatusTone {
   if (status === 'waiting') return 'waiting';
   if (status === 'error') return 'error';
   return 'idle';
-}
-
-/**
- * Places every node on a ring: project in the middle, agents around it, the
- * files they read next, then the tools they share on the outside.
- *
- * A ring is widened until its circumference can hold its boxes, so the diagram
- * grows outwards instead of overlapping itself; the scroller around it takes
- * care of the rest.
- */
-function layoutGraph(graph: GraphData): { nodes: PlacedNode[]; size: number } {
-  const agentRank = new Map<string, number>();
-  graph.nodes.filter(n => n.kind === 'agent').forEach((n, i) => agentRank.set(n.id, i));
-
-  // Keep everything hanging off the same agent together on its ring, so the
-  // edges fan out instead of crossing the whole diagram.
-  const ownerRank = (id: string) => {
-    for (const edge of graph.edges) {
-      if (edge.target === id && agentRank.has(edge.source)) return agentRank.get(edge.source)!;
-      if (edge.source === id && agentRank.has(edge.target)) return agentRank.get(edge.target)!;
-    }
-    return Number.MAX_SAFE_INTEGER;
-  };
-
-  const rings: GraphNode[][] = [[], [], [], []];
-  for (const nd of graph.nodes) rings[RING_OF[nd.kind]].push(nd);
-  for (let r = 2; r < rings.length; r++) {
-    rings[r].sort((a, b) => ownerRank(a.id) - ownerRank(b.id) || a.label.localeCompare(b.label));
-  }
-
-  const radii: number[] = [];
-  let previous = 0;
-  rings.forEach((ring, r) => {
-    if (!ring.length) { radii[r] = previous; return; }
-    if (r === 0 && ring.length === 1) { radii[0] = 0; previous = 0; return; }
-    const needed = (ring.length * (BOX_W + BOX_GAP)) / (2 * Math.PI);
-    const radius = Math.max(previous + RING_GAP, needed);
-    radii[r] = radius;
-    previous = radius;
-  });
-
-  const outer = radii.length ? Math.max(...radii) : 0;
-  const size = Math.max(480, Math.round(2 * (outer + BOX_W / 2 + 32)));
-  const centre = size / 2;
-
-  const nodes: PlacedNode[] = [];
-  rings.forEach((ring, r) => {
-    const radius = radii[r] ?? 0;
-    const step = (2 * Math.PI) / Math.max(ring.length, 1);
-    ring.forEach((nd, i) => {
-      const angle = -Math.PI / 2 + i * step;
-      nodes.push({
-        ...nd,
-        x: radius === 0 ? centre : centre + Math.cos(angle) * radius,
-        y: radius === 0 ? centre : centre + Math.sin(angle) * radius,
-      });
-    });
-  });
-
-  return { nodes, size };
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -374,21 +306,25 @@ export default function AgentKnowledgeGraph() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [graph, setGraph] = useState<GraphData>({ nodes: [], edges: [] });
 
-  // ── Side panel state ──
   /**
    * Map zoom.
    *
-   * The map is laid out at a fixed pixel size that grows with the number of
-   * agents, inside a plain scroll container. Past a couple of dozen nodes the
-   * stage is several times the viewport and there was no way to pull back and
-   * see the shape of it: the map could only be scrolled, never zoomed out.
-   * Scaling the stage keeps the layout maths in unscaled pixels, so hit
-   * targets, edges and text stay in register at every step.
+   * The map is laid out at a pixel size that follows its number of boxes,
+   * inside a plain scroll container, the canvas. Scaling the stage keeps the
+   * layout maths in unscaled pixels, so hit targets, edges and text stay in
+   * register at every step. It opens fitted to the canvas, and fits again
+   * when the canvas is resized and when the graph is rebuilt (an agent picked,
+   * Refresh), and from the fit button.
    */
   const [zoom, setZoom] = useState(1);
   const stageRef = useRef<HTMLDivElement>(null);
-  /** The element that carries the zoom scale, used to anchor it at the pointer. */
-  const scaledRef = useRef<HTMLDivElement>(null);
+  /** The canvas's size, scrollbars included: what the graph is fitted to. */
+  const [view, setView] = useState({ width: 0, height: 0 });
+  /** A drag of the canvas under way: where it started, and the scroll it started from. */
+  const drag = useRef<{ id: number; x: number; y: number; left: number; top: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // ── Side panel state ──
 
   const [panelNode, setPanelNode] = useState<GraphNode | null>(null);
   const [panelContent, setPanelContent] = useState('');
@@ -527,8 +463,10 @@ export default function AgentKnowledgeGraph() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgentId, agents]);
 
-  const { nodes, size } = useMemo(() => layoutGraph(graph), [graph]);
-  const placedById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
+  const layout = useMemo(() => layoutRings(ringOrder(
+    graph.nodes.map(n => ({ id: n.id, ring: RING_OF[n.kind], label: n.label })),
+    graph.edges,
+  )), [graph]);
 
   const openPanel = useCallback(async (node: GraphNode) => {
     setPanelNode(node);
@@ -588,86 +526,122 @@ export default function AgentKnowledgeGraph() {
     }
   }, [openPanel]);
 
-  /** The scale at which the whole stage fits the viewport, never magnifying. */
-  const fitZoom = useCallback(() => {
-    const box = stageRef.current?.getBoundingClientRect();
-    if (!box || size === 0) return 1;
-    // 32px of padding on both axes, matching the p-4 the stage sits in.
-    return clampZoom(Math.min((box.width - 32) / size, (box.height - 32) / size));
-  }, [size]);
+  // The canvas's size, before the first paint and whenever it changes: the
+  // window resized, the sidebar folded, a card opened at another height.
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    // Its outer size: scrollbars that take room (Windows, Linux, macOS set to
+    // show them) come and go with the zoom, and a size read inside them would
+    // fit the graph again each time they did, undoing every zoom in.
+    const measure = () => setView(v => (v.width === el.offsetWidth && v.height === el.offsetHeight ? v : { width: el.offsetWidth, height: el.offsetHeight }));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el, { box: 'border-box' });
+    return () => observer.disconnect();
+  }, []);
 
-  // Open on a map that fits. A user with forty agents should see the shape of
-  // the graph first and zoom in on a corner second, not land inside one.
-  const fittedFor = useRef<number | null>(null);
-  useEffect(() => {
-    if (nodes.length === 0 || fittedFor.current === size) return;
-    fittedFor.current = size;
-    setZoom(fitZoom());
-  }, [size, nodes.length, fitZoom]);
+  /** The zoom at which the whole graph fits the canvas, never above 100 %; null while the canvas has no room. */
+  const fit = useMemo(() => fitZoom(layout, view), [layout, view]);
+  const range = zoomBounds(fit);
+  const clamp = useCallback((z: number) => Math.min(range.max, Math.max(range.min, z)), [range.max, range.min]);
+  const box = useMemo(() => stageBox(layout, view, zoom), [layout, view, zoom]);
 
   /**
-   * Where the pointer was when the zoom gesture started, and which point of
-   * the graph was under it. Scaling the stage alone leaves the scroll offset
-   * where it was, so the viewport's top-left corner stays put and the graph
-   * appears to zoom at the same spot wherever the pointer is. Keeping the
-   * point under the pointer means correcting the scroll by however far it
-   * moved, which can only be measured after the browser has laid the new
-   * scale out.
+   * A zoom about a point of the canvas: the graph's point under it stays
+   * there, at the pointer for a wheel or a pinch, at the middle for the
+   * buttons. The scroll that keeps it is set once the new scale is laid out.
    */
-  const pendingAnchor = useRef<{ px: number; py: number; cx: number; cy: number } | null>(null);
+  const pendingAnchor = useRef<{ anchor: Point; scroll: { left: number; top: number }; from: { zoom: number; box: StageBox } } | null>(null);
+
+  // Open on a map that fits, and fit again when the canvas or the graph
+  // changes: fifty agents and their files are seen whole first, then zoomed
+  // into, not landed in the middle of.
+  useLayoutEffect(() => {
+    if (fit === null) return;
+    pendingAnchor.current = null;
+    setZoom(fit);
+  }, [fit, layout]);
+
+  const zoomAbout = useCallback((next: number, anchor?: Point) => {
+    const el = stageRef.current;
+    const target = clamp(next);
+    if (!el || target === zoom) return;
+    pendingAnchor.current = {
+      anchor: anchor ?? { x: el.clientWidth / 2, y: el.clientHeight / 2 },
+      scroll: { left: el.scrollLeft, top: el.scrollTop },
+      from: { zoom, box },
+    };
+    setZoom(target);
+  }, [box, clamp, zoom]);
+
+  useLayoutEffect(() => {
+    const pending = pendingAnchor.current;
+    pendingAnchor.current = null;
+    const el = stageRef.current;
+    if (!pending || !el) return;
+    // The scroll's ends are the canvas's own, inside any scrollbar.
+    const next = keepAnchor(pending.anchor, pending.scroll, { width: el.clientWidth, height: el.clientHeight }, pending.from, { zoom, box });
+    el.scrollLeft = next.left;
+    el.scrollTop = next.top;
+  }, [zoom, box]);
 
   // Ctrl/Cmd + wheel is the zoom gesture everywhere else, including the pinch
   // a trackpad reports. Without the listener the browser zooms the whole app.
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
+  // Bound by hand: React's own wheel listener is passive and cannot stop it.
+  useEffect(() => {
     const el = stageRef.current;
-    const inner = scaledRef.current;
-    if (el && inner) {
-      const stage = inner.getBoundingClientRect();
-      const box = el.getBoundingClientRect();
-      pendingAnchor.current = {
-        px: (e.clientX - stage.left) / zoom,
-        py: (e.clientY - stage.top) / zoom,
-        cx: e.clientX - box.left,
-        cy: e.clientY - box.top,
-      };
-    }
-    setZoom(z => clampZoom(z * (e.deltaY > 0 ? 0.92 : 1.08)));
-  }, [zoom]);
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      zoomAbout(zoom * (e.deltaY > 0 ? 0.92 : 1.08), { x: e.clientX - rect.left, y: e.clientY - rect.top });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoom, zoomAbout]);
 
-  // Measured rather than derived: the stage is centred while it is smaller
-  // than the viewport and scrolled once it is bigger, so where a point lands
-  // depends on padding and centring this does not need to model.
-  useLayoutEffect(() => {
-    const anchor = pendingAnchor.current;
-    pendingAnchor.current = null;
+  // A drag on the canvas, not on a box, moves the graph with the pointer.
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const el = stageRef.current;
-    const inner = scaledRef.current;
-    if (!anchor || !el || !inner) return;
-    const stage = inner.getBoundingClientRect();
-    const box = el.getBoundingClientRect();
-    el.scrollLeft += (stage.left - box.left) + anchor.px * zoom - anchor.cx;
-    el.scrollTop += (stage.top - box.top) + anchor.py * zoom - anchor.cy;
-  }, [zoom]);
+    if (!el || e.button !== 0 || (e.target as Element).closest('button')) return;
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+    el.setPointerCapture(e.pointerId);
+    setDragging(true);
+  }, []);
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = stageRef.current;
+    if (!d || !el || e.pointerId !== d.id) return;
+    el.scrollLeft = d.left - (e.clientX - d.x);
+    el.scrollTop = d.top - (e.clientY - d.y);
+  }, []);
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.id !== e.pointerId) return;
+    drag.current = null;
+    stageRef.current?.releasePointerCapture(e.pointerId);
+    setDragging(false);
+  }, []);
+  const pannable = box.width > view.width || box.height > view.height;
 
   return (
     <Panel fill padded={false} className="relative w-full overflow-hidden">
       {/* Zoom controls. Words, not glyphs, at the 26px row height. */}
-      {nodes.length > 0 && (
+      {graph.nodes.length > 0 && (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1 border border-border bg-card p-1">
           <Button
             size="sm"
             className="font-mono w-7 justify-center"
             aria-label="Zoom out"
-            disabled={zoom <= ZOOM_MIN}
-            onClick={() => setZoom(z => clampZoom(z - ZOOM_STEP))}
+            disabled={zoom <= range.min}
+            onClick={() => zoomAbout(zoom / ZOOM_STEP)}
           >
             &minus;
           </Button>
           <button
             type="button"
-            onClick={() => setZoom(1)}
+            onClick={() => zoomAbout(1)}
             title="Back to 100%"
             className="h-[26px] w-12 shrink-0 font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           >
@@ -677,44 +651,54 @@ export default function AgentKnowledgeGraph() {
             size="sm"
             className="font-mono w-7 justify-center"
             aria-label="Zoom in"
-            disabled={zoom >= ZOOM_MAX}
-            onClick={() => setZoom(z => clampZoom(z + ZOOM_STEP))}
+            disabled={zoom >= range.max}
+            onClick={() => zoomAbout(zoom * ZOOM_STEP)}
           >
             +
           </Button>
-          <Button size="sm" className="font-mono" onClick={() => setZoom(fitZoom())}>
+          <Button
+            size="sm"
+            className="font-mono"
+            title="The whole graph in the canvas"
+            disabled={fit === null}
+            onClick={() => { pendingAnchor.current = null; if (fit !== null) setZoom(fit); }}
+          >
             fit
           </Button>
         </div>
       )}
 
-      {/* Diagram */}
-      <div ref={stageRef} className="absolute inset-0 overflow-auto" onWheel={onWheel}>
-        <div className="min-w-full min-h-full flex items-center justify-center p-4">
-          {nodes.length === 0 && !loading ? (
+      {/* Diagram: a drag on it, off the boxes, moves the graph; focused, the arrow keys scroll it. */}
+      <div
+        ref={stageRef}
+        tabIndex={0}
+        role="region"
+        aria-label="Agent graph"
+        className={`absolute inset-0 overflow-auto select-none ${dragging ? 'cursor-grabbing' : pannable ? 'cursor-grab' : ''}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        {graph.nodes.length === 0 && !loading ? (
+          <div className="w-full h-full flex items-center justify-center">
             <p className="text-xs text-muted-foreground">No agents to map yet.</p>
-          ) : (
+          </div>
+        ) : (
+          <div className="relative" style={{ width: box.width, height: box.height }}>
             <div
-              ref={scaledRef}
-              className="relative shrink-0"
-              style={{
-                width: size * zoom,
-                height: size * zoom,
-              }}
+              className="absolute origin-top-left"
+              style={{ left: box.left, top: box.top, width: layout.width, height: layout.height, transform: `scale(${zoom})` }}
             >
-              <div
-                className="absolute left-0 top-0 origin-top-left"
-                style={{ width: size, height: size, transform: `scale(${zoom})` }}
-              >
               <svg
-                width={size}
-                height={size}
+                width={layout.width}
+                height={layout.height}
                 className="absolute inset-0 pointer-events-none"
                 aria-hidden
               >
                 {graph.edges.map(edge => {
-                  const a = placedById.get(edge.source);
-                  const b = placedById.get(edge.target);
+                  const a = layout.positions.get(edge.source);
+                  const b = layout.positions.get(edge.target);
                   if (!a || !b) return null;
                   return (
                     <line
@@ -727,39 +711,42 @@ export default function AgentKnowledgeGraph() {
                 })}
               </svg>
 
-              {nodes.map(node => (
-                <button
-                  key={node.id}
-                  onClick={() => handleNodeClick(node)}
-                  style={{
-                    left: node.x - BOX_W / 2,
-                    top: node.y - BOX_H / 2,
-                    width: BOX_W,
-                    height: BOX_H,
-                  }}
-                  className={`absolute flex flex-col justify-center gap-0.5 px-2.5 text-left border transition-colors cursor-pointer ${
-                    node.kind === 'project'
-                      ? 'border-primary bg-accent-dim'
-                      : selectedAgentId === node.id
-                        ? 'border-border-accent bg-secondary'
-                        : 'border-border bg-card hover:bg-secondary'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <StatusSquare tone={node.tone ?? 'idle'} />
-                    <span className="text-[12px] text-foreground truncate">{node.label}</span>
-                  </span>
-                  {node.sub && (
-                    <span className="pl-3 text-[10px] font-mono text-muted-foreground truncate">
-                      {node.sub}
+              {graph.nodes.map(node => {
+                const at = layout.positions.get(node.id);
+                if (!at) return null;
+                return (
+                  <button
+                    key={node.id}
+                    onClick={() => handleNodeClick(node)}
+                    style={{
+                      left: at.x - BOX_W / 2,
+                      top: at.y - BOX_H / 2,
+                      width: BOX_W,
+                      height: BOX_H,
+                    }}
+                    className={`absolute flex flex-col justify-center gap-0.5 px-2.5 text-left border transition-colors cursor-pointer ${
+                      node.kind === 'project'
+                        ? 'border-primary bg-accent-dim'
+                        : selectedAgentId === node.id
+                          ? 'border-border-accent bg-secondary'
+                          : 'border-border bg-card hover:bg-secondary'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <StatusSquare tone={node.tone ?? 'idle'} />
+                      <span className="text-[12px] text-foreground truncate">{node.label}</span>
                     </span>
-                  )}
-                </button>
-              ))}
-              </div>
+                    {node.sub && (
+                      <span className="pl-3 text-[10px] font-mono text-muted-foreground truncate">
+                        {node.sub}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Loading overlay */}
