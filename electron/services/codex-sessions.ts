@@ -24,8 +24,9 @@ import { codexHome, codexRolloutOf } from '../providers/codex-cli';
  * carries, agent-guide.ts), the agent's own codex holds its rollout open (measured on 0.163: from its first line to
  * the codex's end, at rest included; platform/open-files.ts), or it is a fork of the agent's own session that the
  * launch began. A first message naming another agent is nobody's, and so, where a process's files cannot be read
- * (Windows), is one that names nobody. A new rollout is read from its head on, each byte once and only until its first
- * message: never whole, at every tick.
+ * (Windows), is one that names nobody. Where they can, a lookup that fails (ps or lsof failed, or timed out under load)
+ * is asked again, later each time, and never binds (the Audit's L5 on #465). A new rollout is read from its head on,
+ * each byte once and only until its first message: never whole, at every tick.
  *
  * An approval codex waits on (normal mode asks before a command outside its sandbox, and before each call of an MCP
  * server's tool) is in no line of the log: it is read from the terminal's screen (terminal-mirror.ts,
@@ -113,10 +114,15 @@ export interface CodexSessionWatchDeps {
   codexRunning?: (agentId: string) => boolean;
   /**
    * Which of these agents' own codex holds this file open (production: the codex under each one's terminal and what it
-   * started, by lsof or /proc, platform/open-files.ts): its id, null for none of them, undefined where it cannot be
-   * known (Windows).
+   * started, by lsof or /proc, platform/open-files.ts): its id, null for none of them, undefined when it was not
+   * learned (ps or lsof failed or timed out, or Windows, where no tool lists a process's files).
    */
   heldOpenBy?: (file: string, agentIds: string[]) => Promise<string | null | undefined>;
+  /**
+   * Whether a process's open files can be listed here (production: platform/open-files.ts, macOS and Linux). Where they
+   * can, a lookup that learned nothing is asked again; where they cannot, it never will learn anything.
+   */
+  openFilesReadable?: () => boolean;
 }
 
 interface Launch {
@@ -158,6 +164,9 @@ interface Head {
   notASession?: boolean;
   /** Read HEAD_CAP_BYTES in with no first message. */
   capped?: boolean;
+  /** How many times whose codex holds it was asked and not learned, and when it is asked again. */
+  unlearned?: number;
+  askAgainAt?: number;
 }
 
 /** How long a new session waits for its first message, which may say whose it is, before it is settled without it. */
@@ -171,6 +180,13 @@ const IDENTITY = /\[Tars: you are agent ".*?" \(id ([0-9a-fA-F-]{8,})\)/;
 const HEAD_CAP_BYTES = 1024 * 1024;
 /** How much of a rollout's head one read takes. */
 const HEAD_CHUNK_BYTES = 128 * 1024;
+/**
+ * How many times whose codex holds a session's file is asked when it is not learned (ps or lsof failed, or took more
+ * than its 5 s under load: the Audit's L5 on #465), and how long after the first failure it is asked again, twice as
+ * long each time: 1, 2, 4, 8 and 16 s, half a minute of a machine too loaded to answer at least.
+ */
+const HOLDER_ASKS = 6;
+const HOLDER_RETRY_MS = 1_000;
 
 function realOf(dir: string): string {
   try { return fs.realpathSync(dir); } catch { return path.resolve(dir); }
@@ -345,9 +361,10 @@ export class CodexSessionWatch {
 
   /**
    * The launch a new session is, on evidence only: a fork of the session the launch may resume, Tars's identity line in
-   * its first message, or its file held open by the agent's own codex. 'wait' while its first message may still come;
-   * null when no launch waits in its folder since before it began, when its first message names an agent no waiting
-   * launch is, or when no waiting agent's codex holds it, or that cannot be known.
+   * its first message, or its file held open by the agent's own codex. 'wait' while its first message may still come,
+   * and while whose codex holds it is asked again after a lookup that learned nothing; null when no launch waits in its
+   * folder since before it began, when its first message names an agent no waiting launch is, or when no waiting
+   * agent's codex holds it, or that cannot be known (Windows), or was not learned in HOLDER_ASKS lookups.
    */
   private async launchOf(file: string, head: Head & { session: Extract<CodexEvent, { kind: 'session' }> }, now: number): Promise<Launch | null | 'wait'> {
     const { session } = head;
@@ -362,7 +379,17 @@ export class CodexSessionWatch {
     if (head.firstUser === undefined && !head.capped && now - session.at < IDENTITY_WAIT_MS) return 'wait';
     const named = head.firstUser?.match(IDENTITY)?.[1]?.toLowerCase();
     if (named) return waiting.find(l => l.agentId.toLowerCase() === named) ?? null;
+    if (head.askAgainAt !== undefined && now < head.askAgainAt) return 'wait';
     const holder = await this.deps.heldOpenBy?.(file, waiting.map(l => l.agentId));
+    if (holder === undefined && this.deps.heldOpenBy && this.deps.openFilesReadable?.()) {
+      // Not learned (ps or lsof failed, or timed out): never bound on it, and asked again, later each time.
+      head.unlearned = (head.unlearned ?? 0) + 1;
+      if (head.unlearned < HOLDER_ASKS) {
+        head.askAgainAt = now + HOLDER_RETRY_MS * 2 ** (head.unlearned - 1);
+        return 'wait';
+      }
+      console.warn(`[codex-sessions] whose codex holds ${file} was not learned in ${HOLDER_ASKS} lookups (ps or lsof failed): nobody's`);
+    }
     return (holder && waiting.find(l => l.agentId === holder)) || null;
   }
 
@@ -456,7 +483,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning' | 'heldOpenBy'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf' | 'codexRunning' | 'heldOpenBy' | 'openFilesReadable'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;

@@ -762,7 +762,9 @@ app.whenReady().then(async () => {
     },
     // Whose own codex holds a new session's file, read once per session that
     // names nobody: the codex under each waiting agent's terminal and what it
-    // started (the Audit's M1 on #465). Unknown where files cannot be read.
+    // started (the Audit's M1 on #465). Unknown where files cannot be read, and
+    // asked again when ps or lsof failed (the Audit's L5).
+    openFilesReadable: () => openFilesReadable(),
     heldOpenBy: async (file, agentIds) => {
       if (!openFilesReadable()) return undefined;
       const procs = await readProcesses();
