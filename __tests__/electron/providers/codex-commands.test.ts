@@ -14,7 +14,8 @@ import * as path from 'node:path';
  * 3. The effort dropped by a builder (codex-provider.ts had none: `"reasoning_effort": null` in codex's own log for an
  *    agent set to low), or the model.
  * 4. A permission mode turned into a flag the installed codex does not have, which is the same exit 2
- *    (codex-cli.test.ts says which flags each mode becomes; these say every builder uses them).
+ *    (codex-cli.test.ts says which flags each mode becomes; these say every builder uses them). The installed codex's
+ *    flags are read before a launch builds its line (prepareLaunch, off the main thread: codex-cli.test.ts, 8).
  * 5. A prompt that leaves its quotes: a task is user text, and the line is run by a shell or read back into argv.
  * 6. A session Tars resumes after a restart started anew, or its id where codex does not read it. Measured on
  *    0.163: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]` continues the session in its own rollout file, with its
@@ -67,10 +68,13 @@ function argvOf(line: string): string[] {
   return argv[0] === 'env' && argv[1]?.startsWith('CODEX_HOME=') ? argv.slice(2) : argv;
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-0163-'));
   codex016 = path.join(dir, 'codex');
   fs.writeFileSync(codex016, `#!/bin/sh\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
+  // As every launch path does before it builds the line.
+  await provider.prepareLaunch(codex016);
+  await provider.prepareLaunch(nowhere);
 });
 
 describe("an agent's terminal", () => {

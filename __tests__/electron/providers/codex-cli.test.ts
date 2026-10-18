@@ -26,10 +26,17 @@ import * as path from 'node:path';
  *    gate of #465's head, where the stand-in answered in up to 0.9 s), an auto agent of codex-works was handed the
  *    stable flags: its codex had taken longer than the 2 s Tars waited, and that answer is kept for the binary, so
  *    every launch of the run lost codex's automatic review. The answer is waited for as long as codex takes, to 10 s.
+ * 8. codex asked on the main thread (the Audit's L6 on #465): read with execFileSync, --help froze the whole window
+ *    for as long as codex took, up to the 10 s of 7, under the very load 7 is about. It is read with execFile, and
+ *    nothing waits on it but the launch that needs it (CodexProvider.prepareLaunch): a line built before the answer
+ *    has the stable flags, and the answer is then kept for the next. The asks made while codex answers share that one
+ *    codex; a codex updated (its size or time of change) is asked again; a codex that could not answer (not there,
+ *    failed, hung past its time) is asked again at the next launch, its failure never kept for the binary.
  */
 
 import {
   codexPermissionArgs, codexEffortArgs, codexModelsFrom, readCodexModels, codexFlagsFromHelp, codexAccepts, codexHome,
+  readCodexFlags,
 } from '../../../electron/providers/codex-cli';
 
 /** codex 0.163.0's own models_cache.json, cut to what Tars reads, in its order on disk. */
@@ -84,26 +91,87 @@ describe("codex's permission flags", () => {
   });
 });
 
+/** A codex whose --help counts its asks in `count`, after `before` (shell lines), and prints `help`. */
+function fakeCodex(help: string, before = ''): { bin: string; count: string; asks: () => number } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-help-'));
+  const count = path.join(dir, 'count');
+  const bin = path.join(dir, 'codex');
+  fs.writeFileSync(bin, `#!/bin/sh\necho x >> '${count}'\n${before}cat <<'EOF'\n${help}\nEOF\n`, { mode: 0o755 });
+  return { bin, count, asks: () => (fs.existsSync(count) ? fs.readFileSync(count, 'utf8').trim().split('\n').length : 0) };
+}
+
 describe('which flags the installed codex has', () => {
-  it('read from its own --help, once per binary', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-help-'));
-    const count = path.join(dir, 'count');
-    const bin = path.join(dir, 'codex');
-    fs.writeFileSync(bin, `#!/bin/sh\necho x >> '${count}'\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
+  it('read from its own --help, once per binary', async () => {
+    const { bin, asks } = fakeCodex(HELP_0163);
+    await readCodexFlags(bin);
     expect(codexAccepts(bin)('--approve-for-me')).toBe(true);
     expect(codexAccepts(bin)('--full-auto')).toBe(false);
-    expect(fs.readFileSync(count, 'utf8').trim().split('\n'), 'codex was asked on every launch').toHaveLength(1);
+    await readCodexFlags(bin);
+    expect(asks(), 'codex was asked on every launch').toBe(1);
   });
 
-  it('7. a codex slow to answer, as under a heavy load, is waited for: the flags are its own', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-help-'));
-    const bin = path.join(dir, 'codex');
-    fs.writeFileSync(bin, `#!/bin/sh\nsleep 2.5\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
+  it('7. a codex slow to answer, as under a heavy load, is waited for: the flags are its own', async () => {
+    const { bin } = fakeCodex(HELP_0163, 'sleep 2.5\n');
+    expect((await readCodexFlags(bin))?.has('--approve-for-me')).toBe(true);
     expect(codexAccepts(bin)('--approve-for-me')).toBe(true);
   }, 15_000);
 
-  it('a codex that cannot be asked is handed the stable flags only', () => {
-    const accepts = codexAccepts(path.join(os.tmpdir(), 'no-such-codex-binary'));
+  it('8. never on the main thread: the event loop runs while codex answers, and a line built meanwhile has the stable flags', async () => {
+    const { bin } = fakeCodex(HELP_0163, 'sleep 1.5\n');
+    const asked = Date.now();
+    const meanwhile = codexAccepts(bin)('--approve-for-me');
+    expect(Date.now() - asked, 'codex was run on the main thread').toBeLessThan(500);
+    expect(meanwhile).toBe(false);
+    let ticks = 0;
+    const timer = setInterval(() => { ticks++; }, 50);
+    try {
+      expect((await readCodexFlags(bin))?.has('--approve-for-me')).toBe(true);
+    } finally {
+      clearInterval(timer);
+    }
+    expect(ticks, 'the event loop waited on codex').toBeGreaterThan(10);
+    expect(codexAccepts(bin)('--approve-for-me')).toBe(true);
+  }, 15_000);
+
+  it('8. the asks made while codex answers share it: one codex for three launches, and none after', async () => {
+    const { bin, asks } = fakeCodex(HELP_0163, 'sleep 0.5\n');
+    const answers = await Promise.all([readCodexFlags(bin), readCodexFlags(bin), readCodexFlags(bin)]);
+    expect(answers.map(flags => flags?.has('--approve-for-me'))).toEqual([true, true, true]);
+    await readCodexFlags(bin);
+    expect(asks()).toBe(1);
+  });
+
+  it('8. a codex updated is asked again: its flags are the new one\'s', async () => {
+    const { bin, count, asks } = fakeCodex(HELP_0163);
+    expect((await readCodexFlags(bin))?.has('--approve-for-me')).toBe(true);
+    fs.writeFileSync(bin, `#!/bin/sh\necho x >> '${count}'\ncat <<'EOF'\n${HELP_OLDER}\nEOF\n`, { mode: 0o755 });
+    const older = await readCodexFlags(bin);
+    expect(older?.has('--full-auto')).toBe(true);
+    expect(codexAccepts(bin)('--approve-for-me')).toBe(false);
+    expect(asks()).toBe(2);
+  });
+
+  it('8. a codex that could not answer is asked again at the next launch: its failure is not kept', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-help-'));
+    const marker = path.join(dir, 'answered-once');
+    const { bin } = fakeCodex(HELP_0163, `if [ ! -f '${marker}' ]; then : > '${marker}'; exit 3; fi\n`);
+    expect(await readCodexFlags(bin)).toBeUndefined();
+    expect(codexAccepts(bin)('--approve-for-me')).toBe(false);
+    expect((await readCodexFlags(bin))?.has('--approve-for-me')).toBe(true);
+    expect(codexAccepts(bin)('--approve-for-me')).toBe(true);
+  });
+
+  it('8. a codex that hangs on --help is given up on at its time', async () => {
+    const { bin } = fakeCodex(HELP_0163, 'exec sleep 30\n');
+    const asked = Date.now();
+    expect(await readCodexFlags(bin, 300)).toBeUndefined();
+    expect(Date.now() - asked).toBeLessThan(5_000);
+  }, 15_000);
+
+  it('a codex that cannot be asked is handed the stable flags only', async () => {
+    const nowhere = path.join(os.tmpdir(), 'no-such-codex-binary');
+    expect(await readCodexFlags(nowhere)).toBeUndefined();
+    const accepts = codexAccepts(nowhere);
     expect(accepts('--approve-for-me')).toBe(false);
     expect(codexPermissionArgs('auto', accepts)).toEqual(['--ask-for-approval', 'never', '--sandbox', 'workspace-write']);
   });
