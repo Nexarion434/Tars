@@ -133,6 +133,13 @@ for (const newInterface of [false, true]) {
       });
       servers.push(mcp);
       const replies = new Map<number, (msg: Reply) => void>();
+      // A server that dies answers nothing: every call still waiting is answered with what it said, not left to hang.
+      let mcpErr = '';
+      mcp.stderr.on('data', (d) => { mcpErr = (mcpErr + d).slice(-2000); });
+      mcp.on('exit', (code) => {
+        for (const [, reply] of replies) reply({ error: `mcp-orchestrator exited (${code}): ${mcpErr}` });
+        replies.clear();
+      });
       let buffered = '';
       mcp.stdout.on('data', (chunk) => {
         buffered += chunk;
@@ -163,7 +170,12 @@ for (const newInterface of [false, true]) {
       expect(created.isError, created.text).toBe(false);
       const deep = created.text.match(/with ID: ([0-9a-f-]{36})/)?.[1];
       expect(deep, created.text).toBeTruthy();
-      const delegated = await lead('delegate_task', { id: deep, prompt: `LINES 1 KEYOK${nonce}`, timeoutSeconds: 90 });
+      // Bounded here too: an agent held at launch never answers, and the witness on the old build must end on what its
+      // terminal shows, not on the test's own timeout.
+      const delegated = await Promise.race([
+        lead('delegate_task', { id: deep, prompt: `LINES 1 KEYOK${nonce}`, timeoutSeconds: 90 }),
+        sleep(150_000).then(() => ({ text: 'delegate_task gave no answer in 150 s', isError: true })),
+      ]);
 
       const output = await app.evaluate((_e, { dist, id }) => {
         const agent = process.mainModule!.require(`${dist}/core/agent-manager.js`).agents.get(id);
