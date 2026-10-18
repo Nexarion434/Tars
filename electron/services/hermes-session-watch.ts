@@ -39,6 +39,13 @@ export interface HermesSessionState {
 
 const UNREACHABLE = 'Hermes does not answer: the kanban tools cannot reach the board until it does.';
 
+/**
+ * How soon a refused call is checked: one 401 (during a gateway's refresh, say)
+ * said signed out for up to half an hour while every call after it worked (the
+ * Audit's L2 on #452). One check for a burst of refusals.
+ */
+export const RECHECK_AFTER_REFUSAL_MS = 10_000;
+
 export function createHermesSessionWatch(opts: {
   check: () => Promise<SessionCheck>;
   everyMs: number;
@@ -47,6 +54,7 @@ export function createHermesSessionWatch(opts: {
   let state: HermesSessionState = { session: 'none', unmeasured: false };
   let configured = true;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let recheck: ReturnType<typeof setTimeout> | null = null;
 
   const same = (a: HermesSessionState, b: HermesSessionState) =>
     a.session === b.session && a.version === b.version && a.unmeasured === b.unmeasured;
@@ -88,12 +96,17 @@ export function createHermesSessionWatch(opts: {
     stop(): void {
       if (timer) clearInterval(timer);
       timer = null;
+      if (recheck) clearTimeout(recheck);
+      recheck = null;
     },
     checkNow,
-    /** A kanban call the gateway refused for the session: said at once, not at the next check. */
+    /** A kanban call the gateway refused for the session: said at once, and checked again soon. */
     refused(): void {
       if (!configured) return;
       set({ ...state, session: 'signed-out', message: HERMES_SIGNED_OUT, checkedAt: new Date().toISOString() });
+      if (recheck) return;
+      recheck = setTimeout(() => { recheck = null; void checkNow(); }, RECHECK_AFTER_REFUSAL_MS);
+      recheck.unref?.();
     },
     state: (): HermesSessionState => state,
   };

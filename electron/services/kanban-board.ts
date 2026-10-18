@@ -45,8 +45,9 @@
  * keeps the task `scheduled` on the agent's lane, the one state that was safe on
  * every version measured, and the window says the version is unmeasured.
  *
- * Every task Tars files says in its body that it is Tars's agents' (TARS_TASK_MARK),
- * for whoever reads the board, Hermes's own assistant included.
+ * Every task Tars files says in its body that it is Tars's agents' (TARS_TASK_MARK):
+ * a label for whoever opens the task. What keeps Hermes's dispatcher off it is its
+ * state and its lane.
  */
 
 import * as fs from 'fs';
@@ -68,7 +69,7 @@ export function measuredHermes(version: string | null | undefined): boolean {
 /** What every kanban tool answers while Hermes refuses Tars's session, and what the window says. */
 export const HERMES_SIGNED_OUT = 'Tars is signed out of Hermes: sign in again in Settings, Hermes. Until then the kanban tools cannot reach the board.';
 
-/** The line in every task Tars files, so that nobody reading the board, Hermes included, takes it for Hermes's. */
+/** The line in every task Tars files: a label, for whoever opens the task, that it is Tars's agents'. */
 export const TARS_TASK_MARK = 'Tars task: it belongs to Tars\'s agents, who work it on their own lanes (tars:...). Hermes does not take, start, promote or decompose it.';
 /** The lane a parked task sits on: Tars's, taken by no agent yet. */
 export const TARS_LANE = 'tars:unclaimed';
@@ -507,15 +508,30 @@ export async function completeTask(h: Conn, caller: KanbanCaller, idOrPrefix: st
       const said = (summary ?? '').trim() || `Marked done by ${caller.name || caller.agentId}.`;
       // `scheduled` cannot go to `done` (409 on every version measured): a task
       // claimed on an unmeasured Hermes goes through `ready` on its agent's lane.
-      if (t.status === PARKED) {
+      const viaReady = t.status === PARKED;
+      if (viaReady) {
         const readied = await h.update(t.id, { status: 'ready' });
         if (!readied.success) return refused(readied);
       }
       const r = await h.update(t.id, { status: 'done', summary: said, result: said });
-      if (!r.success) return refused(r);
+      if (!r.success) return viaReady ? refused(r, await backToParked(h, t.id)) : refused(r);
       return { ok: true as const, value: toAgentTask(taskIn(r.task), caller) };
     });
   });
+}
+
+/**
+ * A `done` refused after the `ready` it needed, on an unmeasured Hermes: the
+ * task goes back to `scheduled`, the one state proven safe there, and the
+ * answer says what was written. It said "Nothing was written", the task left
+ * `ready` (the Audit's M1 on #452).
+ */
+async function backToParked(h: KanbanHermes, id: string): Promise<string> {
+  try {
+    const back = await h.update(id, { status: PARKED });
+    if (back.success) return `Task ${id} was moved to ready on your lane, then back to scheduled: it is not done.`;
+  } catch { /* said below */ }
+  return `Task ${id} was moved to ready on your lane and could not be put back to scheduled: it is ready there now, and not done.`;
 }
 
 /** Back to the parked state, on the Tars lane: status first, lane second, so it is never ready on no lane. */
