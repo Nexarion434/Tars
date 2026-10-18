@@ -16,7 +16,8 @@ import { ROWS_CHOICES, ROWS_KEYS, pageButtons, pageCount, pageOf, pageRows, page
  * 4. The rows of a page cut wrong: page 5 of 23 at 5 must hold rows 21 to 23, page 1 rows 1 to 5.
  * 5. The page buttons: more than seven, the first or the last missing, the page shown missing, a gap where pages
  *    follow each other, or two gaps side by side.
- * 6. The range off by one ("0 to 5", "21 to 25 of 23"), or a range said for an empty table; one page reads "all 7".
+ * 6. The range off by one ("0 to 5", "21 to 25 of 23"), or a range said for an empty table; one page reads "all 7",
+ *    and a page of one row "6 of 6".
  * 7. A pager shown for five rows or fewer; page buttons shown when one page holds every row.
  * 8. Two cards sharing one remembered choice.
  */
@@ -105,6 +106,10 @@ describe('rangeText (6)', () => {
     expect(rangeText(2, 5, 23)).toBe('6 to 10 of 23');
     expect(rangeText(5, 5, 23)).toBe('21 to 23 of 23');
     expect(rangeText(9, 5, 23)).toBe('21 to 23 of 23');
+  });
+  it('names a page of one row by that row alone', () => {
+    expect(rangeText(2, 5, 6)).toBe('6 of 6');
+    expect(rangeText(3, 10, 21)).toBe('21 of 21');
   });
   it('says all when one page holds them, and nothing for an empty table', () => {
     expect(rangeText(1, 10, 7)).toBe('all 7');
