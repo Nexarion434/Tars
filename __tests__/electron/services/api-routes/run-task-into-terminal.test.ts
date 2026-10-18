@@ -76,13 +76,17 @@ const typed: Typed[] = [];
 let writeOutcome: 'written' | 'refused' = 'written';
 vi.mock('../../../../electron/core/pty-manager', async (original) => {
   const real = await original<typeof import('../../../../electron/core/pty-manager')>();
+  const ledger = await import('../../../../electron/services/task-ledger');
   return {
     ...real,
     ptyProcesses: new Map(),
-    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
+    // As the real writer does (takeField): the line's id only under a sender, and the hand-off the turn takes noted once written.
+    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { agentId: string; taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
       if (writeOutcome === 'refused') return 'refused';
-      typed.push({ ptyId: pty.id, data, taskRef: origin?.taskRef, sender: origin?.sender });
+      const taskRef = origin?.sender ? origin.taskRef : undefined;
+      typed.push({ ptyId: pty.id, data, taskRef, sender: origin?.sender });
       origin?.onWritten?.();
+      if (origin) ledger.noteHandOff(origin.agentId, { ...ledger.handOffFrom(origin.sender as never), text: data, ref: taskRef });
       return 'written';
     }),
   };
