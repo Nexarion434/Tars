@@ -37,8 +37,9 @@ function fromProc(pids: number[]): Set<string> {
 function fromLsof(pids: number[]): Promise<Set<string> | undefined> {
   if (pids.length === 0) return Promise.resolve(new Set());
   return new Promise(done => {
-    // -w no warnings, -n -P no name or port lookups, -Fn names only.
-    execFile('lsof', ['-w', '-n', '-P', '-Fn', '-p', pids.join(',')], { timeout: 5_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+    // macOS's own, by its path: /usr/sbin is not on every PATH an app is started with. -w no warnings, -n -P no
+    // name or port lookups, -Fn names only.
+    execFile('/usr/sbin/lsof', ['-w', '-n', '-P', '-Fn', '-p', pids.join(',')], { timeout: 5_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
       const out = String(stdout ?? '');
       // lsof exits 1 when a pid asked is no process, and lists the others' files all the same.
       if (err && !(typeof (err as { code?: unknown }).code === 'number' && (err as { code: number }).code === 1)) {
