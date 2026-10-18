@@ -1095,6 +1095,7 @@ async function runInTerminal(
     let mode: unknown;
     let restart: RestartNote | undefined;
     let gaveUp = false;
+    let withdrawn = false;
     let typedRef: string | undefined;
     const callerId = resolveCallerId(req);
     const requester = callerId && callerId !== agent.id ? callerId : undefined;
@@ -1110,6 +1111,10 @@ async function runInTerminal(
         text: job.task, ...(typedRef ? { ref: typedRef } : {}),
       }),
       onDropped: () => { gaveUp = true; },
+      // Taken back by its asker while held in the terminal (a draft): the
+      // turn it kept is given back at once, not after TURN_START_MAX_MS (the
+      // Audit's M-B on 8f4f1fd7, on the run-task path).
+      onWithdrawn: () => { withdrawn = true; },
     }, ctx, (data, status = 200) => {
       if (status >= 300) refused = { data: (data ?? {}) as Record<string, unknown>, status };
       else {
@@ -1137,6 +1142,7 @@ async function runInTerminal(
     const latest = Date.now() + TURN_START_MAX_MS;
     while (!turnTask) {
       if (gaveUp) return never('the terminal gave it up before it went in');
+      if (withdrawn) return never('it was cancelled', 409, { code: 'cancelled' });
       if (agents.get(agent.id) !== agent) return never('its agent was removed');
       if (agent.status === 'stopped') return never('its agent was stopped before its turn began');
       if (Date.now() > latest) return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
