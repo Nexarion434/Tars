@@ -63,6 +63,7 @@ import {
   unknownTaskText,
   type Busy,
 } from '../../../electron/core/one-task';
+import { cancelRight } from '../../../electron/core/task-cancel';
 
 const T0 = Date.parse('2026-10-18T01:00:00.000Z');
 
@@ -129,22 +130,25 @@ describe('the queue of one agent', () => {
     expect(q.cancel(task.ref), 'twice').toBeUndefined();
   });
 
-  it('6. who may cancel: its requester, an orchestrator of its project, Tars; nobody else, who is told it does not exist', () => {
-    const q = createOneTaskQueue();
-    const task = q.enqueue('a', { requesterId: 'lead', title: 'x' }, T0);
+  // Who may cancel a queued task is the rule of a request's cancel (core/task-cancel.ts, cancelRight), since the
+  // Audit's L2 on #449: any chat's runner of the project took it back, with no reason, and the chat that asked was
+  // not told. Tars's own pass is the route's (one-task-busy-and-orders.test.ts, case 13).
+  it('6. who may cancel: its requester, or the project\'s orchestrator with a reason; no other chat, no worker, no other project', () => {
     const fleet = new Map([
       ['lead', { id: 'lead', role: 'orchestrator', projectPath: '/p' }],
       ['w2', { id: 'w2', role: 'worker', projectPath: '/p' }],
       ['chat', { id: 'chat', role: 'worker', kind: 'chat', projectPath: '/p' }],
+      ['chat3', { id: 'chat3', role: 'worker', kind: 'chat', projectPath: '/p' }],
       ['other', { id: 'other', role: 'orchestrator', projectPath: '/q' }],
-      ['a', { id: 'a', role: 'worker', projectPath: '/p' }],
     ]);
-    expect(q.mayCancel(task.ref, 'lead', fleet)).toBe(true);
-    expect(q.mayCancel(task.ref, undefined, fleet), "Tars's own pass").toBe(true);
-    expect(q.mayCancel(task.ref, 'chat', fleet), "a chat's runner of its project").toBe(true);
-    expect(q.mayCancel(task.ref, 'w2', fleet), 'a worker that did not ask').toBe(false);
-    expect(q.mayCancel(task.ref, 'other', fleet), "another project's orchestrator").toBe(false);
-    expect(q.mayCancel('t-00000000', 'lead', fleet), 'no such task').toBe(false);
+    expect(cancelRight(fleet.get('lead'), 'lead', '/p', undefined), 'its requester').toEqual({ ok: true, by: 'requester' });
+    expect(cancelRight(fleet.get('chat'), 'chat', '/p', undefined), "a chat's runner that asked").toEqual({ ok: true, by: 'requester' });
+    expect(cancelRight(fleet.get('chat3'), 'chat', '/p', 'mine now'), 'another chat').toMatchObject({ ok: false, error: 'not_your_task' });
+    expect(cancelRight(fleet.get('lead'), 'chat', '/p', ' '), 'the orchestrator, with no reason').toMatchObject({ ok: false, error: 'reason_required' });
+    expect(cancelRight(fleet.get('lead'), 'chat', '/p', 'the gate moved'), 'the orchestrator, with a reason').toEqual({ ok: true, by: 'lead' });
+    expect(cancelRight(fleet.get('w2'), 'lead', '/p', 'why not'), 'a worker that did not ask').toMatchObject({ ok: false, error: 'not_your_task' });
+    expect(cancelRight(fleet.get('other'), 'chat', '/p', 'why not'), "another project's orchestrator").toMatchObject({ ok: false, error: 'not_your_task' });
+    expect(cancelRight(undefined, 'lead', '/p', 'why not'), 'nobody').toMatchObject({ ok: false, error: 'not_your_task' });
   });
 
   it('12. a queued task is followed by its id: queued, starting, started as the ledger task, or failed before starting', () => {
@@ -263,7 +267,8 @@ describe('a task taken out of the queue', () => {
     expect(q.lookup(one.ref)).toMatchObject({ state: 'failed', task: { ref: one.ref }, error: 'it was cancelled' });
     expect(q.lookup(two.ref)).toMatchObject({ state: 'failed', error: 'its agent was removed' });
     expect(q.find(one.ref), 'no longer queued').toBeUndefined();
-    expect(q.mayCancel(one.ref, 'lead', new Map()), 'nor cancelled twice').toBe(false);
+    expect(q.cancel(one.ref), 'nor cancelled twice').toBeUndefined();
+    expect(q.lookup(one.ref), 'and still said cancelled').toMatchObject({ state: 'failed', error: 'it was cancelled' });
     q.runEnded('a');
     expect(q.takeTurn('a', one.ref, undefined), 'nor run').toBe(false);
   });
