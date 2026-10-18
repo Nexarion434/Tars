@@ -41,7 +41,7 @@ import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { planModeRefusal } from '../providers/plan-mode';
 import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
-import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { messagesWaiting, oweToFirstMessage, writeHumanInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
 import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
@@ -50,6 +50,7 @@ import { scheduleTick } from '../utils/agents-tick';
 import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
+import { guideForPrompt } from '../services/agent-guide';
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
@@ -787,7 +788,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // CLIs without Claude's SessionStart hook get the project's memory in the
     // prompt instead - otherwise those agents start knowing nothing.
-    let promptWithMemory = prompt;
+    let memory = '';
     if (needsPromptInjection(cliProvider.configDir)) {
       try {
         const digest = await assembleDigest({
@@ -795,12 +796,20 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           settings: appSettingsForCommand as never,
           hermes: usableHermesConnection(),
         });
-        const wrapped = wrapDigestForPrompt(digest);
-        if (wrapped) promptWithMemory = `${wrapped}\n\n${prompt}`;
+        memory = wrapDigestForPrompt(digest);
       } catch {
         // Memory is context, not a precondition.
       }
     }
+    // And how Tars works, which a claude terminal gets in its bootstrap
+    // (services/agent-guide.ts). Both go in the command with a task only. A
+    // start without one (Start, autostart, a restart, a wake) types no prompt:
+    // given one, `opencode run` and `amp -x` ran once and exited, and every
+    // other CLI started a turn nobody asked for (the Audit's N1 on #448). They
+    // are owed to the first message Tars types into that session instead
+    // (oweToFirstMessage, below).
+    const preamble = [guideForPrompt(agent, cliProvider.configDir), memory].filter(Boolean).join('\n\n');
+    const promptWithMemory = prompt.trim() ? [preamble, prompt].filter(Boolean).join('\n\n') : '';
 
     // Which conversation to continue. Without a word from the caller, the usual
     // rule: the last session, once per app run. A restart names the session it
@@ -918,6 +927,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       throw err;
     }
     noteLaunch(cliProcess, launched);
+    oweToFirstMessage(cliProcess, promptWithMemory ? '' : preamble);
     if (start.platform === 'win32') armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
 
     // Save updated status
