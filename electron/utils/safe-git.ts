@@ -28,6 +28,16 @@ const NO_PROGRAMS = [
   'core.pager=cat',
   'commit.gpgSign=false',
   'tag.gpgSign=false',
+  // Verifying a signature runs a program too: log.showSignature makes log,
+  // show and whatchanged verify every signed commit, and %G? asks it (the
+  // Audit's M1 on #463). Off, and each verifier pointed at the null device,
+  // which nothing can run, whatever a call or a format asks.
+  'log.showSignature=false',
+  `gpg.program=${os.devNull}`,
+  `gpg.openpgp.program=${os.devNull}`,
+  `gpg.ssh.program=${os.devNull}`,
+  `gpg.x509.program=${os.devNull}`,
+  `gpg.ssh.allowedSignersFile=${os.devNull}`,
   'credential.helper=',
   'protocol.allow=never',
   'submodule.recurse=false',
@@ -41,6 +51,8 @@ const NO_CONTENT = new Set(['rev-parse', 'symbolic-ref', 'remote', 'config', 're
 
 /** What a diff and its kin get: no external diff, no textconv. */
 const DIFFS = new Set(['diff', 'log', 'show', 'whatchanged', 'format-patch', 'stash']);
+/** What shows commits, and would verify their signatures: --no-show-signature. */
+const LOGS = new Set(['log', 'show', 'whatchanged']);
 
 /** What Tars's environment hands git, and nothing else: no GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_PARAMETERS, editor or askpass. */
 const PASSED = ['PATH', 'Path', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'SystemRoot', 'SYSTEMROOT', 'ComSpec', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE'];
@@ -90,6 +102,7 @@ function argvOf(args: string[], filters: string[]): string[] {
   const at = subcommandAt(args);
   const out = [...args];
   if (at >= 0 && DIFFS.has(out[at])) out.splice(at + 1, 0, '--no-ext-diff', '--no-textconv');
+  if (at >= 0 && LOGS.has(out[at])) out.splice(at + 1, 0, '--no-show-signature');
   if (at >= 0 && (out[at] === 'status' || out[at] === 'diff')) out.splice(at + 1, 0, '--ignore-submodules=all');
   return ['--no-optional-locks', ...globals(), ...filters, ...out];
 }
