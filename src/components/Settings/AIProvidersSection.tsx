@@ -9,12 +9,15 @@ import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
 import CliPanels, { type CliVersions } from './CliPanels';
 import { CLIS } from '@/lib/clis';
+import { settingsSectionOffered } from '@/lib/claude-accounts-offered';
 import type { AppSettings } from './types';
 
 interface AIProvidersSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** Opens Settings, Claude accounts, from Claude Code's Sign-in row. */
+  onOpenClaudeAccounts?: () => void;
 }
 
 
@@ -76,7 +79,10 @@ const ConfigureButton = ({ open, onClick }: { open: boolean; onClick: () => void
 
 const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
 
-export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: AIProvidersSectionProps) => {
+export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onOpenClaudeAccounts }: AIProvidersSectionProps) => {
+  // Not on a Windows build, which has no Claude accounts yet (lib/claude-accounts-offered.ts): read after hydration, as the bridge is.
+  const [accountsOffered, setAccountsOffered] = useState(true);
+  useEffect(() => setAccountsOffered(settingsSectionOffered('claude-accounts')), []);
   // One row at a time is open: the keys and model lists are reference material,
   // not a form you fill top to bottom.
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -314,18 +320,17 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
         versions={cliVersions}
         claudeRows={
           <>
+                {/* The frame's Sign-in row. It replaces an API key row that kept a key nothing in the main
+                    process ever read, and put it back into its field. */}
                 <SettingsRow
-                  label="API key"
-                  description="Most users rely on the system variable. Set this only to override it."
-                  control={
-                    <PasswordInput
-                      width="control"
-                      value={appSettings.anthropicApiKey || ''}
-                      onChange={(e) => onUpdateLocalSettings({ anthropicApiKey: e.target.value })}
-                      onBlur={() => onSaveAppSettings({ anthropicApiKey: appSettings.anthropicApiKey })}
-                      placeholder="Uses system env ANTHROPIC_API_KEY"
-                    />
-                  }
+                  wrap
+                  label="Sign-in"
+                  description={accountsOffered
+                    ? "Claude Code signs in with your Claude account; several accounts are in Settings, Claude accounts. An API provider's key goes on its own row, under API providers."
+                    : "Claude Code signs in with your Claude account. An API provider's key goes on its own row, under API providers."}
+                  control={accountsOffered && onOpenClaudeAccounts ? (
+                    <Button size="sm" className="font-mono" onClick={onOpenClaudeAccounts}>Claude accounts</Button>
+                  ) : undefined}
                 />
                 <SettingsRow
                   label="Default model"

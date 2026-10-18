@@ -15,12 +15,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 2. Codex's panel has an API key row: with no key it says so; a key pasted and set is saved for Codex (cliKeys.list
  *    says it is set) and never shown back, in the page or its fields;
  * 3. clear asks once, then the key is gone (cliKeys.list says so);
- * 4. Settings > CLI Paths lists the same CLIs under the same names.
+ * 4. Settings > CLI Paths lists the same CLIs under the same names;
+ * 5. Claude Code's panel has the frame's Sign-in row and no key field: an Anthropic key an earlier version saved in
+ *    app-settings.json (nothing in the main process reads it) is never shown back, in the page or its fields, and the
+ *    row's Claude accounts button opens Settings, Claude accounts.
  * Red on 24469620 (PR 459's head): Providers has a row per CLI and a panel for Claude Code only, no key for Codex.
+ * Point 5 red on b775aed2 (#460 with main merged): Claude Code's API key row puts the saved key in its field.
  * The artefact: values.json (the lists as read, cliKeys.list before and after), the screenshots.
  */
 
 const KEY = 'sk-e2e-CODEX-SECRET-7f3a';
+const CLAUDE_KEY = 'sk-ant-e2e-CLAUDE-SECRET-41d3';
 type Api = { electronAPI: { cliKeys: { list(): Promise<Array<{ id: string; hasKey: boolean; envVar: string | null }>> } } };
 
 for (const newInterface of [false, true]) {
@@ -29,7 +34,7 @@ for (const newInterface of [false, true]) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-providers-'));
     const dir = path.join(home, '.dorothy');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface }));
+    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface, anthropicApiKey: CLAUDE_KEY }));
     const values: Record<string, unknown> = { newInterface };
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
     const pageErrors: string[] = [];
@@ -61,6 +66,19 @@ for (const newInterface of [false, true]) {
       expect.soft(listed, 'never qwen-code').not.toContain('qwen-code');
       for (const name of ['oh-my-pi', 'Cline CLI', 'Kilo CLI']) expect.soft(toCome, `${name} is to come`).toContain(name);
       await stepShot(page, '01-providers-claude');
+
+      // 5. Claude Code: the Sign-in row, and the key saved by an earlier version never shown back.
+      if (await clis.count()) await clis.getByRole('button', { name: /^Claude Code/ }).click();
+      const claude = page.getByRole('region', { name: 'Claude Code settings' });
+      await expect.soft(claude, "Claude Code's panel").toBeVisible({ timeout: 10_000 });
+      await expect.soft(claude.getByText(/Claude Code signs in with your Claude account/), 'the Sign-in row').toBeVisible({ timeout: 10_000 });
+      const claudeShown = await page.evaluate((key) => {
+        const inText = document.body.innerText.includes(key);
+        const inFields = Array.from(document.querySelectorAll('input')).some((i) => (i as HTMLInputElement).value.includes(key));
+        return { inText, inFields };
+      }, CLAUDE_KEY);
+      keep({ claudeShown });
+      expect.soft(claudeShown, "Claude Code's saved key is never shown back").toEqual({ inText: false, inFields: false });
 
       // 2. Codex's key: none, then set, never shown back.
       if (await clis.count()) await clis.getByRole('button', { name: /^Codex/ }).click();
@@ -99,6 +117,14 @@ for (const newInterface of [false, true]) {
       const paths = page.locator('main');
       await expect.soft(paths.getByText('Grok CLI', { exact: true }).first(), 'CLI Paths: Grok CLI').toBeVisible({ timeout: 10_000 });
       await expect.soft(paths.getByText('Gemini CLI', { exact: true }).first(), 'CLI Paths: Gemini CLI').toBeVisible();
+
+      // 5, end. Claude Code's Claude accounts button opens that section.
+      await open('AI & Providers', 'Providers');
+      if (await clis.count()) await clis.getByRole('button', { name: /^Claude Code/ }).click();
+      const accounts = page.getByRole('region', { name: 'Claude Code settings' }).getByRole('button', { name: 'Claude accounts' });
+      if (await accounts.count()) await accounts.click();
+      await expect.soft(page.getByRole('heading', { name: 'Claude accounts' }), 'the button opens Claude accounts').toBeVisible({ timeout: 10_000 });
+      await stepShot(page, '05-claude-accounts');
       keep({ pageErrors });
       expect.soft(pageErrors, 'no page error').toEqual([]);
     } finally {
