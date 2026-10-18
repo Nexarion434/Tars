@@ -33,8 +33,8 @@ import type { AddressInfo } from 'node:net';
  *      that ended badly is not flagged as an error.
  *  F7. A run still going at the caller's deadline is reported as done, or the
  *      tool falls back to the terminal then.
- *  F8. Tars answered that no run started (retryWithDispatch, or 502 with
- *      started false), and the tool does NOT fall back to the terminal.
+ *  F8. (Gone in 2.0.4 with the terminal fallback: run-task is the terminal,
+ *      and a refusal of Tars is the answer, F9.)
  *  F9. Tars answered with a refusal that is not "no run" (a clientRequestId
  *      conflict, a permission escalation denied, a cross-project refusal, a
  *      server error, a 502 that says a run started) and the tool dispatches
@@ -52,6 +52,26 @@ import type { AddressInfo } from 'node:net';
  *  F14. The agent did not take the model, and the result says it ran on its
  *      own model whether or not it did: the agent's own model is not named,
  *      or is claimed when it was not taken either (M2).
+ *
+ * Added for a task that waits its turn (2.0.4, one task at a time), which
+ * lives in Tars's memory and is dropped by a restart, before the code:
+ *  F15. Tars restarted while the task was queued (the Tars answering proves
+ *      another instance, so the wait goes without the token and is refused):
+ *      the tool retries for 90 s, then says Tars could not be reached, that
+ *      the run may still be working and not to delegate it again; the task,
+ *      which never started, is never asked again.
+ *  F16. The same while the task was being started: said as surely never run,
+ *      or as still working.
+ *  F17. This same Tars answers 404 for the queued task: retried for 90 s and
+ *      said unreachable, instead of what Tars answered.
+ *  F18. Tars out of reach past the grace period while the task was queued:
+ *      said as a task that ran and may still be working, with no word that
+ *      a restart drops a queued task.
+ *  F19. Over-correction: a run that had started, whose wait meets another
+ *      Tars, is said lost and to be asked again: the ledger keeps it, and
+ *      asking again could run it twice.
+ *  F20. Over-correction: a 401 from the Tars that started the CLI, while the
+ *      task was queued, is said to be a restart.
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -86,6 +106,11 @@ function fetchFailed(): Error {
 /** What apiRequest raises when Tars answered with a refusal. */
 function answered(status: number, body: Record<string, unknown>): Error {
   return Object.assign(new Error(String(body.error ?? `API error: ${status}`)), { status, body });
+}
+
+/** What apiRequest raises when the port proved another Tars than the one that started this CLI: sent without the token, refused. */
+function refusedByAnotherTars(): Error {
+  return Object.assign(answered(401, { error: 'Unauthorized' }), { anotherTars: true });
 }
 
 type Result = { content: { text: string }[]; isError?: boolean };
@@ -202,37 +227,20 @@ describe('delegate_task never types a task after a run may have started', () => 
   it('6. (F6) a run that ended badly is flagged as an error, with its reason', async () => {
     mockApiRequest.mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
-      if (endpoint.startsWith('/api/tasks/t-1')) return { task: { ...ENDED, outcome: 'stopped', stopReason: 'turn_limit', error: 'stopped at the run\'s limit', backgroundStopped: ['npm test'] } };
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: { ...ENDED, outcome: 'stopped', stopReason: 'interrupted', error: 'its turn was interrupted' } };
       throw new Error(`unexpected ${endpoint}`);
     });
     const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it' }) as Result;
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('ended: turn_limit');
-    expect(result.content[0].text).toContain('stopped at the run\'s limit');
-    expect(result.content[0].text).toContain('npm test');
+    expect(result.content[0].text).toContain('ended: interrupted');
+    expect(result.content[0].text).toContain('its turn was interrupted');
   });
 });
 
-describe('delegate_task falls back to the terminal only when Tars said no run started', () => {
+describe('delegate_task takes every refusal of Tars as its answer', () => {
   function dispatchAnswers() {
     return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
   }
-
-  it.each([
-    ['409 retryWithDispatch', answered(409, { error: 'opencode has no ACP mode; use /dispatch', retryWithDispatch: true })],
-    ['502 started false', answered(502, { error: 'launch failed', started: false })],
-  ])('7. (F8) %s: the task goes to the terminal', async (_label, refusal) => {
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw refusal;
-      if (endpoint.includes('/dispatch')) return dispatchAnswers();
-      if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'typed and done' };
-      return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'typed and done' } };
-    });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'sonnet' }) as Result;
-    expect(calls('/run-task')).toHaveLength(1);
-    expect(calls('/dispatch')).toHaveLength(1);
-    expect(result.content[0].text).toContain('typed and done');
-  });
 
   it.each([
     ['a clientRequestId conflict', answered(409, { error: 'clientRequestId x was already used for another request: nothing was sent.', code: 'clientRequestId_conflict' })],
@@ -274,25 +282,13 @@ describe('delegate_task\'s model, refused', () => {
     });
   }
 
-  it('9b. (F14) ran on the agent\'s own model: says which', async () => {
-    refusedThen({ asked: 'gpt-5', taken: false, own: 'opus', ranOn: 'opus' });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and ran on its own model, opus\./);
-  });
-
-  it('9c. (F14) its own model not taken either: says it ran on its CLI\'s default, never on its own', async () => {
+  it('9b. (F14) the agent\'s session already open: says the model was not taken, and names its own', async () => {
     refusedThen({ asked: 'gpt-5', taken: false, own: 'opus' });
     const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).not.toMatch(/ran on its own model/);
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, nor its own model, opus: it ran on its CLI's default model\./);
+    expect(result.content[0].text).toMatch(/not on gpt-5: the agent's session was already open/);
+    expect(result.content[0].text).toMatch(/its own model, opus\./);
   });
 
-  it('9d. (F14) no model of its own: says it ran on its CLI\'s default', async () => {
-    refusedThen({ asked: 'gpt-5', taken: false });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).not.toMatch(/ran on its own model/);
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and has no model of its own: it ran on its CLI's default model\./);
-  });
 });
 
 describe('delegate_task to another project, allowed', () => {
@@ -341,5 +337,129 @@ describe('undici\'s own cut, as the tool meets it', () => {
       server.closeAllConnections();
       await new Promise((r) => server.close(r));
     }
+  });
+});
+
+describe('delegate_task on a task waiting its turn, when Tars restarts', () => {
+  const QUEUED = { ok: true, started: false, queued: true, outcome: 'queued', taskId: 't-0000abcd', queuedBehind: 'task t-1 from "Lead", since 2026-10-18T01:00:00.000Z', queuedAt: '2026-10-18T01:00:05.000Z' };
+  const view = (outcome: string) => ({ id: 't-0000abcd', agentId: 'a1', outcome, queuedBehind: QUEUED.queuedBehind, queuedAt: QUEUED.queuedAt });
+
+  /** run-task answers queued; then each wait on the task gives the next of `waits`, the last one again and again. */
+  function queuedThen(...waits: Array<() => unknown>) {
+    let n = 0;
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return QUEUED;
+      if (endpoint.startsWith('/api/tasks/t-0000abcd')) return waits[Math.min(n++, waits.length - 1)]();
+      if (endpoint.includes('/dispatch')) return { success: true, mode: 'message', agent: { id: 'a1', status: 'running' } };
+      throw new Error(`unexpected ${endpoint}`);
+    });
+  }
+
+  /** What the tool answered within `ms` of fake time, or that it still waits. */
+  async function within(pending: Promise<Result>, ms: number): Promise<Result | 'still waiting'> {
+    let done: Result | undefined;
+    void pending.then((r) => { done = r; });
+    await vi.advanceTimersByTimeAsync(ms);
+    return done ?? 'still waiting';
+  }
+
+  it('12. (F15) the task was queued: says at once that Tars restarted, that it never started and must be asked again', async () => {
+    vi.useFakeTimers();
+    queuedThen(
+      () => ({ task: view('queued'), timeout: true }),
+      () => { throw fetchFailed(); },
+      () => { throw refusedByAnotherTars(); },
+    );
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600, clientRequestId: 'req-fixed-12' }) as Promise<Result>;
+    const result = await within(pending, 10_000);
+    await vi.advanceTimersByTimeAsync(200_000);
+
+    expect(result, 'still waiting after 10 s: the restart was read as Tars out of reach').not.toBe('still waiting');
+    const said = (result as Result).content[0].text;
+    expect((result as Result).isError).toBe(true);
+    expect(said).toContain('Tars restarted');
+    expect(said).toContain('t-0000abcd');
+    expect(said).toContain('never started');
+    expect(said).toContain('asked again');
+    expect(said).not.toMatch(/may still be working|rather than delegating the task again|could not be reached/);
+    expect(calls('/dispatch')).toHaveLength(0);
+  });
+
+  it('13. (F16) the task was being started: says Tars restarted and that it may not have run, never that it is working', async () => {
+    vi.useFakeTimers();
+    queuedThen(() => ({ task: view('starting'), timeout: true }), () => { throw refusedByAnotherTars(); });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600 }) as Promise<Result>;
+    const result = await within(pending, 10_000);
+    await vi.advanceTimersByTimeAsync(200_000);
+
+    expect(result).not.toBe('still waiting');
+    const said = (result as Result).content[0].text;
+    expect(said).toContain('Tars restarted');
+    expect(said).toContain('may not have run');
+    expect(said).toContain('ask for it again');
+    expect(said).not.toMatch(/never started|may still be working|could not be reached/);
+    expect(calls('/dispatch')).toHaveLength(0);
+  });
+
+  it('14. (F17) this same Tars answers 404 for it: what Tars answered is said at once, as never started', async () => {
+    vi.useFakeTimers();
+    const why = 'No such task. Tars started at 2026-10-18T01:30:00.000Z, and keeps no task that was still waiting its turn before then.';
+    queuedThen(() => { throw answered(404, { error: why }); });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600 }) as Promise<Result>;
+    const result = await within(pending, 10_000);
+    await vi.advanceTimersByTimeAsync(200_000);
+
+    expect(result).not.toBe('still waiting');
+    const said = (result as Result).content[0].text;
+    expect((result as Result).isError).toBe(true);
+    expect(said).toContain(why);
+    expect(said).toContain('never started');
+    expect(said).not.toMatch(/could not be reached|may still be working/);
+    expect(calls('/dispatch')).toHaveLength(0);
+  });
+
+  it('15. (F18) Tars out of reach past the grace period while it was queued: says it had not started, and what a restart does to it', async () => {
+    vi.useFakeTimers();
+    queuedThen(() => { throw fetchFailed(); });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600, clientRequestId: 'req-fixed-15' }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const result = await pending;
+
+    const said = result.content[0].text;
+    expect(result.isError).toBe(true);
+    expect(said).toContain('t-0000abcd');
+    expect(said).toContain('had not started');
+    expect(said).toContain('restart');
+    expect(said).toContain('task_status');
+    expect(said).not.toMatch(/ran on agent|may still be working/);
+    expect(calls('/dispatch')).toHaveLength(0);
+  });
+
+  it('16. (F19) a run that had started meets another Tars: never said lost, nor to be asked again', async () => {
+    vi.useFakeTimers();
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
+      if (endpoint.startsWith('/api/tasks/t-1')) throw refusedByAnotherTars();
+      throw new Error(`unexpected ${endpoint}`);
+    });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600 }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const said = (await pending).content[0].text;
+
+    expect(said).not.toMatch(/Tars restarted|never started|asked again/);
+    expect(said).toMatch(/may still be working/);
+    expect(calls('/dispatch')).toHaveLength(0);
+  });
+
+  it("17. (F20) a 401 from the CLI's own Tars while it was queued is not said to be a restart", async () => {
+    vi.useFakeTimers();
+    queuedThen(() => { throw answered(401, { error: 'Unauthorized' }); });
+    const pending = (await loadDelegateTask())({ id: 'a1', prompt: 'do it', timeoutSeconds: 600 }) as Promise<Result>;
+    await vi.advanceTimersByTimeAsync(200_000);
+    const said = (await pending).content[0].text;
+
+    expect(said).not.toContain('Tars restarted');
+    expect(said).toContain('had not started');
+    expect(calls('/dispatch')).toHaveLength(0);
   });
 });

@@ -401,6 +401,18 @@ button and `Settings/TerminalSection.tsx` offers two cards for the *terminal*
 theme, dark and light. Where state is shown, it is the box. There is no
 underline and no bar.
 
+### Sortable table headers
+`ui/SortHeader`, on the Usage page's agent table (`Usage · cost per agent`, its
+`col header states`): the column's name in the header's 10px capitals on a
+26px button that overhangs its column by its own 6px padding, so the name stays
+in line with the values under it. Sorted, it is the selected cell's box,
+`surface-raised` and `border-strong`, with a 12px lucide `arrow-down` (figures
+highest first, words Z to A) or `arrow-up` (figures lowest first, words A to Z,
+which a word column's first click gives), before the name over a column of
+figures and after it over a column of words. Not sorted, no box, and the name lifts to
+`text-primary` on hover. The `th` says `aria-sort`; the focus ring is the
+global one.
+
 ### Toggle
 A 40×20 track with a 14×14 square knob and a 2px inset. On: `accent` track and
 border, an `on-accent` knob, knob right. Off: `surface-raised` track, a

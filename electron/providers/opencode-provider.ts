@@ -37,11 +37,12 @@ export class OpenCodeProvider implements CLIProvider {
 
     // OpenCode CLI:
     //   opencode [project]:       start TUI (default, interactive)
-    //   opencode run [message..]: run non-interactively
+    //   opencode run [message..]: run non-interactively, and exit
+    //   --prompt <text>:          the TUI's starting prompt (1.19.3 --help)
     //   --model provider/model:   model to use
     //
-    // For interactive PTY sessions we launch the TUI (no subcommand).
-    // The user types their prompt directly in the TUI interface.
+    // Always the TUI: the agent's permanent session (2.0.4). `run` did the
+    // task and exited, and the agent was gone with it.
 
     // Model (format: provider/model)
     if (params.model && params.model !== 'default') {
@@ -62,12 +63,13 @@ export class OpenCodeProvider implements CLIProvider {
 
     // A delegated task arrives as params.prompt. Dropping it launched a bare
     // TUI and reported success while the task went nowhere.
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // No task, no prompt: the skills line alone was a turn nobody asked for.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
     if (finalPrompt) {
-      command += ` run '${finalPrompt.replace(/'/g, "'\\''")}'`;
+      command += ` --prompt '${finalPrompt.replace(/'/g, "'\\''")}'`;
     }
 
     return command;

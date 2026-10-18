@@ -100,3 +100,61 @@ export function totalsByAgent(tasks: TaskEntry[], accountLabels: Record<string, 
       || b.tasks - a.tasks
       || a.agentId.localeCompare(b.agentId));
 }
+
+/** The columns of the agent view a header sorts by: every one, the agent's own name included (JeanBrasse, 18/10). */
+export type AgentSortKey = 'agent' | 'project' | 'provider' | 'tasks' | 'time' | 'tokens' | 'cost';
+
+/** Whether a column holds words, which read A to Z first, rather than figures, which read highest first. */
+export function sortsAsWords(key: AgentSortKey): boolean {
+  return key === 'agent' || key === 'project' || key === 'provider';
+}
+
+export interface AgentSort {
+  key: AgentSortKey;
+  /** Highest first, the first click; lowest first, the second. */
+  direction: 'descending' | 'ascending';
+}
+
+/**
+ * The sort a click on a header gives: a column of words A to Z, a column of
+ * figures highest first; a second click turns the order round, a third gives
+ * the default order back. Another header starts at its own first order.
+ */
+export function nextAgentSort(current: AgentSort | null, key: AgentSortKey): AgentSort | null {
+  const first = sortsAsWords(key) ? 'ascending' : 'descending';
+  if (!current || current.key !== key) return { key, direction: first };
+  return current.direction === first ? { key, direction: first === 'ascending' ? 'descending' : 'ascending' } : null;
+}
+
+/** A row's value in a column: what the row shows, compared as what it is. Null for a row without one, a deleted agent's name among them. */
+function sortValue(row: AgentTotal, key: AgentSortKey, names: Record<string, string>): number | string | null {
+  switch (key) {
+    case 'agent': return row.agentId in names ? flat(names[row.agentId]) : null;
+    case 'project': return row.projectPath ? projectName(row.projectPath) : null;
+    case 'provider': return row.providers[0] ?? null;
+    case 'tasks': return row.tasks;
+    case 'time': return row.durationMs;
+    case 'tokens': return row.tokens;
+    case 'cost': return row.costUSD;
+  }
+}
+
+/**
+ * The rows in a column's order, as a new array, either way round, a row
+ * without the value (a deleted agent's name among them) last either way, rows of equal value in the
+ * order given, which is the default one. Figures by their values, words by
+ * their letters whatever their case.
+ */
+export function sortAgentRows(rows: AgentTotal[], sort: AgentSort | null, names: Record<string, string> = {}): AgentTotal[] {
+  if (!sort) return [...rows];
+  const sign = sort.direction === 'descending' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const x = sortValue(a, sort.key, names);
+    const y = sortValue(b, sort.key, names);
+    if (x === null || y === null) return (x === null ? 1 : 0) - (y === null ? 1 : 0);
+    const order = typeof x === 'number' && typeof y === 'number'
+      ? x - y
+      : String(x).localeCompare(String(y), undefined, { sensitivity: 'base', numeric: true });
+    return sign * order;
+  });
+}

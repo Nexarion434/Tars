@@ -9,6 +9,7 @@
  * and what d1-bots.contract.test.ts holds byte for byte.
  */
 import * as path from 'path';
+import { typeLaunchTask } from '../core/typed-task';
 import * as fs from 'fs';
 import * as os from 'os';
 import type * as pty from 'node-pty';
@@ -27,6 +28,7 @@ import { noteWaker } from '../core/agent-asleep';
 import { noteLaunch, launchSettings } from '../core/agent-restart';
 import { sessionStarted, launchUnlessRunning, launchAbandoned, dialogShown, takeSlot } from '../core/agent-launch';
 import { handOffFrom, noteHandOff } from './task-ledger';
+import { guideForPrompt } from './agent-guide';
 
 /** What a bot needs from the rest of Tars. */
 export interface BotFleet {
@@ -215,6 +217,16 @@ function mcpConfigPathFor(provider: CLIProvider): string | undefined {
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 
+/**
+ * The prompt a CLI starts on, with how Tars works first when the CLI has no
+ * SessionStart hook to fetch it (services/agent-guide.ts). Only the command
+ * carries it: a task typed in again, should it not start, is the task alone.
+ */
+function withGuide(agent: AgentStatus, provider: CLIProvider, prompt: string): string {
+  const guide = guideForPrompt(agent, provider.configDir);
+  return guide ? `${guide}\n\n${prompt}` : prompt;
+}
+
 /** The agent's terminal, opened when it has none. */
 async function terminalOf(fleet: BotFleet, agent: AgentStatus): Promise<pty.IPty | undefined> {
   if (!agent.ptyId || !fleet.ptyProcesses.has(agent.ptyId)) {
@@ -247,7 +259,7 @@ async function claimLaunch(agent: AgentStatus): Promise<object | null> {
 async function typeLaunch(
   fleet: BotFleet, agent: AgentStatus, ptyProcess: pty.IPty, launch: Launch, task: string, before: StatusBefore,
   from: BotChannel, handedOver: string,
-): Promise<void> {
+): Promise<pty.IPty> {
   // darwin/linux: typed once the shell is at its prompt. win32 types
   // nothing, the CLI replaces the shell: no prompt to wait for.
   if (launch.platform !== 'win32') await shellReady(ptyProcess);
@@ -270,6 +282,7 @@ async function typeLaunch(
   fleet.saveAgents();
   // Started from a chat, and just as able to come up with no task.
   armTaskStartWatch(agent, agent.ptyId, task);
+  return cli;
 }
 
 /**
@@ -367,7 +380,7 @@ export async function startWithTask(
     const command = provider.buildInteractiveCommand({
       resumeSessionId: opts.resume || asleep ? consumeResumeSessionId(agent) ?? undefined : undefined,
       binaryPath,
-      prompt: task,
+      prompt: withGuide(agent, provider, task),
       model: agent.model,
       permissionMode: agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'),
       effort: agent.effort,
@@ -386,7 +399,8 @@ export async function startWithTask(
     });
     const start = launchIn(agent, ptyProcess, workingDir, command);
     const before = markRunning(agent, task);
-    await typeLaunch(fleet, agent, ptyProcess, start, task, before, from, task);
+    const cli = await typeLaunch(fleet, agent, ptyProcess, start, task, before, from, task);
+    typeLaunchTask(provider, cli, { prompt: withGuide(agent, provider, task), skills: [...new Set(agent.skills || [])], isSuperAgent: hasOrchestratorPowers(agent) });
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(agent.id, launch);
@@ -485,7 +499,7 @@ export async function forwardToOrchestrator(
     const command = provider.buildInteractiveCommand({
       resumeSessionId: opts.resume ? consumeResumeSessionId(orchestrator) ?? undefined : undefined,
       binaryPath,
-      prompt,
+      prompt: withGuide(orchestrator, provider, prompt),
       model: orchestrator.model,
       permissionMode: opts.permissionMode,
       effort: orchestrator.effort,
@@ -499,7 +513,8 @@ export async function forwardToOrchestrator(
     });
     const start = launchIn(orchestrator, ptyProcess, workingDir, command);
     const before = markRunning(orchestrator, opts.message);
-    await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before, from, opts.message);
+    const cli = await typeLaunch(fleet, orchestrator, ptyProcess, start, prompt, before, from, opts.message);
+    typeLaunchTask(provider, cli, { prompt: withGuide(orchestrator, provider, prompt), skills: [...new Set(orchestrator.skills || [])], isSuperAgent: true });
     await opts.reply('started');
   } catch (err) {
     if (launch) launchAbandoned(orchestrator.id, launch);

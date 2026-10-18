@@ -740,6 +740,7 @@ work.
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | nothing (read at launch by `moveLocalKanbanToHermes`, `electron/main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
+| `~/.dorothy/project-files/<name>-<hash>/` | `electron/utils/project-files.ts` | each project's folder, for its agents: `tools/`, `notes/`, `reports/`. `<name>` is the project folder's name in lower case letters, digits and dashes (40 at most), `<hash>` ten hex digits of the SHA-256 of its path as the platform compares paths (on Windows, case and separators do not count). Made when an agent of the project gets its identity or reads the guide's project-folder topic; never deleted by Tars, so a project removed from Tars keeps it: delete it by hand. Outside the repository, outside `~/.dorothy/tmp`, and not under `~/Documents`, which iCloud can evict |
 | `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/chats.json` | `electron/services/chats.ts` | the chats of each project: one record per chat (its number, title, runner and sessions, pinned, snoozed, settled, the inbox), and each project's last number (`numbers`). Not the conversations: those are the runners' transcripts (A chat's record, below) |
@@ -776,7 +777,7 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
 | `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note, unless the Tars that wrote it still runs (its pid is a live process of yours that started when the record's `processStart` says, and the machine has not rebooted since; `ps -o lstart= -p <pid>` on macOS shows that start): a second Tars on the same home reads nothing from it and writes nothing to it. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: JeanBrasse's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
-| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated task answered (read from its terminal session since 2.0.4, a run over ACP before), `{ id, result }`, a terminal task's answer in full (1,000,000 characters at most), a run over ACP's 8,000, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
 | `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
@@ -949,6 +950,7 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
 | POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| GET | `/api/guide` · `/api/guide?topic=<id>` (what `tars_guide` reads: the topics of the agents' guide, `electron/services/agent-guide.ts`, stamped with the running Tars's version; a topic with the caller's project folder in it, an unknown one a 404 that lists the topics) |
 | GET | `/api/tasks/:id` · `/api/tasks?clientRequestId=` (a delegated task as the ledger keeps it; `?wait=<s>` holds the request until the task ends, 120 s at most, and answers `timeout: true` if it has not: what `delegate_task` waits on, segment after segment, since run-task answers once the run has started, with `answer: 'started'`) |
 | POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
@@ -1120,6 +1122,32 @@ in between; a claude started from the Dashboard runs under an interactive `/bin/
 before. Under an older build the first has a `/bin/bash -l -c cd …` parent, and reads as no CLI.
 
 ---
+
+## Orchestration: one task at a time, and who hands work
+
+Since 2.0.4 (`electron/core/one-task.ts`, after the cross-project guard):
+
+- An agent that is working (a delegated task in hand, or a turn in its terminal) gets no second session. A
+  `delegate_task` to it waits its turn: `run-task` answers `outcome: 'queued'` with a task id
+  (`t-xxxxxxxx`) and `queuedBehind`, and the tool waits on that id as on any run. Its answer, when
+  its timeout ends first, names the task it is queued behind, who asked for it and since when.
+  `task_status` reads it, `task_cancel` takes it back (its asker, an orchestrator of its project,
+  or Tars). A `/dispatch` that would start a session beside a run is queued the same way
+  (`mode: 'queued'`); `/start` and `/message` answer `409 agent_busy`.
+- Only Tars, the window and an agent with the orchestrator's powers hand an agent work. A worker's
+  `start_agent`, `delegate_task` or `steer` is `403 worker_may_not_order`, telling it to ask its
+  orchestrator. Stopping is reserved the same way: a worker's `stop_agent`, `remove_agent` or
+  `restart` of another agent is `403 worker_may_not_stop`; an agent may still stop itself. Its `send_message` to another worker goes in as a labelled note once that
+  agent's turn ends, or is `409 note_needs_session` when that agent has no session open. Its message
+  to whoever leads it is a report and goes in as before.
+
+| Symptom | Cause and fix |
+|---|---|
+| `delegate_task` says the task is queued on an agent behind another task | that agent was working: the task starts once it is free. Follow it with `task_status` on the id it names, or `task_cancel` it |
+| a worker is answered `worker_may_not_order` | a worker does not hand work to another agent: it asks its orchestrator (`send_message` to `orchestrator`) |
+| a worker is answered `worker_may_not_stop` | a worker does not stop, restart or remove another agent: it asks its orchestrator, saying why |
+| a worker's message arrives as `[Note for information from ...]` after the recipient's turn | the rule, not a fault: a worker's message to another worker is a note |
+| a queued task is gone after a restart of Tars | the queue is in memory: what had not started was dropped. The asker's `delegate_task` says so (Tars restarted, never started, ask again), and `task_status` on its id answers with the time this Tars started. Delegate it again |
 
 ## MCP servers
 
@@ -1399,9 +1427,9 @@ grep 'is going out now'
 
 `POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
-`send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
-`delegate_task` then returns at once rather than wait on a turn that has not begun
-(`wait_for_agent` follows it). The agent it was for does not read `running` until the message is
+`send_message` says it too, in a result that begins `HELD:` (`wait_for_agent` follows it).
+`delegate_task` and `start_agent` go through `run-task` since 2.0.4, which follows the task
+itself: held, it reads `starting` until it is typed in and its turn begins. The agent it was for does not read `running` until the message is
 in. If the message is still held three minutes on while that agent rests, the agent that sent it
 is told again by Tars: why it waits, and that only a person at that terminal ends the wait (stop
 and start the agent to drop it, then send it again).
@@ -1435,7 +1463,10 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | Symptom | Where to look |
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
-| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
+| a delegated agent "died while it waited", its work half done | before 2.0.4, `delegate_task` ran the task as one ACP turn in a temporary copy of the agent, stopped when it answered with its background work. Since 2.0.4 the task goes into the agent's own terminal and the session stays: if this is seen on 2.0.4, the orchestrator's MCP server is older (restart its CLI) |
+| `delegate_task` says a task was delivered, with no answer | the agent's CLI gives Tars no prompt hook (gemini, codex, opencode, amp, pi, grok): the task went into its terminal and Tars cannot see its turn end. Read the terminal (`get_agent_output`), or have it report with `send_message` to "requester" |
+| a delegated task's answer stops at 4000 characters | the transcript was not found, and the hooks' copy was returned: an API-key provider whose CLI keeps its transcripts outside `~/.claude` and the Claude account folders. `GET /api/tasks/<id>` shows what was read |
+| a delegated task never started: "its turn did not begin within 15 minutes" | the task was typed into the terminal but no UserPromptSubmit came: a field or a dialog held it, or the CLI's hooks are not installed. The queue moved on |
 | an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1635,7 +1666,16 @@ result afterwards.
 The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`, `assign_task`,
 `update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
 the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
-and never write a file. `electron/services/kanban-board.ts` decides where a task sits:
+and never write a file. When Hermes is not configured, refuses, or does not answer, each tool's error
+says what happened, what was written, and what to do: the user connects or signs in to Hermes in
+Tars (Settings, Hermes); the agent says so once, keeps the task in its project folder's `notes/`, and
+goes on (2.0.4; a bare `Hermes refused: Unauthorized` before). "Nothing was written" is said only
+when it is known: Hermes refused, or the connection was never taken (`ECONNREFUSED`, `ENOTFOUND`,
+`EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH`). An answer lost after the request went (a timeout, a
+reset) says Hermes may have done it and to read the task on the board first, and a task created
+whose parking failed is named, with "Do not create it again": it is `ready` on the Tars lane, where
+Hermes does not start it, until the user parks it on the Kanban page.
+`electron/services/kanban-board.ts` decides where a task sits:
 
 | State | On the Hermes board | Who takes it |
 |---|---|---|
@@ -1646,6 +1686,47 @@ and never write a file. `electron/services/kanban-board.ts` decides where a task
 Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` by the
 dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
 neither is a place to park.
+
+Measured again on 18/10 on Hermes 0.21.5, the version the gateway runs (tag `v2026.9.24` of the
+Hermes repository), and on 0.21.1 (`v2026.9.7`), each with its own router and dispatcher ticking
+in a throwaway `HERMES_HOME` (`__tests__/fixtures/hermes-kanban-bench.py`). The same rules hold,
+plus these: the dispatcher spawns `review` as it spawns `ready`, and only for an assignee that is
+an existing Hermes profile; a task cannot be created `scheduled`, nor moved from `scheduled` to
+`done`, `blocked` or `review` (409); 0.21.5 refuses `done` with no result and no summary (400), so
+`mark_task_done` writes one when the agent gave none.
+
+- **Every task Tars files says it is Tars's agents'**: a line before `Filed by`, "Tars task: it
+  belongs to Tars's agents, ... Hermes does not take, start, promote or decompose it.", a label
+  for whoever opens the task. It keeps nobody off it: Hermes's dispatcher keeps off by its own rules
+  (above), and Hermes's assistant, whose board listing does not show a description, can still
+  finish, block or unblock it.
+- **A Hermes whose version was not measured** (`MEASURED_HERMES_VERSIONS` in `kanban-board.ts`,
+  read from `/api/status` once a minute): a claim moves the lane only and the task stays
+  `scheduled`, the one state safe on every version measured. Finishing it goes through `ready`
+  on the agent's lane, then `done`. `hermes:session:state` says the version is unmeasured.
+- **The session**: Tars asks the gateway every half hour, signed in (`services/hermes-session-watch.ts`,
+  started by `main.ts`). On 0.21.5's `basic` provider the access token lives 12 hours and the
+  refresh token 30 days, and the gateway mints a new refresh token at each refresh, so these
+  checks keep the session valid for as long as Tars runs. They also find it ended: a kanban call
+  refused for the session says so at once, and every kanban tool then answers "Tars is signed
+  out of Hermes: sign in again in Settings, Hermes. ...". `hermes:session:state` carries it
+  (`signed-in`, `signed-out`, `unreachable`, `none`) with that sentence, pushed at each change.
+  What no check can renew: a `basic` provider with no `dashboard.basic_auth.secret` (or
+  `HERMES_DASHBOARD_BASIC_AUTH_SECRET`) signs with a key drawn at each start of the gateway, so
+  every restart of Hermes ends every session. Set the secret on the Hermes server to keep them.
+- **A note that could not be written**: the "Claimed by" and "Released by" comments, when the
+  gateway refuses them, are said in the tool's answer, never dropped.
+- **Against a real Hermes**: `TARS_HERMES_TREE=<a Hermes source tree> TARS_HERMES_PYTHON=<its
+  python> npx vitest run __tests__/electron/services/kanban-hermes-live.test.ts`: two agents
+  file, claim, report, finish, release and delete while the dispatcher ticks, and none of their
+  tasks is spawned, promoted or listed for decomposition. Skipped where no Hermes is. In the
+  real app, with the same two variables: `npx playwright test e2e/kanban-hermes.live.spec.ts`
+  (through `pw-slot.sh`). Each agent's own kanban server (`mcp-kanban/dist/bundle.js`, built
+  first) runs with the identity Tars hands it; two agents of one project file, list, read,
+  claim, report, finish (one with no summary), release, hand a task to each other and delete
+  their own, an agent of another project sees none of them, the task handed over starts its
+  agent's CLI, and over at least six ticks after the last write the dispatcher spawns, promotes
+  and decomposes none. It leaves `values.json` and Hermes's own `ticks.jsonl`.
 
 - **An agent files a task**: `create_task` parks it on the agent's own project. If the project
   has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
@@ -2106,7 +2187,7 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 | an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
 | a delegated task ran twice, its second copy typed into the agent's terminal five minutes after the first, or `delegate_task` answered `clientRequestId ... was already used for another request: nothing was sent` while the run kept working | an orchestrator server older than 2.0.4: it held one `run-task` request for the whole run, Node's fetch cut it at 300 s (`fetch failed`), and the tool took that for "no run started". Since 2.0.4 run-task answers once the run has started and no request waits more than 150 s; a request that gets no answer is asked again under the same `clientRequestId`, and the terminal is used only when Tars answered that no run started (`retryWithDispatch`, or `502` with `started: false`). An agent started before the update keeps its old server until its CLI restarts |
-| `delegate_task` says the run may still be working | Tars did not answer for 90 s (asked again with backoff), or the run outlived `timeoutSeconds + 60`. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
+| `delegate_task` says the task may still be working | Tars did not answer for 90 s (asked again with backoff), or the task outlived `timeoutSeconds`, the tool's wait, which never stops it. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
 | a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
@@ -2114,6 +2195,10 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 ---
 
 ## ACP transport
+
+Since 2.0.4 no task is delegated over ACP: `delegate_task` and `start_agent` hand every task to
+the agent's own terminal (SPECS.md, A delegated task). What follows describes the code in
+`electron/services/acp/`, which no route calls any more, until its removal.
 
 `electron/services/acp/` drives CLIs over the Agent Client Protocol instead of typing into a
 terminal: the same JSON-RPC conversation for Claude Code, Codex, Gemini, Grok, opencode and
@@ -2143,7 +2228,10 @@ A model given with the task and refused is followed by the agent's own; the answ
 `model: { asked, taken: false, own, ranOn }` says which one the run is on (`ranOn` absent: neither
 was taken, and the run is on the CLI's default), and so does `delegate_task`'s result
 (`This run is not on <model>: ...`). The turn's usage is filed under `ranOn`, the model the session
-took, and under no model when it took none (the Usage page then names the provider).
+took, and under no model when it took none (the Usage page then names the provider). Such a turn is
+priced only from the cost its adapter reports: Tars prices a turn from its model, and has none to
+price it from, so an adapter that reports no cost leaves it at $0 on the Usage page (its tokens are
+counted). A run whose agent did not take its own model, on a CLI that reports no cost, is the case.
 
 ---
 

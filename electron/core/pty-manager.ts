@@ -544,6 +544,23 @@ export function rememberTerminalOwner(ptyProcess: pty.IPty, agentId: string): vo
   terminalOwner.set(ptyProcess, agentId);
 }
 
+/**
+ * What the CLI in a terminal was started without and is owed: how Tars works
+ * and the project's memory, for a CLI with no SessionStart hook that started
+ * on no task (startAgentCli, ipc-handlers.ts). Given as a prompt, they made
+ * `opencode run` and `amp -x` run once and exit, and every other CLI start a
+ * turn nobody asked for (the Audit's N1 on #448). They go in once, ahead of the
+ * first message Tars types into the terminal (takeField). Keyed by the
+ * terminal, so a CLI started again in it, or in another, is owed afresh.
+ */
+const owedToFirstMessage = new WeakMap<pty.IPty, string>();
+
+/** Owe `text` to the first message typed into this terminal; empty owes nothing. */
+export function oweToFirstMessage(ptyProcess: pty.IPty, text: string): void {
+  if (text) owedToFirstMessage.set(ptyProcess, text);
+  else owedToFirstMessage.delete(ptyProcess);
+}
+
 function inputOf(ptyProcess: pty.IPty): TerminalInput {
   let state = inputs.get(ptyProcess);
   if (!state) {
@@ -791,9 +808,16 @@ function pump(ptyProcess: pty.IPty): void {
   // waits for one. Looked at again every FIELD_PROBE_MS, as a dialog is.
   const head = state.queue[0];
   if (head.origin?.untilRest && turnProbe && head.origin.agentId && turnRunning(head.origin.agentId)) {
-    noteHeld(state, 'it waits for the turn to end');
-    state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
-    return;
+    // A message that does not wait for rest goes past one that does: a task
+    // whose turn has come, or an answer typed now, would otherwise wait for the
+    // very rest it opens (the Audit's M-A on #449).
+    const passing = state.queue.findIndex(item => !item.origin?.untilRest);
+    if (passing < 0) {
+      noteHeld(state, 'it waits for the turn to end');
+      state.timer = setTimeout(() => { state.timer = undefined; pump(ptyProcess); }, FIELD_PROBE_MS);
+      return;
+    }
+    state.queue.unshift(...state.queue.splice(passing, 1));
   }
 
   const left = pauseLeft(state);
@@ -863,7 +887,10 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   // Only a request an agent made carries an id (core/task-requests.ts): Tars's
   // own lines and the channels' stay as their contracts recorded them.
   const taskRef = item.origin?.sender ? item.origin.taskRef : undefined;
-  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark);
+  // Spent by the message that goes in, never by one withdrawn or dropped first.
+  const owed = owedToFirstMessage.get(ptyProcess);
+  owedToFirstMessage.delete(ptyProcess);
+  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -992,7 +1019,15 @@ export function withSenderLine(sender: MessageSender, data: string): string {
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string): void {
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): void {
+  // What the CLI is owed (oweToFirstMessage) goes first, into the same field
+  // and before the message's one Enter, so it starts no turn of its own:
+  // Tars's words, under Tars's own line when the message has a sender, so the
+  // sender is never made to say them.
+  if (owed) {
+    if (sender) write(ptyProcess, state, senderLine({ kind: 'tars' }));
+    write(ptyProcess, state, '\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
+  }
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word

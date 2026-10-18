@@ -77,6 +77,19 @@ Creation now follows the rule the other routes follow.
 **What this is.** A guard against mistakes, and against a *casual* reader of the
 token file. It is not isolation: see §3.
 
+**Who hands work, and who stops (2.0.4).** After the project, the routes that hand an
+agent work (`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer`, and the
+kanban's claim for another agent, `assign_task` with `agent_id`) and those
+that end its CLI (`/stop`, `DELETE /api/agents/:id`, a `restart`) ask the caller's
+role (`core/one-task.ts`): Tars's own pass, an agent with the orchestrator's powers,
+or the agent itself; a worker is refused, and what it sends another worker is typed
+in as a labelled note once that agent's turn ends. The role
+is read from the fleet, which the token names, never from a header. It is still a
+guard against an agent's mistake, not a boundary: a worker that edits
+`~/.dorothy/agents.json` can give itself the orchestrator's role for the next
+launch, as below for a chat's runner, and `intent: 'task'` is a word the caller
+writes, so a worker that leaves it out gets a note through, never a task.
+
 **What it leaves open, deliberately.** The read routes (`GET /api/agents`, and
 per-agent status, output, health, wait, bootstrap) still accept the shared
 token. So a process holding that file can still enumerate the fleet and read any
@@ -138,10 +151,16 @@ any project through the webhook. And an agent that read it before the move
 still has it. Rotating it is deleting `~/.tars-private/hermes-webhook-secret`,
 opening Settings > Hermes, which mints a new one, and giving Hermes that.
 
-**What the ceiling for delegated runs is, and is not** (1.9.6, `core/permission-ceiling.ts`).
-A run over ACP (`delegate_task`, `/run-task`) takes the narrower of its asker's
-permission mode and the target agent's own, in the order plan < normal < auto <
-bypass. What that binds, measured:
+**What the ceiling for delegated runs was, and is not** (1.9.6, `core/permission-ceiling.ts`).
+Since 2.0.4 a delegated task is no run: `delegate_task` and `/run-task` type it into the
+target's own terminal, where it works in the target's own mode, whatever its asker's, its
+sender line marked when the asker runs in a narrower one (`modeGapMark`), as any message is.
+A delegated task runs in the permission mode of the agent that receives it: the
+maintainer's decision of 2026-10-18, made with delegation into the permanent terminal. An
+asker in plan therefore does not hold the task it delegates to plan: the mark asks, it
+does not bind. Until 2.0.4 a run over ACP took the narrower of its asker's permission mode
+and the target agent's own, in the order plan < normal < auto < bypass. What that bound,
+measured:
 
 - **plan binds.** The session is set to plan, and every permission request of the run
   is refused, the request to leave plan included (Claude leaves it through
@@ -153,8 +172,8 @@ bypass. What that binds, measured:
 - **normal, auto and bypass differ little.** Tars answers an ACP run's permission requests
   itself, so a run in normal has what it asks for approved, once at a time, short of the
   deny list. Below plan, the order narrows the session's starting mode and little else.
-- **A target with no ACP mode** is not a run: `delegate_task` types the task into its
-  terminal, where it works in its own mode, whatever its asker's.
+- **A target with no ACP mode** was not a run: `delegate_task` typed the task into its
+  terminal, where it worked in its own mode, whatever its asker's. Since 2.0.4 every target is.
 
 And it is **not a boundary**. A persistent worker keeps the mode JeanBrasse gave it, which is its
 configuration and not the asker's grant: `send_message` and `/dispatch` to a worker in
@@ -397,6 +416,15 @@ gateway with it and edit or delete any task (the audit's gate of #183). Since
 1.9.3 that token is in `~/.tars-private/hermes-token`, out of the folder every
 agent is handed; an agent in bypass, which runs as the user, can still read it
 there (no confinement, JeanBrasse's decision of 2026-09-23).
+
+Nor is the line every task Tars files carries since 2.0.4 ("Tars task: it belongs to Tars's
+agents, ..."): it is a label for whoever opens the task. Hermes's assistant, whose board listing does not
+show a task's description (0.21.5), can still finish, block, unblock or send to review a Tars task,
+and none of that starts anything on a `tars:` lane. What
+keeps Hermes's dispatcher off a Tars task is Hermes's own rules, measured on 0.21.1 and 0.21.5: a
+task parked `scheduled`, or `ready` on a `tars:` lane that is no Hermes profile, is neither
+spawned, promoted nor decomposed. Whoever can move a task on the gateway can still put one where
+Hermes acts.
 
 **The relay to the user's Telegram** (`services/hermes-relay.ts`, on with
 `hermesRelayEnabled`). Who can reply: the tars-relay plugin on the Hermes server

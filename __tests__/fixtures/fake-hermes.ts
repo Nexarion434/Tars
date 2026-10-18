@@ -29,6 +29,17 @@ export class FakeHermes implements KanbanHermes {
   refuseStatus = false;
   /** A gateway that ignores `?tenant=` and answers with the whole board. */
   ignoreTenant = false;
+  /** The version /api/status names: the fake answers as 0.21.1 does unless told otherwise. */
+  hermesVersion: string | undefined = '0.21.1';
+  /** A session the gateway no longer accepts: every call answers 401, as on 17/10. */
+  signedOut = false;
+  /** Hermes 0.21.5: `done` without a result or a summary is refused (measured, 400). */
+  requireDoneEvidence = false;
+  /** Comments refused, the rest accepted: a note Tars writes beside a move. */
+  refuseComments = false;
+
+  async version() { return this.hermesVersion; }
+  private unauthorized() { return { success: false as const, error: 'Unauthorized', needsSignIn: true }; }
 
   private async tick() {
     if (this.down) throw new Error('connect ECONNREFUSED 127.0.0.1:8642');
@@ -42,12 +53,14 @@ export class FakeHermes implements KanbanHermes {
 
   async board(tenant?: string) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
     const names = ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'];
     const all = [...this.tasks.values()].filter(t => this.ignoreTenant || tenant === undefined || t.tenant === tenant);
     return { success: true as const, board: { columns: names.map(name => ({ name, tasks: all.filter(t => t.status === name).map(t => ({ ...t })) })) } };
   }
   async get(id: string) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
     const t = this.tasks.get(id);
     if (!t) return { success: false as const, error: `task ${id} not found` };
     const events = (this.history.get(id) ?? []).map((_, i) => ({ kind: i === 0 ? 'created' : 'changed' }));
@@ -55,6 +68,7 @@ export class FakeHermes implements KanbanHermes {
   }
   async create(body: Record<string, unknown>) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
     const key = (body.idempotency_key as string) || null;
     if (key) {
       const existing = [...this.tasks.values()].find(t => t.idempotency_key === key && t.status !== 'archived');
@@ -71,6 +85,7 @@ export class FakeHermes implements KanbanHermes {
   }
   async update(id: string, patch: Record<string, unknown>) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
     const t = this.tasks.get(id);
     if (!t) return { success: false as const, error: `task ${id} not found` };
     // The gateway applies the assignee first, then the status, in one request.
@@ -91,6 +106,9 @@ export class FakeHermes implements KanbanHermes {
         archived: ['triage', 'todo', 'scheduled', 'ready', 'running', 'blocked', 'review', 'done'],
       };
       if (!(allowed[s] ?? []).includes(from)) return { success: false as const, error: `status transition to '${s}' not valid from current state` };
+      if (s === 'done' && this.requireDoneEvidence && !String(patch.result ?? '').trim() && !String(patch.summary ?? '').trim()) {
+        return { success: false as const, error: `completion blocked: ${id} has no result or summary evidence` };
+      }
       t.status = s; if (s === 'done') t.result = (patch.result as string) ?? (patch.summary as string) ?? null;
       this.record(t);
     }
@@ -98,10 +116,13 @@ export class FakeHermes implements KanbanHermes {
   }
   async remove(id: string) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
     return this.tasks.delete(id) ? { success: true as const } : { success: false as const, error: `task ${id} not found` };
   }
   async comment(id: string, body: string) {
     await this.tick();
+    if (this.signedOut) return this.unauthorized();
+    if (this.refuseComments) return { success: false as const, error: 'the gateway is restarting' };
     const c = this.comments.get(id) ?? []; c.push({ body }); this.comments.set(id, c);
     return { success: true as const };
   }

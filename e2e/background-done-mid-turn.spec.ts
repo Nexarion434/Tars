@@ -17,8 +17,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * own transcript of the night (40 enqueues, 21 attachments, the notices of
  * its background runs). Tars read the notes from user lines only.
  *
- * Two stand-in CLIs record what they are typed: a worker, and "Lead", which
- * asks it for work through the API with its own token, as send_message does.
+ * Two stand-in CLIs record what they are typed: a worker, and "Lead", the
+ * project's orchestrator, which asks it for work through the API with its own
+ * token, as send_message does.
  * The worker's turns are told to Tars through the real hook route with its own
  * token, and its transcript is written where Claude Code keeps it, in the
  * shapes 2.1.296 writes, trimmed to the fields read.
@@ -57,12 +58,14 @@ test('a background task that ended during a turn is not reported as still runnin
     return { cli, file };
   };
   const stand = { w1: cliFor('w1'), o1: cliFor('o1') };
-  const agent = (id: 'w1' | 'o1', name: string) => ({
-    id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+  const agent = (id: 'w1' | 'o1', name: string, role = 'worker') => ({
+    id, name, character: 'robot', provider: 'claude', status: 'idle', role,
     projectPath: project, skills: [], cliPath: stand[id].cli,
     createdAt: '2026-10-13T08:00:00.000Z', lastActivity: '2026-10-13T08:00:00.000Z',
   });
-  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('w1', 'Worker'), agent('o1', 'Lead')], null, 2));
+  // Lead is the project's orchestrator: since 2.0.4 what a worker sends another worker is a note for information,
+  // which hands over no task and leaves no link to report on (core/one-task.ts).
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('w1', 'Worker'), agent('o1', 'Lead', 'orchestrator')], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));

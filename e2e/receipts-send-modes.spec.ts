@@ -13,8 +13,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Stand-in CLIs record every byte typed into them. Requests go through the API
  * with each asker's own token, as the MCP tools send them; a worker's turns are
  * told through the hook route with its own token, as Claude Code's hooks do.
- * An ACP run goes to a fake ACP agent launched as `opencode acp`, which records
- * the session mode Tars asks for.
+ * Each asker has the powers that hand work since 2.0.4 (core/one-task.ts): the
+ * first is the project's orchestrator, and a second one the runner of one of
+ * its chats (chats.json, written by `runner` below).
+ * A delegated task goes into the target's own terminal (2.0.4): there, a stand-in
+ * named `claude` runs Tars's hook scripts around each turn and writes its answer
+ * where Claude Code keeps its transcript.
  *
  * Asserted:
  * 1. one clientRequestId sent three times (two at once, one after): one batch
@@ -25,10 +29,15 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. `steer` into a codex worker: `not_steerable`, nothing typed;
  * 5. `steer` into a worker busy with another asker's work: refused;
  * 6. `queue` into a worker in a turn: nothing typed until the turn ends;
- * 7. an ACP run asked by an agent in plan mode, of a target in bypass, runs
- *    in plan; asked by an agent in bypass, it runs in bypass;
+ * 7. a task delegated by an agent in plan mode to a target in bypass goes into
+ *    the target's terminal marked so, and one delegated by an agent in bypass
+ *    goes in unmarked. Until 2.0.4 this read the session mode of a run over ACP
+ *    (held to plan, its exit refused or cut: EXIT-ASK, EXIT-FORCE): no task is
+ *    run over ACP any more, the target works in its own mode, and the mark asks,
+ *    it does not bind (SECURITY.md: the maintainer decided on 2026-10-18 that a
+ *    delegated task runs in the permission mode of the agent that receives it);
  * 8. a message from an agent in plan mode to a worker in bypass is marked so;
- * 9. after a relaunch, the run's result is read from the ledger by its id, and
+ * 9. after a relaunch, the task's result (its transcript's final message) is read from the ledger by its id, and
  *    by the clientRequestId it was sent with; another agent reads nothing.
  * The artefact: values.json with every answer, the bytes each stand-in
  * received, the ledger's tasks, and the receipts file itself.
@@ -50,67 +59,39 @@ const STAND_IN = (file: string) => [
   '',
 ].join('\n');
 
-/** A fake ACP agent: one session offering four modes, each set_mode recorded, one turn that answers "reviewed". */
-const FAKE_ACP = (modesFile: string) => String.raw`
-const fs = require('fs');
-let buf = '';
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let nl;
-  while ((nl = buf.indexOf('\n')) !== -1) {
-    const line = buf.slice(0, nl).trim();
-    buf = buf.slice(nl + 1);
-    if (line) handle(JSON.parse(line));
+const HOOKS = path.resolve('hooks');
+
+/** A stand-in named `claude` that records what is typed into it and answers each line as a turn, hooks and transcript. */
+const TURN_STAND_IN = (file: string) => String.raw`
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
+const { spawnSync } = require('child_process');
+const sid = crypto.randomUUID();
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
+fs.mkdirSync(dir, { recursive: true });
+const transcript = path.join(dir, sid + '.jsonl');
+const hook = (name, payload) => spawnSync('/bin/bash', [path.join(${JSON.stringify(HOOKS)}, name)], {
+  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
+});
+const turn = (prompt) => {
+  hook('user-prompt-submit.sh', { hook_event_name: 'UserPromptSubmit', prompt });
+  fs.appendFileSync(transcript, JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(),
+    message: { id: crypto.randomUUID(), role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text: 'reviewed' }] } }) + '\n');
+  hook('on-stop.sh', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'reviewed' });
+};
+hook('session-start.sh', { hook_event_name: 'SessionStart', source: 'startup' });
+if (process.stdin.isTTY) process.stdin.setRawMode(true);
+let buffer = '';
+process.stdin.on('data', (d) => {
+  fs.appendFileSync(${JSON.stringify(file)}, d);
+  buffer += d.toString();
+  let end;
+  while ((end = buffer.search(/[\r\n]/)) !== -1) {
+    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
+    buffer = buffer.slice(end + 1);
+    if (line.trim()) turn(line);
   }
 });
-function handle(msg) {
-  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
-  if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'acp-1', modes: {
-    currentModeId: 'default', availableModes: [{ id: 'default' }, { id: 'acceptEdits' }, { id: 'plan' }, { id: 'bypassPermissions' }],
-  } } });
-  if (msg.method === 'session/set_mode') {
-    fs.appendFileSync(${JSON.stringify(modesFile)}, msg.params.modeId + '\n');
-    return send({ jsonrpc: '2.0', id: msg.id, result: {} });
-  }
-  const say = (text) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });
-  const toMode = (modeId) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'current_mode_update', currentModeId: modeId } } });
-  const written = (name) => fs.writeFileSync(${JSON.stringify(path.dirname(modesFile))} + '/' + name + '.written', 'out of plan');
-  // The answer to the permission request below (claude-agent-acp 0.70.0's ExitPlanMode).
-  if (msg.id === 900 && msg.result) {
-    const chosen = msg.result.outcome && msg.result.outcome.optionId;
-    if (chosen && chosen !== 'plan') { toMode(chosen); written('EXIT-ASK'); say('left plan'); }
-    else say('kept planning');
-    return send({ jsonrpc: '2.0', id: pending, result: { stopReason: 'end_turn' } });
-  }
-  if (msg.method === 'session/cancel') { cancelled = true; if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} }); return; }
-  if (msg.method === 'session/prompt') {
-    const text = JSON.stringify(msg.params.prompt);
-    if (text.includes('EXIT-ASK')) {
-      pending = msg.id;
-      return send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: 'acp-1', toolCall: { title: 'ExitPlanMode', kind: 'switch_mode' }, options: [
-        { kind: 'allow_always', name: 'Yes, and use "auto" mode', optionId: 'auto' },
-        { kind: 'allow_always', name: 'Yes, and auto-accept edits', optionId: 'acceptEdits' },
-        { kind: 'allow_once', name: 'Yes, and manually approve edits', optionId: 'default' },
-        { kind: 'reject_once', name: 'No, keep planning', optionId: 'plan' },
-      ] } });
-    }
-    if (text.includes('EXIT-FORCE')) {
-      // Out of plan without asking, then an edit a moment later, unless cancelled.
-      toMode('acceptEdits');
-      return setTimeout(() => {
-        if (!cancelled) written('EXIT-FORCE');
-        send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: cancelled ? 'cancelled' : 'end_turn' } });
-      }, 1500);
-    }
-    say('reviewed');
-    return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 500, outputTokens: 100 } } });
-  }
-  if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, result: {} });
-}
-let pending = null;
-let cancelled = false;
-process.stdin.resume();
+process.stdout.write('stand-in ready\n');
 `;
 
 function sandbox(prefix: string) {
@@ -131,23 +112,43 @@ function sandbox(prefix: string) {
     projectPath: project, skills: [], cliPath: cliFor(id),
     createdAt: '2026-10-12T08:00:00.000Z', lastActivity: '2026-10-12T08:00:00.000Z', ...extra,
   });
+  /**
+   * chats.json with one chat, #2, run by `runnerId`, and the project's inbox:
+   * Main was deleted, so the orchestrator runs no chat, and what cuts its work
+   * is refused as another asker's (worker_busy_for_other_requester), as
+   * before 2.0.4 when the askers were workers.
+   */
+  const runner = (chatId: string, runnerId: string, title: string) => {
+    const at = '2026-10-12T08:00:00.000Z';
+    fs.writeFileSync(path.join(dir, 'chats.json'), JSON.stringify({ version: 1, numbers: { [project]: 2 }, chats: [{
+      id: chatId, projectPath: project, number: 2, title, titleSource: 'user', runnerId, sessionIds: [], pinned: false,
+      snoozedUntil: null, settledAt: null, inbox: true, createdAt: at, updatedAt: at, lastActivityAt: at,
+    }] }, null, 2));
+    return { kind: 'chat', chatId };
+  };
   const seed = (agents: object[], settings: Record<string, unknown> = {}) => {
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents, null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
-    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', ...settings }));
+    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
+      // E2E_NEW_INTERFACE=1: the same run in the new interface's shell.
+      autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface: process.env.E2E_NEW_INTERFACE === '1', ...settings,
+    }));
   };
-  return { home, project, dir, bin, read, agent, seed };
+  return { home, project, dir, bin, read, agent, runner, seed };
 }
 
 async function open(home: string, port: string, ids: string[]) {
   const dist = path.resolve('electron', 'dist');
   const app = await launchSandboxed(electron, home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+    // A chat's runner started takes a slot: room for it whatever this machine's memory (services/chats.ts, chatLimitOf).
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', TARS_CHAT_RAM_GB: '20' },
   });
   const page = await app.firstWindow();
   await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+  // The shell this run is in (E2E_NEW_INTERFACE=1: the new interface's).
+  await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(process.env.E2E_NEW_INTERFACE === '1' ? 1 : 0, { timeout: 30_000 });
   const list = () => page.evaluate(() => (window as unknown as Api).electronAPI.agent.list());
   for (const id of ids) {
     await page.evaluate((id) => (window as unknown as Api).electronAPI.agent.start({ id, prompt: '' }), id);
@@ -186,7 +187,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
   test.setTimeout(300_000);
   const s = sandbox('tars-e2e-receipts-');
   s.seed([
-    s.agent('w1', 'Worker'), s.agent('o1', 'Lead'), s.agent('b1', 'Bot'),
+    s.agent('w1', 'Worker'), s.agent('o1', 'Lead', { role: 'orchestrator' }), s.agent('b1', 'Bot', s.runner('b0b0b0b0-0000-4000-8000-000000000002', 'b1', 'Bot')),
     s.agent('cx', 'Codex Worker', { provider: 'codex' }),
   ]);
   const port = apiPort(31455);
@@ -195,7 +196,7 @@ test('a retried request is sent once, a reused id with another text is refused, 
   const step = (name: string) => { times[name] = Date.now() - t0; };
   const { app, tokensFor, tasks } = await open(s.home, port, ['w1', 'o1', 'b1', 'cx']);
   step('opened');
-  const values: Record<string, unknown> = { times };
+  const values: Record<string, unknown> = { times, newInterface: process.env.E2E_NEW_INTERFACE === '1' };
   try {
     const tokens = await tokensFor(['w1', 'o1', 'b1', 'cx']);
     const { post } = client(port, () => tokens);
@@ -284,52 +285,44 @@ test('a retried request is sent once, a reused id with another text is refused, 
   }
 });
 
-test('a delegated run takes the narrower mode of its asker, a narrower sender is marked, and its result outlives a relaunch', async () => {
+test('a task delegated from plan mode is marked so in the target\'s terminal, a narrower sender is marked, and its result outlives a relaunch', async () => {
   test.setTimeout(300_000);
   const s = sandbox('tars-e2e-ceiling-');
-  const modes = path.join(s.home, 'acp-modes.log');
-  fs.writeFileSync(path.join(s.bin, 'opencode'), `#!${process.execPath}\n${FAKE_ACP(modes)}`, { mode: 0o755 });
+  const ocCli = path.join(s.bin, 'claude');
+  const ocReceived = path.join(s.home, 'oc.received');
+  fs.writeFileSync(ocCli, `#!${process.execPath}\n${TURN_STAND_IN(ocReceived)}`, { mode: 0o755 });
   s.seed([
-    s.agent('p1', 'Planner', { permissionMode: 'plan' }),
-    s.agent('by', 'Builder', { permissionMode: 'bypass' }),
+    s.agent('p1', 'Planner', { permissionMode: 'plan', role: 'orchestrator' }),
+    s.agent('by', 'Builder', { permissionMode: 'bypass', ...s.runner('b0b0b0b0-0000-4000-8000-000000000003', 'by', 'Build') }),
     s.agent('wb', 'Bypass Worker', { permissionMode: 'bypass' }),
-    s.agent('oc', 'Review Agent', { provider: 'opencode', permissionMode: 'bypass' }),
-  ], { cliPaths: { additionalPaths: [s.bin] } });
-  fs.writeFileSync(path.join(s.dir, 'acp-registry.json'), JSON.stringify({ fetchedAt: Date.now(), agents: { opencode: { id: 'opencode', name: 'opencode', version: 'local', command: 'opencode', args: ['acp'] } } }));
+    s.agent('oc', 'Review Agent', { permissionMode: 'bypass', cliPath: ocCli }),
+  ]);
   const port = apiPort(31454);
-  const values: Record<string, unknown> = {};
-  const modesSet = () => (fs.existsSync(modes) ? fs.readFileSync(modes, 'utf8').split('\n').filter(Boolean) : []);
+  const values: Record<string, unknown> = { newInterface: process.env.E2E_NEW_INTERFACE === '1' };
+  const ocLines = () => (fs.existsSync(ocReceived) ? fs.readFileSync(ocReceived, 'utf8') : '').split(/\r|\n|\x1b\[20[01]~/).filter(Boolean);
 
-  let opened = await open(s.home, port, ['p1', 'by', 'wb']);
+  // Builder is not started: a chat's runner takes its orchestrator's mode at its launch (services/chat-runners.ts),
+  // and this needs an asker in bypass beside one in plan. It asks through the API with its own token, as before.
+  let opened = await open(s.home, port, ['p1', 'wb', 'oc']);
   let taskId = '';
   try {
-    const tokens = await opened.tokensFor(['p1', 'by', 'wb', 'oc']);
+    // Not oc: its hooks post with its terminal's own token, which a token minted here would replace (401).
+    const tokens = await opened.tokensFor(['p1', 'by', 'wb']);
     const { post } = client(port, () => tokens);
 
-    // 7. Asked from plan mode: the run is in plan.
-    const planned = await post('/api/agents/oc/run-task', 'p1', { task: 'ACP-PLAN review the notes', timeoutSeconds: 60, clientRequestId: 'cr-acp-plan-1' });
-    const afterPlan = modesSet();
-    // Asked from bypass mode: the run is in bypass.
-    const bypassed = await post('/api/agents/oc/run-task', 'by', { task: 'ACP-BYPASS review the notes', timeoutSeconds: 60 });
-    const afterBypass = modesSet();
-    // The Audit's B1 on #364: held to plan, the run asks to leave it, and is told to keep planning.
-    const asked = await post('/api/agents/oc/run-task', 'p1', { task: 'EXIT-ASK plan only', timeoutSeconds: 60 });
-    // And one that leaves plan without asking is cut, before its edit.
-    const forced = await post('/api/agents/oc/run-task', 'p1', { task: 'EXIT-FORCE plan only', timeoutSeconds: 60 });
-    await new Promise(r => setTimeout(r, 2_500));
-    const out = (name: string) => fs.existsSync(path.join(s.home, `${name}.written`));
-    values.runs = { planned, bypassed, afterPlan, afterBypass, asked, forced, askWrote: out('EXIT-ASK'), forceWrote: out('EXIT-FORCE') };
-    expect(asked.status).toBe(200);
-    expect(asked.body.text).toBe('kept planning');
-    expect(out('EXIT-ASK')).toBe(false);
-    expect(forced.status).toBe(409);
-    expect(forced.body.code).toBe('permission_escalation_denied');
-    expect(out('EXIT-FORCE')).toBe(false);
+    // 7. Delegated from plan mode: into oc's own terminal, marked so; from bypass mode: unmarked.
+    const planned = await post('/api/agents/oc/run-task', 'p1', { task: 'TASK-PLAN review the notes', clientRequestId: 'cr-acp-plan-1' });
+    const bypassed = await post('/api/agents/oc/run-task', 'by', { task: 'TASK-BYPASS review the notes' });
+    const planLine = ocLines().find((l) => l.includes('TASK-PLAN')) ?? '';
+    const bypassLine = ocLines().find((l) => l.includes('TASK-BYPASS')) ?? '';
+    values.runs = { planned, bypassed, planLine, bypassLine };
     expect(planned.status).toBe(200);
-    expect(planned.body.ok).toBe(true);
-    expect(afterPlan.at(-1)).toBe('plan');
+    expect(planned.body).toMatchObject({ ok: true, outcome: 'completed', text: 'reviewed' });
+    expect(planLine).toMatch(/^Message from agent "Planner" \("p1"\), task t-[0-9a-f]{8}: \(sender in plan mode, you in bypass mode\) TASK-PLAN review the notes$/);
     expect(bypassed.status).toBe(200);
-    expect(afterBypass.at(-1)).toBe('bypassPermissions');
+    expect(bypassed.body).toMatchObject({ ok: true, text: 'reviewed' });
+    expect(bypassLine).toContain('TASK-BYPASS review the notes');
+    expect(bypassLine).not.toContain('(sender in');
     taskId = String(planned.body.taskId ?? '');
     expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
 

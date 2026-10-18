@@ -127,7 +127,7 @@ function agent(id: string, over: Partial<AgentStatus> = {}): AgentStatus {
 
 describe('POST /api/agents/:id/stop', () => {
   it('1. refuses a stop with no reason, and leaves the agent as it was', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const worker = agent('w1');
 
     for (const body of [{}, { reason: '' }, { reason: '   ' }, { reason: 42 }]) {
@@ -140,7 +140,7 @@ describe('POST /api/agents/:id/stop', () => {
   });
 
   it('2. files the stop under the agent whose token asked, or under Tars for its own pass', async () => {
-    agent('orch', { name: 'Tars-Orchestrator', status: 'idle' });
+    agent('orch', { role: 'orchestrator', name: 'Tars-Orchestrator', status: 'idle' });
     const w1 = agent('w1');
     const w2 = agent('w2');
 
@@ -152,7 +152,7 @@ describe('POST /api/agents/:id/stop', () => {
   });
 
   it('3. keeps a reason on one line, without control characters, and at most 200 characters', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const w1 = agent('w1');
 
     await call('POST', '/api/agents/w1/stop', { body: { reason: `  stuck\nin a loop\u202E\u0007 ${'x'.repeat(900)}` }, caller: 'orch' });
@@ -165,8 +165,9 @@ describe('POST /api/agents/:id/stop', () => {
 
 describe('a second stop', () => {
   it('answers that the agent is already stopped, with the first stop kept', async () => {
-    agent('orch', { name: 'Tars-Orchestrator', status: 'idle' });
-    agent('other', { name: 'Other', status: 'idle' });
+    agent('orch', { role: 'orchestrator', name: 'Tars-Orchestrator', status: 'idle' });
+    // A chat's runner: since 2.0.4 a worker may not stop another agent at all (core/one-task.ts).
+    agent('other', { name: 'Other', status: 'idle', kind: 'chat' });
     const w1 = agent('w1');
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'frozen' }, caller: 'orch' });
 
@@ -180,7 +181,7 @@ describe('a second stop', () => {
 
 describe('after the stop', () => {
   it('4. /wait comes back at once, saying who stopped it and why', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     agent('w1');
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'frozen' }, caller: 'orch' });
 
@@ -190,7 +191,7 @@ describe('after the stop', () => {
   });
 
   it('5. a start clears the stop: the agent runs, and no longer reads as stopped', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'frozen' }, caller: 'orch' });
 
@@ -227,7 +228,7 @@ describe('a start after a stop (JeanBrasse, 05/10)', () => {
   // 8. Nothing on the agent says it was restarted after a stop, by whom.
   // 9. A start of an agent that was not stopped reads as a restart.
   it('7, 8. tells the restarter who stopped it, when and why, and notes the restart', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'out of budget' }, caller: 'orch' });
     const stoppedAt = w1.stoppedAt;
@@ -241,7 +242,7 @@ describe('a start after a stop (JeanBrasse, 05/10)', () => {
   });
 
   it('7. a /dispatch that starts it again says so too, as a scheduled task\'s does', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const w1 = agent('w1', startableCli());
     await call('POST', '/api/agents/w1/stop', { body: { reason: 'night' }, caller: 'orch' });
 
@@ -253,7 +254,7 @@ describe('a start after a stop (JeanBrasse, 05/10)', () => {
   }, 60_000);
 
   it('9. a start of an agent that was not stopped is no restart', async () => {
-    agent('orch', { status: 'idle' });
+    agent('orch', { role: 'orchestrator', status: 'idle' });
     const w1 = agent('w1', { status: 'idle', currentSessionId: undefined, ...startableCli() });
 
     const r = await call('POST', '/api/agents/w1/start', { body: { prompt: 'go' }, caller: 'orch' });
@@ -264,3 +265,98 @@ describe('a start after a stop (JeanBrasse, 05/10)', () => {
   });
 });
 
+
+describe('who may stop, restart or remove an agent (2.0.4)', () => {
+  // The maintainer's decision of 2026-10-18: stopping an agent is reserved as
+  // ordering work is (core/one-task.ts). Measured on 36822724: a worker's /stop
+  // and DELETE of another worker went through. How it fails, written before
+  // the code:
+  // 10. A worker's /stop of another agent stops it.
+  // 11. A worker's DELETE of another agent ends its terminal and removes it.
+  // 12. A worker's restart (/dispatch, mode 'restart') stops another agent, or
+  //     is refused as a task rather than as a stop.
+  // 13. The refusal does not tell the worker to ask its orchestrator.
+  // 14. The orchestrator, a chat's runner, Tars's own pass, or the agent
+  //     itself is refused.
+  function terminalOf(id: string) {
+    const kill = vi.fn();
+    ptyProcesses.set(`pty-${id}`, { pid: 999_999, process: 'claude', kill, write: vi.fn(), resize: vi.fn(), onData: vi.fn(), onExit: vi.fn() } as never);
+    agents.get(id)!.ptyId = `pty-${id}`;
+    return kill;
+  }
+
+  it("10, 13. a worker's /stop of another agent is refused, and tells it to ask its orchestrator", async () => {
+    agent('dev', { name: 'Dev', status: 'idle' });
+    const qa = agent('qa', { name: 'QA' });
+    const kill = terminalOf('qa');
+
+    const r = await call('POST', '/api/agents/qa/stop', { body: { reason: 'my gate is done' }, caller: 'dev' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(403);
+    expect(r.body.code).toBe('worker_may_not_stop');
+    expect(String(r.body.error)).toContain('Ask your orchestrator');
+    expect(qa.status).toBe('running');
+    expect(qa.stoppedBy).toBeUndefined();
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it("11. a worker's DELETE of another agent is refused: the agent and its terminal stay", async () => {
+    agent('dev', { name: 'Dev', status: 'idle' });
+    agent('qa', { name: 'QA' });
+    const kill = terminalOf('qa');
+
+    const r = await call('DELETE', '/api/agents/qa', { caller: 'dev' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(403);
+    expect(r.body.code).toBe('worker_may_not_stop');
+    expect(String(r.body.error)).toContain('Ask your orchestrator');
+    expect(agents.has('qa')).toBe(true);
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it("12, 13. a worker's restart of another agent is refused as a stop, and stops nothing", async () => {
+    agent('dev', { name: 'Dev', status: 'idle' });
+    const qa = agent('qa', { name: 'QA' });
+    const kill = terminalOf('qa');
+
+    const r = await call('POST', '/api/agents/qa/dispatch', { body: { message: 'start over', mode: 'restart', reason: 'stuck' }, caller: 'dev' });
+
+    expect(r.status, JSON.stringify(r.body)).toBe(403);
+    expect(r.body.code).toBe('worker_may_not_stop');
+    expect(String(r.body.error)).toContain('Ask your orchestrator');
+    expect(qa.status).toBe('running');
+    expect(qa.stoppedBy).toBeUndefined();
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it("14. the orchestrator, a chat's runner, Tars's own pass and the agent itself stop it", async () => {
+    agent('orch', { role: 'orchestrator', name: 'Lead', status: 'idle' });
+    agent('chat', { kind: 'chat', name: 'Lead · Release', status: 'idle' });
+    const byLead = agent('w1');
+    const byChat = agent('w2');
+    const byTars = agent('w3');
+    const itself = agent('w4', { name: 'Self' });
+
+    expect((await call('POST', '/api/agents/w1/stop', { body: { reason: 'r' }, caller: 'orch' })).status).toBe(200);
+    expect((await call('POST', '/api/agents/w2/stop', { body: { reason: 'r' }, caller: 'chat' })).status).toBe(200);
+    expect((await call('POST', '/api/agents/w3/stop', { body: { reason: 'r' }, internal: true })).status).toBe(200);
+    expect((await call('POST', '/api/agents/w4/stop', { body: { reason: 'r' }, caller: 'w4' })).status).toBe(200);
+
+    expect(byLead).toMatchObject({ status: 'stopped', stoppedBy: 'Lead' });
+    expect(byChat).toMatchObject({ status: 'stopped', stoppedBy: 'Lead · Release' });
+    expect(byTars).toMatchObject({ status: 'stopped', stoppedBy: 'Tars' });
+    expect(itself).toMatchObject({ status: 'stopped', stoppedBy: 'Self' });
+  });
+
+  it('14. the orchestrator removes an agent, and an agent removes itself', async () => {
+    agent('orch', { role: 'orchestrator', status: 'idle' });
+    agent('w1');
+    agent('w2');
+
+    expect((await call('DELETE', '/api/agents/w1', { caller: 'orch' })).status).toBe(200);
+    expect((await call('DELETE', '/api/agents/w2', { caller: 'w2' })).status).toBe(200);
+
+    expect(agents.has('w1')).toBe(false);
+    expect(agents.has('w2')).toBe(false);
+  });
+});
