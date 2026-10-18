@@ -208,8 +208,17 @@ for (const newInterface of [false, true]) {
       expect.soft(smaller.outside, `boxes outside after the resize: ${smaller.examples.join('; ')}`).toBe(0);
       expect.soft(smaller.canvasCut, 'the canvas whole after the resize').toEqual([]);
       await page.setViewportSize({ width: 1440, height: 900 });
-      const back = await settle('afterResizeBack');
+      // Back to its size, the graph is fitted to it again, not left at the
+      // smaller window's zoom: every box was inside before the fit too.
+      const until = Date.now() + 10_000;
+      let back = await read();
+      while ((back.outside > 0 || back.zoom !== atOpen.zoom) && Date.now() < until) {
+        await page.waitForTimeout(200);
+        back = await read();
+      }
+      seen.afterResizeBack = back;
       expect.soft(back.outside, 'boxes outside after the window is back').toBe(0);
+      expect.soft(back.zoom, 'the zoom of the window\'s size again').toBe(atOpen.zoom);
 
       // 3. Zoomed in, then fit.
       for (let i = 0; i < 5; i++) await scope.getByRole('button', { name: 'Zoom in' }).click({ timeout: 20_000 });
