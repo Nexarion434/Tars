@@ -12,7 +12,7 @@ import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
 import { holdsMessages } from './one-task';
-import { ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
+import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
@@ -1073,6 +1073,11 @@ export async function launchIntoTerminal(
   start: Launch,
   opts: AgentTerminals & { delayMs?: number; ready?: (ptyProcess: pty.IPty) => Promise<void> },
 ): Promise<pty.IPty> {
+  // A CLI started here owes nothing of one started before it in this terminal:
+  // a bot's relaunch carries the guide section in its command, and the next
+  // message gave it again, with the memory as it was then (the Audit's L-B and
+  // QA's L1 on #448). A launch that owes it says so after (startAgentCli).
+  oweToFirstMessage(ptyProcess, '');
   if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
   if (opts.ready) await opts.ready(ptyProcess);
   if (opts.delayMs) {

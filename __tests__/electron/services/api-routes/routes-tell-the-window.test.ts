@@ -85,8 +85,6 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
   wrapDigestForPrompt: (d: string) => d,
 }));
 vi.mock('../../../../electron/services/acp/delegate', () => ({
-  canDelegateOverAcp: () => true,
-  delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
   // Stop and delete end the agent's delegated runs too (#6): none run here.
   stopAcpRuns: async () => 0,
 }));
@@ -317,15 +315,6 @@ describe('an agent changed over the API', () => {
     expect(writeProgrammaticInput).toHaveBeenCalledWith(terminal, 'one more thing', true, expect.objectContaining({ agentId: expect.any(String) }));
     expect(railHeard('a1')).toEqual(['running']);
     expect((await cardOf('a1'))?.displayStatus).toBe('working');
-  });
-
-  it('shows working then free around a task run over ACP', async () => {
-    putAgent({ id: 'a1' });
-
-    await call('POST', '/api/agents/a1/run-task', { task: 'review the diff' });
-
-    expect(railHeard('a1')).toEqual(['running', 'idle']);
-    expect((await cardOf('a1'))?.displayStatus).toBe('stopped');
   });
 
   it('is gone from the pages when it is deleted', async () => {

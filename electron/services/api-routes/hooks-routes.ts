@@ -1,6 +1,6 @@
 import { agents, saveAgents, noteSessionRegistered, noteTurnStarted, appendAgentOutput } from '../../core/agent-manager';
 import { bindTurn } from '../../core/task-requests';
-import { liveTaskLedger, turnUsageOf } from '../task-ledger';
+import { liveTaskLedger, noteTurn, turnUsageOf } from '../task-ledger';
 import { findAgentByIdOrSession } from './utils';
 import { noteSubmitted, ptyProcesses } from '../../core/pty-manager';
 import { RouteApp, RouteContext, RouteRequest } from './types';
@@ -463,11 +463,7 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       // asker is who this turn's result goes to (core/task-requests.ts).
       if (bindTurn(agent, current_task)) saveAgents();
       // The turn opens a task, or is counted in the one open (task-ledger.ts).
-      try {
-        liveTaskLedger()?.turnStarted(agent, { sessionId: session_id, text: current_task });
-      } catch (err) {
-        console.warn('[task-ledger] turn not recorded:', (err as Error).message);
-      }
+      noteTurn(agent, { sessionId: session_id, text: current_task });
       // And the one post that proves a field emptied. An Enter on a line
       // beginning with `/` may run a command or open a dialog, and the keys
       // alone cannot tell which, so the draft model hedges until something

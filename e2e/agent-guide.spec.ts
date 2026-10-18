@@ -14,9 +14,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * per-task model before it did; scripts were kept in temporary folders that were wiped, or under ~/Documents.
  *
  * The real app on a sandbox HOME, and the real orchestrator MCP server (mcp-orchestrator/dist/bundle.js) run with the
- * identity Tars hands agent `lead`, spoken to over stdio as Claude Code speaks to it. `oc` and `acp` are opencode
- * workers whose CLI is a stand-in: in a terminal it records its command line, launched as `opencode acp` it is an ACP
- * agent that records every prompt; `win` and `dash` are opencode workers started from the window. `w` is a claude worker, whose terminal reads its identity from the bootstrap route
+ * identity Tars hands agent `lead`, spoken to over stdio as Claude Code speaks to it. `oc` and `dl` are opencode
+ * workers whose CLI is a stand-in that records its command line and every message typed into it; `win` and `dash`
+ * are opencode workers started from the window. `w` is a claude worker, whose terminal reads its identity from the bootstrap route
  * (hooks/session-start.sh, tars-hook.mjs): read here with w's own token, as its hook does.
  *
  * Asserted, once with the classic shell and once with the new interface:
@@ -24,8 +24,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    project folder; an unknown topic is an error that lists them;
  * 2. the bootstrap of a claude worker and of the orchestrator carry the "How Tars works" section for their role,
  *    with the project's folder;
- * 3. an opencode worker started in a terminal (start_agent) gets the section in its prompt;
- * 4. a run over ACP (delegate_task) gets it in its prompt;
+ * 3. an opencode worker started in a terminal (start_agent, the deprecated alias) gets the section in its prompt;
+ * 4. an opencode worker handed a task with delegate_task gets it in its prompt, in its own terminal (2.0.4): the TUI
+ *    started with the task as --prompt, never `opencode run`. Until 2.0.4 this step read the prompt of a run over ACP,
+ *    a temporary copy of the agent; no task is delegated over ACP any more;
  * 5. the folder exists, outside the project, with tools/, notes/ and reports/;
  * 6. an opencode worker started from the window (agent:start, the launcher behind the Dashboard's Start, a wake and a
  *    restart) gets the section in its prompt with a task (the Audit's M1 on #448); without one it starts on no prompt,
@@ -39,47 +41,21 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * listing), a screenshot of the Agents page, the app's trace with E2E_TRACE=on.
  */
 
-/** opencode's stand-in: a terminal records its command line; `acp` speaks ACP and records each prompt. */
+/** opencode's stand-in: records its command line, and each message typed into it. */
 const STAND_IN = String.raw`
 const fs = require('fs');
 const log = (entry) => fs.appendFileSync(process.env.STAND_IN_LOG, JSON.stringify({ at: new Date().toISOString(), agent: process.env.CLAUDE_AGENT_ID || null, ...entry }) + '\n');
-if (process.argv[2] !== 'acp') {
-  log({ terminal: process.argv.slice(2) });
-  // Its screen: every message Tars types in, recorded at its Enter.
-  let typed = '';
-  process.stdin.setRawMode(true);
-  process.stdin.on('data', (chunk) => {
-    for (const ch of String(chunk)) {
-      if (ch === '\r') { log({ typed }); typed = ''; } else typed += ch;
-    }
-  });
-  process.stdin.resume();
-  process.stdout.write('opencode ready\r\n');
-} else {
-  log({ launched: process.argv.slice(2) });
-  let buf = '';
-  const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
-  process.stdin.on('data', (chunk) => {
-    buf += chunk;
-    let nl;
-    while ((nl = buf.indexOf('\n')) !== -1) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (line) handle(JSON.parse(line));
-    }
-  });
-  function handle(msg) {
-    if (msg.method === 'session/prompt') log({ prompt: msg.params.prompt?.map((p) => p.text ?? '').join('') });
-    if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
-    if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'acp-1' } });
-    if (msg.method === 'session/prompt') {
-      send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'checked the guide' } } } });
-      return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
-    }
-    if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
+log({ terminal: process.argv.slice(2) });
+// Its screen: every message Tars types in, recorded at its Enter.
+let typed = '';
+process.stdin.setRawMode(true);
+process.stdin.on('data', (chunk) => {
+  for (const ch of String(chunk)) {
+    if (ch === '\r') { log({ typed }); typed = ''; } else typed += ch;
   }
-  process.stdin.resume();
-}
+});
+process.stdin.resume();
+process.stdout.write('opencode ready\r\n');
 `;
 
 const SECTION = '## How Tars works';
@@ -101,7 +77,7 @@ for (const newInterface of [false, true]) {
     });
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
       agent('lead', 'Project Lead', 'orchestrator', 'claude'), agent('w', 'Writer', 'worker', 'claude'),
-      agent('oc', 'Terminal Worker', 'worker', 'opencode'), agent('acp', 'Run Worker', 'worker', 'opencode'),
+      agent('oc', 'Terminal Worker', 'worker', 'opencode'), agent('dl', 'Delegated Worker', 'worker', 'opencode'),
       agent('win', 'Window Worker', 'worker', 'opencode'), agent('dash', 'Dashboard Worker', 'worker', 'opencode'),
     ], null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
@@ -109,7 +85,6 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { opencode, additionalPaths: [bin] }, newInterface,
     }));
-    fs.writeFileSync(path.join(dir, 'acp-registry.json'), JSON.stringify({ fetchedAt: Date.now(), agents: { opencode: { id: 'opencode', name: 'opencode', version: 'local', command: 'opencode', args: ['acp'] } } }));
     const port = apiPort(newInterface ? 31427 : 31431);
     const dist = path.resolve('electron', 'dist');
     const values: Record<string, unknown> = { newInterface, home, project };
@@ -209,17 +184,21 @@ for (const newInterface of [false, true]) {
       expect.soft(once(terminalArgv), terminalArgv).toBe(1);
       expect.soft(terminalArgv).toContain(folder!);
 
-      // 4. A run over ACP.
-      const delegated = await tool('delegate_task', { id: 'acp', prompt: 'ACP>> read the guide', timeoutSeconds: 120, clientRequestId: `e2e-agent-guide-${newInterface}` });
+      // 4. A task delegated to an opencode worker: into its own terminal, its TUI started with the task.
+      const delegated = await tool('delegate_task', { id: 'dl', prompt: 'DELEGATED>> read the guide', timeoutSeconds: 120, clientRequestId: `e2e-agent-guide-${newInterface}` });
       keep({ delegated });
       expect.soft(delegated.isError, delegated.text).toBe(false);
-      expect.soft(delegated.text).toContain('checked the guide');
-      const prompts = entries().filter((e) => e.prompt && e.agent === 'acp').map((e) => e.prompt as string);
+      // opencode gives Tars no hook: delivered, and nothing invented.
+      expect.soft(delegated.text).toContain("The task went into Delegated Worker's terminal");
+      await expect.poll(() => entries().filter((e) => e.terminal && e.agent === 'dl').length, { timeout: 30_000 }).toBe(1);
+      const delegatedArgv = entries().find((e) => e.terminal && e.agent === 'dl')!.terminal as string[];
       keep({ standIn: entries() });
-      expect.soft(prompts.length).toBe(1);
-      expect.soft(prompts[0] ?? '').toContain('ACP>> read the guide');
-      expect.soft(once(prompts[0] ?? ''), prompts[0]).toBe(1);
-      expect.soft(prompts[0] ?? '').toContain(folder!);
+      const delegatedPrompt = delegatedArgv[delegatedArgv.indexOf('--prompt') + 1] ?? '';
+      expect.soft(delegatedArgv, 'the TUI with the task as --prompt').toContain('--prompt');
+      expect.soft(delegatedArgv, '`opencode run` exits after the task').not.toContain('run');
+      expect.soft(delegatedPrompt).toContain('DELEGATED>> read the guide');
+      expect.soft(once(delegatedPrompt), delegatedPrompt).toBe(1);
+      expect.soft(delegatedPrompt).toContain(folder!);
 
       // 6. Opencode workers started from the window, with a task and without one.
       type Api = { electronAPI: { agent: { start: (p: { id: string; prompt: string }) => Promise<unknown> } } };
@@ -234,6 +213,7 @@ for (const newInterface of [false, true]) {
       expect.soft(argvOf('win')).toContain(folder!);
       expect.soft(argvOf('win')).toContain('assign_task');
       expect.soft(argvOf('win')).toContain('WINDOW>> read the guide');
+      expect.soft(entries().find((e) => e.terminal && e.agent === 'win')!.terminal as string[], 'opencode run exits after the task').not.toContain('run');
       // Without a task, no prompt: `opencode run '<prompt>'` runs once and exits (the Audit's N1 on #448).
       const dashArgv = entries().find((e) => e.terminal && e.agent === 'dash')!.terminal as string[];
       expect.soft(dashArgv, argvOf('dash')).not.toContain('run');

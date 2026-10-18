@@ -18,6 +18,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * 4. (the Audit's H-A on 9d9a7ad9) delegate_task's auto-continue, the answer
  *    to the question its own task asked, is sent as a task: it then waits in
  *    the agent's queue behind any task there, which waits for that very turn.
+ *    Since 2.0.4 delegate_task sends the task and nothing else: no
+ *    auto-continue, no terminal fallback; the task goes into the agent's own
+ *    terminal through run-task, and a question it asks is the agent's to put.
+ * 5. (the Audit's M1 on #453) A delegated task that left work running in the
+ *    background is answered without saying so: its asker believes it done
+ *    and cannot tell a server still runs.
  */
 
 vi.mock('../../mcp-orchestrator/src/utils/api.js', () => ({
@@ -36,9 +42,10 @@ async function tool(name: string) {
 
 type Result = { content: { text: string }[]; isError?: boolean };
 
+/** run-task's first answer for a task that waits its turn (2.0.4: start_agent and delegate_task both hand it there). */
 const QUEUED = {
-  success: true, mode: 'queued', queued: true, queuedTask: 't-0000beef',
-  queuedBehind: 'task t-1 from "Lead", since 2026-10-18T01:00:00.000Z', agent: { id: 'a1', name: 'Worker', status: 'running' },
+  ok: true, started: false, queued: true, outcome: 'queued', taskId: 't-0000beef',
+  queuedBehind: 'task t-1 from "Lead", since 2026-10-18T01:00:00.000Z', queuedAt: '2026-10-18T01:01:00.000Z',
 };
 
 beforeEach(() => {
@@ -49,42 +56,41 @@ beforeEach(() => {
 describe('a task queued behind another, as the tools say to follow it', () => {
   it('1. start_agent: follow it with task_status by its id, not wait_for_agent', async () => {
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/dispatch')) return QUEUED;
+      if (endpoint.includes('/run-task')) return QUEUED;
       return { agent: { id: 'a1', name: 'Worker', status: 'running' } };
     });
     const said = ((await (await tool('start_agent'))({ id: 'a1', prompt: 'fix it' })) as Result).content[0].text;
-    expect(said).toContain('queued as t-0000beef');
+    expect(said).toContain('Task t-0000beef is queued');
     expect(said).toContain('task_status({ taskId: "t-0000beef" })');
     expect(said).not.toMatch(/wait_for_agent follows it/);
   });
 
-  it('2. delegate_task typed into the terminal and queued there: the same', async () => {
+  it('2. delegate_task queued, its wait ended first: the same', async () => {
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('opencode has no ACP mode; use /dispatch'), { status: 409, body: { retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) return QUEUED;
+      if (endpoint.includes('/run-task')) return QUEUED;
+      if (endpoint.includes('/api/tasks/')) return { timeout: true, task: { id: 't-0000beef', agentId: 'a1', ...QUEUED } };
       return { agent: { id: 'a1', name: 'Worker', status: 'running' } };
     });
-    const said = ((await (await tool('delegate_task'))({ id: 'a1', prompt: 'fix it' })) as Result).content[0].text;
-    expect(said).toContain('queued as t-0000beef');
+    const said = ((await (await tool('delegate_task'))({ id: 'a1', prompt: 'fix it', timeoutSeconds: 1 })) as Result).content[0].text;
+    expect(said).toContain('Task t-0000beef is queued');
     expect(said).toContain('task_status({ taskId: "t-0000beef" })');
     expect(said).not.toMatch(/use wait_for_agent to follow it/);
   });
 
-  it('4. delegate_task\'s auto-continue is an answer, not a task: it carries no intent', async () => {
-    let waits = 0;
+  it('4. delegate_task sends the task and nothing else: no answer to its question, nothing through /dispatch', async () => {
+    let asked = 0;
     mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw Object.assign(new Error('opencode has no ACP mode; use /dispatch'), { status: 409, body: { retryWithDispatch: true } });
-      if (endpoint.includes('/dispatch')) return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
-      if (endpoint.includes('/wait')) return (waits++ === 0) ? { status: 'waiting', waitingReason: 'question' } : { status: 'completed', lastCleanOutput: 'done' };
-      return { agent: { id: 'a1', name: 'Worker', status: 'completed', lastCleanOutput: 'done' } };
+      if (endpoint.includes('/run-task')) return { ok: true, started: false, queued: false, outcome: 'starting', taskId: 't-0000beef' };
+      // Its turn: running, the agent asking a question meanwhile, then its end.
+      if (endpoint.includes('/api/tasks/')) return (asked++ === 0)
+        ? { timeout: true, task: { id: 'task-1', agentId: 'a1', outcome: 'running' } }
+        : { task: { id: 'task-1', agentId: 'a1', outcome: 'completed', stopReason: 'end_turn', result: 'done' } };
+      return { agent: { id: 'a1', name: 'Worker', status: 'waiting', waitingReason: 'question' } };
     });
-    await (await tool('delegate_task'))({ id: 'a1', prompt: 'fix it' });
-    const dispatches = mockApiRequest.mock.calls.filter((c) => String(c[0]).includes('/dispatch'));
-    expect(dispatches.length, JSON.stringify(dispatches)).toBeGreaterThanOrEqual(2);
-    expect((dispatches[0][2] as { intent?: string }).intent, 'the task itself').toBe('task');
-    const answer = dispatches[1][2] as { message?: string; intent?: string };
-    expect(answer.message).toContain('continue');
-    expect(answer.intent, 'the answer sent as a task').toBeUndefined();
+    const said = ((await (await tool('delegate_task'))({ id: 'a1', prompt: 'fix it' })) as Result).content[0].text;
+    expect(said).toContain('done');
+    const sent = mockApiRequest.mock.calls.filter((c) => c[1] === 'POST').map((c) => String(c[0]));
+    expect(sent, 'what delegate_task typed or sent').toEqual(['/api/agents/a1/run-task']);
   });
 
   it('3. task_status of a task that waited its turn and went in: where it went, and how to follow it now', async () => {
@@ -99,4 +105,17 @@ describe('a task queued behind another, as the tools say to follow it', () => {
     expect(said).toContain('wait_for_agent');
     expect(said).not.toMatch(/queued|starts once it is free/);
   });
+
+  it('5. a task that left background work running says which, with its answer', async () => {
+    mockApiRequest.mockImplementation(async (endpoint: string) => {
+      if (endpoint.includes('/run-task')) return { ok: true, started: false, queued: false, outcome: 'starting', taskId: 't-0000beef' };
+      if (endpoint.includes('/api/tasks/')) return { task: { id: 'task-1', agentId: 'a1', outcome: 'completed', stopReason: 'end_turn', result: 'The server runs on :3000.', backgroundLeft: ['bgserver2'] } };
+      return { agent: { id: 'a1', name: 'Worker', status: 'idle' } };
+    });
+    const said = ((await (await tool('delegate_task'))({ id: 'a1', prompt: 'start the server' })) as Result);
+    expect(said.isError).toBeFalsy();
+    expect(said.content[0].text).toContain('The server runs on :3000.');
+    expect(said.content[0].text).toContain('still running in the background: bgserver2');
+  });
 });
+

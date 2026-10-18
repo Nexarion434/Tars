@@ -31,21 +31,25 @@ import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../me
 import { agentGuideSection, guideForPrompt, guideIndex, guideTopic } from '../agent-guide';
 import { ensureProjectFiles } from '../../utils/project-files';
 import { app } from 'electron';
-import { canDelegateOverAcp, delegateOverAcp } from '../acp/delegate';
 import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
-import { liveTaskLedger, noteHandOff } from '../task-ledger';
-import { enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
+import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
+import { readTaskCosts } from '../task-cost';
+import { readFinalAnswer } from '../terminal-answer';
+import { typeLaunchTask } from '../../core/typed-task';
+import { accountDir } from '../claude-accounts/registry';
+import { announceTask, firstLineOf } from '../task-banner';
+import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
-import { ceilingOf, levelOf, modeGapMark } from '../../core/permission-ceiling';
+import { levelOf, modeGapMark } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
 import { interruptTurn } from '../bus-delivery';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
-import { withSessionTruth } from '../agent-truth';
+import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
@@ -416,6 +420,8 @@ async function spawnAgentSessionInSlot(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   noteLaunch(ptyProcess, launchSettings(agent));
+  // amp takes its task typed in, once it runs (core/typed-task.ts).
+  if (prompt.trim()) typeLaunchTask(cliProvider, ptyProcess, { prompt: taskPrompt, skills: agent.skills, isSuperAgent: isSuperAgentApi });
 
   agent.ptyId = ptyId;
   // The request this prompt runs is delivered with it, and its first turn is
@@ -672,7 +678,7 @@ function senderName(agent: AgentStatus, req: RouteRequest): string {
  * while the first was still the agent's work. Returns its id, for the sender
  * line Tars types before the message.
  */
-function requestFor(agent: AgentStatus, req: RouteRequest, title?: string): string | undefined {
+function requestFor(agent: AgentStatus, req: RouteRequest, title?: string, ref?: string): string | undefined {
   const callerId = resolveCallerId(req);
   const agentId = callerId && callerId !== agent.id ? callerId : undefined;
   // A worker writing to the agent that leads it (the orchestrator that handed
@@ -685,9 +691,9 @@ function requestFor(agent: AgentStatus, req: RouteRequest, title?: string): stri
   if (caller && (caller.requestedBy?.agentId === agent.id
       || (hasOrchestratorPowers(agent) && agent.projectPath === caller.projectPath))) return undefined;
   if (!agentId) return undefined;
-  const ref = enqueueRequest(agent, agentId, { title });
+  const queued = enqueueRequest(agent, agentId, { title, ...(ref ? { ref } : {}) });
   saveAgents();
-  return ref;
+  return queued;
 }
 
 /**
@@ -935,16 +941,274 @@ const TASK_WAIT_STEP_MS = 500;
  * request that started it was answered at the start. In memory, the latest
  * RUN_ENDS_KEPT: after a relaunch the ledger's own record is the answer.
  */
-const runEnds = new Map<string, { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }>();
+const runEnds = new Map<string, { toolCalls?: string[]; backgroundStopped?: string[]; backgroundLeft?: string[]; error?: string; costUSD?: number }>();
 const RUN_ENDS_KEPT = 200;
-function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }): void {
+function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundStopped?: string[]; backgroundLeft?: string[]; error?: string; costUSD?: number }): void {
   runEnds.set(taskId, {
     ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
     ...(result.backgroundStopped?.length ? { backgroundStopped: result.backgroundStopped } : {}),
+    ...(result.backgroundLeft?.length ? { backgroundLeft: result.backgroundLeft } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(typeof result.costUSD === 'number' ? { costUSD: result.costUSD } : {}),
   });
   while (runEnds.size > RUN_ENDS_KEPT) runEnds.delete(runEnds.keys().next().value as string);
+}
+
+/* ── A task in the agent's own terminal (2.0.4) ───────────────────────────── */
+
+/** The model asked for a task, and whether its session took it, by the task's id and the ledger's. */
+const taskModels = new Map<string, { asked: string; taken: boolean; own?: string; ranOn?: string }>();
+/** A session started for a task undid somebody's stop: who, when and why, by the task's id and the ledger's. */
+type RestartNote = { stoppedBy?: string; stoppedAt?: string; stopReason?: string };
+const taskRestarts = new Map<string, RestartNote>();
+const keep = <T>(map: Map<string, T>, key: string, value: T) => {
+  map.set(key, value);
+  while (map.size > RUN_ENDS_KEPT) map.delete(map.keys().next().value as string);
+};
+/** Ledger tasks whose end is known and whose answer is still being read: their followers wait for it. */
+const answering = new Set<string>();
+
+/** How long a task typed in may wait for its turn to begin before it is said never started. */
+const TURN_START_MAX_MS = 15 * 60_000;
+/** How long an asker's follow lasts after its wait answered: the next segment is asked within it. */
+const FOLLOW_GRACE_MS = 5_000;
+const follows = new Map<string, { count: number; release: () => void; timer?: ReturnType<typeof setTimeout> }>();
+
+/**
+ * The asker waits on its task (GET /api/tasks/:id?wait=): while it does, and
+ * for a moment after each segment, the end of that agent's work is not typed
+ * into the asker's terminal as well (agent-watch.ts, isWaitingOn). Returns
+ * the release.
+ */
+function followTask(workerId: string, askerId: string): () => void {
+  const key = `${workerId}\0${askerId}`;
+  let follow = follows.get(key);
+  if (!follow) {
+    follow = { count: 0, release: noteWaitingOn(workerId, askerId) };
+    follows.set(key, follow);
+  }
+  if (follow.timer) {
+    clearTimeout(follow.timer);
+    follow.timer = undefined;
+  }
+  follow.count += 1;
+  let done = false;
+  return () => {
+    const held = follows.get(key);
+    if (done || !held) return;
+    done = true;
+    held.count -= 1;
+    if (held.count > 0) return;
+    held.timer = setTimeout(() => {
+      if (held.count > 0) return;
+      held.release();
+      follows.delete(key);
+    }, FOLLOW_GRACE_MS);
+    held.timer.unref?.();
+  };
+}
+
+/**
+ * Whether Tars hears this CLI's turns begin with the prompt they run (the
+ * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
+ * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
+ * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ */
+function turnsHeard(agent: AgentStatus): boolean {
+  return getProvider(agent.provider).binaryName === 'claude';
+}
+
+/** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
+function transcriptRead(agent: AgentStatus): boolean {
+  return getProvider(agent.provider).binaryName === 'claude';
+}
+
+/** What the asker is told of a task typed into a CLI whose turns Tars cannot see. */
+function deliveredText(agent: AgentStatus): string {
+  return `The task went into ${agent.name || agent.id}'s terminal. Its CLI, ${agent.provider ?? 'this one'}, gives Tars no hook: Tars cannot see when its turn ends, `
+    + 'and reads neither its answer, its tokens nor its cost. Read its terminal, or have it report with send_message to "requester".';
+}
+
+/** What a terminal task used and cost, from its session, or undefined when nothing priced it (never 0 for unknown). */
+async function terminalUsage(task: TaskWithResult): Promise<Record<string, unknown> | undefined> {
+  if (task.source === 'acp') return undefined;
+  try {
+    const cost = (await readTaskCosts([task])).get(task.id);
+    if (!cost?.tokens) return undefined;
+    return {
+      inputTokens: cost.tokens.input, outputTokens: cost.tokens.output,
+      cachedReadTokens: cost.tokens.cacheRead, cachedWriteTokens: cost.tokens.cacheWrite,
+      totalTokens: cost.tokens.input + cost.tokens.output + cost.tokens.cacheRead + cost.tokens.cacheWrite,
+      costUSD: cost.costUSD, from: cost.from,
+    };
+  } catch (err) {
+    console.warn('[run-task] what a task used could not be read:', (err as Error).message);
+    return undefined;
+  }
+}
+
+/** The folder of the Claude account a task ran on, after the first; undefined for account 1 (~/.claude). */
+function accountFolderOf(accountId: string | null): string | undefined {
+  if (!accountId || accountId === 'default') return undefined;
+  try {
+    return accountDir(accountId);
+  } catch {
+    return undefined;
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The task, typed into the agent's permanent terminal (or the session it
+ * starts with it), followed to its end there: the turn it opens, the rest that
+ * ends it (or an interrupt, for which Claude Code sends no hook), then its
+ * final answer from the transcript. The answer the route gives at the end.
+ */
+async function runInTerminal(
+  agent: AgentStatus, req: RouteRequest, ctx: RouteContext, job: { task: string; ref: string; model?: string },
+  onHanded: (start: Record<string, unknown>) => void,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const ledger = liveTaskLedger();
+  const never = (why: string, status = 502, more: Record<string, unknown> = {}) => {
+    oneTaskQueue.notStarted(job.ref, why);
+    return { status, body: { ok: false, started: false, outcome: 'error', taskId: job.ref, error: `Task ${job.ref} never started: ${why}.`, ...more } };
+  };
+  // The turn this task opens: the first the agent begins once it is typed,
+  // the one whose prompt carries this task's id when the sender line has one.
+  let turnTask: string | undefined;
+  const stopWatching = watchTurns((agentId, taskId, prompt) => {
+    if (agentId !== agent.id || turnTask) return;
+    const tagged = taskOfPrompt(prompt);
+    if (tagged && tagged.ref !== job.ref) return;
+    turnTask = taskId;
+    // It ends at its turn's rest, whatever it left running (the Audit's M1 on #453).
+    ledger?.delegatedTask(taskId);
+    // Followed by its first id, it is the ledger's task from this moment on,
+    // and open until its answer is read, however soon its turn ends.
+    answering.add(taskId);
+    oneTaskQueue.runNamed(agent.id, taskId);
+    const asked = taskModels.get(job.ref);
+    if (asked) taskModels.set(taskId, asked);
+    const restart = taskRestarts.get(job.ref);
+    if (restart) taskRestarts.set(taskId, restart);
+  });
+  try {
+    let refused: { data: Record<string, unknown>; status: number } | undefined;
+    let mode: unknown;
+    let restart: RestartNote | undefined;
+    let gaveUp = false;
+    let withdrawn = false;
+    let typedRef: string | undefined;
+    const callerId = resolveCallerId(req);
+    const requester = callerId && callerId !== agent.id ? callerId : undefined;
+    // The agent is at rest (one task at a time): a task still open there is
+    // one its background work keeps open. It ends now, and this task's turn
+    // opens its own (the Audit's H1 on #453).
+    ledger?.endedForDelegation(agent.id);
+    await performDispatch(agent, {
+      message: job.task, model: job.model, from: senderName(agent, req), sender: senderOf(agent, req), mark: markFor(agent, req),
+      turnTaken: true,
+      onAccepted: () => (typedRef = requestFor(agent, req, job.task, job.ref)),
+      // Typed into the live session: the turn it opens is this hand-off's, and
+      // its asker the task's (task-ledger.ts). A session started for it notes
+      // its own (spawnAgentSession).
+      onWritten: () => noteHandOff(agent.id, {
+        ...(requester ? { source: 'agent' as const, requesterAgentId: requester } : { source: 'tars' as const }),
+        text: job.task, ...(typedRef ? { ref: typedRef } : {}),
+      }),
+      onDropped: () => { gaveUp = true; },
+      // Taken back by its asker while held in the terminal (a draft): the
+      // turn it kept is given back at once, not after TURN_START_MAX_MS (the
+      // Audit's M-B on 8f4f1fd7, on the run-task path).
+      onWithdrawn: () => { withdrawn = true; },
+    }, ctx, (data, status = 200) => {
+      if (status >= 300) refused = { data: (data ?? {}) as Record<string, unknown>, status };
+      else {
+        mode = (data as { mode?: unknown } | undefined)?.mode;
+        restart = (data as { restartedAfterStop?: RestartNote } | undefined)?.restartedAfterStop;
+      }
+    });
+    if (refused) return never(String(refused.data.error ?? 'the terminal refused it'), refused.status, { code: refused.data.code });
+    if (job.model) {
+      // A model applies to a session Tars starts for the task, never to one already open.
+      keep(taskModels, job.ref, { asked: job.model, taken: mode === 'start', ...(agent.model ? { own: agent.model } : {}) });
+    }
+    if (restart) keep(taskRestarts, job.ref, restart);
+    const handed = {
+      ...(taskModels.get(job.ref) ? { model: taskModels.get(job.ref) } : {}),
+      ...(restart ? { restartedAfterStop: restart } : {}),
+    };
+    if (!turnsHeard(agent)) {
+      oneTaskQueue.delivered(job.ref, mode === 'start' ? 'started' : 'typed', deliveredText(agent));
+      const body = { ok: true, started: true, outcome: 'delivered', taskId: job.ref, error: deliveredText(agent), ...handed };
+      onHanded(body);
+      return { status: 200, body };
+    }
+    onHanded(handed);
+    const latest = Date.now() + TURN_START_MAX_MS;
+    while (!turnTask) {
+      if (gaveUp) return never('the terminal gave it up before it went in');
+      if (withdrawn) return never('it was cancelled', 409, { code: 'cancelled' });
+      if (agents.get(agent.id) !== agent) return never('its agent was removed');
+      if (agent.status === 'stopped') return never('its agent was stopped before its turn began');
+      if (Date.now() > latest) return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      await sleep(TASK_WAIT_STEP_MS);
+    }
+    const taskId = turnTask;
+    const asked = taskModels.get(taskId);
+    try {
+      // Followed until the rest that ends it (the ledger reads it, and waits
+      // out work left in the background), or until its turn is interrupted.
+      let interrupted = false;
+      for (;;) {
+        const now = ledger?.task(taskId);
+        if (!now || now.endedAt !== null || agents.get(agent.id) !== agent) break;
+        const cut = lastInterruptAt(agent);
+        if (cut !== undefined && cut >= now.startedAt && ledger?.openTaskOf(agent.id)?.id === taskId) {
+          interrupted = true;
+          ledger.stateChanged({ id: agent.id, status: 'stopped' });
+          if (agent.status === 'running') {
+            agent.status = 'idle';
+            agent.lastActivity = new Date().toISOString();
+            saveAgents();
+            emitAgentStatus(agent.id);
+            announceAgent(agent);
+          }
+          break;
+        }
+        await sleep(TASK_WAIT_STEP_MS);
+      }
+      const ended = ledger?.task(taskId);
+      const outcome = ended?.outcome === 'running' || !ended ? 'stopped' : ended.outcome;
+      const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
+      const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
+        ?? agent.lastCleanOutput ?? undefined;
+      // What it left running in the background: told to its asker, never waited for.
+      const backgroundLeft = ended && !interrupted ? pendingBackgroundWork(agent, ended.startedAt) : [];
+      if ((outcome === 'error' && agent.error) || backgroundLeft.length) {
+        noteRunEnd(taskId, { ...(outcome === 'error' && agent.error ? { error: agent.error } : {}), backgroundLeft });
+      }
+      ledger?.terminalEnded(taskId, { ...(result ? { result } : {}), stopReason });
+      const done = ledger?.task(taskId);
+      const usage = done ? await terminalUsage(done) : undefined;
+      return {
+        status: 200,
+        body: {
+          ok: outcome === 'completed', started: true, taskId, outcome, stopReason,
+          ...(result ? { text: result } : {}), ...(usage ? { usage } : {}),
+          ...(backgroundLeft.length ? { backgroundLeft } : {}),
+          ...(outcome === 'error' && agent.error ? { error: agent.error } : {}),
+          ...(asked ? { model: asked } : {}),
+          ...(taskRestarts.get(taskId) ? { restartedAfterStop: taskRestarts.get(taskId) } : {}),
+        },
+      };
+    } finally {
+      answering.delete(taskId);
+    }
+  } finally {
+    stopWatching();
+  }
 }
 
 /**
@@ -1224,7 +1488,10 @@ async function performDispatchLocked(
       untilRest,
       mark: opts.mark,
     });
-    if (outcome === 'refused') dropped(agent, taskRef);
+    if (outcome === 'refused') {
+      dropped(agent, taskRef);
+      opts.onDropped?.();
+    }
     if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
     // Waiting for the turn, or the run, it was sent to wait out: nobody's field holds it.
     const waitsForTurn = outcome === 'held' && untilRest && holdsMessages(agent);
@@ -1539,7 +1806,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
         `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
-        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
@@ -1873,11 +2140,15 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   /**
    * POST /api/agents/:id/run-task
    *
-   * Delegation with a receipt. Where /dispatch types a message into the
-   * target's terminal and returns before the agent has even read it, this runs
-   * the task over the Agent Client Protocol and answers with what the agent
-   * actually did: its reply, why the turn ended, which tools it used and what
-   * the turn cost. Works on every CLI with an ACP mode.
+   * Delegation (delegate_task, start_agent): the task goes into the agent's
+   * own permanent terminal, the session its card shows, which keeps its
+   * conversation, its memory and its background work; with no CLI up, that
+   * session is started (resuming its conversation) with the task (2.0.4, the
+   * maintainer's decision of 2026-10-18). No run over ACP is opened. One task
+   * at a time (core/one-task.ts): an agent at work, or with tasks queued, gets
+   * this one queued. Every task has its id (`t-` and 8 hex) from the start,
+   * followed by GET /api/tasks/:id to its end, read from the session itself:
+   * the final answer from the transcript, what the turn used, why it ended.
    */
   app_.post(/^\/api\/agents\/([^/]+)\/run-task$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
@@ -1888,159 +2159,58 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
     if (!mayHandWork(req, agent, sendJson)) return;
 
-    const { task, timeoutSeconds, model, answer } = req.body as { task?: string; timeoutSeconds?: number; model?: unknown; answer?: unknown };
+    const { task, model, answer } = req.body as { task?: string; model?: unknown; answer?: unknown };
     if (!task?.trim()) {
       sendJson({ error: 'task is required' }, 400);
       return;
     }
-    // A model for this run only: the agent's saved one is not changed.
+    // A model for this task only: the agent's saved one is not changed.
     if (model !== undefined && (typeof model !== 'string' || !RUN_MODEL.test(model))) {
       sendJson({ error: 'model is 1 to 100 letters, digits, dots, colons, dashes, slashes, underscores or brackets.', code: 'invalid_model' }, 400);
       return;
     }
-    // `answer: 'started'`: answered as soon as the run has started, and the
-    // run waited on in the ledger (GET /api/tasks/:id?wait=). Held to the
-    // run's end, the request outlived undici's 300 s on any long task.
+    // `answer: 'started'`: answered at once with the task's id, and the task
+    // followed by it (GET /api/tasks/:id?wait=). Held to the task's end, the
+    // request outlived undici's 300 s on any long task.
     const answerAtStart = answer === 'started';
 
     await withReceipt(req, sendJson, { route: 'run-task', agentId: agent.id, payload: { task, ...(model ? { model } : {}) } }, async (sendJson, receipt) => {
-      if (!canDelegateOverAcp(agent)) {
-        sendJson({ error: `${agent.provider ?? 'this provider'} has no ACP mode; use /dispatch`, retryWithDispatch: true }, 409);
-        return;
-      }
-
-      // The ceiling (core/permission-ceiling.ts): the run takes the narrower
-      // of its asker's mode and the agent's own. Tars's own pass asks as
-      // nobody; an asker named and gone, as the narrowest.
       const callerId = resolveCallerId(req);
       const requester = callerId && callerId !== agent.id ? callerId : undefined;
-      const asker = req.internal || !requester ? undefined : (agents.has(requester) ? levelOf(agents.get(requester)!) : null);
-      const runMode = ceilingOf(asker, levelOf(agent));
-
-      // One task at a time (core/one-task.ts): an agent with a run in
-      // progress, a turn in its terminal, or tasks queued before this one gets
-      // no second session. The task waits its turn, under a task id of its
-      // own from now, and the caller that asked to be answered at the start
-      // is answered now with what it waits behind (GET /api/tasks/:id?wait=
-      // follows it). Taken, its run is on record before anything else can be.
+      // One task at a time: the agent works (a task in hand, a turn in its
+      // terminal), or tasks wait before this one. Queued or not, it has its
+      // id from now, and takes its turn below.
+      const waits = oneTaskQueue.mustQueue(agent.id, terminalTurn(agent));
+      const behind = waits ? busyText(agent) : undefined;
+      const queued = oneTaskQueue.enqueue(agent.id, { ...(requester ? { requesterId: requester } : {}), title: firstLineOf(task) });
+      const startBody = {
+        ok: true, started: false, queued: waits, outcome: waits ? 'queued' : 'starting', taskId: queued.ref,
+        ...(waits ? { queuedBehind: behind, queuedAt: new Date(queued.queuedAt).toISOString() } : {}),
+      };
+      receipt.started(startBody);
       let answered = false;
-      let queuedRef: string | undefined;
-      const turn = terminalTurn(agent);
-      if (oneTaskQueue.mustQueue(agent.id, turn)) {
-        const behind = busyText(agent);
-        const queued = oneTaskQueue.enqueue(agent.id, { ...(requester ? { requesterId: requester } : {}), title: task.slice(0, 100) });
-        queuedRef = queued.ref;
-        const queuedBody = {
-          ok: true, started: false, queued: true, outcome: 'queued', taskId: queued.ref, queuedBehind: behind,
-          queuedAt: new Date(queued.queuedAt).toISOString(),
-        };
-        receipt.started(queuedBody);
-        if (answerAtStart) {
-          answered = true;
-          sendJson({ ...queuedBody, permissionMode: runMode }, 200);
-        }
-        if (!(await waitTurn(agent, queued.ref))) {
-          if (!answered) sendJson({ error: `Task ${queued.ref} was cancelled while it waited behind ${behind}: it never started.`, code: 'cancelled', taskId: queued.ref }, 409);
-          return;
-        }
-      } else {
-        oneTaskQueue.runStarted(agent.id, { ...(requester ? { requesterId: requester } : {}), since: Date.now() });
+      // Queued, it is answered now; taken at once, once it is in the
+      // terminal (a few seconds at most), with what its start said.
+      const answerNow = (more: Record<string, unknown> = {}) => {
+        if (!answerAtStart || answered) return;
+        answered = true;
+        sendJson({ ...startBody, ...more }, 200);
+      };
+      if (waits) answerNow();
+      announceTask(agent.id);
+      if (!(await waitTurn(agent, queued.ref))) {
+        announceTask(agent.id);
+        if (!answered) sendJson({ error: `Task ${queued.ref} was cancelled while it waited${behind ? ` behind ${behind}` : ''}: it never started.`, code: 'cancelled', taskId: queued.ref }, 409);
+        return;
       }
+      announceTask(agent.id);
       try {
-        const wasStatus = agent.status;
-        const handedAt = new Date().toISOString();
-        agent.status = 'running';
-        agent.workHandedAt = handedAt;
-        agent.currentTask = task.slice(0, 100);
-        agent.lastActivity = new Date().toISOString();
-        // Per-agent channel, not a bare 'status': /wait subscribes with
-        // `status:${agentId}` (see the .on below), so an emit on 'status' reached
-        // nobody and a caller waiting on this agent hung until its timeout.
-        emitAgentStatus(agent.id);
-        announceAgent(agent);
-
-        // A task of its own from the moment the run starts (task-ledger.ts): a
-        // quit mid-run leaves it, and its asker is told at the next launch. A
-        // run that never started did no work.
-        let taskId: string | undefined;
-        const result = await delegateOverAcp({
-          agent,
-          task,
-          appSettings: ctx.getAppSettings(),
-          timeoutMs: Math.min(Math.max((timeoutSeconds ?? 900) * 1000, 30_000), 3_600_000),
-          permissionMode: runMode,
-          ...(typeof model === 'string' ? { model } : {}),
-          onStarted: (run) => {
-            try {
-              taskId = liveTaskLedger()?.acpStarted({ agent, requesterAgentId: requester, text: task, startedAt: Date.parse(handedAt) });
-            } catch (err) {
-              console.warn('[task-ledger] ACP run not recorded:', (err as Error).message);
-            }
-            if (taskId) oneTaskQueue.runNamed(agent.id, taskId);
-            const startedBody = { ok: true, started: true, outcome: 'running', ...(taskId ? { taskId } : {}), ...(run.model ? { model: run.model } : {}) };
-            receipt.started(startedBody);
-            // Only with a task to wait on: without one the caller could follow nothing.
-            if (answerAtStart && taskId) {
-              answered = true;
-              sendJson({ ...startedBody, permissionMode: runMode }, 200);
-            }
-          },
-        });
-
-        // Only while this run is still the latest work the agent was handed. The
-        // MCP client can stop waiting on this route before a slow ACP start gives
-        // up, and it then types the task into the terminal instead. The turn that
-        // starts there owns the status: writing back the one this run began from
-        // put a working agent to `waiting`, which /wait answers at once, and which
-        // delegate_task reads as a question and answers by typing into the turn.
-        if (agent.workHandedAt === handedAt) {
-          agent.status = result.ok ? 'idle' : wasStatus === 'running' ? 'idle' : wasStatus;
-          agent.lastActivity = new Date().toISOString();
-          if (result.text) agent.lastCleanOutput = result.text.slice(-8000);
-          saveAgents();
-          emitAgentStatus(agent.id);
-          announceAgent(agent);
-        }
-
-        const outcome = result.ok ? 'completed' : result.stopReason === 'turn_limit' ? 'stopped' : 'error';
-        if (result.started && taskId) {
-          try {
-            liveTaskLedger()?.acpEnded(taskId, {
-              outcome,
-              stopReason: result.stopReason ?? (result.ok ? 'end_turn' : 'error'),
-              result: result.text,
-              usage: result.usage ? {
-                inputTokens: result.usage.inputTokens ?? 0,
-                outputTokens: result.usage.outputTokens ?? 0,
-                cachedReadTokens: result.usage.cachedReadTokens ?? 0,
-                cachedWriteTokens: result.usage.cachedWriteTokens ?? 0,
-              } : null,
-              costUSD: result.costUSD ?? null,
-            });
-          } catch (err) {
-            console.warn('[task-ledger] the end of an ACP run not recorded:', (err as Error).message);
-          }
-          receipt.update({ outcome, ok: result.ok, ...(result.stopReason ? { stopReason: result.stopReason } : {}) });
-          noteRunEnd(taskId, result);
-        }
-        // Queued and taken, but no run started: its follower reads why (GET /api/tasks/:id).
-        if (queuedRef && !taskId) oneTaskQueue.notStarted(queuedRef, result.error || 'the run did not start');
-        // Answered at its start: the caller reads its end from the ledger.
-        if (answered) return;
-
-        // Held to a mode the agent does not offer: it did not run, and typing
-        // the task into the terminal instead would run it in the agent's own,
-        // broader mode. Refused, so that delegate_task does not fall back.
-        if (result.code === 'permission_escalation_denied') {
-          sendJson({ ...result, permissionMode: runMode, retryWithDispatch: false }, 409);
-          return;
-        }
-        // A run that started is an answer, however it ended: 502 only when none
-        // did, which is when delegate_task may type the task into the terminal
-        // instead without running it twice.
-        sendJson({ ...result, permissionMode: runMode, ...(taskId ? { taskId } : {}) }, result.ok || result.started ? 200 : 502);
+        const end = await runInTerminal(agent, req, ctx, { task, ref: queued.ref, ...(typeof model === 'string' ? { model } : {}) }, answerNow);
+        receipt.update({ outcome: end.body.outcome, ok: end.body.ok, ...(end.body.taskId ? { taskId: end.body.taskId } : {}) });
+        if (!answered) sendJson(end.body, end.status);
       } finally {
         oneTaskQueue.runEnded(agent.id);
+        announceTask(agent.id);
       }
     });
   });
@@ -2048,10 +2218,11 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   /**
    * GET /api/tasks/:id, GET /api/tasks?clientRequestId=...
    *
-   * A delegated task as the ledger keeps it, its run's answer included, read
-   * after a relaunch as well as before (4.4 item 3): by its asker, by the
-   * agent that ran it, or by Tars. Anybody else is answered as if it did not
-   * exist. By clientRequestId: the caller's own receipt names the task.
+   * A delegated task, by the id it was given (queued, starting, then the
+   * ledger's task) or the ledger's own id, its answer included, read after a
+   * relaunch as well as before (4.4 item 3): by its asker, by the agent that
+   * ran it, or by Tars. Anybody else is answered as if it did not exist. By
+   * clientRequestId: the caller's own receipt names the task.
    */
   app_.get(/^\/api\/tasks(?:\/([^/]+))?$/, async (req, sendJson) => {
     const driver = resolveDriver(req, sendJson);
@@ -2071,60 +2242,70 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // well under undici's 300 s), and answered `timeout: true` if it has not.
     const waitS = Math.min(Math.max(Number(req.url.searchParams.get('wait')) || 0, 0), TASK_WAIT_MAX_S);
     const until = Date.now() + waitS * 1000;
-    // A task that waited its turn (core/one-task.ts) is followed by the id it
-    // was queued under: while it waits, and as the ledger's task once it ran.
     let queued = id ? oneTaskQueue.lookup(id) : undefined;
     if (queued && callerId && callerId !== queued.task.requesterId && callerId !== queued.task.agentId) queued = undefined;
-    while (queued && (queued.state === 'queued' || queued.state === 'starting') && Date.now() < until) {
-      await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
-      queued = oneTaskQueue.lookup(id) ?? { state: 'failed', task: queued.task, error: 'cancelled before it started' };
-    }
-    if (queued && queued.state !== 'started') {
-      const { task: q } = queued;
-      // Settled: it never started, or it went into the agent's terminal (a
-      // task typed in, or a session started on it), which no ledger task
-      // follows: the agent's turn is its work from then on.
-      const settled = queued.state === 'failed' || queued.state === 'delivered';
+    // Its asker waits on it here: its end is this answer, and is not typed
+    // into the asker's terminal as well (agent-watch.ts, isWaitingOn).
+    const followed = queued && waitS > 0 && callerId && callerId === queued.task.requesterId ? followTask(queued.task.agentId, callerId) : undefined;
+    try {
+      while (queued && (queued.state === 'queued' || queued.state === 'starting') && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
+        queued = oneTaskQueue.lookup(id) ?? { state: 'failed', task: queued.task, error: 'cancelled before it started' };
+      }
+      const model = taskModels.get(queued?.task.ref ?? id);
+      if (queued && queued.state !== 'started') {
+        const { task: q } = queued;
+        sendJson({
+          ...((queued.state === 'queued' || queued.state === 'starting') && waitS > 0 ? { timeout: true } : {}),
+          task: {
+            id: q.ref, agentId: q.agentId, requesterAgentId: q.requesterId ?? null, source: queued.state === 'delivered' ? 'terminal' : q.requesterId ? 'agent' : 'tars', startedAt: null, endedAt: null,
+            queuedAt: new Date(q.queuedAt).toISOString(),
+            ...(model ? { model } : {}),
+            ...(queued.state === 'failed'
+              ? { outcome: 'error', error: `It never started: ${queued.error}.` }
+              : queued.state === 'delivered'
+                ? { outcome: 'delivered', how: queued.how, deliveredAt: new Date(queued.at).toISOString(), ...(queued.note ? { error: queued.note } : {}) }
+                : { outcome: queued.state, ...(queued.state === 'queued' ? { queuedBehind: busyText(agents.get(q.agentId) ?? ({ id: q.agentId } as AgentStatus), q.ref) } : {}) }),
+          },
+        });
+        return;
+      }
+      let found = id ? liveTaskLedger()?.task(queued?.state === 'started' ? queued.taskId : id) : undefined;
+      if (!found || (callerId && callerId !== found.requesterAgentId && callerId !== found.agentId)) {
+        // An id of the queue's shape: a task that waited its turn in another run of Tars.
+        sendJson({ error: /^t-[0-9a-f]{8}$/.test(id) ? unknownTaskText(oneTaskQueue.since) : 'No such task.' }, 404);
+        return;
+      }
+      // Its end is the rest that ended it and the answer read after it: both.
+      const open = (t: TaskWithResult) => t.outcome === 'running' || answering.has(t.id);
+      let timedOut = false;
+      if (waitS > 0 && open(found)) {
+        while (found && open(found) && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
+          found = liveTaskLedger()?.task(found.id) ?? found;
+        }
+        timedOut = open(found);
+      }
+      const end = runEnds.get(found.id);
+      // What the turn used and cost, read from the session (transcripts, the
+      // state mod's turns) once it ended; a run over ACP reported its own.
+      const usage = found.acp ?? (found.outcome !== 'running' && !answering.has(found.id) ? await terminalUsage(found) : undefined);
       sendJson({
-        ...(!settled && waitS > 0 ? { timeout: true } : {}),
+        ...(timedOut ? { timeout: true } : {}),
         task: {
-          id: q.ref, agentId: q.agentId, requesterAgentId: q.requesterId ?? null, source: queued.state === 'delivered' ? 'terminal' : 'acp', startedAt: null, endedAt: null,
-          queuedAt: new Date(q.queuedAt).toISOString(),
-          ...(queued.state === 'failed'
-            ? { outcome: 'error', error: `It never started: ${queued.error}.` }
-            : queued.state === 'delivered'
-              ? { outcome: 'delivered', how: queued.how, deliveredAt: new Date(queued.at).toISOString() }
-              : { outcome: queued.state, ...(queued.state === 'queued' ? { queuedBehind: busyText(agents.get(q.agentId) ?? ({ id: q.agentId } as AgentStatus), q.ref) } : {}) }),
+          ...(end ?? {}),
+          id: found.id, agentId: found.agentId, requesterAgentId: found.requesterAgentId, source: found.source,
+          outcome: found.outcome, startedAt: found.startedAt, endedAt: found.endedAt,
+          ...(found.stopReason ? { stopReason: found.stopReason } : {}),
+          ...(found.result !== undefined ? { result: found.result } : {}),
+          ...(usage ? { usage } : {}),
+          ...((model ?? taskModels.get(found.id)) ? { model: model ?? taskModels.get(found.id) } : {}),
+          ...(taskRestarts.get(found.id) ? { restartedAfterStop: taskRestarts.get(found.id) } : {}),
         },
       });
-      return;
+    } finally {
+      followed?.();
     }
-    let found = id ? liveTaskLedger()?.task(queued?.state === 'started' ? queued.taskId : id) : undefined;
-    if (!found || (callerId && callerId !== found.requesterAgentId && callerId !== found.agentId)) {
-      // An id of the queue's shape: a task that waited its turn in another run of Tars.
-      sendJson({ error: /^t-[0-9a-f]{8}$/.test(id) ? unknownTaskText(oneTaskQueue.since) : 'No such task.' }, 404);
-      return;
-    }
-    let timedOut = false;
-    if (waitS > 0 && found.outcome === 'running') {
-      while (found && found.outcome === 'running' && Date.now() < until) {
-        await new Promise((r) => setTimeout(r, TASK_WAIT_STEP_MS));
-        found = liveTaskLedger()?.task(found.id) ?? found;
-      }
-      timedOut = found.outcome === 'running';
-    }
-    const end = runEnds.get(found.id);
-    sendJson({
-      ...(timedOut ? { timeout: true } : {}),
-      task: {
-        ...(end ?? {}),
-        id: found.id, agentId: found.agentId, requesterAgentId: found.requesterAgentId, source: found.source,
-        outcome: found.outcome, startedAt: found.startedAt, endedAt: found.endedAt,
-        ...(found.stopReason ? { stopReason: found.stopReason } : {}),
-        ...(found.result !== undefined ? { result: found.result } : {}),
-        ...(found.acp ? { usage: found.acp } : {}),
-      },
-    });
   });
 
   // POST /api/agents/:id/stop: with a reason, filed under the caller

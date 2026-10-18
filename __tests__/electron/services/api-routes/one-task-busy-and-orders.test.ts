@@ -8,8 +8,12 @@ import { EventEmitter } from 'node:events';
  * One task at a time and a worker's orders, at the routes, after the Audit's
  * gate of #449 at f9966e6e: what a run, a turn and a note really hold, for
  * every CLI, and the routes the first pass missed. The routes, the queue, the
- * terminals' writer and the kanban's claim are the real ones; the terminals
- * are fake ptys, and a run over ACP lasts until the test ends it.
+ * terminals' writer, the task ledger and the kanban's claim are the real ones;
+ * the terminals are fake ptys. Since 2.0.4 a delegated task goes into the
+ * agent's own terminal (no run over ACP): a claude terminal here does what
+ * Claude Code's hooks do when a task is typed in, its turn begins, and that
+ * turn lasts until the test ends it. A "run" below is that delegated task in
+ * hand: typed in, its turn, until its answer is read.
  *
  * How it fails, written before the code (2026-10-18):
  * 1. (H1) An agent whose CLI tells Tars nothing of its turns (amp, grok,
@@ -47,7 +51,8 @@ import { EventEmitter } from 'node:events';
  *     asked is not told; or its asker, or Tars, is refused.
  * 14. (L3) A task given with start_agent that waited its turn is said
  *     `starting` for ever once it was handed over: its follower cannot tell it
- *     went in.
+ *     went in. (Since 2.0.4 the task before it started the agent's permanent
+ *     session, and this one goes into that session: `typed`, never a second.)
  * 15. (L1, the Audit's K12, which only the role-site table caught) A worker's
  *     report to whoever leads it is labelled a note; or, a run of that agent
  *     under way, it is queued as a task in its line instead of waiting for
@@ -81,6 +86,13 @@ import { EventEmitter } from 'node:events';
  * 23. A task whose turn came, held in the writer by a draft and taken back by
  *     its asker's cancel, keeps the turn for good: every later task to that
  *     agent queues behind a task that no longer exists, until Tars restarts.
+ *
+ * Added after the Audit's gate of 6fb17592 on #453, before the code:
+ * 24. (L1) The banner's stop on a task in hand whose turn has not begun (held
+ *     in the writer by a draft) sends Esc and says the turn stopped: the task
+ *     is not withdrawn and goes in later, or another turn is interrupted.
+ * 25. (L2) A task queued behind a delegated task whose CLI exited meanwhile is
+ *     never said started: no session is started for it, or it reads typed.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -98,16 +110,8 @@ vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir(), getAppPath: () =
 vi.mock('../../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../../../electron/utils/path-builder', () => ({ buildFullPath: vi.fn(() => '/usr/bin') }));
 vi.mock('../../../../electron/services/memory-hub', () => ({ needsPromptInjection: () => false, assembleDigest: async () => '', wrapDigestForPrompt: (d: string) => d }));
+/** The delegated tasks whose turn began in a claude terminal, each ended by the test (its Stop). */
 const runs = vi.hoisted(() => [] as { task: string; end: () => void }[]);
-vi.mock('../../../../electron/services/acp/delegate', async (original) => ({
-  ...(await original<typeof import('../../../../electron/services/acp/delegate')>()),
-  canDelegateOverAcp: () => true,
-  delegateOverAcp: async (opts: { task: string; onStarted?: (r: object) => void }) => {
-    opts.onStarted?.({});
-    await new Promise<void>((resolve) => runs.push({ task: opts.task, end: resolve }));
-    return { ok: true, transport: 'acp', started: true, stopReason: 'end_turn', text: 'done', toolCalls: [] };
-  },
-}));
 // Who was told a task they asked for was cancelled: the chat that asked.
 const told = vi.hoisted(() => [] as unknown[][]);
 vi.mock('../../../../electron/services/agent-watch', async (original) => ({
@@ -124,14 +128,16 @@ import { agents, wireDialogProbe } from '../../../../electron/core/agent-manager
 import { ptyProcesses, resetTerminalInput, writeHumanInput } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
-import { setLiveTaskLedger, type TaskLedger } from '../../../../electron/services/task-ledger';
+import { stopTask } from '../../../../electron/services/task-banner';
+import { noteTurn } from '../../../../electron/services/task-ledger';
+import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
+import { emitAgentStatus } from '../../../../electron/services/agent-events';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 
 const project = fs.mkdtempSync(path.join(os.tmpdir(), 'one-task-busy-'));
 let routes: RouteApp & { routes: Array<{ method: string; pattern: string | RegExp; handler: (req: RouteRequest, send: (data: unknown, status?: number) => void, ctx: RouteContext) => unknown }> };
 let ctx: RouteContext;
-const tasks = new Map<string, Record<string, unknown>>();
 const used = new Set<string>();
 
 type Answer = { data: Record<string, unknown>; status: number };
@@ -160,24 +166,45 @@ function member(id: string, extra: Partial<AgentStatus> = {}): AgentStatus {
   return agent;
 }
 
+/**
+ * What Claude Code's hooks do when a delegated task is submitted in its
+ * terminal: its turn begins (UserPromptSubmit), and lasts until the test ends
+ * it, its Stop: the agent rests.
+ */
+function begin(agent: AgentStatus, prompt: string) {
+  agent.status = 'running';
+  agent.lastTurnStartedAt = new Date().toISOString();
+  noteTurn(agent, { sessionId: agent.currentSessionId, text: prompt });
+  emitAgentStatus(agent.id);
+  runs.push({ task: prompt, end: () => { agent.status = 'idle'; emitAgentStatus(agent.id); } });
+}
+
 /** An agent whose terminal runs its CLI (the foreground process is what cliRunningIn reads). */
 function withCli(id: string, provider: string, status: AgentStatus['status'], extra: Partial<AgentStatus> = {}) {
   const terminal = spawnAgentPty({ binaryName: provider === 'claude' ? 'claude' : provider, shell: '/bin/bash', args: ['-l'], runsCommand: false, cwd: project, cols: 120, rows: 30, env: { CLAUDE_AGENT_ID: id } }) as unknown as FakePty;
   terminal.process = provider === 'claude' ? '2.1.300' : provider;
   ptyProcesses.set(`pty-${id}`, terminal as never);
   const agent = member(id, { status, provider: provider as AgentStatus['provider'], ptyId: `pty-${id}`, ptyCwd: project, currentSessionId: `sess-${id}`, ...extra });
+  // A claude terminal: a task submitted in it (its Enter) begins a turn. Notes, reports and answers are no tasks here.
+  if (provider === 'claude') {
+    let line = '';
+    terminal.write.mockImplementation((data: string) => {
+      for (const ch of String(data)) {
+        if (ch !== '\r') { line += ch; continue; }
+        if (/TASK-[A-Z]/.test(line)) begin(agent, line.replace(/\x1b\[20[01]~/g, ''));
+        line = '';
+      }
+    });
+  }
   return { agent, terminal };
 }
 const typedInto = (t: FakePty) => t.write.mock.calls.map(c => String(c[0])).join('');
 const later = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
 beforeEach(() => {
-  resetLaunches(); vi.useFakeTimers(); agents.clear(); ptyProcesses.clear(); spawned.length = 0; runs.length = 0; tasks.clear(); told.length = 0; used.clear();
-  setLiveTaskLedger({
-    acpStarted: ({ agent, requesterAgentId }: { agent: AgentStatus; requesterAgentId?: string }) => { const id = `task-${tasks.size + 1}`; tasks.set(id, { id, agentId: agent.id, requesterAgentId, source: 'acp', outcome: 'running', startedAt: Date.now() }); return id; },
-    acpEnded: (id: string, end: { outcome: string }) => { tasks.set(id, { ...tasks.get(id)!, outcome: end.outcome, endedAt: Date.now() }); },
-    task: (id: string) => tasks.get(id),
-  } as unknown as TaskLedger);
+  resetLaunches(); vi.useFakeTimers(); agents.clear(); ptyProcesses.clear(); spawned.length = 0; runs.length = 0; told.length = 0; used.clear();
+  const ledgerDir = fs.mkdtempSync(path.join(project, 'ledger-'));
+  startTaskWatch(path.join(ledgerDir, 'l.jsonl'), path.join(ledgerDir, 't.jsonl'), path.join(ledgerDir, 'r.jsonl'));
   routes = { routes: [], add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); }, get(p, h) { this.add('GET', p, h); }, post(p, h) { this.add('POST', p, h); }, put(p, h) { this.add('PUT', p, h); }, delete(p, h) { this.add('DELETE', p, h); } } as typeof routes;
   const settings = {} as AppSettings;
   ctx = { mainWindow: null, appSettings: settings, getAppSettings: () => settings, getTelegramBot: () => null, getSlackApp: () => null, slackResponseChannel: null, slackResponseThreadTs: null, handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(), initAgentPtyCallback: vi.fn(async () => 'unused'), agentStatusEmitter: new EventEmitter() } as RouteContext;
@@ -200,42 +227,46 @@ afterEach(() => {
   }
   for (const t of spawned) resetTerminalInput(t as never);
   vi.useRealTimers();
-  setLiveTaskLedger(null);
+  stopTaskWatch();
 });
 
 describe('what holds an agent, for every CLI (H1)', () => {
-  it('1. a grok worker whose terminal took a task, its TUI open and running, still gets a delegated task: the run starts', async () => {
-    withCli('gk', 'grok', 'running');
+  it('1. a grok worker whose terminal took a task, its TUI open and running, still gets a delegated task: it goes in', async () => {
+    const { terminal } = withCli('gk', 'grok', 'running');
     const a = call('POST', '/api/agents/gk/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
-    expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ started: true });
-    expect(a.answer()?.data.queued).toBeUndefined();
-    expect(runs.map(r => r.task).join('\n')).toContain('TASK-A');
+    await later(1500);
+    expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ queued: false, outcome: 'delivered' });
+    expect(typedInto(terminal)).toContain('TASK-A');
+    // And the next one too: a task its CLI says nothing of does not hold it.
+    const b = call('POST', '/api/agents/gk/run-task', { task: 'TASK-B fix it', answer: 'started' }, 'orch');
+    await later(1500);
+    expect(b.answer()?.data, JSON.stringify(b.answer())).toMatchObject({ queued: false, outcome: 'delivered' });
+    expect(typedInto(terminal)).toContain('TASK-B');
   });
 
   it('1b. a codex worker in a turn, which Tars sees end in codex\'s session log since 2.0.4, holds its line as claude does', async () => {
-    const { agent } = withCli('cx', 'codex', 'running');
+    const { agent, terminal } = withCli('cx', 'codex', 'running');
     const a = call('POST', '/api/agents/cx/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(a.answer()?.data).toMatchObject({ queued: true, outcome: 'queued' });
-    expect(runs).toHaveLength(0);
+    expect(typedInto(terminal), 'typed into the turn in hand').not.toContain('TASK-A');
     agent.status = 'idle';
     await later(1500);
-    expect(runs, 'started once the turn ended').toHaveLength(1);
+    expect(typedInto(terminal), 'typed in once the turn ended').toContain('TASK-A');
   });
 
   it('2. a claude worker the stall watch found doing nothing (its Stop lost) does not hold its line', async () => {
     withCli('st', 'claude', 'running', { stalledSince: new Date(Date.now() - 31 * 60_000).toISOString() } as Partial<AgentStatus>);
     const a = call('POST', '/api/agents/st/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
-    expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ started: true });
+    await later(1500);
+    expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ queued: false, outcome: 'starting' });
     expect(runs).toHaveLength(1);
   });
 
-  it('3. a claude worker in a turn Tars can see end still holds its line: the run waits for the turn', async () => {
+  it('3. a claude worker in a turn Tars can see end still holds its line: the task waits for the turn', async () => {
     const { agent } = withCli('cl', 'claude', 'running');
     const a = call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(a.answer()?.data).toMatchObject({ queued: true, outcome: 'queued' });
     expect(String(a.answer()?.data.queuedBehind)).toContain('a turn in its terminal');
     expect(runs).toHaveLength(0);
@@ -259,7 +290,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
   it('5. start_agent to an agent at its prompt while its delegated run works is queued, then typed in once the run ends, and said so', async () => {
     const { terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(runs).toHaveLength(1);
     const b = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-B fix it', intent: 'task' }, 'orch');
     await later(2000);
@@ -279,7 +310,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
   it('6. /message to an agent at its prompt while its delegated run works types nothing, and says to send it with /dispatch', async () => {
     const { terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const c = call('POST', '/api/agents/cl/message', { message: 'TASK-C fix it' }, 'orch');
     await later(2000);
     await c.done;
@@ -291,7 +322,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
     const { agent, terminal } = withCli('cl', 'claude', 'running');
     member('w1');
     const a = call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(a.answer()?.data).toMatchObject({ outcome: 'queued' });
     const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-TWO read me later' }, 'w1');
     await later(1500);
@@ -315,7 +346,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     member('w1');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(runs).toHaveLength(1);
     agent.status = 'idle';
     const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-SEVEN read me later' }, 'w1');
@@ -331,7 +362,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
   it('8. Tars\'s own note to an agent whose run works waits for the run, and is no task in its queue', async () => {
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     let got: Answer | undefined;
     const written = vi.fn();
     await performDispatch(agent, {
@@ -403,7 +434,7 @@ describe('the routes the mutants walked through (L1)', () => {
     withCli('cl', 'claude', 'idle');
     member('w2');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const b = call('POST', '/api/agents/cl/run-task', { task: 'TASK-B fix it', answer: 'started' }, 'orch');
     await later(50);
     const ref = String(b.answer()?.data.taskId);
@@ -424,7 +455,7 @@ describe('who takes a queued task back (L2)', () => {
   it('13. its asker, Tars, or the project\'s orchestrator with a reason, which the chat that asked is told; not another chat', async () => {
     withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const queue = async (by: string, task: string) => {
       const q = call('POST', '/api/agents/cl/run-task', { task, answer: 'started' }, by);
       await later(50);
@@ -469,7 +500,7 @@ describe('a worker reporting to whoever leads it (L1)', () => {
     // The turn the report opened ends (its Stop); then a run of the orchestrator's own, asked by Tars.
     lead.status = 'idle';
     call('POST', '/api/agents/ld/run-task', { task: 'TASK-A plan', answer: 'started' }, undefined, { internal: true });
-    await later(50);
+    await later(1500);
     expect(runs).toHaveLength(1);
     const duringRun = call('POST', '/api/agents/ld/dispatch', { message: 'REPORT-TWO tests green' }, 'w1');
     await later(1500);
@@ -513,7 +544,7 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     member('x');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-N for you' }, 'x');
     await later(500);
     await n.done;
@@ -549,10 +580,10 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
   it('18. the kanban\'s note to an agent whose run works waits for the run, and takes no place in its line', async () => {
     const { agent, terminal } = withCli('ld', 'claude', 'idle', { role: 'orchestrator' });
     call('POST', '/api/agents/ld/run-task', { task: 'TASK-A plan', answer: 'started' }, undefined, { internal: true });
-    await later(50);
+    await later(1500);
     expect(runs).toHaveLength(1);
-    // The status reads idle while the run works (a late Stop): the kanban types its held note now.
-    agent.status = 'idle';
+    // The task's turn works in the terminal: the kanban's held note is carried, and the fleet changes meanwhile.
+    expect(agent.status).toBe('running');
     carryKanban([{ agentId: 'ld', item: { message: 'KANBAN-NOTE a task landed', sender: { kind: 'tars' }, purpose: 'note', what: 'the note of kanban task t_1' }, at: new Date().toISOString() }]);
     agentStatusEmitter.emit('fleet-change', 'ld');
     await later(3000);
@@ -567,7 +598,7 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
     const { terminal: target } = withCli('cl', 'claude', 'idle');
     const { terminal: sender } = withCli('x', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-L for you' }, 'x');
     await later(500);
     await n.done;
@@ -587,15 +618,17 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
   it('20. the kanban\'s hand-off to an agent whose run works is a task: it waits its turn, never typed beside the run', async () => {
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     expect(runs).toHaveLength(1);
-    // The status reads idle while the run works (a late Stop): the kanban types its held hand-off now.
-    agent.status = 'idle';
+    // The task's turn works in the terminal: the kanban's held hand-off is carried, and the fleet changes meanwhile.
+    expect(agent.status).toBe('running');
     carryKanban([{ agentId: 'cl', item: { message: 'KANBAN-WORK task t_2 is yours', sender: { kind: 'tars' }, purpose: 'work', what: 'kanban task t_2' }, at: new Date().toISOString() }]);
     agentStatusEmitter.emit('fleet-change', 'cl');
     await later(3000);
     expect(typedInto(terminal), 'typed beside the run').not.toContain('KANBAN-WORK');
-    expect(oneTaskQueue.queued('cl'), 'not in the line').toHaveLength(1);
+    // Since 2.0.4 the delegated task is a turn in the terminal: its status is that turn's, and the hand-off waits for
+    // it, with the kanban or in the line. (A run over ACP left the status idle, and the hand-off waited in the line.)
+    expect(oneTaskQueue.queued('cl').length, 'queued twice').toBeLessThanOrEqual(1);
     runs[0].end();
     await later(3000);
     expect(typedInto(terminal)).toContain('KANBAN-WORK');
@@ -605,7 +638,7 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     member('x');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-P for you' }, 'x');
     const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-P fix it', intent: 'task' }, 'orch');
     await Promise.all([n.done, t.done]);
@@ -625,7 +658,7 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
   it('22. a task held in the writer by a person typing keeps its turn: the next task waits for it, never typed behind it', async () => {
     const { terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
     const u = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-U fix that', intent: 'task' }, 'orch');
     await Promise.all([t.done, u.done]);
@@ -643,7 +676,7 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
   it('23. a task whose turn came, held by a draft and cancelled by its asker, gives the turn back: the next task runs', async () => {
     const { terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
     await t.done;
     expect(t.answer()?.data).toMatchObject({ mode: 'queued' });
@@ -660,23 +693,94 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
     const z = call('POST', '/api/agents/cl/run-task', { task: 'TASK-Z next', answer: 'started' }, 'orch');
     await later(3000);
     expect(z.answer()?.data, 'queued behind a task that no longer exists').not.toMatchObject({ queued: true });
-    expect(runs, 'the next task never started').toHaveLength(2);
+    // Z has the turn now (since 2.0.4 it goes into the same terminal, where the draft holds it in turn).
+    expect(oneTaskQueue.busyRun('cl')?.taskRef, 'the next task never took the turn').toBe(String(z.answer()?.data.taskId));
     const q = call('GET', `/api/tasks/${String(t.answer()?.data.queuedTask)}`, {}, 'orch');
     await q.done;
     expect(q.answer()?.data, 'said starting for ever').toMatchObject({ task: { outcome: 'error', error: 'It never started: it was cancelled.' } });
   });
+
+  it('23b. the same for a delegated task (run-task): held by a draft and cancelled by its asker, it gives the turn back at once', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const b = call('POST', '/api/agents/cl/run-task', { task: 'TASK-B fix it', answer: 'started' }, 'orch');
+    await later(50);
+    expect(b.answer()?.data).toMatchObject({ queued: true, outcome: 'queued' });
+    const ref = String(b.answer()?.data.taskId);
+    // An arrow key in the field, a draft Tars cannot restore: B's turn comes and B is held there.
+    writeHumanInput(terminal as never, '\x1b[A');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).not.toContain('TASK-B');
+    const c = call('POST', `/api/tasks/${ref}/cancel`, {}, 'orch');
+    await c.done;
+    expect(c.answer()?.data, JSON.stringify(c.answer())).toMatchObject({ success: true });
+    await later(2000);
+    expect(oneTaskQueue.busyRun('cl'), 'the cancelled task still holds the turn').toBeUndefined();
+    const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');
+    await seen.done;
+    expect(seen.answer()?.data.task, JSON.stringify(seen.answer())).toMatchObject({ outcome: 'error' });
+    expect(String((seen.answer()?.data.task as { error?: string } | undefined)?.error)).toContain('cancelled');
+  });
 });
 
 describe('a task that waited its turn and went in (L3)', () => {
-  it('14. start_agent queued behind a run is said delivered once its session started, never starting for ever', async () => {
+  it('14. start_agent queued behind a task whose session was started for it is said delivered once typed into that session, never starting for ever', { timeout: 30_000 }, async () => {
     member('w3');
     call('POST', '/api/agents/w3/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
+    // Its session, started with the task: claude runs in its terminal, and its turn begins (Claude Code's hooks).
+    spawned.at(-1)!.process = '2.1.300';
+    begin(agents.get('w3')!, 'TASK-A review');
     const b = call('POST', '/api/agents/w3/dispatch', { message: 'TASK-B fix it', intent: 'task' }, 'orch');
     await later(50);
     await b.done;
     expect(b.answer()?.data, JSON.stringify(b.answer())).toMatchObject({ mode: 'queued' });
     const ref = String(b.answer()?.data.queuedTask);
+    runs[0].end();
+    await later(5000);
+    const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');
+    await seen.done;
+    expect(seen.answer()?.data.task, JSON.stringify(seen.answer())).toMatchObject({ id: ref, outcome: 'delivered', how: 'typed' });
+    // Into the one session started for the task before it: no second one.
+    expect(spawned).toHaveLength(1);
+    expect(typedInto(spawned[0])).toContain('TASK-B');
+  });
+});
+
+describe('after the Audit\'s gate of 6fb17592 on #453', () => {
+  it('24. the banner\'s stop on a task held by a draft before its turn withdraws it, and interrupts nothing', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    // A draft in the field: the delegated task is held in the writer, its turn not begun.
+    writeHumanInput(terminal as never, '\x1b[A');
+    const a = call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const ref = String(a.answer()?.data.taskId);
+    expect(oneTaskQueue.busyRun('cl')?.taskRef).toBe(ref);
+    const before = typedInto(terminal);
+    expect(before).not.toContain('TASK-A');
+    const stopped = await stopTask('cl', ref);
+    expect(stopped, JSON.stringify(stopped)).toMatchObject({ success: true, stopped: 'queued' });
+    expect(typedInto(terminal).slice(before.length), 'Esc sent to a turn that is not this task\'s').not.toContain('\x1b');
+    await later(2000);
+    expect(oneTaskQueue.busyRun('cl'), 'the stopped task still holds the turn').toBeUndefined();
+    await later(10_000);
+    expect(typedInto(terminal), 'the stopped task went in later').not.toContain('TASK-A');
+  });
+
+  it('25. a task queued behind a delegated task whose CLI exited meanwhile starts a session: said started', { timeout: 30_000 }, async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    expect(runs).toHaveLength(1);
+    const b = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-B fix it', intent: 'task' }, 'orch');
+    await later(50);
+    await b.done;
+    expect(b.answer()?.data, JSON.stringify(b.answer())).toMatchObject({ mode: 'queued' });
+    const ref = String(b.answer()?.data.queuedTask);
+    // The task's turn ends, and the CLI exits: its terminal is a shell again.
+    terminal.process = 'bash';
     runs[0].end();
     await later(5000);
     const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');

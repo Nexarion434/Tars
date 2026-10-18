@@ -122,6 +122,15 @@ export interface CLIProvider {
   /** Build command string for interactive PTY sessions */
   buildInteractiveCommand(params: InteractiveCommandParams): string;
 
+  /**
+   * The CLI has no interactive form that takes a starting prompt (amp): its
+   * command never carries the task, and every launch with one types it in once
+   * the CLI runs (core/typed-task.ts). Absent: the task is on the command line.
+   */
+  readonly taskTypedAfterLaunch?: boolean;
+  /** With taskTypedAfterLaunch: the text a launch types in for this task ('' for none). */
+  typedTask?(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string;
+
   /** Build command string for scheduled task execution */
   buildScheduledCommand(params: ScheduledCommandParams): string;
 
