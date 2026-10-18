@@ -177,12 +177,14 @@ const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v ==
 
 /**
  * Tars's settings with the administrator's over them: the administrator's
- * value wins wherever both set one; an object is merged key by key, a list is
- * both lists (theirs first: their hooks run, and Tars's), and an MCP server of
- * the administrator's is theirs whole, whatever Tars names the same.
+ * value wins wherever both set one; an object is merged key by key, an MCP
+ * server of the administrator's is theirs whole, whatever Tars names the
+ * same, and a list is theirs alone, except a hook's: both run, theirs first.
+ * Joining every list would widen an allowlist (tools.allowed, tools.core,
+ * mcp.allowed) the day Tars writes the same key (the Audit's re-check of #461).
  */
-function underAdministrator(tars: unknown, admin: unknown, where: string[] = []): unknown {
-  if (Array.isArray(tars) && Array.isArray(admin)) {
+export function underAdministrator(tars: unknown, admin: unknown, where: string[] = []): unknown {
+  if (Array.isArray(tars) && Array.isArray(admin) && where[0] === 'hooks') {
     const seen = new Set(admin.map((a) => JSON.stringify(a)));
     return [...admin, ...tars.filter((t) => !seen.has(JSON.stringify(t)))];
   }

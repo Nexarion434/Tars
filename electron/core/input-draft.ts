@@ -56,6 +56,12 @@ export interface Draft {
    * running turn, which leaves the field alone (escCutTheTurn).
    */
   beforeEsc?: { text: string; cursor: number };
+  /**
+   * Known empty to the model, but the CLI may have put back, after a cut turn,
+   * the message Tars typed to open it: at most this many characters, which
+   * Tars takes out before it types (pty-manager.ts, noteTurnCut).
+   */
+  refilled?: number;
 }
 
 export function emptyDraft(): Draft {
@@ -280,10 +286,16 @@ function apply(d: Draft, t: Token): Draft {
 }
 
 /**
- * The field once a lone Esc, and nothing after it, is known to have cut a
- * running turn (the transcript recorded the cut after it): Claude Code and
- * Qwen Code leave the field as it was then (measured, 2026-10-18), so it is
- * known again. Anything else is left as it is.
+ * The field as it was before a lone Esc, and nothing after it, once that Esc is
+ * known to have cut a running turn (the transcript recorded the cut after it).
+ * Measured on Qwen Code 0.25.2 (2026-10-18): Esc in a turn cuts it; nothing was
+ * typed in that run, so what the field held then was not measured. Read from
+ * the CLIs' code (the Audit's M2 on #461): Qwen Code moves what was queued in
+ * the turn back into the field, else puts the cut prompt back into an empty
+ * field unless a tool is running; Claude Code 2.1.302 puts the last prompt
+ * back into an empty field. So this is only the model's side: the writer
+ * decides whether the CLI may have refilled it (noteTurnCut). Anything else is
+ * left as it is.
  */
 export function escCutTheTurn(d: Draft): Draft {
   if (d.state !== 'unknown' || !d.beforeEsc) return d;

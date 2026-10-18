@@ -268,6 +268,9 @@ function asTypedText(data: string): string {
  */
 export const TYPING_PAUSE_MS = 5000;
 
+/** Backspaces beyond the characters Tars typed, when a cut turn's field may hold them back (noteTurnCut). */
+const REFILL_SLACK = 8;
+
 /**
  * How long after the submit keystroke the draft is typed back.
  *
@@ -523,6 +526,13 @@ interface TerminalInput {
   agentId?: string;
   /** When Tars last finished typing a message in, or 0. */
   lastWriteAt: number;
+  /**
+   * Since the last message Tars typed that opened a turn: how many characters
+   * it typed, everything typed into the terminal after it, and whether another
+   * message of Tars's went into that turn. What an Esc that cut the turn may
+   * have made the CLI put back depends on it (noteTurnCut).
+   */
+  sinceTurnOpened?: { chars: number; keys: string; alone: boolean };
 }
 
 const inputs = new WeakMap<pty.IPty, TerminalInput>();
@@ -630,6 +640,7 @@ export function draftOf(ptyProcess: pty.IPty): Draft {
  */
 export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   const state = inputOf(ptyProcess);
+  if (state.sinceTurnOpened) state.sinceTurnOpened.keys += data;
   // A key typed while the CLI shows a dialog answers the dialog: the field
   // behind it is as it was. Read as a key in the field, the arrow and the Enter
   // that picked an option left a draft Tars could not vouch for, and what the
@@ -669,17 +680,30 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
 }
 
 /**
- * A turn of this terminal's CLI was cut, the transcript says (lastInterruptAt):
- * an Esc typed just before, with nothing after it, was that cut, and left the
- * field as it was (input-draft.ts, escCutTheTurn). Until this, the field stayed
- * unknown and the agent's next task waited behind it until somebody pressed
- * Enter or Ctrl+C (found by qwen-code.spec.ts, the Audit's L1 on #461).
+ * A turn of this terminal's CLI was cut, the transcript says (lastInterruptAt).
+ * Until this, the field stayed unknown after the Esc that cut it, and the
+ * agent's next task waited until somebody pressed Enter or Ctrl+C (found by
+ * qwen-code.spec.ts, the Audit's L1 on #461).
+ *
+ * But the CLIs refill the field on that cut, read from their code (the Audit's
+ * M2 on #461): Qwen Code 0.25.2 moves what was queued during the turn back
+ * into it, else puts the cut prompt back into an empty field unless a tool is
+ * running; Claude Code 2.1.302 puts the last prompt back into an empty field
+ * (auto_restore_cancel). So the field is known again only when nothing but
+ * that one Esc was typed since Tars's message opened the turn, and no other
+ * message of Tars's went into it: then it holds nothing, or that message, and
+ * Tars takes it out with as many backspaces before typing (takeField), which
+ * do nothing in an empty field. Anything else leaves it unknown, and the task
+ * waits, as before.
  */
 export function noteTurnCut(ptyProcess: pty.IPty): void {
   const state = inputOf(ptyProcess);
-  const before = state.draft;
-  state.draft = escCutTheTurn(state.draft);
-  if (state.draft === before) return;
+  const since = state.sinceTurnOpened;
+  if (!since || !since.alone || since.keys !== '\x1b') return;
+  const cut = escCutTheTurn(state.draft);
+  if (cut === state.draft || cut.text !== '') return;
+  state.draft = { ...cut, refilled: since.chars };
+  state.sinceTurnOpened = undefined;
   if (state.queue.length > 0) pump(ptyProcess);
   fieldChanged(ptyProcess);
 }
@@ -884,8 +908,13 @@ function pump(ptyProcess: pty.IPty): void {
  * submitted with the message, or lost.
  */
 function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): void {
+  const refilled = state.draft.refilled;
+  if (refilled !== undefined) state.draft = emptyDraft();
   const draft = state.draft;
   state.held = [];
+  // Whether this message opens a turn, or goes into one that runs (the CLI queues it).
+  const owner = item.origin?.agentId ?? state.agentId ?? terminalOwner.get(ptyProcess);
+  const opensTurn = !(owner && turnProbe && turnRunning(owner));
 
   const done = () => {
     const held = state.held ?? [];
@@ -899,6 +928,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
     fieldChanged(ptyProcess);
   };
 
+  // What the CLI may have put back after a cut turn: Tars's own message, no longer.
+  if (refilled !== undefined) write(ptyProcess, state, '\x7f'.repeat(refilled + REFILL_SLACK));
   if (draft.text) write(ptyProcess, state, clearKeys(draft));
   // Only a request an agent made carries an id (core/task-requests.ts): Tars's
   // own lines and the channels' stay as their contracts recorded them.
@@ -906,7 +937,9 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   // Spent by the message that goes in, never by one withdrawn or dropped first.
   const owed = owedToFirstMessage.get(ptyProcess);
   owedToFirstMessage.delete(ptyProcess);
-  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
+  const chars = writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
+  if (opensTurn) state.sinceTurnOpened = { chars, keys: '', alone: true };
+  else if (state.sinceTurnOpened) state.sinceTurnOpened.alone = false;
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -1035,7 +1068,13 @@ export function withSenderLine(sender: MessageSender, data: string): string {
 }
 
 /** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): void {
+/** Types a message into the field, its Enter apart; answers how many characters went in. */
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): number {
+  let chars = 0;
+  const write = (p: pty.IPty, st: TerminalInput, piece: string) => {
+    writeInto(p, st, piece);
+    chars += piece.replace(/\x1b\[20[01]~/g, '').length;
+  };
   // What the CLI is owed (oweToFirstMessage) goes first, into the same field
   // and before the message's one Enter, so it starts no turn of its own:
   // Tars's words, under Tars's own line when the message has a sender, so the
@@ -1067,6 +1106,7 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
     // still be delayed (see below) so it isn't swallowed into the paste.
     write(ptyProcess, state, data);
   }
+  return chars;
 }
 
 /**
@@ -1077,6 +1117,9 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
  * timer and leave the field owned by nobody, so the terminal is given up on
  * instead and whatever was queued for it stops pretending it is going out.
  */
+/** `write`, for writeBody, which counts what it types under the same name. */
+const writeInto = (ptyProcess: pty.IPty, state: TerminalInput, data: string) => write(ptyProcess, state, data);
+
 function write(ptyProcess: pty.IPty, state: TerminalInput, data: string): void {
   try {
     ptyProcess.write(data);

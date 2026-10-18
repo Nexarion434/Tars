@@ -540,7 +540,8 @@ which an administrator enforces controls over the user's and the project's setti
 `QWEN_CODE_SYSTEM_SETTINGS_PATH` names in the environment Tars was started with. Pointing the slot at Tars's file
 dropped those controls without a word. Since this fix the administrator's file is read again at each launch and
 merged over Tars's (`underAdministrator` in `services/qwen-code.ts`): their value wins wherever both set one, a
-list is both lists (their hooks run, then Tars's), and an MCP server they name is theirs whole. One that cannot be
+hook list is both lists (their hooks run, then Tars's), any other list is theirs alone (an allowlist is never
+widened), and an MCP server they name is theirs whole. One that cannot be
 read (not JSON, a folder, refused) stops the agent from starting, and the start says which file and why. What it
 does not close: Tars's agent files sit in `~/.dorothy/qwen-code/agents`, which every agent can write, so an agent
 can change another Qwen Code agent's file until its next launch rewrites it, as it can `statusline.sh`; and qwen's
