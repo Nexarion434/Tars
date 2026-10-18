@@ -29,6 +29,9 @@ import { DEV_URL, PORT_OFFSET, apiPort } from './ports.mjs';
  */
 
 const LEAD = 'dddd4444-0000-4000-8000-0000000000d4';
+/** What a test started, ended after it even when it ran out of time: a stand-in left on its port answers the next run. */
+const started: ChildProcess[] = [];
+test.afterEach(() => { for (const child of started.splice(0)) child.kill(); });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const ANSI = /\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>78DEHMNOZc]/g;
 type Reply = { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
@@ -101,6 +104,9 @@ for (const newInterface of [false, true]) {
     const stub: ChildProcess = spawn(process.execPath, [path.resolve('e2e', 'live', 'fake-messages-api.mjs')], {
       env: { PATH: process.env.PATH, FAKE_PORT: String(STUB), FAKE_LOG, FAKE_KEY: KEY }, stdio: 'ignore',
     });
+    started.push(stub);
+    await expect.poll(() => fs.existsSync(FAKE_LOG) && fs.readFileSync(FAKE_LOG, 'utf8').includes('"listening"'),
+      { timeout: 10_000, message: `the stand-in is not listening on ${STUB}: is another process holding the port?` }).toBe(true);
     const requests = () => (fs.existsSync(FAKE_LOG) ? fs.readFileSync(FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : [])
       .filter((r: { url?: string }) => r.url) as Array<{ url: string; last: string; side: boolean; auth: { bearer: string | null; xApiKey: string | null } }>;
 
@@ -132,6 +138,7 @@ for (const newInterface of [false, true]) {
         },
       });
       servers.push(mcp);
+      started.push(mcp);
       const replies = new Map<number, (msg: Reply) => void>();
       // A server that dies answers nothing: every call still waiting is answered with what it said, not left to hang.
       let mcpErr = '';
