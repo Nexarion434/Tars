@@ -93,7 +93,7 @@ process.stdin.resume();
 `;
 
 type Banner = { task: { ref: string; from: string; startedAt: string; firstLine: string } | null; waiting: Array<{ ref: string; from: string; firstLine: string }> };
-type Agent = { id: string; status: string; cliRunning?: boolean; currentSessionId?: string; taskBanner?: Banner };
+type Agent = { id: string; status: string; cliRunning?: boolean; currentSessionId?: string; lastTurnStartedAt?: string; taskBanner?: Banner };
 type Api = { electronAPI: {
   agent: { start(p: { id: string; prompt: string }): Promise<unknown>; list(): Promise<Agent[]>; get(id: string): Promise<Agent | null> };
   usage: { tasks(q?: { sinceDays?: number }): Promise<{ tasks: Array<{ id: string; agentId: string; source: string; requesterAgentId: string | null; outcome: string; sessionIds: string[]; costUSD: number | null }> }> };
@@ -196,6 +196,11 @@ for (const newInterface of [false, true]) {
       expect.soft(String(seen.listText ?? ''), 'the list names the waiting task').toContain('run the tests');
 
       // 2. stop task: that task only. The turn ends, the session stays, the waiting task goes in.
+      // Clicked once its turn runs, as Tars asks: a task typed into the terminal whose turn the CLI has not yet
+      // reported (its UserPromptSubmit hook) is refused, "its turn not begun: stop it once its turn runs"
+      // (services/task-banner.ts). The classic shell's run of 18/10 21:43 clicked 0.3 s before that hook.
+      const slowAt = Date.parse(lines(path.join(home, 'stand-in.jsonl')).find((e) => typeof e.turn === 'string' && e.turn.includes('SLOW'))?.at ?? '');
+      await expect.poll(async () => Date.parse((await get('dev'))?.lastTurnStartedAt ?? '') >= slowAt, { timeout: 30_000 }).toBe(true);
       if (await banner.count()) await banner.getByRole('button', { name: 'stop task' }).click();
       const next = page.locator('[data-task-banner]').filter({ hasText: 'run the tests' });
       await expect.soft(next, 'the waiting task is now in hand').toBeVisible({ timeout: 30_000 });
