@@ -31,9 +31,16 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * d. Tars's own pass still hands oc a task, and the window still starts an agent (qa).
  * e. Stopping is reserved as handing work is: dev's stop_agent on qa is refused with the message that it asks its
  *    orchestrator, and qa's CLI keeps running; lead's stop_agent on qa stops it, filed under lead.
+ * g. A terminal open beside the queue (the Audit's gate of #449): oc's terminal runs (the window starts it), and while
+ *    a run of lead's works on oc, lead's start_agent to oc waits its turn, is typed into the terminal once the run
+ *    answered, and task_status by its id says it went in (M1, L3). oc's CLI tells Tars nothing of its turns, so its
+ *    terminal, given that task, does not hold it: lead's next delegate_task still runs (H1). dev's kanban claim of a
+ *    task for qa is refused, with the code of an order (M2).
  * f. A task waiting its turn is in Tars's memory only: lead delegates to oc while a run of Tars's holds it, Tars quits
  *    and starts again on the same home, and lead's delegate_task says that Tars restarted and that the task never
  *    started and must be asked again; task_status asked of the new Tars says the same; the task never runs.
+ * Red on f9966e6e for g: the task is typed into oc's terminal beside the run, the next delegate_task waits behind
+ * "a turn in its terminal" until its timeout, and dev's claim is answered by the board, not refused.
  * Red on 9df7c099 (2.0.4 before this change): the two runs overlap, the worker's calls go through, the message is
  * typed into qa's turn with no label. Red on 36822724 for e and f: dev stops qa, and the delegation waits 90 s after
  * the restart, then says Tars could not be reached and the run may still be working.
@@ -50,6 +57,14 @@ const HOLD_S = 120;
  */
 const FAKE_ACP = String.raw`
 const fs = require('fs');
+if (process.stdin.isTTY) {
+  // Started in its terminal (the window's Start), not over ACP: a stand-in that records every byte typed into it.
+  process.stdin.setRawMode(true);
+  process.stdin.on('data', (d) => fs.appendFileSync(process.env.FAKE_ACP_LOG + '.typed', d));
+  process.stdout.write('opencode ready
+');
+  return;
+}
 const log = (entry) => fs.appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + '\n');
 log({ launched: true });
 let buf = '';
@@ -314,6 +329,34 @@ for (const newInterface of [false, true]) {
       expect.soft(leadStop.isError, leadStop.text).toBe(false);
       expect.soft(leadStop.text).toContain('Stopped agent qa');
       expect.soft(qaAfterLeadStop, "qa after the orchestrator's stop").toMatchObject({ status: 'stopped', stoppedBy: 'Project Lead', stopReason: 'the e2e stops qa', cliRunning: false });
+
+      // g. A terminal open on oc beside its delegated runs.
+      const ocTyped = () => (fs.existsSync(`${acpLog}.typed`) ? fs.readFileSync(`${acpLog}.typed`, 'utf8') : '');
+      await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'oc', prompt: '' }));
+      await expect.poll(async () => (await page.evaluate(() => (window as unknown as Api).electronAPI.agent.list())).find((a) => a.id === 'oc')?.cliRunning ?? false, { timeout: 30_000 }).toBe(true);
+      const gone = lead.call('delegate_task', { id: 'oc', prompt: 'TASK-GONE review the docs', timeoutSeconds: 120 });
+      await expect.poll(() => acpEntries().some((e) => e.prompt === 'TASK-GONE'), { timeout: 30_000 }).toBe(true);
+      const typedTask = await lead.call('start_agent', { id: 'oc', prompt: 'TASK-TYPED fix the docs' });
+      await new Promise((r) => setTimeout(r, 1500));
+      const typedDuringRun = ocTyped().includes('TASK-TYPED');
+      const goneAnswer = await gone;
+      await expect.poll(() => ocTyped().includes('TASK-TYPED'), { timeout: 30_000 }).toBe(true).catch(() => undefined);
+      const typedRef = /queued as (t-[0-9a-f]{8})/.exec(typedTask.text)?.[1] ?? '';
+      const typedStatus = typedRef ? await lead.call('task_status', { taskId: typedRef }) : null;
+      const afterTyped = await lead.call('delegate_task', { id: 'oc', prompt: 'TASK-GTWO check the links', timeoutSeconds: 60 });
+      const devClaim = await api('/api/kanban/tasks/t_0123abcd/claim', ids.dev, { agent_id: 'qa' }, 'dev');
+      keep({ g: { typedTask, typedDuringRun, goneAnswer, typedRef, typedStatus, afterTyped, devClaim, ocTyped: ocTyped().slice(-3000) } });
+      expect.soft(typedTask.isError, typedTask.text).toBe(false);
+      expect.soft(typedTask.text).toContain('queued as t-');
+      expect.soft(typedTask.text).toContain('task_status');
+      expect.soft(typedDuringRun, "typed into oc's terminal beside the run").toBe(false);
+      expect.soft(goneAnswer.text).toContain('answer for TASK-GONE');
+      expect.soft(ocTyped(), 'never typed in once the run answered').toContain('TASK-TYPED');
+      expect.soft(typedStatus?.text ?? '').toContain('went into its terminal');
+      expect.soft(afterTyped.isError, afterTyped.text).toBe(false);
+      expect.soft(afterTyped.text, 'the terminal given a task held oc').toContain('answer for TASK-GTWO');
+      expect.soft(devClaim.status, JSON.stringify(devClaim.body)).toBe(403);
+      expect.soft(devClaim.body.code).toBe('worker_may_not_order');
 
       // f. Tars restarts while lead's task waits its turn on oc, behind a run of Tars's own.
       const hold = api('/api/agents/oc/run-task', ids.tars, { task: 'TASK-HOLD keep oc busy' }).catch((err: unknown) => ({ status: 0, body: { error: String(err) } }));
