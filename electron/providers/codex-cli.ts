@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse as parseToml } from 'smol-toml';
-import { execCliSync } from './cli-exec';
+import { execCli } from './cli-exec';
 import { trustsTooMuch } from '../utils/trust-too-much';
 import { updateSharedTextSync } from '../utils/shared-file';
 import type { AgentEffort } from '../types';
@@ -68,40 +68,65 @@ export function codexFlagsFromHelp(help: string): Set<string> {
   return new Set(help.match(/--[a-z][a-z0-9-]*/g) ?? []);
 }
 
+/** The flags each codex binary listed, by binaryKey; and the asks of --help still running. */
 const flagsByBinary = new Map<string, Set<string>>();
+const asking = new Map<string, Promise<Set<string> | undefined>>();
 
-function flagsOf(binaryPath: string): Set<string> {
-  let key = binaryPath;
+/** A binary and its version, as its flags are kept: its real path, size and time of change, which an update changes. */
+function binaryKey(binaryPath: string): string {
   try {
     const real = fs.realpathSync(binaryPath);
     const stat = fs.statSync(real);
-    key = `${real}:${stat.size}:${stat.mtimeMs}`;
-  } catch { /* asked by its name: on the PATH, or not there at all */ }
-  let flags = flagsByBinary.get(key);
-  if (!flags) {
-    try {
-      // On the main thread, once per binary: codex answers --help in tens of
-      // milliseconds, and the answer is kept for the binary. Waited for as
-      // long as it takes, to 10 s: under a heavy load (a load average of 170,
-      // measured at #465's gate) a slow answer given up on at 2 s handed every
-      // launch of the run the stable flags; one that hangs is given up on then.
-      flags = codexFlagsFromHelp(String(execCliSync(binaryPath, ['--help'], { encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] })));
-    } catch {
-      flags = new Set();
-    }
-    flagsByBinary.set(key, flags);
+    return `${real}:${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return binaryPath; // asked by its name: on the PATH, or not there at all
   }
-  return flags;
 }
 
 /**
- * Whether the codex at `binaryPath` has a flag, from its own `--help`, asked when a flag is first asked about (only
- * auto needs one), and once per binary (its path, size and time of change: an update is asked again). A codex that
- * cannot be asked has none of the flags this checks: it is handed the stable ones only.
+ * The flags the codex at `binaryPath` has, from its own `--help`, read off the main thread (the Audit's L6 on #465:
+ * read with execFileSync, it froze the window for as long as codex took). Kept per binary and version, and the asks
+ * made while codex answers share that one codex. Waited for as long as it takes, to `timeoutMs`: under a heavy load (a
+ * load average of 170, measured at #465's gate) a slow answer given up on at 2 s handed every launch of the run the
+ * stable flags. undefined when codex could not answer (not there, failed, hung past its time): that is not kept, and
+ * the next launch asks again.
+ */
+export function readCodexFlags(binaryPath: string, timeoutMs = 10_000): Promise<Set<string> | undefined> {
+  const key = binaryKey(binaryPath);
+  const known = flagsByBinary.get(key);
+  if (known) return Promise.resolve(known);
+  let ask = asking.get(key);
+  if (!ask) {
+    ask = execCli(binaryPath, ['--help'], { encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 })
+      .then(({ stdout }) => {
+        const flags = codexFlagsFromHelp(stdout);
+        flagsByBinary.set(key, flags);
+        return flags;
+      }, () => undefined)
+      .finally(() => asking.delete(key));
+    asking.set(key, ask);
+  }
+  return ask;
+}
+
+/**
+ * Whether the codex at `binaryPath` has a flag, from the answer readCodexFlags kept for it (only auto needs one): never
+ * codex run on the main thread. A launch reads the flags before it builds its line (CodexProvider.prepareLaunch); a
+ * line built without that answer, or for a codex that could not answer, has the stable flags only, and the flags are
+ * read for the next.
  */
 export function codexAccepts(binaryPath: string): (flag: string) => boolean {
   let known: Set<string> | undefined;
-  return (flag: string) => (known ??= flagsOf(binaryPath)).has(flag);
+  return (flag: string) => {
+    if (!known) {
+      known = flagsByBinary.get(binaryKey(binaryPath));
+      if (!known) {
+        void readCodexFlags(binaryPath);
+        known = new Set();
+      }
+    }
+    return known.has(flag);
+  };
 }
 
 /**

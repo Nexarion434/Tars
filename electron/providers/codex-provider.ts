@@ -13,7 +13,7 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
-import { CODEX_SESSION_ID, codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexModels } from './codex-cli';
+import { CODEX_SESSION_ID, codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexFlags, readCodexModels } from './codex-cli';
 
 /**
  * The models of a ChatGPT account as codex-cli 0.163.0 listed them on 2026-10-18, in its order: what Tars offers
@@ -64,6 +64,11 @@ export class CodexProvider implements CLIProvider {
 
   resolveBinaryPath(appSettings: AppSettings): string {
     return appSettings.cliPaths?.codex || 'codex';
+  }
+
+  /** The installed codex's flags, read off the main thread before a launch builds its line (codex-cli.ts). */
+  async prepareLaunch(binaryPath: string): Promise<void> {
+    await readCodexFlags(binaryPath);
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {

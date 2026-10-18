@@ -755,6 +755,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const appSettingsForCommand = getAppSettings();
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await cliProvider.prepareLaunch?.(binaryPath);
 
     // The orchestrator's powers: its project's orchestrator (the toggle, never
     // the name) or a chat's runner (core/agent-role.ts).

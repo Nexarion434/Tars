@@ -288,7 +288,10 @@ async function spawnAgentSessionInSlot(
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
   // Build the CLI command through the provider so non-claude CLIs (codex,
-  // gemini, grok, opencode, pi) get their own syntax instead of claude flags.
+  // gemini, grok, opencode, pi) get their own syntax instead of claude flags,
+  // once what its line needs is read from the CLI (codex's flags), off the
+  // main thread.
+  await cliProvider.prepareLaunch?.(binaryPath);
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({

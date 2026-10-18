@@ -121,6 +121,12 @@ export interface CLIProvider {
   /** Resolve the binary path from app settings or defaults */
   resolveBinaryPath(appSettings: AppSettings): string;
 
+  /**
+   * What the line needs read from the CLI itself, read off the main thread: every launch path awaits it before it
+   * calls buildInteractiveCommand (codex's own flags, the Audit's L6 on #465). Absent: nothing to read.
+   */
+  prepareLaunch?(binaryPath: string): Promise<void>;
+
   /** Build command string for interactive PTY sessions */
   buildInteractiveCommand(params: InteractiveCommandParams): string;
 
