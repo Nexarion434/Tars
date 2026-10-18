@@ -30,11 +30,16 @@ import * as path from 'node:path';
  *      which holds none, erases one; an empty field from an old page clears a key.
  *  P9. The inventory misses a credential of AppSettings: a field named like a
  *      key, a token, a secret or a password that is not a secret field.
+ * P10. (Added before its code, 2026-10-18.) The pages written before 2.0.4 test
+ *      a key for truth (the Telegram test button, a provider's "set" state):
+ *      with the field gone they read every key as unset. A set secret reaches
+ *      the window as a mask, never as itself, and the mask sent back by a save
+ *      keeps the key; secretsSet says which are set; secrets:set clears one.
  */
 
 import {
   SECRET_FIELDS, migrateSecrets, loadSettingsWithSecrets, saveSettingsSplit, withoutSecrets, keepSecrets, secretStates,
-  SECRETS_FILE, readSecrets,
+  SECRETS_FILE, readSecrets, settingsForWindow, setSecret, SECRET_MASK,
 } from '../../../electron/services/settings-secrets';
 import { DATA_DIR, PRIVATE_DIR, APP_SETTINGS_FILE } from '../../../electron/constants';
 import type { AppSettings } from '../../../electron/types';
@@ -149,5 +154,20 @@ describe('the secrets, in ~/.tars-private', () => {
     expect(saved).toMatchObject({ ...KEYS, telegramEnabled: false });
     // A new key typed in a page still reaches it.
     expect(keepSecrets(current, { openRouterApiKey: 'or-new' } as Partial<AppSettings>).openRouterApiKey).toBe('or-new');
+  });
+
+  it('P10. the window gets a mask for a set secret, its save of the mask keeps the key, secrets:set clears one', () => {
+    const current = { ...KEYS, telegramEnabled: true, cliApiKeys: { codex: { key: 'cx-1' } } } as unknown as AppSettings;
+    const shown = settingsForWindow(current) as unknown as Record<string, unknown>;
+    expect(JSON.stringify(shown)).not.toMatch(/ds-secret-111|tg-secret-222|honcho-333|x-444|cx-1/);
+    expect(shown.deepSeekApiKey).toBe(SECRET_MASK);
+    expect(shown.slackBotToken).toBe('');
+    expect(shown).not.toHaveProperty('cliApiKeys');
+    expect(shown.secretsSet).toMatchObject({ deepSeekApiKey: true, slackBotToken: false });
+    expect(keepSecrets(current, shown as Partial<AppSettings>)).toMatchObject(KEYS);
+    const cleared = setSecret(current, 'deepSeekApiKey', null);
+    expect(cleared.ok && cleared.settings.deepSeekApiKey).toBe('');
+    expect(setSecret(current, 'cliApiKeys', 'x').ok).toBe(false);
+    expect(setSecret(current, 'telegramEnabled', 'x').ok).toBe(false);
   });
 });
