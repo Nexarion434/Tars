@@ -30,6 +30,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 5. a permission qw asks for reads `waiting` / `permission` in the window, as a claude agent's does;
  * 6. Tars restarted, qw started again continues its conversation (--resume with the session it had);
  * 7. Usage by task holds qw's tasks with their tokens and cost.
+ * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.dorothy/qwen-code/mcp-servers.json),
+ * seeded on this checkout's bundle: a dev run finds no bundle under its resources and registers none, for any CLI.
  * Red on feat/cli-api-keys (24469620), before the provider: qwen-code is Claude, and none of this holds.
  * The artefact: values.json (every answer, the stand-in's records, the settings file, the usage), E2E_TRACE=on.
  */
@@ -212,6 +214,12 @@ for (const newInterface of [false, true]) {
       agent('qw', 'Qwen Worker', 'worker', 'qwen-code', { cliPath: qwen, model: 'deepseek-v4-flash', effort: 'high' }),
     ], null, 2));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
+    // What a packaged Tars registers for Qwen Code at its start (mcp-orchestrator.ts), the bundles being under its
+    // resources there: in a dev run they are not, so the entry is the one it would write, on this checkout's bundle.
+    fs.mkdirSync(path.join(dir, 'qwen-code'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'qwen-code', 'mcp-servers.json'), JSON.stringify({
+      'claude-mgr-orchestrator': { command: process.execPath, args: [path.resolve('mcp-orchestrator', 'dist', 'bundle.js')] },
+    }));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { qwencode: qwen, additionalPaths: [bin] }, newInterface,
