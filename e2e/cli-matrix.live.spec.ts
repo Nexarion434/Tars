@@ -14,7 +14,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * claude on claude-haiku-5-5 at low effort, codex on gpt-6-luna at low effort, Qwen Code on deepseek-v4-flash, amp
  * on its default. Logins: claude's own sign-in (its keychain; the sandbox HOME only moves its files), codex's
  * auth.json and qwen's settings.json copied into the sandbox HOME for the run and removed with it; nothing of them is
- * printed or kept in the artefact.
+ * printed or kept in the artefact. A ChatGPT login rotates its refresh token when codex refreshes it: an auth.json
+ * the run refreshed (same account, still readable) is put back in ~/.codex, or the real codex would be signed out.
  *
  * One short delegation per ordered pair (A, B), in plain words, as a person would ask: A is told to give B, with
  * delegate_task, the task "send A the word R<pair> with send_message, then answer with the word D<pair>". Read from
@@ -63,6 +64,10 @@ for (const newInterface of [false, true]) {
     for (const [from, to] of [[path.join(real, '.codex', 'auth.json'), path.join(home, '.codex', 'auth.json')], [path.join(real, '.qwen', 'settings.json'), path.join(home, '.qwen', 'settings.json')]]) {
       if (fs.existsSync(from)) fs.copyFileSync(from, to);
     }
+    const codexAuth = { real: path.join(real, '.codex', 'auth.json'), copy: path.join(home, '.codex', 'auth.json') };
+    const authText = (f: string) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
+    const accountOf = (text: string) => { try { const j = JSON.parse(text); return j?.tokens?.account_id ?? null; } catch { return undefined; } };
+    const authAtStart = authText(codexAuth.copy);
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(agents.map((a) => ({
       id: a.id, name: a.name, character: 'robot', provider: a.provider, status: 'idle', role: 'orchestrator', projectPath: project, skills: [],
       permissionMode: 'bypass', cliPath: a.path, ...(a.model ? { model: a.model } : {}), ...(a.effort ? { effort: a.effort } : {}),
@@ -155,6 +160,13 @@ for (const newInterface of [false, true]) {
       expect(cells.filter((c) => c.step !== 'starts').length, 'every pair has its cells').toBe(agents.length * (agents.length - 1) * 4);
     } finally {
       await app.close().catch(() => undefined);
+      // codex refreshed its login in the copy: the same account's newer tokens go back, atomically.
+      const after = authText(codexAuth.copy);
+      if (authAtStart && after && after !== authAtStart && accountOf(after) !== undefined && accountOf(after) === accountOf(authAtStart)) {
+        const tmp = `${codexAuth.real}.tars-e2e-${process.pid}`;
+        fs.writeFileSync(tmp, after, { mode: 0o600 });
+        fs.renameSync(tmp, codexAuth.real);
+      }
       await removeHome(home);
     }
   });
