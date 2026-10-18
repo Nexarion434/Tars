@@ -24,7 +24,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    measured on 0.163);
  * 5. no file under the sandbox HOME but ~/.dorothy/app-settings.json holds a key (the CLIs' own folders, the
  *    window's profile);
- * 6. codex's key cleared, the agent started again gets no CODEX_API_KEY and no provider of Tars's: its own login.
+ * 6. codex's key cleared, and its CLI ended by itself (its shell stays, as when a CLI exits on its own): started
+ *    again in that shell's place, it gets no CODEX_API_KEY and no provider of Tars's, its own login (the Audit's L1
+ *    on #459: the reused shell kept the key it was spawned with).
  * Red on main 42fe71d8: there is no cliKeys channel, and codex's agent gets no key.
  * The artefact: values.json (the lists, the stand-ins' records, the files scanned), with E2E_TRACE=on the app's trace.
  */
@@ -37,7 +39,7 @@ const argv = process.argv.slice(2);
 if (['mcp', '--version', 'version', 'login', 'auth', 'config'].includes(argv[0])) { process.stdout.write('ok\n'); process.exit(0); }
 const keys = Object.keys(process.env).filter((k) => /_(API_KEY|KEY)$/.test(k)).sort();
 const hashes = Object.fromEntries(keys.map((k) => [k, crypto.createHash('sha256').update(process.env[k]).digest('hex')]));
-fs.appendFileSync(path.join(process.env.HOME, 'stand-in.jsonl'), JSON.stringify({ name, agent: process.env.CLAUDE_AGENT_ID || null, argv, keys, hashes }) + '\n');
+fs.appendFileSync(path.join(process.env.HOME, 'stand-in.jsonl'), JSON.stringify({ name, pid: process.pid, agent: process.env.CLAUDE_AGENT_ID || null, argv, keys, hashes }) + '\n');
 process.stdout.write(name + ' stand-in ready\n');
 process.stdin.on('data', () => {});
 process.stdin.resume();
@@ -54,7 +56,7 @@ const KEYS: Record<string, { key: string; envVar: string; set?: string }> = {
   pi: { key: 'e2e-pi-mistral-6666', envVar: 'MISTRAL_API_KEY', set: 'MISTRAL_API_KEY' },
 };
 
-type Rec = { name: string; agent: string | null; argv: string[]; keys: string[]; hashes: Record<string, string> };
+type Rec = { name: string; pid: number; agent: string | null; argv: string[]; keys: string[]; hashes: Record<string, string> };
 type KeyState = { id: string; envVar: string | null; hasKey: boolean };
 type Api = { electronAPI: {
   cliKeys: { list(): Promise<KeyState[]>; set(id: string, patch: { key?: string | null; envVar?: string | null }): Promise<{ success: boolean; error?: string }> };
@@ -167,7 +169,8 @@ for (const newInterface of [false, true]) {
 
       // 6. Codex's key cleared: started again, it runs on its own login.
       const cleared = await api((a) => a.cliKeys.set('codex', { key: null }));
-      await api((a) => a.agent.stop('a-codex', 'the e2e starts it again without its key'));
+      // The CLI ends by itself; its shell stays.
+      process.kill(first.find((r) => r.agent === 'a-codex')!.pid, 'SIGKILL');
       await expect.poll(async () => (await api((a) => a.agent.list())).find((x) => x.id === 'a-codex')?.cliRunning ?? false, { timeout: 30_000 }).toBe(false);
       await api((a) => a.agent.start({ id: 'a-codex', prompt: '' }));
       await expect.poll(() => records().filter((r) => r.agent === 'a-codex').length, { timeout: 60_000 }).toBe(2);

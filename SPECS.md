@@ -232,7 +232,7 @@ One key per CLI, beside the API-key providers on the claude binary: codex, qwen-
 | amp | `AMP_API_KEY`, fixed | `amp --help` |
 | opencode, pi, omp, cline, kilo | the one named in Settings: none is passed until then | they read each model provider's own variable |
 
-A key has no whitespace or control character; a variable is in capitals, ends with `_API_KEY`, `_KEY` or `_TOKEN`, and is none Tars sets (`CLAUDE_`, `DOROTHY_`, `TARS_`) nor one that changes how a process runs (`DYLD_`, `LD_`, `NODE_`...). Like every provider key, it sits in `~/.dorothy`, which every agent is handed with `--add-dir`: an agent that reads `app-settings.json` reads the keys (SECURITY.md).
+With a key, Tars's codex provider (`-c model_provider=tars-key`) overrides a model provider the user chose in `~/.codex/config.toml`, for Tars's agents only: their own `codex` keeps it. A start in a shell kept from an earlier launch carries the keys set now: a shell spawned with other keys (`keyPrintOf`, in memory) is closed and a new one opened (`killStalePty`), so a key set since reaches it, and a key cleared since leaves it. A key has no whitespace or control character; a variable is in capitals, ends with `_API_KEY`, `_KEY` or `_TOKEN`, and is none Tars sets (`CLAUDE_`, `DOROTHY_`, `TARS_`) nor one that changes how a process runs (`DYLD_`, `LD_`, `NODE_`...). Like every provider key, it sits in `~/.dorothy`, which every agent is handed with `--add-dir`: an agent that reads `app-settings.json` reads the keys (SECURITY.md).
 
 ### Keeping the CLIs current
 
