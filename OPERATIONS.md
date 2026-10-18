@@ -1188,7 +1188,7 @@ change meant to be seen, recorded on the code before the change.
 ### How registration works
 
 `setupMcpOrchestrator()` runs on `whenReady()`, un-awaited so it does not hold the first paint.
-For each server × each of the 19 providers it calls `provider.isMcpServerRegistered(name, path)`
+For each server × each provider of the registry it calls `provider.isMcpServerRegistered(name, path)`
 and, if absent, `provider.registerMcpServer(name, 'node', [bundlePath])`, yielding with
 `setImmediate` between each because registering shells out and this is the thread that pumps
 every PTY.

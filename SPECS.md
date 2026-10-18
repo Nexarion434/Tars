@@ -142,7 +142,7 @@ Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `sr
 
 `safeEffort()` is exported from the same module and validates reasoning effort against `{low, medium, high, xhigh, max}` before it lands unquoted in a shell string. The value arrives over IPC, so it is validated at the point of use, not trusted from the caller. `effortFlag()` turns it into ` --effort <level>` for the fourteen providers on the claude binary, medium included: without the flag Claude Code starts at the effort it last saved for that model from any terminal (`/effort` writes `modelSettings.<model>.effortLevel` into `~/.claude/settings.json`), not at medium. An agent with no effort gets no flag, which is the one case that means the CLI's own.
 
-### The registry (19 providers)
+### The registry (21 providers)
 
 | id | Display name | Binary | Config dir | Reaches the model via |
 |---|---|---|---|---|
@@ -152,6 +152,8 @@ Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `sr
 | `grok` | Grok CLI | `grok` | `~/.grok` | native |
 | `opencode` | OpenCode | `opencode` | `~/.opencode` | native |
 | `pi` | Pi Terminal | `pi` | `~/.pi` | native |
+| `amp` | Amp | `amp` | `~/.config/amp` | native |
+| `qwen-code` | Qwen Code | `qwen` | `~/.qwen` | native, on the models of the user's own `~/.qwen/settings.json` (2.0.4, below) |
 | `openrouter` | OpenRouter | `claude` | `~/.claude` | `https://openrouter.ai/api` |
 | `deepseek` | DeepSeek | `claude` | `~/.claude` | `https://api.deepseek.com/anthropic`, else OpenRouter |
 | `moonshot` | MoonshotAI (Kimi) | `claude` | `~/.claude` | `https://api.moonshot.ai/anthropic`, else OpenRouter |
@@ -176,6 +178,22 @@ Plus `local`: the `claude` binary pointed at a running Tasmania server (`ANTHROP
 | Prompt-injected memory | every provider whose `configDir` is not `~/.claude` (see §5) |
 | ACP mode | `claude`, `codex`, `gemini`, `grok`, `opencode`, `pi` (see §4) |
 | Orchestrator tool block | Claude only enforces it as a CLI flag (`--disallowed-tools`); on every other provider it is enforced by ACP permission arbitration |
+
+### Qwen Code (2.0.4): `providers/qwen-code-provider.ts`, `services/qwen-code.ts`
+
+The CLI `qwen` (a Gemini CLI fork) as a CLI of Tars's, measured with qwen 0.25.2 on deepseek-v4-flash on 2026-10-18. Not the provider `qwen`, which is the Qwen API through the claude binary.
+
+- **Session**: started with its task as `-i` (a positional prompt runs one-shot and exits), and the session stays; a delegated task is typed into it as for claude (a bracketed paste and Enter, taken as its next turn, the sender line intact). Resumed after a Tars restart with `--resume <id>` (`--fork-session` beside it for a restart), the transcript checked first (`resolveResumeSessionId`).
+- **Models**: the user's `~/.qwen/settings.json` modelProviders, every provider's list, read and never written (`qwenModels`; `models:cli` for the window); `-m <id>`.
+- **Effort**: no flag; the setting `model.reasoningEffort` (low to max), in Tars's settings file for the agent (below). The status bar read "deepseek-v4-flash low" with it set to low.
+- **Permission modes**: `--approval-mode` plan (plan), default (normal), auto-edit (auto), yolo (bypass). Plan is offered (`hasPlanMode`).
+- **Orchestrator**: `--exclude-tools edit write_file agent`, its own tool names (enforced, `enforcesOrchestratorMode`).
+- **Tars's settings file**: `QWEN_CODE_SYSTEM_SETTINGS_PATH` names `~/.dorothy/qwen-code/agents/<id>.json`, read above the user's settings (hooks concatenated), written at each launch: Tars's hooks, Tars's MCP servers (registered into `~/.dorothy/qwen-code/mcp-servers.json`, never `~/.qwen`), the effort, and `general.enableAutoUpdate: false`. No token and no key in it.
+- **Hooks**: Qwen Code fires Claude Code's hooks with Claude Code's fields (SessionStart, UserPromptSubmit with the prompt, Stop with `last_assistant_message`, StopFailure, Notification idle_prompt and permission_prompt, PermissionRequest with `tool_name`, SessionEnd, PostToolUse), so Tars's own scripts run as they are (the Node runner on win32): its turns are heard, its status is a claude agent's, a permission it asks for reads `waiting` / `permission` (`hasClaudeHooks`, `core/end-of-turn.ts`). SessionStart's additionalContext is not read (measured): how Tars works goes in the first prompt, as for every CLI without Claude's bootstrap.
+- **MCP**: a server gets qwen's whole environment (its own internal tokens removed, `sanitizeChildEnv`) and then its own `env`: the agent's identity (`CLAUDE_AGENT_ID`, its terminal's token) reaches Tars's servers through the environment, so send_message, delegate_task and the kanban speak as that agent.
+- **Key**: `keyEnvFor('qwen-code', settings, { model })`, the envKey of the agent's model (see An API key per CLI).
+- **Answer, tokens, cost**: from `~/.qwen/projects/<cwd, every character that is not a letter or a digit a dash, lower-cased on win32>/chats/<session>.jsonl`: the final message is the last assistant record's text parts, its thinking (`thought`) left out; tokens from each record's `usageMetadata` (input is the prompt less its cached part, output the candidates and the thoughts), priced from the catalogue by the model id.
+- **Updates**: its standalone install (`~/.local/lib/qwen-code`, a manifest named `@qwen-code/qwen-code`) by its own `qwen update`, once for the fleet, never while a session runs its node, judged by the manifest's version after; an npm install as amp's. Not while the user's `general.enableAutoUpdate` is false.
 
 ### Alt-provider safety gate
 

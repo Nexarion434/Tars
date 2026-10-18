@@ -231,9 +231,9 @@ so rather than inventing an answer.
 
 ## Providers
 
-Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi), twelve reached
-by API key: DeepSeek, Kimi (Moonshot), MiniMax, Mimo, NVIDIA, Nous Portal,
-Ollama Cloud, OpenRouter, Qwen, Venice AI, Zhipu and any OpenAI-compatible
+Eight CLIs (Claude Code, Codex, Gemini, Grok, opencode, Pi, Amp and Qwen Code),
+twelve reached by API key through Claude Code: DeepSeek, Kimi (Moonshot), MiniMax,
+Mimo, NVIDIA, Nous Portal, Ollama Cloud, OpenRouter, Qwen, Venice AI, Zhipu and any OpenAI-compatible
 endpoint you point Tars at yourself, plus Ollama for whatever you run
 locally. Local models also run through Tasmania.
 
