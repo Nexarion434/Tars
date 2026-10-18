@@ -38,6 +38,7 @@ import { emitAgentStatus } from '../agent-events';
 import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
+import { typeLaunchTask } from '../../core/typed-task';
 import { accountDir } from '../claude-accounts/registry';
 import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
@@ -419,6 +420,8 @@ async function spawnAgentSessionInSlot(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   noteLaunch(ptyProcess, launchSettings(agent));
+  // amp takes its task typed in, once it runs (core/typed-task.ts).
+  if (prompt.trim()) typeLaunchTask(cliProvider, ptyProcess, { prompt: taskPrompt, skills: agent.skills, isSuperAgent: isSuperAgentApi });
 
   agent.ptyId = ptyId;
   // The request this prompt runs is delivered with it, and its first turn is

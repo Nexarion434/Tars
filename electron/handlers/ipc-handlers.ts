@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopTask, taskBannerOf } from '../services/task-banner';
+import { typeLaunchTask } from '../core/typed-task';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { gitRefusal } from '../core/chat-slots';
@@ -929,6 +930,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     }
     noteLaunch(cliProcess, launched);
     oweToFirstMessage(cliProcess, promptWithMemory ? '' : preamble);
+    // amp takes its task typed in, once it runs (core/typed-task.ts).
+    typeLaunchTask(cliProvider, cliProcess, { prompt: promptWithMemory, skills: allAgentSkills, isSuperAgent: isSuperAgentCheck });
     if (start.platform === 'win32') armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
 
     // Save updated status
