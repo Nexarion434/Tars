@@ -69,6 +69,17 @@ import { EventEmitter } from 'node:events';
  *     typed beside the run, or queued as a task.
  * 19. (L-D) A note held behind steady work is never retold: its sender heard
  *     only that it was queued.
+ *
+ * Added after the QA's gate of 05e31fa4, for the code that fixed them (mutant
+ * killers, as cases 10 to 12):
+ * 20. (D5) The kanban's hand-off to an agent whose run works is typed beside
+ *     the run: no task.
+ * 21. (D2) A task whose turn came while a note is still held sits behind the
+ *     note in the writer, and the note waits for that task's turn: neither
+ *     ever goes in.
+ * 22. (D4) A task held in the writer (a person typing) gives its turn back
+ *     before it is written, and the next task is typed behind it, into the
+ *     same turn.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -101,7 +112,7 @@ import { registerKanbanRoutes, carryKanban } from '../../../../electron/services
 import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents, wireDialogProbe } from '../../../../electron/core/agent-manager';
-import { ptyProcesses, resetTerminalInput } from '../../../../electron/core/pty-manager';
+import { ptyProcesses, resetTerminalInput, writeHumanInput } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
 import { noteTurn } from '../../../../electron/services/task-ledger';
@@ -575,6 +586,66 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
     runs[0].end();
     await later(3000);
     expect(typedInto(target)).toContain('NOTE-L');
+  });
+});
+
+describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
+  it('20. the kanban\'s hand-off to an agent whose run works is a task: it waits its turn, never typed beside the run', async () => {
+    const { agent, terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    expect(runs).toHaveLength(1);
+    // The task's turn works in the terminal: the kanban's held hand-off is carried, and the fleet changes meanwhile.
+    expect(agent.status).toBe('running');
+    carryKanban([{ agentId: 'cl', item: { message: 'KANBAN-WORK task t_2 is yours', sender: { kind: 'tars' }, purpose: 'work', what: 'kanban task t_2' }, at: new Date().toISOString() }]);
+    agentStatusEmitter.emit('fleet-change', 'cl');
+    await later(3000);
+    expect(typedInto(terminal), 'typed beside the run').not.toContain('KANBAN-WORK');
+    // Since 2.0.4 the delegated task is a turn in the terminal: its status is that turn's, and the hand-off waits for
+    // it, with the kanban or in the line. (A run over ACP left the status idle, and the hand-off waited in the line.)
+    expect(oneTaskQueue.queued('cl').length, 'queued twice').toBeLessThanOrEqual(1);
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).toContain('KANBAN-WORK');
+  });
+
+  it('21. a task whose turn came while a note is held goes past it in the writer, and the note waits for that task\'s turn', async () => {
+    const { agent, terminal } = withCli('cl', 'claude', 'idle');
+    member('x');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-P for you' }, 'x');
+    const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-P fix it', intent: 'task' }, 'orch');
+    await Promise.all([n.done, t.done]);
+    expect(n.answer()?.data).toMatchObject({ note: true, queued: true });
+    expect(t.answer()?.data).toMatchObject({ mode: 'queued' });
+    // Just after the note's first look at the turn probe: the task's turn comes before its next one.
+    await later(1010);
+    runs[0].end();
+    await later(2000);
+    expect(typedInto(terminal), 'the task never went in').toContain('TASK-P');
+    expect(typedInto(terminal), 'the note went in with the task').not.toContain('NOTE-P');
+    agent.status = 'idle';
+    await later(3000);
+    expect(typedInto(terminal)).toContain('NOTE-P');
+  });
+
+  it('22. a task held in the writer by a person typing keeps its turn: the next task waits for it, never typed behind it', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
+    const u = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-U fix that', intent: 'task' }, 'orch');
+    await Promise.all([t.done, u.done]);
+    // Somebody types in the field as the run ends: T's turn comes, and T waits for the pause.
+    writeHumanInput(terminal as never, 'h');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).not.toContain('TASK-T');
+    expect(typedInto(terminal)).not.toContain('TASK-U');
+    await later(5000);
+    expect(typedInto(terminal), 'T never went in').toContain('TASK-T');
+    expect(typedInto(terminal), "U typed behind T, into T's turn").not.toContain('TASK-U');
   });
 });
 

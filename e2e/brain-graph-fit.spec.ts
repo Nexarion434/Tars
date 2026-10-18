@@ -98,9 +98,10 @@ async function measure(page: Page, firstAgent: string, frame: Locator | null): P
     // agent picked, that box is gone from the graph and the canvas is not.
     let canvas = document.querySelector<HTMLElement>('[data-e2e-canvas="1"]');
     if (!canvas) {
+      // The canvas by its name, once it holds the first agent's box: at fit it
+      // does not scroll, so it is no longer the first scrolling ancestor.
       const first = [...document.querySelectorAll('button')].find(b => (b.textContent ?? '').startsWith(firstAgent));
-      canvas = first?.parentElement ?? null;
-      while (canvas && !/(auto|scroll)/.test(getComputedStyle(canvas).overflow + getComputedStyle(canvas).overflowX)) canvas = canvas.parentElement;
+      canvas = first?.closest<HTMLElement>('[aria-label="Agent graph"]') ?? null;
       canvas?.setAttribute('data-e2e-canvas', '1');
     }
     const zoom = document.querySelector('button[title="Back to 100%"]')?.textContent?.trim() ?? null;

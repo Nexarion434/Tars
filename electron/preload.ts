@@ -602,6 +602,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('hermes:relay:status', listener);
       return () => ipcRenderer.removeListener('hermes:relay:status', listener);
     },
+    // Tars's Hermes session: signed out, unreachable or an unmeasured version, now and at each change.
+    sessionState: () =>
+      ipcRenderer.invoke('hermes:session:state'),
+    onSessionState: (callback: (state: unknown) => void) => {
+      const listener = (_: unknown, state: unknown) => callback(state);
+      ipcRenderer.on('hermes:session:state', listener);
+      return () => ipcRenderer.removeListener('hermes:session:state', listener);
+    },
     testConnection: (connection: Record<string, unknown>) =>
       ipcRenderer.invoke('hermes:connection:test', connection),
     signIn: (params: { connection: Record<string, unknown>; username: string; password: string; provider?: string }) =>

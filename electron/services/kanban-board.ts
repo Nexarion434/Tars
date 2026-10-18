@@ -35,6 +35,19 @@
  * board at the same moment; that person is JeanBrasse, and the move is his to make.
  *
  * Each project is a Hermes tenant (its path), which the board filters on.
+ *
+ * Measured again on 18/10 against Hermes 0.21.5, the version the maintainer's
+ * gateway runs, and 0.21.1, each with its own router and dispatcher ticking in a
+ * throwaway HERMES_HOME: the same rules, plus two. The dispatcher spawns `review`
+ * rows as it spawns `ready` ones, and 0.21.5 refuses `done` with no result and no
+ * summary. Neither lets a task be created `scheduled` nor moved from `scheduled`
+ * to `done`. On a Hermes of another version nothing is known, so a claim there
+ * keeps the task `scheduled` on the agent's lane, the one state that was safe on
+ * every version measured, and the window says the version is unmeasured.
+ *
+ * Every task Tars files says in its body that it is Tars's agents' (TARS_TASK_MARK):
+ * a label for whoever opens the task. What keeps Hermes's dispatcher off it is its
+ * state and its lane.
  */
 
 import * as fs from 'fs';
@@ -44,6 +57,20 @@ import type { MessageSender } from '../core/pty-manager';
 import { samePath, isUnder } from '../platform/path-compare';
 
 export const PARKED = 'scheduled';
+
+/** The versions of Hermes whose dispatcher, promotion and decomposition were measured (18/10). */
+export const MEASURED_HERMES_VERSIONS: readonly string[] = ['0.21.1', '0.21.5'];
+
+/** Whether the rules of this Hermes version were measured: the exact version, nothing that only starts like one. */
+export function measuredHermes(version: string | null | undefined): boolean {
+  return MEASURED_HERMES_VERSIONS.includes((version ?? '').trim());
+}
+
+/** What every kanban tool answers while Hermes refuses Tars's session, and what the window says. */
+export const HERMES_SIGNED_OUT = 'Tars is signed out of Hermes: sign in again in Settings, Hermes. Until then the kanban tools cannot reach the board.';
+
+/** The line in every task Tars files: a label, for whoever opens the task, that it is Tars's agents'. */
+export const TARS_TASK_MARK = 'Tars task: it belongs to Tars\'s agents, who work it on their own lanes (tars:...). Hermes does not take, start, promote or decompose it.';
 /** The lane a parked task sits on: Tars's, taken by no agent yet. */
 export const TARS_LANE = 'tars:unclaimed';
 
@@ -71,7 +98,7 @@ interface HermesTask {
   result?: string | null;
 }
 
-type Reply<T> = { success: true } & T | { success: false; error?: string };
+type Reply<T> = { success: true } & T | { success: false; error?: string; needsSignIn?: boolean };
 
 /** The part of hermes-client this needs, so tests can stand a fake Hermes in its place. */
 export interface KanbanHermes {
@@ -81,6 +108,8 @@ export interface KanbanHermes {
   update(id: string, patch: Record<string, unknown>): Promise<Reply<{ task: unknown }>>;
   remove(id: string): Promise<Reply<object>>;
   comment(id: string, body: string): Promise<Reply<object>>;
+  /** The version /api/status names, undefined when it names none. */
+  version?(): Promise<string | undefined>;
 }
 
 /** Who is calling, as Tars knows it from the token presented. */
@@ -101,6 +130,8 @@ export interface AgentTask {
   priority: 'low' | 'medium' | 'high';
   description: string;
   heldByCaller: boolean;
+  /** What Tars could not write beside the move: its note on the board, said rather than dropped. */
+  note?: string;
 }
 
 export interface AgentTaskDetail extends AgentTask {
@@ -111,6 +142,13 @@ export interface AgentTaskDetail extends AgentTask {
 export type KanbanResult<T> = { ok: true; value: T } | { ok: false; status: number; error: string };
 
 const fail = (status: number, error: string): { ok: false; status: number; error: string } => ({ ok: false, status, error });
+
+/** A note on the board beside a move: null once written, else what to say of it. */
+async function noteOnBoard(h: KanbanHermes, id: string, body: string, what: string): Promise<string | null> {
+  const r = await h.comment(id, body).catch((err: unknown) => ({ success: false as const, error: err instanceof Error ? err.message : String(err), needsSignIn: false }));
+  if (r.success) return null;
+  return `${what} is made, and its note on the board ("${body}") was not written: ${r.needsSignIn ? HERMES_SIGNED_OUT : `${r.error || 'no reason given'}.`}`;
+}
 
 // ── Names ─────────────────────────────────────────────────────────────────
 
@@ -215,10 +253,18 @@ function unreachable(err: unknown): { ok: false; status: number; error: string }
 }
 
 /** Hermes said no. `done`: what the call had already written before it did. */
-function refused(reply: { success: false; error?: string }, done?: string): { ok: false; status: number; error: string } {
+function refused(reply: { success: false; error?: string; needsSignIn?: boolean }, done?: string): { ok: false; status: number; error: string } {
+  // A session Hermes no longer accepts: the one sentence every kanban tool
+  // says, with what was written before it when something was.
+  if (reply.needsSignIn) return fail(503, done ? `${HERMES_SIGNED_OUT} ${done}` : HERMES_SIGNED_OUT);
   // A refusal may be of the call (a transition Hermes does not allow) and not
   // of the caller: what to do is said for the one only the user can fix.
   return fail(502, `Hermes refused: ${reply.error || 'no reason given'}. ${done ?? 'Nothing was written.'} If it refused access (a token, a sign-in): ${WHAT_TO_DO.replace(/^Only/, 'only')}`);
+}
+
+/** Whether a claim may put a task `ready` on its agent's lane: only on a Hermes whose rules were measured. */
+async function readyIsSafe(h: KanbanHermes): Promise<boolean> {
+  return measuredHermes(await h.version?.());
 }
 
 /** Every task of one project, as the board has it now. */
@@ -357,7 +403,7 @@ export async function createParkedTask(
   if (!project.ok) return project;
   return withHermes(h, async h => {
     const labels = (input.labels ?? []).filter(Boolean);
-    const body = [input.description ?? '', labels.length ? `Labels: ${labels.join(', ')}` : '', `Filed by ${caller.name || caller.agentId} (Tars agent ${caller.agentId}).`]
+    const body = [input.description ?? '', labels.length ? `Labels: ${labels.join(', ')}` : '', TARS_TASK_MARK, `Filed by ${caller.name || caller.agentId} (Tars agent ${caller.agentId}).`]
       .filter(Boolean).join('\n\n');
     // Created on the Tars lane, so that in the moment before it is parked it is
     // `ready` on something Hermes cannot spawn, never on no lane at all.
@@ -369,7 +415,7 @@ export async function createParkedTask(
     const task = taskIn(created.task);
     // Left `ready` on the Tars lane, where Hermes skips it, and said so: the
     // task exists, and an agent told "nothing was written" filed it again.
-    const notParked = (why: string) => fail(502, `Task ${task.id} was created but not parked: ${why}. `
+    const notParked = (why: string, status = 502) => fail(status, `Task ${task.id} was created but not parked: ${why}. `
       + 'Do not create it again: it is on the board, on the Tars lane, where Hermes does not start it; '
       + 'the user parks it on the Kanban page.');
     let parked: Awaited<ReturnType<KanbanHermes['update']>>;
@@ -378,7 +424,7 @@ export async function createParkedTask(
     } catch (err) {
       return notParked(`Hermes did not answer (${err instanceof Error ? err.message : String(err)})`);
     }
-    if (!parked.success) return notParked(parked.error || 'no reason given');
+    if (!parked.success) return parked.needsSignIn ? notParked(HERMES_SIGNED_OUT.replace(/\.$/, ''), 503) : notParked(parked.error || 'no reason given');
     return { ok: true, value: toAgentTask(taskIn(parked.task), caller) };
   });
 }
@@ -406,7 +452,7 @@ export async function claimTask(
       if (!now.ok) return now;
       const t = now.value.task;
       const lane = laneOf(holder.agentId);
-      if (t.assignee === lane && t.status === 'ready') return { ok: true as const, value: toAgentTask(t, caller) };
+      if (t.assignee === lane && (t.status === 'ready' || t.status === PARKED)) return { ok: true as const, value: toAgentTask(t, caller) };
       const other = nameOfLane(t.assignee);
       if (other) return fail(409, `Task ${t.id} is already claimed by ${other}.`);
       if (t.status === 'done' || t.status === 'archived') return fail(409, `Task ${t.id} is done.`);
@@ -414,17 +460,19 @@ export async function claimTask(
         return fail(409, `Task ${t.id} is not parked: Hermes has it (${t.status}${t.assignee ? `, ${t.assignee}` : ''}). Only the user moves it back.`);
       }
       // The lane lands before the status, in the same request: `ready` on the
-      // agent's lane, which Hermes skips, never `ready` on no lane.
-      const claimed = await h.update(t.id, { assignee: lane, status: 'ready' });
+      // agent's lane, which Hermes skips, never `ready` on no lane. On a Hermes
+      // whose rules were not measured, the lane only: the task stays `scheduled`.
+      const ready = await readyIsSafe(h);
+      const claimed = await h.update(t.id, ready ? { assignee: lane, status: 'ready' } : { assignee: lane });
       if (!claimed.success) return refused(claimed);
       const after = taskIn(claimed.task);
-      if (after.assignee !== lane || after.status !== 'ready') {
+      if (after.assignee !== lane || after.status !== (ready ? 'ready' : PARKED)) {
         return fail(502, `Hermes did not record the claim of ${t.id} (${after.status}, ${after.assignee}).`);
       }
       if (holder.name) claimedNames.set(holder.agentId.toLowerCase(), holder.name);
       const by = holder === caller ? '' : ` (handed by ${caller.name || caller.agentId})`;
-      await h.comment(t.id, `Claimed by ${holder.name || holder.agentId}, Tars agent ${holder.agentId}${by}.`).catch(() => undefined);
-      return { ok: true as const, value: toAgentTask(after, caller) };
+      const note = await noteOnBoard(h, t.id, `Claimed by ${holder.name || holder.agentId}, Tars agent ${holder.agentId}${by}.`, 'The claim');
+      return { ok: true as const, value: { ...toAgentTask(after, caller), ...(note ? { note } : {}) } };
     });
   });
 }
@@ -456,22 +504,48 @@ export async function completeTask(h: Conn, caller: KanbanCaller, idOrPrefix: st
       if (t.assignee !== laneOf(caller.agentId)) {
         return fail(409, heldElsewhere(t, caller) ?? `Task ${t.id} is parked: claim it first with assign_task, then mark it done.`);
       }
-      const r = await h.update(t.id, { status: 'done', summary, result: summary });
-      if (!r.success) return refused(r);
+      // Hermes 0.21.5 refuses `done` with no result and no summary.
+      const said = (summary ?? '').trim() || `Marked done by ${caller.name || caller.agentId}.`;
+      // `scheduled` cannot go to `done` (409 on every version measured): a task
+      // claimed on an unmeasured Hermes goes through `ready` on its agent's lane.
+      const viaReady = t.status === PARKED;
+      if (viaReady) {
+        const readied = await h.update(t.id, { status: 'ready' });
+        if (!readied.success) return refused(readied);
+      }
+      const r = await h.update(t.id, { status: 'done', summary: said, result: said });
+      if (!r.success) return viaReady ? refused(r, await backToParked(h, t.id)) : refused(r);
       return { ok: true as const, value: toAgentTask(taskIn(r.task), caller) };
     });
   });
 }
 
+/**
+ * A `done` refused after the `ready` it needed, on an unmeasured Hermes: the
+ * task goes back to `scheduled`, the one state proven safe there, and the
+ * answer says what was written. It said "Nothing was written", the task left
+ * `ready` (the Audit's M1 on #452).
+ */
+async function backToParked(h: KanbanHermes, id: string): Promise<string> {
+  try {
+    const back = await h.update(id, { status: PARKED });
+    if (back.success) return `Task ${id} was moved to ready on your lane, then back to scheduled: it is not done.`;
+  } catch { /* said below */ }
+  return `Task ${id} was moved to ready on your lane and could not be put back to scheduled: it is ready there now, and not done.`;
+}
+
 /** Back to the parked state, on the Tars lane: status first, lane second, so it is never ready on no lane. */
 async function release(h: KanbanHermes, caller: KanbanCaller, t: HermesTask): Promise<KanbanResult<AgentTask>> {
   if (t.status === PARKED && (!t.assignee || t.assignee === TARS_LANE)) return { ok: true, value: toAgentTask(t, caller) };
-  const parked = await h.update(t.id, { status: PARKED });
-  if (!parked.success) return refused(parked);
+  // A task claimed on an unmeasured Hermes is `scheduled` already: only its lane moves.
+  if (t.status !== PARKED) {
+    const parked = await h.update(t.id, { status: PARKED });
+    if (!parked.success) return refused(parked);
+  }
   const lane = await h.update(t.id, { assignee: TARS_LANE });
   if (!lane.success) return refused(lane, `Task ${t.id} is parked again, still on its lane.`);
-  await h.comment(t.id, `Released by ${caller.name || caller.agentId}, back to the parked tasks.`).catch(() => undefined);
-  return { ok: true, value: toAgentTask(taskIn(lane.task), caller) };
+  const note = await noteOnBoard(h, t.id, `Released by ${caller.name || caller.agentId}, back to the parked tasks.`, 'The release');
+  return { ok: true, value: { ...toAgentTask(taskIn(lane.task), caller), ...(note ? { note } : {}) } };
 }
 
 export async function moveTask(h: Conn, caller: KanbanCaller, idOrPrefix: string, column: AgentColumn): Promise<KanbanResult<AgentTask>> {
@@ -528,6 +602,19 @@ async function asCreated(h: KanbanHermes, id: string): Promise<boolean | null> {
 }
 
 /**
+ * A body with Tars's mark, once, whoever files it (the error triage, the move of
+ * the local board): before a last "Filed by" line, which stays the last line, as
+ * the filer's line always is.
+ */
+function marked(body: string): string {
+  if (body.includes(TARS_TASK_MARK)) return body;
+  const lines = body.trimEnd().split('\n');
+  const last = lines[lines.length - 1] ?? '';
+  if (!last.startsWith('Filed by ')) return [body.trimEnd(), TARS_TASK_MARK].filter(Boolean).join('\n\n');
+  return [...lines.slice(0, -1), TARS_TASK_MARK, last].join('\n');
+}
+
+/**
  * A task Tars files itself, parked on a project: created on the Tars lane under
  * an idempotency key, then parked. The key hands back the task a previous run
  * created, whatever became of it since: claimed, run by Hermes, dragged back,
@@ -541,8 +628,9 @@ export async function fileParkedTask(
   h: KanbanHermes,
   task: { title: string; body: string; tenant: string; priority?: 'low' | 'medium' | 'high'; key: string },
 ): Promise<{ ok: true; id: string; parkedNow: boolean } | { ok: false; error: string }> {
+  const body = marked(task.body);
   const created = await h.create({
-    title: task.title, body: task.body, tenant: task.tenant, assignee: TARS_LANE,
+    title: task.title, body, tenant: task.tenant, assignee: TARS_LANE,
     priority: PRIORITY_TO_HERMES[task.priority ?? 'medium'] ?? 0,
     idempotency_key: task.key,
   });
@@ -596,7 +684,7 @@ export async function migrateLocalTasks(h: KanbanHermes, file: string, record: s
     if (!t.projectPath) { out.errors.push(`${t.id}: no project`); continue; }
     try {
       const labels = (t.labels ?? []).filter(Boolean);
-      const body = [t.description ?? '', labels.length ? `Labels: ${labels.join(', ')}` : '', `Moved from the local Tars board (${t.id}).`].filter(Boolean).join('\n\n');
+      const body = [t.description ?? '', labels.length ? `Labels: ${labels.join(', ')}` : '', TARS_TASK_MARK, `Moved from the local Tars board (${t.id}).`].filter(Boolean).join('\n\n');
       const filed = await fileParkedTask(h, { title: t.title, body, tenant: t.projectPath, priority: t.priority, key: `tars-local:${t.id}` });
       if (!filed.ok) { out.errors.push(`${t.id}: ${filed.error}`); continue; }
       moved[t.id] = filed.id;
