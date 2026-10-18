@@ -12,7 +12,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * adds amp, which must be logged in.
  *
  * claude on claude-haiku-5-5 at low effort, codex on gpt-6-luna at low effort, Qwen Code on deepseek-v4-flash, amp
- * on its default. Logins: claude's own sign-in (its keychain; the sandbox HOME only moves its files), codex's
+ * on its default. Logins: claude needs TARS_CLI_MATRIX_CLAUDE_TOKEN (a `claude setup-token` token, handed to the app as
+ * CLAUDE_CODE_OAUTH_TOKEN): from a sandbox HOME it does not reach the keychain's sign-in, "Not logged in" (seen on
+ * 2026-10-18, claude 2.1.302). codex's
  * auth.json and qwen's settings.json copied into the sandbox HOME for the run and removed with it; nothing of them is
  * printed or kept in the artefact. A ChatGPT login rotates its refresh token when codex refreshes it: an auth.json
  * the run refreshed (same account, still readable) is put back in ~/.codex, or the real codex would be signed out.
@@ -86,7 +88,7 @@ for (const newInterface of [false, true]) {
     const cells: Cell[] = [];
     const cell = (from: string, to: string, step: string, green: boolean, detail: string) => cells.push({ from, to, step, result: green ? 'green' : 'red', detail: detail.slice(0, 300) });
 
-    const app: ElectronApplication = await launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' } });
+    const app: ElectronApplication = await launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', ...(process.env.TARS_CLI_MATRIX_CLAUDE_TOKEN ? { CLAUDE_CODE_OAUTH_TOKEN: process.env.TARS_CLI_MATRIX_CLAUDE_TOKEN } : {}) } });
     try {
       const page: Page = await app.firstWindow();
       await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
