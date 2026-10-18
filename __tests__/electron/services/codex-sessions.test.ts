@@ -54,6 +54,11 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  * 14. A character codex wrote in two pieces, read in two ticks, decoded as two replacement characters: the answer
  *    posted is not the one codex gave. And the unfinished line kept between two ticks as a slice of the buffer it
  *    was read in, which the heap rules forbid: it is kept as its own bytes.
+ * 15. Whose codex holds a new session's file not learned (ps or lsof failed, or timed out under load: the Audit's L5
+ *    on #465), and that taken for an answer: the agent's own session, one its user began by typing into its terminal,
+ *    settled as nobody's for good and never followed; or bound on no evidence. It is asked again, 1, 2, 4, 8 and 16 s
+ *    apart, six times in all; a failure never binds, and once given up on, the session is nobody's. Where a
+ *    process's files cannot be listed at all (Windows) it is not asked again: it never will be learned.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -68,7 +73,11 @@ let running: Set<string>;
 let held: Map<string, string>;
 /** Windows: no tool lists a process's open files. */
 let openFilesUnread: boolean;
+/** Lookups that fail before one answers (ps or lsof failed, or timed out): each learns nothing. */
+let failingLookups: number;
 let askedHolder: string[];
+/** When each lookup was made, by the watch's clock. */
+let askedAt: number[];
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -139,7 +148,9 @@ beforeEach(() => {
   running = new Set();
   held = new Map();
   openFilesUnread = false;
+  failingLookups = 0;
   askedHolder = [];
+  askedAt = [];
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
@@ -151,10 +162,13 @@ beforeEach(() => {
     codexRunning: (agentId) => running.has(agentId),
     heldOpenBy: async (file, agentIds) => {
       askedHolder.push(file);
+      askedAt.push(now);
       if (openFilesUnread) return undefined;
+      if (failingLookups > 0) { failingLookups--; return undefined; }
       const holder = held.get(file);
       return holder !== undefined && agentIds.includes(holder) ? holder : null;
     },
+    openFilesReadable: () => !openFilesUnread,
   });
 });
 
@@ -356,19 +370,53 @@ describe('whose session it is', () => {
     expect(askedHolder.filter(f => f === file)).toHaveLength(1);
   });
 
-  it("2. where a process's open files cannot be read (Windows), only the identity line binds", async () => {
+  it("2. where a process's open files cannot be read (Windows), only the identity line binds, and it is not asked again (15)", async () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     openFilesUnread = true;
     watch.noteLaunch(AGENT, project);
     now += 1000;
-    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('typed by its user'), done('t1', 'unseen')]));
-    await watch.tick();
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('typed by its user'), done('t1', 'unseen')]));
+    for (let i = 0; i < 80; i++) { await watch.tick(); now += 500; }
     expect(postsFor(AGENT)).toEqual([]);
+    expect(askedHolder.filter(f => f === file)).toHaveLength(1);
     const NAMED = '01a14ed5-3333-7000-8000-000000000003';
     now += 1000;
     rollout(NAMED, [meta(NAMED, project), started('t2'), user(`[Tars: you are agent "Cody" (id ${AGENT}), worker of project ${project}.]\n\nMessage from Tars: hello`), done('t2', 'seen')]);
     await watch.tick();
     expect(outputsOf(AGENT)).toEqual(['seen']);
+  });
+
+  it("PC (the Audit's probe on #465, L5). a lookup that failed once is asked again, and the session its user typed into the agent's codex is followed", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    now += 60_000;
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('refactor the parser'), done('t1', 'Refactored.')]));
+    failingLookups = 1;
+    await watch.tick();
+    expect(postsFor(AGENT), 'bound on a lookup that failed').toEqual([]);
+    now += 1000;
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['Refactored.']);
+    expect(askedHolder.filter(f => f === file)).toHaveLength(2);
+  });
+
+  it('15. a lookup that keeps failing is asked six times, 1, 2, 4, 8 and 16 s apart, never binds, and is then given up on', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    now += 60_000;
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('refactor the parser'), done('t1', 'Refactored.')]));
+    failingLookups = Number.POSITIVE_INFINITY;
+    const first = now;
+    for (let i = 0; i < 240; i++) { await watch.tick(); now += 500; }
+    expect(askedAt.map(at => at - first)).toEqual([0, 1000, 3000, 7000, 15000, 31000]);
+    expect(postsFor(AGENT), 'bound on a lookup that failed').toEqual([]);
+    // lsof answers again, after the session was given up on: it stays nobody's.
+    failingLookups = 0;
+    for (let i = 0; i < 20; i++) { await watch.tick(); now += 500; }
+    expect(askedHolder.filter(f => f === file)).toHaveLength(6);
+    expect(postsFor(AGENT)).toEqual([]);
   });
 
   it("2. a first message naming another agent is never bound, even with the file held by the codex of the one waiting", async () => {
