@@ -59,8 +59,10 @@ describe('the resume a restart asks for', () => {
   });
 
   it('reaches codex as codex takes it: codex fork for a restart, codex resume otherwise', async () => {
-    expect(await commandFor('codex', { resumeSessionId: SESSION, forkSession: true })).toMatch(new RegExp(`^'/usr/local/bin/cli' fork .*'${SESSION}'$`));
-    expect(await commandFor('codex', { resumeSessionId: SESSION })).toMatch(new RegExp(`^'/usr/local/bin/cli' resume .*'${SESSION}'$`));
+    // After the home Tars hands codex, on macOS and Linux (`env CODEX_HOME=<home>`, the Audit's L4 on #465).
+    const home = process.platform === 'win32' ? '' : "env CODEX_HOME='[^']*' ";
+    expect(await commandFor('codex', { resumeSessionId: SESSION, forkSession: true })).toMatch(new RegExp(`^${home}'/usr/local/bin/cli' fork .*'${SESSION}'$`));
+    expect(await commandFor('codex', { resumeSessionId: SESSION })).toMatch(new RegExp(`^${home}'/usr/local/bin/cli' resume .*'${SESSION}'$`));
   });
 
   it('reaches no other CLI, whose resume flag nobody has verified', async () => {
