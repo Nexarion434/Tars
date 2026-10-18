@@ -151,6 +151,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:queue', listener);
       return () => ipcRenderer.removeListener('agent:queue', listener);
     },
+    stopTask: (agentId: string, ref: string) =>
+      ipcRenderer.invoke('agent:task-stop', agentId, ref),
+    onTask: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('agent:task', listener);
+      return () => ipcRenderer.removeListener('agent:task', listener);
+    },
     onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => {
       const listener = (_: unknown, event: { type: string; agentId: string; status: string; timestamp: string }) => callback(event);
       ipcRenderer.on('agent:status', listener);
@@ -406,6 +413,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('models:catalog-status'),
     refresh: () =>
       ipcRenderer.invoke('models:refresh'),
+  },
+
+  // An API key per CLI (2.0.4, services/cli-keys.ts): the key goes in, never comes back.
+  cliKeys: {
+    list: () =>
+      ipcRenderer.invoke('cliKeys:list'),
+    set: (id: string, patch: { key?: string | null; envVar?: string | null }) =>
+      ipcRenderer.invoke('cliKeys:set', id, patch),
   },
 
   appSettings: {

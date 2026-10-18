@@ -51,6 +51,12 @@
  * 16. A task taken out of the queue (cancelled, or its agent removed) is no
  *     longer known by its id: its asker, following it between two waits, is
  *     told there is no such task, or that a restart lost it.
+ * 17. (2.0.4, a delegation into the agent's terminal) A task typed into a CLI whose
+ *     turns Tars cannot see is followed for ever as starting: it is known by its
+ *     id as delivered, with what Tars could not read.
+ * 18. The task in hand loses who asked, its first line or when it was taken, and
+ *     the window's banner cannot say them; or a task given straight, with no
+ *     wait, has none of them.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -271,5 +277,31 @@ describe('a task taken out of the queue', () => {
     expect(q.lookup(one.ref), 'and still said cancelled').toMatchObject({ state: 'failed', error: 'it was cancelled' });
     q.runEnded('a');
     expect(q.takeTurn('a', one.ref, undefined), 'nor run').toBe(false);
+  });
+});
+
+describe('a delegation into the agent\'s terminal (2.0.4)', () => {
+  it('17. typed into a CLI whose turns Tars cannot see, is known by its id as delivered', () => {
+    const q = createOneTaskQueue(T0);
+    const t = q.enqueue('oc', { requesterId: 'lead', title: 'review' }, T0);
+    expect(q.takeTurn('oc', t.ref, undefined, T0)).toBe(true);
+    q.delivered(t.ref, 'typed', 'opencode: Tars cannot see when its turn ends');
+    expect(q.lookup(t.ref)).toMatchObject({ state: 'delivered', how: 'typed', note: 'opencode: Tars cannot see when its turn ends' });
+    // Once started as the ledger's task, it stays that.
+    const u = q.enqueue('a', { title: 'x' }, T0);
+    q.takeTurn('a', u.ref, undefined, T0);
+    q.runNamed('a', 'ledger-1');
+    q.delivered(u.ref, 'typed', 'late');
+    expect(q.lookup(u.ref)).toMatchObject({ state: 'started', taskId: 'ledger-1' });
+  });
+
+  it('18. the task in hand keeps who asked, its first line and when it was taken', () => {
+    const q = createOneTaskQueue(T0);
+    const t = q.enqueue('a', { requesterId: 'lead', title: 'review the notes' }, T0);
+    q.takeTurn('a', t.ref, undefined, T0 + 1_000);
+    expect(q.busyRun('a')).toMatchObject({ kind: 'run', taskRef: t.ref, requesterId: 'lead', title: 'review the notes', since: T0 + 1_000 });
+    q.runEnded('a');
+    q.runStarted('a', { since: T0 + 2_000, title: 'straight in' });
+    expect(q.busyRun('a')).toMatchObject({ title: 'straight in', since: T0 + 2_000 });
   });
 });

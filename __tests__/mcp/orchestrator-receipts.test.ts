@@ -98,7 +98,8 @@ describe('a send of the orchestrator\'s tools', () => {
     mockApiRequest.mockResolvedValue(typed);
     await (await tool('send_message'))({ id: 'w1', message: 'review #280', clientRequestId: 'my-own-id-0001' });
     await (await tool('start_agent'))({ id: 'w1', prompt: 'review #280', clientRequestId: 'my-own-id-0002' });
-    expect(bodiesOf('/dispatch').map((body) => body.clientRequestId)).toEqual(['my-own-id-0001', 'my-own-id-0002']);
+    expect(bodiesOf('/dispatch').map((body) => body.clientRequestId)).toEqual(['my-own-id-0001']);
+    expect(bodiesOf('/run-task').map((body) => body.clientRequestId)).toEqual(['my-own-id-0002']);
   });
 
   it('5. names its id when every attempt failed, so the agent can try again with it', async () => {

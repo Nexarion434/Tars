@@ -21,11 +21,8 @@ import { EventEmitter } from 'node:events';
  *      end, or answered `timeout: true`.
  *  S4. A model that is not a model name (spaces, not a string, too long,
  *      empty) reaches the run instead of a 400 invalid_model.
- *  S5. A valid model does not reach the run.
- *  S6. `answer: 'started'` with no task to follow (the ledger named none) is
- *      answered at the start anyway: the caller has nothing to wait on and the
- *      run's end is lost. It must then be answered at the end, with the run.
- *  S7. `answer: 'started'` with a task is not answered until the run ends.
+ *  S5 to S7 went with the run over ACP in 2.0.4: the task goes into the
+ *      agent's terminal, run-task-into-terminal.test.ts.
  *  S8. The cross-project guard is looser or stricter on run-task than it was:
  *      another project's agent is driven without allowCrossProject: true, or
  *      refused with it.
@@ -212,52 +209,10 @@ describe('POST /api/agents/:id/run-task, model', () => {
     expect(runs).toHaveLength(0);
     expect(agents.get('a1')!.status).toBe('idle');
   });
-
-  it.each(['claude-opus-4-6', 'sonnet[1m]', 'openai/gpt-5.1', 'gemini:2.5-pro'])('(S5) %s reaches the run', async (model) => {
-    putAgent('a1');
-    call('POST', '/api/agents/a1/run-task', 'a1', { task: 'do it', model, answer: 'started' });
-    await flush();
-    expect(runs).toHaveLength(1);
-    expect(runs[0].opts.model).toBe(model);
-  });
-});
-
-describe('POST /api/agents/:id/run-task, answer: started', () => {
-  it('(S7) with a task: answered at the start, the run still going', async () => {
-    putAgent('a1');
-    const run = call('POST', '/api/agents/a1/run-task', 'a1', { task: 'do it', answer: 'started' });
-    const { data, status } = await run.answer;
-    expect(status).toBe(200);
-    expect(data).toMatchObject({ started: true, outcome: 'running', taskId: 't-1' });
-    expect(tasks.get('t-1')!.outcome).toBe('running');
-  });
-
-  it('(S6) with no task named: not answered at the start, answered at the end with the run', async () => {
-    ledgerNames = false;
-    putAgent('a1');
-    const run = call('POST', '/api/agents/a1/run-task', 'a1', { task: 'do it', answer: 'started' });
-    await flush();
-    expect(runs).toHaveLength(1);
-    expect(run.answered(), 'answered at the start with no task to follow').toBeUndefined();
-    runs[0].end();
-    const { data, status } = await run.answer;
-    expect(status).toBe(200);
-    expect(data).toMatchObject({ ok: true, started: true, text: 'the run\'s answer' });
-    expect(data.taskId).toBeUndefined();
-  });
-
-  it('(S7) without answer: started, held to the run\'s end as before', async () => {
-    putAgent('a1');
-    const run = call('POST', '/api/agents/a1/run-task', 'a1', { task: 'do it' });
-    await flush();
-    expect(run.answered()).toBeUndefined();
-    runs[0].end();
-    expect((await run.answer).data).toMatchObject({ ok: true, text: 'the run\'s answer', taskId: 't-1' });
-  });
 });
 
 describe('POST /api/agents/:id/run-task from another project', () => {
-  it('(S8) refused 403 without allowCrossProject: true, run with it', async () => {
+  it('(S8) refused 403 without allowCrossProject: true', async () => {
     putAgent('target');
     putAgent('orch', path.join(tmp, 'another-project')).role = 'orchestrator';
     const refused = await call('POST', '/api/agents/target/run-task', 'orch', { task: 'do it', answer: 'started' }).answer;
@@ -265,8 +220,7 @@ describe('POST /api/agents/:id/run-task from another project', () => {
     expect(String(refused.data.error)).toMatch(/Cross-project access denied/);
     expect(runs).toHaveLength(0);
 
-    const allowed = await call('POST', '/api/agents/target/run-task', 'orch', { task: 'do it', answer: 'started', allowCrossProject: true }).answer;
-    expect(allowed.status).toBe(200);
-    expect(allowed.data).toMatchObject({ started: true, taskId: 't-1' });
+    // Let through with allowCrossProject: true, it goes into the target's
+    // terminal (2.0.4): run-task-into-terminal.test.ts, D13.
   });
 });

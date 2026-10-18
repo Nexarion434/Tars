@@ -12,23 +12,22 @@ import { BOT_TOKEN, OWNER_ID, startFakeTelegram } from '../__tests__/fixtures/fa
  * réveillent avec le mauvais niveau d'effort par rapport à leur paramètre", and nothing tested it), in the real app.
  *
  * Six agents, each at its own level: the lead (the orchestrator) at max, and workers at low, medium, high and xhigh,
- * and one run only over ACP, at high. Each path that starts a CLI is driven once, and the effort the CLI received is
- * read from the argv the stand-in records (`--effort <level>`, as Claude Code takes it), or for the ACP run from the
- * `session/set_config_option` the stand-in adapter receives:
+ * and one only ever handed a delegated task, at high. Each path that starts a CLI is driven once, and the effort the
+ * CLI received is read from the argv the stand-in records (`--effort <level>`, as Claude Code takes it):
  * 1. a start from the window, for the five terminals;
  * 2. a restart (agent:restart), which continues the conversation under a new id;
  * 3. an effort changed in the agent's settings (agent:update), which restarts it at the new level;
  * 4. a wake from sleep (#322);
  * 5. the bot's launch of the orchestrator for a Telegram message, the orchestrator not running;
  * 6. a chat's runner, at its orchestrator's effort (#379's rule);
- * 7. a run over ACP (run-task);
+ * 7. a delegated task (run-task) to an agent whose CLI is not running: its permanent session is started with the
+ *    task (2.0.4). Until 2.0.4 this read the effort a run over ACP set on its adapter; no task is run over ACP now;
  * 8. the resume after a crash: Tars and every CLI killed by PID mid-turn, then Tars started again.
  * Each check is soft, so one run names every path that loses the effort.
  *
  * The CLIs are stand-ins named `claude` (node scripts, as an npm install of Claude Code is) that run Tars's own hook
  * scripts, write their transcript where Claude Code does, continue the session `--resume` names (a new one with
- * `--fork-session`), and record each launch's argv. `npx` is a stand-in too, first on every launch's PATH: it answers
- * as @agentclientprotocol/claude-agent-acp does, offering a model and an effort option, and records each request.
+ * `--fork-session`), and record each launch's argv.
  */
 
 const HOOKS = path.resolve('hooks');
@@ -90,46 +89,13 @@ process.stdin.on('data', (data) => {
 process.stdin.resume();
 `;
 
-/** `npx -y @agentclientprotocol/claude-agent-acp@<v>`, as the adapter answers: a model and an effort option offered. */
-const FAKE_ADAPTER = String.raw`
-const fs = require('fs'), path = require('path');
-const record = (o) => fs.appendFileSync(path.join(process.env.HOME, 'acp.jsonl'), JSON.stringify({ at: new Date().toISOString(), agent: process.env.CLAUDE_AGENT_ID || null, argv: process.argv.slice(2), ...o }) + '\n');
-let buf = '';
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
-const options = [
-  { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'default', options: [{ value: 'default', name: 'Default' }] },
-  { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: 'default',
-    options: ['default', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, name: value })) },
-];
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let nl;
-  while ((nl = buf.indexOf('\n')) !== -1) {
-    const line = buf.slice(0, nl).trim();
-    buf = buf.slice(nl + 1);
-    if (line) handle(JSON.parse(line));
-  }
-});
-function handle(msg) {
-  record({ method: msg.method ?? null, params: msg.params ?? null });
-  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentInfo: { name: 'claude-agent-acp' } } });
-  if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'acp-1', configOptions: options } });
-  if (msg.method === 'session/prompt') {
-    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'acp-1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'reviewed' } } } });
-    return send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 1 } } });
-  }
-  if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
-}
-process.stdin.resume();
-`;
-
 type Agent = { id: string; kind?: string; chatId?: string; status: string; cliRunning?: boolean; currentSessionId?: string };
 type Launch = { id: string; pid: number; sid: string; resume: string | null; fork: boolean; effort: string | null; argv: string[] };
 type Answer = Record<string, unknown>;
 const lines = <T>(file: string): T[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 /** Each agent's own level. */
-const EFFORT: Record<string, string> = { lead: 'max', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', acp: 'high' };
+const EFFORT: Record<string, string> = { lead: 'max', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', dl: 'high' };
 
 function seedProject(home: string) {
   const project = path.join(home, 'projects', 'demo');
@@ -147,7 +113,7 @@ function seedProject(home: string) {
   return project;
 }
 
-test('every start of an agent\'s CLI runs at that agent\'s own effort: window, restart, settings, wake, bot, chat, ACP, crash', async () => {
+test('every start of an agent\'s CLI runs at that agent\'s own effort: window, restart, settings, wake, bot, chat, delegated task, crash', async () => {
   test.setTimeout(480_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-effort-'));
   const project = seedProject(home);
@@ -156,29 +122,30 @@ test('every start of an agent\'s CLI runs at that agent\'s own effort: window, r
   for (const d of [dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');
   fs.writeFileSync(cli, `#!${process.execPath}\nconst HOOKS = ${JSON.stringify(HOOKS)};\n${STAND_IN}`, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'npx'), `#!${process.execPath}\n${FAKE_ADAPTER}`, { mode: 0o755 });
   const agent = (id: string, name: string, role = 'worker') => ({
     id, name, character: 'robot', provider: 'claude', status: 'idle', role, permissionMode: 'normal', effort: EFFORT[id],
     projectPath: project, skills: [], cliPath: cli, createdAt: '2026-10-13T08:00:00.000Z', lastActivity: '2026-10-13T08:00:00.000Z',
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent('lead', 'Lead', 'orchestrator'), agent('low', 'Low Worker'), agent('medium', 'Medium Worker'),
-    agent('high', 'High Worker'), agent('xhigh', 'Xhigh Worker'), agent('acp', 'ACP Worker'),
+    agent('high', 'High Worker'), agent('xhigh', 'Xhigh Worker'), agent('dl', 'Delegated Worker'),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   const telegram = await startFakeTelegram();
-  // The stand-ins first on every launch's PATH (the bots and the ACP adapter take the binary from it).
+  // The stand-in first on every launch's PATH (the bots take the binary from it).
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { additionalPaths: [bin] },
     telegramEnabled: true, telegramBotToken: BOT_TOKEN, telegramAuthToken: 'e2e-auth-token',
     telegramAuthorizedChatIds: [String(OWNER_ID)], telegramChatId: String(OWNER_ID),
+    // E2E_NEW_INTERFACE=1: the same run in the new interface's shell.
+    newInterface: process.env.E2E_NEW_INTERFACE === '1',
   }));
   const launchesFile = path.join(home, 'launches.jsonl');
   const launchesOf = (id: string) => lines<Launch>(launchesFile).filter((l) => l.id === id);
   const port = apiPort(31438);
   const dist = path.resolve('electron', 'dist');
-  const values: Record<string, unknown> = { home };
+  const values: Record<string, unknown> = { home, newInterface: process.env.E2E_NEW_INTERFACE === '1' };
   /** What each path started, with the effort the CLI received and the agent's own. */
   const seen: Array<{ path: string; agent: string; received: string | null; own: string }> = [];
   const keep = () => { values.seen = seen; recordValues(values); };
@@ -195,6 +162,8 @@ test('every start of an agent\'s CLI runs at that agent\'s own effort: window, r
     const page: Page = await app.firstWindow();
     await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!(window as unknown as { electronAPI?: unknown }).electronAPI);
+    // The shell this run is in (E2E_NEW_INTERFACE=1: the new interface's).
+    await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(process.env.E2E_NEW_INTERFACE === '1' ? 1 : 0, { timeout: 30_000 });
     const call = (ns: string, name: string, ...args: unknown[]) => page.evaluate(([ns, name, args]) => {
       const api = (window as unknown as { electronAPI: Record<string, Record<string, (...a: unknown[]) => Promise<Answer>>> }).electronAPI;
       return api[ns as string][name as string](...(args as unknown[]));
@@ -268,17 +237,16 @@ test('every start of an agent\'s CLI runs at that agent\'s own effort: window, r
     check('chat runner', runner.id, launchesOf(runner.id)[0].effort, EFFORT.lead);
     values.runnerId = runner.id;
 
-    // ── 7. A run over ACP ──
+    // ── 7. A delegated task, its agent's CLI not running: its session started with the task ──
     const leadToken = lines<{ id: string; token: string | null }>(path.join(home, 'tokens.jsonl')).filter((l) => l.id === 'lead' && l.token).at(-1)!.token!;
-    const ran = await fetch(`http://127.0.0.1:${port}/api/agents/acp/run-task`, {
+    const handed = await fetch(`http://127.0.0.1:${port}/api/agents/dl/run-task`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${leadToken}` },
-      body: JSON.stringify({ task: 'review the notes', timeoutSeconds: 60 }),
+      body: JSON.stringify({ task: 'DELEGATED>> review the notes', answer: 'started' }),
     }).then(async (r) => ({ status: r.status, body: await r.json() as Answer }));
-    values.acpRun = ran;
-    const acp = lines<{ method: string | null; params: { configId?: string; value?: string } | null }>(path.join(home, 'acp.jsonl'));
-    values.acpRequests = acp.map((r) => r.method);
-    const set = acp.filter((r) => r.method === 'session/set_config_option' && r.params?.configId === 'effort').at(-1);
-    check('ACP run', 'acp', set?.params?.value ?? null);
+    values.delegated = handed;
+    await expect.poll(() => launchesOf('dl').length, { timeout: 60_000, message: 'the delegated task started the agent\'s session' }).toBeGreaterThan(0);
+    check('delegated task', 'dl', launchesOf('dl')[0].effort);
+    await atRest('dl');
 
     // ── 8. A crash mid-turn, then Tars started again ──
     await atRest('xhigh');

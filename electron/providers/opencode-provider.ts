@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
+import { keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -37,11 +38,12 @@ export class OpenCodeProvider implements CLIProvider {
 
     // OpenCode CLI:
     //   opencode [project]:       start TUI (default, interactive)
-    //   opencode run [message..]: run non-interactively
+    //   opencode run [message..]: run non-interactively, and exit
+    //   --prompt <text>:          the TUI's starting prompt (1.19.3 --help)
     //   --model provider/model:   model to use
     //
-    // For interactive PTY sessions we launch the TUI (no subcommand).
-    // The user types their prompt directly in the TUI interface.
+    // Always the TUI: the agent's permanent session (2.0.4). `run` did the
+    // task and exited, and the agent was gone with it.
 
     // Model (format: provider/model)
     if (params.model && params.model !== 'default') {
@@ -68,7 +70,7 @@ export class OpenCodeProvider implements CLIProvider {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
     if (finalPrompt) {
-      command += ` run '${finalPrompt.replace(/'/g, "'\\''")}'`;
+      command += ` --prompt '${finalPrompt.replace(/'/g, "'\\''")}'`;
     }
 
     return command;
@@ -96,7 +98,7 @@ export class OpenCodeProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -107,6 +109,8 @@ export class OpenCodeProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('opencode', appSettings),
     };
   }
 

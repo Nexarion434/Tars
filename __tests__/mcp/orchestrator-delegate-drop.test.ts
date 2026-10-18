@@ -33,8 +33,8 @@ import type { AddressInfo } from 'node:net';
  *      that ended badly is not flagged as an error.
  *  F7. A run still going at the caller's deadline is reported as done, or the
  *      tool falls back to the terminal then.
- *  F8. Tars answered that no run started (retryWithDispatch, or 502 with
- *      started false), and the tool does NOT fall back to the terminal.
+ *  F8. (Gone in 2.0.4 with the terminal fallback: run-task is the terminal,
+ *      and a refusal of Tars is the answer, F9.)
  *  F9. Tars answered with a refusal that is not "no run" (a clientRequestId
  *      conflict, a permission escalation denied, a cross-project refusal, a
  *      server error, a 502 that says a run started) and the tool dispatches
@@ -227,37 +227,20 @@ describe('delegate_task never types a task after a run may have started', () => 
   it('6. (F6) a run that ended badly is flagged as an error, with its reason', async () => {
     mockApiRequest.mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/run-task')) return { started: true, outcome: 'running', taskId: 't-1' };
-      if (endpoint.startsWith('/api/tasks/t-1')) return { task: { ...ENDED, outcome: 'stopped', stopReason: 'turn_limit', error: 'stopped at the run\'s limit', backgroundStopped: ['npm test'] } };
+      if (endpoint.startsWith('/api/tasks/t-1')) return { task: { ...ENDED, outcome: 'stopped', stopReason: 'interrupted', error: 'its turn was interrupted' } };
       throw new Error(`unexpected ${endpoint}`);
     });
     const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it' }) as Result;
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('ended: turn_limit');
-    expect(result.content[0].text).toContain('stopped at the run\'s limit');
-    expect(result.content[0].text).toContain('npm test');
+    expect(result.content[0].text).toContain('ended: interrupted');
+    expect(result.content[0].text).toContain('its turn was interrupted');
   });
 });
 
-describe('delegate_task falls back to the terminal only when Tars said no run started', () => {
+describe('delegate_task takes every refusal of Tars as its answer', () => {
   function dispatchAnswers() {
     return { success: true, mode: 'message', agent: { id: 'a1', name: 'Worker', status: 'running' } };
   }
-
-  it.each([
-    ['409 retryWithDispatch', answered(409, { error: 'opencode has no ACP mode; use /dispatch', retryWithDispatch: true })],
-    ['502 started false', answered(502, { error: 'launch failed', started: false })],
-  ])('7. (F8) %s: the task goes to the terminal', async (_label, refusal) => {
-    mockApiRequest.mockImplementation(async (endpoint: string) => {
-      if (endpoint.includes('/run-task')) throw refusal;
-      if (endpoint.includes('/dispatch')) return dispatchAnswers();
-      if (endpoint.includes('/wait')) return { status: 'completed', lastCleanOutput: 'typed and done' };
-      return { agent: { status: 'completed', name: 'Worker', lastCleanOutput: 'typed and done' } };
-    });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'sonnet' }) as Result;
-    expect(calls('/run-task')).toHaveLength(1);
-    expect(calls('/dispatch')).toHaveLength(1);
-    expect(result.content[0].text).toContain('typed and done');
-  });
 
   it.each([
     ['a clientRequestId conflict', answered(409, { error: 'clientRequestId x was already used for another request: nothing was sent.', code: 'clientRequestId_conflict' })],
@@ -299,25 +282,13 @@ describe('delegate_task\'s model, refused', () => {
     });
   }
 
-  it('9b. (F14) ran on the agent\'s own model: says which', async () => {
-    refusedThen({ asked: 'gpt-5', taken: false, own: 'opus', ranOn: 'opus' });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and ran on its own model, opus\./);
-  });
-
-  it('9c. (F14) its own model not taken either: says it ran on its CLI\'s default, never on its own', async () => {
+  it('9b. (F14) the agent\'s session already open: says the model was not taken, and names its own', async () => {
     refusedThen({ asked: 'gpt-5', taken: false, own: 'opus' });
     const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).not.toMatch(/ran on its own model/);
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, nor its own model, opus: it ran on its CLI's default model\./);
+    expect(result.content[0].text).toMatch(/not on gpt-5: the agent's session was already open/);
+    expect(result.content[0].text).toMatch(/its own model, opus\./);
   });
 
-  it('9d. (F14) no model of its own: says it ran on its CLI\'s default', async () => {
-    refusedThen({ asked: 'gpt-5', taken: false });
-    const result = await (await loadDelegateTask())({ id: 'a1', prompt: 'do it', model: 'gpt-5' }) as Result;
-    expect(result.content[0].text).not.toMatch(/ran on its own model/);
-    expect(result.content[0].text).toMatch(/not on gpt-5: the agent did not take it, and has no model of its own: it ran on its CLI's default model\./);
-  });
 });
 
 describe('delegate_task to another project, allowed', () => {

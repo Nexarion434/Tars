@@ -43,6 +43,8 @@ export interface Busy {
   taskRef?: string;
   requesterId?: string;
   since: number;
+  /** The task's first line, for the window's banner (2.0.4). */
+  title?: string;
 }
 
 export interface QueuedTask {
@@ -53,8 +55,12 @@ export interface QueuedTask {
   queuedAt: number;
 }
 
-/** Handed over in the agent's terminal once its turn came: typed into its session, or a session started on it. */
-type Delivered = { how: 'typed' | 'started'; at: number };
+/**
+ * Handed over in the agent's terminal once its turn came: typed into its
+ * session, or a session started on it. `note`, for a CLI whose turns Tars
+ * cannot see (no hook): what is not read of it (2.0.4).
+ */
+type Delivered = { how: 'typed' | 'started'; at: number; note?: string };
 
 type Taken = { task: QueuedTask; taskId?: string; error?: string; delivered?: Delivered };
 
@@ -85,13 +91,17 @@ export interface OneTaskQueue {
     | { state: 'queued'; task: QueuedTask }
     | { state: 'starting'; task: QueuedTask }
     | { state: 'started'; task: QueuedTask; taskId: string }
-    | { state: 'delivered'; task: QueuedTask; how: Delivered['how']; at: number }
+    | { state: 'delivered'; task: QueuedTask; how: Delivered['how']; at: number; note?: string }
     | { state: 'failed'; task: QueuedTask; error: string }
     | undefined;
   /** The run of a task taken from the queue ended before it started: no ledger task will follow. */
   notStarted(ref: string, error: string): void;
-  /** A task taken from the queue went into the agent's terminal: no ledger task will follow, and nothing more is waited for. */
-  delivered(ref: string, how: Delivered['how'], now?: number): void;
+  /**
+   * A task taken from the queue went into the agent's terminal: no ledger task
+   * will follow, and nothing more is waited for. `note`: what is not read of
+   * a CLI whose turns Tars cannot see.
+   */
+  delivered(ref: string, how: Delivered['how'], note?: string, now?: number): void;
   queued(agentId: string): QueuedTask[];
   /** Out of the line, never to start: still known by its ref, as failed with `why`, to whoever follows it. */
   cancel(ref: string, why?: string): QueuedTask | undefined;
@@ -155,7 +165,7 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       const task = line[0];
       leave(task);
       remember(ref, { task });
-      runs.set(agentId, { kind: 'run', taskRef: ref, ...(task.requesterId ? { requesterId: task.requesterId } : {}), since: now });
+      runs.set(agentId, { kind: 'run', taskRef: ref, ...(task.requesterId ? { requesterId: task.requesterId } : {}), since: now, title: task.title });
       return true;
     },
     find,
@@ -165,7 +175,7 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       const was = taken.get(ref);
       if (!was) return undefined;
       if (was.taskId) return { state: 'started', task: was.task, taskId: was.taskId };
-      if (was.delivered) return { state: 'delivered', task: was.task, how: was.delivered.how, at: was.delivered.at };
+      if (was.delivered) return { state: 'delivered', task: was.task, how: was.delivered.how, at: was.delivered.at, ...(was.delivered.note ? { note: was.delivered.note } : {}) };
       if (was.error !== undefined) return { state: 'failed', task: was.task, error: was.error };
       return { state: 'starting', task: was.task };
     },
@@ -173,9 +183,9 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       const was = taken.get(ref);
       if (was && !was.taskId && !was.delivered) was.error = error;
     },
-    delivered(ref, how, now = Date.now()) {
+    delivered(ref, how, note, now = Date.now()) {
       const was = taken.get(ref);
-      if (was && !was.taskId && was.error === undefined) was.delivered = { how, at: now };
+      if (was && !was.taskId && was.error === undefined) was.delivered = { how, at: now, ...(note ? { note } : {}) };
     },
     queued(agentId) {
       return [...lineOf(agentId)];
