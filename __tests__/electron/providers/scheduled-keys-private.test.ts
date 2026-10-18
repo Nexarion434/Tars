@@ -18,9 +18,11 @@ import { spawnSync } from 'node:child_process';
  *  K3. With no key in the private file, the CLI starts anyway, keyless, and
  *      falls back on whatever login the user's own Claude Code has, sending it
  *      to the vendor's URL; or it fails without a word in the task's log.
- *  K4. The key reaches the CLI some other way than the Bearer every key
- *      provider's endpoint takes (ANTHROPIC_AUTH_TOKEN), or ANTHROPIC_API_KEY
- *      inherited from the user's shell goes along with it.
+ *  K4. The key reaches the CLI under another variable than the one its script
+ *      used (ANTHROPIC_API_KEY, which `claude -p` uses unasked and Tars's
+ *      bridge reads as x-api-key; ANTHROPIC_AUTH_TOKEN for Ollama Cloud, whose
+ *      endpoint wants a Bearer), or a key of the user's shell under the other
+ *      one goes along with it.
  *  K5. A key with shell in it ($(...), a backtick) is run by the script.
  *  K6. A provider left out: every key provider's script is run here.
  */
@@ -33,12 +35,13 @@ import type { AgentProvider, AppSettings } from '../../../electron/types';
 const HAS_BASH = process.platform !== 'win32' && spawnSync('bash', ['-c', 'true']).status === 0;
 const KEY = 'sk-test-0123456789';
 
-/** Each key provider, and the settings field its scheduled key is. The bridges present Tars's own token. */
-const CASES: Array<[AgentProvider, keyof AppSettings | 'api-token']> = [
-  ['openrouter', 'openRouterApiKey'], ['deepseek', 'deepSeekApiKey'], ['mimo', 'openRouterApiKey'],
-  ['moonshot', 'moonshotApiKey'], ['qwen', 'openRouterApiKey'], ['zhipu', 'zhipuApiKey'],
-  ['minimax', 'minimaxApiKey'], ['nvidia', 'openRouterApiKey'], ['nous-portal', 'openRouterApiKey'],
-  ['ollama-cloud', 'ollamaCloudApiKey'], ['venice', 'api-token'], ['custom-openai', 'api-token'],
+/** Each key provider, the settings field its scheduled key is, and the variable it goes in. The bridges present Tars's own token. */
+type Variable = 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN';
+const CASES: Array<[AgentProvider, keyof AppSettings | 'api-token', Variable]> = [
+  ['openrouter', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['deepseek', 'deepSeekApiKey', 'ANTHROPIC_API_KEY'], ['mimo', 'openRouterApiKey', 'ANTHROPIC_API_KEY'],
+  ['moonshot', 'moonshotApiKey', 'ANTHROPIC_API_KEY'], ['qwen', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['zhipu', 'zhipuApiKey', 'ANTHROPIC_API_KEY'],
+  ['minimax', 'minimaxApiKey', 'ANTHROPIC_API_KEY'], ['nvidia', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['nous-portal', 'openRouterApiKey', 'ANTHROPIC_API_KEY'],
+  ['ollama-cloud', 'ollamaCloudApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['venice', 'api-token', 'ANTHROPIC_API_KEY'], ['custom-openai', 'api-token', 'ANTHROPIC_API_KEY'],
 ];
 
 let root: string;
@@ -68,7 +71,7 @@ function build(id: AgentProvider): string {
 function runScript(script: string): number | null {
   const file = path.join(root, 'task.sh');
   fs.writeFileSync(file, script, { mode: 0o700 });
-  return spawnSync('bash', [file], { env: { PATH: process.env.PATH, HOME: os.homedir(), ANTHROPIC_API_KEY: 'users-own-key' }, encoding: 'utf-8' }).status;
+  return spawnSync('bash', [file], { env: { PATH: process.env.PATH, HOME: os.homedir(), ANTHROPIC_API_KEY: 'users-own-key', ANTHROPIC_AUTH_TOKEN: 'users-own-token' }, encoding: 'utf-8' }).status;
 }
 
 beforeEach(() => {
@@ -78,7 +81,7 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_BASH)('a scheduled task of a key provider, and its key', () => {
-  it.each(CASES)('K1, K2, K4, K6. %s reads its key from the private folder and hands it as the Bearer', (id, field) => {
+  it.each(CASES)('K1, K2, K4, K6. %s reads its key from the private folder and hands it over as %s', (id, field, variable) => {
     seed(field, KEY);
     const script = build(id);
     expect(script).not.toContain(KEY);
@@ -86,8 +89,7 @@ describe.skipIf(!HAS_BASH)('a scheduled task of a key provider, and its key', ()
     expect(script).not.toMatch(/\.dorothy\/api-token|DATA_DIR[^\n]*api-token/);
     expect(runScript(script)).toBe(0);
     const [auth, apiKey] = fs.readFileSync(seen(), 'utf-8').split('\n');
-    expect(auth).toBe(KEY);
-    expect(apiKey).toBe('');
+    expect(variable === 'ANTHROPIC_AUTH_TOKEN' ? [auth, apiKey] : [apiKey, auth]).toEqual([KEY, '']);
   });
 
   it.each(CASES)('K3. %s refuses to start without a key, and says so in its log', (id, field) => {
@@ -103,7 +105,7 @@ describe.skipIf(!HAS_BASH)('a scheduled task of a key provider, and its key', ()
     const odd = 'k$(touch pwned)`touch pwned2`';
     seed('deepSeekApiKey', odd);
     expect(runScript(build('deepseek'))).toBe(0);
-    expect(fs.readFileSync(seen(), 'utf-8').split('\n')[0]).toBe(odd);
+    expect(fs.readFileSync(seen(), 'utf-8').split('\n')[1]).toBe(odd);
     expect(fs.existsSync(path.join(root, 'pwned'))).toBe(false);
     expect(fs.existsSync(path.join(root, 'pwned2'))).toBe(false);
   });
