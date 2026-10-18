@@ -9,7 +9,7 @@ import { posixWords, PosixWordsError } from '../../../electron/platform/posix-wo
  * The provider's POSIX command line, read back into argv, to start the CLI
  * without a shell on Windows.
  *
- * The grammar is closed, pinned by what the 20 providers emit (read on
+ * The grammar is closed, pinned by what the 21 providers emit (read on
  * 2026-09-25 from every buildInteractiveCommand and the helpers in
  * cli-provider.ts, and held by exec-into-cli.test.ts): words separated by
  * spaces; a word is a run of single-quoted text (anything but ', newlines
@@ -200,9 +200,9 @@ async function commandOf(providerId: string, prompt: string, binaryPath: string)
 }
 
 describe('9. every provider round-trips', () => {
-  it('covers the 20 providers', async () => {
+  it('covers the 21 providers', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
-    expect(getAllProviders()).toHaveLength(20);
+    expect(getAllProviders()).toHaveLength(21);
   });
 
   it('first word the binary, last word the prompt, the rest from the grammar, for every adversarial prompt', async () => {
@@ -211,6 +211,11 @@ describe('9. every provider round-trips', () => {
     for (const provider of getAllProviders()) {
       for (const [label, prompt] of ADVERSARIAL) {
         const words = posixWords(await commandOf(provider.id, prompt, bin));
+        // Amp takes its task typed in once it runs (core/typed-task.ts): no prompt on its line.
+        if (provider.taskTypedAfterLaunch) {
+          expect([provider.id, label, words[0], words.includes(prompt)]).toEqual([provider.id, label, bin, false]);
+          continue;
+        }
         expect([provider.id, label, words[0], words.at(-1)]).toEqual([provider.id, label, bin, prompt]);
       }
     }

@@ -54,9 +54,13 @@ describe('the resume a restart asks for', () => {
     expect(await commandFor('openrouter', {})).not.toContain('--resume');
   });
 
+  it('reaches Qwen Code by its own --resume and --fork-session (qwen 0.25.2, measured)', async () => {
+    expect(await commandFor('qwen-code', { resumeSessionId: SESSION, forkSession: true })).toContain(` --resume '${SESSION}' --fork-session`);
+  });
+
   it('reaches no other CLI, whose resume flag nobody has verified', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
-    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude')) {
+    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude' && p.id !== 'qwen-code')) {
       const command = await commandFor(provider.id, { resumeSessionId: SESSION, forkSession: true });
       expect(command, provider.id).not.toContain(SESSION);
     }
