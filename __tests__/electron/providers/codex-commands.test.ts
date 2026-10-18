@@ -21,9 +21,16 @@ import * as path from 'node:path';
  *    conversation (asked what the turn before said, it answered it), and `codex fork <id>` goes on under a new
  *    session, as a restart that applies new settings wants (agent-restart.ts).
  * 7. Anything but a session id after `resume`: it reaches a command line.
+ * 8. Tars and the codex it starts reading two homes (the Audit's L4 on #465). Tars writes the folder's trust and the
+ *    names of its MCP servers' variables into config.toml under the CODEX_HOME of its own environment (else
+ *    ~/.codex), and reads the sessions there; the codex in an agent's terminal read the CODEX_HOME its shell's rc
+ *    files set. Where they differ, codex asked "Trust this folder?" for good, and Tars's servers had no identity. The
+ *    codex Tars starts is handed Tars's own: on macOS and Linux in its command line, which no rc file can change; on
+ *    Windows, where nothing is sourced and the first word of the line is the binary itself, in its environment.
  */
 
 import { CodexProvider } from '../../../electron/providers/codex-provider';
+import { codexHome } from '../../../electron/providers/codex-cli';
 
 const HELP_0163 = `Codex CLI
       --approve-for-me
@@ -54,6 +61,12 @@ function words(line: string): string[] {
   return out;
 }
 
+/** An agent's terminal line as argv, after the `env CODEX_HOME=<home>` it starts with on macOS and Linux (8). */
+function argvOf(line: string): string[] {
+  const argv = words(line);
+  return argv[0] === 'env' && argv[1]?.startsWith('CODEX_HOME=') ? argv.slice(2) : argv;
+}
+
 beforeAll(() => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-0163-'));
   codex016 = path.join(dir, 'codex');
@@ -62,17 +75,17 @@ beforeAll(() => {
 
 describe("an agent's terminal", () => {
   it('auto: the automatic review on a codex that has it; bypass: its own bypass; never --full-auto', () => {
-    const auto = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, permissionMode: 'auto' }));
+    const auto = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, permissionMode: 'auto' }));
     expect(auto).toContain('--approve-for-me');
-    const bypass = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, permissionMode: 'bypass' }));
+    const bypass = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, permissionMode: 'bypass' }));
     expect(bypass).toContain('--dangerously-bypass-approvals-and-sandbox');
-    const older = words(provider.buildInteractiveCommand({ binaryPath: nowhere, prompt: PROMPT, permissionMode: 'auto' }));
+    const older = argvOf(provider.buildInteractiveCommand({ binaryPath: nowhere, prompt: PROMPT, permissionMode: 'auto' }));
     expect(older).toEqual(expect.arrayContaining(['--ask-for-approval', 'never', '--sandbox', 'workspace-write']));
     for (const argv of [auto, bypass, older]) expect(argv).not.toContain('--full-auto');
   });
 
   it('the model and the effort, the prompt last and whole', () => {
-    const argv = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'low', permissionMode: 'normal' }));
+    const argv = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'low', permissionMode: 'normal' }));
     expect(argv[0]).toBe(codex016);
     expect(argv.slice(1, 3)).toEqual(['--model', 'gpt-6-luna']);
     expect(argv).toEqual(expect.arrayContaining(['-c', 'model_reasoning_effort=low']));
@@ -81,21 +94,40 @@ describe("an agent's terminal", () => {
   });
 });
 
+describe('the codex home', () => {
+  it('8. on macOS and Linux, the line hands codex the home Tars reads and writes, before the binary', () => {
+    const argv = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT }));
+    expect(argv.slice(0, 3)).toEqual(['env', `CODEX_HOME=${codexHome()}`, codex016]);
+    expect(argv[argv.length - 1]).toBe(PROMPT);
+  });
+
+  it("8. on Windows, the terminal's environment does, and the line starts with codex itself", () => {
+    const was = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      expect(words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT }))[0]).toBe(codex016);
+      expect(provider.getPtyEnvVars('a', '/p', []).CODEX_HOME).toBe(codexHome());
+    } finally {
+      Object.defineProperty(process, 'platform', was);
+    }
+  });
+});
+
 describe('a session resumed or forked', () => {
   const ID = '01a14fb7-9e95-7c81-8980-2b82c8316805';
 
   it('resumed: codex resume, its options, the session, then the prompt', () => {
-    const argv = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'low', permissionMode: 'auto', resumeSessionId: ID }));
+    const argv = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'low', permissionMode: 'auto', resumeSessionId: ID }));
     expect(argv.slice(0, 2)).toEqual([codex016, 'resume']);
     expect(argv).toEqual(expect.arrayContaining(['--model', 'gpt-6-luna', '-c', 'model_reasoning_effort=low', '--approve-for-me']));
     expect(argv.slice(-2)).toEqual([ID, PROMPT]);
   });
 
   it('forked: codex fork; with no task, the session last', () => {
-    const fork = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, resumeSessionId: ID, forkSession: true }));
+    const fork = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, resumeSessionId: ID, forkSession: true }));
     expect(fork.slice(0, 2)).toEqual([codex016, 'fork']);
     expect(fork.slice(-2)).toEqual([ID, PROMPT]);
-    const bare = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: '', resumeSessionId: ID }));
+    const bare = argvOf(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: '', resumeSessionId: ID }));
     expect(bare.slice(0, 2)).toEqual([codex016, 'resume']);
     expect(bare[bare.length - 1]).toBe(ID);
   });

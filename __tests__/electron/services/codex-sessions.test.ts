@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 
 /**
  * Codex's turns, as Tars sees them (2.0.4).
@@ -18,8 +19,13 @@ import * as path from 'node:path';
  * The ways it fails:
  * 1. A turn's end never seen: the status stays running, delegate_task never gets the answer.
  * 2. A session given to the wrong agent: another codex agent's in the same folder, the user's own codex session, one
- *    begun before the agent's launch, or one in another folder. Tars's identity line in the first message ("(id
- *    <agent id>)") settles it when it is there; otherwise the first launch in that folder takes the first session.
+ *    begun before the agent's launch, or one in another folder. Its id then became the agent's, and the next restart
+ *    or wake resumed someone else's conversation in the agent's terminal (the Audit's M1 on #465). A session is
+ *    the agent's only on evidence that it is: its first message carries the agent's identity line ("(id <agent
+ *    id>)", which every session Tars begins carries), the rollout is held open by the codex under the agent's
+ *    terminal (measured on 0.163: from the file's first line to the codex's end, at rest included), or it is a fork
+ *    of the agent's own session that its launch began. A first message naming another agent is never the agent's;
+ *    and where a process's open files cannot be read (Windows), a session without the line is nobody's.
  * 3. The guardian's session (codex's automatic review, a subagent with a rollout of its own) taken for the agent's:
  *    its task_complete would end the agent's turn in the middle.
  * 4. A turn's end posted before its start, or its start without the task's text: the text carries the sender line
@@ -41,6 +47,13 @@ import * as path from 'node:path';
  *    window, a wake) writes no rollout at all before its first turn, so a first task typed more than ten minutes
  *    later began a session nobody's, and Tars never saw a turn of it. Or a launch whose codex is gone kept for good,
  *    so that a later session in that folder, the user's own, is taken for the agent's.
+ * 12. A rollout read whole, at every tick, to learn whose it is (the Audit's L3): any session of the machine's day
+ *    folders, however large, until it is settled. Only its first lines are read, each byte once.
+ * 13. The first message missed for being far into the file: measured on 0.163, session_meta alone is 19 KB, and
+ *    codex's instructions, the project's AGENTS.md and its context come before the user's message (at 43 KB).
+ * 14. A character codex wrote in two pieces, read in two ticks, decoded as two replacement characters: the answer
+ *    posted is not the one codex gave. And the unfinished line kept between two ticks as a slice of the buffer it
+ *    was read in, which the heap rules forbid: it is kept as its own bytes.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -51,6 +64,11 @@ let screen: Map<string, string | undefined>;
 let interrupted: Array<{ agentId: string; sessionId: string }>;
 let resumable: Map<string, string>;
 let running: Set<string>;
+/** A rollout and the agent whose own codex holds it open, as lsof or /proc would say. */
+let held: Map<string, string>;
+/** Windows: no tool lists a process's open files. */
+let openFilesUnread: boolean;
+let askedHolder: string[];
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -59,7 +77,13 @@ const OTHER = 'bbbb2222-0000-4000-8000-00000000c0de';
 const SESSION = '01a14ed5-56c5-78e0-9779-9be42587f6e6';
 
 const line = (type: string, payload: Record<string, unknown>) => JSON.stringify({ timestamp: new Date(now).toISOString(), type, payload });
-const meta = (id: string, cwd: string, source: unknown = 'cli') => line('session_meta', { id, session_id: id, cwd, source, originator: 'codex-tui', cli_version: '0.163.0', timestamp: new Date(now).toISOString() });
+/** A session_meta; `pad`, its instructions, which make it 19 KB in 0.163. */
+const meta = (id: string, cwd: string, source: unknown = 'cli', pad = 0) => line('session_meta', {
+  id, session_id: id, cwd, source, originator: 'codex-tui', cli_version: '0.163.0', timestamp: new Date(now).toISOString(),
+  ...(pad ? { base_instructions: { text: 'i'.repeat(pad) } } : {}),
+});
+/** One of the lines codex writes before the user's message (its instructions, AGENTS.md, the context), of about `bytes`. */
+const codexOwn = (bytes: number) => line('response_item', { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'd'.repeat(bytes) }] });
 const started = (turn: string) => line('event_msg', { type: 'task_started', turn_id: turn });
 const user = (text: string) => line('event_msg', { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text }] } });
 const aborted = (turn: string) => line('event_msg', { type: 'turn_aborted', turn_id: turn, reason: 'interrupted' });
@@ -77,6 +101,34 @@ function rollout(id: string, lines: string[], partial = ''): string {
 }
 const append = (file: string, text: string) => { fs.appendFileSync(file, text); fs.utimesSync(file, new Date(now), new Date(now)); };
 const postsFor = (agentId: string) => posts.filter(p => p.agentId === agentId).map(p => ({ path: p.path, ...p.body }));
+const outputsOf = (agentId: string) => postsFor(agentId).filter(p => p.path === '/api/hooks/output').map(p => p.output);
+/** The session's file held open by the agent's own codex: the evidence a session with no identity line needs. */
+const own = (file: string, agentId: string = AGENT) => { held.set(file, agentId); return file; };
+
+/** How a file is read while this runs: whole (readFileSync), and how many of its bytes through its descriptors. */
+const nodeFs = createRequire(import.meta.url)('fs') as typeof fs;
+function countReads(file: string) {
+  const original = { openSync: nodeFs.openSync, readSync: nodeFs.readSync, readFileSync: nodeFs.readFileSync, closeSync: nodeFs.closeSync };
+  const fds = new Set<number>();
+  const seen = { wholeFile: 0, bytes: 0 };
+  nodeFs.openSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+    const fd = (original.openSync as (...a: unknown[]) => number)(p, ...rest);
+    if (String(p) === file) fds.add(fd);
+    return fd;
+  }) as typeof fs.openSync;
+  nodeFs.readSync = ((fd: number, ...rest: unknown[]) => {
+    const n = (original.readSync as (...a: unknown[]) => number)(fd, ...rest);
+    if (fds.has(fd)) seen.bytes += n;
+    return n;
+  }) as typeof fs.readSync;
+  nodeFs.readFileSync = ((p: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+    if (String(p) === file) seen.wholeFile++;
+    return (original.readFileSync as (...a: unknown[]) => unknown)(p, ...rest);
+  }) as typeof fs.readFileSync;
+  nodeFs.closeSync = ((fd: number) => { fds.delete(fd); return original.closeSync(fd); }) as typeof fs.closeSync;
+  syncBuiltinESMExports();
+  return { seen, restore: () => { Object.assign(nodeFs, original); syncBuiltinESMExports(); } };
+}
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-sessions-'));
@@ -85,6 +137,9 @@ beforeEach(() => {
   interrupted = [];
   resumable = new Map();
   running = new Set();
+  held = new Map();
+  openFilesUnread = false;
+  askedHolder = [];
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
@@ -94,6 +149,12 @@ beforeEach(() => {
     interrupted: (agentId, sessionId) => { interrupted.push({ agentId, sessionId }); posts.push({ agentId, path: '/api/hooks/status', body: { interruptedHere: true } }); },
     resumableSessionOf: (agentId) => resumable.get(agentId),
     codexRunning: (agentId) => running.has(agentId),
+    heldOpenBy: async (file, agentIds) => {
+      askedHolder.push(file);
+      if (openFilesUnread) return undefined;
+      const holder = held.get(file);
+      return holder !== undefined && agentIds.includes(holder) ? holder : null;
+    },
   });
 });
 
@@ -102,7 +163,7 @@ describe("a codex agent's turn", () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(AGENT, project);
     now += 1500;
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from agent "Lead": fix it [task t-1a2b3c4d]'), done('t1', 'Fixed: 2 files.')]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from agent "Lead": fix it [task t-1a2b3c4d]'), done('t1', 'Fixed: 2 files.')]));
     await watch.tick();
 
     expect(postsFor(AGENT)).toEqual([
@@ -119,7 +180,7 @@ describe("a codex agent's turn", () => {
     watch.noteLaunch(AGENT, project);
     now += 1000;
     const refusal = JSON.stringify({ type: 'error', status: 400, error: { type: 'invalid_request_error', message: "The 'gpt-5-codex-mini' model is not supported when using Codex with a ChatGPT account." } });
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('hello'), done('t1', null, refusal)]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('hello'), done('t1', null, refusal)]));
     await watch.tick();
 
     const last = postsFor(AGENT).at(-1);
@@ -132,7 +193,7 @@ describe("a codex agent's turn", () => {
     watch.noteLaunch(AGENT, project);
     now += 500;
     const whole = done('t1', 'one');
-    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), user('first')], whole.slice(0, 40));
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('first')], whole.slice(0, 40)));
     await watch.tick();
     expect(postsFor(AGENT).map(p => p.status ?? p.path)).toEqual(['running', 'running']);
 
@@ -151,7 +212,7 @@ describe('a turn interrupted', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(AGENT, project);
     now += 1000;
-    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from agent "Lead": a long job [task t-1a2b3c4d]'), aborted('t1')]);
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from agent "Lead": a long job [task t-1a2b3c4d]'), aborted('t1')]));
     await watch.tick();
 
     expect(interrupted).toEqual([{ agentId: AGENT, sessionId: SESSION }]);
@@ -175,7 +236,7 @@ describe('a codex started with no prompt', () => {
     watch.noteLaunch(OTHER, project);
     now += 60 * 60_000;
     await watch.tick();
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from Tars: the first task'), done('t1', 'done')]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from Tars: the first task'), done('t1', 'done')]));
     await watch.tick();
     expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['done']);
 
@@ -224,16 +285,101 @@ describe('a session resumed', () => {
     resumable.set(AGENT, OLD);
     watch.noteLaunch(AGENT, project);
     now += 1500;
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('new'), done('t1', 'new answer')]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('new'), done('t1', 'new answer')]));
     await watch.tick();
     append(file, [started('tx'), user('someone else'), done('tx', 'not this agent\'s')].map(l => `${l}\n`).join(''));
     await watch.tick();
     expect(new Set(postsFor(AGENT).map(p => p.session_id))).toEqual(new Set([SESSION]));
     expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['new answer']);
   });
+
+  it("10. a fork its launch began of the agent's own session is the agent's at once, before any message", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    oldRollout(project);
+    resumable.set(AGENT, OLD);
+    watch.noteLaunch(AGENT, project);
+    watch.noteLaunch(OTHER, project);
+    now += 1300;
+    // Measured on 0.163: `codex fork <id>` with no prompt writes its session_meta at once, then nothing until a turn.
+    const FORK = '01a14fc3-eac2-7f33-8e4c-630805508299';
+    rollout(FORK, [line('session_meta', { id: FORK, session_id: FORK, cwd: project, source: 'cli', forked_from_id: OLD, timestamp: new Date(now).toISOString() }), line('event_msg', { type: 'thread_settings_applied' })]);
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([{ path: '/api/hooks/status', agent_id: AGENT, session_id: FORK, status: 'running', source: 'startup' }]);
+    expect(postsFor(OTHER)).toEqual([]);
+  });
 });
 
 describe('whose session it is', () => {
+  it("PA (the Audit's probe on #465). the user's own codex in the agent's folder, while the agent's codex idles with no prompt, is not the agent's", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);   // Start with no task: codex writes no rollout yet
+    now += 60_000;
+    const USERS = '01a14ed5-56c5-78e0-9779-000000000aaa';
+    rollout(USERS, [meta(USERS, project), started('u1'), user('refactor the parser for me'), done('u1', 'Done, my own session.')]);
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+  });
+
+  it("PB (the Audit's probe on #465). a first message naming another agent is not bound to the one launch waiting", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    now += 5_000;
+    const S2 = '01a14ed5-56c5-78e0-9779-000000000bbb';
+    rollout(S2, [meta(S2, project), started('t1'), user(`Message from agent "Lead" (id ${OTHER}): hello`), done('t1', 'x')]);
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+  });
+
+  it("2. a first message its user typed into the agent's own codex, with no identity line: the agent's, its codex holding the file", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    now += 60_000;
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('refactor the parser'), done('t1', 'Refactored.')]));
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['Refactored.']);
+  });
+
+  it("2. which codex holds a session's file is asked once, and one no waiting agent's codex holds stays nobody's", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    now += 1000;
+    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), user('mine, outside Tars')]);
+    await watch.tick();
+    await watch.tick();
+    append(file, `${done('t1', 'not the agent\'s')}\n`);
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+    expect(askedHolder.filter(f => f === file)).toHaveLength(1);
+  });
+
+  it("2. where a process's open files cannot be read (Windows), only the identity line binds", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    openFilesUnread = true;
+    watch.noteLaunch(AGENT, project);
+    now += 1000;
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('typed by its user'), done('t1', 'unseen')]));
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+    const NAMED = '01a14ed5-3333-7000-8000-000000000003';
+    now += 1000;
+    rollout(NAMED, [meta(NAMED, project), started('t2'), user(`[Tars: you are agent "Cody" (id ${AGENT}), worker of project ${project}.]\n\nMessage from Tars: hello`), done('t2', 'seen')]);
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['seen']);
+  });
+
+  it("2. a first message naming another agent is never bound, even with the file held by the codex of the one waiting", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(AGENT, project);
+    now += 1000;
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user(`[Tars: you are agent "Lead" (id ${OTHER}), orchestrator of project ${project}.]\n\nwork`), done('t1', 'not yours')]));
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+  });
+
   it("the agent its first message names, whichever launched first in that folder", async () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(OTHER, project);
@@ -258,12 +404,12 @@ describe('whose session it is', () => {
     await watch.tick();
     expect(postsFor(AGENT), JSON.stringify(posts)).toEqual([]);
 
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('hello'), done('t1', 'mine')]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('hello'), done('t1', 'mine')]));
     await watch.tick();
     expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['mine']);
   });
 
-  it("two codex agents launched in one folder each get one session, in their launches' order", async () => {
+  it('two codex agents launched in one folder each get the session their own codex holds, whichever launched first', async () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(AGENT, project);
     now += 200;
@@ -271,12 +417,12 @@ describe('whose session it is', () => {
     now += 800;
     const first = '01a14ed5-1111-7000-8000-000000000001';
     const second = '01a14ed5-2222-7000-8000-000000000002';
-    rollout(first, [meta(first, project), started('a'), user('a'), done('a', 'A')]);
+    own(rollout(first, [meta(first, project), started('a'), user('a'), done('a', 'A')]), OTHER);
     now += 300;
-    rollout(second, [meta(second, project), started('b'), user('b'), done('b', 'B')]);
+    own(rollout(second, [meta(second, project), started('b'), user('b'), done('b', 'B')]), AGENT);
     await watch.tick();
-    expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['A']);
-    expect(postsFor(OTHER).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['B']);
+    expect(outputsOf(OTHER)).toEqual(['A']);
+    expect(outputsOf(AGENT)).toEqual(['B']);
   });
 });
 
@@ -285,7 +431,7 @@ describe('an approval codex waits on', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(AGENT, project);
     now += 500;
-    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), user('run the tests')]);
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('run the tests')]));
     await watch.tick();
     screen.set(AGENT, 'Would you like to run the following command? $ npm test');
     await watch.tick();
@@ -305,7 +451,7 @@ describe('an approval codex waits on', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
     watch.noteLaunch(AGENT, project);
     now += 500;
-    rollout(SESSION, [meta(SESSION, project), started('t1'), user('x'), done('t1', 'y')]);
+    own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('x'), done('t1', 'y')]));
     await watch.tick();
     screen.set(AGENT, 'Would you like to run the following command?');
     await watch.tick();
@@ -324,6 +470,58 @@ describe('what is read', () => {
     now += 1000;
     const file = rollout(SESSION, [meta(SESSION, project), started('t1')]);
     expect(watch.filesToRead()).toEqual([file]);
+  });
+
+  it('12. a rollout is never read whole to learn whose it is: its first lines are read once, from where the last tick stopped', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(OTHER, project);
+    now += 100;
+    watch.noteLaunch(AGENT, project);
+    now += 900;
+    // Its first message not written yet, codex's own long lines before it, the kind 0.163 writes (13).
+    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), codexOwn(150_000)]);
+    const reads = countReads(file);
+    try {
+      await watch.tick();
+      await watch.tick();
+      await watch.tick();
+      append(file, `${user(`[Tars: you are agent "Cody" (id ${AGENT}), worker of project ${project}.]\n\nfix it`)}\n${done('t1', 'fixed')}\n`);
+      await watch.tick();
+    } finally {
+      reads.restore();
+    }
+    expect(outputsOf(AGENT)).toEqual(['fixed']);
+    expect(reads.seen.wholeFile, 'read whole').toBe(0);
+    // Once to learn whose it is, once more to follow it from its start: never at every tick.
+    expect(reads.seen.bytes).toBeLessThanOrEqual(2 * fs.statSync(file).size);
+  });
+
+  it("13. the first message found however far codex's own lines put it", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(OTHER, project);
+    now += 100;
+    watch.noteLaunch(AGENT, project);
+    now += 900;
+    rollout(SESSION, [meta(SESSION, project, 'cli', 19_000), started('t1'), codexOwn(150_000), codexOwn(150_000),
+      user(`[Tars: you are agent "Cody" (id ${AGENT}), worker of project ${project}.]\n\nfix it`), done('t1', 'fixed')]);
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['fixed']);
+    expect(postsFor(OTHER)).toEqual([]);
+  });
+
+  it('14. a character codex wrote in two pieces is read whole', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(AGENT, project);
+    now += 500;
+    const file = own(rollout(SESSION, [meta(SESSION, project), started('t1'), user('say it')]));
+    await watch.tick();
+    const bytes = Buffer.from(`${done('t1', 'café ☕ prêt')}\n`, 'utf8');
+    const cut = bytes.indexOf(Buffer.from('☕', 'utf8')) + 1;
+    fs.appendFileSync(file, bytes.subarray(0, cut));
+    await watch.tick();
+    fs.appendFileSync(file, bytes.subarray(cut));
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['café ☕ prêt']);
   });
 
   it('a line that is not JSON, or not an event, is no event', () => {
