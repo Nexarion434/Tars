@@ -21,7 +21,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    "6 of 6";
  * 6. the choice is remembered per card: the page opened again, the agents table shows ten rows, the averages five;
  * 7. By task lists the twelve tasks as before, with no pager; By agent again pages at ten from page 1.
- * Red on 92b3aab2 (the code before the pager): every row shows and there is no pager.
+ * Red on 94ed3211 (the code before the pager): every row shows and there is no pager.
  * The artefact: values.json with the rows and pagers read at each step, in both shells, and their screenshots.
  */
 
