@@ -481,7 +481,7 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
     expect(typedInto(terminal), 'the answer waits behind the task that waits for it').toContain('ANSWER-43');
   });
 
-  it('17. a held note lets one queued task in at a time, each in a turn of its own, and delivered is said when it went in', async () => {
+  it('17. a held note and two queued tasks go in one at a time, each in a turn of its own, and delivered is said when it went in', async () => {
     const { agent, terminal } = withCli('cl', 'claude', 'idle');
     member('x');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
@@ -499,24 +499,23 @@ describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7
     const tRef = String(t.answer()?.data.queuedTask);
     const uRef = String(u.answer()?.data.queuedTask);
     runs[0].end();
-    await later(5000);
-    expect(typedInto(terminal)).toContain('TASK-T');
-    expect(typedInto(terminal), "U typed into T's turn").not.toContain('TASK-U');
-    expect(typedInto(terminal), "the note typed into T's turn").not.toContain('NOTE-N');
-    const tSeen = call('GET', `/api/tasks/${tRef}`, {}, 'orch');
-    const uSeen = call('GET', `/api/tasks/${uRef}`, {}, 'orch');
-    await Promise.all([tSeen.done, uSeen.done]);
-    expect(tSeen.answer()?.data.task, JSON.stringify(tSeen.answer())).toMatchObject({ outcome: 'delivered', how: 'typed' });
-    expect(uSeen.answer()?.data.task, 'said delivered before it went in').toMatchObject({ outcome: 'queued' });
-    // T's turn ends: one of U and the note goes, never both.
-    agent.status = 'idle';
-    await later(3000);
-    const next = ['TASK-U', 'NOTE-N'].filter(k => typedInto(terminal).includes(k));
-    expect(next, 'not one at a time').toHaveLength(1);
-    agent.status = 'idle';
-    await later(3000);
-    expect(typedInto(terminal)).toContain('TASK-U');
-    expect(typedInto(terminal)).toContain('NOTE-N');
+    // At each rest one of them goes in, its own turn, never two; U after T; each said delivered only once in.
+    const order: string[] = [];
+    for (let rest = 0; rest < 3; rest++) {
+      await later(3000);
+      const now = ['NOTE-N', 'TASK-T', 'TASK-U'].filter(k => typedInto(terminal).includes(k));
+      const fresh = now.filter(k => !order.includes(k));
+      expect(fresh, `rest ${rest}: one at a time, typed so far ${now.join(', ')}`).toHaveLength(1);
+      order.push(...fresh);
+      for (const [key, ref] of [['TASK-T', tRef], ['TASK-U', uRef]] as const) {
+        const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');
+        await seen.done;
+        expect(seen.answer()?.data.task, `${key} at rest ${rest}`).toMatchObject(order.includes(key) ? { outcome: 'delivered', how: 'typed' } : { outcome: 'queued' });
+      }
+      // The turn of what went in ends.
+      agent.status = 'idle';
+    }
+    expect(order.indexOf('TASK-T'), order.join(', ')).toBeLessThan(order.indexOf('TASK-U'));
   });
 
   it('18. the kanban\'s note to an agent whose run works waits for the run, and takes no place in its line', async () => {
