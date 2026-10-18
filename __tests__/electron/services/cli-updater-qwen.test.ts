@@ -23,6 +23,9 @@ import { classifyInstall, updateCli, type CliUpdateContext } from '../../../elec
  *      reads failed.
  *  U3. It updates under a session still running qwen's node, or while the
  *      user turned qwen's updates off in ~/.qwen/settings.json.
+ *  U4. (The Audit's L2 on #461, written before its code.) Installed with npm
+ *      (@qwen-code/qwen-code), it is updated, npm run, while the user turned
+ *      qwen's updates off.
  */
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -85,5 +88,30 @@ describe.skipIf(process.platform === 'win32')('qwen code, updated once for the f
     fs.writeFileSync(path.join(home, '.qwen', 'settings.json'), JSON.stringify({ general: { enableAutoUpdate: false } }));
     expect(await updateCli('qwen', launcher, ctx)).toMatchObject({ outcome: 'skipped' });
     expect(JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version).toBe('0.25.2');
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('qwen code installed with npm', () => {
+  it('U4. is left as it is while the user turned qwen\'s updates off: npm never runs', async () => {
+    const prefix = path.join(home, 'npm');
+    const pkg = path.join(prefix, 'lib', 'node_modules', '@qwen-code', 'qwen-code');
+    fs.mkdirSync(path.join(pkg, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@qwen-code/qwen-code', version: '0.25.1' }));
+    fs.writeFileSync(path.join(pkg, 'dist', 'cli.js'), '#!/usr/bin/env node\n', { mode: 0o755 });
+    fs.mkdirSync(path.join(prefix, 'bin'), { recursive: true });
+    const launcher = path.join(prefix, 'bin', 'qwen');
+    fs.symlinkSync(path.join(pkg, 'dist', 'cli.js'), launcher);
+    // An npm that records being run, first on the PATH: nothing reaches the registry.
+    const fakeBin = path.join(home, 'fake-bin');
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const ran = path.join(home, 'npm-ran');
+    fs.writeFileSync(path.join(fakeBin, 'npm'), `#!/bin/sh\necho "$@" >> '${ran}'\nexit 1\n`, { mode: 0o755 });
+    ctx.env.PATH = `${fakeBin}${path.delimiter}${ctx.env.PATH}`;
+    fs.mkdirSync(path.join(home, '.qwen'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.qwen', 'settings.json'), JSON.stringify({ general: { enableAutoUpdate: false } }));
+
+    expect(classifyInstall(launcher)).toMatchObject({ kind: 'npm', pkg: '@qwen-code/qwen-code' });
+    expect(await updateCli('qwen', launcher, ctx)).toMatchObject({ cli: 'qwen', outcome: 'skipped', detail: expect.stringContaining('enableAutoUpdate') });
+    expect(fs.existsSync(ran), 'npm ran').toBe(false);
   });
 });

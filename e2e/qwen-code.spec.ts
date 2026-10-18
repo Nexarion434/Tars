@@ -30,7 +30,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    started with qw's own environment: lead's terminal receives it from "Qwen Worker" ("qw");
  * 5. a permission qw asks for reads `waiting` / `permission` in the window, as a claude agent's does;
  * 6. Tars restarted, qw started again continues its conversation (--resume with the session it had);
- * 7. Usage by task holds qw's tasks with their tokens and cost.
+ * 7. Usage by task holds qw's tasks with their tokens and cost;
+ * 8. (the Audit's M1 on #461) an administrator's system settings file, named by QWEN_CODE_SYSTEM_SETTINGS_PATH in
+ *    the environment Tars started with: qw's settings file of Tars's carries its controls, its values winning;
+ * 9. (the Audit's L1) Esc in a qw turn: qwen sends no Stop and writes the cancel into its transcript (measured on
+ *    0.25.2, 2026-10-18): the delegated task ends `interrupted`, and the next task goes in at once.
  * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.dorothy/qwen-code/mcp-servers.json),
  * seeded on this checkout's bundle: a dev run finds no bundle under its resources and registers none, for any CLI.
  * Red on feat/cli-api-keys (24469620), before the provider: qwen-code is Claude, and none of this holds.
@@ -95,6 +99,16 @@ async function turn(prompt) {
     log({ sent });
     answer = 'answer for TASK-SENDBACK: reported';
   }
+  if (task === 'TASK-LONG') {
+    // What qwen 0.25.2 does on Esc: the turn ends with no Stop, the request's end written as cancelled; its idle
+    // prompt notification comes a while later.
+    await new Promise((r) => { cancelTurn = r; setTimeout(r, 90000); });
+    cancelTurn = null;
+    write({ type: 'system', subtype: 'ui_telemetry', systemPayload: { uiEvent: { v: 1, kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: Date.now() } } });
+    log({ cancelled: task });
+    setTimeout(() => hook('Notification', { notification_type: 'idle_prompt', message: 'Qwen Code is waiting for your input', title: 'Qwen Code' }), 20000);
+    return;
+  }
   if (task === 'TASK-PERM') {
     hook('PermissionRequest', { tool_name: 'run_shell_command', tool_input: { command: 'touch x' } });
     hook('Notification', { notification_type: 'permission_prompt', message: 'Qwen Code needs your permission to use run_shell_command', title: 'Qwen Code' });
@@ -110,10 +124,12 @@ hook('SessionStart', { source: resume ? 'resume' : 'startup', model: flag('-m'),
 process.stdout.write('qwen stand-in ready\n');
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 let queue = Promise.resolve();
+let cancelTurn = null;
 const first = flag('-i');
 if (first) queue = queue.then(() => turn(first));
 let buffer = '';
 process.stdin.on('data', (d) => {
+  if (d.toString() === '\x1b' && cancelTurn) { cancelTurn(); return; }
   buffer += d.toString();
   let end;
   while ((end = buffer.search(/[\r\n]/)) !== -1) {
@@ -225,6 +241,11 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { qwencode: qwen, additionalPaths: [bin] }, newInterface,
     }));
+    // An administrator's system settings, where the environment Tars starts with names them (qwen's own override).
+    const adminFile = path.join(home, 'admin', 'qwen-system.json');
+    const ADMIN = { permissions: { deny: ['run_shell_command(rm -rf *)'] }, slashCommands: { disabled: ['mcp'] } };
+    fs.mkdirSync(path.dirname(adminFile), { recursive: true });
+    fs.writeFileSync(adminFile, JSON.stringify(ADMIN));
     const port = apiPort(newInterface ? 31412 : 31411);
     const dist = path.resolve('electron', 'dist');
     const values: Record<string, unknown> = { newInterface, home };
@@ -233,7 +254,7 @@ for (const newInterface of [false, true]) {
       ? fs.readFileSync(path.join(home, 'qwen-stand-in.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Rec) : []);
     const launches = () => records().filter((r) => r.launched);
 
-    const launch = () => launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' } });
+    const launch = () => launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', QWEN_CODE_SYSTEM_SETTINGS_PATH: adminFile } });
     const open = async (app: ElectronApplication) => {
       const page: Page = await app.firstWindow();
       await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
@@ -285,12 +306,16 @@ for (const newInterface of [false, true]) {
       expect.soft(first?.launched?.join(' ') ?? '', 'the effort on the command line').not.toContain('high');
       expect.soft(first?.hashes?.DEEPSEEK_API_KEY, 'its key under its model\'s envKey').toBe(sha(KEY));
       expect.soft(first?.launched?.join(' ') ?? '').not.toContain(KEY);
-      const s = (first?.settings ?? {}) as { hooks?: Record<string, unknown>; mcpServers?: Record<string, unknown>; model?: unknown; general?: unknown };
+      const s = (first?.settings ?? {}) as { hooks?: Record<string, unknown>; mcpServers?: Record<string, unknown>; model?: unknown; general?: unknown; permissions?: unknown; slashCommands?: unknown };
       expect.soft(Object.keys(s.hooks ?? {}).sort()).toEqual(expect.arrayContaining(['Notification', 'PermissionRequest', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']));
       expect.soft(Object.keys(s.mcpServers ?? {})).toContain('claude-mgr-orchestrator');
       expect.soft(s.model).toEqual({ reasoningEffort: 'high' });
       expect.soft(s.general).toEqual({ enableAutoUpdate: false });
       expect.soft(JSON.stringify(s)).not.toMatch(new RegExp(`${KEY}|TOKEN`));
+      // 8. The administrator's controls, in the slot qwen gives them.
+      expect.soft(s.permissions, 'the administrator\'s denylist').toEqual(ADMIN.permissions);
+      expect.soft(s.slashCommands).toEqual(ADMIN.slashCommands);
+      expect.soft(first?.settingsFile, 'the administrator\'s file itself is never handed over').not.toBe(adminFile);
 
       // 4. A second task, into the same session, and a report back through Tars's MCP server.
       const two = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-SENDBACK report to me when done', timeoutSeconds: 120 });
@@ -307,6 +332,18 @@ for (const newInterface of [false, true]) {
       const permAnswer = await perm;
       keep({ permAnswer });
       expect.soft(permAnswer.text).toContain('answer for TASK-PERM');
+
+      // 9. Esc in a turn: the task ends interrupted, and the next one goes in at once.
+      const long = lead.call('delegate_task', { id: 'qw', prompt: 'TASK-LONG write a very long report', timeoutSeconds: 120 });
+      await expect.poll(() => records().some((r) => r.turn === 'TASK-LONG'), { timeout: 30_000 }).toBe(true);
+      await page.evaluate(() => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } }).electronAPI.agent.sendInput({ id: 'qw', input: '\x1b' }));
+      const cut = await long;
+      const startedAfter = Date.now();
+      const after = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-AFTER one more thing', timeoutSeconds: 120 });
+      keep({ cut, after, afterTookMs: Date.now() - startedAfter });
+      expect.soft(cut.text).toContain('ended: interrupted');
+      expect.soft(after.text).toContain('answer for TASK-AFTER');
+      expect.soft(Date.now() - startedAfter, 'the next task waited for the idle notification').toBeLessThan(15_000);
 
       // 7. Usage by task.
       const report = await page.evaluate(() => (window as unknown as Api).electronAPI.usage.tasks({ sinceDays: 1 }));
