@@ -51,7 +51,7 @@ import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/age
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
-import { oneTaskQueue, workerOrderRefusal, workerStopRefusal, isReportTo, noteFrom, behindText, unknownTaskText, type Busy } from '../../core/one-task';
+import { oneTaskQueue, workerOrderRefusal, workerStopRefusal, isReportTo, noteFrom, behindText, unknownTaskText, terminalTurnOf, holdsMessages, type Busy } from '../../core/one-task';
 import { chatIdentityOf, chatOfAsker, orchestratorMoved } from '../../core/chat-identity';
 
 /**
@@ -835,15 +835,23 @@ function noteNeedsSession(agent: AgentStatus): Record<string, unknown> {
 }
 
 /**
- * A turn in the agent's terminal: its CLI up, and working or asking (a
- * permission, a question) (core/one-task.ts). `waiting` on the idle prompt is
- * Claude Code's word for a CLI at rest at its prompt: no turn.
+ * A turn in the agent's terminal, where Tars can see one end
+ * (core/one-task.ts, terminalTurnOf): never for a CLI without hooks, never for
+ * one the stall watch found doing nothing.
  */
 function terminalTurn(agent: AgentStatus): Busy | undefined {
-  if (agent.status !== 'running' && !(agent.status === 'waiting' && agent.waitingReason !== 'idle')) return undefined;
-  if (!cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) return undefined;
-  const since = Date.parse(agent.workHandedAt ?? agent.lastActivity ?? '') || Date.now();
-  return { kind: 'turn', ...(agent.requestedBy?.agentId ? { requesterId: agent.requestedBy.agentId } : {}), since };
+  return terminalTurnOf(agent, cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined));
+}
+
+/**
+ * A worker writing to whoever leads it: a report, not a task, so it is no
+ * task in that agent's queue either (core/one-task.ts, isReportTo).
+ */
+function reportSender(req: RouteRequest, agent: AgentStatus): AgentStatus | undefined {
+  if (req.internal) return undefined;
+  const callerId = resolveCallerId(req);
+  const caller = callerId && callerId !== agent.id ? agents.get(callerId) : undefined;
+  return caller && !hasOrchestratorPowers(caller) && isReportTo(caller, agent) ? caller : undefined;
 }
 
 /** What a task asked now (or the queued task `ref`) waits behind, said for its asker. */
@@ -1040,6 +1048,13 @@ export interface DispatchOpts {
   mark?: string;
   /** A worker's note (core/one-task.ts): typed into a live session only, never a session started for it. */
   noteOnly?: boolean;
+  /**
+   * Information, not a task: Tars's own word (the kanban's note, the error
+   * triage's), a worker's report to whoever leads it. While a run holds the
+   * agent or tasks wait their turn, it waits for them (WriteOrigin.untilRest),
+   * and it is never queued as a task.
+   */
+  information?: boolean;
   /** Its turn in the agent's queue taken already: a session may start now. */
   turnTaken?: boolean;
 }
@@ -1115,6 +1130,16 @@ async function performDispatchLocked(
   // Audit typed `echo MARK-SHELL-$((6*7))` and read MARK-SHELL-42. A session
   // still starting counts, through cliRunningIn: its terminal holds the CLI.
   // Elsewhere a session is started with the message as its task.
+  // One task at a time (core/one-task.ts): a run over ACP holds the agent, or
+  // tasks wait before this one. Typed into its terminal now, a task would be a
+  // second copy of the agent at work beside the run: it waits its turn as with
+  // no session (the Audit's M1 on #449). A note or information waits for the
+  // run's end in the terminal's writer instead, and is no task.
+  const behindWork = !opts.turnTaken && oneTaskQueue.mustQueue(agent.id, undefined);
+  if (livePty && cliRunningIn(livePty) && behindWork && !opts.noteOnly && !opts.information) {
+    queueDispatch(agent, opts, ctx, sendJson, taskRef, previousStatus);
+    return;
+  }
   if (livePty && cliRunningIn(livePty)) {
     // A live session, mid-task or at its prompt: type the message into it.
     // Working once the message is in its terminal, not before: an agent read
@@ -1154,13 +1179,13 @@ async function performDispatchLocked(
       // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
       onWithdrawn: () => cancelRetell?.(),
       taskRef,
-      untilRest: opts.untilRest,
+      untilRest: opts.untilRest || behindWork,
       mark: opts.mark,
     });
     if (outcome === 'refused') dropped(agent, taskRef);
     if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
-    // Waiting for the turn it was sent to wait out: nobody's field holds it.
-    const waitsForTurn = outcome === 'held' && !!opts.untilRest && agent.status === 'running';
+    // Waiting for the turn, or the run, it was sent to wait out: nobody's field holds it.
+    const waitsForTurn = outcome === 'held' && (!!opts.untilRest || behindWork) && holdsMessages(agent);
     if (outcome === 'held' && !waitsForTurn) cancelRetell = retellWhileHeld(agent, opts.sender, Date.now());
     // `held` is not `written`. The message is queued for that terminal and
     // goes in when the field frees, but answering a caller "sent" while
@@ -1185,24 +1210,8 @@ async function performDispatchLocked(
   // tasks wait before this one. A session started now would be a second copy
   // of the agent at work: the task waits its turn instead, and the caller is
   // told which task it waits behind.
-  if (!opts.turnTaken && oneTaskQueue.mustQueue(agent.id, undefined)) {
-    const behind = busyText(agent);
-    const queued = oneTaskQueue.enqueue(agent.id, {
-      ...(opts.sender?.kind === 'agent' ? { requesterId: opts.sender.id } : {}), title: opts.message.slice(0, 100),
-    });
-    sendJson({
-      success: true, mode: 'queued', queued: true, queuedBehind: behind, queuedTask: queued.ref, previousStatus,
-      ...(taskRef ? { taskRef } : {}), agent: { id: agent.id, name: agent.name, status: agent.status },
-    });
-    void waitTurn(agent, queued.ref).then(async (taken) => {
-      if (!taken) { dropped(agent, taskRef); return; }
-      try {
-        await performDispatch(agent, { ...opts, onAccepted: () => taskRef, turnTaken: true }, ctx, () => undefined);
-      } finally {
-        // The session it started holds the agent from here: its turn, in its terminal.
-        oneTaskQueue.runEnded(agent.id);
-      }
-    });
+  if (behindWork) {
+    queueDispatch(agent, opts, ctx, sendJson, taskRef, previousStatus);
     return;
   }
 
@@ -1214,6 +1223,40 @@ async function performDispatchLocked(
     return;
   }
   sendJson({ success: true, mode: 'start', previousStatus, ...restartedAfterStop(agent, since), ...(taskRef ? { taskRef } : {}), agent: { id: agent.id, name: agent.name, status: agent.status } });
+}
+
+/**
+ * A task that waits its turn in the agent's queue (core/one-task.ts), told
+ * which task it waits behind, and handed over once it is first and the agent
+ * free: typed into its live session, or a session started on it. What became
+ * of it is kept under its id for whoever follows it: delivered, or why it
+ * never started. Said `starting` for ever, a start_agent that ran read as
+ * still queued (the Audit's L3 on #449).
+ */
+function queueDispatch(agent: AgentStatus, opts: DispatchOpts, ctx: RouteContext, sendJson: SendJson, taskRef: string | undefined, previousStatus: AgentStatus['status']): void {
+  const behind = busyText(agent);
+  const queued = oneTaskQueue.enqueue(agent.id, {
+    ...(opts.sender?.kind === 'agent' ? { requesterId: opts.sender.id } : {}), title: opts.message.slice(0, 100),
+  });
+  sendJson({
+    success: true, mode: 'queued', queued: true, queuedBehind: behind, queuedTask: queued.ref, previousStatus,
+    ...(taskRef ? { taskRef } : {}), agent: { id: agent.id, name: agent.name, status: agent.status },
+  });
+  void waitTurn(agent, queued.ref).then(async (taken) => {
+    if (!taken) { dropped(agent, taskRef); return; }
+    let answer: { data: { mode?: unknown; error?: unknown }; status: number } | undefined;
+    try {
+      await performDispatch(agent, { ...opts, onAccepted: () => taskRef, turnTaken: true }, ctx, (data, status = 200) => {
+        answer ??= { data: (data ?? {}) as { mode?: unknown; error?: unknown }, status };
+      });
+    } finally {
+      // The session it went into holds the agent from here: its turn, in its terminal.
+      oneTaskQueue.runEnded(agent.id);
+      const mode = answer && answer.status < 300 ? answer.data.mode : undefined;
+      if (mode === 'message' || mode === 'start') oneTaskQueue.delivered(queued.ref, mode === 'start' ? 'started' : 'typed');
+      else oneTaskQueue.notStarted(queued.ref, typeof answer?.data.error === 'string' ? answer.data.error : 'it could not be handed over');
+    }
+  });
 }
 
 /**
@@ -1753,6 +1796,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         message, model, permissionMode, from: by, sender: senderOf(agent, req), mark: markFor(agent, req),
         untilRest: mode === 'queue' || interrupted === false,
         noteOnly: !!noteBy,
+        // A report to whoever leads the worker waits for that agent's run, as a note does: it is no task.
+        information: !noteBy && !!reportSender(req, agent),
         // After the wait: a sender refused 409 typed nothing and takes no link.
         // A note hands nothing over: nobody's request.
         onAccepted: () => (noteBy ? undefined : requestFor(agent, req, message)),
@@ -1971,14 +2016,20 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
     if (queued && queued.state !== 'started') {
       const { task: q } = queued;
+      // Settled: it never started, or it went into the agent's terminal (a
+      // task typed in, or a session started on it), which no ledger task
+      // follows: the agent's turn is its work from then on.
+      const settled = queued.state === 'failed' || queued.state === 'delivered';
       sendJson({
-        ...(queued.state !== 'failed' && waitS > 0 ? { timeout: true } : {}),
+        ...(!settled && waitS > 0 ? { timeout: true } : {}),
         task: {
-          id: q.ref, agentId: q.agentId, requesterAgentId: q.requesterId ?? null, source: 'acp', startedAt: null, endedAt: null,
+          id: q.ref, agentId: q.agentId, requesterAgentId: q.requesterId ?? null, source: queued.state === 'delivered' ? 'terminal' : 'acp', startedAt: null, endedAt: null,
           queuedAt: new Date(q.queuedAt).toISOString(),
           ...(queued.state === 'failed'
             ? { outcome: 'error', error: `It never started: ${queued.error}.` }
-            : { outcome: queued.state, ...(queued.state === 'queued' ? { queuedBehind: busyText(agents.get(q.agentId) ?? ({ id: q.agentId } as AgentStatus), q.ref) } : {}) }),
+            : queued.state === 'delivered'
+              ? { outcome: 'delivered', how: queued.how, deliveredAt: new Date(queued.at).toISOString() }
+              : { outcome: queued.state, ...(queued.state === 'queued' ? { queuedBehind: busyText(agents.get(q.agentId) ?? ({ id: q.agentId } as AgentStatus), q.ref) } : {}) }),
         },
       });
       return;
@@ -2083,8 +2134,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         sendJson(noteNeedsSession(agent), 409);
         return;
       }
-      // A session started now would work beside a run, or before tasks queued (core/one-task.ts).
-      if (noCli && oneTaskQueue.mustQueue(agent.id, undefined)) {
+      // A session started now, or a task typed into the live one, would work
+      // beside a run, or before tasks queued (core/one-task.ts, the Audit's M1
+      // on #449). A note or a report waits for the run's end instead.
+      const report = !noteBy && !!reportSender(req, agent);
+      const behindWork = oneTaskQueue.mustQueue(agent.id, undefined);
+      if (behindWork && (noCli || (!noteBy && !report))) {
         sendJson({
           error: `"${agent.name || agent.id}" is working on ${busyText(agent)}: nothing was sent. Send it with /dispatch, which waits its turn.`,
           code: 'agent_busy',
@@ -2138,12 +2193,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
           onWithdrawn: () => cancelRetell?.(),
           taskRef,
           mark: markFor(agent, req),
-          // A note waits for the turn's end, as /dispatch's `queue`.
-          untilRest: !!noteBy,
+          // A note waits for the turn's end, as /dispatch's `queue`; a note or a report, for a run's.
+          untilRest: !!noteBy || behindWork,
         });
         if (outcome === 'refused') dropped(agent, taskRef);
         if (outcome !== 'held' && outcome !== 'refused') handedOver(delivered(agent, taskRef));
-        const waitsForTurn = outcome === 'held' && !!noteBy && agent.status === 'running';
+        const waitsForTurn = outcome === 'held' && (!!noteBy || behindWork) && holdsMessages(agent);
         if (outcome === 'held' && !waitsForTurn) cancelRetell = retellWhileHeld(agent, sender, Date.now());
         sendJson({
           success: true,

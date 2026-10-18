@@ -1,6 +1,8 @@
 import { hasOrchestratorPowers } from './agent-role';
 import { newTaskRef } from './task-requests';
+import { hasEndOfTurn } from './end-of-turn';
 import { envelopeValue } from '../utils/envelope-value';
+import type { AgentProvider } from '../types';
 
 /**
  * One agent, one task at a time, and a worker never orders work from another
@@ -12,7 +14,13 @@ import { envelopeValue } from '../utils/envelope-value';
  *    or a turn in its terminal) never starts a second session: it waits here,
  *    first come first served, and starts once the agent is free. It has a
  *    task id from the moment it is queued, so its asker can follow it
- *    (GET /api/tasks/:id) and cancel it (POST /api/tasks/:ref/cancel).
+ *    (GET /api/tasks/:id) and cancel it (POST /api/tasks/:ref/cancel). A task
+ *    typed into a live terminal waits here as one sent to an agent with no
+ *    session does, while a run holds the agent or tasks wait before it; a
+ *    note, or Tars's own word, waits for the run's end instead, and is no
+ *    task (holdsMessages). A turn in the terminal counts only where Tars can
+ *    see it end (terminalTurnOf): amp, codex, grok, opencode and pi tell Tars
+ *    nothing of their turns, so only their runs hold them.
  * 2. Only Tars, the user's window, an agent with an orchestrator's powers
  *    (the project's orchestrator, a chat's runner) or the agent itself hand an
  *    agent work. A worker is refused, and told to ask its orchestrator; what
@@ -45,10 +53,10 @@ export interface QueuedTask {
   queuedAt: number;
 }
 
-type Taken = { task: QueuedTask; taskId?: string; error?: string };
+/** Handed over in the agent's terminal once its turn came: typed into its session, or a session started on it. */
+type Delivered = { how: 'typed' | 'started'; at: number };
 
-/** Who may cancel: the fleet as the queue reads it. */
-type FleetMember = { id: string; role?: string; kind?: string; projectPath?: string };
+type Taken = { task: QueuedTask; taskId?: string; error?: string; delivered?: Delivered };
 
 export interface OneTaskQueue {
   /** When this queue began, with this run of Tars: a task queued before it is gone. */
@@ -77,12 +85,14 @@ export interface OneTaskQueue {
     | { state: 'queued'; task: QueuedTask }
     | { state: 'starting'; task: QueuedTask }
     | { state: 'started'; task: QueuedTask; taskId: string }
+    | { state: 'delivered'; task: QueuedTask; how: Delivered['how']; at: number }
     | { state: 'failed'; task: QueuedTask; error: string }
     | undefined;
   /** The run of a task taken from the queue ended before it started: no ledger task will follow. */
   notStarted(ref: string, error: string): void;
+  /** A task taken from the queue went into the agent's terminal: no ledger task will follow, and nothing more is waited for. */
+  delivered(ref: string, how: Delivered['how'], now?: number): void;
   queued(agentId: string): QueuedTask[];
-  mayCancel(ref: string, callerId: string | undefined, fleet: ReadonlyMap<string, FleetMember>): boolean;
   /** Out of the line, never to start: still known by its ref, as failed with `why`, to whoever follows it. */
   cancel(ref: string, why?: string): QueuedTask | undefined;
 }
@@ -155,23 +165,20 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       const was = taken.get(ref);
       if (!was) return undefined;
       if (was.taskId) return { state: 'started', task: was.task, taskId: was.taskId };
+      if (was.delivered) return { state: 'delivered', task: was.task, how: was.delivered.how, at: was.delivered.at };
       if (was.error !== undefined) return { state: 'failed', task: was.task, error: was.error };
       return { state: 'starting', task: was.task };
     },
     notStarted(ref, error) {
       const was = taken.get(ref);
-      if (was && !was.taskId) was.error = error;
+      if (was && !was.taskId && !was.delivered) was.error = error;
+    },
+    delivered(ref, how, now = Date.now()) {
+      const was = taken.get(ref);
+      if (was && !was.taskId && was.error === undefined) was.delivered = { how, at: now };
     },
     queued(agentId) {
       return [...lineOf(agentId)];
-    },
-    mayCancel(ref, callerId, fleet) {
-      const task = find(ref);
-      if (!task) return false;
-      if (!callerId || callerId === task.requesterId) return true;
-      const caller = fleet.get(callerId);
-      const agent = fleet.get(task.agentId);
-      return !!caller && !!agent && hasOrchestratorPowers(caller) && caller.projectPath === agent.projectPath;
     },
     cancel(ref, why = 'it was cancelled') {
       const task = find(ref);
@@ -181,6 +188,53 @@ export function createOneTaskQueue(since: number = Date.now()): OneTaskQueue {
       return task;
     },
   };
+}
+
+/** What the busy rule reads of an agent: agent-routes.ts and agent-manager.ts hand it an AgentStatus. */
+export interface TurnView {
+  id: string;
+  provider?: AgentProvider;
+  status?: string;
+  waitingReason?: string;
+  /** Set by the stall watch on a `running` agent that does nothing (services/stall-watch.ts). */
+  stalledSince?: string;
+  workHandedAt?: string;
+  lastActivity?: string;
+  requestedBy?: { agentId?: string };
+}
+
+/**
+ * A turn in the agent's terminal, as Tars can tell one: its CLI up, and
+ * working or asking (a permission, a question). `waiting` on the idle prompt
+ * is Claude Code's word for a CLI at rest at its prompt: no turn.
+ *
+ * Only where the CLI tells Tars its turn ended (hasEndOfTurn): amp, codex,
+ * grok, opencode and pi stay `running` for as long as their TUI is open, so a
+ * turn read from that never ended, and every task delegated to one of them
+ * waited in its queue for ever (the Audit's H1 on #449). Their terminal is
+ * taken as at rest, as it was before the queue: only their runs hold them.
+ * And a turn the stall watch found doing nothing for half an hour is none: a
+ * claude whose Stop was lost reads `running` at its prompt.
+ */
+export function terminalTurnOf(agent: TurnView, cliRunning: boolean): Busy | undefined {
+  if (!hasEndOfTurn(agent) || agent.stalledSince) return undefined;
+  if (agent.status !== 'running' && !(agent.status === 'waiting' && agent.waitingReason !== 'idle')) return undefined;
+  if (!cliRunning) return undefined;
+  const since = Date.parse(agent.workHandedAt ?? agent.lastActivity ?? '') || Date.now();
+  return { kind: 'turn', ...(agent.requestedBy?.agentId ? { requesterId: agent.requestedBy.agentId } : {}), since };
+}
+
+/**
+ * Whether a message sent to wait for the agent's rest (pty-manager.ts,
+ * WriteOrigin.untilRest) still waits: a run holds the agent, tasks wait their
+ * turn before it, or a turn Tars can see end runs in its terminal. Read by the
+ * terminals' writer, so a note, or Tars's own word, never goes in beside a
+ * run, whatever the agent's status reads (the Audit's M1 on #449); and never
+ * waits for an end of turn a CLI without hooks never says.
+ */
+export function holdsMessages(agent: TurnView, queue: OneTaskQueue = oneTaskQueue): boolean {
+  if (queue.busyRun(agent.id) || queue.queued(agent.id).length > 0) return true;
+  return agent.status === 'running' && hasEndOfTurn(agent) && !agent.stalledSince;
 }
 
 /** What a queued task waits behind, said for its asker. */

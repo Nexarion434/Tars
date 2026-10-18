@@ -14,6 +14,7 @@ import {
   type AgentColumn, type AgentTask, type HermesUnusable, type KanbanCaller, type KanbanHermes, type KanbanResult,
 } from '../kanban-board';
 import { performDispatch } from './agent-routes';
+import { workerOrderRefusal } from '../../core/one-task';
 import { agentStatusEmitter } from '../agent-events';
 import type { MessageSender } from '../../core/pty-manager';
 import type { NoteDelivery } from '../error-triage';
@@ -145,7 +146,8 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): 'typed' | 
   const message = item.carried && item.since
     ? `(${carriedSince(item.since)}${item.carriedFrom ? `, from ${envelopeValue(item.carriedFrom)}` : ''}) ${item.message}`
     : item.message;
-  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
+  // A note is information, never a task in the agent's queue: it waits for a run of it to end (core/one-task.ts).
+  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender, information: item.purpose === 'note' }, ctx, (data, code) => {
     status = code ?? 200;
     error = (data as { error?: string })?.error ?? '';
   }).then(() => {
@@ -211,7 +213,7 @@ export function tellOrchestratorAsTars(projectPath: string, message: string): Pr
     let held = false;
     let error = '';
     performDispatch(orchestrator, {
-      message, from: 'Tars', sender: { kind: 'tars' },
+      message, from: 'Tars', sender: { kind: 'tars' }, information: true,
       onWritten: () => settle('typed'),
       onDropped: () => settle('not-now'),
     }, ctx, (data, code) => {
@@ -304,6 +306,15 @@ export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {
       target = agents.get(wanted);
       if (!target) {
         sendJson({ error: `No agent ${wanted} in Tars.` }, 404);
+        return;
+      }
+      // Handing a task to another agent is handing it work: the drive routes'
+      // rule, from the same place (core/one-task.ts). A worker asks its
+      // orchestrator (the Audit's M2 on #449: it typed the task into that
+      // agent, or started it).
+      const refusal = workerOrderRefusal({ kind: 'agent', agent: caller.agent }, target);
+      if (refusal) {
+        sendJson({ error: refusal, code: 'worker_may_not_order' }, 403);
         return;
       }
     }

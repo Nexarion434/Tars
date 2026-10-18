@@ -157,6 +157,8 @@ type TaskView = {
   id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number | null; endedAt?: number | null;
   /** Queued: what it waits behind, and since when (one task at a time per agent). */
   queuedBehind?: string; queuedAt?: string; error?: string;
+  /** Delivered: a task that waited its turn and went into the agent's terminal, typed in or as a session started on it. */
+  how?: "typed" | "started"; deliveredAt?: string;
 };
 
 /** A task waiting its turn, said for its asker: behind which task, from whom, since when, and how to follow it. */
@@ -193,6 +195,11 @@ function notStartedText(task: TaskView, err: unknown): string | null {
 /** A delegated task as the ledger keeps it, said for the caller. */
 function taskText(task: TaskView): string {
   if (task.outcome === "queued" || task.outcome === "starting") return queuedText(task);
+  if (task.outcome === "delivered") {
+    return `Task ${task.id} on agent ${task.agentId} waited its turn and went into its terminal`
+      + `${task.how === "started" ? ", as the task of a session started on it" : ", typed into its session"}${task.deliveredAt ? ` at ${task.deliveredAt}` : ""}: `
+      + "it is that agent's work now. Follow it with wait_for_agent and get_agent_output.";
+  }
   const head = `Task ${task.id} on agent ${task.agentId}: ${task.outcome}${task.stopReason ? ` (${task.stopReason})` : ""}.`;
   if (task.outcome === "running") return `${head} It is still working: ask task_status again later.`;
   if (task.error && !task.result) return `${head} ${task.error}`;
@@ -696,7 +703,7 @@ const AGENT_TOOLS: Tool[] = [
       }
 
       if (data.mode === "queued") {
-        return text(`Agent "${agentName}" works on ${data.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${data.queuedTask ? ` as ${data.queuedTask}` : ""} and starts once it is free. wait_for_agent follows it; task_cancel takes it back.${duplicateNote(data)}`);
+        return text(`Agent "${agentName}" works on ${data.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${data.queuedTask ? ` as ${data.queuedTask}` : ""} and starts once it is free.${data.queuedTask ? ` task_status({ taskId: "${data.queuedTask}" }) follows it (wait_for_agent follows the agent's current task, not this one); task_cancel takes it back.` : " task_cancel takes it back."}${duplicateNote(data)}`);
       }
 
       if (data.mode === "message") {
@@ -902,7 +909,7 @@ const AGENT_TOOLS: Tool[] = [
         // Waiting its turn behind another task: a wait now would end with that
         // task, not this one. Say it; wait_for_agent follows it.
         if (dispatched.mode === "queued") {
-          return text(`Agent "${agentName}" works on ${dispatched.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${dispatched.queuedTask ? ` as ${dispatched.queuedTask}` : ""} and starts once it is free. delegate_task is not waiting on it: use wait_for_agent to follow it, or task_cancel to take it back.`);
+          return text(`Agent "${agentName}" works on ${dispatched.queuedBehind ?? "another task"}: an agent runs one task at a time, so this one is queued${dispatched.queuedTask ? ` as ${dispatched.queuedTask}` : ""} and starts once it is free. delegate_task is not waiting on it: follow it with task_status${dispatched.queuedTask ? `({ taskId: "${dispatched.queuedTask}" })` : ""} (wait_for_agent follows the agent's current task, not this one), or take it back with task_cancel.`);
         }
 
         // Not typed yet: waiting here would wait on a turn that has not
