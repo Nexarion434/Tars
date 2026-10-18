@@ -18,8 +18,13 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * Asserted, both shells: no file of the home holds the key's 20 characters but app-settings.json, where the key is;
  * the agent's kept output keeps everything else; ~/.claude.json keeps the user's own entry and its other fields, in
- * 0600; agents.json is at version 4; the gone Tars's run token folder is removed, and the running one's is kept.
- * The artefact: values.json (where the tail was found, before and after) and the screenshot.
+ * 0600, and the account folder's its own; agents.json is at version 4; the gone Tars's run token folder is removed,
+ * and the running one's is kept. The artefact: values.json (where the tail was found, before and after) and the
+ * screenshot.
+ *
+ * The other fields seeded are none of Claude Code's defaults: Tars runs `claude auth status` for each account at
+ * start, and Claude Code drops a key at its default value when it saves the file, `theme: "dark"` and an emptied
+ * `customApiKeyResponses` among them (measured, 2.1.302).
  */
 
 const tail = (key: string) => key.trim().slice(-20);
@@ -66,11 +71,11 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', deepSeekApiKey: key, newInterface }, null, 2));
     const claudeJson = path.join(home, '.claude.json');
-    fs.writeFileSync(claudeJson, JSON.stringify({ numStartups: 3, theme: 'dark', customApiKeyResponses: { approved: [], rejected: [tail(key), tail(users)] } }, null, 2), { mode: 0o600 });
+    fs.writeFileSync(claudeJson, JSON.stringify({ numStartups: 3, theme: 'light', customApiKeyResponses: { approved: [], rejected: [tail(key), tail(users)] } }, null, 2), { mode: 0o600 });
     fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), JSON.stringify({ enabled: true, accounts: [{ id: 'default' }, { id: 'acct-0a1b2c', label: 'Account 2' }] }));
     const accountJson = path.join(home, '.claude-accounts', 'acct-0a1b2c', '.claude.json');
     fs.mkdirSync(path.dirname(accountJson), { recursive: true });
-    fs.writeFileSync(accountJson, JSON.stringify({ customApiKeyResponses: { approved: [], rejected: [tail(key)] } }, null, 2), { mode: 0o600 });
+    fs.writeFileSync(accountJson, JSON.stringify({ numStartups: 5, customApiKeyResponses: { approved: [], rejected: [tail(key)] } }, null, 2), { mode: 0o600 });
 
     // Run token folders where the app makes them, its temporary folder, which it inherits from here.
     const deadPid = spawnSync(process.execPath, ['-e', '0']).pid!;
@@ -92,26 +97,33 @@ for (const newInterface of [false, true]) {
       app.process().stdout?.on('data', (d) => fs.appendFileSync(appLog, d));
       app.process().stderr?.on('data', (d) => fs.appendFileSync(appLog, d));
       const page = await app.firstWindow();
-      await expect.poll(() => JSON.parse(fs.readFileSync(path.join(dir, 'agents.json'), 'utf8')).version, { timeout: 30_000 }).toBe(4);
+      // The cleaning's end, which a build without it never reaches: soft, so that its values.json says what was left.
+      await expect.soft.poll(() => holding(home, tail(key)), { message: 'the key\'s 20 characters, left anywhere but in the settings', timeout: 30_000 })
+        .toEqual(['.dorothy/app-settings.json']);
       await stepShot(page, newInterface ? 'cleaned-new-interface' : 'cleaned');
 
       const saved = (file: string) => (JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')).agents as Array<{ output: string[] }>)[0].output.join('');
       const config = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+      const account = JSON.parse(fs.readFileSync(accountJson, 'utf8'));
+      const agentsVersion = JSON.parse(fs.readFileSync(path.join(dir, 'agents.json'), 'utf8')).version;
       keep({
-        after: holding(home, tail(key)), agentsVersion: 4, rejected: config.customApiKeyResponses.rejected.map((t: string) => (t === tail(users) ? 'the user\'s own' : 'another')),
+        after: holding(home, tail(key)), agentsVersion,
+        rejected: (config.customApiKeyResponses?.rejected ?? []).map((t: string) => (t === tail(users) ? 'the user\'s own' : 'another')),
         claudeJsonMode: (fs.statSync(claudeJson).mode & 0o777).toString(8), goneFolder: fs.existsSync(gone), runningFolder: fs.existsSync(running),
       });
       expect(values.before, 'the seed').toEqual(expect.arrayContaining(['.dorothy/agents.json', '.dorothy/agents.backup.json', '.claude.json']));
-      expect.soft(holding(home, tail(key)), 'the key\'s 20 characters, left anywhere but in the settings').toEqual(['.dorothy/app-settings.json']);
+      expect.soft(agentsVersion, 'agents.json').toBe(4);
       for (const file of ['agents.json', 'agents.backup.json']) {
         expect.soft(saved(file), `${file}: the rest of the output`).toContain('the session began');
         expect.soft(saved(file), file).toContain('and went on');
         expect.soft(saved(file), file).toContain('\x1b[1mDetected\x1b[12Ga');
       }
-      expect.soft(config.customApiKeyResponses.rejected, "~/.claude.json: the user's own entry").toEqual([tail(users)]);
-      expect.soft(config).toMatchObject({ numStartups: 3, theme: 'dark' });
+      expect.soft(config.customApiKeyResponses?.rejected, "~/.claude.json: the user's own entry").toEqual([tail(users)]);
+      expect.soft(config, '~/.claude.json: its other fields').toMatchObject({ numStartups: 3, theme: 'light' });
       expect.soft(fs.statSync(claudeJson).mode & 0o777).toBe(0o600);
-      expect.soft(JSON.parse(fs.readFileSync(accountJson, 'utf8')).customApiKeyResponses.rejected, "the account folder's").toEqual([]);
+      // Emptied, the list is Claude Code's default, which its next save of the file leaves out.
+      expect.soft(account.customApiKeyResponses?.rejected ?? [], "the account folder's").toEqual([]);
+      expect.soft(account, "the account folder's other fields").toMatchObject({ numStartups: 5 });
       expect.soft(fs.existsSync(gone), 'the run token folder of a Tars gone').toBe(false);
       expect.soft(fs.existsSync(path.join(running, 'token')), 'the run token folder of a Tars running').toBe(true);
     } finally {
