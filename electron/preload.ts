@@ -423,6 +423,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('cliKeys:set', id, patch),
   },
 
+  // A secret of the settings (2.0.4, services/settings-secrets.ts): set or
+  // cleared here, kept in ~/.tars-private, never sent back.
+  secrets: {
+    set: (field: string, value: string | null) =>
+      ipcRenderer.invoke('secrets:set', field, value),
+  },
+
   appSettings: {
     get: () =>
       ipcRenderer.invoke('app:getSettings'),

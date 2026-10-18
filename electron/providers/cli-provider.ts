@@ -1,8 +1,6 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
-import { dataPath } from '../constants';
+import { PRIVATE_DIR_NAME } from '../constants';
+import { loadSettingsWithSecrets } from '../services/settings-secrets';
 
 /**
  * Synchronously read the persisted app settings. Providers use this in
@@ -10,12 +8,8 @@ import { dataPath } from '../constants';
  * initAgentPty and the automation handlers already use).
  */
 export function readAppSettingsFromDisk(): Partial<AppSettings> {
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    return JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as Partial<AppSettings>;
-  } catch {
-    return {};
-  }
+  // With their secrets, from ~/.tars-private (services/settings-secrets.ts).
+  return loadSettingsWithSecrets();
 }
 
 /**
@@ -318,6 +312,48 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
 export function managedCliEnv(binaryName: string): Record<string, string> {
   if (binaryName !== 'claude') return {};
   return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
+}
+
+/**
+ * The lines of a scheduled script (`claude -p`, run later by launchd or cron)
+ * that hand a key provider's key to the CLI: read at run time from
+ * ~/.tars-private, where the keys live since 2.0.4 (services/settings-secrets.ts),
+ * and never written into the script, which sits in ~/.dorothy, every agent's
+ * --add-dir. `field` is a key of settings-secrets.json, or `api-token` for the
+ * bridge providers, which present Tars's own token to Tars's bridge.
+ *
+ * No jq: the private file is written one top-level field per line
+ * (JSON.stringify(_, null, 2)), and sed reads that line; a value holding a
+ * quote or a backslash, which no vendor's key does, reads as none. The value
+ * is only ever expanded inside double quotes, so a `$(...)` in it is text.
+ * Without a key the task does not run and its log says why: run keyless, the
+ * CLI would fall back on the user's own Claude login and send it to the
+ * vendor's URL. The key goes under the variable the script always used
+ * (`variable`): ANTHROPIC_API_KEY, which `claude -p` uses unasked and Tars's
+ * bridge reads as x-api-key, or ANTHROPIC_AUTH_TOKEN, the Bearer, for an
+ * endpoint that wants one; the other one is blanked, so that a key the user's
+ * shell exports does not go along.
+ */
+export function scheduledKeyLines(
+  field: string,
+  logPath: string,
+  variable: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN' = 'ANTHROPIC_API_KEY',
+): string {
+  const other = variable === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
+  const file = `"$HOME/${PRIVATE_DIR_NAME}/${field === 'api-token' ? 'api-token' : 'settings-secrets.json'}"`;
+  const read = field === 'api-token'
+    ? `cat ${file} 2>/dev/null`
+    : `sed -n 's/^  "${field}": "\\([^"\\\\]*\\)",\\{0,1\\}$/\\1/p' ${file} 2>/dev/null | head -n 1`;
+  return [
+    `TARS_KEY="$(${read})"`,
+    'if [ -z "$TARS_KEY" ]; then',
+    `  echo "=== No key in Tars's settings (${field === 'api-token' ? "Tars's local token" : field}): the task did not run ===" >> ${shellQuote(logPath)}`,
+    '  exit 1',
+    'fi',
+    `export ${variable}="$TARS_KEY"`,
+    `export ${other}=""`,
+    'unset TARS_KEY',
+  ].join('\n');
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {

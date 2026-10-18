@@ -77,7 +77,9 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
-import { cliKeyStates, keepCliKeys, withCliKey, withoutCliKeys } from '../services/cli-keys';
+import { cliKeyStates, withCliKey } from '../services/cli-keys';
+import { keepSecrets, secretStates, setSecret, settingsForWindow, type SecretField } from '../services/settings-secrets';
+import { isSecretFile, windowMayRead, windowMayWrite } from '../utils/window-file-access';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -1978,9 +1980,10 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     return { version: app.getVersion() };
   });
 
-  // Never a CLI's key: the window learns only whether one is set (cliKeys:list).
+  // Never a secret: the window learns only whether each is set (secretsSet,
+  // and cliKeys:list for the CLIs' keys).
   ipcMain.handle('app:getSettings', async () => {
-    return withoutCliKeys(getAppSettings());
+    return settingsForWindow(getAppSettings());
   });
 
   // An API key per CLI (2.0.4, services/cli-keys.ts): set here and nowhere
@@ -2114,8 +2117,23 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     return catalogStatus();
   });
 
-  // Save app settings
-  ipcMain.handle('app:saveSettings', async (_event, newSettings: Partial<AppSettings>) => {
+  // Save app settings. The window holds no secret (app:getSettings), so its
+  // save never writes or erases one: a key typed in a page is set, an empty
+  // field keeps the key (services/settings-secrets.ts, keepSecrets).
+  ipcMain.handle('app:saveSettings', async (_event, newSettings: Partial<AppSettings>) =>
+    applySettings(newSettings ?? {}, (current) => keepSecrets(current, newSettings ?? {})));
+
+  // One secret set or cleared from the window (2.0.4): the only way a page
+  // clears one. Answers whether it is set, never the value.
+  ipcMain.handle('secrets:set', async (_event, field: unknown, value: unknown) => {
+    const r = setSecret(getAppSettings(), String(field), value as string | null);
+    if (!r.ok) return { success: false, error: r.error };
+    const name = String(field) as SecretField;
+    const saved = await applySettings({ [name]: r.settings[name] } as Partial<AppSettings>, () => r.settings);
+    return saved.success ? { success: true, set: secretStates(getAppSettings())[name] } : saved;
+  });
+
+  async function applySettings(newSettings: Partial<AppSettings>, merge: (current: AppSettings) => AppSettings): Promise<{ success: boolean; error?: string }> {
     try {
       const telegramChanged = newSettings.telegramEnabled !== undefined ||
                               newSettings.telegramBotToken !== undefined;
@@ -2133,7 +2151,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // With the relay on, Hermes is the only voice on the user's Telegram: the
       // Tars bot's token is erased and the bot off, whatever else was saved
       // (hermes-relay-switch.ts).
-      const updatedSettings = settingsForRelay(keepCliKeys(currentSettings, newSettings));
+      const updatedSettings = settingsForRelay(merge(currentSettings));
       const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
@@ -2178,7 +2196,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       console.error('Failed to save app settings:', err);
       return { success: false, error: String(err) };
     }
-  });
+  }
 
   // Test Telegram connection
   ipcMain.handle('telegram:test', async () => {
@@ -2252,7 +2270,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
     // Notify frontend of settings change
     const mainWindow = getMainWindow();
-    mainWindow?.webContents.send('settings:updated', withoutCliKeys(appSettings));
+    mainWindow?.webContents.send('settings:updated', settingsForWindow(appSettings));
 
     return { success: true };
   });
@@ -2513,50 +2531,17 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * shell:exec: a path containing $(...) or a backtick executed arbitrary
    * code as soon as the page opened.
    */
-  /** Roots a free-form file path is allowed to live under. */
-  const textFileRoots = () => [
-    path.join(os.homedir(), '.claude'),
-    path.join(os.homedir(), '.codex'),
-    path.join(os.homedir(), '.gemini'),
-    path.join(os.homedir(), '.grok'),
-    DATA_DIR,
-    ...readCustomProjects(),
-  ];
-
   /**
-   * Under a root that is not the home nor above it, where the path really
-   * lands: a project added as `~` or `/Users` made every file of the home
-   * readable and writable here, and so did a link under ~/.dorothy or in a
-   * project, followed by the read or the write. One file link to a markdown
-   * file may lead out, a CLAUDE.md kept in a dotfiles repository
-   * (utils/real-target.ts).
+   * What the window reads and writes here, and nothing else (the Audit's
+   * Holes 1 and 2, utils/window-file-access.ts): it reads what the Brain and
+   * the code panel show, never a secret, and writes the instruction files the
+   * Brain edits. It wrote any text under ~/.dorothy, the CLIs' folders and the
+   * projects, statusline.sh and bin/tars-mcp-node included.
    */
-  const isAllowedTextFile = (target: string) => {
-    const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true });
-  };
-
-  /**
-   * Claude's own JSON files, which fs:write-text-file never writes although
-   * `~/.claude` is one of its roots. It writes the text it is given, in place,
-   * and every claude binary reads these as it starts: a half-written or
-   * mistyped settings.json or mcp.json stops Claude Code. Tars changes them
-   * through updateSharedJsonSync, and the one caller, the Brain page, edits
-   * CLAUDE.md files. Compared through links, which the write would follow.
-   */
-  const isClaudeJsonFile = (target: string) => {
-    const real = (file: string) => (fs.existsSync(file) ? fs.realpathSync(file) : file);
-    return [
-      path.join(os.homedir(), '.claude.json'),
-      path.join(os.homedir(), '.claude', 'settings.json'),
-      path.join(os.homedir(), '.claude', 'mcp.json'),
-    ].some(file => real(file) === real(target));
-  };
-
   ipcMain.handle('fs:read-text-file', async (_event, filePath: string) => {
     try {
       const target = path.resolve(String(filePath || '').replace(/^~/, os.homedir()));
-      if (!isAllowedTextFile(target)) return { content: '', error: 'Path outside allowed roots' };
+      if (!windowMayRead(target, readCustomProjects())) return { content: '', error: 'Path outside allowed roots' };
       if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return { content: '', error: 'Not found' };
       return { content: fs.readFileSync(target, 'utf-8') };
     } catch (err) {
@@ -2567,8 +2552,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('fs:write-text-file', async (_event, params: { filePath: string; content: string }) => {
     try {
       const target = path.resolve(String(params?.filePath || '').replace(/^~/, os.homedir()));
-      if (!isAllowedTextFile(target)) return { success: false, error: 'Path outside allowed roots' };
-      if (isClaudeJsonFile(target)) return { success: false, error: `${path.basename(target)} is Claude Code's own file and is not written as text` };
+      if (!windowMayWrite(target, readCustomProjects())) return { success: false, error: 'Only an instruction file (CLAUDE.md) is written from here' };
       fs.writeFileSync(target, String(params?.content ?? ''), 'utf-8');
       return { success: true };
     } catch (err) {
@@ -2643,7 +2627,8 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
           // Under a root that is not the home nor above it, where the read
           // really lands: a link in the base or in `rel` may lead out of every
           // root, except one file link to a markdown file (utils/real-target.ts).
-          if (fs.existsSync(target) && fs.statSync(target).isFile()
+          // Never a secret, whatever folder it is asked of (2.0.4).
+          if (fs.existsSync(target) && fs.statSync(target).isFile() && !isSecretFile(target)
             && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true })) {
             out[target] = fs.readFileSync(target, 'utf-8');
           }

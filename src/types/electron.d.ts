@@ -1619,8 +1619,24 @@ export interface ElectronAPI {
     set: (id: CliKeyId, patch: { key?: string | null; envVar?: string | null }) => Promise<{ success: boolean; error?: string; state?: CliKeyState }>;
   };
 
+  /**
+   * A secret of the settings (2.0.4): a bot token, a provider's key, Hermes's
+   * gateway token, a memory backend's key, kept by Tars in ~/.tars-private.
+   * `value` a new one, null to clear it. Never answers the value: whether it
+   * is set. The CLIs' own keys go through cliKeys.
+   */
+  secrets?: {
+    set: (field: string, value: string | null) => Promise<{ success: boolean; error?: string; set?: boolean }>;
+  };
+
   appSettings?: {
+    /**
+     * Since 2.0.4 no secret comes back: a secret field is a mask of bullets when
+     * it is set and '' when not, and `secretsSet` says which are set. Saving
+     * the mask back keeps the key; secrets.set clears one.
+     */
     get: () => Promise<{
+      secretsSet?: Record<string, boolean>;
       notificationsEnabled: boolean;
       notifyOnWaiting: boolean;
       notifyOnComplete: boolean;

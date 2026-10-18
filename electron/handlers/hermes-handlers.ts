@@ -7,7 +7,7 @@ import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
-import { API_PORT, DATA_DIR, dataPath } from '../constants';
+import { API_PORT } from '../constants';
 import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
 import { relayStatus } from '../services/hermes-relay';
@@ -262,14 +262,6 @@ async function detectTailscale(): Promise<TailscaleInfo> {
     } catch { /* try next candidate */ }
   }
   return { installed: false, running: false, serveConfigured: false };
-}
-
-function readApiToken(): string {
-  try {
-    return fs.readFileSync(dataPath('api-token'), 'utf-8').trim();
-  } catch {
-    return '';
-  }
 }
 
 /** POST JSON to the local API and resolve with {status, body}. */
