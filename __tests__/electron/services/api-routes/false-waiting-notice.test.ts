@@ -448,7 +448,8 @@ describe('a failed attempt over ACP', () => {
     const terminal = ptyProcesses.get('pty-be') as unknown as FakePty;
     const run = runTaskOverAcp('BotID');
     await pause(1_000);
-    const sent = await dispatch('BotID');
+    // As delegate_task's terminal path sends it: a task (intent 'task'), which waits its turn; a plain message keeps its mode.
+    const sent = await call('POST', '/api/agents/be/dispatch', { message: 'BotID', intent: 'task' }, 'orch');
     expect((sent?.data as { mode?: string } | undefined)?.mode, 'typed in beside the attempt').toBe('queued');
     await pause(500);
     expect(typedInto(terminal).join('\n')).not.toContain('BotID');
