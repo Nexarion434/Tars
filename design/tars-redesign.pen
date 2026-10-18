@@ -2937,7 +2937,7 @@
                       "id": "F7FQp",
                       "name": "nav Update",
                       "width": "fill_container",
-                      "fill": "#000000",
+                      "fill": "$accent-dim",
                       "stroke": "$accent",
                       "strokeWidth": 1,
                       "gap": 10,
@@ -64667,7 +64667,7 @@
                                   "type": "frame",
                                   "id": "TPuOk",
                                   "name": "chip",
-                                  "fill": "#000000",
+                                  "fill": "$accent-dim",
                                   "stroke": "$accent",
                                   "strokeWidth": 1,
                                   "padding": [
@@ -64807,7 +64807,7 @@
                                   "type": "frame",
                                   "id": "OPX9r",
                                   "name": "chip",
-                                  "fill": "#000000",
+                                  "fill": "$accent-dim",
                                   "stroke": "$accent",
                                   "strokeWidth": 1,
                                   "padding": [
@@ -83414,7 +83414,7 @@
                           "name": "n",
                           "width": 16,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -83464,7 +83464,7 @@
                           "name": "n",
                           "width": 16,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -83565,7 +83565,7 @@
                           "name": "n",
                           "width": 16,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -83825,7 +83825,7 @@
                               "name": "box",
                               "width": 12,
                               "height": 12,
-                              "stroke": "#000000",
+                              "stroke": "$border-strong",
                               "strokeWidth": 1
                             },
                             {
@@ -83886,7 +83886,7 @@
                               "name": "box",
                               "width": 12,
                               "height": 12,
-                              "stroke": "#000000",
+                              "stroke": "$border-strong",
                               "strokeWidth": 1
                             },
                             {
@@ -83947,7 +83947,7 @@
                               "name": "box",
                               "width": 12,
                               "height": 12,
-                              "stroke": "#000000",
+                              "stroke": "$border-strong",
                               "strokeWidth": 1
                             },
                             {
@@ -84191,7 +84191,7 @@
                           "name": "toggle",
                           "width": 30,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "stroke": "$border",
                           "strokeWidth": 1,
                           "children": [
@@ -85521,7 +85521,7 @@
                       "type": "rectangle",
                       "id": "Hqv7P",
                       "name": "sq",
-                      "fill": "#000000",
+                      "fill": "$status-running",
                       "width": 6,
                       "height": 6
                     },
@@ -85618,7 +85618,7 @@
                               "type": "rectangle",
                               "id": "e4jZW",
                               "name": "sq",
-                              "fill": "#000000",
+                              "fill": "$status-running",
                               "width": 6,
                               "height": 6
                             },
@@ -85831,7 +85831,7 @@
                                           "type": "rectangle",
                                           "id": "SvI7S",
                                           "name": "sq",
-                                          "fill": "#000000",
+                                          "fill": "$status-idle",
                                           "width": 6,
                                           "height": 6
                                         },
@@ -85912,7 +85912,7 @@
                                           "type": "rectangle",
                                           "id": "j6ZHj",
                                           "name": "sq",
-                                          "fill": "#000000",
+                                          "fill": "$status-waiting",
                                           "width": 6,
                                           "height": 6
                                         },
@@ -85993,7 +85993,7 @@
                                           "type": "rectangle",
                                           "id": "yQtps",
                                           "name": "sq",
-                                          "fill": "#000000",
+                                          "fill": "$status-running",
                                           "width": 6,
                                           "height": 6
                                         },
@@ -86229,7 +86229,7 @@
                                   "name": "approve",
                                   "width": "fill_container",
                                   "fill": "$bg",
-                                  "stroke": "#000000",
+                                  "stroke": "$border-strong",
                                   "strokeWidth": 1,
                                   "layout": "vertical",
                                   "children": [
@@ -86903,7 +86903,7 @@
                                   "type": "rectangle",
                                   "id": "fT8R4",
                                   "name": "sq",
-                                  "fill": "#000000",
+                                  "fill": "$status-running",
                                   "width": 6,
                                   "height": 6
                                 },
@@ -86984,7 +86984,7 @@
                                   "type": "rectangle",
                                   "id": "j2BdK",
                                   "name": "sq",
-                                  "fill": "#000000",
+                                  "fill": "$text-muted",
                                   "width": 6,
                                   "height": 6
                                 },
@@ -87065,7 +87065,7 @@
                                   "type": "rectangle",
                                   "id": "eyooW",
                                   "name": "sq",
-                                  "fill": "#000000",
+                                  "fill": "$status-idle",
                                   "width": 6,
                                   "height": 6
                                 },
@@ -87146,7 +87146,7 @@
                                   "type": "rectangle",
                                   "id": "Hy63f",
                                   "name": "sq",
-                                  "fill": "#000000",
+                                  "fill": "$status-waiting",
                                   "width": 6,
                                   "height": 6
                                 },
@@ -87227,7 +87227,7 @@
                                   "type": "rectangle",
                                   "id": "GcNk0",
                                   "name": "sq",
-                                  "fill": "#000000",
+                                  "fill": "$status-error",
                                   "width": 6,
                                   "height": 6
                                 },
@@ -91048,7 +91048,7 @@
                               "name": "box",
                               "width": 12,
                               "height": 12,
-                              "stroke": "#000000",
+                              "stroke": "$border-strong",
                               "strokeWidth": 1
                             },
                             {
@@ -91427,7 +91427,7 @@
                           "type": "rectangle",
                           "id": "l5pRN",
                           "name": "i",
-                          "fill": "#000000",
+                          "fill": "$text-muted",
                           "width": 8,
                           "height": 8
                         },
@@ -92607,7 +92607,7 @@
                           "name": "tg",
                           "width": 30,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "stroke": "$border",
                           "strokeWidth": 1,
                           "padding": [
@@ -278180,7 +278180,7 @@
                       "id": "ARMRl",
                       "name": "nav Update",
                       "width": "fill_container",
-                      "fill": "#000000",
+                      "fill": "$accent-dim",
                       "stroke": "$accent",
                       "strokeWidth": 1,
                       "gap": 10,
@@ -313709,7 +313709,7 @@
                           "name": "tg",
                           "width": 30,
                           "height": 16,
-                          "fill": "#000000",
+                          "fill": "$surface-raised",
                           "stroke": "$border",
                           "strokeWidth": 1,
                           "padding": [
@@ -316339,7 +316339,7 @@
                               "name": "box",
                               "width": 12,
                               "height": 12,
-                              "stroke": "#000000",
+                              "stroke": "$border-strong",
                               "strokeWidth": 1
                             },
                             {
@@ -316718,7 +316718,7 @@
                           "type": "rectangle",
                           "id": "wUH2y",
                           "name": "i",
-                          "fill": "#000000",
+                          "fill": "$text-muted",
                           "width": 8,
                           "height": 8
                         },
@@ -465583,7 +465583,93 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Kept by Tars (in ~/.tars-private after the secrets PR), handed to the server through its environment when the CLI starts it, never written into a CLI's file and never shown back.",
+                  "content": "Kept by Tars (in ~/.tars-private after the secrets PR) and never shown back.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "A9JCn",
+              "name": "line",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "F94Dd",
+                  "name": "dot",
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "AclDT",
+                      "name": "square",
+                      "fill": "$text-muted",
+                      "width": 4,
+                      "height": 4
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "w39JPV",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Handed to the server through its environment when the CLI starts it. Claude Code passes its whole environment to its MCP servers. Codex empties it: a server gets a few base variables and its own explicit env from config.toml, nothing else (measured on 13/10). A secret reaches a Codex server only through that explicit env.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "umdIm",
+              "name": "line",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Arp6c",
+                  "name": "dot",
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "h6fRYn",
+                      "name": "square",
+                      "fill": "$text-muted",
+                      "width": 4,
+                      "height": 4
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "vE61l",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "So the Backend measures each CLI first: what reaches an MCP server it starts, and from where. The window's \"never written into a CLI's configuration\" holds only for the CLIs that measure clears.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
@@ -476919,7 +477005,7 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Today the window refuses any embedded page (window-manager.ts: webviewTag false, will-attach-webview prevented), because the window drives the agents.",
+                  "content": "The specification is the Audit's isolation report, reports/audit-browser-isolation-2-0-5-1810.md: each rule with the test that proves it. These notes follow it, and the report wins wherever they differ.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
@@ -476962,7 +477048,136 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Its own session partition, no preload, no node integration, sandboxed, every permission denied, downloads refused, http and https only, other sites in the user's browser.",
+                  "content": "Today the window refuses any embedded page (window-manager.ts: webviewTag false, will-attach-webview prevented), and both stay: the page is a WebContentsView the main process makes and attaches where the window asks, never a <webview> tag.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "g6WlV",
+              "name": "line",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "v5y3I",
+                  "name": "dot",
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "cfYTu",
+                      "name": "square",
+                      "fill": "$text-muted",
+                      "width": 4,
+                      "height": 4
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "p6R7Q",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "One session partition per project, never Tars's own: app:// and local-file:// are not in it. No preload, no Node, full sandbox, every permission denied, http and https only, popups and external protocols refused; other sites open in the user's browser.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "OtkUG",
+              "name": "line",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "sLIfv",
+                  "name": "dot",
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "RQjlP",
+                      "name": "square",
+                      "fill": "$text-muted",
+                      "width": 4,
+                      "height": 4
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "yBlvr",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Downloads are asked of the user in Tars's window (name, size, origin), never automatic and never accepted by an agent. An accepted one goes to ~/Downloads/Tars/<project>/, keeps the system's quarantine mark, and is never opened.",
+                  "lineHeight": 1.5,
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "TS8Tv",
+              "name": "line",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "igoDq",
+                  "name": "dot",
+                  "padding": [
+                    8,
+                    0,
+                    0,
+                    0
+                  ],
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "D0gAE",
+                      "name": "square",
+                      "fill": "$text-muted",
+                      "width": 4,
+                      "height": 4
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "ka2jp",
+                  "name": "t",
+                  "fill": "$text-primary",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Tars's own ports are blocked from the page: the API port, the OpenAI bridge, the Hermes tunnel, the dev renderer. Certificate errors are never waived, in any build. Devtools open on the user's request only: never from an agent, never with a remote debugging port.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
@@ -477033,7 +477248,7 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "A Tars tool for every CLI, through mcp-orchestrator: browser_open, browser_click, browser_type, browser_read, browser_capture, on the browser beside that agent's terminal only.",
+                  "content": "A Tars tool for every CLI, through mcp-orchestrator and the agent's own token: browser_open, browser_navigate, browser_read, browser_click, browser_type, browser_screenshot, browser_close, on the browser beside that agent's terminal only (the tabs it opened, or one the user hands it). What a page returns is labelled as content from the web, never as instructions.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
@@ -477076,7 +477291,7 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Who drives is said above the page; the user takes over or gives it back; an agent waits while the user has it.",
+                  "content": "Who drives is said above the page; the user takes over or gives it back; an agent waits while the user has it. Every navigation an agent makes shows in the bar with its name: no hidden tab.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
@@ -477147,7 +477362,7 @@
                   "fill": "$text-primary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Electron's web view on macOS, Windows and Linux; captures saved in the project's reports folder.",
+                  "content": "The same WebContentsView on macOS, Windows and Linux; screenshots saved in the project's reports folder; downloads under ~/Downloads/Tars/<project>/ on each, with the quarantine attribute on macOS and the mark of the web on Windows.",
                   "lineHeight": 1.5,
                   "fontFamily": "$font-ui",
                   "fontSize": 13,
