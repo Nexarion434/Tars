@@ -131,23 +131,23 @@ export class AmpProvider implements CLIProvider {
     // amp.dangerouslyAllowAll) with no command line equivalent, so
     // params.permissionMode has nothing to map to here.
 
-    // A delegated task arrives as params.prompt. Dropping it would launch a
-    // bare TUI and report success while the task went nowhere, which is the
-    // trap opencode-provider.ts documents. The TUI takes a starting message
-    // only over stdin (`echo "..." | amp`), and stdin is how Tars types into a
-    // live session, so the prompt goes through -x instead: it is the documented
-    // way to pass one as an argument. Like opencode's `run`, that means the
-    // process ends with the task and a follow-up message respawns it.
-    // No task, no prompt: the skills line alone was a turn nobody asked for.
-    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
-    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
-      finalPrompt = `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
-    }
-    if (finalPrompt) {
-      command += ` -x '${finalPrompt.replace(/'/g, "'\\''")}'`;
-    }
-
+    // Never the task: the TUI takes a starting message only from its input,
+    // and `-x`, the one way to pass one as an argument, does the task and
+    // exits, and the agent was gone with it. The agent's permanent session is
+    // its TUI (2.0.4): the launch types the task in once it runs
+    // (taskTypedAfterLaunch, typedTask, core/typed-task.ts).
     return command;
+  }
+
+  readonly taskTypedAfterLaunch = true;
+
+  /** What a launch types into the TUI: the task, with the skills line before it. No task, nothing. */
+  typedTask(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string {
+    if (!params.prompt?.trim()) return '';
+    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+      return `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
+    }
+    return params.prompt;
   }
 
   buildScheduledCommand(params: ScheduledCommandParams): string {
