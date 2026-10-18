@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
+import { keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -177,10 +178,8 @@ export class AmpProvider implements CLIProvider {
     // AMP_API_KEY is one of the six variables `amp --help` documents. Without
     // it Amp starts a device login flow in the PTY, which an unattended agent
     // cannot complete.
-    const apiKey = appSettings?.ampApiKey;
-    if (apiKey) {
-      vars.AMP_API_KEY = apiKey;
-    }
+    // The key set in Settings, or the ampApiKey of before 2.0.4 (services/cli-keys.ts).
+    Object.assign(vars, keyEnvFor('amp', appSettings));
 
     const managed = this.writeManagedSettings();
     if (managed) {
