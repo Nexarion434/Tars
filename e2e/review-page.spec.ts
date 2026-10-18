@@ -42,7 +42,9 @@ function ranIn(dir: string): string[] {
   const real = fs.realpathSync(dir);
   return fs.readFileSync(gitLog, 'utf8').split('\n').filter(Boolean)
     .filter(line => line.startsWith(`${real}|`))
-    .map(line => line.slice(real.length + 1).replace(/^--no-optional-locks /, '').replace(/^-c core\.quotePath=false /, ''));
+    // Through utils/safe-git.ts: --no-optional-locks and its -c overrides first, and a look at the filters before a content read.
+    .map(line => line.slice(real.length + 1).replace(/^--no-optional-locks /, '').replace(/^(-c \S+ )+/, ''))
+    .filter(line => !/^config -z --name-only --get-regexp/.test(line));
 }
 const wholePatches = (lines: string[]) => lines.filter(l => /^diff\b/.test(l) && !/--(numstat|name-status)\b/.test(l) && !/ -- /.test(l));
 const lists = (lines: string[]) => lines.filter(l => /^diff\b.*--numstat/.test(l));
