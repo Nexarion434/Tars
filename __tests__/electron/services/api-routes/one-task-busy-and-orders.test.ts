@@ -47,6 +47,10 @@ import { EventEmitter } from 'node:events';
  * 14. (L3) A task given with start_agent that waited its turn is said
  *     `starting` for ever once it was handed over: its follower cannot tell it
  *     went in.
+ * 15. (L1, the Audit's K12, which only the role-site table caught) A worker's
+ *     report to whoever leads it is labelled a note; or, a run of that agent
+ *     under way, it is queued as a task in its line instead of waiting for
+ *     the run's end.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -391,6 +395,35 @@ describe('who takes a queued task back (L2)', () => {
     const d = await queue('orch', 'TASK-D of the lead');
     expect(await cancel(d, undefined, {}, true), "Tars's own pass").toMatchObject({ status: 200, data: { cancelled: d } });
     expect(told).toHaveLength(1);
+  });
+});
+
+describe('a worker reporting to whoever leads it (L1)', () => {
+  it('15. its report is no note, and, a run of that agent under way, waits for it without taking a place in its line', async () => {
+    const { agent: lead, terminal } = withCli('ld', 'claude', 'idle', { role: 'orchestrator' });
+    member('w1');
+    const atRest = call('POST', '/api/agents/ld/dispatch', { message: 'REPORT-ONE the PR is up' }, 'w1');
+    await later(1500);
+    await atRest.done;
+    expect(atRest.answer()?.data, JSON.stringify(atRest.answer())).toMatchObject({ success: true, mode: 'message' });
+    expect(atRest.answer()?.data.note).toBeUndefined();
+    expect(typedInto(terminal)).toContain('REPORT-ONE');
+    expect(typedInto(terminal)).not.toContain('Note for information');
+    // The turn the report opened ends (its Stop); then a run of the orchestrator's own, asked by Tars.
+    lead.status = 'idle';
+    call('POST', '/api/agents/ld/run-task', { task: 'TASK-A plan', answer: 'started' }, undefined, { internal: true });
+    await later(50);
+    expect(runs).toHaveLength(1);
+    const duringRun = call('POST', '/api/agents/ld/dispatch', { message: 'REPORT-TWO tests green' }, 'w1');
+    await later(1500);
+    await duringRun.done;
+    expect(duringRun.answer()?.data, JSON.stringify(duringRun.answer())).toMatchObject({ success: true, queued: true });
+    expect(duringRun.answer()?.data.queuedTask, 'queued as a task').toBeUndefined();
+    expect(oneTaskQueue.queued('ld')).toEqual([]);
+    expect(typedInto(terminal)).not.toContain('REPORT-TWO');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).toContain('REPORT-TWO');
   });
 });
 
