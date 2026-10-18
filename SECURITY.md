@@ -154,7 +154,9 @@ opening Settings > Hermes, which mints a new one, and giving Hermes that.
 Since 2.0.4 a delegated task is no run: `delegate_task` and `/run-task` type it into the
 target's own terminal, where it works in the target's own mode, whatever its asker's, its
 sender line marked when the asker runs in a narrower one (`modeGapMark`), as any message is.
-An asker in plan therefore no longer holds the task it delegates to plan: the mark asks, it
+A delegated task runs in the permission mode of the agent that receives it: the
+maintainer's decision of 2026-10-18, made with delegation into the permanent terminal. An
+asker in plan therefore does not hold the task it delegates to plan: the mark asks, it
 does not bind. Until 2.0.4 a run over ACP took the narrower of its asker's permission mode
 and the target agent's own, in the order plan < normal < auto < bypass. What that bound,
 measured:
