@@ -22,6 +22,10 @@ import * as path from 'node:path';
  * 6. The model list fixed and stale: a model the account cannot use offered (gpt-5-codex-mini, refused for a
  *    ChatGPT account), the account's own models missing, hidden ones offered (the guardian's codex-auto-review),
  *    codex's order lost, or a cache codex wrote otherwise (fields missing, another type) crashing the list.
+ * 7. A codex slow to answer --help taken for one without the flags. Under a heavy load (a load average of 170 at the
+ *    gate of #465's head, where the stand-in answered in up to 0.9 s), an auto agent of codex-works was handed the
+ *    stable flags: its codex had taken longer than the 2 s Tars waited, and that answer is kept for the binary, so
+ *    every launch of the run lost codex's automatic review. The answer is waited for as long as codex takes, to 10 s.
  */
 
 import {
@@ -90,6 +94,13 @@ describe('which flags the installed codex has', () => {
     expect(codexAccepts(bin)('--full-auto')).toBe(false);
     expect(fs.readFileSync(count, 'utf8').trim().split('\n'), 'codex was asked on every launch').toHaveLength(1);
   });
+
+  it('7. a codex slow to answer, as under a heavy load, is waited for: the flags are its own', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-help-'));
+    const bin = path.join(dir, 'codex');
+    fs.writeFileSync(bin, `#!/bin/sh\nsleep 2.5\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
+    expect(codexAccepts(bin)('--approve-for-me')).toBe(true);
+  }, 15_000);
 
   it('a codex that cannot be asked is handed the stable flags only', () => {
     const accepts = codexAccepts(path.join(os.tmpdir(), 'no-such-codex-binary'));
