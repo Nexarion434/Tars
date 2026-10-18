@@ -24,7 +24,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 6. duo: its one other card takes the board's whole height;
  * 7. harbor, no orchestrator: no switch, and the grid of today;
  * 8. a card's fullscreen fills the window, and its exit gives the layout back;
- * 9. at the narrowest window, 1200 by 800, the same layout, the column's cards still the box of the grid's.
+ * 9. at the narrowest window, 1200 by 800, the same layout, the column's cards still the box of the grid's;
+ * 10. a scrollbar that takes room (forced, as Windows and Linux draw one) is taken from the orchestrator, never from the
+ *     column's cards.
  * Red on the code before it (main, 12bc5dcc): no switch, and every board the equal grid.
  * The artefact: values.json with every box, size and focus read, per shell, and a screenshot of each step.
  */
@@ -261,6 +263,19 @@ for (const newInterface of [false, true]) {
       expect.soft(near(smallBoxes[0]!.width, small.board.width - 8 - small.w - smallSb), 'narrowest: the orchestrator two columns').toBe(true);
       for (let i = 1; i < 6; i++) expect.soft(near(smallBoxes[i]!.width, small.w), `narrowest: card ${i} a grid column wide`).toBe(true);
       await shot('09-narrowest-window');
+
+      // 10. A scrollbar that takes room, as Windows and Linux draw one (macOS overlays its own, so it is forced here as
+      // #454's spec forces them): the column's cards keep the grid's width, the orchestrator gives up the room.
+      await page.addStyleTag({ content: '[data-board-column] { scrollbar-width: auto !important; scrollbar-color: auto !important; } [data-board-column]::-webkit-scrollbar { width: 17px; }' });
+      await expect.poll(scrollbarOf, { timeout: 10_000 }).toBeGreaterThanOrEqual(10);
+      await page.waitForTimeout(800);
+      const forced = await gridCell();
+      const forcedSb = await scrollbarOf();
+      const forcedBoxes = await Promise.all(ids('six').map(box));
+      seen.scrollbarTakingRoom = { cell: forced, scrollbar: forcedSb, boxes: forcedBoxes, sizes: await settledSizes(ids('six')) };
+      expect.soft(near(forcedBoxes[0]!.width, forced.board.width - 8 - forced.w - forcedSb), 'the scrollbar taken from the orchestrator').toBe(true);
+      for (let i = 1; i < 6; i++) expect.soft(near(forcedBoxes[i]!.width, forced.w), `with a scrollbar: card ${i} still a grid column wide`).toBe(true);
+      await shot('10-scrollbar-taking-room');
 
       seen.pageErrors = errors;
       expect.soft(errors, 'no page error').toEqual([]);
