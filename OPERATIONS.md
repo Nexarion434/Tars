@@ -735,9 +735,10 @@ work.
 |---|---|---|
 | `~/.dorothy/agents.json` | `electron/core/agent-manager.ts` | the fleet: schema `version: 2`, `savedAt`, `agents[]` |
 | `~/.dorothy/agents.backup.json` | same | last good copy, taken from content just parsed successfully |
-| `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting: provider keys, Telegram/Slack/X/Jira, CLI paths, memory backends |
-| `~/.dorothy/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` |
-| `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
+| `~/.dorothy/app-settings.json` | `electron/main.ts` (`saveAppSettingsToFile`) | every setting but the secrets: Telegram/Slack/X/Jira switches, CLI paths, memory backends' addresses |
+| `~/.tars-private/settings-secrets.json` | `electron/services/settings-secrets.ts` (`saveSettingsSplit`) | every secret of the settings: the bots' tokens, provider and CLI keys, SocialData's, X's, Jira's, Hermes's gateway token, gbrain's and Honcho's, mode `0600` (in `app-settings.json` until 2.0.4, moved at the first start with every copy of it erased) |
+| `~/.tars-private/api-token` | `electron/services/api-server.ts` | 32 random bytes hex, mode `0600` (in `~/.dorothy` until 2.0.4) |
+| `~/.tars-private/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh (in `~/.dorothy` until 2.0.4); its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | nothing (read at launch by `moveLocalKanbanToHermes`, `electron/main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
 | `~/.dorothy/project-files/<name>-<hash>/` | `electron/utils/project-files.ts` | each project's folder, for its agents: `tools/`, `notes/`, `reports/`. `<name>` is the project folder's name in lower case letters, digits and dashes (40 at most), `<hash>` ten hex digits of the SHA-256 of its path as the platform compares paths (on Windows, case and separators do not count). Made when an agent of the project gets its identity or reads the guide's project-folder topic; never deleted by Tars, so a project removed from Tars keeps it: delete it by hand. Outside the repository, outside `~/.dorothy/tmp`, and not under `~/Documents`, which iCloud can evict |
@@ -916,7 +917,7 @@ Three layers, in order:
    `http://localhost:3000` is rejected `403 Forbidden origin`: a browser tab on any site can
    reach `127.0.0.1`, and CORS hides the response but not the side effect. Shell hooks send no
    `Origin` at all, which is why they pass.
-2. **Bearer token.** `Authorization: Bearer <~/.dorothy/api-token>`, or the token an agent was
+2. **Bearer token.** `Authorization: Bearer <~/.tars-private/api-token>`, or the token an agent was
    started with (`CLAUDE_MGR_API_TOKEN`), else `401`. Exempt paths: `/api/health`,
    `/api/local-file`, and anything under `/api/hooks/`. **Who is calling** is decided here too,
    by `resolveCaller`: an agent's own token names that agent, and an `X-Tars-Caller-Id` naming
@@ -933,7 +934,7 @@ and no UI warning.
 ### Talk to it
 
 ```bash
-TOKEN=$(cat ~/.dorothy/api-token)
+TOKEN=$(cat ~/.tars-private/api-token)
 API=http://127.0.0.1:31415
 
 curl -s $API/api/health                                    # {"ok":true}, no auth
@@ -1017,12 +1018,12 @@ group mapped to `params.id`.
 ```bash
 lsof -nP -iTCP:31415 -sTCP:LISTEN         # who owns the port
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:31415/api/health   # expect 200
-stat -f '%Sp %N' ~/.dorothy/api-token      # expect -rw-------
+stat -f '%Sp %N' ~/.tars-private/api-token      # expect -rw-------
 ```
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `401 Unauthorized` from a script | token missing or stale | re-read `~/.dorothy/api-token`; the file is regenerated if shorter than 32 chars |
+| `401 Unauthorized` from a script | token missing or stale | re-read `~/.tars-private/api-token`; the file is regenerated if shorter than 32 chars |
 | `403 Forbidden origin` | called from a browser page or a tool that sets `Origin` | drop the header; `curl` sends none |
 | every call `ECONNREFUSED` | port taken at boot, API never started | `lsof -nP -iTCP:31415`, kill the squatter, restart Tars |
 | `413 Request body too large` | >4 MiB payload | it is a hard cap; chunk the prompt |
@@ -1041,8 +1042,8 @@ The identity comes from the token the MCP client presents, and from nothing else
 `CLAUDE_MGR_API_TOKEN`, and the caller's project is that agent's `projectPath` in the fleet. The
 headers (`X-Tars-Caller-Id`, `X-Tars-Caller-Project`) scope nothing, on any token.
 
-An MCP client whose process has no token of its own falls back to `~/.dorothy/api-token` and is
-refused on these routes:
+An MCP client whose process has no token of its own presents none since 2.0.4 (it fell back to the
+shared token, then in `~/.dorothy/api-token`), and is refused on these routes, as the shared token is:
 
 ```
 403 This agent has no identity, so its calls cannot be scoped to a project.
@@ -1060,7 +1061,7 @@ ps -Eww -o command= -p <pid of the mcp-orchestrator bundle> | tr ' ' '\n' | grep
 
 **What this guard is not.** A caller with no agent token and no `X-Tars-Client: mcp` header is
 not scoped at all: that is how the super chat dispatches to every project, and it is also what
-any process that reads `~/.dorothy/api-token` gets. `allowCrossProject: true` lets any agent
+any process that reads `~/.tars-private/api-token` gets. `allowCrossProject: true` lets any agent
 through. The guard stops an orchestrator from acting on the wrong project by mistake; it does not
 stop an agent that means to.
 
@@ -1250,10 +1251,10 @@ claude mcp list | grep tars-memory
 ls -l /Applications/Tars.app/Contents/Resources/mcp-memory/dist/bundle.js
 
 # 3. can the server reach the API? (it needs the token file)
-stat ~/.dorothy/api-token && curl -s http://127.0.0.1:31415/api/health
+stat ~/.tars-private/api-token && curl -s http://127.0.0.1:31415/api/health
 
 # 4. was the agent spawned with an identity?
-curl -s -H "Authorization: Bearer $(cat ~/.dorothy/api-token)" \
+curl -s -H "Authorization: Bearer $(cat ~/.tars-private/api-token)" \
   "http://127.0.0.1:31415/api/agents/<id>?full=true" | jq '{id,name,projectPath,ptyId,ptyCwd}'
 ```
 
@@ -1470,9 +1471,10 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
-Hooks read the API token from `$HOME/.dorothy/api-token` and pass it via
+Hooks present their CLI's own token (`CLAUDE_MGR_API_TOKEN`) via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
-in `ps`.
+in `ps`. A CLI Tars did not start has none, and its hooks read nothing from Tars: they read with
+`~/.dorothy/api-token` until 2.0.4, when that file went to `~/.tars-private`.
 
 ### Debugging hooks
 
@@ -1501,7 +1503,7 @@ quitting kills every agent terminal and each comes back with a token.
 |---|---|
 | agents stuck `idle` while clearly working | `jq` not on the hook's PATH: every script `exit 0`s with `{"continue":true}` and posts nothing |
 | status posts ignored after a restart | `SessionStart` registration was lost; the stale-session guard drops later posts. Stop and re-dispatch the agent |
-| no memory injected at session start | `/api/memory/context` returned empty, or `$HOME/.dorothy/api-token` is unreadable; `/api/memory/*` is **not** auth-exempt |
+| no memory injected at session start | `/api/memory/context` returned empty, or the CLI was not started by Tars and has no `CLAUDE_MGR_API_TOKEN`; `/api/memory/*` is **not** auth-exempt |
 | sandbox/E2E agent status shows up in prod | fixed in 1.7.0: the hooks follow `CLAUDE_MGR_API_URL`. On an older build they hardcoded `31415`; see *Run a second Tars beside your live one* |
 
 ---
@@ -1528,7 +1530,8 @@ tool's own input schema (`query`/`q`/`search`/`text`/`question`).
 
 ### Configure
 
-Settings → Workspace → Memory Backends writes into `~/.dorothy/app-settings.json`:
+Settings → Workspace → Memory Backends writes into `~/.dorothy/app-settings.json`, its keys into
+`~/.tars-private/settings-secrets.json`:
 `memoryGbrainEnabled` / `memoryGbrainMcpUrl` / `memoryGbrainAuthToken`, and
 `memoryHonchoEnabled` / `memoryHonchoMcpUrl` / `memoryHonchoApiKey`.
 
@@ -1542,7 +1545,7 @@ survives.
 ### Check reachability
 
 ```bash
-TOKEN=$(cat ~/.dorothy/api-token)
+TOKEN=$(cat ~/.tars-private/api-token)
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:31415/api/memory/status?project_path=$PWD" | jq
 ```
@@ -1576,7 +1579,7 @@ Tars instead.
 
 ### Connection
 
-`~/.dorothy/hermes-connection.json`, four modes (`electron/types/hermes.ts`):
+`~/.tars-private/hermes-connection.json` (in `~/.dorothy` until 2.0.4), four modes (`electron/types/hermes.ts`):
 
 | mode | base URL |
 |---|---|
@@ -1605,7 +1608,7 @@ Sign-in state is process-local: **restarting Tars logs you out of a cookie gatew
 ### Check it is reachable
 
 ```bash
-jq . ~/.dorothy/hermes-connection.json
+jq . ~/.tars-private/hermes-connection.json
 
 # local gateway
 curl -s http://127.0.0.1:9119/api/status | jq '{version, auth_flows}'
@@ -1647,7 +1650,7 @@ Body: `agent_id` **or** `agent_name` (case-insensitive exact match, narrowed by
 `project_path` when the same role exists on several projects), plus `message` (required),
 `model`, `permission_mode` (`normal|auto|bypass`), `dry_run`.
 
-Auth: the webhook secret, and nothing else. The master `~/.dorothy/api-token` used to be
+Auth: the webhook secret, and nothing else. The master `api-token` used to be
 accepted as a fallback; since 1.7.6 it gets a `403`, as do an agent's own token and Tars's pass,
 and with no secret file nothing opens the route at all. Before 1.7.6 a missing secret file
 skipped the route's check entirely. This is the one route published over the tailnet, which is
