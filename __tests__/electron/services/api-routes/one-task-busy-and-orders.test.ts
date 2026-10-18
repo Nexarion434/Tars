@@ -51,6 +51,19 @@ import { EventEmitter } from 'node:events';
  *     report to whoever leads it is labelled a note; or, a run of that agent
  *     under way, it is queued as a task in its line instead of waiting for
  *     the run's end.
+ *
+ * Added after the Audit's gate of 9d9a7ad9, before the code (2026-10-18):
+ * 16. (H-A) The orchestrator's answer to an agent waiting on a question is
+ *     queued behind a task that waits for that very turn: in auto mode as a
+ *     task of its own, in queue mode behind the line. Nothing moves until a
+ *     person acts.
+ * 17. (M-A) A message held at the head of the terminal's writer lets the
+ *     queued tasks behind it go in back to back: the second is typed into the
+ *     first one's turn, and both read delivered before anything was typed.
+ * 18. (L-A, the Audit's N9) The kanban's note to an agent whose run works is
+ *     typed beside the run, or queued as a task.
+ * 19. (L-D) A note held behind steady work is never retold: its sender heard
+ *     only that it was queued.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -87,7 +100,8 @@ vi.mock('../../../../electron/services/agent-watch', async (original) => ({
 
 import { registerAgentRoutes, performDispatch } from '../../../../electron/services/api-routes/agent-routes';
 import { registerTaskRoutes } from '../../../../electron/services/api-routes/task-routes';
-import { registerKanbanRoutes } from '../../../../electron/services/api-routes/kanban-routes';
+import { registerKanbanRoutes, carryKanban } from '../../../../electron/services/api-routes/kanban-routes';
+import { agentStatusEmitter } from '../../../../electron/services/agent-events';
 import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents, wireDialogProbe } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, resetTerminalInput } from '../../../../electron/core/pty-manager';
@@ -245,7 +259,7 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
     expect(typedInto(terminal)).not.toContain('TASK-C');
   });
 
-  it('7. a note held for a turn\'s end waits for the run queued behind that turn, whatever the status reads, and goes in once the run ends', async () => {
+  it('7. a note held for a turn\'s end and a run queued behind that turn go one after the other, never together', async () => {
     const { agent, terminal } = withCli('cl', 'claude', 'running');
     member('w1');
     const a = call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
@@ -256,19 +270,34 @@ describe('nothing goes into a terminal beside a run (M1)', () => {
     await n.done;
     expect(n.answer()?.data).toMatchObject({ success: true, note: true, queued: true });
     expect(typedInto(terminal)).not.toContain('NOTE-TWO');
-    // Its Stop: the turn ends.
+    // Its Stop: the turn ends, and one of the two takes the agent.
     agent.status = 'idle';
     await later(3000);
-    expect(runs, 'the run queued behind the turn took it').toHaveLength(1);
-    expect(typedInto(terminal), 'the note went in beside the run').not.toContain('NOTE-TWO');
-    // The terminal's own status reads idle while the run works (its Stop came late, or the run does not own the
-    // status): the run still holds the agent.
-    agent.status = 'idle';
-    await later(3000);
-    expect(typedInto(terminal), 'the note went in beside the run, the status reading idle').not.toContain('NOTE-TWO');
-    runs[0].end();
+    const noteFirst = typedInto(terminal).includes('NOTE-TWO');
+    expect(noteFirst && runs.length === 1, 'the note went in beside the run').toBe(false);
+    expect(noteFirst || runs.length === 1, 'neither went').toBe(true);
+    // The turn of whichever went ends: the other goes.
+    if (noteFirst) agent.status = 'idle'; else runs[0].end();
     await later(3000);
     expect(typedInto(terminal)).toContain('NOTE-TWO');
+    expect(runs).toHaveLength(1);
+  });
+
+  it('7b. a note waits for a run whatever the agent\'s status reads (a late Stop, a run that does not own the status)', async () => {
+    const { agent, terminal } = withCli('cl', 'claude', 'idle');
+    member('w1');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(50);
+    expect(runs).toHaveLength(1);
+    agent.status = 'idle';
+    const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-SEVEN read me later' }, 'w1');
+    await later(3000);
+    await n.done;
+    expect(n.answer()?.data).toMatchObject({ success: true, note: true, queued: true });
+    expect(typedInto(terminal), 'the note went in beside the run').not.toContain('NOTE-SEVEN');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).toContain('NOTE-SEVEN');
   });
 
   it('8. Tars\'s own note to an agent whose run works waits for the run, and is no task in its queue', async () => {
@@ -424,6 +453,106 @@ describe('a worker reporting to whoever leads it (L1)', () => {
     runs[0].end();
     await later(3000);
     expect(typedInto(terminal)).toContain('REPORT-TWO');
+  });
+});
+
+describe('an answer, a held message and queued tasks (the Audit\'s gate of 9d9a7ad9)', () => {
+  it('16. the answer to an agent waiting on a question goes in while a task waits for that turn, in auto mode', async () => {
+    const { agent, terminal } = withCli('cl', 'claude', 'waiting', { waitingReason: 'question' } as Partial<AgentStatus>);
+    const q = call('POST', '/api/agents/cl/run-task', { task: 'TASK-Q review', answer: 'started' }, 'orch');
+    await later(50);
+    expect(q.answer()?.data).toMatchObject({ outcome: 'queued' });
+    const a = call('POST', '/api/agents/cl/dispatch', { message: 'ANSWER-42 yes, go on' }, 'orch');
+    await later(2000);
+    await a.done;
+    expect(a.answer()?.data, JSON.stringify(a.answer())).toMatchObject({ success: true, mode: 'message' });
+    expect(a.answer()?.data.queuedTask).toBeUndefined();
+    expect(typedInto(terminal)).toContain('ANSWER-42');
+    void agent;
+  });
+
+  it('16b. and in queue mode, which waits for a turn and a run, never for the tasks in line', async () => {
+    const { terminal } = withCli('cl', 'claude', 'waiting', { waitingReason: 'question' } as Partial<AgentStatus>);
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-Q review', answer: 'started' }, 'orch');
+    await later(50);
+    const a = call('POST', '/api/agents/cl/dispatch', { message: 'ANSWER-43 yes', mode: 'queue' }, 'orch');
+    await later(3000);
+    await a.done;
+    expect(typedInto(terminal), 'the answer waits behind the task that waits for it').toContain('ANSWER-43');
+  });
+
+  it('17. a held note lets one queued task in at a time, each in a turn of its own, and delivered is said when it went in', async () => {
+    const { agent, terminal } = withCli('cl', 'claude', 'idle');
+    member('x');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(50);
+    const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-N for you' }, 'x');
+    await later(500);
+    await n.done;
+    expect(n.answer()?.data).toMatchObject({ note: true, queued: true });
+    const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
+    await later(500);
+    await t.done;
+    const u = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-U fix that', intent: 'task' }, 'orch');
+    await later(500);
+    await u.done;
+    const tRef = String(t.answer()?.data.queuedTask);
+    const uRef = String(u.answer()?.data.queuedTask);
+    runs[0].end();
+    await later(5000);
+    expect(typedInto(terminal)).toContain('TASK-T');
+    expect(typedInto(terminal), "U typed into T's turn").not.toContain('TASK-U');
+    expect(typedInto(terminal), "the note typed into T's turn").not.toContain('NOTE-N');
+    const tSeen = call('GET', `/api/tasks/${tRef}`, {}, 'orch');
+    const uSeen = call('GET', `/api/tasks/${uRef}`, {}, 'orch');
+    await Promise.all([tSeen.done, uSeen.done]);
+    expect(tSeen.answer()?.data.task, JSON.stringify(tSeen.answer())).toMatchObject({ outcome: 'delivered', how: 'typed' });
+    expect(uSeen.answer()?.data.task, 'said delivered before it went in').toMatchObject({ outcome: 'queued' });
+    // T's turn ends: one of U and the note goes, never both.
+    agent.status = 'idle';
+    await later(3000);
+    const next = ['TASK-U', 'NOTE-N'].filter(k => typedInto(terminal).includes(k));
+    expect(next, 'not one at a time').toHaveLength(1);
+    agent.status = 'idle';
+    await later(3000);
+    expect(typedInto(terminal)).toContain('TASK-U');
+    expect(typedInto(terminal)).toContain('NOTE-N');
+  });
+
+  it('18. the kanban\'s note to an agent whose run works waits for the run, and takes no place in its line', async () => {
+    const { agent, terminal } = withCli('ld', 'claude', 'idle', { role: 'orchestrator' });
+    call('POST', '/api/agents/ld/run-task', { task: 'TASK-A plan', answer: 'started' }, undefined, { internal: true });
+    await later(50);
+    expect(runs).toHaveLength(1);
+    // The status reads idle while the run works (a late Stop): the kanban types its held note now.
+    agent.status = 'idle';
+    carryKanban([{ agentId: 'ld', item: { message: 'KANBAN-NOTE a task landed', sender: { kind: 'tars' }, purpose: 'note', what: 'the note of kanban task t_1' }, at: new Date().toISOString() }]);
+    agentStatusEmitter.emit('fleet-change', 'ld');
+    await later(3000);
+    expect(oneTaskQueue.queued('ld'), 'queued as a task').toEqual([]);
+    expect(typedInto(terminal), 'typed beside the run').not.toContain('KANBAN-NOTE');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).toContain('KANBAN-NOTE');
+  });
+
+  it('19. a note held behind work is said still held to its sender, once, ten minutes on', async () => {
+    const { terminal: target } = withCli('cl', 'claude', 'idle');
+    const { terminal: sender } = withCli('x', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(50);
+    const n = call('POST', '/api/agents/cl/dispatch', { message: 'NOTE-L for you' }, 'x');
+    await later(500);
+    await n.done;
+    expect(n.answer()?.data).toMatchObject({ note: true, queued: true });
+    await later(10 * 60_000);
+    const told = () => typedInto(sender).split('still waits').length - 1;
+    expect(told(), 'never told it is still held').toBe(1);
+    await later(20 * 60_000);
+    expect(told(), 'told more than once').toBe(1);
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(target)).toContain('NOTE-L');
   });
 });
 
