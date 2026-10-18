@@ -107,7 +107,12 @@ function sendThroughTars(to, message) {
   for (const name of server.envVars) if (process.env[name] !== undefined) env[name] = process.env[name];
   log({ mcp: true, handed: Object.keys(env).sort(), token: !!env.CLAUDE_MGR_API_TOKEN });
   return new Promise((resolve) => {
-    const child = spawn(server.command, server.args, { env, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(server.command, server.args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stderr.on('data', (d) => log({ mcp: true, stderr: String(d).slice(0, 400) }));
+    // A server that ends before it answers ends the call, with what it said: never a turn left open.
+    let said = '';
+    child.stderr.on('data', (d) => { said = (said + d).slice(-300); });
+    child.on('exit', (code) => { for (const [, r] of replies) r({ error: `the Tars server ended (${code}): ${said.trim().split('\n').pop()}` }); replies.clear(); });
     let buffered = '';
     const replies = new Map();
     child.stdout.on('data', (chunk) => {
@@ -116,7 +121,8 @@ function sendThroughTars(to, message) {
         const line = buffered.slice(0, at); buffered = buffered.slice(at + 1);
         if (!line.trim()) continue;
         const msg = JSON.parse(line);
-        if (typeof msg.id === 'number') replies.get(msg.id)?.(msg);
+        log({ mcp: true, from: 'server', id: msg.id ?? null, method: msg.method ?? null, hasResult: msg.result !== undefined });
+        if (typeof msg.id === 'number' && !msg.method) replies.get(msg.id)?.(msg);
       }
     });
     let next = 1;

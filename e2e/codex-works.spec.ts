@@ -89,6 +89,10 @@ for (const newInterface of [false, true]) {
     let app: ElectronApplication | undefined;
     try {
       app = await launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' } });
+      // The main process's own log, in the artefact: what the hook routes and the codex watch said.
+      const appLog = test.info().outputPath('app.log');
+      app.process().stdout?.on('data', (d) => fs.appendFileSync(appLog, d));
+      app.process().stderr?.on('data', (d) => fs.appendFileSync(appLog, d));
       const page: Page = await app.firstWindow();
       await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(newInterface ? 1 : 0, { timeout: 30_000 });
 
@@ -151,10 +155,12 @@ for (const newInterface of [false, true]) {
 
       // Tars's servers in codex's config, written by Tars's own registration (setupMcpOrchestrator, run at every
       // start of a packaged Tars). A development run finds no bundle under process.resourcesPath, the app's: the
-      // orchestrator's bundle is put where a packaged Tars holds it, for that call.
+      // orchestrator's server is put where a packaged Tars holds it, for that call.
       const resources = path.join(home, 'resources');
       fs.mkdirSync(path.join(resources, 'mcp-orchestrator', 'dist'), { recursive: true });
       fs.copyFileSync(path.resolve('mcp-orchestrator', 'dist', 'bundle.js'), path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js'));
+      // With its package.json, as the app ships it (build.extraResources): the bundle is an ES module.
+      fs.copyFileSync(path.resolve('mcp-orchestrator', 'package.json'), path.join(resources, 'mcp-orchestrator', 'package.json'));
       await app.evaluate(async (_e, { dist, resources }) => {
         const was = process.resourcesPath;
         Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true, writable: true });
