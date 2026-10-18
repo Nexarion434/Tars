@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
+import { linksLeaving } from './home-links.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -11,7 +12,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * test of behaviour, run only on purpose (TARS_HEAP_BENCH=1, --project=bench, as the heap benches), and skipped unless
  * E2E_USAGE_REAL_HOME names a home prepared from a machine's data as APFS clones
  * (the bench's prepare-real-home.sh: never the live files) and E2E_IPC_TIMER the main-process timer that
- * NODE_OPTIONS loads (the bench's ipc-timer.cjs). Each launch runs on its own clone of that home, removed after.
+ * NODE_OPTIONS loads (the bench's ipc-timer.cjs). Each launch runs on its own clone of that home, removed after, and
+ * not before every link in the clone is seen to stay inside it, whatever its spelling (e2e/home-links.mjs): a Claude
+ * account folder's links to the live ~/.claude, copied as they are, let the bench of 18/10 run two measures with the
+ * live folders in reach (the Audit's L1 on #467). The bench refuses to start on such a clone, and says which links.
  *
  * Recorded into values.json, times and sizes only, never what the data says:
  * - when each card first showed, from the page's load: cold (the app starts on the Usage page, nothing read yet),
@@ -82,6 +86,10 @@ test('the Usage page on real data: when each card shows, and every call it makes
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-usage-speed-'));
     const home = path.join(base, 'home');
     execFileSync('cp', ['-cR', REAL, home]);
+    // Nothing is launched on a clone with a way out: every link stays inside it, or the bench stops here.
+    const leaving = linksLeaving(home);
+    if (leaving.length > 0) await removeHome(base);
+    expect(leaving, `links of the clone of ${REAL} that lead out of it: the bench refuses to run on it`).toEqual([]);
     const times = path.join(base, 'ipc-times.jsonl');
     const launched = Date.now();
     const app = await launchSandboxed(electron, home, {
