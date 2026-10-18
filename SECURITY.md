@@ -530,6 +530,22 @@ only the migration asked for `0700`. Whichever write makes it now, the
 migration or the first save of the conversation or of the webhook secret, makes
 it `0700`. A directory that already exists at another mode is left as it is.
 
+**A Qwen Code agent and the administrator's system settings (2.0.4, the Audit's M1 on #461).** Tars hands
+each Qwen Code agent a settings file of its own through `QWEN_CODE_SYSTEM_SETTINGS_PATH` (its hooks, Tars's
+MCP servers, its effort, qwen's updater off). That variable names qwen's system settings slot, the file through
+which an administrator enforces controls over the user's and the project's settings: a tool denylist
+(`permissions.deny`, `tools.disabled`), disabled slash commands, fixed MCP servers (qwen 0.25.2's
+`docs/configuration/settings.md`). Its default is `/Library/Application Support/QwenCode/settings.json`,
+`/etc/qwen-code/settings.json` or `C:\ProgramData\qwen-code\settings.json`, or what
+`QWEN_CODE_SYSTEM_SETTINGS_PATH` names in the environment Tars was started with. Pointing the slot at Tars's file
+dropped those controls without a word. Since this fix the administrator's file is read again at each launch and
+merged over Tars's (`underAdministrator` in `services/qwen-code.ts`): their value wins wherever both set one, a
+list is both lists (their hooks run, then Tars's), and an MCP server they name is theirs whole. One that cannot be
+read (not JSON, a folder, refused) stops the agent from starting, and the start says which file and why. What it
+does not close: Tars's agent files sit in `~/.dorothy/qwen-code/agents`, which every agent can write, so an agent
+can change another Qwen Code agent's file until its next launch rewrites it, as it can `statusline.sh`; and qwen's
+own system defaults file (`system-defaults.json`, the lowest layer) is left to qwen, which reads it as before.
+
 ## 6. Who the bots answer
 
 Each bot is a way into the fleet from outside the machine, so each answers a
