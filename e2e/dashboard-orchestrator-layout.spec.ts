@@ -26,7 +26,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 8. a card's fullscreen fills the window, and its exit gives the layout back;
  * 9. at the narrowest window, 1200 by 800, the same layout, the column's cards still the box of the grid's;
  * 10. a scrollbar that takes room (forced, as Windows and Linux draw one) is taken from the orchestrator, never from the
- *     column's cards.
+ *     column's cards, even when it comes without the board being drawn again;
+ * 11. a card out of sight resized, then its board left at once, leaves no page error behind.
  * Red on the code before it (main, 12bc5dcc): no switch, and every board the equal grid.
  * The artefact: values.json with every box, size and focus read, per shell, and a screenshot of each step.
  */
@@ -288,6 +289,21 @@ for (const newInterface of [false, true]) {
       expect.soft(near(forcedBoxes[0]!.width, forced.board.width - 8 - forced.w - forcedSb), 'the scrollbar taken from the orchestrator').toBe(true);
       for (let i = 1; i < 6; i++) expect.soft(near(forcedBoxes[i]!.width, forced.w), `with a scrollbar: card ${i} still a grid column wide`).toBe(true);
       await shot('10-scrollbar-taking-room');
+
+      // 11. A card out of sight resized, then its board left at once. xterm defers the resize of a terminal out of sight
+      // (a card below the column's fold) to an idle task its dispose does not cancel, and run after the dispose that
+      // task read a renderer that was gone: `Cannot read properties of undefined (reading 'handleResize')`, seen at
+      // step 9 of the run of 19/10 01:48, a resize then another board. Three rounds of it.
+      for (let round = 0; round < 3; round++) {
+        await showProject('seven');
+        await expect.poll(layoutOf).toBe('orchestrator');
+        await page.setViewportSize({ width: round % 2 ? 1440 : 1300, height: 900 });
+        await page.waitForTimeout(150);
+        await showProject('duo');
+      }
+      await page.waitForTimeout(1500);
+      seen.outOfSightResize = errors.filter((e) => /handleResize/.test(e));
+      expect.soft(seen.outOfSightResize, 'no resize left behind for a terminal already gone').toEqual([]);
 
       seen.pageErrors = errors;
       expect.soft(errors, 'no page error').toEqual([]);
