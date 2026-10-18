@@ -184,7 +184,7 @@ Plus `local`: the `claude` binary pointed at a running Tasmania server (`ANTHROP
 The CLI `qwen` (a Gemini CLI fork) as a CLI of Tars's, measured with qwen 0.25.2 on deepseek-v4-flash on 2026-10-18. Not the provider `qwen`, which is the Qwen API through the claude binary.
 
 - **Session**: started with its task as `-i` (a positional prompt runs one-shot and exits), and the session stays; a delegated task is typed into it as for claude (a bracketed paste and Enter, taken as its next turn, the sender line intact). Resumed after a Tars restart with `--resume <id>` (`--fork-session` beside it for a restart), the transcript checked first (`resolveResumeSessionId`).
-- **Models**: the user's `~/.qwen/settings.json` modelProviders, every provider's list, read and never written (`qwenModels`; `models:cli` for the window); `-m <id>`.
+- **Models**: the user's `~/.qwen/settings.json` modelProviders, every provider's list, read and never written (`qwenModels`; `models:cli` for the window, each model's address shown without the user, password, query or fragment a URL can carry a key in); `-m <id>`.
 - **Effort**: no flag; the setting `model.reasoningEffort` (low to max), in Tars's settings file for the agent (below). The status bar read "deepseek-v4-flash low" with it set to low.
 - **Permission modes**: `--approval-mode` plan (plan), default (normal), auto-edit (auto), yolo (bypass). Plan is offered (`hasPlanMode`).
 - **Orchestrator**: `--exclude-tools edit write_file agent`, its own tool names (enforced, `enforcesOrchestratorMode`).

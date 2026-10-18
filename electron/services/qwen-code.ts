@@ -48,6 +48,20 @@ export function qwenTranscriptPath(projectPath: string, sessionId: string, homeD
 /** A model id that may reach a command line. */
 export const QWEN_MODEL_ID = /^[a-zA-Z0-9._:/-]+$/;
 
+/**
+ * A model's address as the window may show it: its scheme, host, port and
+ * path, without the user, password, query or fragment a URL can carry a key
+ * in (the Audit's L1 on #462). Undefined for what is not a URL.
+ */
+function shownBaseUrl(baseUrl: string): string | undefined {
+  try {
+    const u = new URL(baseUrl);
+    return `${u.protocol}//${u.host}${u.pathname === '/' ? '' : u.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The models in the user's ~/.qwen/settings.json modelProviders, every provider's, read only; none when it cannot be read. */
 export function qwenModels(homeDir = os.homedir()): Array<{ id: string; name: string; description: string }> {
   try {
@@ -60,7 +74,7 @@ export function qwenModels(homeDir = os.homedir()): Array<{ id: string; name: st
         if (!m || typeof m.id !== 'string' || !QWEN_MODEL_ID.test(m.id) || out.some((o) => o.id === m.id)) continue;
         out.push({
           id: m.id, name: typeof m.name === 'string' ? m.name : m.id,
-          description: typeof m.baseUrl === 'string' ? `${kind}, ${m.baseUrl}` : kind,
+          description: typeof m.baseUrl === 'string' && shownBaseUrl(m.baseUrl) ? `${kind}, ${shownBaseUrl(m.baseUrl)}` : kind,
         });
       }
     }
