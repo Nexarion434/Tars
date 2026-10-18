@@ -4,7 +4,7 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 199 root frames, 32 of them drawn for 2.0.4 and not built yet (listed at the end).
+rather than a companion to it. `design/tars-redesign.pen` holds 238 root frames, 73 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
 `design/chat-design.pen` holds 72 of those, the other eighty-four being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
@@ -115,7 +115,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 |---|---|
 | General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
 | AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
-| Hermes | Connection (+ link out to Schedules), with its Telegram through Hermes switch: Settings · Connection, and its states in Settings · Connection · Telegram through Hermes (and its light copy) |
+| Hermes | Connection (+ link out to Schedules): Settings · Connection. Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
@@ -225,19 +225,34 @@ operation), empty, error, needs-sign-in, permission-denied.
 - Launch: mark, wordmark, boot steps, gateway handshake
 - Page load: skeleton in the real shape of the content
 
-## Drawn for 2.0.4, not built yet
+## Drawn, not built yet
 
-Frames of `design/tars-redesign.pen` for four features the app does not render yet. Each has its dark and light
-frames, the narrowest window (1200 by 800), its empty and error states, and a notes frame saying what the Backend
-must provide. Once a feature is built, its frames join the line of its page above, and a new section (Relay) joins
+Frames of `design/tars-redesign.pen` for what the app does not render yet, in tokens only. Each has its main frames
+dark and light, the narrowest window (1200 by 800), its states, and a notes frame saying what the Backend must
+provide. Once a feature is built, its frames join the line of its page above, and a new section joins
 `e2e/surfaces.mjs`.
 
-- Vault, each project's folder (`~/.dorothy/project-files/<key>`): Vault · project folders · a report, · a tool
-  (the report's light copy, the tool at the narrowest window), · states (and its light copy), · notes for the Backend.
-- Review, a project holding several repositories, one not under git, one whose folder is gone: Review · projects and
-  their repositories (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend.
-- Memory, one picture: Memory · one picture · Settings, Memory Backends (its light copy, the narrowest window),
-  · Brain, Backends (its light copy), · states (and its light copy), · notes for the Backend.
-- The Hermes relay in one click, a Relay section under Settings, Hermes: Relay · Hermes in one click · ready to
-  install, · installing, · installed, · a step failed (the light copies of ready, installed and failed; installing
-  at the narrowest window), · states (and its light copy), · notes for the Backend.
+For 2.0.4:
+- Vault, what agents produce (each project's reports and tools, and the documents made here), read and edited in its
+  file panel: Vault · project folders · a report, · a report, editing, · a tool (the first two with their light
+  copies, editing at the narrowest window), · states (and its light copy), · notes for the Backend.
+- Review, every repository of every project, search with no limit, a folder with no git: Review · projects and their
+  repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the
+  narrowest window), · states (and its light copy), · notes for the Backend.
+- Memory, one picture (Brain links to the Vault): Memory · one picture · Settings, Memory Backends, · Brain, Backends
+  (each with its light copy, Settings at the narrowest window), · states (and its light copy), · notes for the Backend.
+- Relay, one switch for every gateway Hermes has, a section under Settings, Hermes: Relay · Settings, Hermes · off,
+  · turning on, · on, · could not turn on (off, on and could not turn on with their light copies, turning on at the
+  narrowest window), · states (and its light copy), · notes for the Backend.
+- Providers, one panel per CLI: Providers · one panel per CLI · Codex, · Claude Code (Codex with its light copy and at
+  the narrowest window), · states (and its light copy), · notes for the Backend.
+
+For 2.0.5:
+- File panel, opened from anywhere (a terminal, Brain, Review, the Vault): File panel (2.0.5) · opened from an agent's
+  terminal (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend.
+- Connectors and Decisions, approved on 17/10: Decisions · waiting, rules and decided, Decisions · nothing waits,
+  Connectors · in use, Connectors · a fresh install (each with its light copy), and the add flow: Connectors · add a
+  server · a command (and its light copy), · the catalogue, · states (and its light copy), · notes for the Backend.
+- Browser beside an agent's terminal: Browser (2.0.5) · beside an agent's terminal (its light copy, the narrowest
+  window), · states (and its light copy), · notes for the Backend.
+- The app's language: Language (2.0.5) · Settings, General, Preferences (and its light copy), · notes.
