@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv, scheduledKeyExports } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic'; // Anthropic-compatible endpoint
@@ -198,8 +198,7 @@ export class MiniMaxProvider implements CLIProvider {
     const settings = readAppSettingsFromDisk();
     const direct = !!settings.minimaxApiKey;
     const schedBase = direct ? MINIMAX_BASE_URL : OPENROUTER_BASE_URL;
-    const schedKeyJq = direct ? '.minimaxApiKey' : '.openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
+    const envExports = scheduledKeyExports(schedBase, direct ? 'minimaxApiKey' : 'openRouterApiKey', params.logPath);
 
     return `#!/bin/bash
 export HOME=${shellQuote(params.homeDir)}

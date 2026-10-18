@@ -10,8 +10,8 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv, scheduledKeyExports } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const MOONSHOT_BASE_URL = 'https://api.moonshot.ai/anthropic'; // Anthropic-compatible endpoint
@@ -158,8 +158,7 @@ export class MoonshotProvider implements CLIProvider {
     const settings = readAppSettingsFromDisk();
     const direct = !!settings.moonshotApiKey;
     const schedBase = direct ? MOONSHOT_BASE_URL : OPENROUTER_BASE_URL;
-    const schedKeyJq = direct ? '.moonshotApiKey' : '.openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\nexport ANTHROPIC_API_KEY="$(jq -r '${schedKeyJq} // empty' "${DATA_DIR_SHELL}/app-settings.json")"\n`;
+    const envExports = scheduledKeyExports(schedBase, direct ? 'moonshotApiKey' : 'openRouterApiKey', params.logPath);
 
     return `#!/bin/bash
 export HOME=${shellQuote(params.homeDir)}
