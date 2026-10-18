@@ -350,7 +350,8 @@ for (const newInterface of [false, true]) {
       const qwTasks = report.tasks.filter((t) => t.agentId === 'qw');
       keep({ qwTasks });
       expect.soft(qwTasks.length).toBeGreaterThanOrEqual(3);
-      expect.soft(qwTasks.every((t) => (t.costUSD ?? 0) > 0), 'a task of qw\'s with no cost').toBe(true);
+      // The task cut with Esc (9) ran no model turn to its end: no cost is right for it.
+      expect.soft(qwTasks.filter((t) => t.outcome === 'completed').every((t) => (t.costUSD ?? 0) > 0), 'a finished task of qw\'s with no cost').toBe(true);
 
       // 6. Tars restarted: qw continues its conversation.
       const sid = launches()[0].sid!;
