@@ -79,6 +79,7 @@ export default function CliPanels({ versions, claudeRows }: { versions: CliVersi
           <KeyRow cli={cli} state={keyState} onChanged={readKeys} />
         )}
         {cli.id === 'claude' && claudeRows}
+        {cli.id === 'qwen-code' && <QwenCodeRows />}
         <SettingsRow
           label="Command"
           description={v?.version
@@ -173,6 +174,40 @@ function KeyRow({ cli, state, onChanged }: { cli: CliDef; state: CliKeyState | n
         </div>
       )}
       {error && <p className="pb-2 text-[11.5px] text-danger">{error}</p>}
+    </>
+  );
+}
+
+/**
+ * Qwen Code's own rows (PR 461): its models, read from the CLI's settings
+ * (models.ofCli), and how it takes effort and permissions.
+ */
+function QwenCodeRows() {
+  const [models, setModels] = useState<Array<{ id: string; name: string }> | null>(null);
+  useEffect(() => {
+    let live = true;
+    window.electronAPI?.models?.ofCli('qwen-code')
+      .then((res) => { if (live) setModels(res?.models ?? []); })
+      .catch(() => { if (live) setModels([]); });
+    return () => { live = false; };
+  }, []);
+  return (
+    <>
+      <SettingsRow
+        label="Models"
+        description={models === null
+          ? 'Reading Qwen Code\'s models.'
+          : models.length
+            ? 'From Qwen Code\'s own settings (~/.qwen/settings.json): a new Qwen Code agent picks one of these.'
+            : 'None in Qwen Code\'s settings (~/.qwen/settings.json): add a model provider there, then pick its models here.'}
+        control={models && models.length > 0 ? (
+          <ul aria-label="Qwen Code models" className="flex flex-col items-end gap-0.5">
+            {models.map((m) => <li key={m.id} className="font-mono text-[11.5px] text-foreground">{m.name}</li>)}
+          </ul>
+        ) : undefined}
+      />
+      <SettingsRow label="Effort" description="Written into the settings Tars gives each Qwen Code agent, from the effort the agent is given." />
+      <SettingsRow label="Permission mode" description="Plan, normal, auto or bypass, picked for each agent in New agent: Qwen Code runs them as its own approval modes." />
     </>
   );
 }

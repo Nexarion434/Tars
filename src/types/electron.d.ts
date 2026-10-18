@@ -346,6 +346,8 @@ export type AgentProvider =
   | 'mimo'
   | 'moonshot'
   | 'qwen'
+  /** Qwen Code, the CLI `qwen` (2.0.4); `qwen` is the Qwen API through the claude binary. */
+  | 'qwen-code'
   | 'zhipu'
   | 'minimax'
   | 'nvidia'

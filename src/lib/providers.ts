@@ -87,6 +87,17 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     defaultModel: 'gpt-5.2-codex',
   },
   {
+    // Qwen Code, the CLI `qwen` (2.0.4, #461). Its models are the user's own, read from the CLI
+    // (models.ofCli('qwen-code'), its settings.json modelProviders), never a list kept here.
+    id: 'qwen-code',
+    label: 'Qwen Code',
+    icon: { type: 'svg-qwen' },
+    accent: 'primary',
+    requiresCli: true,
+    models: [],
+    defaultModel: '',
+  },
+  {
     id: 'gemini',
     label: 'Gemini',
     icon: { type: 'svg-gemini' },
@@ -207,7 +218,8 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
   },
   {
     id: 'qwen',
-    label: 'Qwen',
+    // The Qwen API, through the claude binary: not Qwen Code, the CLI below.
+    label: 'Qwen API',
     icon: { type: 'svg-qwen' },
     accent: 'blue-500',
     models: [
