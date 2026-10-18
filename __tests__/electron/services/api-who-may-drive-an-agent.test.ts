@@ -575,6 +575,8 @@ describe('Hermes, the one caller published off this machine', () => {
     // is handed, one `cat` away. A Hermes job holds that value, so it moves
     // as it is.
     fs.writeFileSync(HERMES_SECRET_LEGACY, SECRET, { mode: 0o600 });
+    // And BETA's project allowed to the default gateway, as the user allows it in Settings since 2.0.4.
+    fs.writeFileSync(HERMES_GATEWAYS, JSON.stringify({ gateways: [{ id: 'default', label: 'Hermes', projects: [BETA.projectPath] }] }), { mode: 0o600 });
     const beta = agents.get(BETA.id)!;
     const terminal = liveTerminal(beta);
 
