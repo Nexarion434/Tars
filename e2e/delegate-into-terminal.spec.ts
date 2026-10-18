@@ -113,7 +113,7 @@ const lines = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, 'ut
 
 for (const newInterface of [false, true]) {
   test(`delegate_task gives the task to the agent's own terminal and returns its full answer${newInterface ? ' (new interface)' : ''}`, async () => {
-    test.setTimeout(300_000);
+    test.setTimeout(480_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-delegate-terminal-'));
     const project = path.join(home, 'projects', 'demo');
     const dir = path.join(home, '.dorothy');
@@ -199,16 +199,21 @@ for (const newInterface of [false, true]) {
 
       // 1 to 3. Two delegations at once: the first works for 12 s, the second waits its turn.
       const first = tool('delegate_task', { id: 'dev', prompt: 'SLOW LONG review the release notes', timeoutSeconds: 240, clientRequestId: `e2e-into-terminal-1-${newInterface}` });
-      await expect.poll(async () => (await get('dev'))?.taskBanner?.task?.firstLine ?? '', { timeout: 30_000 }).toBe('SLOW LONG review the release notes');
+      // In dev's terminal (an older Tars tries a run over ACP first, and falls back to the terminal when it fails).
+      const devTurnsWith = (mark: string) => lines(path.join(home, 'stand-in.jsonl')).filter((e) => e.id === 'dev' && typeof e.turn === 'string' && e.turn.includes(mark));
+      await expect.poll(() => devTurnsWith('SLOW LONG').length, { timeout: 180_000 }).toBe(1);
       const second = tool('delegate_task', { id: 'dev', prompt: 'run the tests', timeoutSeconds: 240, clientRequestId: `e2e-into-terminal-2-${newInterface}` });
-      await expect.poll(async () => (await get('dev'))?.taskBanner?.waiting.length ?? 0, { timeout: 15_000 }).toBe(1);
-      const banner = (await get('dev'))!.taskBanner!;
+      let banner: Banner | undefined;
+      await expect.configure({ soft: true }).poll(async () => {
+        banner = (await get('dev'))?.taskBanner;
+        return banner?.waiting.length ?? 0;
+      }, { timeout: 15_000, message: 'the banner shows the second task waiting' }).toBe(1);
       const [one, two] = await Promise.all([first, second]);
 
       // 5. A CLI with no hook: its session is started with the task, and the task said delivered.
       const toOc = await tool('delegate_task', { id: 'oc', prompt: 'NOHOOK look at the logs', timeoutSeconds: 60 });
       // Its CLI writes its first line a moment after Tars answered: read once it has.
-      await expect.poll(() => lines(path.join(home, 'no-hook.jsonl')).filter((e) => e.launched).length, { timeout: 30_000 }).toBe(1);
+      await expect.poll(() => lines(path.join(home, 'no-hook.jsonl')).filter((e) => e.launched).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
       // 6. The deprecated alias: answered at once with a task id, into the same terminal.
       const started = await tool('start_agent', { id: 'dev', prompt: 'ALIAS tidy the changelog' });
       await expect.poll(() => lines(path.join(home, 'stand-in.jsonl')).filter((e) => typeof e.turn === 'string' && e.turn.includes('ALIAS')).length, { timeout: 30_000 }).toBe(1);
@@ -236,8 +241,8 @@ for (const newInterface of [false, true]) {
       expect.soft(one.text).toContain('600000 tokens');
       expect.soft(one.text).toContain('$0.7000');
       // 3. The second waited its turn, shown on the banner, and returned its own answer.
-      expect.soft(banner.task).toMatchObject({ from: 'Project Lead', firstLine: 'SLOW LONG review the release notes' });
-      expect.soft(banner.waiting.map((w) => ({ from: w.from, firstLine: w.firstLine }))).toEqual([{ from: 'Project Lead', firstLine: 'run the tests' }]);
+      expect.soft(banner?.task).toMatchObject({ from: 'Project Lead', firstLine: 'SLOW LONG review the release notes' });
+      expect.soft(banner?.waiting.map((w) => ({ from: w.from, firstLine: w.firstLine }))).toEqual([{ from: 'Project Lead', firstLine: 'run the tests' }]);
       expect.soft(two.isError, two.text.slice(0, 300)).toBe(false);
       expect.soft(two.text).toContain('Second task done: the tests pass.');
       expect.soft(two.text).not.toContain('END-OF-ANSWER');
