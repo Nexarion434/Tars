@@ -31,6 +31,11 @@ import { EventEmitter } from 'node:events';
  *    path;
  * 8. a message that never went in (withdrawn, or dropped because the CLI is
  *    gone) uses it up, and the next one that does go in goes without it.
+ * 9. (the Audit's L-B and QA's L1 on #448, written before the fix) a CLI
+ *    launched again into a terminal that still owes the section, as a bot does
+ *    with launchIntoTerminal, the section in its own command: the next message
+ *    typed in carries the section a second time, with the memory as it was at
+ *    the first start.
  *
  * And the guide route (the Audit's L-A on #448): GET /api/guide?topic=project-folder
  * says why a project's folder could not be made, and so does the section
@@ -101,7 +106,8 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 const handlers = new Map<string, Handler>();
 
 import { registerIpcHandlers, type IpcHandlerDependencies } from '../../../electron/handlers/ipc-handlers';
-import { agents, initAgentPty } from '../../../electron/core/agent-manager';
+import { agents, initAgentPty, launchIntoTerminal } from '../../../electron/core/agent-manager';
+import { toLaunch } from '../../../electron/platform/launch';
 import { ptyProcesses, resetTerminalInput, writeProgrammaticInput, withdrawWaiting, writeHumanInput } from '../../../electron/core/pty-manager';
 import { resetResumeTracking, encodeProjectDirName } from '../../../electron/utils/resume-session';
 import { resetAgentRestarts } from '../../../electron/core/agent-restart';
@@ -328,6 +334,29 @@ describe('a CLI without Claude\'s hook started from the window with no task', ()
     const first = typedInto(terminal);
     expect(first).toContain('FIRST>> rebase onto main');
     expect(count(first), first).toBe(1);
+  });
+});
+
+describe('a CLI launched again into a terminal that still owes the section', () => {
+  it('owes nothing from the earlier start: the next message carries no section (9)', async () => {
+    const { agent, terminal } = await startedFromWindow('');
+    // Its CLI quits, the shell is back in front, and a bot launches it again
+    // there with the task, the section in its command (bot-core.ts, withGuide).
+    terminal.process = 'bash';
+    const relaunch = toLaunch(`'opencode' --prompt '${SECTION} BOT>> the task from Telegram'`, project, process.env);
+    // On win32 a launch replaces the terminal (startCliInTerminal), and what the
+    // old one owed goes with it: the case is the typed launch of darwin and linux.
+    if (relaunch.platform !== 'win32') {
+      await launchIntoTerminal(agent, terminal as never, relaunch, { ptyProcesses, initAgentPty });
+      terminal.process = 'opencode';
+      terminal.write.mockClear();
+
+      expect(await dispatch(agent.id, 'NEXT>> and push it')).toMatchObject({ success: true, mode: 'message' });
+      const next = typedInto(terminal);
+      expect(next).toContain('NEXT>> and push it');
+      expect(count(next), next).toBe(0);
+      expect(next).not.toContain(MEMORY);
+    }
   });
 });
 

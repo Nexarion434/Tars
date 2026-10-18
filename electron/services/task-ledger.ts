@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { ensureSecretFileMode, writeAtomicSync, writeSecretFileSync } from '../utils/secret-file';
 import type { MessageSender } from '../core/pty-manager';
 import { taskOfPrompt } from '../core/task-requests';
+import { ANSWER_MAX } from './terminal-answer';
 
 /**
  * The tasks the Usage page prices: one record per piece of work an agent does,
@@ -158,8 +159,12 @@ export interface AcpRun {
 /** A hand-off not followed by a turn within this long started nothing. */
 const HAND_OFF_TTL_MS = 15 * 60_000;
 const TEXT_MAX = 200;
-/** What a delegated run's answer keeps: as much as an agent's lastCleanOutput. */
-const RESULT_MAX = 8_000;
+/**
+ * What a delegated task's answer keeps: the final message in full (2.0.4), up
+ * to a million characters. A run over ACP kept 8000, as much as lastCleanOutput.
+ */
+const RESULT_MAX = ANSWER_MAX;
+const ACP_RESULT_MAX = 8_000;
 const STOP_REASON = /^[A-Za-z_]{1,64}$/;
 const DEFAULT_MAX_LINES = 20_000;
 
@@ -333,6 +338,9 @@ function lineOf(v: unknown): Line | null {
       usage: u ? { inputTokens: u.inputTokens as number, outputTokens: u.outputTokens as number, cachedReadTokens: u.cachedReadTokens as number, cachedWriteTokens: u.cachedWriteTokens as number } : null,
     };
   }
+  if (l.t === 'answer' && typeof l.stopReason === 'string' && STOP_REASON.test(l.stopReason)) {
+    return { t: 'answer', id: l.id, at: l.at, stopReason: l.stopReason };
+  }
   if (l.t === 'end' && OUTCOMES.includes(l.outcome as TaskOutcome) && l.outcome !== 'running') {
     return { t: 'end', id: l.id, at: l.at, outcome: l.outcome as Exclude<TaskOutcome, 'running'> };
   }
@@ -344,6 +352,8 @@ type Line =
   | { t: 'turn'; id: string; at: number; sessionId?: string }
   | { t: 'end'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'> }
   | { t: 'acp'; id: string; at: number; outcome: Exclude<TaskOutcome, 'running'>; stopReason: string; usage: Omit<AcpUsage, 'costUSD'> | null; costUSD: number | null }
+  /** A terminal task's end as its delegation read it: why its turn ended (its answer is in resultFile). */
+  | { t: 'answer'; id: string; at: number; stopReason: string }
   | ({ t: 'usage'; id: string; at: number; sessionId?: string } & TurnUsage);
 
 /** Tokens added to a per-model record, false when it already holds as many models as it may. */
@@ -372,13 +382,33 @@ function addUsage(task: TaskRecord, usage: TurnUsage, sessionId: string | undefi
 
 export interface TaskLedger {
   handedOff(agentId: string, handOff: HandOff): void;
-  turnStarted(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): void;
+  /** Returns the task the turn opened, or was counted in: a delegation into the terminal follows it (2.0.4). */
+  turnStarted(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): string | undefined;
   stateChanged(agent: TaskAgentView, opts?: { backgroundLeft?: boolean }): void;
   acpRun(run: AcpRun): void;
   /** A delegation over ACP begins: its task, open, and its id. */
   acpStarted(run: AcpStart): string;
   /** That delegation ended: why, what it answered, what it used. */
   acpEnded(taskId: string, end: AcpEnd): void;
+  /**
+   * A terminal task a delegation followed ended (the agent's rest ended it
+   * here): its final answer and why its turn ended, kept once (2.0.4).
+   */
+  terminalEnded(taskId: string, end: { result?: string; stopReason: string }): void;
+  /**
+   * A delegated task is about to be typed into an agent at rest (2.0.4): the
+   * task still open there is one its background work keeps open, and it ends
+   * now, so that the delegation's turn opens a task of its own (the Audit's H1
+   * on #453: counted into the earlier task, the delegation was unknown to its
+   * asker, which asked again). Returns the id it ended.
+   */
+  endedForDelegation(agentId: string): string | undefined;
+  /**
+   * The task a delegated turn opened: it ends at that turn's rest, background
+   * work left or not (the Audit's M1 on #453). In memory: a task still open at
+   * a restart ends at the next launch anyway.
+   */
+  delegatedTask(taskId: string): void;
   /** One task by its id, with its run's answer when it has one. */
   task(id: string): TaskWithResult | undefined;
   /** The delegations a quit cut, found open at this start: given once, for their askers to be told. */
@@ -433,6 +463,10 @@ export function createTaskLedger(opts: {
     // A turn's usage comes after the Stop that ended its task.
     if (line.t === 'usage') {
       if (task) addUsage(task, line, line.sessionId);
+      return;
+    }
+    if (line.t === 'answer') {
+      if (task && task.source !== 'acp' && task.endedAt !== null && task.stopReason === undefined) task.stopReason = line.stopReason;
       return;
     }
     if (!task || task.endedAt !== null) return;
@@ -593,6 +627,8 @@ export function createTaskLedger(opts: {
     const id = open.get(agentId);
     return id ? byId.get(id) : undefined;
   };
+  /** The delegated tasks still open: each ends at its turn's rest (delegatedTask). */
+  const delegated = new Set<string>();
 
   return {
     handedOff(agentId, handOff) {
@@ -630,7 +666,7 @@ export function createTaskLedger(opts: {
       const current = openTaskOf(agent.id);
       if (current) {
         write({ t: 'turn', id: current.id, at, sessionId: turn.sessionId });
-        return;
+        return current.id;
       }
       const fresh = handOff && at - handOff.at <= HAND_OFF_TTL_MS ? handOff : undefined;
       const task: TaskRecord = {
@@ -654,6 +690,7 @@ export function createTaskLedger(opts: {
       };
       open.set(agent.id, task.id);
       write({ t: 'task', task });
+      return task.id;
     },
 
     stateChanged(agent, opts) {
@@ -662,8 +699,11 @@ export function createTaskLedger(opts: {
       const outcome = endingOf(agent);
       if (!outcome) return;
       // Resting with work still running in the background is not the end: the
-      // agent comes back when that work reports (agent-watch.ts says why).
-      if (outcome === 'completed' && opts?.backgroundLeft) return;
+      // agent comes back when that work reports (agent-watch.ts says why). A
+      // delegated task's is: its asker gets its answer at its turn's rest,
+      // with what it left running (agent-routes.ts, runInTerminal).
+      if (outcome === 'completed' && opts?.backgroundLeft && !delegated.has(task.id)) return;
+      delegated.delete(task.id);
       open.delete(agent.id);
       write({ t: 'end', id: task.id, at: now(), outcome });
     },
@@ -736,7 +776,7 @@ export function createTaskLedger(opts: {
       const task = byId.get(taskId);
       if (!task || task.endedAt !== null) return;
       if (end.result) {
-        const result = Array.from(end.result).slice(0, RESULT_MAX).join('');
+        const result = Array.from(end.result).slice(0, ACP_RESULT_MAX).join('');
         results.set(taskId, result);
         writeResult(taskId, result);
       }
@@ -744,6 +784,31 @@ export function createTaskLedger(opts: {
         t: 'acp', id: taskId, at: now(), outcome: end.outcome,
         stopReason: STOP_REASON.test(end.stopReason) ? end.stopReason : 'unknown', usage: end.usage, costUSD: end.costUSD,
       });
+    },
+
+    endedForDelegation(agentId) {
+      const task = openTaskOf(agentId);
+      if (!task) return undefined;
+      open.delete(agentId);
+      delegated.delete(task.id);
+      write({ t: 'end', id: task.id, at: now(), outcome: 'completed' });
+      return task.id;
+    },
+
+    delegatedTask(taskId) {
+      const task = byId.get(taskId);
+      if (task && task.endedAt === null) delegated.add(taskId);
+    },
+
+    terminalEnded(taskId, end) {
+      const task = byId.get(taskId);
+      if (!task || task.source === 'acp' || task.endedAt === null || task.stopReason !== undefined) return;
+      if (end.result) {
+        const result = Array.from(end.result).slice(0, RESULT_MAX).join('');
+        results.set(taskId, result);
+        writeResult(taskId, result);
+      }
+      write({ t: 'answer', id: taskId, at: now(), stopReason: STOP_REASON.test(end.stopReason) ? end.stopReason : 'unknown' });
     },
 
     task(id) {
@@ -810,4 +875,28 @@ export function noteHandOff(agentId: string, handOff: HandOff): void {
   } catch (err) {
     console.warn('[task-ledger] hand-off not recorded:', (err as Error).message);
   }
+}
+
+/** Told the task each turn opened or was counted in: a delegation into a terminal follows its own (2.0.4). */
+type TurnWatcher = (agentId: string, taskId: string, prompt: string | undefined) => void;
+const turnWatchers = new Set<TurnWatcher>();
+
+export function watchTurns(watcher: TurnWatcher): () => void {
+  turnWatchers.add(watcher);
+  return () => { turnWatchers.delete(watcher); };
+}
+
+/**
+ * A turn began (UserPromptSubmit, hooks-routes.ts): recorded, never thrown,
+ * and the task it went into told to whoever follows one. Returns that task.
+ */
+export function noteTurn(agent: TaskAgentView, turn: { sessionId?: string; text?: string }): string | undefined {
+  let taskId: string | undefined;
+  try {
+    taskId = live?.turnStarted(agent, turn);
+  } catch (err) {
+    console.warn('[task-ledger] turn not recorded:', (err as Error).message);
+  }
+  if (taskId) for (const watcher of [...turnWatchers]) watcher(agent.id, taskId, turn.text);
+  return taskId;
 }

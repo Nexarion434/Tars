@@ -50,6 +50,11 @@ function dispatchAnswers(answer: Record<string, unknown>) {
     if (endpoint.includes('/dispatch')) {
       return { success: true, mode: 'start', previousStatus: 'stopped', agent: { id: 'a1', name: 'Tars-QA', status: 'running' }, ...answer };
     }
+    // start_agent hands the task through run-task (2.0.4): answered once it is in the terminal.
+    if (endpoint.includes('/run-task')) {
+      const { restartedAfterStop } = answer as { restartedAfterStop?: unknown };
+      return { ok: true, started: false, queued: false, outcome: 'starting', taskId: 't-0a0b0c0d', ...(restartedAfterStop ? { restartedAfterStop } : {}) };
+    }
     return { agent: { status: 'running', name: 'Tars-QA' } };
   });
 }
@@ -65,7 +70,7 @@ describe('a start that undid a stop', () => {
   it('1. start_agent says who had stopped the agent, why, and that the restart is noted', async () => {
     dispatchAnswers({ restartedAfterStop: STOP });
     const result = text(await (await tool('start_agent'))({ id: 'a1', prompt: 'Gate #305' }));
-    expect(result).toContain('Started agent "Tars-QA"');
+    expect(result).toContain('Task t-0a0b0c0d is going into agent a1\'s terminal');
     expect(result).toContain('It had been stopped by "JeanBrasse": "out of budget for tonight". Your restart is noted on it.');
   });
 

@@ -81,7 +81,9 @@ export class GeminiProvider implements CLIProvider {
 
     if (finalPrompt) {
       const escaped = finalPrompt.replace(/'/g, "'\\''");
-      command += ` '${escaped}'`;
+      // -i/--prompt-interactive: the task, then the session stays (0.64
+      // --help). A bare query ran one-shot and exited on releases before 0.64.
+      command += ` -i '${escaped}'`;
     }
 
     return command;
