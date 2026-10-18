@@ -57,7 +57,8 @@ vi.mock('child_process', async importOriginal => ({
 }));
 
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
-const file = path.join(home, '.dorothy', 'hermes-connection.json');
+// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.dorothy moves there at the first read.
+const file = path.join(home, '.tars-private', 'hermes-connection.json');
 
 let usableHermesConnection: () => unknown;
 // The handlers bring the overseer with them: loaded once, with the time that takes.
