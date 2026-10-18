@@ -4,7 +4,8 @@
 // - it writes its session where codex does ($CODEX_HOME, else ~/.codex, sessions/<y>/<m>/<d>/rollout-*.jsonl) in
 //   codex's lines: session_meta, task_started, turn_context (the effort it was given), the user's message, and
 //   task_complete with the answer, or with the error codex reports for a model a ChatGPT account cannot use;
-// - in normal mode it asks before running a command, in codex's own dialog, and waits for a key;
+// - in normal mode it asks before running a command, in codex's own dialog, and before calling an MCP server's tool,
+//   in the form 0.163 draws for it (measured with a probe server), and waits for a key;
 // - for `SEND <agent> <text>` it starts Tars's MCP server from its config.toml as codex does, with HOME, PATH, TERM
 //   and the variables `env_vars` names (nothing else: measured with a probe server on 0.163), and calls
 //   send_message;
@@ -103,10 +104,15 @@ function boot() {
   if (opts.prompt) queue(opts.prompt);
 }
 
-let dialog = null; // the key the open approval dialog waits for
+let dialog = null; // the open approval: which one, and what answering it resolves
 function ask(tag) {
   out(`\n\n  Would you like to run the following command?\n\n  $ echo ${tag}\n\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for this command in this session (a)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel\n`);
-  return new Promise((resolve) => { dialog = resolve; });
+  return new Promise((resolve) => { dialog = { kind: 'command', resolve }; });
+}
+/** The form codex 0.163 draws before it calls an MCP server's tool; Enter submits Allow, the option shown selected. */
+function askTool(server, tool) {
+  out(`\n◦ Calling ${server}.${tool}\n    + Show details\n\n  Field 1/1\n  Allow the ${server} MCP server to run tool "${tool}"?\n  › 1. Allow                   Run the tool and continue\n    2. Allow for this session  Run the tool and remember this choice for this session\n    3. Always allow            Run the tool and remember this choice for future tool calls\n    4. Cancel                  Cancel this tool call\n  enter to submit | esc to cancel\n`);
+  return new Promise((resolve) => { dialog = { kind: 'tool', resolve }; });
 }
 
 function tarsServer() {
@@ -179,7 +185,9 @@ async function turn(text) {
     out('\x1b[2J\x1b[H');
     answer = allowed ? `ran echo ${approve[1]}` : `did not run echo ${approve[1]}`;
   } else if (send) {
-    answer = await sendThroughTars(send[1], send[2]);
+    const allowed = asks ? await askTool('claude-mgr-orchestrator', 'send_message') : true;
+    if (asks) out('\x1b[2J\x1b[H');
+    answer = allowed ? await sendThroughTars(send[1], send[2]) : 'the call of send_message was cancelled';
   } else if (echo) {
     answer = `echo ${echo[1]}`;
   }
@@ -200,8 +208,10 @@ process.stdin.on('data', (chunk) => {
     return;
   }
   if (dialog) {
-    if (/[y\r]/.test(data)) { const d = dialog; dialog = null; d(true); }
-    else if (/[\x1bn]/.test(data)) { const d = dialog; dialog = null; d(false); }
+    const yes = dialog.kind === 'tool' ? /\r/ : /[y\r]/;
+    const no = dialog.kind === 'tool' ? /\x1b/ : /[\x1bn]/;
+    if (yes.test(data)) { const d = dialog; dialog = null; d.resolve(true); }
+    else if (no.test(data)) { const d = dialog; dialog = null; d.resolve(false); }
     return;
   }
   typed += data.replace(/\x1b\[20[01]~/g, '');

@@ -25,7 +25,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 3. Cody's send_message to Claire goes through the Tars MCP server inside codex with Cody's own identity: Claire's
  *    terminal gets it from "Cody";
  * 4. Nora, in normal mode, waits on codex's approval dialog: her status says she waits on a permission, then her
- *    answer comes back once it is answered;
+ *    answer comes back once it is answered; and before her call of a Tars tool, on the form codex 0.163 draws for
+ *    it (measured with a probe server), named in her status, then her message reaches Claire once it is allowed;
  * 5. Mini, on gpt-5-codex-mini, fails with codex's own words, and Lead is told so.
  * Both shells. The artefact: values.json (each tool's answer, each launch's argv and effort, Claire's typed bytes, the
  * statuses seen) and the screenshot.
@@ -221,6 +222,32 @@ for (const newInterface of [false, true]) {
       const noraDone = await lead('wait_for_agent', { id: nora, timeoutSeconds: 60 });
       keep({ noraDone });
       expect.soft(noraDone.text, "Nora's answer never came back after the approval").toContain(`ran echo c${nonce}`);
+
+      // And before each call of a tool: codex's form, said in her status, allowed by an Enter in her terminal. Claire's
+      // turn on Cody's message is ended first, as her Stop hook would.
+      await fetch(`http://127.0.0.1:${port}/api/hooks/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.claire}` },
+        body: JSON.stringify({ agent_id: CLAIRE, session_id: 'e2e00000-0000-4000-8000-0000000000c1', status: 'idle' }),
+      });
+      await lead('send_message', { id: nora, message: `SEND ${CLAIRE} hello from nora d${nonce}` });
+      let askedTool: Awaited<ReturnType<typeof statusOf>> | undefined;
+      await expect.poll(async () => { askedTool = await statusOf(nora); return `${askedTool.status} ${askedTool.waitingReason}`; }, { timeout: 30_000 })
+        .toBe('waiting permission').catch(() => {});
+      keep({ noraAskedTool: askedTool });
+      expect.soft(`${askedTool?.status} ${askedTool?.waitingReason}`, "Nora's tool call approval is not in her status").toBe('waiting permission');
+      expect.soft((askedTool?.waitingOn as { text?: string } | undefined)?.text, 'what Nora waits on').toBe('Allow the claude-mgr-orchestrator MCP server to run tool "send_message"?');
+      await app.evaluate((_e, { dist, id }) => {
+        const req = process.mainModule!.require;
+        const a = req(`${dist}/core/agent-manager.js`).agents.get(id);
+        req(`${dist}/core/pty-manager.js`).ptyProcesses.get(a.ptyId)?.write('\r');
+      }, { dist, id: nora });
+      await expect.poll(async () => (await statusOf(nora)).status, { timeout: 30_000 }).not.toBe('waiting').catch(() => {});
+      const noraSent = await lead('wait_for_agent', { id: nora, timeoutSeconds: 60 });
+      await expect.poll(typedIntoClaire, { timeout: 15_000 }).toContain(`hello from nora d${nonce}`).catch(() => {});
+      keep({ noraSent, claireTyped: typedIntoClaire().slice(-1500) });
+      expect.soft(noraSent.text, "Nora's tool call never went through once allowed").toContain('sent:');
+      expect.soft(typedIntoClaire(), "Claire never got Nora's message").toContain(`hello from nora d${nonce}`);
+      expect.soft(typedIntoClaire(), 'the message is not from Nora').toContain('"Nora"');
 
       // 5. Mini, on a model the account cannot use: codex's own words, to Lead.
       const mini = await make('Mini', { model: 'gpt-5-codex-mini', permissionMode: 'auto' });
