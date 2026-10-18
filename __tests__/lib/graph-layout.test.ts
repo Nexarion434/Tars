@@ -30,7 +30,9 @@ import {
  * 3. a node lost, placed twice, or two nodes on one spot;
  * 4. the order: a ring's nodes not going round clockwise from the top in the
  *    order given, so an agent's files scatter rather than sit together; a ring
- *    not outside the one before it;
+ *    not outside the one before it; a ring of few boxes starting anywhere but
+ *    the top, so a lone skill of the first agent lands across the graph from
+ *    it; several projects with one in the middle and the others off to a side;
  * 5. the same nodes giving another picture from one opening to the next;
  * 6. a box outside the drawing's bounds, or bounds wider than the boxes, which
  *    makes the fit smaller than it needs to be;
@@ -152,6 +154,20 @@ describe('the order and the rings (4)', () => {
   it('puts a lone node of the middle ring where the rings go round', () => {
     const layout = layoutRings([['p'], names('agent', 5)]);
     expect(radius(layout, 'p')).toBeCloseTo(0, 6);
+  });
+
+  it('puts several nodes of the middle ring around it, none on it, evenly', () => {
+    const layout = layoutRings([names('project', 2), names('agent', 6)]);
+    expect(radius(layout, 'project-0')).toBeGreaterThan(0);
+    expect(radius(layout, 'project-1')).toBeCloseTo(radius(layout, 'project-0'), 6);
+    expect(Math.abs(angle(layout, 'project-1') - angle(layout, 'project-0'))).toBeCloseTo(Math.PI, 6);
+  });
+
+  it('starts every ring at the top, so a lone node of a ring sits up there by the first agent', () => {
+    const layout = layoutRings([['p'], names('agent', 6), ['skill']]);
+    const top = (id: string) => Math.min(angle(layout, id), 2 * Math.PI - angle(layout, id));
+    expect(top('agent-0')).toBeLessThan(Math.PI / 3);
+    expect(top('skill')).toBeLessThan(Math.PI / 3);
   });
 });
 
