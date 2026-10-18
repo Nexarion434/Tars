@@ -39,6 +39,8 @@ import * as path from 'node:path';
  *      with whatever it holds, erases a key or writes one.
  *  K9. Amp's key of before (ampApiKey) is no longer read, or wins over the
  *      one set since.
+ *  K10. (the Audit's L3 on #459) A variable chosen for a CLI whose variable is
+ *      its own (codex, amp) is stored, or changes where its key goes.
  */
 
 import { CLI_KEYS, keyEnvFor, keyVariableOf, cliKeyStates, withCliKey, withoutCliKeys, keepCliKeys, codexKeyConfig, qwenEnvKey } from '../../../electron/services/cli-keys';
@@ -174,4 +176,19 @@ describe('a key per CLI, in its agents\' environment', () => {
     if (!cleared.ok) throw new Error(cleared.error);
     expect(getProvider('amp').getPtyEnvVars('a', '/p', [], cleared.settings).AMP_API_KEY).toBeUndefined();
   });
+
+  it('K10. the variable of codex and amp is theirs: a change is refused, and the key still goes there', () => {
+    for (const cli of ['codex', 'amp'] as const) {
+      const r = withCliKey(settings(), cli, { key: KEY });
+      if (!r.ok) throw new Error(r.error);
+      const changed = withCliKey(r.settings, cli, { envVar: 'OPENAI_API_KEY' });
+      expect(changed, cli).toMatchObject({ ok: false });
+      if (!changed.ok) expect(changed.error).toContain(cli === 'codex' ? 'CODEX_API_KEY' : 'AMP_API_KEY');
+      expect(keyVariableOf(cli, r.settings).name).toBe(cli === 'codex' ? 'CODEX_API_KEY' : 'AMP_API_KEY');
+      // One written by hand in the file is not read either.
+      const forged = { ...r.settings, cliApiKeys: { [cli]: { key: KEY, envVar: 'OPENAI_API_KEY' } } } as AppSettings;
+      expect(keyEnvFor(cli, forged)).toEqual({ [cli === 'codex' ? 'CODEX_API_KEY' : 'AMP_API_KEY']: KEY });
+    }
+  });
 });
+
