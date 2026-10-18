@@ -1,0 +1,160 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { IPty } from 'node-pty';
+
+/**
+ * An Esc that cut a turn, and the field the CLI refills (the Audit's M2 on
+ * #461 at 4804a90f). Read from the CLIs' own code, installed on this Mac:
+ *  - Qwen Code 0.25.2, on a user's cancel: what the user queued during the turn
+ *    (typed, then Enter) goes back into the field first; then, the field empty
+ *    and nothing queued, the cancelled prompt is put back into it, unless a
+ *    tool call is pending or running.
+ *  - Claude Code 2.1.302, on a user's cancel with an empty field: the last
+ *    user message is put back (`auto_restore_cancel`).
+ * Tars took the field to be as it was before the Esc, typed its next task
+ * after that text, and one Enter sent both: the cut task again, or the user's
+ * own words.
+ *
+ * Every way it can fail, written before the code (2026-10-19):
+ *  F1. Nothing but the Esc was typed since the task went in, and the CLI put
+ *      that task back: the next task is sent with it (qwen, claude).
+ *  F2. The user queued a message during the turn, and qwen moved it back into
+ *      the field: the next task is typed after it and sent with it.
+ *  F3. The user had typed in the field, then pressed Esc: the next task goes
+ *      in although the field is not Tars's to clear.
+ *  F4. Tars typed a message into the running turn, which qwen queued and moved
+ *      back: the next task is sent with it.
+ *  F5. Over-correction: the CLI put nothing back (a tool was running), and the
+ *      next task still waits, or is not sent alone.
+ *
+ * The writer is the real one; the CLI is a field of its own that takes the
+ * bytes as the CLIs do: a paste or keys into the field, a backspace out of it,
+ * an Enter that submits (or queues, while a turn runs), and the Esc that cuts
+ * the turn and refills the field, by the flavour's rule.
+ */
+
+vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
+vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: () => {} }));
+
+import {
+  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, noteTurnCut, rememberTerminalOwner, resetTerminalInput,
+  setTurnProbe, writeHumanInput, writeProgrammaticInput,
+} from '../../../electron/core/pty-manager';
+
+type Flavour = 'qwen' | 'claude';
+
+/** A CLI's input field, and what it submits, as qwen 0.25.2 and claude 2.1.302 handle these bytes. */
+function fakeCli(flavour: Flavour, opts: { toolRunning?: boolean } = {}) {
+  const cli = { field: '', queue: [] as string[], submitted: [] as string[], turn: false, last: '' };
+  const write = (data: string) => {
+    if (data === '\x1b') {
+      if (!cli.turn) { cli.field = ''; return; }
+      cli.turn = false;
+      if (flavour === 'qwen') {
+        const popped = cli.queue.splice(0).join('\n');
+        if (popped) { cli.field = cli.field ? `${popped}\n${cli.field}` : popped; return; }
+      }
+      if (cli.field === '' && !opts.toolRunning) cli.field = cli.last;
+      return;
+    }
+    if (data === '\r') {
+      if (!cli.field) return;
+      if (cli.turn) { cli.queue.push(cli.field); cli.field = ''; return; }
+      cli.submitted.push(cli.field);
+      cli.last = cli.field;
+      cli.field = '';
+      cli.turn = true;
+      return;
+    }
+    const text = data.replace(/\x1b\[20[01]~/g, '');
+    for (const ch of text) {
+      if (ch === '\x7f') cli.field = cli.field.slice(0, -1);
+      else if (ch === '\x03') cli.field = '';
+      else if (ch >= ' ' || ch === '\n') cli.field += ch;
+    }
+  };
+  const pty = { write } as unknown as IPty;
+  return { cli, pty };
+}
+
+const T1 = 'TASK-ONE review the notes';
+const T2 = 'TASK-TWO write the summary';
+const origin = { agentId: 'qw' };
+/** Past the pause a person's last key is given, the delayed carriage return and the probes. */
+const settle = () => vi.advanceTimersByTime(TYPING_PAUSE_MS + PROGRAMMATIC_SUBMIT_DELAY_MS + 3000);
+let made: ReturnType<typeof fakeCli>;
+
+function start(flavour: Flavour, opts: { toolRunning?: boolean } = {}) {
+  made = fakeCli(flavour, opts);
+  rememberTerminalOwner(made.pty, 'qw');
+  setTurnProbe(() => made.cli.turn);
+  expect(writeProgrammaticInput(made.pty, T1, true, origin)).toBe('written');
+  settle();
+  expect(made.cli.submitted).toEqual([T1]);
+  return made;
+}
+
+beforeEach(() => { vi.useFakeTimers(); });
+afterEach(() => {
+  if (made) resetTerminalInput(made.pty);
+  setTurnProbe(null);
+  vi.useRealTimers();
+});
+
+describe('the next task after an Esc that cut a turn', () => {
+  it.each<Flavour>(['qwen', 'claude'])('F1. %s put the cut task back: the next one is sent alone', (flavour) => {
+    const { cli, pty } = start(flavour);
+    writeHumanInput(pty, '\x1b');
+    expect(cli.field, 'the CLI put the cut task back').toBe(T1);
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1, T2]);
+  });
+
+  it('F2. qwen moved the user\'s queued message back: the next task waits, and the message stays the user\'s', () => {
+    const { cli, pty } = start('qwen');
+    for (const ch of 'my own idea') writeHumanInput(pty, ch);
+    writeHumanInput(pty, '\r');
+    writeHumanInput(pty, '\x1b');
+    expect(cli.field).toBe('my own idea');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.field).toBe('my own idea');
+    expect(messagesWaiting().find((w) => w.agentId === 'qw')).toBeDefined();
+  });
+
+  it.each<Flavour>(['qwen', 'claude'])('F3. %s: the user had typed in the field before the Esc: the next task waits', (flavour) => {
+    const { cli, pty } = start(flavour);
+    for (const ch of 'half a thought') writeHumanInput(pty, ch);
+    writeHumanInput(pty, '\x1b');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.field).toContain('half a thought');
+  });
+
+  it('F4. qwen moved a message Tars typed into the running turn back: the next task waits', () => {
+    const { cli, pty } = start('qwen');
+    writeProgrammaticInput(pty, 'NOTE for information', true, origin);
+    settle();
+    expect(cli.queue).toEqual(['NOTE for information']);
+    writeHumanInput(pty, '\x1b');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+  });
+
+  it.each<Flavour>(['qwen', 'claude'])('F5. %s put nothing back (a tool was running): the next task goes in, alone', (flavour) => {
+    const { cli, pty } = start(flavour, { toolRunning: true });
+    writeHumanInput(pty, '\x1b');
+    expect(cli.field).toBe('');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1, T2]);
+  });
+});
