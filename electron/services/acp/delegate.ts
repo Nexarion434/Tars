@@ -1,4 +1,3 @@
-import * as os from 'os';
 import * as path from 'path';
 import { AcpSession, endProcessTreesNow, type TurnResult } from './client';
 import { acpLaunchFor, loadAcpRegistry } from './registry';
@@ -18,6 +17,7 @@ import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 import { agentTmpEnvOrNone } from '../agent-tmp';
 import { guideForPrompt } from '../agent-guide';
+import { writeRunTokenFile } from './run-token-file';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -104,19 +104,6 @@ function mcpServersFor(agent: AgentStatus, tokenFile: string): { name: string; c
     }
   }
   return servers;
-}
-
-/**
- * The run's token in a file only its owner reads, for its MCP servers
- * (mcpServersFor): in a folder of its own, mode 0700 as mkdtemp makes it (on
- * Windows, inside the user's own temporary folder), so that two runs of one
- * agent never share one, and removed with the run.
- */
-function writeRunTokenFile(token: string): { file: string; remove: () => void } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-'));
-  const file = path.join(dir, 'token');
-  fs.writeFileSync(file, token, { mode: 0o600, flag: 'wx' });
-  return { file, remove: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
 /**
