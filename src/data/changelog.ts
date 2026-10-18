@@ -36,6 +36,7 @@ export const CHANGELOG: Release[] = [
       'A task given to an opencode, amp or gemini agent now starts its interactive session, which stays once the task is done: opencode was started as opencode run and amp as amp -x, which do the task and exit, so the agent was gone with it, and an older gemini ran a task given that way once and exited too. opencode now opens its screen with the task as its first prompt, gemini takes it with -i, and amp, which has no such option, opens its screen and gets the task typed in once it runs.',
       'A delegated task now ends with its agent\'s turn even when that turn left work running in the background, a dev server or a watcher: delegate_task returns the answer and names what is still running, which goes on in the agent\'s session, and the agent takes its next task. A delegation over ACP stopped that work when it answered.',
       'start_agent is deprecated: it now hands the task exactly as delegate_task does, into the agent\'s own terminal and in its turn, and answers at once with the task\'s id, which task_status follows. Use delegate_task, which waits for the answer; the guide no longer teaches start_agent.',
+      'Qwen Code in the window: New agent offers it with plan, and the models of Qwen Code\'s own settings rather than a list kept in Tars; Settings, Providers shows those models in its panel; Usage and the agent cards name it Qwen Code, and the Qwen API that runs through Claude Code is now named Qwen API, so the two are never confused.',
     ],
   },
   {
