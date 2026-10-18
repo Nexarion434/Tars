@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
 
 /**
@@ -26,6 +27,10 @@ import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
  *      the system configuration names one.
  *  G7. Any git call of the main process skips all this: one written
  *      elsewhere, with execFile('git', ...) of its own.
+ *  G8. (The Audit's M1 on #463, written before its code.) `log`, `show` or
+ *      `whatchanged` verify a signed commit, log.showSignature on, and run the
+ *      verifier the repository names: gpg.program and gpg.openpgp.program,
+ *      gpg.ssh.program, gpg.x509.program. Review's log is one of them.
  */
 
 import { safeGit, safeGitSync, safeGitEnv } from '../../../electron/utils/safe-git';
@@ -47,6 +52,20 @@ describe('a repository\'s own programs never run', () => {
     expect(h.ran(), 'programs the repository named').toEqual([]);
     // And the work is still read: the change, and the untracked file.
     expect(diff.files.map((f) => f.path).sort()).toEqual(expect.arrayContaining(['a.txt', 'b.txt']));
+  });
+
+  it('G8. a signed commit\'s verifier never runs: log, show and whatchanged, Review\'s log included', async () => {
+    // The witness: the repository's own git runs a verifier for each format.
+    execFileSync('git', ['log', '-3'], { cwd: h.repo, stdio: 'pipe', env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', GIT_CONFIG_NOSYSTEM: '1' } });
+    expect(h.ran().map((l) => l.split(' ')[0]).sort(), 'the fixture names no verifier git runs').toEqual(expect.arrayContaining(['openpgp-verify', 'ssh-verify', 'x509-verify']));
+    fs.rmSync(h.marker, { force: true });
+    await repoSummary(h.repo);
+    await safeGit(h.repo, ['log', '-3']);
+    await safeGit(h.repo, ['log', '--show-signature', '-3']);
+    await safeGit(h.repo, ['show', 'HEAD']);
+    await safeGit(h.repo, ['whatchanged', '-3']);
+    safeGitSync(h.repo, ['log', '-1', '--format=%G?']);
+    expect(h.ran(), 'programs the repository named').toEqual([]);
   });
 
   it('G2, G3. a worktree, an add and a commit: no filter, no hook, no signature, and a required filter does not fail them', async () => {
