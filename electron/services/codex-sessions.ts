@@ -10,7 +10,8 @@ import { codexHome } from '../providers/codex-cli';
  * $CODEX_HOME/sessions/<year>/<month>/<day>/rollout-<time>-<id>.jsonl, one JSON object a line (measured on
  * codex-cli 0.163.0): `session_meta` (its id, its folder, `source`: `cli`, or a subagent such as the guardian of the
  * automatic review), `task_started`, the user's message (`item_completed`, a `UserMessage`), and `task_complete`,
- * with `last_agent_message`, or with `error` when the turn failed. This reads it and posts, as the agent's terminal
+ * with `last_agent_message`, or with `error` when the turn failed, or `turn_aborted` when it was interrupted (no
+ * task_complete then: Tars is told, task-watch.ts, turnInterrupted). This reads it and posts, as the agent's terminal
  * and with that terminal's token, what Claude Code's hooks post (session-start.sh, user-prompt-submit.sh,
  * on-stop.sh, stop-failure.sh, permission-request.sh): the hook routes decide what happens, so a codex agent goes
  * through the one state machine every agent goes through (hooks-routes.ts). codex-sessions.test.ts says each way
@@ -21,8 +22,9 @@ import { codexHome } from '../providers/codex-cli';
  * the session's first message ("(id <agent id>)", every task Tars hands a session) says which; without it, the
  * first launch takes the first session.
  *
- * An approval codex waits on (normal mode asks before each command) is in no line of the log: it is read from the
- * terminal's screen (terminal-mirror.ts, codexDialogOnScreen) while a turn is open.
+ * An approval codex waits on (normal mode asks before a command outside its sandbox, and before each call of an MCP
+ * server's tool) is in no line of the log: it is read from the terminal's screen (terminal-mirror.ts,
+ * codexDialogOnScreen) while a turn is open.
  */
 
 export interface HookPost {
@@ -34,7 +36,8 @@ export type CodexEvent =
   | { kind: 'session'; id: string; cwd: string; subagent: boolean; at: number }
   | { kind: 'turn_started'; turnId: string }
   | { kind: 'user'; text: string }
-  | { kind: 'turn_complete'; turnId: string; message: string | null; error: string | null };
+  | { kind: 'turn_complete'; turnId: string; message: string | null; error: string | null }
+  | { kind: 'turn_aborted'; turnId: string };
 
 /** What a turn's `error` says, in codex's own words: the API's message when codex kept the API's answer whole. */
 function errorText(error: unknown): string | null {
@@ -67,6 +70,8 @@ export function codexEventOf(line: string): CodexEvent | null {
   }
   if (type !== 'event_msg') return null;
   if (p.type === 'task_started') return { kind: 'turn_started', turnId: typeof p.turn_id === 'string' ? p.turn_id : '' };
+  // Interrupted (Esc): measured on 0.163, `turn_aborted` with reason `interrupted`, and no task_complete after it.
+  if (p.type === 'turn_aborted') return { kind: 'turn_aborted', turnId: typeof p.turn_id === 'string' ? p.turn_id : '' };
   if (p.type === 'task_complete') {
     return {
       kind: 'turn_complete',
@@ -93,6 +98,8 @@ export interface CodexSessionWatchDeps {
   post: (agentId: string, post: HookPost) => Promise<void>;
   /** codex's approval dialog on the agent's screen, as one line, or undefined. */
   dialogTitle: (agentId: string) => string | undefined;
+  /** Told a turn was interrupted, before the agent's rest is posted (production: task-watch.ts, turnInterrupted). */
+  interrupted?: (agentId: string, sessionId: string) => void;
 }
 
 interface Launch { agentId: string; cwd: string; at: number }
@@ -267,6 +274,13 @@ export class CodexSessionWatch {
           await this.post(b, '/api/hooks/status', { hook: 'Stop', status: 'idle' });
           await this.post(b, '/api/hooks/agent-stopped', { hook: 'Stop' });
         }
+      } else if (event.kind === 'turn_aborted' && b.turnOpen) {
+        b.turnOpen = false;
+        b.startPosted = false;
+        b.asking = false;
+        // No answer, and no task_complete will come: said interrupted first, then the rest codex is at.
+        this.deps.interrupted?.(b.agentId, b.sessionId);
+        await this.post(b, '/api/hooks/status', { hook: 'Stop', status: 'idle' });
       }
     }
   }
@@ -302,7 +316,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;

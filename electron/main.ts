@@ -130,7 +130,7 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
-import { startTaskWatch } from './services/task-watch';
+import { startTaskWatch, turnInterrupted } from './services/task-watch';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch } from './services/stall-watch';
@@ -751,6 +751,7 @@ app.whenReady().then(async () => {
       const agent = agents.get(agentId);
       return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
     },
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
   });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the

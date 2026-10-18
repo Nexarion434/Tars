@@ -50,6 +50,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
+import { turnInterruptedAt } from '../task-watch';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
@@ -1184,6 +1185,8 @@ async function runInTerminal(
       }
       const ended = ledger?.task(taskId);
       const outcome = ended?.outcome === 'running' || !ended ? 'stopped' : ended.outcome;
+      // Or its CLI's own log said the turn was interrupted, which stopped its task (codex: task-watch.ts).
+      if (!interrupted && outcome === 'stopped' && ended && (turnInterruptedAt(agent.id) ?? -Infinity) >= ended.startedAt) interrupted = true;
       const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
       const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
         ?? agent.lastCleanOutput ?? undefined;
