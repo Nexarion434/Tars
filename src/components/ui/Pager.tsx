@@ -53,7 +53,7 @@ export function Pager({
         )}
         {pages.length > 0 && (
           <>
-            <Button size="sm" className="w-[26px] px-0 shrink-0" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+            <Button size="icon" className="shrink-0" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}>
               <ChevronLeft className="w-3 h-3" />
             </Button>
             <span className="hidden @min-[520px]:contents">
@@ -62,11 +62,11 @@ export function Pager({
                 : (
                   <Button
                     key={p}
-                    size="sm"
+                    size="icon"
                     active={p === page}
                     aria-current={p === page ? 'page' : undefined}
                     aria-label={`Page ${p}`}
-                    className="w-[26px] px-0 shrink-0 font-mono"
+                    className="shrink-0 font-mono"
                     onClick={() => onPage(p)}
                   >
                     {p}
@@ -74,7 +74,7 @@ export function Pager({
                 )))}
             </span>
             <span className="@min-[520px]:hidden px-1 font-mono text-[11px] text-text-secondary whitespace-nowrap">{`${page} / ${last}`}</span>
-            <Button size="sm" className="w-[26px] px-0 shrink-0" aria-label="Next page" disabled={page >= last} onClick={() => onPage(page + 1)}>
+            <Button size="icon" className="shrink-0" aria-label="Next page" disabled={page >= last} onClick={() => onPage(page + 1)}>
               <ChevronRight className="w-3 h-3" />
             </Button>
           </>
