@@ -65,7 +65,7 @@ describe('linksLeaving', () => {
   it.skipIf(cannotSymlink())('3. reports a relative link that climbs out of the home', () => {
     link('../../../outside/projects', '.claude-accounts/acct/projects');
     link('../../home/../outside', '.claude/escape');
-    expect(names()).toEqual([path.join('.claude', 'escape'), path.join('.claude-accounts', 'acct', 'projects')]);
+    expect(names()).toEqual([path.join('.claude', 'escape'), path.join('.claude-accounts', 'acct', 'projects')].sort());
   });
 
   it.skipIf(cannotSymlink())('4. judges where a link really leads, whatever the spelling of the path', () => {
