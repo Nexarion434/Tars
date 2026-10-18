@@ -15,8 +15,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * The real app on a sandbox HOME, and the real orchestrator MCP server (mcp-orchestrator/dist/bundle.js), run once
  * with the identity of the orchestrator `lead` and once with that of the worker `dev`, spoken to over stdio as Claude
- * Code speaks to it. Agent `oc` is an opencode worker whose CLI is a fake ACP agent: each turn lasts RUN_S, and it
- * records every launch, prompt and answer with its pid. Agent `qa` is a worker whose terminal runs a stand-in that
+ * Code speaks to it. Agent `oc` is a claude worker whose CLI is a stand-in named `claude` that does what Claude Code
+ * does around a turn (Tars's own hook scripts, a transcript line per reply): each turn lasts RUN_S, and it records
+ * every launch, prompt and answer with its pid. Since 2.0.4 a delegated task goes into the agent's own terminal, so
+ * "never two sessions at work" is read from that one CLI's turns: never two at once, and all in one process. Until
+ * 2.0.4 oc was an opencode agent driven over ACP by a fake ACP agent, one process per run. Agent `qa` is a worker whose terminal runs a stand-in that
  * records every byte typed into it; its turns are told through the hook route with its own token.
  *
  * Asserted, once with the classic shell and once with the new interface:
@@ -34,7 +37,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * f. A task waiting its turn is in Tars's memory only: lead delegates to oc while a run of Tars's holds it, Tars quits
  *    and starts again on the same home, and lead's delegate_task says that Tars restarted and that the task never
  *    started and must be asked again; task_status asked of the new Tars says the same; the task never runs.
- * Red on 9df7c099 (2.0.4 before this change): the two runs overlap, the worker's calls go through, the message is
+ * Red on 9df7c099 (2.0.4 before #449): the two runs overlap, the worker's calls go through, the message is
  * typed into qa's turn with no label. Red on 36822724 for e and f: dev stops qa, and the delegation waits 90 s after
  * the restart, then says Tars could not be reached and the run may still be working.
  * The artefact: values.json (every tool answer, the fake agent's log, the bytes qa received, the ledger's tasks, the
@@ -44,40 +47,52 @@ import { DEV_URL, apiPort } from './ports.mjs';
 const RUN_S = 6;
 const HOLD_S = 120;
 
+const HOOKS = path.resolve('hooks');
+
 /**
- * A fake ACP agent, launched as `opencode acp`: each prompt answered after RUN_S, every step logged with its pid.
- * TASK-HOLD is held for HOLD_S: the run a restart of Tars cuts, with a task queued behind it.
+ * oc's CLI, a stand-in named `claude`: Claude Code's hooks around each turn and its transcript, each turn RUN_S long
+ * (TASK-HOLD: HOLD_S, the turn a restart of Tars cuts, with a task queued behind it), every step logged with its pid.
  */
-const FAKE_ACP = String.raw`
-const fs = require('fs');
-const log = (entry) => fs.appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + '\n');
+const TURN_STAND_IN = (log: string) => String.raw`
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
+const { spawnSync } = require('child_process');
+const sid = crypto.randomUUID();
+const dir = path.join(process.env.HOME, '.claude', 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
+fs.mkdirSync(dir, { recursive: true });
+const transcript = path.join(dir, sid + '.jsonl');
+const log = (entry) => fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + '\n');
+const hook = (name, payload) => spawnSync('/bin/bash', [path.join(${JSON.stringify(HOOKS)}, name)], {
+  input: JSON.stringify({ session_id: sid, cwd: process.cwd(), transcript_path: transcript, ...payload }), env: process.env, timeout: 20000,
+});
+const reply = (text) => fs.appendFileSync(transcript, JSON.stringify({
+  type: 'assistant', timestamp: new Date().toISOString(), message: { id: crypto.randomUUID(), role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } },
+}) + '\n');
+async function turn(prompt) {
+  const task = (prompt.match(/TASK-[A-Z]+/) ?? ['?'])[0];
+  hook('user-prompt-submit.sh', { hook_event_name: 'UserPromptSubmit', prompt });
+  log({ prompt: task });
+  await new Promise((r) => setTimeout(r, (task === 'TASK-HOLD' ? ${HOLD_S} : ${RUN_S}) * 1000));
+  reply('answer for ' + task);
+  log({ answered: task });
+  hook('on-stop.sh', { hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'answer for ' + task });
+}
+hook('session-start.sh', { hook_event_name: 'SessionStart', source: 'startup' });
 log({ launched: true });
-let buf = '';
-const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let nl;
-  while ((nl = buf.indexOf('\n')) !== -1) {
-    const line = buf.slice(0, nl).trim();
-    buf = buf.slice(nl + 1);
-    if (line) handle(JSON.parse(line));
+process.stdout.write('stand-in ready\n');
+if (process.stdin.isTTY) process.stdin.setRawMode(true);
+let buffer = '';
+let queue = Promise.resolve();
+const dashes = process.argv.indexOf('--');
+if (dashes !== -1 && process.argv.slice(dashes + 1).join(' ').trim()) queue = queue.then(() => turn(process.argv.slice(dashes + 1).join(' ')));
+process.stdin.on('data', (data) => {
+  buffer += data.toString();
+  let end;
+  while ((end = buffer.search(/[\r\n]/)) !== -1) {
+    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
+    buffer = buffer.slice(end + 1);
+    if (line.trim()) queue = queue.then(() => turn(line));
   }
 });
-function handle(msg) {
-  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } });
-  if (msg.method === 'session/new') return send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'acp-' + process.pid } });
-  if (msg.method === 'session/prompt') {
-    const text = msg.params.prompt?.map((p) => p.text ?? '').join('') ?? '';
-    const task = (text.match(/TASK-[A-Z]+/) ?? ['?'])[0];
-    log({ prompt: task });
-    return setTimeout(() => {
-      log({ answered: task });
-      send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: msg.params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answer for ' + task } } } });
-      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } } });
-    }, (task === 'TASK-HOLD' ? ${HOLD_S} : ${RUN_S}) * 1000);
-  }
-  if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, result: {} });
-}
 process.stdin.resume();
 `;
 
@@ -142,8 +157,9 @@ for (const newInterface of [false, true]) {
     const dir = path.join(home, '.dorothy');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
-    const acpLog = path.join(home, 'fake-acp.jsonl');
-    fs.writeFileSync(path.join(bin, 'opencode'), `#!${process.execPath}\nprocess.env.FAKE_ACP_LOG = ${JSON.stringify(acpLog)};\n${FAKE_ACP}`, { mode: 0o755 });
+    const turnsLog = path.join(home, 'oc-turns.jsonl');
+    const ocCli = path.join(bin, 'claude');
+    fs.writeFileSync(ocCli, `#!${process.execPath}\n${TURN_STAND_IN(turnsLog)}`, { mode: 0o755 });
     const qaReceived = path.join(home, 'qa.received');
     const qaCli = path.join(home, 'qa-cli.cjs');
     fs.writeFileSync(qaCli, STAND_IN(qaReceived), { mode: 0o755 });
@@ -153,7 +169,7 @@ for (const newInterface of [false, true]) {
     });
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
       agent('lead', 'Project Lead', 'orchestrator', 'claude'),
-      agent('oc', 'Review Agent', 'worker', 'opencode'),
+      agent('oc', 'Review Agent', 'worker', 'claude', { cliPath: ocCli }),
       agent('dev', 'Dev Agent', 'worker', 'claude'),
       agent('qa', 'QA Agent', 'worker', 'claude', { cliPath: qaCli }),
     ], null, 2));
@@ -162,12 +178,11 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { additionalPaths: [bin] }, newInterface,
     }));
-    fs.writeFileSync(path.join(dir, 'acp-registry.json'), JSON.stringify({ fetchedAt: Date.now(), agents: { opencode: { id: 'opencode', name: 'opencode', version: 'local', command: 'opencode', args: ['acp'] } } }));
     const port = apiPort(newInterface ? 31423 : 31424);
     const dist = path.resolve('electron', 'dist');
     const values: Record<string, unknown> = { newInterface, runSeconds: RUN_S };
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
-    const acpEntries = () => (fs.existsSync(acpLog) ? fs.readFileSync(acpLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []) as Array<{ at: number; pid: number; launched?: boolean; prompt?: string; answered?: string }>;
+    const ocTurns = () => (fs.existsSync(turnsLog) ? fs.readFileSync(turnsLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []) as Array<{ at: number; pid: number; launched?: boolean; prompt?: string; answered?: string }>;
     const qaBytes = () => (fs.existsSync(qaReceived) ? fs.readFileSync(qaReceived, 'utf8') : '');
 
     const launch = () => launchSandboxed(electron, home, {
@@ -209,7 +224,7 @@ for (const newInterface of [false, true]) {
 
       // a, c. Two delegations from the orchestrator to oc at once, and a third asked meanwhile.
       const first = lead.call('delegate_task', { id: 'oc', prompt: 'TASK-ONE review the notes', timeoutSeconds: 120 });
-      await expect.poll(() => acpEntries().filter((e) => e.prompt).length, { timeout: 30_000 }).toBe(1);
+      await expect.poll(() => ocTurns().filter((e) => e.prompt).length, { timeout: 30_000 }).toBe(1);
       const second = lead.call('delegate_task', { id: 'oc', prompt: 'TASK-TWO review the tests', timeoutSeconds: 120 });
       await new Promise((r) => setTimeout(r, 1000));
       const third = await api('/api/agents/oc/run-task', ids.lead, { task: 'TASK-THREE never run', answer: 'started' }, 'lead');
@@ -251,12 +266,13 @@ for (const newInterface of [false, true]) {
       await expect.poll(async () => (await qaNow()).cliRunning, { timeout: 15_000 }).toBe(false).catch(() => undefined);
       const qaAfterLeadStop = await qaNow();
 
-      const acp = acpEntries();
+      const turns = ocTurns();
       const report = await page.evaluate(() => (window as unknown as Api).electronAPI.usage.tasks({ sinceDays: 1 }));
-      const runs = report.tasks.filter((t) => t.source === 'acp' && t.agentId === 'oc');
+      // oc's tasks, each opened by its turn in oc's terminal (task-ledger.ts).
+      const runs = report.tasks.filter((t) => t.agentId === 'oc');
       keep({
         firstAnswer, secondAnswer, third, thirdSeen, thirdStatus, thirdCancel, devDelegate, devStart, devNote, noteDuringTurn, noteLine,
-        byTars: { status: byTars.status, ok: byTars.body.ok, text: byTars.body.text }, fakeAcp: acp, qaBytes: qaBytes(), tasks: runs,
+        byTars: { status: byTars.status, ok: byTars.body.ok, text: byTars.body.text }, ocTurns: turns, qaBytes: qaBytes(), tasks: runs,
         devStop, qaAfterDevStop, leadStop, qaAfterLeadStop,
       });
       await page.goto(`${DEV_URL}/usage`, { waitUntil: 'domcontentloaded' });
@@ -268,15 +284,18 @@ for (const newInterface of [false, true]) {
       expect.soft(firstAnswer.text).toContain('answer for TASK-ONE');
       expect.soft(secondAnswer.isError, secondAnswer.text).toBe(false);
       expect.soft(secondAnswer.text).toContain('answer for TASK-TWO');
-      const at = (key: 'prompt' | 'answered', task: string) => acp.find((e) => e[key] === task)?.at ?? NaN;
+      const at = (key: 'prompt' | 'answered', task: string) => turns.find((e) => e[key] === task)?.at ?? NaN;
       expect.soft(at('prompt', 'TASK-TWO'), 'TASK-TWO reached oc before TASK-ONE was answered').toBeGreaterThanOrEqual(at('answered', 'TASK-ONE'));
       let inFlight = 0;
       let most = 0;
-      for (const e of acp) {
+      for (const e of turns) {
         if (e.prompt) most = Math.max(most, ++inFlight);
         if (e.answered) inFlight--;
       }
       expect.soft(most, 'prompts of oc at work at once').toBe(1);
+      // And all in oc's one permanent session: one process of its CLI, launched once.
+      expect.soft(turns.filter((e) => e.launched).length, 'launches of oc\'s CLI').toBe(1);
+      expect.soft(new Set(turns.filter((e) => e.prompt).map((e) => e.pid)).size, 'processes oc\'s tasks ran in').toBe(1);
       // The third: queued behind a task from lead, said so, cancelled, never run.
       expect.soft(third.status).toBe(200);
       expect.soft(third.body.outcome).toBe('queued');
@@ -286,14 +305,14 @@ for (const newInterface of [false, true]) {
       expect.soft(thirdStatus?.text ?? '').toContain('task_status');
       expect.soft(thirdCancel?.isError ?? true, thirdCancel?.text).toBe(false);
       expect.soft(thirdCancel?.text ?? '').toContain('never started');
-      expect.soft(acp.filter((e) => e.prompt === 'TASK-THREE'), 'the cancelled task ran').toEqual([]);
+      expect.soft(turns.filter((e) => e.prompt === 'TASK-THREE'), 'the cancelled task ran').toEqual([]);
 
       // b. The worker's orders are refused, and say to ask the orchestrator; nothing of it ran.
       expect.soft(devDelegate.isError, devDelegate.text).toBe(true);
       expect.soft(devDelegate.text).toContain('Ask your orchestrator');
       expect.soft(devStart.isError, devStart.text).toBe(true);
       expect.soft(devStart.text).toContain('Ask your orchestrator');
-      expect.soft(acp.filter((e) => e.prompt === 'TASK-DEV' || e.prompt === 'TASK-DEVSTART'), "the worker's tasks ran").toEqual([]);
+      expect.soft(turns.filter((e) => e.prompt === 'TASK-DEV' || e.prompt === 'TASK-DEVSTART'), "the worker's tasks ran").toEqual([]);
       // Its message is a note, typed in only after qa's turn, and labelled so.
       expect.soft(devNote.isError, devNote.text).toBe(false);
       expect.soft(devNote.text).toContain('as a note for information');
@@ -317,7 +336,7 @@ for (const newInterface of [false, true]) {
 
       // f. Tars restarts while lead's task waits its turn on oc, behind a run of Tars's own.
       const hold = api('/api/agents/oc/run-task', ids.tars, { task: 'TASK-HOLD keep oc busy' }).catch((err: unknown) => ({ status: 0, body: { error: String(err) } }));
-      await expect.poll(() => acpEntries().some((e) => e.prompt === 'TASK-HOLD'), { timeout: 30_000 }).toBe(true);
+      await expect.poll(() => ocTurns().some((e) => e.prompt === 'TASK-HOLD'), { timeout: 30_000 }).toBe(true);
       let lostAt = 0;
       const lost = lead.call('delegate_task', { id: 'oc', prompt: 'TASK-LOST asked before the restart', timeoutSeconds: 120 }).then((answer) => { lostAt = Date.now(); return answer; });
       const queuedOnOc = () => app.evaluate((_e, { dist }) => process.mainModule!.require(`${dist}/core/one-task.js`).oneTaskQueue.queued('oc').map((t: { ref: string }) => t.ref) as string[], { dist });
@@ -337,7 +356,7 @@ for (const newInterface of [false, true]) {
       const lostStatus = await leadAgain.call('task_status', { taskId: lostRef });
       const holdAnswer = await hold;
       keep({
-        restart: { lostRef, lostAnswer, lostStatus, hold: { status: holdAnswer.status }, closedAt, relaunchedAt, answeredAt: lostAt, fakeAcp: acpEntries() },
+        restart: { lostRef, lostAnswer, lostStatus, hold: { status: holdAnswer.status }, closedAt, relaunchedAt, answeredAt: lostAt, ocTurns: ocTurns() },
       });
       expect.soft(lostAnswer.isError, lostAnswer.text).toBe(true);
       expect.soft(lostAnswer.text).toContain('Tars restarted');
@@ -348,11 +367,11 @@ for (const newInterface of [false, true]) {
       expect.soft(lostStatus.isError, lostStatus.text).toBe(true);
       expect.soft(lostStatus.text).toContain('never started');
       expect.soft(lostStatus.text).toContain('asked again');
-      expect.soft(acpEntries().filter((e) => e.prompt === 'TASK-LOST'), 'the lost task ran').toEqual([]);
+      expect.soft(ocTurns().filter((e) => e.prompt === 'TASK-LOST'), 'the lost task ran').toEqual([]);
     } finally {
       for (const s of servers) s.kill();
       await app.close().catch(() => undefined);
-      if (fs.existsSync(acpLog)) fs.copyFileSync(acpLog, test.info().outputPath('fake-acp.jsonl'));
+      if (fs.existsSync(turnsLog)) fs.copyFileSync(turnsLog, test.info().outputPath('oc-turns.jsonl'));
       await removeHome(home);
     }
   });
