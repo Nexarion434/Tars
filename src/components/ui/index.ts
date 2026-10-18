@@ -15,6 +15,8 @@ export { ErrorState } from './ErrorState';
 export { PageHeader } from './PageHeader';
 export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedOption } from './SegmentedControl';
+export { SortHeader } from './SortHeader';
+export type { SortDirection } from './SortHeader';
 export { Chip, MetaChip } from './Chip';
 export type { ChipProps } from './Chip';
 export { Panel, PanelCaption } from './Panel';

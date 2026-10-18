@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react';
 import { useMemory, formatBytes, timeAgo } from '@/hooks/useMemory';
 import type { ProjectMemory, MemoryFile, HermesMcpServer, HermesMemoryProvider } from '@/types/electron';
 import AgentKnowledgeGraph from '@/components/Memory/AgentKnowledgeGraph';
+import { useCardTitle } from '@/components/ui/CardTitle';
 import { olderCopyFolder } from '@/lib/older-copy';
 import {
   BrandSpinner,
@@ -413,6 +414,10 @@ export default function MemoryPage() {
     refresh,
   } = useMemory();
 
+  // In the card More opens (the new interface), the page fills the card
+  // rather than the window: at the window's height, the bottom of the graph
+  // was under the card's edge, past what it shows.
+  const inCard = useCardTitle() !== null;
   const [activeTab, setActiveTab] = useState<Tab>('projects');
   const [showNewFileDialog, setShowNewFileDialog] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
@@ -501,7 +506,7 @@ export default function MemoryPage() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)] overflow-hidden">
+    <div className={`flex flex-col ${inCard ? 'h-full' : 'h-[calc(100vh-7rem)] lg:h-[calc(100vh-44px)]'} overflow-hidden`}>
 
       <PageHeader
         title="Brain"
