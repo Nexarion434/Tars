@@ -9638,9 +9638,10 @@
                               "type": "rectangle",
                               "id": "NEmYT",
                               "name": "c7",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             }
                           ]
                         },
@@ -9654,33 +9655,37 @@
                               "type": "rectangle",
                               "id": "btApP",
                               "name": "c8",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "zbx5Y",
                               "name": "c9",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "op13J",
                               "name": "c10",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "b0l3F",
                               "name": "c11",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             }
                           ]
                         },
@@ -9694,33 +9699,37 @@
                               "type": "rectangle",
                               "id": "LWDHy",
                               "name": "c12",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "zpukZ",
                               "name": "c13",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "cu5Ze",
                               "name": "c14",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "kncXw",
                               "name": "c15",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 6.31,
-                              "height": 6.31
+                              "height": 6.31,
+                              "opacity": 0.16
                             }
                           ]
                         }
@@ -9914,33 +9923,37 @@
                               "type": "rectangle",
                               "id": "gKlLL",
                               "name": "c12",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 5.05,
-                              "height": 5.05
+                              "height": 5.05,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "cQjoz",
                               "name": "c13",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 5.05,
-                              "height": 5.05
+                              "height": 5.05,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "nfpv3",
                               "name": "c14",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 5.05,
-                              "height": 5.05
+                              "height": 5.05,
+                              "opacity": 0.16
                             },
                             {
                               "type": "rectangle",
                               "id": "bshOs",
                               "name": "c15",
-                              "fill": "$accent-dim",
+                              "fill": "$accent",
                               "width": 5.05,
-                              "height": 5.05
+                              "height": 5.05,
+                              "opacity": 0.16
                             }
                           ]
                         }
