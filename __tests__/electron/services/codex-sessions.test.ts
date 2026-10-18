@@ -34,6 +34,9 @@ import * as path from 'node:path';
  *    (reason `interrupted`) and no task_complete. The agent read running for good and, since codex holds its line
  *    while a turn runs, every later task waited behind a turn that was over; or the interrupt was taken for an end,
  *    and the task said completed, with the turn before's answer.
+ * 10. A session Tars resumed (`codex resume <id>`, after a restart of Tars or a sleep) never seen: measured on 0.163,
+ *    codex appends to the session's own rollout, under the day it began, and writes no new session_meta. Or its
+ *    earlier turns posted again as new, or a fresh session (or a fork) in the same folder taken for the resumed one.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -42,6 +45,7 @@ let root: string;
 let posts: Array<{ agentId: string } & HookPost>;
 let screen: Map<string, string | undefined>;
 let interrupted: Array<{ agentId: string; sessionId: string }>;
+let resumable: Map<string, string>;
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -74,6 +78,7 @@ beforeEach(() => {
   posts = [];
   screen = new Map();
   interrupted = [];
+  resumable = new Map();
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
@@ -81,6 +86,7 @@ beforeEach(() => {
     post: async (agentId, post) => { posts.push({ agentId, ...post }); },
     dialogTitle: (agentId) => screen.get(agentId),
     interrupted: (agentId, sessionId) => { interrupted.push({ agentId, sessionId }); posts.push({ agentId, path: '/api/hooks/status', body: { interruptedHere: true } }); },
+    resumableSessionOf: (agentId) => resumable.get(agentId),
   });
 });
 
@@ -151,6 +157,52 @@ describe('a turn interrupted', () => {
     await watch.tick();
     expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['done now']);
     expect(interrupted).toHaveLength(1);
+  });
+});
+
+describe('a session resumed', () => {
+  const OLD = '01a14fb7-9e95-7c81-8980-2b82c8316805';
+  /** The session as an earlier run of Tars left it: begun three days ago, its folder that day's. */
+  function oldRollout(project: string): string {
+    const dir = path.join(root, 'sessions', '2026', '10', '15');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `rollout-2026-10-15T09-00-00-${OLD}.jsonl`);
+    fs.writeFileSync(file, [meta(OLD, project), started('t0'), user('the first task'), done('t0', 'the first answer')].map(l => `${l}\n`).join(''));
+    return file;
+  }
+
+  it('10. is bound to its own rollout from where it was, told as a resume, and only its new turns are posted', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    const file = oldRollout(project);
+    resumable.set(AGENT, OLD);
+    watch.noteLaunch(AGENT, project);
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([]);
+
+    now += 2000;
+    append(file, [started('t1'), user('again'), done('t1', 'the second answer')].map(l => `${l}\n`).join(''));
+    await watch.tick();
+    expect(postsFor(AGENT)).toEqual([
+      { path: '/api/hooks/status', agent_id: AGENT, session_id: OLD, status: 'running', source: 'resume' },
+      { path: '/api/hooks/status', agent_id: AGENT, session_id: OLD, status: 'running', event: 'UserPromptSubmit', current_task: 'again' },
+      { path: '/api/hooks/output', agent_id: AGENT, session_id: OLD, hook: 'Stop', output: 'the second answer' },
+      { path: '/api/hooks/status', agent_id: AGENT, session_id: OLD, hook: 'Stop', status: 'idle' },
+      { path: '/api/hooks/agent-stopped', agent_id: AGENT, session_id: OLD, hook: 'Stop' },
+    ]);
+  });
+
+  it('10. a fresh session in that folder, or a fork, is the one bound, and the old rollout is left alone', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    const file = oldRollout(project);
+    resumable.set(AGENT, OLD);
+    watch.noteLaunch(AGENT, project);
+    now += 1500;
+    rollout(SESSION, [meta(SESSION, project), started('t1'), user('new'), done('t1', 'new answer')]);
+    await watch.tick();
+    append(file, [started('tx'), user('someone else'), done('tx', 'not this agent\'s')].map(l => `${l}\n`).join(''));
+    await watch.tick();
+    expect(new Set(postsFor(AGENT).map(p => p.session_id))).toEqual(new Set([SESSION]));
+    expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['new answer']);
   });
 });
 

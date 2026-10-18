@@ -16,6 +16,11 @@ import * as path from 'node:path';
  * 4. A permission mode turned into a flag the installed codex does not have, which is the same exit 2
  *    (codex-cli.test.ts says which flags each mode becomes; these say every builder uses them).
  * 5. A prompt that leaves its quotes: a task is user text, and the line is run by a shell or read back into argv.
+ * 6. A session Tars resumes after a restart started anew, or its id where codex does not read it. Measured on
+ *    0.163: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]` continues the session in its own rollout file, with its
+ *    conversation (asked what the turn before said, it answered it), and `codex fork <id>` goes on under a new
+ *    session, as a restart that applies new settings wants (agent-restart.ts).
+ * 7. Anything but a session id after `resume`: it reaches a command line.
  */
 
 import { CodexProvider } from '../../../electron/providers/codex-provider';
@@ -73,6 +78,32 @@ describe("an agent's terminal", () => {
     expect(argv).toEqual(expect.arrayContaining(['-c', 'model_reasoning_effort=low']));
     expect(argv[argv.length - 1]).toBe(PROMPT);
     expect(argv).not.toContain('--approve-for-me');
+  });
+});
+
+describe('a session resumed or forked', () => {
+  const ID = '01a14fb7-9e95-7c81-8980-2b82c8316805';
+
+  it('resumed: codex resume, its options, the session, then the prompt', () => {
+    const argv = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'low', permissionMode: 'auto', resumeSessionId: ID }));
+    expect(argv.slice(0, 2)).toEqual([codex016, 'resume']);
+    expect(argv).toEqual(expect.arrayContaining(['--model', 'gpt-6-luna', '-c', 'model_reasoning_effort=low', '--approve-for-me']));
+    expect(argv.slice(-2)).toEqual([ID, PROMPT]);
+  });
+
+  it('forked: codex fork; with no task, the session last', () => {
+    const fork = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, resumeSessionId: ID, forkSession: true }));
+    expect(fork.slice(0, 2)).toEqual([codex016, 'fork']);
+    expect(fork.slice(-2)).toEqual([ID, PROMPT]);
+    const bare = words(provider.buildInteractiveCommand({ binaryPath: codex016, prompt: '', resumeSessionId: ID }));
+    expect(bare.slice(0, 2)).toEqual([codex016, 'resume']);
+    expect(bare[bare.length - 1]).toBe(ID);
+  });
+
+  it('anything but a session id is never resumed', () => {
+    const line = provider.buildInteractiveCommand({ binaryPath: codex016, prompt: PROMPT, resumeSessionId: "x'; rm -rf ~; '" });
+    expect(words(line)).not.toContain('resume');
+    expect(line).not.toContain('rm -rf');
   });
 });
 
