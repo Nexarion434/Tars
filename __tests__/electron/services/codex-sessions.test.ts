@@ -37,6 +37,10 @@ import * as path from 'node:path';
  * 10. A session Tars resumed (`codex resume <id>`, after a restart of Tars or a sleep) never seen: measured on 0.163,
  *    codex appends to the session's own rollout, under the day it began, and writes no new session_meta. Or its
  *    earlier turns posted again as new, or a fresh session (or a fork) in the same folder taken for the resumed one.
+ * 11. A launch given up on while its codex still runs. Measured on 0.163: codex started with no prompt (Start in the
+ *    window, a wake) writes no rollout at all before its first turn, so a first task typed more than ten minutes
+ *    later began a session nobody's, and Tars never saw a turn of it. Or a launch whose codex is gone kept for good,
+ *    so that a later session in that folder, the user's own, is taken for the agent's.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -46,6 +50,7 @@ let posts: Array<{ agentId: string } & HookPost>;
 let screen: Map<string, string | undefined>;
 let interrupted: Array<{ agentId: string; sessionId: string }>;
 let resumable: Map<string, string>;
+let running: Set<string>;
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -79,6 +84,7 @@ beforeEach(() => {
   screen = new Map();
   interrupted = [];
   resumable = new Map();
+  running = new Set();
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
@@ -87,6 +93,7 @@ beforeEach(() => {
     dialogTitle: (agentId) => screen.get(agentId),
     interrupted: (agentId, sessionId) => { interrupted.push({ agentId, sessionId }); posts.push({ agentId, path: '/api/hooks/status', body: { interruptedHere: true } }); },
     resumableSessionOf: (agentId) => resumable.get(agentId),
+    codexRunning: (agentId) => running.has(agentId),
   });
 });
 
@@ -157,6 +164,26 @@ describe('a turn interrupted', () => {
     await watch.tick();
     expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['done now']);
     expect(interrupted).toHaveLength(1);
+  });
+});
+
+describe('a codex started with no prompt', () => {
+  it('11. is waited on while it runs, its first turn an hour later its own; once gone, a later session is nobody\'s', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    running.add(AGENT);
+    watch.noteLaunch(AGENT, project);
+    watch.noteLaunch(OTHER, project);
+    now += 60 * 60_000;
+    await watch.tick();
+    rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from Tars: the first task'), done('t1', 'done')]);
+    await watch.tick();
+    expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['done']);
+
+    const LATER = '01a14fb7-0000-7000-8000-00000000c0de';
+    now += 1000;
+    rollout(LATER, [meta(LATER, project), started('t2'), user('the user, outside Tars'), done('t2', 'not an agent\'s')]);
+    await watch.tick();
+    expect(postsFor(OTHER)).toEqual([]);
   });
 });
 
