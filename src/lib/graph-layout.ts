@@ -68,7 +68,9 @@ function bricks(from: number, to: number): Cell[] {
 /**
  * The bricks a ring of `count` boxes takes, `from` the middle out: the band
  * just deep enough to hold them, and of its bricks `count` taken evenly round
- * it, in the order they go round.
+ * it, in the order they go round, the first at the top. Every ring starts
+ * there, so a lone skill sits by the first agent that reads it, not across
+ * the graph from it.
  */
 function band(count: number, from: number): Cell[] {
   // Room for the count and a row more, then wider until it holds them: the
@@ -82,7 +84,7 @@ function band(count: number, from: number): Cell[] {
   cells.sort((p, q) => p.r - q.r || p.a - q.a || p.x - q.x || p.y - q.y);
   const reach = cells[count - 1].r;
   const held = cells.filter(c => c.r <= reach).sort((p, q) => p.a - q.a || p.r - q.r || p.x - q.x || p.y - q.y);
-  return Array.from({ length: count }, (_, i) => held[Math.floor(((i + 0.5) * held.length) / count)]);
+  return Array.from({ length: count }, (_, i) => held[Math.floor((i * held.length) / count)]);
 }
 
 export interface RingNode { id: string; ring: number; label: string }
@@ -128,16 +130,18 @@ export function ringOrder(nodes: RingNode[], edges: Array<{ source: string; targ
 }
 
 /**
- * Places the nodes of each ring, from the middle out: the first ring with any
- * node around the middle itself, each next one a band at least RING_GAP
- * beyond the ring inside it. An empty ring is skipped.
+ * Places the nodes of each ring, from the middle out: a lone node of the
+ * first ring with any in the middle itself, several around it, each next
+ * ring a band at least RING_GAP beyond the ring inside it. An empty ring is
+ * skipped.
  */
 export function layoutRings(rings: string[][]): Layout {
   const placed: Array<{ id: string; cell: Cell }> = [];
   let reach = -1;
   for (const ring of rings) {
     if (ring.length === 0) continue;
-    const cells = band(ring.length, reach < 0 ? 0 : reach + RING_GAP);
+    const from = reach >= 0 ? reach + RING_GAP : ring.length === 1 ? 0 : 1;
+    const cells = band(ring.length, from);
     ring.forEach((id, i) => placed.push({ id, cell: cells[i] }));
     reach = Math.max(...cells.map(c => c.r));
   }
