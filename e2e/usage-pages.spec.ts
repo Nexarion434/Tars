@@ -20,7 +20,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 5. the averages page on their own: per agent five rows of twelve, per model five of six, and per model page 2 is
  *    "6 of 6";
  * 6. the choice is remembered per card: the page opened again, the agents table shows ten rows, the averages five;
- * 7. By task lists the twelve tasks as before, with no pager; By agent again pages at ten from page 1.
+ * 7. By task lists the twelve tasks as before, with no pager; By agent again pages at ten from page 1;
+ * and the pager's arrows are drawn whole (12 px), not squeezed into a small button's padding (red on 421c9534).
  * Red on 94ed3211 (the code before the pager): every row shows and there is no pager.
  * The artefact: values.json with the rows and pagers read at each step, in both shells, and their screenshots.
  */
@@ -140,6 +141,10 @@ for (const newInterface of [false, true]) {
       await expect.soft(pager('Agents').getByRole('button', { name: 'Page 1' }), 'page 1 shown').toHaveAttribute('aria-current', 'page');
       await expect.soft(pager('Agents').getByRole('button', { name: 'Page 3' }), 'three pages').toBeVisible();
       await expect.soft(pager('Agents').getByRole('button', { name: 'Previous page' }), 'previous off').toBeDisabled();
+      // The arrows drawn whole: a padding left on a small button squeezed them into 4 px.
+      const arrow = (await pager('Agents').count()) ? await pager('Agents').getByRole('button', { name: 'Next page' }).locator('svg').boundingBox() : null;
+      seen.nextArrowWidth = arrow?.width ?? null;
+      expect.soft(arrow?.width ?? 0, 'the next arrow is drawn whole').toBeGreaterThanOrEqual(10);
       await shot('01-agents-page-1');
 
       // 2. The next page, then the last.
