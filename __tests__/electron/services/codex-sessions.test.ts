@@ -59,6 +59,11 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  *    settled as nobody's for good and never followed; or bound on no evidence. It is asked again, 1, 2, 4, 8 and 16 s
  *    apart, six times in all; a failure never binds, and once given up on, the session is nobody's. Where a
  *    process's files cannot be listed at all (Windows) it is not asked again: it never will be learned.
+ * 16. A codex that asks to sign in, unseen (the Audit's L7 on #465): its home has no login (Tars's, which it is
+ *    handed, while the user's rc files set another, where their login is), and codex 0.163 then shows its sign-in
+ *    screen and writes no session: the agent read as starting, then running. Why is asked at its launch
+ *    (codexSignInGap, codex-sign-in.test.ts) and said in its status, once; never once its session came (it was
+ *    signed in after all), nor for a launch a later one replaced, nor when nothing keeps it from signing in.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -78,6 +83,9 @@ let failingLookups: number;
 let askedHolder: string[];
 /** When each lookup was made, by the watch's clock. */
 let askedAt: number[];
+/** Why an agent's codex will start not signed in, as each launch asks it; and what was said of it. */
+let gapOf: (agentId: string) => Promise<string | undefined>;
+let said: Array<{ agentId: string; text: string }>;
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -151,6 +159,8 @@ beforeEach(() => {
   failingLookups = 0;
   askedHolder = [];
   askedAt = [];
+  gapOf = async () => undefined;
+  said = [];
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
@@ -169,6 +179,8 @@ beforeEach(() => {
       return holder !== undefined && agentIds.includes(holder) ? holder : null;
     },
     openFilesReadable: () => !openFilesUnread,
+    signInGapOf: (agentId) => gapOf(agentId),
+    notSignedIn: (agentId, text) => { said.push({ agentId, text }); },
   });
 });
 
@@ -471,6 +483,50 @@ describe('whose session it is', () => {
     await watch.tick();
     expect(outputsOf(OTHER)).toEqual(['A']);
     expect(outputsOf(AGENT)).toEqual(['B']);
+  });
+});
+
+describe('a codex that asks to sign in', () => {
+  const WHY = "codex asks to sign in: Tars starts it on ~/.codex, and your login is in ~/elsewhere, the CODEX_HOME your shell sets.";
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('16. is said at its launch, once, while the launch waits for its session', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    gapOf = async () => WHY;
+    watch.noteLaunch(AGENT, project);
+    await settle();
+    await watch.tick();
+    expect(said).toEqual([{ agentId: AGENT, text: WHY }]);
+  });
+
+  it('16. is not said once its session came, nor for a launch a later one replaced', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    const answers: Array<(text: string | undefined) => void> = [];
+    gapOf = () => new Promise(resolve => { answers.push(resolve); });
+    watch.noteLaunch(AGENT, project);
+    now += 1000;
+    rollout(SESSION, [meta(SESSION, project), started('t1'), user(`[Tars: you are agent "Cody" (id ${AGENT}), worker of project ${project}.]\n\nhello`), done('t1', 'signed in after all')]);
+    await watch.tick();
+    expect(outputsOf(AGENT)).toEqual(['signed in after all']);
+    answers[0](WHY);
+    await settle();
+    expect(said).toEqual([]);
+
+    watch.noteLaunch(OTHER, project);
+    watch.noteLaunch(OTHER, project);
+    answers[1](WHY);
+    await settle();
+    expect(said, 'said for a launch a later one replaced').toEqual([]);
+    answers[2](WHY);
+    await settle();
+    expect(said).toEqual([{ agentId: OTHER, text: WHY }]);
+  });
+
+  it('16. nothing is said when nothing keeps it from signing in', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(AGENT, project);
+    await settle();
+    expect(said).toEqual([]);
   });
 });
 
