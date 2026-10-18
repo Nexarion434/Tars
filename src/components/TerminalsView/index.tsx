@@ -458,6 +458,9 @@ export default function TerminalsView() {
   }, [stopAgent, multiTerminal.unregisterContainer, hiddenAgents.hide, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.removeAgentFromTab]);
 
   const handleFocusPanel = useCallback((agentId: string) => {
+    // A card picked by hand wins over a focus still waiting for its terminal (the orchestrator layout's, or Ctrl+Tab's):
+    // that terminal, ready later, would take the keys back from the card just clicked.
+    if (pendingFocusRef.current !== agentId) pendingFocusRef.current = null;
     setFocusedPanelId(agentId);
     multiTerminal.focusTerminal(agentId);
     if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
