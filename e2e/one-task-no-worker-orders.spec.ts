@@ -61,8 +61,7 @@ if (process.stdin.isTTY) {
   // Started in its terminal (the window's Start), not over ACP: a stand-in that records every byte typed into it.
   process.stdin.setRawMode(true);
   process.stdin.on('data', (d) => fs.appendFileSync(process.env.FAKE_ACP_LOG + '.typed', d));
-  process.stdout.write('opencode ready
-');
+  process.stdout.write('opencode ready' + String.fromCharCode(10));
   return;
 }
 const log = (entry) => fs.appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ at: Date.now(), pid: process.pid, ...entry }) + '\n');
