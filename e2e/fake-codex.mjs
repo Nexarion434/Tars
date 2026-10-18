@@ -8,7 +8,9 @@
 // - for `SEND <agent> <text>` it starts Tars's MCP server from its config.toml as codex does, with HOME, PATH, TERM
 //   and the variables `env_vars` names (nothing else: measured with a probe server on 0.163), and calls
 //   send_message;
-// - it reads what is typed into it as codex's composer does: a bracketed paste, then Enter.
+// - it reads what is typed into it as codex's composer does: a bracketed paste, then Enter;
+// - in a folder its config.toml does not trust (`[projects."<real path>"] trust_level = "trusted"`), it first asks
+//   "Trust this folder?" and starts no session until it is answered.
 // Every launch and turn is logged to FAKE_CODEX_LOG, one JSON line each, with whether the agent's token was in its
 // environment, never the token.
 import fs from 'node:fs';
@@ -71,18 +73,35 @@ const asks = !opts.approveForMe && !opts.bypass && opts.approval !== 'never';
 log({ launch: true, argv, cwd: process.cwd(), token: !!process.env.CLAUDE_MGR_API_TOKEN, model: opts.model, effort, asks });
 
 const home = process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex');
-const started = new Date();
-const pad = (n) => String(n).padStart(2, '0');
-const dir = path.join(home, 'sessions', String(started.getFullYear()), pad(started.getMonth() + 1), pad(started.getDate()));
-fs.mkdirSync(dir, { recursive: true });
-const sessionId = randomUUID();
-const stamp = `${started.getFullYear()}-${pad(started.getMonth() + 1)}-${pad(started.getDate())}T${pad(started.getHours())}-${pad(started.getMinutes())}-${pad(started.getSeconds())}`;
-const rollout = path.join(dir, `rollout-${stamp}-${sessionId}.jsonl`);
-const write = (type, payload) => fs.appendFileSync(rollout, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
-write('session_meta', { id: sessionId, session_id: sessionId, cwd: process.cwd(), source: 'cli', originator: 'codex-tui', cli_version: '0.163.0', timestamp: started.toISOString() });
-
 const out = (text) => process.stdout.write(text.replace(/\n/g, '\r\n'));
-out('>_ OpenAI Codex (v0.163.0)\n\n› ');
+
+/** Whether config.toml trusts this folder, by its real path, as codex 0.163 reads it. */
+function trusted(dir) {
+  let toml = '';
+  try { toml = fs.readFileSync(path.join(home, 'config.toml'), 'utf8'); } catch { return false; }
+  const header = `[projects.${JSON.stringify(dir)}]`;
+  const at = toml.indexOf(header);
+  if (at < 0) return false;
+  return /^trust_level\s*=\s*"trusted"/m.test(toml.slice(at + header.length).split(/\n\[/)[0]);
+}
+
+let booted = false;
+/** The session's log, once the session begins (after the trust question, when there is one). */
+let write = () => {};
+function boot() {
+  booted = true;
+  const started = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dir = path.join(home, 'sessions', String(started.getFullYear()), pad(started.getMonth() + 1), pad(started.getDate()));
+  fs.mkdirSync(dir, { recursive: true });
+  const sessionId = randomUUID();
+  const stamp = `${started.getFullYear()}-${pad(started.getMonth() + 1)}-${pad(started.getDate())}T${pad(started.getHours())}-${pad(started.getMinutes())}-${pad(started.getSeconds())}`;
+  const rollout = path.join(dir, `rollout-${stamp}-${sessionId}.jsonl`);
+  write = (type, payload) => fs.appendFileSync(rollout, JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n');
+  write('session_meta', { id: sessionId, session_id: sessionId, cwd: process.cwd(), source: 'cli', originator: 'codex-tui', cli_version: '0.163.0', timestamp: started.toISOString() });
+  out('>_ OpenAI Codex (v0.163.0)\n\n› ');
+  if (opts.prompt) queue(opts.prompt);
+}
 
 let dialog = null; // the key the open approval dialog waits for
 function ask(tag) {
@@ -170,12 +189,16 @@ async function turn(text) {
 
 let busy = Promise.resolve();
 const queue = (text) => { busy = busy.then(() => turn(text)); };
-if (opts.prompt) queue(opts.prompt);
 
 let typed = '';
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.on('data', (chunk) => {
   const data = chunk.toString('utf8');
+  if (!booted) {
+    if (/[1y\r]/.test(data)) boot();
+    else if (/[2n\x1b]/.test(data)) process.exit(0);
+    return;
+  }
   if (dialog) {
     if (/[y\r]/.test(data)) { const d = dialog; dialog = null; d(true); }
     else if (/[\x1bn]/.test(data)) { const d = dialog; dialog = null; d(false); }
@@ -190,3 +213,9 @@ process.stdin.on('data', (chunk) => {
   }
 });
 process.stdin.resume();
+const cwd = fs.realpathSync(process.cwd());
+if (trusted(cwd)) boot();
+else {
+  log({ trustAsked: true, cwd });
+  out('> You are in ' + cwd + '\n\n  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.\n\n› 1. Yes, continue\n  2. No, quit\n\n  Press enter to continue\n');
+}
