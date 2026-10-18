@@ -28,6 +28,10 @@ import { HERMES_SIGNED_OUT } from '../../../electron/services/kanban-board';
  *    signed out, or asks anything at all of a gateway nobody configured;
  * 7. a refusal racing a check tells the window twice for one change;
  * 8. stop() leaves the timer running.
+ * 9. one refused call (a 401 during a gateway's refresh, say) keeps the window on
+ *    signed out until the next check, half an hour on, while every call after it
+ *    works; or a burst of refusals asks the gateway once per refusal (the Audit's
+ *    L2 on #452).
  */
 
 afterEach(() => { vi.useRealTimers(); });
@@ -98,6 +102,28 @@ describe('the Hermes session watch', () => {
     expect(w.state()).toMatchObject({ version: '0.22.0', unmeasured: true });
     await w.checkNow();
     expect(w.state().unmeasured).toBe(true);
+  });
+
+  it('9. asks again within a minute of a refused call, once for a burst, and says signed in again while the session works', async () => {
+    vi.useFakeTimers();
+    const { w, check, seen } = watch([signedIn, signedIn, { ...signedIn, signedIn: false }], 30 * 60_000);
+    w.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(check).toHaveBeenCalledTimes(1);
+    w.refused();
+    w.refused();
+    w.refused();
+    expect(w.state().session).toBe('signed-out');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check, 'one check for the burst').toHaveBeenCalledTimes(2);
+    expect(w.state().session).toBe('signed-in');
+    // A session the gateway has really ended stays signed out after the check.
+    w.refused();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(check).toHaveBeenCalledTimes(3);
+    expect(w.state().session).toBe('signed-out');
+    expect(seen.map(s => s.session)).toEqual(['signed-in', 'signed-out', 'signed-in', 'signed-out']);
+    w.stop();
   });
 
   it('6. stays quiet with no Hermes configured, or one that asks for no sign-in', async () => {

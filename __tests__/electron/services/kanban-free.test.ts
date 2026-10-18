@@ -46,6 +46,11 @@ import { FakeHermes } from '../../fixtures/fake-hermes';
  *     "0.21.10", a canary) is taken as measured; or no version at all is;
  * 18b. a task Tars files itself (fileParkedTask: the error triage's, the local board's)
  *     carries no mark, or carries it twice;
+ * 21b. on such a Hermes, finishing goes through `ready` on the agent's lane;
+ *     when `done` is then refused, the task is left `ready` there, the one state
+ *     not proven safe on that version, and the agent is told nothing was written,
+ *     or, the session lapsing between the two calls, only that Tars is signed
+ *     out (the Audit's M1 on #452);
  * 23. a note Tars writes on the board beside a claim or a release ("Claimed by",
  *     "Released by") is refused, and the tool says nothing of it: the board then
  *     shows no trace of who took the task, while the agent was told all went well.
@@ -201,6 +206,65 @@ describe('21. a task claimed scheduled is reported on, finished and released fro
       expect(h.exposures(id)).toEqual([]);
       expect(h.spawnable()).not.toContain(id);
       for (const x of h.history.get(id)!) expect(x.assignee ?? '').toMatch(/^tars:/);
+    }
+  });
+});
+
+describe('21b. a done refused after the ready it needs, on an unmeasured Hermes', () => {
+  async function claimedOnUnmeasured() {
+    h.hermesVersion = '0.22.0';
+    const id = await filed(dune, 'Finish me');
+    expect((await claimTask(h, dune, id)).ok).toBe(true);
+    expect(h.tasks.get(id)!.status).toBe('scheduled');
+    return id;
+  }
+
+  it('puts the task back to scheduled and says what was written', async () => {
+    const id = await claimedOnUnmeasured();
+    const realUpdate = h.update.bind(h);
+    h.update = async (taskId, patch) => (patch.status === 'done' ? { success: false as const, error: 'completion blocked' } : realUpdate(taskId, patch));
+    const r = await completeTask(h, dune, id, 'Done.');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain(`Task ${id} was moved to ready on your lane, then back to scheduled`);
+      expect(r.error).not.toContain('Nothing was written');
+    }
+    expect(h.tasks.get(id)!.status).toBe('scheduled');
+    expect(h.tasks.get(id)!.assignee).toBe(laneOf(dune.agentId));
+  });
+
+  it('says the task is still ready when it cannot be put back', async () => {
+    const id = await claimedOnUnmeasured();
+    const realUpdate = h.update.bind(h);
+    let readied = false;
+    h.update = async (taskId, patch) => {
+      if (patch.status === 'ready') { readied = true; return realUpdate(taskId, patch); }
+      if (readied && (patch.status === 'done' || patch.status === 'scheduled')) return { success: false as const, error: 'the gateway is restarting' };
+      return realUpdate(taskId, patch);
+    };
+    const r = await completeTask(h, dune, id, 'Done.');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain('ready');
+      expect(r.error).toContain('could not be put back');
+      expect(r.error).not.toContain('Nothing was written');
+    }
+    expect(h.tasks.get(id)!.status).toBe('ready');
+  });
+
+  it('says so beside the signed-out sentence when the session lapses between the two calls', async () => {
+    const id = await claimedOnUnmeasured();
+    const realUpdate = h.update.bind(h);
+    h.update = async (taskId, patch) => {
+      const r = await realUpdate(taskId, patch);
+      if (patch.status === 'ready') h.signedOut = true;
+      return r;
+    };
+    const r = await completeTask(h, dune, id, 'Done.');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.startsWith(HERMES_SIGNED_OUT)).toBe(true);
+      expect(r.error).toContain(`Task ${id} was moved to ready on your lane`);
     }
   });
 });
