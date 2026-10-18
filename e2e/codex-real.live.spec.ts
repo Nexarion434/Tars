@@ -8,9 +8,10 @@ import { launchSandboxed, recordValues, removeHome, stepShot } from './fixture.m
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * The real codex in Tars, once (2.0.4): an agent created on codex, in auto at low effort on gpt-6-luna, starts in a
- * project folder codex has never seen, answers its first task, and sends a message to a claude agent through the
- * Tars MCP server inside codex, with its own identity.
+ * The real codex in Tars, once (2.0.4): an agent created on codex, in auto at low effort on gpt-6-luna, is handed a
+ * task with delegate_task, so Tars starts its codex with it in a project folder codex has never seen; it sends a
+ * message to a claude agent through the Tars MCP server inside codex, with its own identity, and delegate_task
+ * returns its answer, read from codex's session log.
  *
  * codex is the user's own install (E2E_CODEX), signed in with the user's ChatGPT account through a link to
  * ~/.codex/auth.json in the sandbox's CODEX_HOME: never a copy, so a token codex refreshes is the one file, and the
@@ -131,7 +132,7 @@ test('the real codex starts in a new folder, answers, and messages a claude agen
     mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
     const calls: Array<{ tool: string; text: string; isError: boolean }> = [];
     const lead = async (tool: string, args: Record<string, unknown>) => {
-      const reply = await Promise.race([rpc('tools/call', { name: tool, arguments: args }), sleep(240_000).then(() => ({ error: `${tool} gave no answer in 240 s` }) as Reply)]);
+      const reply = await Promise.race([rpc('tools/call', { name: tool, arguments: args }), sleep(300_000).then(() => ({ error: `${tool} gave no answer in 300 s` }) as Reply)]);
       const answer = { tool, text: reply.result?.content?.map(c => c.text ?? '').join('\n') ?? JSON.stringify(reply.error), isError: !!reply.result?.isError || !!reply.error };
       calls.push(answer);
       keep({ calls });
@@ -142,11 +143,11 @@ test('the real codex starts in a new folder, answers, and messages a claude agen
     const made = await lead('create_agent', { name: 'Cody', provider: 'codex', projectPath: project, model: 'gpt-6-luna', effort: 'low', permissionMode: 'auto' });
     const cody = made.text.match(/with ID: ([0-9a-f-]{36})/)?.[1] ?? '';
     expect(cody, made.text).toBeTruthy();
-    await lead('send_message', {
+    const done = await lead('delegate_task', {
       id: cody,
-      message: `Use the send_message tool of the claude-mgr-orchestrator MCP server once: id "${CLAIRE}", message "hello from real codex ${nonce}". Then reply with exactly: DONE ${nonce}`,
+      prompt: `Use the send_message tool of the claude-mgr-orchestrator MCP server once: id "${CLAIRE}", message "hello from real codex ${nonce}". Then reply with exactly: DONE ${nonce}`,
+      timeoutSeconds: 240,
     });
-    const done = await lead('wait_for_agent', { id: cody, timeoutSeconds: 200 });
     await expect.poll(typedIntoClaire, { timeout: 20_000 }).toContain(nonce).catch(() => {});
     const events = rollout();
     const context = events.find(e => e.type === 'turn_context')?.payload as { model?: string; collaboration_mode?: { settings?: { reasoning_effort?: string } }; approvals_reviewer?: string } | undefined;
