@@ -75,6 +75,11 @@ import { EventEmitter } from 'node:events';
  * 22. (D4) A task held in the writer (a person typing) gives its turn back
  *     before it is written, and the next task is typed behind it, into the
  *     same turn.
+ *
+ * Added after the Audit's gate of 8f4f1fd7 (M-B), failures first:
+ * 23. A task whose turn came, held in the writer by a draft and taken back by
+ *     its asker's cancel, keeps the turn for good: every later task to that
+ *     agent queues behind a task that no longer exists, until Tars restarts.
  */
 
 type FakePty = { pid: number; process: string; write: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn>; resize: ReturnType<typeof vi.fn>; onData: ReturnType<typeof vi.fn>; onExit: ReturnType<typeof vi.fn> };
@@ -621,6 +626,32 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
     await later(5000);
     expect(typedInto(terminal), 'T never went in').toContain('TASK-T');
     expect(typedInto(terminal), "U typed behind T, into T's turn").not.toContain('TASK-U');
+  });
+
+  it('23. a task whose turn came, held by a draft and cancelled by its asker, gives the turn back: the next task runs', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(50);
+    const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
+    await t.done;
+    expect(t.answer()?.data).toMatchObject({ mode: 'queued' });
+    // An arrow key in the field, a draft Tars cannot restore: T's turn comes and T is held there.
+    writeHumanInput(terminal as never, '\x1b[A');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).not.toContain('TASK-T');
+    const c = call('POST', `/api/tasks/${String(t.answer()?.data.taskRef)}/cancel`, {}, 'orch');
+    await c.done;
+    expect(c.answer()?.data).toMatchObject({ success: true });
+    await later(2000);
+    expect(oneTaskQueue.busyRun('cl'), 'the cancelled task still holds the turn').toBeUndefined();
+    const z = call('POST', '/api/agents/cl/run-task', { task: 'TASK-Z next', answer: 'started' }, 'orch');
+    await later(3000);
+    expect(z.answer()?.data, 'queued behind a task that no longer exists').not.toMatchObject({ queued: true });
+    expect(runs, 'the next task never started').toHaveLength(2);
+    const q = call('GET', `/api/tasks/${String(t.answer()?.data.queuedTask)}`, {}, 'orch');
+    await q.done;
+    expect(q.answer()?.data, 'said starting for ever').toMatchObject({ task: { outcome: 'error', error: 'It never started: it was cancelled.' } });
   });
 });
 
