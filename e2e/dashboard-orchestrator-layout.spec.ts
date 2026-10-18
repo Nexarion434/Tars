@@ -97,6 +97,11 @@ for (const newInterface of [false, true]) {
       };
       const tab = (name: string) => page.getByRole('button', { name, exact: true });
       const panel = (id: string) => page.locator(`[data-agent-panel="${id}"]`);
+      /** A project's board on screen: its tab clicked only when it is not shown, since a click on the tab shown turns it off. */
+      const showProject = async (name: string) => {
+        if (!(await panel(`${name}-0`).isVisible())) await tab(name).click();
+        await expect(panel(`${name}-0`)).toBeVisible({ timeout: 30_000 });
+      };
       const board = () => page.locator('[data-board-layout]');
       const sw = () => page.getByRole('radiogroup', { name: 'Board layout' });
       const box = async (id: string): Promise<Box | null> => panel(id).boundingBox();
@@ -107,9 +112,16 @@ for (const newInterface of [false, true]) {
         return { board: b, w: (b.width - 16) / 3, h: Math.max(80, (b.height - 24) / 2) };
       };
       const scrollbarOf = () => page.locator('[data-board-column]').evaluate((el) => (el as HTMLElement).offsetWidth - (el as HTMLElement).clientWidth);
-      /** The last size the agent's CLI printed: what its terminal told the PTY after the fit addon sized it. */
+      /**
+       * The last size the agent's CLI printed: what its terminal told the PTY after the fit addon sized it. Read from the
+       * main process's copy of the terminal (agent:get), not the panel's: xterm draws nothing for a terminal out of
+       * sight, such as a card below the column's fold, though its fit and its PTY's size go on.
+       */
       const sizeOf = async (id: string) => {
-        const text = await panel(id).locator('.xterm-rows').innerText().catch(() => '');
+        const text = await page.evaluate(async (i) => {
+          const api = (window as unknown as { electronAPI: { agent: { get: (id: string) => Promise<{ output?: string[] } | null> } } }).electronAPI;
+          return ((await api.agent.get(i))?.output ?? []).join('');
+        }, id);
         const all = [...text.matchAll(/\[size (\d+)x(\d+)\]/g)];
         const last = all[all.length - 1];
         return last ? { cols: Number(last[1]), rows: Number(last[2]) } : null;
@@ -173,7 +185,7 @@ for (const newInterface of [false, true]) {
       await shot('02-tars-keys');
 
       // 3. six: the column's cards are the equal grid's, their CLI too.
-      await tab('six').click();
+      await showProject('six');
       await expect.poll(layoutOf).toBe('orchestrator');
       await expect.poll(focusedPanel, { timeout: 15_000 }).toBe('six-0');
       await start(ids('six'));
@@ -196,13 +208,13 @@ for (const newInterface of [false, true]) {
       await shot('04-six-equal-grid');
 
       // 4. The choice is kept per project, and across a reload.
-      await tab('seven').click();
+      await showProject('seven');
       await expect.poll(layoutOf).toBe('orchestrator');
-      await tab('six').click();
+      await showProject('six');
       await expect.poll(layoutOf).toBe('grid');
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('[data-agent-panel]').first()).toBeVisible({ timeout: 90_000 });
-      await tab('six').click();
+      await showProject('six');
       await expect.poll(layoutOf).toBe('grid');
       await expect(sw().getByRole('radio', { name: 'Equal grid' })).toHaveAttribute('aria-checked', 'true');
       await sw().getByRole('radio', { name: 'Orchestrator' }).click();
@@ -210,7 +222,7 @@ for (const newInterface of [false, true]) {
       seen.kept = { six: 'grid after a reload', seven: 'orchestrator', back: 'orchestrator' };
 
       // 5. seven: six cards in the column, the last reached by the wheel.
-      await tab('seven').click();
+      await showProject('seven');
       await expect.poll(layoutOf).toBe('orchestrator');
       const column = page.locator('[data-board-column]');
       const colBox = (await column.boundingBox())!;
@@ -227,7 +239,7 @@ for (const newInterface of [false, true]) {
       await shot('05-seven-column-scrolled');
 
       // 6. duo: one other card, the whole height.
-      await tab('duo').click();
+      await showProject('duo');
       await expect.poll(layoutOf).toBe('orchestrator');
       const duo = await Promise.all(ids('duo').map(box));
       seen.duo = duo;
@@ -235,14 +247,14 @@ for (const newInterface of [false, true]) {
       await shot('06-duo');
 
       // 7. harbor: no orchestrator, no switch, the grid.
-      await tab('harbor').click();
+      await showProject('harbor');
       await expect.poll(layoutOf).toBe('grid');
       await expect(sw()).toHaveCount(0);
       seen.harbor = await Promise.all(ids('harbor').map(box));
       await shot('07-harbor-no-orchestrator');
 
       // 8. Fullscreen fills the window and gives the layout back.
-      await tab('tars').click();
+      await showProject('tars');
       await expect.poll(layoutOf).toBe('orchestrator');
       await panel('tars-2').getByRole('button', { name: 'Fullscreen', exact: true }).click();
       await expect.poll(async () => (await box('tars-2'))?.width ?? 0).toBeGreaterThan(1400);
@@ -253,7 +265,7 @@ for (const newInterface of [false, true]) {
 
       // 9. The narrowest window.
       await page.setViewportSize({ width: 1200, height: 800 });
-      await tab('six').click();
+      await showProject('six');
       await expect.poll(layoutOf).toBe('orchestrator');
       await page.waitForTimeout(800);
       const small = await gridCell();
