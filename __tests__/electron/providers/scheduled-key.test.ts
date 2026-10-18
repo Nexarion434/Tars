@@ -39,8 +39,8 @@ let record: string;
 
 beforeAll(() => {
   bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sched-bin-'));
-  // node, and nothing else of the machine's: no jq.
-  fs.symlinkSync(process.execPath, path.join(bin, 'node'));
+  // node, and nothing else of the machine's: no jq. A script, not a link: the suite's guard reads a link's target.
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
   record = path.join(bin, 'claude.record');
   claude = path.join(bin, 'claude');
   fs.writeFileSync(claude, `#!/bin/sh\n{ echo "AUTH=\${ANTHROPIC_AUTH_TOKEN-<unset>}"; echo "API=\${ANTHROPIC_API_KEY-<unset>}"; echo "BASE=\${ANTHROPIC_BASE_URL-<unset>}"; echo "ARGS=$*"; } > '${record}'\n`, { mode: 0o755 });
