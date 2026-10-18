@@ -2007,7 +2007,7 @@ up. An orchestrator is never put to sleep. SPECS.md, "An agent asleep", has the 
 | Symptom | Cause |
 |---|---|
 | An agent at rest for hours never sleeps | something keeps it: a timer of its own (a `/loop` ScheduleWakeup, a CronCreate) or a background agent its CLI runs, as its last Stop hook counted them (`STOP hook` lines in `/tmp/dorothy-hooks.log`), a process under its CLI (a dev server, a background task: `ps -A -o pid,ppid,command \| grep -A8 claude`), a draft in its field, a message, note or question waiting for it, an agent still holding work it handed out, or a conversation Tars cannot resume (a provider other than claude, or no transcript) |
-| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`), so there was nothing to resume |
+| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`; a codex agent's rollout, `$CODEX_HOME/sessions/<y>/<m>/<d>/rollout-*-<session>.jsonl`), so there was nothing to resume |
 | Its pane is blank while it sleeps | Tars restarted since it fell asleep: the last screen is kept in memory only, by choice (SPECS.md, "An agent asleep") |
 
 ### Agent stuck in the wrong directory
