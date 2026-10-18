@@ -564,13 +564,6 @@ export interface HermesSshConfig {
   localPort?: number;
 }
 
-/**
- * The relay to the user's Telegram through their Hermes (electron/services/hermes-relay.ts), as Settings, Hermes shows
- * it. `state`: off (the switch, hermesRelayEnabled, is off); ready; unreachable (Hermes did not answer); not-configured
- * (the tars-relay plugin has no user id on the server); plugin-missing (not installed on the server); unauthorized
- * (the dashboard token was refused); no-connection (no Hermes connection saved). `waiting`: sends Hermes has not
- * taken yet, which go when it does.
- */
 /** Tars's Hermes session as the main process watches it (electron/services/hermes-session-watch.ts). */
 export interface HermesSessionState {
   /** `none`: no Hermes configured, or one that asks for no sign-in. */
@@ -583,6 +576,13 @@ export interface HermesSessionState {
   checkedAt?: string;
 }
 
+/**
+ * The relay to the user's Telegram through their Hermes (electron/services/hermes-relay.ts), as Settings, Hermes shows
+ * it. `state`: off (the switch, hermesRelayEnabled, is off); ready; unreachable (Hermes did not answer); not-configured
+ * (the tars-relay plugin has no user id on the server); plugin-missing (not installed on the server); unauthorized
+ * (the dashboard token was refused); no-connection (no Hermes connection saved). `waiting`: sends Hermes has not
+ * taken yet, which go when it does.
+ */
 export interface HermesRelayStatus {
   enabled: boolean;
   state: 'off' | 'ready' | 'unreachable' | 'not-configured' | 'plugin-missing' | 'unauthorized' | 'no-connection';

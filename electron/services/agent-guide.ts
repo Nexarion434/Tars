@@ -76,7 +76,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'The board is Hermes\'s, shown on the Kanban page of Tars: one space per project, one lane per agent. The kanban tools reach it through Tars, for your project only.',
-      'File a task with `create_task` when there is work nobody holds yet: a follow-up you found, a defect outside your task, something the user should decide. It arrives parked in the backlog, where Hermes never starts it, and its description says it is Tars\'s agents\': Hermes, and its own assistant reading the board, leave it alone.',
+      'File a task with `create_task` when there is work nobody holds yet: a follow-up you found, a defect outside your task, something the user should decide. It arrives parked in the backlog, where Hermes never starts it; its description says it is Tars\'s agents\', for whoever opens it.',
       'Claim a task with `assign_task` before you work on it (one at a time); report with `update_task_progress`; finish it with `mark_task_done` and a one to three sentence summary. `move_task` moves a task you hold between backlog, ongoing and done; planned is the user\'s: it hands a task to Hermes, and only the user does that. `list_tasks` and `get_task` read the board; `delete_task` removes a task you filed by mistake.',
       'On a Hermes whose version Tars has not measured, a task you claim stays `scheduled` on Hermes (`list_tasks` shows it ongoing, Hermes: scheduled): it is yours all the same, and `mark_task_done` finishes it.',
       'An orchestrator files the work it splits, so the user sees it on the board, and its workers claim and finish their own.',

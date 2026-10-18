@@ -1667,8 +1667,10 @@ an existing Hermes profile; a task cannot be created `scheduled`, nor moved from
 `mark_task_done` writes one when the agent gave none.
 
 - **Every task Tars files says it is Tars's agents'**: a line before `Filed by`, "Tars task: it
-  belongs to Tars's agents, ... Hermes does not take, start, promote or decompose it.", for
-  whoever reads the board, Hermes's own assistant included.
+  belongs to Tars's agents, ... Hermes does not take, start, promote or decompose it.", a label
+  for whoever opens the task. It keeps nobody off it: Hermes's dispatcher keeps off by its own rules
+  (above), and Hermes's assistant, whose board listing does not show a description, can still
+  finish, block or unblock it.
 - **A Hermes whose version was not measured** (`MEASURED_HERMES_VERSIONS` in `kanban-board.ts`,
   read from `/api/status` once a minute): a claim moves the lane only and the task stays
   `scheduled`, the one state safe on every version measured. Finishing it goes through `ready`
