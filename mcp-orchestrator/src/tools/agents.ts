@@ -311,6 +311,8 @@ type RunAnswer = {
   result?: string;
   toolCalls?: string[];
   backgroundStopped?: string[];
+  /** Background work the task's turn left running when it ended (2.0.4): never waited for. */
+  backgroundLeft?: string[];
   usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; costUSD?: number | null };
   costUSD?: number;
   error?: string;
@@ -347,8 +349,11 @@ function runText(run: RunAnswer, modelNote: string): ToolResult {
   ].filter(Boolean).join(" | ");
   const ok = run.ok ?? run.outcome === "completed";
   const why = !ok && run.error ? `\n${run.error}` : "";
+  const left = run.backgroundLeft?.length
+    ? `\nstill running in the background: ${run.backgroundLeft.join(", ")} (the task ended with its turn; that work goes on in the agent's session)`
+    : "";
   return {
-    content: [{ type: "text", text: `${run.text || run.result || "(the agent produced no text)"}\n\n---\n${meta}${why}${modelNote}` }],
+    content: [{ type: "text", text: `${run.text || run.result || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}${modelNote}` }],
     isError: !ok,
   };
 }

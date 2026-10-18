@@ -1,6 +1,6 @@
 import { agents } from '../core/agent-manager';
 import { oneTaskQueue } from '../core/one-task';
-import { ptyProcesses } from '../core/pty-manager';
+import { ptyProcesses, withdrawWaiting } from '../core/pty-manager';
 import { cliRunningIn } from '../core/agent-pty';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { interruptTurn } from './bus-delivery';
@@ -45,6 +45,9 @@ export function announceTask(agentId: string): void {
  * ends its turn (Esc, as the window's own interrupt), never the session,
  * which keeps its conversation and its background work; a task that waits
  * leaves the line and never starts. Any other ref is no task of this agent's.
+ * A task in hand whose turn has not begun (held in the terminal's writer by a
+ * draft) is taken back there, as a cancel takes it: an Esc then would reach
+ * whatever else runs, and the task would go in after (the Audit's L1 on #453).
  */
 export async function stopTask(agentId: string, ref: string): Promise<{ success: boolean; stopped?: 'turn' | 'queued'; error?: string }> {
   const agent = agents.get(agentId);
@@ -52,6 +55,13 @@ export async function stopTask(agentId: string, ref: string): Promise<{ success:
   const run = oneTaskQueue.busyRun(agentId);
   if (run?.taskRef === ref || (run?.taskId !== undefined && run.taskId === ref)) {
     const pty = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+    if (run.taskId === undefined) {
+      if (pty && run.taskRef && withdrawWaiting(pty, run.taskRef) > 0) {
+        announceTask(agentId);
+        return { success: true, stopped: 'queued' };
+      }
+      return { success: false, error: 'Its task is going into the terminal now, its turn not begun: stop it once its turn runs.' };
+    }
     if (!pty || !cliRunningIn(pty)) return { success: false, error: 'No CLI runs in this agent\'s terminal: its task is not in a turn.' };
     await interruptTurn(agent, pty);
     return { success: true, stopped: 'turn' };

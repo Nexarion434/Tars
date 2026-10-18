@@ -395,6 +395,20 @@ export interface TaskLedger {
    * here): its final answer and why its turn ended, kept once (2.0.4).
    */
   terminalEnded(taskId: string, end: { result?: string; stopReason: string }): void;
+  /**
+   * A delegated task is about to be typed into an agent at rest (2.0.4): the
+   * task still open there is one its background work keeps open, and it ends
+   * now, so that the delegation's turn opens a task of its own (the Audit's H1
+   * on #453: counted into the earlier task, the delegation was unknown to its
+   * asker, which asked again). Returns the id it ended.
+   */
+  endedForDelegation(agentId: string): string | undefined;
+  /**
+   * The task a delegated turn opened: it ends at that turn's rest, background
+   * work left or not (the Audit's M1 on #453). In memory: a task still open at
+   * a restart ends at the next launch anyway.
+   */
+  delegatedTask(taskId: string): void;
   /** One task by its id, with its run's answer when it has one. */
   task(id: string): TaskWithResult | undefined;
   /** The delegations a quit cut, found open at this start: given once, for their askers to be told. */
@@ -613,6 +627,8 @@ export function createTaskLedger(opts: {
     const id = open.get(agentId);
     return id ? byId.get(id) : undefined;
   };
+  /** The delegated tasks still open: each ends at its turn's rest (delegatedTask). */
+  const delegated = new Set<string>();
 
   return {
     handedOff(agentId, handOff) {
@@ -683,8 +699,11 @@ export function createTaskLedger(opts: {
       const outcome = endingOf(agent);
       if (!outcome) return;
       // Resting with work still running in the background is not the end: the
-      // agent comes back when that work reports (agent-watch.ts says why).
-      if (outcome === 'completed' && opts?.backgroundLeft) return;
+      // agent comes back when that work reports (agent-watch.ts says why). A
+      // delegated task's is: its asker gets its answer at its turn's rest,
+      // with what it left running (agent-routes.ts, runInTerminal).
+      if (outcome === 'completed' && opts?.backgroundLeft && !delegated.has(task.id)) return;
+      delegated.delete(task.id);
       open.delete(agent.id);
       write({ t: 'end', id: task.id, at: now(), outcome });
     },
@@ -765,6 +784,20 @@ export function createTaskLedger(opts: {
         t: 'acp', id: taskId, at: now(), outcome: end.outcome,
         stopReason: STOP_REASON.test(end.stopReason) ? end.stopReason : 'unknown', usage: end.usage, costUSD: end.costUSD,
       });
+    },
+
+    endedForDelegation(agentId) {
+      const task = openTaskOf(agentId);
+      if (!task) return undefined;
+      open.delete(agentId);
+      delegated.delete(task.id);
+      write({ t: 'end', id: task.id, at: now(), outcome: 'completed' });
+      return task.id;
+    },
+
+    delegatedTask(taskId) {
+      const task = byId.get(taskId);
+      if (task && task.endedAt === null) delegated.add(taskId);
     },
 
     terminalEnded(taskId, end) {

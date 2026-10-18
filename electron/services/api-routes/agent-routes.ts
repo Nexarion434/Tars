@@ -49,7 +49,7 @@ import { interruptTurn } from '../bus-delivery';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
-import { lastInterruptAt, withSessionTruth } from '../agent-truth';
+import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
@@ -941,12 +941,13 @@ const TASK_WAIT_STEP_MS = 500;
  * request that started it was answered at the start. In memory, the latest
  * RUN_ENDS_KEPT: after a relaunch the ledger's own record is the answer.
  */
-const runEnds = new Map<string, { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }>();
+const runEnds = new Map<string, { toolCalls?: string[]; backgroundStopped?: string[]; backgroundLeft?: string[]; error?: string; costUSD?: number }>();
 const RUN_ENDS_KEPT = 200;
-function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundStopped?: string[]; error?: string; costUSD?: number }): void {
+function noteRunEnd(taskId: string, result: { toolCalls?: string[]; backgroundStopped?: string[]; backgroundLeft?: string[]; error?: string; costUSD?: number }): void {
   runEnds.set(taskId, {
     ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
     ...(result.backgroundStopped?.length ? { backgroundStopped: result.backgroundStopped } : {}),
+    ...(result.backgroundLeft?.length ? { backgroundLeft: result.backgroundLeft } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(typeof result.costUSD === 'number' ? { costUSD: result.costUSD } : {}),
   });
@@ -1081,6 +1082,8 @@ async function runInTerminal(
     const tagged = taskOfPrompt(prompt);
     if (tagged && tagged.ref !== job.ref) return;
     turnTask = taskId;
+    // It ends at its turn's rest, whatever it left running (the Audit's M1 on #453).
+    ledger?.delegatedTask(taskId);
     // Followed by its first id, it is the ledger's task from this moment on,
     // and open until its answer is read, however soon its turn ends.
     answering.add(taskId);
@@ -1099,6 +1102,10 @@ async function runInTerminal(
     let typedRef: string | undefined;
     const callerId = resolveCallerId(req);
     const requester = callerId && callerId !== agent.id ? callerId : undefined;
+    // The agent is at rest (one task at a time): a task still open there is
+    // one its background work keeps open. It ends now, and this task's turn
+    // opens its own (the Audit's H1 on #453).
+    ledger?.endedForDelegation(agent.id);
     await performDispatch(agent, {
       message: job.task, model: job.model, from: senderName(agent, req), sender: senderOf(agent, req), mark: markFor(agent, req),
       turnTaken: true,
@@ -1177,7 +1184,11 @@ async function runInTerminal(
       const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
       const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
         ?? agent.lastCleanOutput ?? undefined;
-      if (outcome === 'error' && agent.error) noteRunEnd(taskId, { error: agent.error });
+      // What it left running in the background: told to its asker, never waited for.
+      const backgroundLeft = ended && !interrupted ? pendingBackgroundWork(agent, ended.startedAt) : [];
+      if ((outcome === 'error' && agent.error) || backgroundLeft.length) {
+        noteRunEnd(taskId, { ...(outcome === 'error' && agent.error ? { error: agent.error } : {}), backgroundLeft });
+      }
       ledger?.terminalEnded(taskId, { ...(result ? { result } : {}), stopReason });
       const done = ledger?.task(taskId);
       const usage = done ? await terminalUsage(done) : undefined;
@@ -1186,6 +1197,7 @@ async function runInTerminal(
         body: {
           ok: outcome === 'completed', started: true, taskId, outcome, stopReason,
           ...(result ? { text: result } : {}), ...(usage ? { usage } : {}),
+          ...(backgroundLeft.length ? { backgroundLeft } : {}),
           ...(outcome === 'error' && agent.error ? { error: agent.error } : {}),
           ...(asked ? { model: asked } : {}),
           ...(taskRestarts.get(taskId) ? { restartedAfterStop: taskRestarts.get(taskId) } : {}),
@@ -1794,7 +1806,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
         `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
-        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn and stops what you left in the background, and nothing brings you back (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
