@@ -623,7 +623,11 @@ export default function AgentKnowledgeGraph() {
     stageRef.current?.releasePointerCapture(e.pointerId);
     setDragging(false);
   }, []);
-  const pannable = box.width > view.width || box.height > view.height;
+  // Whether the stage is larger than the canvas: only then does the canvas
+  // scroll. At fit the stage is the canvas's outer size, and scrollbars that
+  // take room (Windows, Linux) left by a zoom in would overflow it by their
+  // own width and stay, the graph scrolled under them (the QA's L2 of #454).
+  const pannable = box.width > view.width + 0.5 || box.height > view.height + 0.5;
 
   return (
     <Panel fill padded={false} className="relative w-full overflow-hidden">
@@ -674,7 +678,7 @@ export default function AgentKnowledgeGraph() {
         tabIndex={0}
         role="region"
         aria-label="Agent graph"
-        className={`absolute inset-0 overflow-auto select-none ${dragging ? 'cursor-grabbing' : pannable ? 'cursor-grab' : ''}`}
+        className={`absolute inset-0 select-none ${pannable ? 'overflow-auto' : 'overflow-hidden'} ${dragging ? 'cursor-grabbing' : pannable ? 'cursor-grab' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
