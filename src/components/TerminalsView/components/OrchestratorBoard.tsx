@@ -22,15 +22,21 @@ function OrchestratorBoard({ width, height, orchestratorId, columnIds, panel }: 
   const columnRef = useRef<HTMLDivElement>(null);
   const [scrollbar, setScrollbar] = useState(0);
   const boxes = orchestratorBoxes(width, height, columnIds.length, scrollbar);
+  const hasColumn = boxes !== null;
 
-  // The column's scrollbar once laid out: none where the system overlays it (macOS by default) or while its cards fit,
-  // its width where it takes room. Read after every layout of the board, and set only when it moved.
+  // The column's scrollbar: none where the system overlays it (macOS by default) or while its cards fit, its width where
+  // it takes room. Read whenever the column's content box changes, which a scrollbar coming or going does, whatever
+  // brought it: more cards, a shorter window, a stylesheet or a system setting. Read after each draw of the board only,
+  // a scrollbar that came without one went unseen, and hid the right edge of every card.
   useLayoutEffect(() => {
     const column = columnRef.current;
     if (!column) return;
-    const measured = column.offsetWidth - column.clientWidth;
-    if (measured !== scrollbar) setScrollbar(measured);
-  });
+    const read = () => setScrollbar(column.offsetWidth - column.clientWidth);
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [hasColumn]);
 
   if (!boxes) return null;
   return (

@@ -319,8 +319,18 @@ export function attachShiftEnterHandler(
  * real would mean a handle on the frame, which only xterm can give.
  */
 export function disposeTerminalSafely(term: Pick<Terminal, 'dispose'>): void {
-  setTimeout(() => term.dispose(), 40);
+  setTimeout(() => {
+    // The resize xterm put off for a terminal out of sight (a card below the fold of the Dashboard's orchestrator
+    // layout), run now while its renderer is there. xterm 5.3 keeps it as an idle task (RenderService's
+    // `_pausedResizeTask`) that dispose leaves queued, and run after it, it read a renderer that was gone:
+    // `Cannot read properties of undefined (reading 'handleResize')`. Nothing but xterm's own core holds that task.
+    (term as unknown as PausedResize)._core?._renderService?._pausedResizeTask?.flush();
+    term.dispose();
+  }, 40);
 }
+
+/** The one piece of xterm's core disposeTerminalSafely reaches, as xterm 5.3 names it. */
+type PausedResize = { _core?: { _renderService?: { _pausedResizeTask?: { flush(): void } } } };
 
 /** What a terminal says when keys typed into it reach no terminal in main. */
 export const NOT_RUNNING_LINE = '\r\n\x1b[90m(Not running: start this agent to type here.)\x1b[0m\r\n';
