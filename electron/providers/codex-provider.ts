@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AgentEffort, AppSettings } from '../types';
+import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -11,7 +12,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { shellQuote } from './cli-provider';
+import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
 import { CODEX_SESSION_ID, codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexModels } from './codex-cli';
 
 /**
@@ -71,11 +72,19 @@ export class CodexProvider implements CLIProvider {
     // A session to go on with (measured on 0.163): `codex resume <id>` continues
     // it in its own rollout, with its conversation, and `codex fork <id>` under a
     // new session, as a restart that applies new settings wants
-    // (agent-restart.ts). codex's own options may come before the subcommand,
-    // which 0.163 takes there, the agent's after it; the session before the
-    // prompt. A session id and nothing else: it reaches a command line.
+    // (agent-restart.ts). Every option after the subcommand, a key's included, so
+    // it applies to the session resumed (0.163 also takes codex's own before it);
+    // the session before the prompt. A session id and nothing else: it reaches a
+    // command line.
     const session = params.resumeSessionId && CODEX_SESSION_ID.test(params.resumeSessionId) ? params.resumeSessionId : undefined;
     if (session) command += params.forkSession ? ' fork' : ' resume';
+
+    // A key from Settings: its interactive session reads none from its
+    // environment (0.163), so a model provider of Tars's names CODEX_API_KEY,
+    // by name only. None: Codex keeps its own login (services/cli-keys.ts).
+    for (const arg of codexKeyConfig(params.appSettings ?? (readAppSettingsFromDisk() as AppSettings))) {
+      command += ` ${shellQuote(arg)}`;
+    }
 
     command += this.modelAndEffort(params.model, params.effort);
 
@@ -133,7 +142,7 @@ export class CodexProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -144,6 +153,8 @@ export class CodexProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('codex', appSettings),
     };
   }
 

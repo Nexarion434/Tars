@@ -214,6 +214,21 @@ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = 1
 
 On the `claude` binary, the fourteen providers that run it get `managedCliEnv()` as well: `DISABLE_AUTOUPDATER=1` and `CLAUDE_CODE_DISABLE_MOUSE_CLICKS=1`. Amp gets its update check turned off through the settings copy Tars hands it (`~/.dorothy/amp-settings.json`, `amp.updates.mode: "disabled"`). Neither CLI updates itself inside a Tars terminal: Tars does it, below.
 
+### An API key per CLI (2.0.4): `services/cli-keys.ts`
+
+One key per CLI, beside the API-key providers on the claude binary: codex, qwen-code, gemini, opencode, pi, grok, amp, and omp, cline and kilo before their providers exist. Kept in `app-settings.json` as `cliApiKeys: { <cli>: { key, envVar? } }` (amp's `ampApiKey` of before is read when amp has none), written by `cliKeys:set` only. The window reads `cliKeys:list` (`CliKeyState`: whether a key is set, the variable it goes under and where that name comes from, what the CLI does without one), never a key: `app:getSettings` and every `settings:updated` drop `cliApiKeys` and `ampApiKey` (`withoutCliKeys`), and `app:saveSettings` neither writes nor erases one (`keepCliKeys`). The key reaches that CLI's agents only, through its provider's `getPtyEnvVars` (`keyEnvFor`), which every launch reads and an ACP run too, at the agent's next start; never an argument, never the CLI's own files. Each variable, as measured on 2026-10-18:
+
+| CLI | Variable | Measured |
+|---|---|---|
+| codex | `CODEX_API_KEY`, fixed | codex-cli 0.163: `codex exec` reads it, never `OPENAI_API_KEY`; the interactive session reads no key from its environment (its sign-in screen), so with a key Tars starts it with `-c model_provider=tars-key` and that provider's `env_key="CODEX_API_KEY"`, names only. With the ChatGPT login there too, the key wins (a wrong key: 401); without a key nothing is added and the login is used |
+| qwen-code | its model's `envKey` in `~/.qwen/settings.json` modelProviders (`DEEPSEEK_API_KEY` here), the one named in Settings first, else `OPENAI_API_KEY` | Qwen Code 0.25.2: the agent's environment wins over the key its settings' `env` holds (a wrong key: 401). Its provider comes next (feat/qwen-code) |
+| gemini | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | not installed here: documentation |
+| grok | `GROK_API_KEY` (or `XAI_API_KEY`) | not installed here: documentation |
+| amp | `AMP_API_KEY`, fixed | `amp --help` |
+| opencode, pi, omp, cline, kilo | the one named in Settings: none is passed until then | they read each model provider's own variable |
+
+With a key, Tars's codex provider (`-c model_provider=tars-key`) overrides a model provider the user chose in `~/.codex/config.toml`, for Tars's agents only: their own `codex` keeps it. A start in a shell kept from an earlier launch carries the keys set now: a shell spawned with other keys (`keyPrintOf`, in memory) is closed and a new one opened (`killStalePty`), so a key set since reaches it, and a key cleared since leaves it. A key has no whitespace or control character; a variable is in capitals, ends with `_API_KEY`, `_KEY` or `_TOKEN`, and is none Tars sets (`CLAUDE_`, `DOROTHY_`, `TARS_`) nor one that changes how a process runs (`DYLD_`, `LD_`, `NODE_`...). Like every provider key, it sits in `~/.dorothy`, which every agent is handed with `--add-dir`: an agent that reads `app-settings.json` reads the keys (SECURITY.md).
+
 ### Keeping the CLIs current
 
 `electron/services/cli-updater.ts`, started by `startCliUpdates()` 5 s after launch and every 30 minutes after, Claude Code's own cadence. One pass at a time, one CLI at a time, logged to `~/.dorothy/cli-updates.log`. A pass runs only while `autoCheckUpdates` is on, read at every pass: it is the one "Check for updates" switch, for Tars's own updates and the CLIs' (JeanBrasse, 2026-09-23). And it checks only the CLIs at least one agent runs, by each agent's provider (`clisInUse`): an agent with none, and the thirteen providers pointed at another vendor, run claude, so a fleet with no Amp agent never has Amp checked.

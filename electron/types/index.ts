@@ -345,6 +345,38 @@ export type CLIPaths = Record<CLIPathKey, string> & {
   additionalPaths: string[];
 };
 
+/** The CLIs that take an API key of their own from Tars (2.0.4), those of Tars's and those to come. */
+export type CliKeyId = 'codex' | 'qwen-code' | 'gemini' | 'opencode' | 'pi' | 'grok' | 'amp' | 'omp' | 'cline' | 'kilo';
+
+export interface CliApiKey {
+  /** The key; '' when only the variable is set. */
+  key: string;
+  /** The variable the user chose, for a CLI that reads one per model provider. */
+  envVar?: string;
+}
+
+/** A CLI's key as the window may know it (cliKeys:list): never the key. */
+export interface CliKeyState {
+  id: CliKeyId;
+  label: string;
+  hasKey: boolean;
+  /** The variable its agents get the key under; null until one is named, for a CLI that reads one per model provider. */
+  envVar: string | null;
+  /** chosen: named in Settings; cli-config: the CLI's own settings name it (Qwen Code's envKey); default: the CLI's; none. */
+  envVarFrom: 'chosen' | 'cli-config' | 'default' | 'none';
+  /** The CLI's own variable, which cannot be changed. */
+  envVarFixed: boolean;
+  /** No key reaches its agents until a variable is named. */
+  envVarRequired: boolean;
+  envVarChoices: string[];
+  /** Tars's provider for this CLI, or null while it has none yet. */
+  provider: string | null;
+  /** How its key was measured, or where its variable comes from. */
+  measured: string;
+  /** What the CLI does with no key from Tars. */
+  withoutKey: string;
+}
+
 export interface AppSettings {
   notificationsEnabled: boolean;
   notifyOnWaiting: boolean;
@@ -446,8 +478,14 @@ export interface AppSettings {
   opencodeDefaultModel: string;
   ampEnabled?: boolean;
   ampDefaultModel?: string;
-  /** Amp access token (sgamp_...), passed to the PTY as AMP_API_KEY. */
+  /** Amp access token (sgamp_...), passed to the PTY as AMP_API_KEY. Before 2.0.4; cliApiKeys.amp since, read first. */
   ampApiKey?: string;
+  /**
+   * An API key per CLI (2.0.4, services/cli-keys.ts): handed to that CLI's
+   * agents only, in their terminal's environment, under the variable it reads.
+   * Written by cliKeys:set only; app:getSettings never returns it.
+   */
+  cliApiKeys?: Partial<Record<CliKeyId, CliApiKey>>;
   /** External AI provider keys. All alt providers use the claude binary
    *  with ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY injected into the PTY. */
   openRouterEnabled?: boolean;

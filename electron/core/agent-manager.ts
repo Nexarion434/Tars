@@ -1,3 +1,5 @@
+import { keyPrintOf } from '../services/cli-keys';
+import { readAppSettingsFromDisk } from '../providers/cli-provider';
 import { agentRecovered, reportEvent } from '../services/event-reports';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -186,11 +188,27 @@ export function clearSuperAgentOutputBuffer() {
  * after its PTY was created: the running PTY keeps its old cwd, so
  * subsequent messages land in the main workspace instead of the worktree.
  */
+/**
+ * The key environment each agent terminal was spawned with, as a print
+ * (services/cli-keys.ts, keyPrintOf): a start in a reused shell must carry the
+ * keys set now (the Audit's L1 on #459). A codex key set after the shell was
+ * spawned had codex started on Tars's provider without CODEX_API_KEY, which it
+ * refuses; a key cleared stayed in the shell. In memory: a terminal does not
+ * outlive Tars.
+ */
+const ptyKeyPrints = new WeakMap<pty.IPty, string>();
+
+export function notePtyKeys(ptyProcess: pty.IPty, agent: AgentStatus, settings: AppSettings | Partial<AppSettings>): void {
+  ptyKeyPrints.set(ptyProcess, keyPrintOf(agent, settings));
+}
+
 export function killStalePty(agent: AgentStatus): boolean {
   if (!agent.ptyId) return false;
   const expectedCwd = agent.worktreePath || agent.projectPath;
-  if (agent.ptyCwd === expectedCwd) return false;
   const existing = ptyProcesses.get(agent.ptyId);
+  const printed = existing ? ptyKeyPrints.get(existing) : undefined;
+  const keysStale = printed !== undefined && printed !== keyPrintOf(agent, readAppSettingsFromDisk());
+  if (agent.ptyCwd === expectedCwd && !keysStale) return false;
   if (existing) {
     try {
       killPty(existing);
@@ -199,9 +217,9 @@ export function killStalePty(agent: AgentStatus): boolean {
     }
     ptyProcesses.delete(agent.ptyId);
   }
-  console.log(
-    `Killed stale PTY for agent ${agent.id}: ptyCwd=${agent.ptyCwd} expected=${expectedCwd}`
-  );
+  console.log(keysStale
+    ? `Killed stale PTY for agent ${agent.id}: its CLI's key changed since it was spawned`
+    : `Killed stale PTY for agent ${agent.id}: ptyCwd=${agent.ptyCwd} expected=${expectedCwd}`);
   agent.ptyId = undefined;
   agent.ptyCwd = undefined;
   return true;
@@ -1217,6 +1235,8 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
       ...tasmaniaEnv,
     },
   });
+  // The keys this shell's environment carries, for a start that reuses it.
+  notePtyKeys(ptyProcess, agent, savedSettings as unknown as AppSettings);
   return { ptyProcess, cwd };
 }
 
