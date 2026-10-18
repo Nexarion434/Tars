@@ -139,14 +139,12 @@ export const TaskCosts = memo(function TaskCosts({ start, length, control }: {
   // An answer to an earlier question, arriving after a later one, is dropped.
   const asked = useRef(0);
 
-  // Read as the page opens, beside the transcripts' own read rather than after it (`Usage · cards while they read`),
-  // and again when the timeframe moves or the transcripts' figures change. Not when their first figures arrive after
-  // an opening that had none: the opening's read is that same moment's answer, and asking twice cost a second scan.
-  const lastAsk = useRef<{ startMs: number; data: unknown } | null>(null);
+  // Read once the transcripts' figures are in, and again when they change or the timeframe moves. Not beside their
+  // first scan: both readings run on the main process's one thread, and asked together they slowed each other, the
+  // figures showing 16 to 20 s later on this Mac's data (reports/usage-pages-speed-1810.md). The card shows its
+  // loading ladder meanwhile (`Usage · cards while they read`).
   useEffect(() => {
-    const prev = lastAsk.current;
-    lastAsk.current = { startMs, data };
-    if (prev && prev.startMs === startMs && prev.data === null && data !== null) return;
+    if (!data) return;
     const read = window.electronAPI?.usage?.tasks;
     if (!read) return;
     const mine = ++asked.current;
