@@ -1010,12 +1010,15 @@ function followTask(workerId: string, askerId: string): () => void {
 
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
- * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
- * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
- * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ * UserPromptSubmit post, which opens the ledger's task) and end: claude, the
+ * providers that run it, and codex, whose session log Tars reads and posts as
+ * those hooks would, the answer in full (2.0.4, services/codex-sessions.ts).
+ * Gemini's BeforeAgent hook posts `running` with no prompt, and opencode, amp,
+ * pi and grok have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  const provider = getProvider(agent.provider);
+  return provider.binaryName === 'claude' || provider.getHookConfig().turnsReported === true;
 }
 
 /** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
