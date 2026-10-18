@@ -15,7 +15,9 @@ import * as path from 'node:path';
  *    agent set to low), or the model.
  * 4. A permission mode turned into a flag the installed codex does not have, which is the same exit 2
  *    (codex-cli.test.ts says which flags each mode becomes; these say every builder uses them). The installed codex's
- *    flags are read before a launch builds its line (prepareLaunch, off the main thread: codex-cli.test.ts, 8).
+ *    flags are read before a launch builds its line (prepareLaunch, off the main thread: codex-cli.test.ts, 8), in
+ *    auto only: no flag of normal or bypass depends on the installed codex, and a launch in those modes waited on a
+ *    --help it never used, up to 10 s on a loaded machine.
  * 5. A prompt that leaves its quotes: a task is user text, and the line is run by a shell or read back into argv.
  * 6. A session Tars resumes after a restart started anew, or its id where codex does not read it. Measured on
  *    0.163: `codex resume [OPTIONS] [SESSION_ID] [PROMPT]` continues the session in its own rollout file, with its
@@ -73,8 +75,8 @@ beforeAll(async () => {
   codex016 = path.join(dir, 'codex');
   fs.writeFileSync(codex016, `#!/bin/sh\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
   // As every launch path does before it builds the line.
-  await provider.prepareLaunch(codex016);
-  await provider.prepareLaunch(nowhere);
+  await provider.prepareLaunch(codex016, 'auto');
+  await provider.prepareLaunch(nowhere, 'auto');
 });
 
 describe("an agent's terminal", () => {
@@ -95,6 +97,23 @@ describe("an agent's terminal", () => {
     expect(argv).toEqual(expect.arrayContaining(['-c', 'model_reasoning_effort=low']));
     expect(argv[argv.length - 1]).toBe(PROMPT);
     expect(argv).not.toContain('--approve-for-me');
+  });
+});
+
+describe("what a launch reads of codex first", () => {
+  it('4. its --help in auto only: a launch in normal or bypass mode does not wait on codex', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-modes-'));
+    const count = path.join(dir, 'count');
+    const bin = path.join(dir, 'codex');
+    fs.writeFileSync(bin, `#!/bin/sh\necho x >> '${count}'\ncat <<'EOF'\n${HELP_0163}\nEOF\n`, { mode: 0o755 });
+    const asks = () => (fs.existsSync(count) ? fs.readFileSync(count, 'utf8').trim().split('\n').length : 0);
+    await provider.prepareLaunch(bin, 'normal');
+    await provider.prepareLaunch(bin, 'bypass');
+    await provider.prepareLaunch(bin, undefined);
+    expect(asks(), 'codex was asked for a mode that needs none of its flags').toBe(0);
+    await provider.prepareLaunch(bin, 'auto');
+    expect(asks()).toBe(1);
+    expect(argvOf(provider.buildInteractiveCommand({ binaryPath: bin, prompt: PROMPT, permissionMode: 'auto' }))).toContain('--approve-for-me');
   });
 });
 
