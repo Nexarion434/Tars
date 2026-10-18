@@ -1,0 +1,135 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+/**
+ * What the window may read and write on the disk (the Audit's Holes 1 and 2,
+ * 2.0.4). The window is the renderer: a page with an XSS, or a dependency of it
+ * gone bad, holds every channel the preload hands it.
+ *
+ * Hole 1: fs:write-text-file wrote any text under ~/.dorothy, ~/.claude,
+ * ~/.codex, ~/.gemini, ~/.grok and every project: statusline.sh, which Claude
+ * Code runs, bin/tars-mcp-node, which every Tars MCP server runs on, a CLI's
+ * hooks or settings, a project's git hooks. One call ran code in every agent.
+ * The one page that writes (the Brain) writes instruction files.
+ *
+ * Hole 2: local-file:// and fs:read-text-file served anything under ~/.dorothy
+ * and ~/.claude, every key app-settings.json held and Claude Code's credentials
+ * included.
+ *
+ * Every way it can fail, written before the code (2026-10-18):
+ *  W1. A read hands the window a secret: the settings, the private file, the
+ *      shared token (where it is and where it was), the Hermes files, a CLI's
+ *      own credentials (~/.claude/.credentials.json, ~/.codex/auth.json,
+ *      ~/.gemini/oauth_creds.json), anything under ~/.tars-private.
+ *  W2. A secret reached another way: a symbolic link in a project, or a hard
+ *      link to the private file, which has no path back to it.
+ *  W3. Over-correction: the Brain cannot read what it shows (~/.claude/CLAUDE.md,
+ *      ~/.claude/mcp.json, ~/.dorothy/CLAUDE.md, a project's CLAUDE.md), or the
+ *      code panel a project's file.
+ *  W4. A write lands on something that runs: statusline.sh, bin/tars-mcp-node,
+ *      a hook of Tars's or of a CLI, a CLI's settings or config, a project's
+ *      package.json or git hook, or any file that is not an instruction file.
+ *  W5. Over-correction: the Brain cannot save an instruction file it edits
+ *      (~/.claude/CLAUDE.md, ~/.dorothy/CLAUDE.md, a project's CLAUDE.md or
+ *      .claude/CLAUDE.md).
+ *  W6. local-file:// serves outside what a page may show (vault attachments,
+ *      the project-files folders, Claude Code's memory folders), or serves a
+ *      secret through a link placed in one of those.
+ */
+
+import { windowMayRead, windowMayWrite, localFileServes } from '../../../electron/utils/window-file-access';
+import { DATA_DIR, PRIVATE_DIR } from '../../../electron/constants';
+
+const home = () => os.homedir();
+const at = (...p: string[]) => path.join(home(), ...p);
+const put = (file: string, text = 'x') => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); return file; };
+let project: string;
+
+beforeEach(() => {
+  for (const d of ['.dorothy', '.tars-private', '.claude', '.codex', '.gemini', 'proj']) fs.rmSync(at(d), { recursive: true, force: true });
+  project = at('proj');
+  fs.mkdirSync(project, { recursive: true });
+});
+
+describe('what the window reads', () => {
+  it('W1. no secret, wherever it is', () => {
+    const secrets = [
+      put(path.join(DATA_DIR, 'app-settings.json'), '{"deepSeekApiKey":"k"}'),
+      put(path.join(DATA_DIR, 'app-settings.json.bak')),
+      put(path.join(DATA_DIR, 'api-token')),
+      put(path.join(DATA_DIR, 'hermes-session.json')),
+      put(path.join(PRIVATE_DIR, 'settings-secrets.json')),
+      put(path.join(PRIVATE_DIR, 'api-token')),
+      put(path.join(PRIVATE_DIR, 'notes.md')),
+      put(at('.claude', '.credentials.json')),
+      put(at('.codex', 'auth.json')),
+      put(at('.gemini', 'oauth_creds.json')),
+    ];
+    for (const s of secrets) expect(windowMayRead(s, [project]), s).toBe(false);
+    // Nor the rest of ~/.dorothy: it is not one of the window's roots any more.
+    expect(windowMayRead(put(path.join(DATA_DIR, 'agents.json')), [project])).toBe(false);
+  });
+
+  it('W2. no secret through a link in a project, a symbolic or a hard one', () => {
+    const secret = put(path.join(PRIVATE_DIR, 'settings-secrets.json'), '{"k":"v"}');
+    fs.symlinkSync(secret, path.join(project, 'soft.json'));
+    fs.linkSync(secret, path.join(project, 'hard.txt'));
+    expect(windowMayRead(path.join(project, 'soft.json'), [project])).toBe(false);
+    expect(windowMayRead(path.join(project, 'hard.txt'), [project])).toBe(false);
+  });
+
+  it('W3. what the Brain and the code panel show', () => {
+    for (const f of [at('.claude', 'CLAUDE.md'), at('.claude', 'mcp.json'), path.join(DATA_DIR, 'CLAUDE.md'), path.join(project, 'CLAUDE.md'), path.join(project, 'src', 'a.ts')]) {
+      expect(windowMayRead(put(f), [project]), f).toBe(true);
+    }
+  });
+});
+
+describe('what the window writes', () => {
+  it('W4. nothing that runs, nothing that is not an instruction file', () => {
+    const refused = [
+      path.join(DATA_DIR, 'statusline.sh'), path.join(DATA_DIR, 'bin', 'tars-mcp-node'), path.join(DATA_DIR, 'hooks', 'on-stop.sh'),
+      path.join(DATA_DIR, 'agents.json'), path.join(DATA_DIR, 'notes.md'),
+      at('.claude', 'settings.json'), at('.claude', 'hooks', 'a.sh'), at('.claude', 'agents', 'x.md'),
+      at('.codex', 'config.toml'), at('.gemini', 'settings.json'), at('.gemini', 'GEMINI.md'),
+      path.join(project, 'package.json'), path.join(project, '.git', 'hooks', 'pre-commit'), path.join(project, 'docs', 'CLAUDE.md'),
+      path.join(PRIVATE_DIR, 'CLAUDE.md'),
+    ];
+    for (const f of refused) expect(windowMayWrite(put(f), [project]), f).toBe(false);
+  });
+
+  it('W5. the instruction files the Brain edits', () => {
+    for (const f of [at('.claude', 'CLAUDE.md'), path.join(DATA_DIR, 'CLAUDE.md'), path.join(project, 'CLAUDE.md'), path.join(project, '.claude', 'CLAUDE.md')]) {
+      expect(windowMayWrite(put(f), [project]), f).toBe(true);
+    }
+    // One of them linked to the private file is refused.
+    fs.rmSync(path.join(project, 'CLAUDE.md'));
+    fs.symlinkSync(put(path.join(PRIVATE_DIR, 'settings-secrets.json')), path.join(project, 'CLAUDE.md'));
+    expect(windowMayWrite(path.join(project, 'CLAUDE.md'), [project])).toBe(false);
+  });
+});
+
+describe('what local-file:// serves', () => {
+  it('W6. the vault\'s attachments, the project files, Claude Code\'s memory, and nothing else', () => {
+    const served = [
+      path.join(DATA_DIR, 'vault', 'attachments', 'a-photo.png'),
+      path.join(DATA_DIR, 'project-files', 'tars-1', 'reports', 'r.md'),
+      at('.claude', 'projects', '-Users-x-proj', 'memory', 'MEMORY.md'),
+    ];
+    for (const f of served) expect(localFileServes(put(f)), f).toBe(true);
+    const refused = [
+      path.join(DATA_DIR, 'app-settings.json'), path.join(DATA_DIR, 'agents.json'), path.join(PRIVATE_DIR, 'settings-secrets.json'),
+      path.join(PRIVATE_DIR, 'api-token'), at('.claude', '.credentials.json'), at('.claude', 'projects', '-Users-x-proj', 'abc.jsonl'),
+      path.join(project, 'a.png'),
+    ];
+    for (const f of refused) expect(localFileServes(put(f)), f).toBe(false);
+    const link = path.join(DATA_DIR, 'vault', 'attachments', 'b.png');
+    fs.symlinkSync(path.join(PRIVATE_DIR, 'settings-secrets.json'), link);
+    expect(localFileServes(link)).toBe(false);
+    const hard = path.join(DATA_DIR, 'project-files', 'tars-1', 'h.md');
+    fs.linkSync(path.join(PRIVATE_DIR, 'api-token'), hard);
+    expect(localFileServes(hard)).toBe(false);
+  });
+});
