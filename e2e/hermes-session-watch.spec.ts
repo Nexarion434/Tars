@@ -114,9 +114,10 @@ test('Tars renews its Hermes session by asking it, and the window is told at onc
     // The checks present the cookies the answers rotated: the rotated ones were
     // kept, so the session is renewed by the checks themselves. The first two
     // can both carry the sign-in's own cookie: a sign-in starts a check and its
-    // own probe together, each sent before the other's answer came back.
+    // own probe together, each sent before the other's answer came back. A
+    // rotated request is recorded with the access cookie's value it presented.
     const authed = requests.filter(r => r.path.endsWith('(rotated)'));
-    const values = authed.map(r => /hermes_session_at=([^;]+)/.exec(r.cookie)?.[1]);
+    const values = authed.map(r => r.cookie);
     seen.renewed = values;
     expect(values.at(-1)).toMatch(/^first\.[1-9][0-9]*$/);
     expect(new Set(values.filter(v => v !== 'first.0')).size).toBeGreaterThanOrEqual(2);
