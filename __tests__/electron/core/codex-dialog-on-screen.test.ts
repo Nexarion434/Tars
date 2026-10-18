@@ -16,7 +16,9 @@ import * as os from 'node:os';
  *    into it ends on an Enter that allows the call in the user's name.
  * 2. A command's dialog not seen.
  * 3. What it asks about lost: the line must name the tool, or the command.
- * 4. An option row read as what it asks about.
+ * 4. An option row read as what it asks about, or the end of one carried onto the next row: in a terminal narrower
+ *    than the form (an agent's panel, 86 columns in the specs), "Always allow"'s description runs onto a row of
+ *    its own.
  * 5. A false alarm: a title quoted in the conversation, with no answer under it.
  */
 
@@ -25,14 +27,14 @@ vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }));
 import { attachTerminalMirror, codexDialogOnScreen, dialogOnScreen } from '../../../electron/core/terminal-mirror';
 import type { IPty } from 'node-pty';
 
-function mirrored(rows: string[]): IPty {
+function mirrored(rows: string[], cols = 120): IPty {
   const data: Array<(chunk: string) => void> = [];
   const pty = {
     onData: (listener: (chunk: string) => void) => { data.push(listener); return { dispose() {} }; },
     onExit: () => ({ dispose() {} }),
     write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pid: 1, process: 'codex',
   };
-  attachTerminalMirror(pty as never, { cols: 120, rows: 30, watchRepaint: false, label: 'codex' });
+  attachTerminalMirror(pty as never, { cols, rows: 30, watchRepaint: false, label: 'codex' });
   for (const listener of data) listener('\x1b[2J\x1b[H' + rows.join('\r\n'));
   return pty as never;
 }
@@ -62,6 +64,15 @@ describe("codex's approval on the screen", () => {
     const pty = mirrored(TOOL_CALL);
     expect(codexDialogOnScreen(pty)).toBe('Allow the probe MCP server to run tool "ping"?');
     expect(dialogOnScreen(pty)).toBe(true);
+  });
+
+  it('4. the end of an option, on a row of its own in a narrower terminal, is not what it asks about', () => {
+    const title = 'Allow the probe MCP server to run tool "ping"?';
+    expect(codexDialogOnScreen(mirrored(TOOL_CALL, 86))).toBe(title);
+    const at = TOOL_CALL.findIndex(row => row.includes('3. Always allow'));
+    expect(codexDialogOnScreen(mirrored([
+      ...TOOL_CALL.slice(0, at), '    3. Always allow            Run the tool and remember this choice for future tool', '                               calls', ...TOOL_CALL.slice(at + 1),
+    ]))).toBe(title);
   });
 
   it("2, 3. a command's dialog is seen, with the command", () => {
