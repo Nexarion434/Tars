@@ -22,7 +22,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   offers no second stop, which would replace who and why;
  * - the orchestrator's window lists them in a stopped group of its rail;
  * - the Dashboard pane says stopped, with the line in the branch's place, and
- *   its terminal says the session is stopped;
+ *   its terminal says the session is stopped: in the equal grid, picked in the
+ *   header, since in the orchestrator layout (2.0.4) Frontend Engineer's pane is
+ *   in its column, a third of the board wide as in a grid of three columns,
+ *   where the header leaves this line no room but its title;
  * - the Projects page offers resume and start, as for an idle agent;
  * - after a reload of the window, then a restart of Tars with the agents
  *   started at launch, both still say it, and neither is resumed while the
@@ -210,8 +213,11 @@ test('a stopped agent says stopped, who stopped it, when and why, and still does
   await lead.getByRole('button', { name: 'close', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  // The Dashboard: the pane says stopped, the line where the branch was.
+  // The Dashboard: the pane says stopped, the line where the branch was. In the
+  // equal grid, where a pane of this board of three is half its width: the
+  // orchestrator layout opens first, its column a third of the board wide.
   await page.goto(`${DEV_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('radiogroup', { name: 'Board layout' }).getByRole('radio', { name: 'Equal grid' }).click({ timeout: 60_000 });
   const pane = paneHeader('Frontend Engineer');
   await expect(pane).toBeVisible({ timeout: 60_000 });
   await expect(pane.getByText('stopped', { exact: true })).toBeVisible();
