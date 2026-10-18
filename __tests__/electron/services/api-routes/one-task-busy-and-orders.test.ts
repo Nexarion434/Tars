@@ -656,7 +656,7 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
   it('23. a task whose turn came, held by a draft and cancelled by its asker, gives the turn back: the next task runs', async () => {
     const { terminal } = withCli('cl', 'claude', 'idle');
     call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
-    await later(50);
+    await later(1500);
     const t = call('POST', '/api/agents/cl/dispatch', { message: 'TASK-T fix it', intent: 'task' }, 'orch');
     await t.done;
     expect(t.answer()?.data).toMatchObject({ mode: 'queued' });
@@ -673,10 +673,35 @@ describe('the halves of the fix the QA pinned (gate of 05e31fa4)', () => {
     const z = call('POST', '/api/agents/cl/run-task', { task: 'TASK-Z next', answer: 'started' }, 'orch');
     await later(3000);
     expect(z.answer()?.data, 'queued behind a task that no longer exists').not.toMatchObject({ queued: true });
-    expect(runs, 'the next task never started').toHaveLength(2);
+    // Z has the turn now (since 2.0.4 it goes into the same terminal, where the draft holds it in turn).
+    expect(oneTaskQueue.busyRun('cl')?.taskRef, 'the next task never took the turn').toBe(String(z.answer()?.data.taskId));
     const q = call('GET', `/api/tasks/${String(t.answer()?.data.queuedTask)}`, {}, 'orch');
     await q.done;
     expect(q.answer()?.data, 'said starting for ever').toMatchObject({ task: { outcome: 'error', error: 'It never started: it was cancelled.' } });
+  });
+
+  it('23b. the same for a delegated task (run-task): held by a draft and cancelled by its asker, it gives the turn back at once', async () => {
+    const { terminal } = withCli('cl', 'claude', 'idle');
+    call('POST', '/api/agents/cl/run-task', { task: 'TASK-A review', answer: 'started' }, 'orch');
+    await later(1500);
+    const b = call('POST', '/api/agents/cl/run-task', { task: 'TASK-B fix it', answer: 'started' }, 'orch');
+    await later(50);
+    expect(b.answer()?.data).toMatchObject({ queued: true, outcome: 'queued' });
+    const ref = String(b.answer()?.data.taskId);
+    // An arrow key in the field, a draft Tars cannot restore: B's turn comes and B is held there.
+    writeHumanInput(terminal as never, '\x1b[A');
+    runs[0].end();
+    await later(3000);
+    expect(typedInto(terminal)).not.toContain('TASK-B');
+    const c = call('POST', `/api/tasks/${ref}/cancel`, {}, 'orch');
+    await c.done;
+    expect(c.answer()?.data, JSON.stringify(c.answer())).toMatchObject({ success: true });
+    await later(2000);
+    expect(oneTaskQueue.busyRun('cl'), 'the cancelled task still holds the turn').toBeUndefined();
+    const seen = call('GET', `/api/tasks/${ref}`, {}, 'orch');
+    await seen.done;
+    expect(seen.answer()?.data.task, JSON.stringify(seen.answer())).toMatchObject({ outcome: 'error' });
+    expect(String((seen.answer()?.data.task as { error?: string } | undefined)?.error)).toContain('cancelled');
   });
 });
 
