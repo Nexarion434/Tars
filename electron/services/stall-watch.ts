@@ -81,11 +81,21 @@ function childrenOf(pid: number, procs: Proc[]): Proc[] {
   return procs.filter(proc => proc.ppid === pid);
 }
 
-/** The claude process of a terminal: the terminal's own process when the shell exec'd it, else the first under it. */
-export function cliProcess(terminalPid: number, procs: Proc[]): Proc | undefined {
+/** A codex process: its binary, or node running it (`node .../codex`, `node .../codex.js`). */
+const isCodex = (command: string) => {
+  const [first, second] = command.split(/\s+/).map(word => path.basename(word));
+  return first === 'codex' || (first === 'node' && (second === 'codex' || second === 'codex.js'));
+};
+
+/**
+ * The CLI process of a terminal, claude's unless `binary` says codex's (the sleep pass, 2.0.4): the terminal's own
+ * process when the shell exec'd it, else the first under it.
+ */
+export function cliProcess(terminalPid: number, procs: Proc[], binary: 'claude' | 'codex' = 'claude'): Proc | undefined {
+  const isCli = binary === 'codex' ? isCodex : isClaude;
   const queue = procs.filter(proc => proc.pid === terminalPid);
   for (let i = 0; i < queue.length && i < 64; i++) {
-    if (isClaude(queue[i].command)) return queue[i];
+    if (isCli(queue[i].command)) return queue[i];
     queue.push(...childrenOf(queue[i].pid, procs));
   }
   return undefined;
