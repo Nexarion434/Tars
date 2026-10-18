@@ -47,6 +47,8 @@ import { EventEmitter } from 'node:events';
  *  D18. codex, whose turns Tars reads from its session log and posts as the
  *      hooks would (services/codex-sessions.ts), is said delivered as a CLI
  *      Tars cannot see, or followed to its end without its answer.
+ *  D19. A codex turn interrupted (its log's turn_aborted, then the rest it
+ *      comes to) ends the task as completed, or never ends it.
  *  D13. Another project's orchestrator that passed allowCrossProject: true is
  *      refused, or its task goes anywhere but the target's terminal (moved
  *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
@@ -113,7 +115,7 @@ import { registerAgentRoutes } from '../../../../electron/services/api-routes/ag
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-ledger';
-import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
+import { startTaskWatch, stopTaskWatch, turnInterrupted } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
 import { transcriptPath } from '../../../../electron/utils/resume-session';
@@ -371,6 +373,36 @@ describe('a task delegated to a codex agent', () => {
     rests(dev);
     const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
     expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: long });
+  });
+});
+
+describe('a task delegated to a codex agent, its turn interrupted', () => {
+  it('(D19) ends as stopped, interrupted, when codex logs the turn aborted, then rests', async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a long job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // What the session watch does on codex's turn_aborted (main.ts wires it to this), then its post of the rest.
+    turnInterrupted(dev.id, dev.currentSessionId!);
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+  });
+
+  it("(D19) an interrupt from a session that is not the agent's is not its task's", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    turnInterrupted(dev.id, 'an-older-session');
+    dev.lastCleanOutput = 'all done';
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: 'all done' });
   });
 });
 

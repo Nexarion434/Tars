@@ -30,6 +30,10 @@ import * as path from 'node:path';
  *    shows. While it is on screen the agent is waiting on a permission, and running again once it is gone.
  * 8. Every rollout of the machine read at every tick: only the files changed since the oldest launch it waits on,
  *    and of a file already read, only what was added since.
+ * 9. A turn interrupted (Esc in its terminal) never seen to end: measured on 0.163, codex then writes `turn_aborted`
+ *    (reason `interrupted`) and no task_complete. The agent read running for good and, since codex holds its line
+ *    while a turn runs, every later task waited behind a turn that was over; or the interrupt was taken for an end,
+ *    and the task said completed, with the turn before's answer.
  */
 
 import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electron/services/codex-sessions';
@@ -37,6 +41,7 @@ import { CodexSessionWatch, codexEventOf, type HookPost } from '../../../electro
 let root: string;
 let posts: Array<{ agentId: string } & HookPost>;
 let screen: Map<string, string | undefined>;
+let interrupted: Array<{ agentId: string; sessionId: string }>;
 let now: number;
 let watch: CodexSessionWatch;
 
@@ -48,6 +53,7 @@ const line = (type: string, payload: Record<string, unknown>) => JSON.stringify(
 const meta = (id: string, cwd: string, source: unknown = 'cli') => line('session_meta', { id, session_id: id, cwd, source, originator: 'codex-tui', cli_version: '0.163.0', timestamp: new Date(now).toISOString() });
 const started = (turn: string) => line('event_msg', { type: 'task_started', turn_id: turn });
 const user = (text: string) => line('event_msg', { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text }] } });
+const aborted = (turn: string) => line('event_msg', { type: 'turn_aborted', turn_id: turn, reason: 'interrupted' });
 const done = (turn: string, message: string | null, error?: string) => line('event_msg', { type: 'task_complete', turn_id: turn, last_agent_message: message, ...(error ? { error: { message: error } } : {}) });
 
 function rollout(id: string, lines: string[], partial = ''): string {
@@ -67,12 +73,14 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-sessions-'));
   posts = [];
   screen = new Map();
+  interrupted = [];
   now = Date.parse('2026-10-18T13:46:06Z');
   watch = new CodexSessionWatch({
     codexHome: () => root,
     now: () => now,
     post: async (agentId, post) => { posts.push({ agentId, ...post }); },
     dialogTitle: (agentId) => screen.get(agentId),
+    interrupted: (agentId, sessionId) => { interrupted.push({ agentId, sessionId }); posts.push({ agentId, path: '/api/hooks/status', body: { interruptedHere: true } }); },
   });
 });
 
@@ -122,6 +130,27 @@ describe("a codex agent's turn", () => {
     const outputs = postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output);
     expect(outputs).toEqual(['one', 'two']);
     expect(postsFor(AGENT).filter(p => p.event === 'UserPromptSubmit').map(p => p.current_task)).toEqual(['first', 'second']);
+  });
+});
+
+describe('a turn interrupted', () => {
+  it('9. is said interrupted before the agent rests, with no answer, and the next turn is read as before', async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-codex-project-'));
+    watch.noteLaunch(AGENT, project);
+    now += 1000;
+    const file = rollout(SESSION, [meta(SESSION, project), started('t1'), user('Message from agent "Lead": a long job [task t-1a2b3c4d]'), aborted('t1')]);
+    await watch.tick();
+
+    expect(interrupted).toEqual([{ agentId: AGENT, sessionId: SESSION }]);
+    const after = postsFor(AGENT).slice(2);
+    expect(after).toEqual([
+      { path: '/api/hooks/status', interruptedHere: true },
+      { path: '/api/hooks/status', agent_id: AGENT, session_id: SESSION, hook: 'Stop', status: 'idle' },
+    ]);
+    append(file, [started('t2'), user('again'), done('t2', 'done now')].map(l => `${l}\n`).join(''));
+    await watch.tick();
+    expect(postsFor(AGENT).filter(p => p.path === '/api/hooks/output').map(p => p.output)).toEqual(['done now']);
+    expect(interrupted).toHaveLength(1);
   });
 });
 
