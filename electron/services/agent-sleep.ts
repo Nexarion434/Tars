@@ -111,9 +111,10 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
     cliRunning: cliRunningIn(terminal),
     starting: sessionStarting(agent),
     // Tars resumes the claude binary's conversations, the providers that run
-    // it included, and only once their transcript is on disk: what the wake
-    // resumes is what this finds (consumeResumeSessionId).
-    resumable: getProvider(agent.provider).binaryName === 'claude' && resolveResumeSessionId(agent) !== null,
+    // it included, and codex's (2.0.4, `codex resume`), and only once their
+    // transcript or rollout is on disk: what the wake resumes is what this
+    // finds (consumeResumeSessionId).
+    resumable: ['claude', 'codex'].includes(getProvider(agent.provider).binaryName) && resolveResumeSessionId(agent) !== null,
     owed: holdsFor(agent.id)
       || owedKanban().some((k) => k.agentId === agent.id)
       || waitingDeliveries().some((d) => d.targetAgentId === agent.id)

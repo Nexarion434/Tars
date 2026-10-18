@@ -12,8 +12,53 @@ import type { AgentEffort } from '../types';
  */
 
 /** Where codex keeps its config, its sessions and its model cache: CODEX_HOME, else ~/.codex, as codex reads it. */
-export function codexHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex');
+export function codexHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  return env.CODEX_HOME?.trim() || path.join(homeDir, '.codex');
+}
+
+/** A codex session id: a UUID (codex's own are version 7), and the only thing a resume puts on a command line. */
+export const CODEX_SESSION_ID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** A day's folder under sessions/, as codex names it: by the local day, and the UTC one read too. */
+function dayFolder(at: Date, utc: boolean): string {
+  const [y, m, d] = utc ? [at.getUTCFullYear(), at.getUTCMonth() + 1, at.getUTCDate()] : [at.getFullYear(), at.getMonth() + 1, at.getDate()];
+  return path.join(String(y), String(m).padStart(2, '0'), String(d).padStart(2, '0'));
+}
+
+const rolloutFound = new Map<string, string>();
+
+/**
+ * The rollout file codex keeps a session in, $CODEX_HOME/sessions/<y>/<m>/<d>/rollout-<time>-<id>.jsonl, under the
+ * day the session began, which `codex resume <id>` appends to (measured on 0.163). Looked for first in the days the
+ * id itself names (a version 7 id begins with its time in milliseconds), then in every day; undefined when codex has
+ * no such session.
+ */
+export function codexRolloutOf(sessionId: string, home: string = codexHome()): string | undefined {
+  if (!CODEX_SESSION_ID.test(sessionId)) return undefined;
+  const key = `${home}\0${sessionId}`;
+  const known = rolloutFound.get(key);
+  if (known && fs.existsSync(known)) return known;
+  const sessions = path.join(home, 'sessions');
+  const suffix = `-${sessionId.toLowerCase()}.jsonl`;
+  const numbered = (dir: string): string[] => { try { return fs.readdirSync(dir).filter(n => /^\d+$/.test(n)); } catch { return []; } };
+  const days: string[] = [];
+  const at = parseInt(sessionId.slice(0, 8) + sessionId.slice(9, 13), 16);
+  for (const t of [at - 86_400_000, at, at + 86_400_000]) {
+    const day = new Date(t);
+    if (!Number.isNaN(day.getTime())) days.push(dayFolder(day, false), dayFolder(day, true));
+  }
+  for (const y of numbered(sessions)) for (const m of numbered(path.join(sessions, y))) for (const d of numbered(path.join(sessions, y, m))) days.push(path.join(y, m, d));
+  for (const day of new Set(days)) {
+    let names: string[];
+    try { names = fs.readdirSync(path.join(sessions, day)); } catch { continue; }
+    const name = names.find(n => n.startsWith('rollout-') && n.toLowerCase().endsWith(suffix));
+    if (name) {
+      const file = path.join(sessions, day, name);
+      rolloutFound.set(key, file);
+      return file;
+    }
+  }
+  return undefined;
 }
 
 /** The flags a codex `--help` lists. */

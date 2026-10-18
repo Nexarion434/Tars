@@ -12,7 +12,7 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { shellQuote } from './cli-provider';
-import { codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexModels } from './codex-cli';
+import { CODEX_SESSION_ID, codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexModels } from './codex-cli';
 
 /**
  * The models of a ChatGPT account as codex-cli 0.163.0 listed them on 2026-10-18, in its order: what Tars offers
@@ -68,6 +68,15 @@ export class CodexProvider implements CLIProvider {
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
+    // A session to go on with (measured on 0.163): `codex resume <id>` continues
+    // it in its own rollout, with its conversation, and `codex fork <id>` under a
+    // new session, as a restart that applies new settings wants
+    // (agent-restart.ts). codex's own options may come before the subcommand,
+    // which 0.163 takes there, the agent's after it; the session before the
+    // prompt. A session id and nothing else: it reaches a command line.
+    const session = params.resumeSessionId && CODEX_SESSION_ID.test(params.resumeSessionId) ? params.resumeSessionId : undefined;
+    if (session) command += params.forkSession ? ' fork' : ' resume';
+
     command += this.modelAndEffort(params.model, params.effort);
 
     // The mode in flags the installed codex has: 0.163 refuses --full-auto, and
@@ -98,6 +107,7 @@ export class CodexProvider implements CLIProvider {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
 
+    if (session) command += ` ${shellQuote(session)}`;
     if (finalPrompt) {
       const escaped = finalPrompt.replace(/'/g, "'\\''");
       command += ` '${escaped}'`;

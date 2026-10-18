@@ -15,7 +15,7 @@ import { holdsMessages } from './one-task';
 import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
-import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty, agentShell, codexLaunching } from './agent-pty';
 import { killPty } from './pty-kill';
 import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
@@ -1080,6 +1080,8 @@ export async function launchIntoTerminal(
   oweToFirstMessage(ptyProcess, '');
   if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
   if (opts.ready) await opts.ready(ptyProcess);
+  // codex typed into a shell already there, one reused too: noted as it starts (core/agent-pty.ts).
+  if (getProvider(agent.provider).binaryName === 'codex') codexLaunching(agent.id, start.cwd);
   if (opts.delayMs) {
     await new Promise<void>((resolve) => {
       setTimeout(() => {

@@ -86,6 +86,19 @@ const NODE_PTY_HELPER = 'spawn-helper';
  * checking nothing. Here they reach the real one and keep asserting what they
  * always did.
  */
+/**
+ * codex is starting for this agent (2.0.4): its folder trusted first, since
+ * codex asks "Trust this folder?" in a new one and waits there for good
+ * (providers/codex-cli.ts), and its launch noted, the session it begins or
+ * resumes being the agent's (services/codex-sessions.ts). At every spawn of a
+ * codex agent's terminal, and where a codex line is typed into a shell already
+ * there (agent-manager.ts, launchIntoTerminal).
+ */
+export function codexLaunching(agentId: string, cwd: string): void {
+  ensureCodexProjectTrusted(cwd);
+  noteCodexLaunch(agentId, cwd);
+}
+
 export function spawnAgentPty(opts: {
   /** The provider's binary, which decides what Tars is allowed to impose. */
   binaryName: string;
@@ -187,12 +200,7 @@ export function spawnAgentPty(opts: {
   if (agentId) rememberTerminalOwner(spawned, agentId);
   // codex reports no turn through a hook: its session log does, and the one
   // this terminal's codex begins is the agent's (services/codex-sessions.ts).
-  if (agentId && opts.binaryName === 'codex') {
-    // And its folder trusted first: codex asks "Trust this folder?" in a new
-    // one, and waits there for good (providers/codex-cli.ts).
-    ensureCodexProjectTrusted(opts.cwd);
-    noteCodexLaunch(agentId, opts.cwd);
-  }
+  if (agentId && opts.binaryName === 'codex') codexLaunching(agentId, opts.cwd);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {

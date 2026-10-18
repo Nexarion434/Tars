@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { codexHome } from '../providers/codex-cli';
+import { codexHome, codexRolloutOf } from '../providers/codex-cli';
 
 /**
  * Codex's turns, read from its own session log and told to Tars the way Claude Code's hooks tell it (2.0.4).
@@ -100,9 +100,17 @@ export interface CodexSessionWatchDeps {
   dialogTitle: (agentId: string) => string | undefined;
   /** Told a turn was interrupted, before the agent's rest is posted (production: task-watch.ts, turnInterrupted). */
   interrupted?: (agentId: string, sessionId: string) => void;
+  /** The session the agent's launch may resume (production: its resumableSessionId, utils/resume-session.ts). */
+  resumableSessionOf?: (agentId: string) => string | undefined;
 }
 
-interface Launch { agentId: string; cwd: string; at: number }
+interface Launch {
+  agentId: string;
+  cwd: string;
+  at: number;
+  /** The agent's own session, which the launch may resume: its rollout, and how long it was then. */
+  resume?: { sessionId: string; file: string; size: number };
+}
 interface Bound {
   agentId: string;
   sessionId: string;
@@ -112,6 +120,8 @@ interface Bound {
   turnOpen: boolean;
   startPosted: boolean;
   asking: boolean;
+  /** Bound as resumed: no session_meta comes, so its registration is posted at its first lines. */
+  resumed?: boolean;
 }
 
 /** A session's time may read a little before the launch Tars noted: the two clocks are read apart. */
@@ -155,7 +165,17 @@ export class CodexSessionWatch {
   noteLaunch(agentId: string, cwd: string): void {
     this.launches = this.launches.filter(l => l.agentId !== agentId);
     for (const [file, b] of this.bound) if (b.agentId === agentId) this.bound.delete(file);
-    this.launches.push({ agentId, cwd: realOf(cwd), at: this.deps.now() });
+    const launch: Launch = { agentId, cwd: realOf(cwd), at: this.deps.now() };
+    // It may resume the agent's own session. Measured on 0.163: `codex resume`
+    // appends to that session's rollout, under the day it began, and writes no
+    // session_meta. The session is the agent's again once that file grows past
+    // where it was now, unless a new session (a fresh start, a fork) comes first.
+    const resumable = this.deps.resumableSessionOf?.(agentId);
+    const file = resumable ? codexRolloutOf(resumable, this.deps.codexHome()) : undefined;
+    if (resumable && file) {
+      try { launch.resume = { sessionId: resumable, file, size: fs.statSync(file).size }; } catch { /* gone: a new session, then */ }
+    }
+    this.launches.push(launch);
   }
 
   /** Whether anything is waited on or followed: no codex agent, no reading. */
@@ -193,9 +213,25 @@ export class CodexSessionWatch {
   async tick(): Promise<void> {
     const now = this.deps.now();
     this.launches = this.launches.filter(l => now - l.at < LAUNCH_TTL_MS);
+    this.bindResumed();
     this.bindNew(now);
     for (const [file, b] of this.bound) await this.follow(file, b);
     for (const b of this.bound.values()) await this.lookForApproval(b);
+  }
+
+  private bindResumed(): void {
+    for (const launch of [...this.launches]) {
+      if (!launch.resume) continue;
+      let size: number;
+      try { size = fs.statSync(launch.resume.file).size; } catch { continue; }
+      if (size <= launch.resume.size) continue;
+      this.launches = this.launches.filter(l => l !== launch);
+      this.nobodys.delete(launch.resume.file);
+      this.bound.set(launch.resume.file, {
+        agentId: launch.agentId, sessionId: launch.resume.sessionId, offset: launch.resume.size, partial: '',
+        registered: false, turnOpen: false, startPosted: false, asking: false, resumed: true,
+      });
+    }
   }
 
   private bindNew(now: number): void {
@@ -243,6 +279,10 @@ export class CodexSessionWatch {
     try { read = readFrom(file, b.offset); } catch { return; }
     if (!read.text) return;
     b.offset = read.end;
+    if (b.resumed && !b.registered) {
+      b.registered = true;
+      await this.post(b, '/api/hooks/status', { status: 'running', source: 'resume' });
+    }
     const lines = (b.partial + read.text).split('\n');
     // A last line with no end yet is still being written: it waits for the rest.
     b.partial = lines.pop() ?? '';
@@ -316,7 +356,7 @@ export function noteCodexLaunch(agentId: string, cwd: string): void {
 let timer: ReturnType<typeof setInterval> | undefined;
 
 /** Reads codex's sessions every second while a codex agent is launched or followed. */
-export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted'>): void {
+export function startCodexSessionWatch(deps: Pick<CodexSessionWatchDeps, 'post' | 'dialogTitle' | 'interrupted' | 'resumableSessionOf'>): void {
   codexSessionWatch.setDeps(deps);
   if (timer) return;
   let running = false;

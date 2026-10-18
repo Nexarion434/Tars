@@ -752,6 +752,7 @@ app.whenReady().then(async () => {
       return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
     },
     interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+    resumableSessionOf: (agentId) => agents.get(agentId)?.resumableSessionId,
   });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
