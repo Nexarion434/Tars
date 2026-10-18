@@ -15,14 +15,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * A real Hermes kanban in a throwaway HERMES_HOME (__tests__/fixtures/hermes-kanban-bench.py): its own HTTP router,
  * which the sandbox's connection file names, and its own dispatcher, promotion and decomposer listing, ticking every
  * half second. The real app on a sandbox HOME, and the real kanban MCP server (mcp-kanban/dist/bundle.js), run once
- * per agent with the identity Tars hands that agent, spoken to over stdio as a CLI speaks to it. Dune and Dove work
- * on one project, Kit on another. Dove's CLI is a recording stand-in, which the hand-off starts.
+ * per agent with the identity Tars hands that agent, spoken to over stdio as a CLI speaks to it. Dune and Dove, two
+ * workers, and Lead, their orchestrator, work on one project, Kit on another. Dove's CLI is a recording stand-in,
+ * which the hand-off starts.
  *
  * Asserted:
  * 1. Dune and Dove file, list, read, claim, report on, finish (one with no summary: Hermes 0.21.5 refuses done with
- *    none), release, hand to each other and delete their own tasks, and no tool answers with an error;
+ *    none), release and delete their own tasks, and no tool answers with an error;
  * 2. Kit, of another project, sees none of them, and can neither claim nor delete one;
- * 3. the task Dune hands to Dove reaches Dove: its CLI starts with the task;
+ * 3. the task Lead hands to Dove reaches Dove: its CLI starts with the task. Handing a task to another agent is the
+ *    orchestrator's: a worker's hand-off is refused by the role rule of the drive routes (#449, core/one-task.ts),
+ *    and whichever of #449 and this spec's PR merges second adds that refusal here;
  * 4. every task carries Tars's mark in its body, on Hermes itself;
  * 5. over at least six ticks of Hermes's dispatcher after the last write, none of them is spawned, promoted or
  *    listed for decomposition; at no tick does one sit in a state Hermes acts on (todo, triage, running, review,
@@ -41,6 +44,7 @@ const live = !!TREE && !!PYTHON && fs.existsSync(path.join(TREE, 'hermes_cli'));
 const DUNE = 'aaaa1111-0000-4000-8000-0000000000a1';
 const DOVE = 'bbbb2222-0000-4000-8000-0000000000b2';
 const KIT = 'cccc3333-0000-4000-8000-0000000000c3';
+const LEAD = 'dddd4444-0000-4000-8000-0000000000d4';
 
 interface Tick { tick: number; version?: string; spawned?: string[]; triage?: string[]; promoted?: number; tasks?: Record<string, [string, string | null]>; error?: string }
 type Reply = { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown };
@@ -86,12 +90,13 @@ setInterval(() => {}, 1 << 30);
 `, { mode: 0o755 });
   const launches = () => (fs.existsSync(launchesFile) ? fs.readFileSync(launchesFile, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l) as { argv: string[]; agent: string | null }) : []);
 
-  const agent = (id: string, name: string, provider: string, projectPath: string) => ({
-    id, name, character: 'robot', provider, status: 'idle', permissionMode: 'normal', projectPath, skills: [],
+  const agent = (id: string, name: string, provider: string, projectPath: string, role = 'worker') => ({
+    id, name, character: 'robot', provider, status: 'idle', role, permissionMode: 'normal', projectPath, skills: [],
     createdAt: '2026-10-18T08:00:00.000Z', lastActivity: '2026-10-18T08:00:00.000Z',
   });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent(DUNE, 'Dune', 'claude', project), agent(DOVE, 'Dove', 'codex', project), agent(KIT, 'Kit', 'claude', other),
+    agent(LEAD, 'Lead', 'claude', project, 'orchestrator'),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project, other]));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, cliPaths: { codex: codexCli }, ollamaBaseUrl: 'http://127.0.0.1:9' }));
@@ -124,7 +129,7 @@ setInterval(() => {}, 1 << 30);
     const identity = await app.evaluate((_e, { dist, ids }) => {
       const tokens = process.mainModule!.require(`${dist}/core/agent-tokens.js`);
       return { tokens: ids.map((id: string) => tokens.mintRunToken(id).token as string), instance: tokens.tarsInstanceId() as string };
-    }, { dist, ids: [DUNE, DOVE, KIT] });
+    }, { dist, ids: [DUNE, DOVE, KIT, LEAD] });
 
     const kanbanAs = async (agentId: string, projectPath: string, token: string) => {
       const mcp = spawn(process.execPath, [path.resolve('mcp-kanban', 'dist', 'bundle.js')], {
@@ -169,6 +174,7 @@ setInterval(() => {}, 1 << 30);
     const dune = await kanbanAs(DUNE, project, identity.tokens[0]);
     const dove = await kanbanAs(DOVE, project, identity.tokens[1]);
     const kit = await kanbanAs(KIT, other, identity.tokens[2]);
+    const lead = await kanbanAs(LEAD, project, identity.tokens[3]);
     const ok = async (p: Promise<Answer>): Promise<Answer> => {
       const a = await p;
       expect(a.isError, `${a.tool} ${JSON.stringify(a.args)}: ${a.text}`).toBe(false);
@@ -211,8 +217,8 @@ setInterval(() => {}, 1 << 30);
     await ok(dune('assign_task', { task_id: b }));
     await ok(dune('mark_task_done', { task_id: b, summary: 'Spec written.' }));
 
-    // 3. Handed to Dove: claimed on its lane, and its CLI starts with the task.
-    expect((await ok(dune('assign_task', { task_id: c, agent_id: DOVE }))).text).toContain('Tars types it into that agent');
+    // 3. Handed to Dove by the project's orchestrator: claimed on its lane, and its CLI starts with the task.
+    expect((await ok(lead('assign_task', { task_id: c, agent_id: DOVE }))).text).toContain('Tars types it into that agent');
     await expect.poll(() => launches().filter(l => l.agent === DOVE && l.argv.join(' ').includes(c)).length, { timeout: 30_000 }).toBe(1);
     keep({ launches: launches() });
     // Dove's own now: it can release and delete it, and Dune, who no longer holds it, cannot delete it.
