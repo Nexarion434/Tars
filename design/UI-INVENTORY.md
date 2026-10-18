@@ -4,7 +4,7 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 256 root frames, 73 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+rather than a companion to it. `design/tars-redesign.pen` holds 256 root frames, 75 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
 `design/chat-design.pen` holds 72 of those, the other hundred and eighty-four being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
@@ -229,20 +229,21 @@ read the transcript instead, is gone since 1.9.2.
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
 | Permission asked of Tars | The question Claude Code would put to its permission dialog, asked of Tars by the state mod instead: the line a panel shows, with allow, deny with a reason and ask in terminal; a call too long for that line, shown whole in the panel before allow; the same question in full in the agent's window, with why Claude Code asks and the rule that asked under the call, and on its card; too late, when the question went back first (and its light copy) |
 
-## The task banner above an agent's terminal (drawn only)
+## The task banner above an agent's terminal
 
 A task someone gives an agent (delegate_task, a chat, Tars, a channel) goes into the
-agent's own terminal, the permanent one, and runs there as one of its turns. Drawn on
-2026-10-18 and not built yet: while the agent works on such a task, a banner above its
-terminal says who gave it, since when, its first line, how many tasks wait and from
-whom, and offers stop task. The first column names no route, so `npm run e2e:guard`
-does not read this table.
+agent's own terminal, the permanent one, and runs there as one of its turns. While the
+agent works on such a task, a banner above its terminal says who gave it, since when,
+its first line, how many tasks wait and from whom, and offers stop task. Built in 2.0.4
+(`src/components/TaskBanner.tsx`) on the Dashboard's panel and in the agent's window;
+the new interface's project page row is drawn and not built yet (listed at the end).
+The first column names no route, so `npm run e2e:guard` does not read this table.
 
 | Surface | Frames |
 |---|---|
 | The banner on the Dashboard's panel, in both shells: a task in hand with nothing waiting; two waiting, and the list the count opens; 660, 582 and 420 wide; the smallest pane, 3x3 in a 1200 by 800 window | `tars-redesign.pen`: Task banner · above the agent's terminal, Task banner · Dashboard, a panel on a given task |
 | The agent's window: the banner over its terminal column | `tars-redesign.pen`: Task banner · above the agent's terminal |
-| The new interface's project page, which shows no terminal: the agent's row in the team carries the banner, with the senders of what waits on a third line | `tars-redesign.pen`: Task banner · new interface, the project page's team |
+| The new interface's project page, which shows no terminal: the agent's row in the team carries the banner, with the senders of what waits on a third line (not built yet) | `tars-redesign.pen`: Task banner · new interface, the project page's team |
 
 Each frame has its `· light` copy beside it. Task banner · notes, what the Backend
 sends lists the fields, the push and the call the window needs from the main process.
@@ -278,6 +279,8 @@ For 2.0.4:
   narrowest window), · states (and its light copy), · notes for the Backend.
 - Providers, one panel per CLI: Providers · one panel per CLI · Codex, · Claude Code (Codex with its light copy and at
   the narrowest window), · states (and its light copy), · notes for the Backend.
+- The task banner on the new interface's project page, in the agent's row of the team: Task banner · new interface,
+  the project page's team (and its light copy).
 
 For 2.0.5:
 - File panel, opened from anywhere (a terminal, Brain, Review, the Vault): File panel (2.0.5) · opened from an agent's

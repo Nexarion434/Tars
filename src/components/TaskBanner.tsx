@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { List } from 'lucide-react';
-import { Button, StatusSquare } from '@/components/ui';
+import { StatusSquare } from '@/components/ui';
 import type { AgentStatus } from '@/types/electron';
 import { useTaskBanner } from '@/hooks/useTaskBanner';
 import { cleanLine, clockOf, elapsedSince, sendersOf } from '@/lib/task-banner';
@@ -16,7 +16,9 @@ import { cleanLine, clockOf, elapsedSince, sendersOf } from '@/lib/task-banner';
  * from 560 px, "Task from <sender> since 14:02 · 4 min" and the waiting tasks'
  * senders beside their count; under 560, "from <sender> since 14:02", the
  * senders in their list only; under 400, the sender and the hour, and the
- * count without its icon.
+ * count without its icon. Those widths are the banner's own, padding included:
+ * the container carries no padding, its content does (a container query reads
+ * the content box, and a 583 px pane read as 559 took the narrow layout).
  */
 export default function TaskBanner({ agent }: { agent: AgentStatus }) {
   const banner = useTaskBanner(agent);
@@ -58,40 +60,48 @@ export default function TaskBanner({ agent }: { agent: AgentStatus }) {
       data-task-banner
       role="status"
       aria-label={`Task from ${from}`}
-      className="@container relative shrink-0 px-3 py-1.5 bg-secondary border-b border-border select-none"
+      className="@container relative shrink-0 bg-secondary border-b border-border select-none"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusSquare tone="running" />
-        <p className="min-w-0 truncate text-[11px] leading-tight text-muted-foreground">
-          <span className="hidden @min-[560px]:inline">Task </span>
-          <span className="hidden @min-[400px]:inline">from </span>
-          <span className="text-foreground font-medium">{from}</span>
-          <span className="font-mono">
-            {' '}
-            <span className="hidden @min-[400px]:inline">since </span>
-            {clockOf(task.startedAt)}
-            <span className="hidden @min-[560px]:inline"> · {elapsedSince(task.startedAt, now)}</span>
-          </span>
-        </p>
-        <span className="flex-1" />
-        {waiting.length > 0 && (
+      <div className="px-3 py-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusSquare tone="running" />
+          <p className="min-w-0 truncate text-[11px] leading-tight text-muted-foreground">
+            <span className="hidden @min-[560px]:inline">Task </span>
+            <span className="hidden @min-[400px]:inline">from </span>
+            <span className="text-foreground font-medium">{from}</span>
+            <span className="font-mono">
+              {' '}
+              <span className="hidden @min-[400px]:inline">since </span>
+              {clockOf(task.startedAt)}
+              <span className="hidden @min-[560px]:inline"> · {elapsedSince(task.startedAt, now)}</span>
+            </span>
+          </p>
+          <span className="flex-1" />
+          {waiting.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className={`h-[26px] shrink-0 flex items-center gap-1.5 px-2 border text-[11px] transition-colors ${open ? 'bg-card border-border-accent text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              <List size={12} className="hidden @min-[400px]:block" />
+              <span>{waiting.length} waiting</span>
+              <span className="hidden @min-[560px]:inline">· {sendersOf(waiting)}</span>
+            </button>
+          )}
+          {/* As the panel header draws its stop, which every banner frame copies: 11 px, in the secondary grey. */}
           <button
             type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            className={`h-[26px] shrink-0 flex items-center gap-1.5 px-2 border text-[11px] transition-colors ${open ? 'bg-card border-border-accent text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={stop}
+            disabled={stopping}
+            className="h-[26px] shrink-0 px-2 border border-border bg-card font-mono text-[11px] text-text-secondary hover:text-foreground hover:bg-secondary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <List size={12} className="hidden @min-[400px]:block" />
-            <span>{waiting.length} waiting</span>
-            <span className="hidden @min-[560px]:inline">· {sendersOf(waiting)}</span>
+            stop task
           </button>
-        )}
-        <Button size="sm" className="font-mono shrink-0" onClick={stop} disabled={stopping}>
-          stop task
-        </Button>
+        </div>
+        <p className="mt-1 truncate text-[12px] leading-snug text-foreground" title={firstLine}>{firstLine}</p>
+        {error && <p className="mt-1 text-[11px] text-danger">{error}</p>}
       </div>
-      <p className="mt-1 truncate text-[12px] leading-snug text-foreground" title={firstLine}>{firstLine}</p>
-      {error && <p className="mt-1 text-[11px] text-danger">{error}</p>}
       {open && waiting.length > 0 && (
         <div className="absolute right-3 top-full z-20 mt-1 w-[320px] max-w-[calc(100%-24px)] bg-bg-elevated border border-border-accent">
           <div className="flex items-center justify-between px-3 pt-[9px] pb-[7px] text-[10px] text-muted-foreground">
