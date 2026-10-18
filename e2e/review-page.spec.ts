@@ -181,7 +181,8 @@ test('review: a project with no agent, the files without their patches, a patch 
     .filter({ has: page.getByRole('button', { name: 'open', exact: true }) }).last();
   fs.writeFileSync(gitLog, '');
   await card.getByRole('button', { name: 'open', exact: true }).click();
-  const asked = () => ranIn(code).filter(l => l.startsWith('status --porcelain=v1 -z')).length;
+  // safe-git puts --ignore-submodules=all right after the subcommand.
+  const asked = () => ranIn(code).filter(l => /^status (--ignore-submodules=all )?--porcelain=v1 -z/.test(l)).length;
   await expect.poll(asked, { timeout: 30_000, message: 'the code panel asked review:diff for the tree' }).toBeGreaterThan(0);
   await page.waitForTimeout(1500);
   const codeRuns = ranIn(code);
