@@ -81,8 +81,11 @@ function flagsOf(binaryPath: string): Set<string> {
   if (!flags) {
     try {
       // On the main thread, once per binary: codex answers --help in tens of
-      // milliseconds, and one that hangs is given up on quickly.
-      flags = codexFlagsFromHelp(String(execCliSync(binaryPath, ['--help'], { encoding: 'utf-8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })));
+      // milliseconds, and the answer is kept for the binary. Waited for as
+      // long as it takes, to 10 s: under a heavy load (a load average of 170,
+      // measured at #465's gate) a slow answer given up on at 2 s handed every
+      // launch of the run the stable flags; one that hangs is given up on then.
+      flags = codexFlagsFromHelp(String(execCliSync(binaryPath, ['--help'], { encoding: 'utf-8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] })));
     } catch {
       flags = new Set();
     }
