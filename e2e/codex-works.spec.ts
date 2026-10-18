@@ -102,8 +102,15 @@ for (const newInterface of [false, true]) {
         c.status = 'idle';
         c.sessionRegisteredAt = new Date().toISOString();
         const tokens = req(`${dist}/core/agent-tokens.js`);
-        return { token: tokens.mintRunToken(lead).token as string, instance: tokens.tarsInstanceId() as string };
+        return { token: tokens.mintRunToken(lead).token as string, instance: tokens.tarsInstanceId() as string, claire: tokens.mintAgentToken(claire) as string };
       }, { dist, lead: LEAD, claire: CLAIRE });
+      // Its session, as Claude Code's SessionStart hook registers it: the stand-in has no hooks, and a launch whose
+      // session never registers is still on its way, which a message waits for.
+      const registered = await fetch(`http://127.0.0.1:${port}/api/hooks/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.claire}` },
+        body: JSON.stringify({ agent_id: CLAIRE, session_id: 'e2e00000-0000-4000-8000-0000000000c1', status: 'idle', source: 'startup' }),
+      }).then(r => r.status);
+      expect(registered).toBe(200);
 
       const mcp = spawn(process.execPath, [path.resolve('mcp-orchestrator', 'dist', 'bundle.js')], {
         env: { PATH: process.env.PATH ?? '', HOME: home, CLAUDE_MGR_API_URL: `http://127.0.0.1:${port}`, CLAUDE_MGR_API_TOKEN: identity.token, CLAUDE_AGENT_ID: LEAD, CLAUDE_PROJECT_PATH: project, TARS_INSTANCE_ID: identity.instance },
