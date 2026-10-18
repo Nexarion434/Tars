@@ -14,7 +14,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Seeded as an install of 2.0.3 left it: an agent on deepseek whose kept output holds Claude Code's question (its
  * bytes as 2.1.302 wrote them, measured, the key's last 20 characters in them), in agents.json at version 3 and in its
  * backup; those 20 characters in the rejected list of ~/.claude.json, beside the user's own, and of an account
- * folder's; a run token folder of a Tars that is gone, and one of a Tars still running. Then Tars starts on that home.
+ * folder's, and in the copies Claude Code keeps of both (a backup in each `backups/`, a write it never finished beside
+ * ~/.claude.json); a run token folder of a Tars that is gone, and one of a Tars still running. Then Tars starts on
+ * that home.
  *
  * Asserted, both shells: no file of the home holds the key's 20 characters but app-settings.json, where the key is;
  * the agent's kept output keeps everything else; ~/.claude.json keeps the user's own entry and its other fields, in
@@ -76,6 +78,14 @@ for (const newInterface of [false, true]) {
     const accountJson = path.join(home, '.claude-accounts', 'acct-0a1b2c', '.claude.json');
     fs.mkdirSync(path.dirname(accountJson), { recursive: true });
     fs.writeFileSync(accountJson, JSON.stringify({ numStartups: 5, customApiKeyResponses: { approved: [], rejected: [tail(key)] } }, null, 2), { mode: 0o600 });
+    // Claude Code's copies, named as it names them (2.1.302): a backup in each config home's backups/, and a leftover.
+    const homeBackup = path.join(home, '.claude', 'backups', '.claude.json.backup.1792350644690');
+    const copies: Array<[string, string[]]> = [[homeBackup, [tail(key), tail(users)]], [path.join(home, '.claude.json.tmp.78791.84efb0c4c9ae'), [tail(key)]],
+      [path.join(path.dirname(accountJson), 'backups', '.claude.json.backup.1792350644614'), [tail(key)]]];
+    for (const [file, rejected] of copies) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ numStartups: 2, customApiKeyResponses: { approved: [], rejected } }, null, 2), { mode: 0o600 });
+    }
 
     // Run token folders where the app makes them, its temporary folder, which it inherits from here.
     const deadPid = spawnSync(process.execPath, ['-e', '0']).pid!;
@@ -111,7 +121,9 @@ for (const newInterface of [false, true]) {
         rejected: (config.customApiKeyResponses?.rejected ?? []).map((t: string) => (t === tail(users) ? 'the user\'s own' : 'another')),
         claudeJsonMode: (fs.statSync(claudeJson).mode & 0o777).toString(8), goneFolder: fs.existsSync(gone), runningFolder: fs.existsSync(running),
       });
-      expect(values.before, 'the seed').toEqual(expect.arrayContaining(['.dorothy/agents.json', '.dorothy/agents.backup.json', '.claude.json']));
+      expect(values.before, 'the seed').toEqual(expect.arrayContaining(['.dorothy/agents.json', '.dorothy/agents.backup.json', '.claude.json',
+        '.claude/backups/.claude.json.backup.1792350644690', '.claude.json.tmp.78791.84efb0c4c9ae', '.claude-accounts/acct-0a1b2c/backups/.claude.json.backup.1792350644614']));
+      expect.soft(JSON.parse(fs.readFileSync(homeBackup, 'utf8')).customApiKeyResponses?.rejected, "Claude Code's backup: the user's own entry").toEqual([tail(users)]);
       expect.soft(agentsVersion, 'agents.json').toBe(4);
       for (const file of ['agents.json', 'agents.backup.json']) {
         expect.soft(saved(file), `${file}: the rest of the output`).toContain('the session began');

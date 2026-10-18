@@ -479,9 +479,11 @@ the key's last 20 characters (`sk-ant-...` then those 20), which the agents'
 kept output held in `agents.json` and `agents.backup.json`, in every agent's
 reach; they are masked there, the rest of the output kept. And Tars's keys' last
 20 characters are taken out of the `customApiKeyResponses.rejected` list of
-`~/.claude.json` and of each account folder's, the user's own entries left, the
-file changed the way Tars writes its trust there (`updateSharedJsonSync`). A key
-since replaced in Settings is masked in the output, which shows it under the
+`~/.claude.json` and of each account folder's, and of the copies Claude Code
+keeps of each (its backups in the config home's `backups/`, one a minute at most,
+the last five kept, and a write of its own it never finished, beside the file),
+the user's own entries left, each file changed the way Tars writes its trust
+there (`updateSharedJsonSync`). A key since replaced in Settings is masked in the output, which shows it under the
 question's masking, but not found in a rejected list, which holds the 20
 characters alone.
 

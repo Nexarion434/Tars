@@ -13,8 +13,9 @@ import { accountsRoot, readAccountsSettings } from '../services/claude-accounts/
  * beginning (measured on 2.1.302, its bytes in key-fragments-on-load.test.ts). An agent's terminal output is kept in
  * agents.json and agents.backup.json, which every agent is handed (--add-dir). After a No, Claude Code keeps the same
  * 20 characters, `key.trim().slice(-20)`, in `customApiKeyResponses.rejected` of the .claude.json of the folder it
- * ran on: ~/.claude.json, or an account folder's. Since 2.0.4 the key goes as the auth token, which is never asked
- * about: nothing new is written, and this cleans, once, what is there (agent-manager.ts, loadAgents).
+ * ran on, ~/.claude.json or an account folder's, and in its own copies of that file (copiesOf). Since 2.0.4 the key
+ * goes as the auth token, which is never asked about: nothing new is written, and this cleans, once, what is there
+ * (agent-manager.ts, loadAgents).
  */
 
 /** What a masked fragment becomes: the rest of the output, and the screen around it, stay as they were. */
@@ -93,7 +94,27 @@ export function withoutRejectedTails<T>(config: T | undefined, keys: string[]): 
   return { ...config, customApiKeyResponses: { ...responses, rejected: kept } } as T;
 }
 
-/** The .claude.json of each Claude account folder Tars runs agents on: ~/.claude.json, then each account's. */
+/** Beside a .claude.json: the single backup Claude Code still restores from, and a write of its own it never finished. */
+const BESIDE = /^\.claude\.json\.(?:backup|tmp\.\d+\.[0-9a-f]+)$/;
+/** In the `backups/` folder of its config home: one backup a minute at most, the last five kept. */
+const BACKED_UP = /^\.claude\.json\.backup\.\d+$/;
+
+/**
+ * Claude Code's own copies of a .claude.json, each with the same list (its names read in 2.1.302, the backups and the
+ * leftovers found in a real home): `.claude.json.backup.<ms>` in `<config home>/backups/`, `.claude.json.backup` and
+ * `.claude.json.tmp.<pid>.<hex>` beside the file.
+ */
+function copiesOf(file: string, configHome: string): string[] {
+  const matching = (dir: string, pattern: RegExp) => {
+    try { return fs.readdirSync(dir).filter(name => pattern.test(name)).map(name => path.join(dir, name)); } catch { return []; }
+  };
+  return [...matching(path.dirname(file), BESIDE), ...matching(path.join(configHome, 'backups'), BACKED_UP)];
+}
+
+/**
+ * The .claude.json of each Claude account folder Tars runs agents on, each followed by Claude Code's copies of it:
+ * ~/.claude.json, whose config home is ~/.claude, then each account's, whose config home is its folder.
+ */
 export function claudeConfigFiles(home: string = os.homedir()): string[] {
   const dirs = new Set<string>();
   try {
@@ -103,7 +124,11 @@ export function claudeConfigFiles(home: string = os.homedir()): string[] {
     const root = accountsRoot(home);
     for (const name of fs.readdirSync(root)) if (/^acct-[0-9a-f]{6}$/.test(name)) dirs.add(path.join(root, name));
   } catch { /* no account folder */ }
-  return [path.join(home, '.claude.json'), ...[...dirs].map(dir => path.join(dir, '.claude.json'))];
+  const withCopies = (file: string, configHome: string) => [file, ...copiesOf(file, configHome)];
+  return [...new Set([
+    ...withCopies(path.join(home, '.claude.json'), path.join(home, '.claude')),
+    ...[...dirs].flatMap(dir => withCopies(path.join(dir, '.claude.json'), dir)),
+  ])];
 }
 
 /**
