@@ -433,8 +433,10 @@ file that does not parse is left as it is. What it closes and what it does not:
   as its CLI needs it (a CLI's key, `ANTHROPIC_API_KEY` for the providers on the claude binary), and so is
   readable to it and its children; a process's environment is the user's to read too: on macOS 26 `ps -E` and
   `ps eww` showed no other process's (measured on 2026-10-18), and on Linux `/proc/<pid>/environ` is readable by
-  the same user (procfs's rule, not run here). An agent that read a key before 2.0.4 still has it: rotating it is
-  the only cure. The zeros written over a copy land in new blocks on a copy-on-write disk (APFS, btrfs): the old
+  the same user (procfs's rule, not run here). gbrain's and Honcho's keys go into `~/.claude.json` as their MCP
+  servers' `Authorization` header, since every claude agent's CLI calls them itself (`setupMemoryBackends`): any
+  agent that reads that file reads them. An agent that read a key before 2.0.4 still has it: rotating it is the
+  only cure. The zeros written over a copy land in new blocks on a copy-on-write disk (APFS, btrfs): the old
   blocks are freed, not wiped. A hard link made to the private file before a save keeps the old contents (a save
   writes a new file); the window's channels refuse a file linked into the private folder, which they can tell.
 
