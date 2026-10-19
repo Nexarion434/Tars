@@ -8,7 +8,7 @@
 //   in the form 0.163 draws for it (measured with a probe server), and waits for a key;
 // - for `SEND <agent> <text>` it starts Tars's MCP server from its config.toml as codex does, with HOME, PATH, TERM
 //   and the variables `env_vars` names (nothing else: measured with a probe server on 0.163), and calls
-//   send_message;
+//   send_message; for `DELEGATE <agent> <prompt>` the same, with delegate_task (e2e/cli-matrix.spec.ts);
 // - it reads what is typed into it as codex's composer does: a bracketed paste, then Enter;
 // - `HOLD <tag>` works until Esc is pressed, then logs the turn as 0.163 does when it is interrupted: `turn_aborted`
 //   (reason `interrupted`), and no task_complete;
@@ -189,6 +189,10 @@ function tarsServer() {
 }
 
 function sendThroughTars(to, message) {
+  return callTars('send_message', { id: to, message });
+}
+
+function callTars(tool, args) {
   const server = tarsServer();
   if (!server) return Promise.resolve('no Tars server in config.toml');
   // What codex 0.163 hands an MCP server: HOME, PATH, TERM and the names env_vars lists, from its own environment.
@@ -219,11 +223,11 @@ function sendThroughTars(to, message) {
     (async () => {
       await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'codex-mcp-client', version: '0.163.0' } });
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-      const reply = await rpc('tools/call', { name: 'send_message', arguments: { id: to, message } });
+      const reply = await rpc('tools/call', { name: tool, arguments: args });
       const text = reply.result?.content?.map(c => c.text ?? '').join('\n') ?? JSON.stringify(reply.error);
-      log({ mcp: true, tool: 'send_message', isError: !!reply.result?.isError || !!reply.error, text: text.slice(0, 400) });
+      log({ mcp: true, tool, to: args.id ?? null, isError: !!reply.result?.isError || !!reply.error, text: text.slice(0, tool === 'send_message' ? 400 : 3000) });
       child.kill();
-      resolve(`${reply.result?.isError ? 'refused' : 'sent'}: ${text.split('\n')[0]}`);
+      resolve(tool === 'send_message' ? `${reply.result?.isError ? 'refused' : 'sent'}: ${text.split('\n')[0]}` : `${tool} ${reply.result?.isError ? 'refused' : 'answered'}: ${text}`);
     })();
   });
 }
@@ -263,11 +267,16 @@ async function turn(text) {
   let answer = 'ok';
   const approve = /APPROVE (\w+)/.exec(text);
   const send = /SEND (\S+) (.+)$/m.exec(text);
+  const delegate = /DELEGATE (\S+) (.+)$/m.exec(text);
   const echo = /ECHO (\w+)/.exec(text);
   if (approve) {
     const allowed = asks ? await ask(approve[1]) : true;
     out('\x1b[2J\x1b[H');
     answer = allowed ? `ran echo ${approve[1]}` : `did not run echo ${approve[1]}`;
+  } else if (delegate && (!send || delegate.index < send.index)) {
+    const allowed = asks ? await askTool('claude-mgr-orchestrator', 'delegate_task') : true;
+    if (asks) out('\x1b[2J\x1b[H');
+    answer = allowed ? await callTars('delegate_task', { id: delegate[1], prompt: delegate[2], timeoutSeconds: Number(process.env.FAKE_DELEGATE_TIMEOUT_S) || 90 }) : 'the call of delegate_task was cancelled';
   } else if (send) {
     const allowed = asks ? await askTool('claude-mgr-orchestrator', 'send_message') : true;
     if (asks) out('\x1b[2J\x1b[H');
