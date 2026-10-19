@@ -363,7 +363,8 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
           description={
             (conn.authMode || 'token') === 'oauth'
               ? "The gateway's own sign-in. Use the row below."
-              : 'A static session token, sent as X-Hermes-Session-Token.'
+              // main keeps a saved token on the mask or an empty field, and nothing clears it (keepToken)
+              : 'A static session token, sent as X-Hermes-Session-Token. Switching to OAuth keeps it, unused.'
           }
           control={
             <div className="flex items-center gap-2 w-full justify-end">
