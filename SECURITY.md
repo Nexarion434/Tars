@@ -253,6 +253,25 @@ is no loss under this section: every one of those processes runs as the same
 user and could already read the token from the CLI's environment, as measured
 above.
 
+**Never in a command line.** The arguments of a process are another matter:
+every account on the machine reads them (`ps`; `/proc/<pid>/cmdline` on Linux),
+where the environment is read by this user's own processes only. A delegated
+run handed its MCP servers its token in the list of servers ACP carries, and
+the claude adapter writes that list into the `--mcp-config` JSON of the claude
+it starts: measured on 2026-10-17, and again on 2026-10-18, with
+claude-agent-acp 0.93.0, the run's token was in that process's arguments.
+Since 2.0.4 the list carries `CLAUDE_MGR_API_TOKEN_FILE`, the path of a `0600`
+file in a `0700` folder of the run's own, removed when the run ends, and the
+servers read the token there (`mcp-shared/src/tars-api.ts`). A folder a run or a
+crash left goes at Tars's next start; it names the Tars that made it, so another
+Tars's run under way keeps its own (`services/acp/run-token-file.ts`). Measured the same
+way: the path is in the arguments, the token is not. This is the one place a
+`0600` file buys something: nothing against this user's processes, which read
+it as they read the environment, but out of the other accounts' sight. A
+terminal's token never went there: spawnAgentPty puts it in the environment,
+and the shell hooks hand it to curl with `-H @<(printf ...)`, a builtin, never
+an argument.
+
 **The honest statement.** Per-agent tokens ended impersonation *by naming*: an
 agent can no longer become a colleague by writing a header. They do not, and
 cannot, end impersonation by a process that reads the process table. Closing
@@ -430,6 +449,47 @@ gateway with it and edit or delete any task (the audit's gate of #183). Since
 1.9.3 that token is in `~/.tars-private/hermes-token`, out of the folder every
 agent is handed; an agent in bypass, which runs as the user, can still read it
 there (no confinement, JeanBrasse's decision of 2026-09-23).
+
+**A key provider's key goes to Claude Code as `ANTHROPIC_AUTH_TOKEN`**
+(`keyProviderEnv`, `electron/providers/cli-provider.ts`). Measured on claude
+2.1.302 on 2026-10-18, in a throwaway home against a stand-in of the vendor: an
+API key Claude Code finds in its environment is not used until someone answers
+"Do you want to use this API key?" at launch, No preselected. Until 2.0.4 Tars
+handed every key provider's key over that way, so the question waited in a
+terminal nobody watches, and the first Enter typed there, Tars's own included,
+answered No. The key was then refused for good in that folder's `.claude.json`,
+and a session with a subscription signed in sent the subscription's OAuth token,
+with its first request, to the vendor's URL. An auth token is never asked
+about, wins over a signed-in subscription (the stand-in got the key, never the
+OAuth token) and is written nowhere. `ANTHROPIC_API_KEY` is blanked: a key the
+user's shell exports would bring the question back, and go out to the vendor as
+`x-api-key`. Approving the key in `.claude.json` would have stopped the question
+too, and left the key's last 20 characters there and in each backup Claude Code
+makes of the file.
+
+A scheduled task takes the key the same way (`scheduledKeyExports`). Measured
+on 2.1.302: `claude -p` with `ANTHROPIC_API_KEY` empty or unset, or with
+`ANTHROPIC_AUTH_TOKEN` empty, and a subscription signed in, sends the
+subscription's OAuth token as a Bearer to the URL it is pointed at, the
+vendor's. The scripts read the key with jq, which macOS ships only from 15, and
+a key removed after the task was scheduled read empty the same way. Since 2.0.4
+the script reads it as the task runs, with Tars's own node (the launcher its MCP
+servers run on, or `node`), never in an argument, and with no key, or settings
+it cannot read, writes why in the task's log and ends before claude starts.
+
+What Tars before 2.0.4 left of those keys is cleaned once, at the first load of
+an `agents.json` from before it (`core/key-fragments.ts`): the question showed
+the key's last 20 characters (`sk-ant-...` then those 20), which the agents'
+kept output held in `agents.json` and `agents.backup.json`, in every agent's
+reach; they are masked there, the rest of the output kept. And Tars's keys' last
+20 characters are taken out of the `customApiKeyResponses.rejected` list of
+`~/.claude.json` and of each account folder's, and of the copies Claude Code
+keeps of each (its backups in the config home's `backups/`, one a minute at most,
+the last five kept, and a write of its own it never finished, beside the file),
+the user's own entries left, each file changed the way Tars writes its trust
+there (`updateSharedJsonSync`). A key since replaced in Settings is masked in the output, which shows it under the
+question's masking, but not found in a rejected list, which holds the 20
+characters alone.
 
 Nor is the line every task Tars files carries since 2.0.4 ("Tars task: it belongs to Tars's
 agents, ..."): it is a label for whoever opens the task. Hermes's assistant, whose board listing does not
