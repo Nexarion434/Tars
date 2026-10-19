@@ -26,7 +26,7 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
+import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
 import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
 import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
 import { APP_PAGES } from './services/health/pages';
@@ -130,10 +130,19 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
-import { startTaskWatch } from './services/task-watch';
+import { startTaskWatch, turnInterrupted } from './services/task-watch';
+import { cliRunningIn } from './core/agent-pty';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
-import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
+import { filesOpenBy, openFilesReadable } from './platform/open-files';
+import { startCodexSessionWatch } from './services/codex-sessions';
+import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
+import { codexKeyConfig } from './services/cli-keys';
+import { getProvider } from './providers';
+import { scheduleTick } from './utils/agents-tick';
+import { terminalTokenOf } from './core/agent-tokens';
+import { codexDialogOnScreen } from './core/terminal-mirror';
 import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
@@ -143,9 +152,10 @@ import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-bo
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
-import { agentStatusEmitter } from './services/agent-events';
+import { agentStatusEmitter, emitAgentStatus } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
+import { sweepRunTokenFolders } from './services/acp/run-token-file';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
 import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
@@ -559,6 +569,8 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // And the run token folders a delegated run or a crash left behind (services/acp/run-token-file.ts).
+  sweepRunTokenFolders();
   // Whether the last run stopped abruptly, and who was working then, read
   // before this run's record replaces it (services/run-state.ts).
   previousRun = beginRun({ appVersion: app.getVersion() });
@@ -728,6 +740,81 @@ app.whenReady().then(async () => {
   startStallWatch();
   // Agents with no turn for 30 minutes sleep, orchestrators never (services/agent-sleep.ts).
   startSleepWatch();
+  // codex's turns, read from its session log and posted as its terminal's hooks
+  // would post them, with that terminal's own token (services/codex-sessions.ts).
+  startCodexSessionWatch({
+    post: async (agentId, { path: route, body }) => {
+      const token = terminalTokenOf(agentId);
+      if (!token) return;
+      try {
+        await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        console.warn(`[codex-sessions] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+      }
+    },
+    dialogTitle: (agentId) => {
+      const agent = agents.get(agentId);
+      return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+    },
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+    resumableSessionOf: (agentId) => agents.get(agentId)?.resumableSessionId,
+    codexRunning: (agentId) => {
+      const agent = agents.get(agentId);
+      const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      return !!terminal && cliRunningIn(terminal);
+    },
+    // Whose own codex holds a new session's file, read once per session that
+    // names nobody: the codex under each waiting agent's terminal and what it
+    // started (the Audit's M1 on #465). Unknown where files cannot be read, and
+    // asked again when ps or lsof failed (the Audit's L5).
+    openFilesReadable: () => openFilesReadable(),
+    heldOpenBy: async (file, agentIds) => {
+      if (!openFilesReadable()) return undefined;
+      const procs = await readProcesses();
+      if (!procs) return undefined;
+      let real: string;
+      try { real = fs.realpathSync(file); } catch { return null; }
+      for (const agentId of agentIds) {
+        const agent = agents.get(agentId);
+        const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+        const codex = terminal ? cliProcess(terminal.pid, procs, 'codex') : undefined;
+        if (!codex) continue;
+        const open = await filesOpenBy(processTreeOf(codex.pid, procs));
+        if (open === undefined) return undefined;
+        if (open.has(real)) return agentId;
+      }
+      return null;
+    },
+    // Why the agent's codex will start not signed in, asked at its launch (the
+    // Audit's L7 on #465): Tars hands codex its own home, and the user's login
+    // may be in the CODEX_HOME their shell sets. Said in its status: codex shows
+    // its sign-in screen and writes no session, so nothing else would say it.
+    signInGapOf: async (agentId) => {
+      const agent = agents.get(agentId);
+      if (!agent) return undefined;
+      return codexSignInGap({
+        binaryPath: agent.cliPath || getProvider(agent.provider).resolveBinaryPath(appSettings),
+        home: codexHome(),
+        keyed: codexKeyConfig(appSettings).length > 0,
+        shellHome: () => loginShellCodexHome(),
+      });
+    },
+    notSignedIn: (agentId, text) => {
+      const agent = agents.get(agentId);
+      if (!agent) return;
+      console.warn(`[codex] ${agent.name || agentId}: ${text}`);
+      agent.status = 'error';
+      agent.error = text;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      scheduleTick();
+      emitAgentStatus(agentId);
+    },
+  });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
   // first pass forward, for the e2e.

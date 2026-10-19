@@ -627,7 +627,7 @@ const AGENT_TOOLS: Tool[] = [
         .string()
         .optional()
         .describe("The provider, by id (default claude). Its own CLI: claude, codex, gemini, grok, opencode, pi, amp. Claude Code run against another provider, with the key set in Tars's Settings (refused without it): openrouter, deepseek, mimo, moonshot, qwen, zhipu, minimax, nvidia, nous-portal, ollama, ollama-cloud, venice, custom-openai."),
-      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-5-codex' for codex). Omit for the provider's default."),
+      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-6-luna' for codex). Omit for the provider's default."),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort. Omit for the CLI's own."),
       permissionMode: z
         .enum(["plan", "normal", "auto", "bypass"])

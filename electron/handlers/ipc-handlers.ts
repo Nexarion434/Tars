@@ -1,10 +1,10 @@
+import { safeGit, safeGitSync } from '../utils/safe-git';
 import { ipcMain, dialog, shell, app } from 'electron';
 import { stopTask, taskBannerOf } from '../services/task-banner';
 import { typeLaunchTask } from '../core/typed-task';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { gitRefusal } from '../core/chat-slots';
-import { execFileSync } from 'child_process';
 import { restartRunnersOf } from '../services/chat-runners';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
@@ -77,6 +77,7 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
+import { readCodexModels } from '../providers/codex-cli';
 import { cliKeyStates, keepCliKeys, withCliKey, withoutCliKeys } from '../services/cli-keys';
 
 /**
@@ -179,7 +180,7 @@ async function makeAgentWorktree(projectPath: string, branchName: string): Promi
       // a quote or a space in it ("Bob's Projects") used to break the command,
       // or run its own. In the C locale: gitRefusal reads git's "fatal:",
       // which a translated git would not write.
-      const git = (args: string[]) => execFileSync('git', args, { cwd: projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+      const git = (args: string[]) => safeGitSync(projectPath, args, { env: { LC_ALL: 'C' } });
       // An existing branch is checked out there, a new one is made: only the
       // add that applies runs, so a refusal is git's reason for it. Any failure
       // of the first used to be retried as a new branch, and the user read the
@@ -754,6 +755,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const appSettingsForCommand = getAppSettings();
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await cliProvider.prepareLaunch?.(binaryPath, options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'));
 
     // The orchestrator's powers: its project's orchestrator (the toggle, never
     // the name) or a chat's runner (core/agent-role.ts).
@@ -2008,6 +2011,15 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       const model = getAppSettings().customOpenAIModel?.trim();
       return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
     }
+    // The models of the account codex is signed in with, from codex's own
+    // list: models.dev's OpenAI list offered gpt-5-codex-mini, which codex
+    // refuses for a ChatGPT account (codex-cli.ts).
+    if (provider === 'codex') {
+      const listed = readCodexModels();
+      if (listed.length > 0) {
+        return { models: listed.map(m => ({ id: m.id, name: m.name, description: m.description, effortValues: m.efforts, contextWindow: m.contextWindow })) };
+      }
+    }
     await loadCatalog();
     return { models: modelsForProvider(provider) };
   });
@@ -3080,11 +3092,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:branch', async (_event, { cwd }: { cwd: string }) => {
     if (!cwd || !fs.existsSync(cwd)) return { success: false, error: 'no such directory' };
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      const { stdout } = await promisify(execFile)('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-        cwd, timeout: 8000,
-      });
+      const { stdout } = await safeGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 8000 });
       return { success: true, output: stdout.trim() };
     } catch {
       return { success: false, error: 'not a git repository' };
