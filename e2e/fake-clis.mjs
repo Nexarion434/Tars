@@ -460,7 +460,7 @@ export async function run() {
     const text = typed.trim();
     typed = '';
     if (!text) return;
-    log({ typed: text.slice(-1500) });
+    log({ typed: text.slice(-1500), head: text.slice(0, 300) });
     if (question === 'trust') { question = null; log({ answered: 'trust', with: text }); return; }
     if (question === 'api-key') {
       // A prompt typed into the question answers it, No being preselected: the key refused for good (#458).
