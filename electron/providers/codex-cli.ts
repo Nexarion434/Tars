@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFile } from 'child_process';
+import { spawn } from 'child_process';
 import { parse as parseToml } from 'smol-toml';
 import { cliEnv, execCli } from './cli-exec';
 import { defaultShell } from '../utils/default-shell';
@@ -58,20 +58,35 @@ const shellHomes = new Map<string, Promise<string | undefined>>();
 /**
  * The CODEX_HOME the user's own shell sets, as a login shell of theirs prints it with its rc files run, which Tars
  * started from the Dock or Finder never reads: once per run once it has answered, off the main thread, and a shell
- * that failed or hung past 5 s is asked again next time. undefined when it sets none, and on Windows, which runs no
- * rc file.
+ * that failed or hung past `timeoutMs` is asked again next time. Waited for to 20 s: a login zsh with its rc files
+ * answered in 7.6 s under a load average of 150 (measured on 19/10). undefined when it sets none, and on Windows,
+ * which runs no rc file.
  */
-export function loginShellCodexHome(shell: string = defaultShell(), platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
+export function loginShellCodexHome(shell: string = defaultShell(), platform: NodeJS.Platform = process.platform, timeoutMs = 20_000): Promise<string | undefined> {
   if (platform === 'win32') return Promise.resolve(undefined);
   let asked = shellHomes.get(shell);
   if (!asked) {
     asked = new Promise<string | undefined>((resolve, reject) => {
-      const child = execFile(shell, ['-ilc', `printf '\\n%s%s\\n' '${SHELL_MARK}' "$CODEX_HOME"`], { timeout: 5_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-        if (err) reject(err);
-        else resolve(codexHomeFromShell(String(stdout)));
+      // The shell leads a process group of its own, ended whole at its time, and is given up on then: interactive,
+      // it ignores SIGTERM (macOS's zsh, measured), and what its rc files start can hold its output open after it.
+      // Its answer is its marked line, whatever comes after. An rc file that asks something (compinit's insecure
+      // folders) reads no answer from its input, and no terminal: it is not a wait.
+      const child = spawn(shell, ['-ilc', `printf '\\n%s%s\\n' '${SHELL_MARK}' "$CODEX_HOME"`], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      let out = '';
+      let settled = false;
+      const settle = (done: () => void) => { if (!settled) { settled = true; clearTimeout(timer); done(); } };
+      const timer = setTimeout(() => settle(() => {
+        try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); } catch { /* ended already */ }
+        reject(new Error(`${shell} gave no answer in ${timeoutMs} ms`));
+      }), timeoutMs);
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        out = (out + chunk).slice(-65_536);
+        const at = out.lastIndexOf(SHELL_MARK);
+        if (at >= 0 && out.includes('\n', at)) settle(() => resolve(codexHomeFromShell(out)));
       });
-      // An rc file that asks something (compinit's insecure folders) gets no answer, not a wait.
-      child.stdin?.end();
+      child.on('error', (err) => settle(() => reject(err)));
+      child.on('close', (code) => settle(() => (code === 0 ? resolve(codexHomeFromShell(out)) : reject(new Error(`${shell} exited with ${code}`)))));
     });
     const kept = asked;
     shellHomes.set(shell, kept);
