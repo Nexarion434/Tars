@@ -80,6 +80,7 @@ import { probeVersion } from '../core/version-probe';
 import { cliKeyStates, withCliKey } from '../services/cli-keys';
 import { keepSecrets, secretStates, setSecret, settingsForWindow, type SecretField } from '../services/settings-secrets';
 import { isSecretFile, mayBeProject, windowMayRead, windowMayWrite } from '../utils/window-file-access';
+import { copySecret, showSecretOnce } from '../services/secret-handoff';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -2236,7 +2237,9 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }
   });
 
-  // Generate or regenerate Telegram auth token
+  // Generate or regenerate the Telegram auth token. The page is told it is
+  // set, never the token: the main process shows it once (secret-handoff.ts),
+  // and telegram:authToken:copy copies it again.
   ipcMain.handle('telegram:generateAuthToken', async () => {
     const appSettings = getAppSettings();
     const newToken = crypto.randomBytes(16).toString('hex');
@@ -2245,8 +2248,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     saveAppSettings(appSettings);
     setAppSettings(appSettings);
 
-    return { success: true, token: newToken };
+    void showSecretOnce('Telegram authorization token', newToken,
+      'Send /auth followed by this token to your bot from each Telegram account that may use it. Tars shows it only here: Copy puts it on the clipboard, and Copy token in Settings does again.');
+    return { success: true, set: true };
   });
+
+  ipcMain.handle('telegram:authToken:copy', async () => ({ copied: copySecret(getAppSettings().telegramAuthToken) }));
 
   // Remove an authorized Telegram chat ID
   ipcMain.handle('telegram:removeAuthorizedChatId', async (_event, chatId: string) => {

@@ -448,8 +448,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('telegram:test'),
     sendTest: () =>
       ipcRenderer.invoke('telegram:sendTest'),
+    // Mints a token the main process shows the user once; the page is told it is set (secret-handoff.ts).
     generateAuthToken: () =>
       ipcRenderer.invoke('telegram:generateAuthToken'),
+    copyAuthToken: () =>
+      ipcRenderer.invoke('telegram:authToken:copy'),
     removeAuthorizedChatId: (chatId: string) =>
       ipcRenderer.invoke('telegram:removeAuthorizedChatId', chatId),
   },
@@ -603,6 +606,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hermes: {
     getConnectionInfo: () =>
       ipcRenderer.invoke('hermes:getConnectionInfo'),
+    // The webhook secret, put on the clipboard by the main process; never answered to the page.
+    copyWebhookSecret: () =>
+      ipcRenderer.invoke('hermes:webhookSecret:copy'),
     getConnection: () =>
       ipcRenderer.invoke('hermes:connection:get'),
     saveConnection: (connection: Record<string, unknown>) =>

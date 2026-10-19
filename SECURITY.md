@@ -616,10 +616,17 @@ cluster's in `~/.kube` (the Audit's L1 on #466). `fs:add-custom-project` refuses
 such a folder, and since the projects' list lives in `~/.dorothy`, which every
 agent can write, each read judges its own target as well. `app:getSettings` and `settings:updated` carry no secret: a
 set one is a mask of bullets and `secretsSet` says which are set; `secrets:set`
-sets or clears one and answers whether it is set. Not closed there: the Hermes
-connection form (`hermes:connection:get`) still gets the dashboard's token, the
-Hermes page shows the webhook secret to copy, and Settings > Telegram the auth
-token it mints. Before 1.9.2 the roots were `~/.dorothy`, the CLIs' folders and
+sets or clears one and answers whether it is set. The last three the window
+saw go through the main process since the Audit's L2 on #466
+(`services/secret-handoff.ts`): the Telegram auth token Settings mints is shown
+once in a dialog of the main process, which the page cannot read, and
+`telegram:authToken:copy` copies it again; the webhook secret Hermes is given is
+copied by `hermes:webhookSecret:copy`, and `hermes:getConnectionInfo` says only
+that it is set; the Hermes form gets the dashboard's token as the mask, and a
+save of the mask, or of nothing, keeps it. Each answer to the page holds none of
+them: a page that read one kept a way in after it was fixed (an attacker's
+Telegram authorized to drive agents, Hermes reconfigured, posts to Tars as
+Hermes). Before 1.9.2 the roots were `~/.dorothy`, the CLIs' folders and
 the projects. Until 1.9.2 a root could be
 the home or a folder above it (a project added as `~` or `/Users`, or written
 into `projects.json`), and the path was judged as spelled while the read or

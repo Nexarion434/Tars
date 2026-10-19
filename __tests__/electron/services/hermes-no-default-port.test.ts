@@ -187,6 +187,7 @@ describe('the Hermes pages\' handlers', () => {
       const handle = [...before.matchAll(/ipcMain\.handle\('([^']+)'/g)].pop();
       return handle?.[1] ?? '(outside any handler)';
     });
-    expect(channels.sort()).toEqual(['hermes:connection:get', 'hermes:testGateway']);
+    // hermes:connection:save reads it for the dashboard token alone, which the form holds as the mask (the Audit's L2 on #466).
+    expect(channels.sort()).toEqual(['hermes:connection:get', 'hermes:connection:save', 'hermes:testGateway']);
   });
 });
