@@ -56,6 +56,11 @@ import * as path from 'node:path';
  *      `/` or `..` writes outside Tars's folder.
  *  Q14. (L4) `--resume` is handed an id that is not a session's: it must be
  *      the UUID qwen names its transcripts by, or nothing.
+ *  Q15. (The QA's BLOCK at af9ff3da, 19/10) A project reached through a link
+ *      (anything under macOS's /var or /tmp): qwen files its transcript under
+ *      the real path it runs in, and the cut is looked for under the saved
+ *      spelling alone, so an Esc never ends the delegated task. Every other
+ *      reader of a qwen transcript tries both (transcriptRoots).
  */
 
 import { getProvider } from '../../../electron/providers';
@@ -176,6 +181,19 @@ describe('the qwen-code provider', () => {
     expect(lastInterruptAt(agent), 'a refused tool call or a finished turn read as a cut').toBeUndefined();
     fs.appendFileSync(file, telemetry({ kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: 1792351006222 }) + '\n');
     expect(lastInterruptAt(agent)).toBe(1792351006222);
+  });
+
+  it('Q15. a turn cut with Esc reads as cut when qwen filed its transcript under the real path of a linked project', () => {
+    const sid = '2c0ffee0-1234-4abc-8def-0123456789ab';
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qwen-esc-link-')));
+    const real = path.join(base, 'checkout');
+    fs.mkdirSync(real);
+    const linked = path.join(base, 'linked');
+    fs.symlinkSync(real, linked, 'junction');
+    const file = qwenTranscriptPath(real, sid);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ sessionId: sid, type: 'system', subtype: 'ui_telemetry', systemPayload: { uiEvent: { kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: 1792351006333 } } }) + '\n');
+    expect(lastInterruptAt({ provider: 'qwen-code', currentSessionId: sid, projectPath: linked })).toBe(1792351006333);
   });
 
   it('Q13. an agent id never names a file outside Tars\'s folder', () => {
