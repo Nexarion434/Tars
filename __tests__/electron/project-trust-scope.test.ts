@@ -31,6 +31,12 @@ import * as path from 'node:path';
  *  8. Over-correction: an ordinary project below the home directory, or a
  *     directory elsewhere that merely starts with the home directory's
  *     name, is no longer trusted and every agent meets the dialog.
+ *  9. A project reached through a link (anything under macOS's /var or /tmp,
+ *     a checkout linked elsewhere) is trusted under the spelling Tars saved
+ *     alone, while Claude Code starts in its real path and reads the flag
+ *     there: the dialog shows, and the agent's first task answers it (the
+ *     QA's CLI matrix with the system TMPDIR, 19/10: claude's first task went
+ *     into the trust question, and it never called delegate_task).
  *
  * The negative witness for 1 to 7 is the product before this change, which
  * writes every one of them.
@@ -124,5 +130,19 @@ describe('ensureProjectTrusted still trusts a project', () => {
     ensureProjectTrusted(beside);
 
     expect(trusted().sort()).toEqual([beside, project].sort());
+  });
+});
+
+describe('ensureProjectTrusted trusts a project reached through a link', () => {
+  it('9. under the path Claude Code reads, its real one, as well as the one Tars saved', () => {
+    const real = path.join(home(), 'elsewhere', 'project');
+    fs.mkdirSync(real, { recursive: true });
+    const viaLink = path.join(home(), 'linked');
+    fs.symlinkSync(path.join(home(), 'elsewhere'), viaLink, 'junction');
+    const saved = path.join(viaLink, 'project');
+
+    ensureProjectTrusted(saved);
+
+    expect(trusted().sort()).toEqual([fs.realpathSync(saved), saved].sort());
   });
 });
