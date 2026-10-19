@@ -445,7 +445,13 @@ again when the mark changes). Output: `release/mac-arm64/Tars Sandbox.app`. This
 `scripts/sandbox.sh` starts. A test copy never passes for the real Tars in the Dock, the app
 switcher, its menu bar item or a crash box (18/10: two Uncaught Exception boxes from a test
 copy looked like the maintainer's Tars looping). `npm run electron:build`, the release's, is
-unchanged. `e2e/sandbox-build.packed.spec.ts` checks a packed build:
+unchanged. The build carries `tarsSandbox: true` in its own package.json (`-c.extraMetadata`), and
+with it refuses to start on the account's own home (HOME the one the password database names, as
+the Finder, the Dock or `open` start it): it says why on its output and exits with 1 before
+anything reads the data folder, with no dialog (`electron/core/sandbox-guard.ts`). Its own profile
+means its own single-instance lock, so it would otherwise start beside the real Tars, on its
+agents, settings, tokens, bots and port. Start it with `scripts/sandbox.sh`. It never checks for
+updates either. `e2e/sandbox-build.packed.spec.ts` checks a packed build:
 `TARS_PACKED_APP="release/mac-arm64/Tars Sandbox.app" npx playwright test e2e/sandbox-build.packed.spec.ts`.
 
 Note `electron:pack` does **not** run `next build`: it packages whatever is already in `out/`.

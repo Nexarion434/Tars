@@ -74,6 +74,7 @@ DOROTHY_E2E           # '1' suppresses DevTools so screenshots are clean
 DOROTHY_TELEGRAM_API_URL # under DOROTHY_E2E only: a stand-in of Telegram's Bot API, http://127.0.0.1:<port> and nothing else
 DOROTHY_HEALTH_EVERY_MS  # under DOROTHY_E2E only: how often the health samples are taken (200 ms at least; else every 5 minutes)
 DOROTHY_HERMES_SESSION_EVERY_MS # under DOROTHY_E2E only: how often Tars asks its Hermes session (200 ms at least; else every 30 minutes)
+DOROTHY_E2E_PASSWD_HOME # under DOROTHY_E2E only: the home a test build takes for the account's own (core/sandbox-build.ts); else the password database's
 DOROTHY_ERROR_REPORTS_DSN # a development run only: where error reports go (a stand-in of Sentry); a packaged Tars never reads it (app.isPackaged, services/error-reports/index.ts)
 ELECTRON_BUILD        # '1' switches next.config.ts to output: 'export' for packaging
 PATH SHELL HOME       # read when composing the PTY environment (buildFullPath, cli-paths detection)
