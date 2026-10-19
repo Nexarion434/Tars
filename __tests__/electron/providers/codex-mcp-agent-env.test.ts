@@ -19,6 +19,11 @@ import * as path from 'node:path';
  *  C2. A server registered before 2.0.4, without them, reads as registered and
  *      is never registered again.
  *  C3. A server that is not Tars's is handed the agent's token.
+ *
+ * Since #465 (main bc169117) the names come from the one list the orchestrator
+ * keeps and hands each registration of a Tars server (TARS_MCP_ENV), and Tars
+ * writes that section itself, `codex mcp add` having no way to say them: these
+ * call the provider as the orchestrator does.
  */
 
 const added = vi.hoisted(() => ({ fail: false }));
@@ -38,6 +43,7 @@ vi.mock('../../../electron/providers/cli-exec', async (original) => ({
 }));
 
 import { CodexProvider } from '../../../electron/providers/codex-provider';
+import { TARS_MCP_ENV } from '../../../electron/services/mcp-orchestrator-env';
 
 const config = () => fs.readFileSync(path.join(os.homedir(), '.codex', 'config.toml'), 'utf-8');
 const section = (name: string) => config().split(/\n(?=\[)/).find((s) => s.startsWith(`[mcp_servers.${name}]`)) ?? '';
@@ -49,11 +55,11 @@ beforeEach(() => {
 });
 
 describe("codex and the variables of a Tars server", () => {
-  it('C1. names them, through codex mcp add and through the fallback', async () => {
+  it('C1. names them, whether codex mcp add works or not', async () => {
     const codex = new CodexProvider();
-    await codex.registerMcpServer('claude-mgr-orchestrator', '/bin/node', ['/r/mcp-orchestrator/dist/bundle.js']);
+    await codex.registerMcpServer('claude-mgr-orchestrator', '/bin/node', ['/r/mcp-orchestrator/dist/bundle.js'], TARS_MCP_ENV);
     added.fail = true;
-    await codex.registerMcpServer('claude-mgr-telegram', '/bin/node', ['/r/mcp-telegram/dist/bundle.js']);
+    await codex.registerMcpServer('claude-mgr-telegram', '/bin/node', ['/r/mcp-telegram/dist/bundle.js'], TARS_MCP_ENV);
     for (const name of ['claude-mgr-orchestrator', 'claude-mgr-telegram']) {
       for (const v of NAMES) expect(section(name), `${name} ${v}`).toContain(`"${v}"`);
       expect(section(name)).toMatch(/^env_vars = \[/m);
@@ -63,7 +69,7 @@ describe("codex and the variables of a Tars server", () => {
   it('C2. one registered without them is registered again', () => {
     fs.mkdirSync(path.join(os.homedir(), '.codex'), { recursive: true });
     fs.writeFileSync(path.join(os.homedir(), '.codex', 'config.toml'), '[mcp_servers.claude-mgr-vault]\ncommand = "/bin/node"\nargs = ["/r/mcp-vault/dist/bundle.js"]\n');
-    expect(new CodexProvider().isMcpServerRegistered('claude-mgr-vault', '/r/mcp-vault/dist/bundle.js')).toBe(false);
+    expect(new CodexProvider().isMcpServerRegistered('claude-mgr-vault', '/r/mcp-vault/dist/bundle.js', TARS_MCP_ENV)).toBe(false);
   });
 
   it('C3. a server that is not Tars\'s gets none of them', async () => {
