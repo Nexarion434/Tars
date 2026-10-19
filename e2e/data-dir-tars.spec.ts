@@ -71,7 +71,9 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(old, 'CLAUDE.md'), '# Tars Agent Instructions\n');
     fs.writeFileSync(path.join(old, 'project-files', 'atlas-0123456789', 'reports', 'release.md'), '# release\n');
     fs.writeFileSync(path.join(old, 'tmp', 'a1b2c3d4e5', 't', 'scratch.txt'), 'scratch');
-    const inode = fs.statSync(path.join(old, 'agents.json')).ino;
+    // A file Tars never writes at a start (agents.json is saved again as it loads): moved, it keeps its inode.
+    const report = path.join('project-files', 'atlas-0123456789', 'reports', 'release.md');
+    const inode = fs.statSync(path.join(old, report)).ino;
     const before = listing(old);
     // What Tars 2.0.3 wrote outside its folder.
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -98,7 +100,7 @@ for (const newInterface of [false, true]) {
       const link = fs.existsSync(old) ? fs.lstatSync(old).isSymbolicLink() : false;
       keep({ after, link });
       expect.soft(after.filter((f) => before.includes(f))).toEqual(before);
-      expect.soft(fs.existsSync(path.join(tars, 'agents.json')) ? fs.statSync(path.join(tars, 'agents.json')).ino : null).toBe(inode);
+      expect.soft(fs.existsSync(path.join(tars, report)) ? fs.statSync(path.join(tars, report)).ino : null, 'moved, not copied').toBe(inode);
       expect.soft(link, '~/.dorothy is a link').toBe(true);
       expect.soft(fs.readFileSync(path.join(old, 'project-files', 'atlas-0123456789', 'reports', 'release.md'), 'utf8')).toBe('# release\n');
 
@@ -119,7 +121,8 @@ for (const newInterface of [false, true]) {
       keep({ ran });
       const addDirs = ran.argv.flatMap((a, i) => (a === '--add-dir' ? [ran.argv[i + 1]] : []));
       expect.soft(addDirs.some((d) => d.replace(/^'|'$/g, '') === tars), `--add-dir ${addDirs.join(', ')}`).toBe(true);
-      expect.soft(addDirs.some((d) => d.includes('.dorothy'))).toBe(false);
+      // The old folder itself, not any path with .dorothy in it: an agent's own TMPDIR, where a run may make HOME, is under one.
+      expect.soft(addDirs.some((d) => { const p = d.replace(/^'|'$/g, ''); return p === old || p.startsWith(`${old}${path.sep}`); })).toBe(false);
       expect.soft(ran.tmp ?? '').toContain(`${path.sep}.tars${path.sep}tmp${path.sep}`);
 
       // 4. The old path rewritten where Tars wrote it.
@@ -128,7 +131,7 @@ for (const newInterface of [false, true]) {
       const codex = fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8');
       keep({ claudeSettings, codex });
       expect.soft(claudeSettings.note).toBe(`${old}-backup/keep`);
-      expect.soft(JSON.stringify(claudeSettings.statusLine)).not.toContain('/.dorothy/');
+      expect.soft(JSON.stringify(claudeSettings.statusLine)).not.toContain(`${old}/`);
       expect.soft(claudeJson).not.toContain(`${old}/bin`);
       expect.soft(codex).toContain('$HOME/.tars/bin/tars-mcp-node');
       await page.waitForTimeout(800);
