@@ -170,6 +170,7 @@ export class OpenCodeProvider implements CLIProvider {
     }, { createMode: 0o644 });
     // A file Tars cannot read (opencode takes JSONC, comments and all) is the user's, and left as it is.
     if (outcome === 'unreadable') console.warn(`[opencode] MCP server ${name} not registered: ${file} is not plain JSON, left untouched`);
+    else if (outcome === 'busy') console.warn(`[opencode] MCP server ${name} not registered: ${file} changed under every attempt, tried again at the next start`);
     else console.log(`[opencode] Registered MCP server ${name} in ${file}`);
     dropLegacy(name);
   }

@@ -163,6 +163,7 @@ export class PiProvider implements CLIProvider {
       return config;
     }, { createMode: 0o644 });
     if (outcome === 'unreadable') console.warn(`[pi] MCP server ${name} not registered: ${file} is not JSON, left untouched`);
+    else if (outcome === 'busy') console.warn(`[pi] MCP server ${name} not registered: ${file} changed under every attempt, tried again at the next start`);
     else console.log(`[pi] Registered MCP server ${name} in ${file}`);
     dropServer(legacyMcpFile(), name);
   }
