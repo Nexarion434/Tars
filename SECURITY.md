@@ -445,9 +445,7 @@ file that does not parse is left as it is. What it closes and what it does not:
   token (`/api/telegram/send*`, `/api/x/request`, `/api/socialdata/request`), and Tars makes only the calls their
   tools make: a post, a reply or a delete on X while Posting is on, SocialData's Twitter reads, a send to a chat
   the user authorized. No hook and no Tars MCP server presents the shared token any more, from either place;
-  a CLI Tars did not start reads nothing from Tars. The scheduled scripts read their key from the private file
-  at run time, never written into the script, and do not run without one. The agents and the scheduled tasks
-  on Tars's OpenAI bridge (Venice, a custom endpoint) present the bridge's own token
+  a CLI Tars did not start reads nothing from Tars. The agents on Tars's OpenAI bridge (Venice, a custom endpoint) present the bridge's own token
   (`~/.tars-private/bridge-token`, `services/bridge-token.ts`), which the bridge alone takes and the API refuses:
   they were handed the shared token, and an agent in bypass read it in its environment (the Audit's L3 on #466).
 - **Not closed**: an agent in bypass mode runs as the user and reads the whole disk, `~/.tars-private`
@@ -487,18 +485,11 @@ user's shell exports would bring the question back, and go out to the vendor as
 too, and left the key's last 20 characters there and in each backup Claude Code
 makes of the file.
 
-A scheduled task takes the key the same way (`scheduledKeyExports`). Measured
-on 2.1.302: `claude -p` with `ANTHROPIC_API_KEY` empty or unset, or with
-`ANTHROPIC_AUTH_TOKEN` empty, and a subscription signed in, sends the
-subscription's OAuth token as a Bearer to the URL it is pointed at, the
-vendor's. The scripts read the key with jq, which macOS ships only from 15, and
-a key removed after the task was scheduled read empty the same way. Since 2.0.4
-the script reads it as the task runs, from `~/.tars-private/settings-secrets.json`,
-with bash alone (`scheduledKeyLines`): no program a launchd or cron PATH may lack,
-and none under `~/.dorothy/bin`, which every agent can replace and every scheduled
-task would then run with the private file's path at hand. Never in an argument;
-with no key, or a private file it cannot read, it writes why in the task's log and
-ends before claude starts.
+No scheduled task of Tars's hands a key to `claude -p` any more: the builders of
+scheduled scripts each provider kept had no caller since 87507e03 removed the
+Automations and Scheduled Tasks before 1.8.0 (the Schedules page drives Hermes's
+crons), and they went in 2.0.4 with the key reading they carried (the QA's gate of
+#458).
 
 What Tars before 2.0.4 left of those keys is cleaned once, at the first load of
 an `agents.json` from before it (`core/key-fragments.ts`): the question showed

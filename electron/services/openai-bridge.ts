@@ -42,8 +42,7 @@ import type { AppSettings } from '../types';
  * <token>`, except exactly four paths (see its own comment and CLAUDE.md's
  * Backend Agent rules - that count is a hard invariant, not a suggestion).
  * The claude binary does not send an Authorization header to whatever
- * ANTHROPIC_BASE_URL points at by default; it sends `x-api-key`, as the
- * scheduled runs' scripts still have it. Putting this behind /api/* would mean
+ * ANTHROPIC_BASE_URL points at by default; it sends `x-api-key`. Putting this behind /api/* would mean
  * either breaking that invariant with a fifth exemption, or the bridge would
  * 401 those requests before its own handler ever ran. So this runs as a
  * second, separate, loopback-only http.Server, and authenticates the same way
@@ -53,8 +52,7 @@ import type { AppSettings } from '../types';
  * the bridge held the token that opens Tars's API (the Audit's L3 on #466). Each provider that routes through here
  * (venice-provider.ts, custom-openai-provider.ts) hands it to the PTY as
  * ANTHROPIC_AUTH_TOKEN, the Bearer, since an API key in its environment is
- * asked about at launch (keyProviderEnv); a scheduled script exports it as
- * ANTHROPIC_API_KEY, which `claude -p` uses unasked. The real vendor key never leaves
+ * asked about at launch (keyProviderEnv). The real vendor key never leaves
  * this process: it is read from the settings' secrets per request and attached
  * only to the outbound call to that vendor, never handed to the claude
  * binary.

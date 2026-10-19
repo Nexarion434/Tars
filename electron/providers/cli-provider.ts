@@ -1,5 +1,4 @@
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
-import { PRIVATE_DIR_NAME } from '../constants';
 import { loadSettingsWithSecrets } from '../services/settings-secrets';
 
 /**
@@ -47,18 +46,6 @@ export interface InteractiveCommandParams {
   forkSession?: boolean;
   /** The settings the command is built with: read from disk when absent (codex's key, services/cli-keys.ts). */
   appSettings?: AppSettings;
-}
-
-/**
- * Parameters for building a scheduled (non-interactive, one-shot) command.
- */
-export interface ScheduledCommandParams {
-  binaryPath: string;
-  prompt: string;
-  autonomous: boolean;
-  mcpConfigPath?: string;
-  outputFormat?: string;
-  verbose?: boolean;
 }
 
 /**
@@ -117,9 +104,6 @@ export interface CLIProvider {
   /** With taskTypedAfterLaunch: the text a launch types in for this task ('' for none). */
   typedTask?(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string;
 
-  /** Build command string for scheduled task execution */
-  buildScheduledCommand(params: ScheduledCommandParams): string;
-
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
@@ -161,20 +145,6 @@ export interface CLIProvider {
 
   /** Get the Tars --add-dir equivalent flag for this provider */
   getAddDirFlag(): string;
-
-  /** Generate the shell script content for scheduled tasks */
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    /** Optional skills list to inject as a prompt prefix (same as interactive sessions) */
-    skills?: string[];
-  }): string;
 }
 
 /**
@@ -244,8 +214,7 @@ export function promptOperand(prompt: string | undefined): string {
  * backticks and line breaks reach the program as they are.
  *
  * Every folder a command hands its CLI (`--add-dir`, `--include-directories`)
- * goes through this. They used to be written `'${DATA_DIR}'`, and the scheduled
- * builders `"${DATA_DIR}"`, and DATA_DIR carries the home folder's own name:
+ * goes through this. They used to be written `'${DATA_DIR}'`, and DATA_DIR carries the home folder's own name:
  * a home such as `/Users/o'neil` closed the quote early and the command did
  * not run, and a name built to close it could add arguments of its own.
  */
@@ -331,86 +300,10 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
  *
  * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
  * would bring the question back, about itself, and go out as `x-api-key` to a
- * vendor it has nothing to do with. Scheduled runs (`claude -p`) take the key
- * the same way, from scheduledKeyExports.
+ * vendor it has nothing to do with.
  */
 export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
   return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
-}
-
-/**
- * The lines of a scheduled script (`claude -p`, run later by launchd or cron)
- * that hand a key to the CLI: read at run time from ~/.tars-private, where the
- * keys live since 2.0.4 (services/settings-secrets.ts), and never written into
- * the script, which sits in ~/.dorothy, every agent's --add-dir. `field` is a
- * key of settings-secrets.json, or `bridge-token` for the bridge providers,
- * which present the bridge's own token (services/bridge-token.ts).
- *
- * Read by bash itself, with no other program: launchd and cron run the task
- * with a bare PATH (no /usr/bin, where sed and head live, in the scheduled
- * scripts' own test), jq ships with macOS only from 15, and a program under
- * ~/.dorothy/bin can be replaced by any agent, and every scheduled task would
- * then run it with the private file's path at hand (the Audit's re-check of
- * #458). The private file is written one top-level field per line
- * (JSON.stringify(_, null, 2)), and its field's line is read; a value holding
- * a quote or a backslash, which no vendor's key does, reads as none. The
- * value is only ever expanded inside double quotes, so a `$(...)` in it is
- * text. Without a key, or with a private file it cannot read, the task does
- * not run and its log says why: run keyless, the CLI would fall back on the
- * user's own Claude login and send it to the vendor's URL (measured on claude
- * 2.1.302 against a stand-in of the vendor). The key goes under `variable`,
- * the other one blanked so that a key the user's shell exports does not go
- * along.
- */
-export function scheduledKeyLines(
-  field: string,
-  logPath: string,
-  variable: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN' = 'ANTHROPIC_API_KEY',
-  sentTo?: string,
-): string {
-  if (!/^[A-Za-z0-9-]+$/.test(field)) throw new Error(`not a settings field: ${field}`);
-  const other = variable === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
-  const file = `"$HOME/${PRIVATE_DIR_NAME}/${field === 'bridge-token' ? 'bridge-token' : 'settings-secrets.json'}"`;
-  const read = field === 'bridge-token'
-    ? [`[ -r ${file} ] && IFS= read -r TARS_KEY < ${file}`]
-    : [
-      `TARS_P='  "${field}": "'`,
-      `if [ -r ${file} ]; then`,
-      '  while IFS= read -r TARS_LINE || [ -n "$TARS_LINE" ]; do',
-      '    case "$TARS_LINE" in "$TARS_P"*) TARS_KEY=${TARS_LINE#"$TARS_P"}; TARS_KEY=${TARS_KEY%,}; TARS_KEY=${TARS_KEY%\\"}; break ;; esac',
-      `  done < ${file}`,
-      'fi',
-      'case "$TARS_KEY" in *[\\"\\\\]*) TARS_KEY="" ;; esac',
-      'unset TARS_LINE TARS_P',
-    ];
-  const what = field === 'bridge-token' ? "the bridge's token" : field;
-  return [
-    'TARS_KEY=""',
-    ...read,
-    'if [ -z "$TARS_KEY" ]; then',
-    `  echo "=== Not run: no ${what} in Tars's settings, or they could not be read. claude was not started${sentTo ? `, and nothing was sent to ${sentTo}` : ''} ===" >> ${shellQuote(logPath)}`,
-    '  exit 1',
-    'fi',
-    `export ${variable}="$TARS_KEY"`,
-    `export ${other}=""`,
-    'unset TARS_KEY',
-  ].join('\n');
-}
-
-/**
- * The lines of a scheduled script that point `claude -p` at a key provider
- * and hand it the key as keyProviderEnv does a terminal's: the auth token, the
- * API key blanked (the Audit's M1 on #458). Measured on claude 2.1.302 against
- * a stand-in of the vendor: `claude -p` with ANTHROPIC_API_KEY empty or unset,
- * or ANTHROPIC_AUTH_TOKEN empty, and a subscription signed in, sends the
- * subscription's OAuth token as a Bearer to the vendor's URL.
- */
-export function scheduledKeyExports(baseUrl: string, setting: string, logPath: string): string {
-  return [
-    `export ANTHROPIC_BASE_URL=${shellQuote(baseUrl)}`,
-    scheduledKeyLines(setting, logPath, 'ANTHROPIC_AUTH_TOKEN', baseUrl),
-    '',
-  ].join('\n');
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {

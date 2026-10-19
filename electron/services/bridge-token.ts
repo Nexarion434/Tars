@@ -6,13 +6,13 @@ import { writeSecretFileEvenIfHeldSync } from '../utils/secret-file';
 
 /**
  * The token Tars's OpenAI bridge (services/openai-bridge.ts) takes, and the
- * only thing it opens: the agents on Venice or a custom endpoint, and their
- * scheduled tasks, present it as their key. They were handed Tars's shared
+ * only thing it opens: the agents on Venice or a custom endpoint present it
+ * as their key. They were handed Tars's shared
  * API token, which every other path keeps from the agents since 2.0.4: an
  * agent in bypass read it in its own environment and could call every route
  * that token opens (the Audit's L3 on #466). Kept in ~/.tars-private, 0600,
- * the same across starts, since a scheduled task reads it as it runs and a
- * running agent keeps the one it was started with.
+ * the same across starts, since a running agent keeps the one it was started
+ * with.
  */
 let token: string | undefined;
 

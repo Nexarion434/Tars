@@ -97,9 +97,7 @@ export function readSecrets(): Secrets {
 }
 
 /**
- * Written as JSON.stringify(_, null, 2) writes it, and nothing else: one
- * top-level field per line, which is what a scheduled script reads a key with
- * (scheduledKeyLines, providers/cli-provider.ts), with no jq.
+ * Written as JSON.stringify(_, null, 2) writes it, and nothing else.
  */
 function writeSecrets(secrets: Secrets): void {
   writeSecretFileSync(SECRETS_FILE, `${JSON.stringify(secrets, null, 2)}\n`);

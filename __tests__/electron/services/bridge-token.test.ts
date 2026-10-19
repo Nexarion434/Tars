@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 /**
- * The agents and the scheduled tasks on Tars's OpenAI bridge (Venice, a custom
+ * The agents on Tars's OpenAI bridge (Venice, a custom
  * endpoint) present a token that opens the bridge and nothing else (the
  * Audit's L3 on #466, 2.0.4). They were handed Tars's shared token, the one
  * every other path keeps from the agents since 2.0.4: an agent on Venice, in
@@ -15,12 +13,10 @@ import { spawnSync } from 'node:child_process';
  * Every way it can fail, written before the code (2026-10-19):
  *  B1. A bridge agent's terminal is handed the shared token, or no token, or
  *      the vendor's key.
- *  B2. A bridge provider's scheduled script reads the shared token
- *      (~/.tars-private/api-token), or writes the bridge's into the script.
  *  B3. The bridge takes the shared token, or refuses its own, as a Bearer or
  *      as x-api-key.
  *  B4. The bridge's token is not kept: a new one at each start leaves every
- *      scheduled task and every running agent with one the bridge refuses. Or
+ *      running agent with one the bridge refuses. Or
  *      it is the shared token under another name, or a short one, or kept
  *      where an agent reads it (~/.dorothy), or not 0600.
  *  B5. Tars's API takes the bridge's token for its own.
@@ -32,7 +28,6 @@ import { getApiToken, resolveCaller } from '../../../electron/services/api-serve
 import { PRIVATE_DIR, DATA_DIR } from '../../../electron/constants';
 import type { AppSettings } from '../../../electron/types';
 
-const HAS_BASH = process.platform !== 'win32' && spawnSync('bash', ['-c', 'true']).status === 0;
 const file = path.join(PRIVATE_DIR, 'bridge-token');
 
 beforeEach(() => {
@@ -74,26 +69,6 @@ describe('the agents and the tasks on the bridge', () => {
       expect(env.ANTHROPIC_AUTH_TOKEN, id).toBe(getBridgeToken());
       expect(JSON.stringify(env), id).not.toContain(getApiToken());
       expect(JSON.stringify(env), id).not.toContain('vendor-key');
-    }
-  });
-
-  it.skipIf(!HAS_BASH)('B2. a bridge task reads the bridge\'s token as it runs, never the shared one, and writes none into its script', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-bridge-sched-'));
-    const seen = path.join(dir, 'seen');
-    const cli = path.join(dir, 'claude');
-    fs.writeFileSync(cli, `#!/bin/sh\nprintf '%s\\n%s\\n' "$ANTHROPIC_API_KEY" "$ANTHROPIC_AUTH_TOKEN" > '${seen}'\n`, { mode: 0o700 });
-    for (const id of ['venice', 'custom-openai'] as const) {
-      fs.rmSync(seen, { force: true });
-      const script = getProvider(id).buildScheduledScript!({
-        binaryPath: cli, binaryDir: dir, projectPath: dir, prompt: 'the task', autonomous: true,
-        mcpConfigPath: path.join(dir, 'mcp.json'), logPath: path.join(dir, 'task.log'), homeDir: os.homedir(),
-      });
-      expect(script, id).not.toContain(getBridgeToken());
-      expect(script, id).not.toMatch(/tars-private\/api-token/);
-      const run = spawnSync('/bin/bash', ['-c', script], { env: { PATH: process.env.PATH, HOME: os.homedir() }, encoding: 'utf-8' });
-      expect(run.status, `${id}: ${fs.existsSync(path.join(dir, 'task.log')) ? fs.readFileSync(path.join(dir, 'task.log'), 'utf-8') : ''}`).toBe(0);
-      const [apiKey] = fs.readFileSync(seen, 'utf-8').split('\n');
-      expect(apiKey, id).toBe(getBridgeToken());
     }
   });
 });
