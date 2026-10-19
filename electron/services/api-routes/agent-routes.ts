@@ -35,7 +35,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
-import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
+import { handOffFrom, liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
 import { typeLaunchTask } from '../../core/typed-task';
@@ -81,6 +81,13 @@ type SpawnOpts = {
   wokenBy?: { by: string; via: AgentWakeVia };
   /** The request this prompt runs (core/task-requests.ts): delivered as the session starts. */
   taskRef?: string;
+  /**
+   * Who sent the prompt, when it is a dispatch: its task is that sender's when
+   * no request names its asker. An asker the agent once handed work to queues
+   * none (requestFor), and its task, starting the session, was filed as Tars's
+   * or under the agent's own requester (the Audit's M1 on #470).
+   */
+  sender?: MessageSender;
 };
 
 /**
@@ -451,10 +458,14 @@ async function spawnAgentSessionInSlot(
   agent.workHandedAt = new Date().toISOString();
   // Work handed over, for the task its first turn opens (task-ledger.ts).
   if (prompt.trim()) {
-    const asker = request?.requesterAgentId ?? agent.requestedBy?.agentId;
+    const asker = request?.requesterAgentId;
     noteHandOff(agent.id, asker
       ? { source: 'agent', requesterAgentId: asker, text: prompt }
-      : { source: 'tars', text: prompt });
+      : opts.sender && opts.sender.kind !== 'tars'
+        ? { ...handOffFrom(opts.sender), text: prompt }
+        : agent.requestedBy?.agentId
+          ? { source: 'agent', requesterAgentId: agent.requestedBy.agentId, text: prompt }
+          : { source: 'tars', text: prompt });
   }
   agent.currentTask = prompt;
   agent.output = [];
@@ -1107,7 +1118,6 @@ async function runInTerminal(
     let restart: RestartNote | undefined;
     let gaveUp = false;
     let withdrawn = false;
-    let typedRef: string | undefined;
     const callerId = resolveCallerId(req);
     const requester = callerId && callerId !== agent.id ? callerId : undefined;
     // The agent is at rest (one task at a time): a task still open there is
@@ -1117,14 +1127,14 @@ async function runInTerminal(
     await performDispatch(agent, {
       message: job.task, model: job.model, from: senderName(agent, req), sender: senderOf(agent, req), mark: markFor(agent, req),
       turnTaken: true,
-      onAccepted: () => (typedRef = requestFor(agent, req, job.task, job.ref)),
-      // Typed into the live session: the turn it opens is this hand-off's, and
-      // its asker the task's (task-ledger.ts). A session started for it notes
-      // its own (spawnAgentSession).
-      onWritten: () => noteHandOff(agent.id, {
-        ...(requester ? { source: 'agent' as const, requesterAgentId: requester } : { source: 'tars' as const }),
-        text: job.task, ...(typedRef ? { ref: typedRef } : {}),
-      }),
+      onAccepted: () => requestFor(agent, req, job.task, job.ref),
+      // An agent's task carries its id on its line, a request queued for it
+      // or not; Tars's line carries none (taskOfPrompt reads an agent's). The
+      // writer notes the hand-off the turn takes (pty-manager.ts, takeField):
+      // noted here too, a second one, with no id when the line had none, was
+      // left over for the agent's next turn with none, and that turn was filed
+      // under this task's asker (the QA's CLI matrix, H1).
+      ...(requester ? { taskId: job.ref } : {}),
       onDropped: () => { gaveUp = true; },
       // Taken back by its asker while held in the terminal (a draft): the
       // turn it kept is given back at once, not after TURN_START_MAX_MS (the
@@ -1341,6 +1351,14 @@ export interface DispatchOpts {
    */
   onAccepted?: () => string | undefined | void;
   /**
+   * The id its asker follows this task by (delegate_task's terminal path):
+   * typed on the sender line when no request of onAccepted's carries one, so
+   * its turn is told apart. A worker the agent once handed work to queues no
+   * request there (requestFor), and its task went in with no id at all (the
+   * QA's CLI matrix, H1).
+   */
+  taskId?: string;
+  /**
    * Typed into a live session: once it is written into the terminal, once the
    * terminal gives it up, or once a cancel takes it back before it went in
    * (WriteOrigin).
@@ -1494,7 +1512,7 @@ async function performDispatchLocked(
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
       // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
       onWithdrawn: () => { cancelRetell?.(); opts.onWithdrawn?.(); },
-      taskRef,
+      taskRef: taskRef ?? opts.taskId,
       untilRest,
       mark: opts.mark,
     });
@@ -1537,7 +1555,7 @@ async function performDispatchLocked(
   // No session: spawn a fresh one with the message as the prompt.
   const since = new Date().toISOString();
   const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef }, ctx, sendJson))) {
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef, sender: opts.sender }, ctx, sendJson))) {
     dropped(agent, taskRef);
     return;
   }
@@ -2053,7 +2071,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson);
     });
     if (!spawned) {
       dropped(agent, taskRef);
@@ -2416,7 +2434,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
         const since = new Date().toISOString();
-        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef }, ctx, sendJson))) {
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson))) {
           dropped(agent, taskRef);
           return;
         }
