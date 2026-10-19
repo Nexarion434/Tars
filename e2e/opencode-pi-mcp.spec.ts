@@ -113,9 +113,23 @@ for (const newInterface of [false, true]) {
       await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
       await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(newInterface ? 1 : 0, { timeout: 30_000 });
-      // Tars writes its servers at its start, before an agent of a CLI is launched.
+      // Tars's MCP servers registered in every CLI's configuration, as a packaged Tars does at every start
+      // (setupMcpOrchestrator). A development run finds no bundle under process.resourcesPath, the app's own.
+      const resources = path.join(home, 'resources');
+      fs.mkdirSync(path.join(resources, 'mcp-orchestrator', 'dist'), { recursive: true });
+      fs.copyFileSync(path.resolve('mcp-orchestrator', 'dist', 'bundle.js'), path.join(resources, 'mcp-orchestrator', 'dist', 'bundle.js'));
+      fs.copyFileSync(path.resolve('mcp-orchestrator', 'package.json'), path.join(resources, 'mcp-orchestrator', 'package.json'));
+      const dist = path.resolve('electron', 'dist');
+      await app.evaluate(async (_e, { resources, dist }) => {
+        const was = process.resourcesPath;
+        Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true, writable: true });
+        try {
+          await process.mainModule!.require(`${dist}/services/mcp-orchestrator.js`).setupMcpOrchestrator({});
+        } finally {
+          Object.defineProperty(process, 'resourcesPath', { value: was, configurable: true, writable: true });
+        }
+      }, { resources, dist });
       const written = { opencode: path.join(home, '.config', 'opencode', 'opencode.json'), pi: path.join(home, '.pi', 'agent', 'mcp.json') };
-      await expect.poll(() => Object.values(written).filter((f) => fs.existsSync(f)).length, { timeout: 30_000, message: 'Tars wrote its servers' }).toBe(2);
 
       for (const id of ['oc', 'pi']) await page.evaluate((i) => (window as unknown as Api).electronAPI.agent.start({ id: i, prompt: '' }), id);
       const answered = (kind: string) => lines(path.join(home, `${kind}.jsonl`)).find((e) => typeof e.whoami === 'string');
