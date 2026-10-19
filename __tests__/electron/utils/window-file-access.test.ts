@@ -41,9 +41,19 @@ import * as path from 'node:path';
  *      a file with a second name outside the private folder, which no name and
  *      no inode check of Tars's knows: an agent's hard link, in its project's
  *      folder of files, to an SSH key or a CLI's credentials.
+ * Added before their code after the Audit's L1 on #466 (2026-10-19):
+ *  W8. A folder of credentials taken for a project, added from a page or
+ *      written into the projects' list, which lives in ~/.dorothy, every
+ *      agent's: ~/.ssh, ~/.gnupg, ~/.aws, ~/.config (GitHub's hosts.yml),
+ *      ~/.kube, ~/.docker, or a folder under one, or a link to one, and the
+ *      window reads what it holds. Or, over-correcting, a real project refused.
+ *  W9. A project's .env.local or .env.production read: only .env was a secret.
+ *  W10. A CLI's settings that hold a key read: ~/.claude/settings.json and
+ *      settings.local.json (their env), a project's .claude/settings.local.json,
+ *      Grok CLI's ~/.grok/user-settings.json.
  */
 
-import { windowMayRead, windowMayWrite, localFileServes } from '../../../electron/utils/window-file-access';
+import { windowMayRead, windowMayWrite, localFileServes, mayBeProject } from '../../../electron/utils/window-file-access';
 import { DATA_DIR, PRIVATE_DIR } from '../../../electron/constants';
 
 const home = () => os.homedir();
@@ -52,7 +62,7 @@ const put = (file: string, text = 'x') => { fs.mkdirSync(path.dirname(file), { r
 let project: string;
 
 beforeEach(() => {
-  for (const d of ['.dorothy', '.tars-private', '.claude', '.codex', '.gemini', 'proj']) fs.rmSync(at(d), { recursive: true, force: true });
+  for (const d of ['.dorothy', '.tars-private', '.claude', '.codex', '.gemini', '.grok', '.ssh', '.gnupg', '.aws', '.config', '.kube', '.docker', 'proj', 'kube-link']) fs.rmSync(at(d), { recursive: true, force: true });
   project = at('proj');
   fs.mkdirSync(project, { recursive: true });
 });
@@ -147,3 +157,33 @@ describe('what local-file:// serves', () => {
     });
   });
 });
+
+describe('credentials, whatever the project (the Audit\'s L1 on #466)', () => {
+  it('W8. no folder of credentials is a project, under its name, under another, or a level down', () => {
+    const places = [at('.ssh'), at('.gnupg'), at('.aws'), at('.config', 'gh'), at('.config'), at('.kube'), at('.docker')];
+    for (const place of places) {
+      const file = put(path.join(place, 'hosts.yml'), 'oauth_token: gho_x');
+      expect(mayBeProject(place), place).toBe(false);
+      expect(windowMayRead(file, [place]), file).toBe(false);
+    }
+    fs.symlinkSync(at('.kube'), at('kube-link'));
+    expect(mayBeProject(at('kube-link'))).toBe(false);
+    expect(windowMayRead(path.join(at('kube-link'), 'hosts.yml'), [at('kube-link')])).toBe(false);
+    // A real project still is one, and the code panel still reads it.
+    expect(mayBeProject(project)).toBe(true);
+    expect(windowMayRead(put(path.join(project, 'src', 'b.ts')), [project])).toBe(true);
+  });
+
+  it('W9. no .env of any kind', () => {
+    for (const name of ['.env.local', '.env.production', '.env.development.local']) {
+      expect(windowMayRead(put(path.join(project, name), 'KEY=1'), [project]), name).toBe(false);
+    }
+  });
+
+  it('W10. no CLI settings that hold a key', () => {
+    for (const f of [at('.claude', 'settings.json'), at('.claude', 'settings.local.json'), path.join(project, '.claude', 'settings.local.json'), at('.grok', 'user-settings.json')]) {
+      expect(windowMayRead(put(f, '{"env":{"ANTHROPIC_API_KEY":"k"}}'), [project]), f).toBe(false);
+    }
+  });
+});
+
