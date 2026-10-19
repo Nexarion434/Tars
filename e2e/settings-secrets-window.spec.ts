@@ -21,8 +21,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    holds none, the row offers its empty field and the bot cannot be turned on. Its auth token: regenerate has Tars
  *    show the new token in its own dialog, never in the page; copy token has Tars copy it. OpenRouter's key: set and
  *    cleared through its row, its label says so. A save of a switch leaves every secret as it was.
- * 2. Hermes: the form's token reads set and is in no field; replace then save puts a new one in its connection;
- *    copy secret has Tars copy the webhook's secret, which the page never holds.
+ * 2. Hermes: the form's token reads set and is in no field, and its row says switching to OAuth keeps it, unused
+ *    (nothing in the form clears it); replace then save puts a new one in its connection; copy secret has Tars copy the
+ *    webhook's secret, which the page never holds.
  * 3. One detection: CLI Paths shows, as it opens, the codex set in the settings (a stand-in that answers
  *    `codex-cli 9.9.9`), and Providers lists it as `codex 9.9.9`, its Command row naming that path, set in CLI Paths;
  *    for every CLI, CLI Paths shows a path exactly when Providers says ready.
@@ -259,6 +260,8 @@ for (const newInterface of [false, true]) {
       await section(page, 'Hermes', 'Connection');
       const auth = rowOf(page, 'Auth');
       await expect(auth).toContainText('a token is set', { timeout: 30_000 });
+      // Nothing in the form clears it (main keeps it on the mask or an empty field): the row says what OAuth does to it.
+      await expect(auth).toContainText('Switching to OAuth keeps it, unused.');
       await expect(auth.locator('input')).toHaveCount(0);
       expect(await held(page, [HERMES_TOKEN, MASK]), 'Hermes holds no token').toEqual([]);
       await stepShot(page, '01-hermes-token-set');
