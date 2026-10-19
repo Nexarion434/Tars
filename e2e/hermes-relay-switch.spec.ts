@@ -11,8 +11,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * #285's relay. Frames: `Settings · Connection`, and `Settings · Connection ·
  * Telegram through Hermes` with its light copy.
  *
- * The sandbox holds a Tars bot token (the bot itself off, so nothing calls
- * Telegram) and a Hermes connection to a port nothing listens on.
+ * The sandbox holds a Tars bot token where 2.0.4 keeps it, in
+ * ~/.tars-private/settings-secrets.json (the bot itself off, so nothing calls
+ * Telegram), and a Hermes connection to a port nothing listens on.
  * - Off: the row warns that turning it on erases the bot's token.
  * - A click on the switch shows the warning with turn on and cancel, and the
  *   settings file is untouched; cancel keeps it so.
@@ -28,7 +29,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   Telegram is the bot's own again, its token field empty.
  *
  * The artefact: a screenshot per step, and values.json with the settings file
- * at each step and the states read.
+ * and the bot's (stand-in) token as Tars keeps it, at each step, and the
+ * states read.
  */
 
 const LABEL = 'Telegram through Hermes';
@@ -47,15 +49,21 @@ test('Telegram through Hermes warns before it erases the bot\'s token, and says 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-relay-switch-'));
   const dir = path.join(home, '.dorothy');
   fs.mkdirSync(dir, { recursive: true });
-  fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
+  const priv = path.join(home, '.tars-private');
+  fs.mkdirSync(priv, { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
-  fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
+  fs.writeFileSync(path.join(priv, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }), { mode: 0o600 });
   const settingsFile = path.join(dir, 'app-settings.json');
   fs.writeFileSync(settingsFile, JSON.stringify({
-    autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9',
-    telegramEnabled: false, telegramBotToken: '123456:ABCDEF', telegramAuthToken: 'e2e-auth-token', hermesRelayEnabled: false,
+    autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', telegramEnabled: false, hermesRelayEnabled: false,
   }));
-  const file = () => JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as { hermesRelayEnabled?: boolean; telegramBotToken?: string; telegramEnabled?: boolean };
+  const secretsFile = path.join(priv, 'settings-secrets.json');
+  fs.writeFileSync(secretsFile, JSON.stringify({ telegramBotToken: '123456:ABCDEF', telegramAuthToken: 'e2e-auth-token' }), { mode: 0o600 });
+  /** The settings file, with the bot's token read where Tars keeps it ('' once erased, whether written so or left out). */
+  const file = () => ({
+    ...JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as { hermesRelayEnabled?: boolean; telegramEnabled?: boolean },
+    telegramBotToken: (JSON.parse(fs.readFileSync(secretsFile, 'utf-8')) as { telegramBotToken?: string }).telegramBotToken ?? '',
+  });
 
   const app = await launchSandboxed(electron, home, {
     env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31469), DOROTHY_E2E: '1' },

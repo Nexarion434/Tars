@@ -424,14 +424,19 @@ describe('the MCP servers that call the API', () => {
 
   it('orchestrator: with no token of its own, the shared file and a colleague\'s name make it nobody', async () => {
     // The other way to be beta: drop the token, and let the client fall back to
-    // the file every agent can read, with beta's id in the environment.
+    // the file, with beta's id in the environment. Until 2.0.4 the client
+    // presented ~/.dorothy/api-token, which every agent can read, and Tars took
+    // it for nobody; since, the file is in ~/.tars-private, which no client
+    // reads, and the client presents nothing: Tars does not take the call.
     const sharedHome = fs.mkdtempSync(path.join(tmp, 'shared-home-'));
-    fs.mkdirSync(path.join(sharedHome, '.dorothy'));
-    fs.writeFileSync(path.join(sharedHome, '.dorothy', 'api-token'), sharedToken);
+    for (const dir of ['.dorothy', '.tars-private']) {
+      fs.mkdirSync(path.join(sharedHome, dir));
+      fs.writeFileSync(path.join(sharedHome, dir, 'api-token'), sharedToken);
+    }
     asAgent({ HOME: sharedHome, CLAUDE_AGENT_ID: BETA.id, CLAUDE_PROJECT_PATH: BETA.projectPath });
     const { apiRequest } = await orchestratorClient();
 
-    await expect(apiRequest('/api/bus/read')).rejects.toThrow(NO_AGENT);
+    await expect(apiRequest('/api/bus/read')).rejects.toMatchObject({ status: 401 });
   });
 
   it('memory: presents the agent\'s own token', async () => {

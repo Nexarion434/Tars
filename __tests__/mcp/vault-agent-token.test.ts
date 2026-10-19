@@ -50,9 +50,12 @@ beforeEach(() => {
   saved = { CLAUDE_MGR_API_TOKEN: process.env.CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL: process.env.CLAUDE_MGR_API_URL, TARS_INSTANCE_ID: process.env.TARS_INSTANCE_ID };
   delete process.env.CLAUDE_MGR_API_TOKEN;
   process.env.TARS_INSTANCE_ID = INSTANCE;
-  // The shared file an agent without a token of its own falls back to.
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
+  // The shared file an agent without a token of its own fell back to until
+  // 2.0.4, where it was and where it is since.
+  for (const dir of ['.dorothy', '.tars-private']) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, 'api-token'), 'the-shared-token-from-the-file');
+  }
   restoreHome = moveTestHome(home);
 });
 
@@ -81,13 +84,13 @@ describe('the vault client', () => {
     expect(sent[0].headers.Authorization).toBe('Bearer the-token-minted-for-this-agent');
   });
 
-  it('still presents the shared token for a session started before tokens existed', async () => {
+  it('presents no token for a session started without one (2.0.4: the shared token is out of the agents\' reach)', async () => {
     delete process.env.CLAUDE_MGR_API_TOKEN;
     const { apiRequest } = await vaultClient();
 
-    await apiRequest('GET', '/api/vault/documents');
+    await apiRequest('GET', '/api/vault/documents').catch(() => undefined);
 
-    expect(sent[0].headers.Authorization).toBe('Bearer the-shared-token-from-the-file');
+    expect(sent[0].headers.Authorization).toBeUndefined();
   });
 });
 

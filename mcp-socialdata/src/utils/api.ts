@@ -1,51 +1,23 @@
-import * as https from "https";
-import { API_WAIT_MS, send } from "../../../mcp-shared/src/http.js";
-import { readAppSettings } from "../../../mcp-shared/src/settings.js";
+import { API_WAIT_MS, TARS_WAIT_MS } from "../../../mcp-shared/src/http.js";
+import { apiRequest } from "../../../mcp-shared/src/tars-api.js";
 
-const SOCIALDATA_BASE = "api.socialdata.tools";
-
-function getApiKey(): string {
-  const key = (readAppSettings() as { socialDataApiKey?: string } | null | undefined)?.socialDataApiKey;
-  if (key) {
-    return key;
-  }
-  throw new Error(
-    "SocialData API key not configured. Please add your API key in Tars Settings > SocialData."
-  );
-}
-
+/**
+ * One read of SocialData, made by Tars with the user's key (POST
+ * /api/socialdata/request, services/api-routes/integration-routes.ts): until
+ * 2.0.4 this server read the key out of app-settings.json and called
+ * SocialData itself; it is in ~/.tars-private now, which nothing handed to an
+ * agent reads. Tars answers SocialData's status and body as they came, read
+ * here as they always were, or refuses (no key, a call the tools do not make)
+ * with why. Only reads: `method` is always GET.
+ */
 export async function socialDataRequest(
-  method: string,
+  _method: "GET",
   endpoint: string,
   queryParams?: Record<string, string>
 ): Promise<unknown> {
-  const apiKey = getApiKey();
-
-  let requestPath = endpoint;
-  if (queryParams) {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (value !== undefined && value !== "") {
-        params.append(key, value);
-      }
-    }
-    const qs = params.toString();
-    if (qs) {
-      requestPath += `?${qs}`;
-    }
-  }
-
-  const { status, data } = await send(https, {
-    hostname: SOCIALDATA_BASE,
-    port: 443,
-    path: requestPath,
-    method,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json",
-    },
-    timeout: API_WAIT_MS,
-  }, undefined, (err) => new Error(`SocialData API request failed: ${err.message}`));
+  const { status, data } = (await apiRequest(
+    "/api/socialdata/request", "POST", { endpoint, query: queryParams ?? {} }, API_WAIT_MS + TARS_WAIT_MS,
+  )) as { status: number; data: string };
 
   let parsed: unknown;
   try {

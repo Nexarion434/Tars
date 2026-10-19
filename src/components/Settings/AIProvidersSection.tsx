@@ -2,13 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Input, MetaChip, PanelCaption, PasswordInput, Select, StatusBadge, Dropdown } from '@/components/ui';
+import { Button, Input, MetaChip, PanelCaption, Select, StatusBadge, Dropdown } from '@/components/ui';
 import { isValidOpenAIBaseUrl } from '@/lib/validateUrl';
 import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import CliPanels, { type CliVersions } from './CliPanels';
 import { CLIS } from '@/lib/clis';
+import { versionNumber } from '@/lib/cli-version';
+import { secretIsSet } from '@/lib/secret-settings';
+import { useCliDetection } from '@/hooks/useCliDetection';
 import { settingsSectionOffered } from '@/lib/claude-accounts-offered';
 import type { AppSettings } from './types';
 
@@ -16,30 +20,10 @@ interface AIProvidersSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
   /** Opens Settings, Claude accounts, from Claude Code's Sign-in row. */
   onOpenClaudeAccounts?: () => void;
-}
-
-
-/**
- * The version to print for a CLI, out of whatever its `--version` says.
- *
- * `shell:version` hands back the raw output and that is the right contract for
- * a generic handler, so the tidying belongs here. Both CLIs installed on the
- * machine this was checked on append a parenthesised note to the version:
- *
- *   claude --version  ->  2.1.258 (Claude Code)
- *   amp --version     ->  0.0.1788811227-gce258b (released 2026-09-07T20:00:27.000Z, 1h ago)
- *
- * Amp's note says how old the build is, so a column headed version was reading
- * `1h ago`, and `2h ago` an hour later. Only a parenthesised group at the very
- * end is dropped, and only if something is left: a subtractive rule cannot pick
- * the wrong token out of an output nobody has seen, an annotation in the middle
- * of a line is left alone, and a plain `0.5.0` comes back untouched.
- */
-function displayVersion(raw: string): string {
-  const line = raw.trim().split('\n')[0].trim();
-  return line.replace(/\s*\([^()]*\)$/, '').trim() || line;
 }
 
 
@@ -79,7 +63,7 @@ const ConfigureButton = ({ open, onClick }: { open: boolean; onClick: () => void
 
 const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
 
-export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onOpenClaudeAccounts }: AIProvidersSectionProps) => {
+export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onSecretChanged, onOpenClaudeAccounts }: AIProvidersSectionProps) => {
   // Not on a Windows build, which has no Claude accounts yet (lib/claude-accounts-offered.ts): read after hydration, as the bridge is.
   const [accountsOffered, setAccountsOffered] = useState(true);
   useEffect(() => setAccountsOffered(settingsSectionOffered('claude-accounts')), []);
@@ -87,8 +71,11 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
   // not a form you fill top to bottom.
   const [expanded, setExpanded] = useState<string | null>(null);
   const [cliVersions, setCliVersions] = useState<CliVersions>(() =>
-    Object.fromEntries(CLIS.filter((c) => !c.soon).map((c) => [c.id, { version: null, loading: true }])),
+    Object.fromEntries(CLIS.filter((c) => !c.soon).map((c) => [c.id, { path: null, version: null, loading: true }])),
   );
+  // Ready is where the one detection found the CLI (CLI Paths shows the same
+  // path), and its version is asked of that very binary.
+  const { paths: detected } = useCliDetection();
 
   // The one field here that isn't a key: reject and explain rather than
   // silently persisting something that will 404 the moment an agent starts.
@@ -111,24 +98,22 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
   useEffect(() => { checkOllama(); }, [checkOllama]);
 
   useEffect(() => {
-    const detect = async () => {
-      const entries = await Promise.all(
-        CLIS.filter((c) => !c.soon).map(async (cli) => {
-          try {
-            const result = await window.electronAPI?.shell?.version(cli.command);
-            const version = result?.success && result.output && !result.output.includes('not found') && !result.output.includes('command not found')
-              ? displayVersion(result.output)
-              : null;
-            return [cli.id, { version, loading: false }] as const;
-          } catch {
-            return [cli.id, { version: null, loading: false }] as const;
-          }
-        }),
-      );
-      setCliVersions(Object.fromEntries(entries));
-    };
-    void detect();
-  }, []);
+    if (!detected) return;
+    let current = true;
+    void Promise.all(
+      CLIS.filter((c) => !c.soon).map(async (cli) => {
+        const path = (cli.pathKey && detected[cli.pathKey]) || null;
+        if (!path) return [cli.id, { path: null, version: null, loading: false }] as const;
+        try {
+          const result = await window.electronAPI?.shell?.version(path);
+          return [cli.id, { path, version: result?.success ? versionNumber(result.output) : null, loading: false }] as const;
+        } catch {
+          return [cli.id, { path, version: null, loading: false }] as const;
+        }
+      }),
+    ).then((entries) => { if (current) setCliVersions(Object.fromEntries(entries)); });
+    return () => { current = false; };
+  }, [detected]);
 
   const toggleExpanded = (id: string) => setExpanded((cur) => (cur === id ? null : id));
 
@@ -147,9 +132,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-... (optional)',
       enabled: !!appSettings.customOpenAIEnabled,
       onToggle: () => onSaveAppSettings({ customOpenAIEnabled: !appSettings.customOpenAIEnabled }),
-      apiKey: appSettings.customOpenAIApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ customOpenAIApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ customOpenAIApiKey: appSettings.customOpenAIApiKey }),
+      keyField: 'customOpenAIApiKey' as const,
       models: [appSettings.customOpenAIModel || 'no model set'],
       extraRows: (
         <>
@@ -195,9 +178,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-or-v1-...',
       enabled: !!appSettings.openRouterEnabled,
       onToggle: () => onSaveAppSettings({ openRouterEnabled: !appSettings.openRouterEnabled }),
-      apiKey: appSettings.openRouterApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ openRouterApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ openRouterApiKey: appSettings.openRouterApiKey }),
+      keyField: 'openRouterApiKey' as const,
       models: ['deepseek/deepseek-r1', 'moonshotai/kimi-k2', 'xiaomi/mimo-v2-pro', 'qwen/qwq-32b', 'openai/gpt-4.1', 'google/gemini-2.5-pro', '300+ more…'],
     },
     {
@@ -209,9 +190,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-...',
       enabled: !!appSettings.deepSeekEnabled,
       onToggle: () => onSaveAppSettings({ deepSeekEnabled: !appSettings.deepSeekEnabled }),
-      apiKey: appSettings.deepSeekApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ deepSeekApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ deepSeekApiKey: appSettings.deepSeekApiKey }),
+      keyField: 'deepSeekApiKey' as const,
       models: ['deepseek/deepseek-r1', 'deepseek/deepseek-chat', 'deepseek/deepseek-r1-distill-llama-70b'],
     },
     {
@@ -223,9 +202,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-...',
       enabled: !!appSettings.moonshotEnabled,
       onToggle: () => onSaveAppSettings({ moonshotEnabled: !appSettings.moonshotEnabled }),
-      apiKey: appSettings.moonshotApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ moonshotApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ moonshotApiKey: appSettings.moonshotApiKey }),
+      keyField: 'moonshotApiKey' as const,
       models: ['moonshotai/kimi-k2', 'moonshotai/moonlight-16k', 'moonshotai/kimi-vl-a3b-thinking'],
     },
     {
@@ -237,9 +214,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-...',
       enabled: !!appSettings.mimoEnabled,
       onToggle: () => onSaveAppSettings({ mimoEnabled: !appSettings.mimoEnabled }),
-      apiKey: appSettings.mimoApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ mimoApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ mimoApiKey: appSettings.mimoApiKey }),
+      keyField: 'mimoApiKey' as const,
       models: ['xiaomi/mimo-v2-pro', 'xiaomi/mimo-v2-flash', 'xiaomi/mimo-v2-omni'],
     },
     {
@@ -251,9 +226,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'sk-...',
       enabled: !!appSettings.qwenEnabled,
       onToggle: () => onSaveAppSettings({ qwenEnabled: !appSettings.qwenEnabled }),
-      apiKey: appSettings.qwenApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ qwenApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ qwenApiKey: appSettings.qwenApiKey }),
+      keyField: 'qwenApiKey' as const,
       models: ['qwen/qwq-32b', 'qwen/qwen-2.5-72b-instruct', 'qwen/qwen-2.5-coder-32b-instruct', 'qwen/qwen3-235b-a22b'],
     },
     {
@@ -265,9 +238,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: '...',
       enabled: !!appSettings.zhipuEnabled,
       onToggle: () => onSaveAppSettings({ zhipuEnabled: !appSettings.zhipuEnabled }),
-      apiKey: appSettings.zhipuApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ zhipuApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ zhipuApiKey: appSettings.zhipuApiKey }),
+      keyField: 'zhipuApiKey' as const,
       models: ['zhipuai/glm-4.6', 'zhipuai/glm-4.5', 'zhipuai/glm-4-plus', 'zhipuai/glm-4-air', 'zhipuai/glm-4-flash'],
     },
     {
@@ -279,9 +250,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: '...',
       enabled: !!appSettings.minimaxEnabled,
       onToggle: () => onSaveAppSettings({ minimaxEnabled: !appSettings.minimaxEnabled }),
-      apiKey: appSettings.minimaxApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ minimaxApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ minimaxApiKey: appSettings.minimaxApiKey }),
+      keyField: 'minimaxApiKey' as const,
       models: ['minimax/minimax-m2', 'minimax/minimax-m1', 'minimax/minimax-01'],
     },
     {
@@ -293,9 +262,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: 'vn_...',
       enabled: !!appSettings.veniceEnabled,
       onToggle: () => onSaveAppSettings({ veniceEnabled: !appSettings.veniceEnabled }),
-      apiKey: appSettings.veniceApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ veniceApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ veniceApiKey: appSettings.veniceApiKey }),
+      keyField: 'veniceApiKey' as const,
       models: ['llama-3.3-70b', 'venice-uncensored-1-2', 'deepseek-v3.2', 'qwen3-235b-a22b-instruct-2507'],
     },
     {
@@ -307,9 +274,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       placeholder: '...',
       enabled: !!appSettings.ollamaCloudEnabled,
       onToggle: () => onSaveAppSettings({ ollamaCloudEnabled: !appSettings.ollamaCloudEnabled }),
-      apiKey: appSettings.ollamaCloudApiKey || '',
-      onKeyChange: (v: string) => onUpdateLocalSettings({ ollamaCloudApiKey: v }),
-      onKeyBlur: () => onSaveAppSettings({ ollamaCloudApiKey: appSettings.ollamaCloudApiKey }),
+      keyField: 'ollamaCloudApiKey' as const,
       models: ['gpt-oss:120b', 'glm-5.2', 'kimi-k2.7-code', 'deepseek-v4-pro'],
     },
   ];
@@ -318,6 +283,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
     <>
       <CliPanels
         versions={cliVersions}
+        configuredPaths={appSettings.cliPaths}
         claudeRows={
           <>
                 {/* The frame's Sign-in row. It replaces an API key row that kept a key nothing in the main
@@ -453,7 +419,7 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
       </div>
 
       {apiProviders.map((p) => {
-        const hasKey = p.apiKey.trim().length > 0;
+        const hasKey = secretIsSet(appSettings, p.keyField);
         const open = expanded === p.id;
         return (
           <div key={p.id}>
@@ -474,18 +440,14 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
             {open && (
               <ConfigureArea>
                 {'extraRows' in p && p.extraRows}
-                <SettingsRow
+                <SecretRow
+                  field={p.keyField}
                   label="API key"
                   description={p.note}
-                  control={
-                    <PasswordInput
-                      width="control"
-                      value={p.apiKey}
-                      onChange={(e) => p.onKeyChange(e.target.value)}
-                      onBlur={p.onKeyBlur}
-                      placeholder={p.placeholder}
-                    />
-                  }
+                  set={hasKey}
+                  placeholder={p.placeholder}
+                  clearWarning={`Clear ${p.name}'s key? Its agents go without it from their next start.`}
+                  onChanged={onSecretChanged}
                 />
                 <div className="px-4 py-3 flex flex-wrap items-center gap-1.5">
                   {p.models.map((m) => (

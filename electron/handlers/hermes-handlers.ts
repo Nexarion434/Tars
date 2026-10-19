@@ -7,7 +7,7 @@ import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
-import { API_PORT, DATA_DIR, dataPath } from '../constants';
+import { API_PORT } from '../constants';
 import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
 import { relayStatus } from '../services/hermes-relay';
@@ -16,6 +16,8 @@ import { describeSecretFileError } from '../utils/secret-file';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
 import { provisionWebhookSecret } from '../services/hermes-webhook-secret';
+import { copySecret } from '../services/secret-handoff';
+import { SECRET_MASK } from '../services/settings-secrets';
 import {
   fetchHermesCrons,
   hermesCronAction,
@@ -56,6 +58,22 @@ const HERMES_DESKTOP_REGISTRY = path.join(path.dirname(HERMES_DESKTOP_CONFIG), '
 
 const readConnection = readHermesConnection;
 const writeConnection = writeHermesConnection;
+
+/**
+ * The connection as the Hermes form gets it: its dashboard token as the mask,
+ * never itself (the Audit's L2 on #466): a page that read it could reconfigure
+ * the user's Hermes. The form saves what it holds back.
+ */
+function forTheForm(conn: HermesConnection): HermesConnection {
+  return conn.token ? { ...conn, token: SECRET_MASK } : conn;
+}
+
+/** A save from the form: the mask, or nothing typed, keeps the token saved (`kept`); a token typed in replaces it. */
+function keepToken(incoming: HermesConnection, kept: string | undefined): HermesConnection {
+  const typed = typeof incoming.token === 'string' ? incoming.token.trim() : '';
+  if (typed && typed !== SECRET_MASK) return { ...incoming, token: typed };
+  return kept ? { ...incoming, token: kept } : { ...incoming, token: undefined };
+}
 
 /**
  * A call to the gateway, with the connection a file names: never the default
@@ -264,14 +282,6 @@ async function detectTailscale(): Promise<TailscaleInfo> {
   return { installed: false, running: false, serveConfigured: false };
 }
 
-function readApiToken(): string {
-  try {
-    return fs.readFileSync(dataPath('api-token'), 'utf-8').trim();
-  } catch {
-    return '';
-  }
-}
-
 /** POST JSON to the local API and resolve with {status, body}. */
 function postLocal(pathname: string, token: string, payload: unknown): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
@@ -312,11 +322,16 @@ export function registerHermesHandlers(): void {
       webhookPath: '/api/webhooks/hermes',
       webhookLocalUrl: `http://127.0.0.1:${API_PORT}/api/webhooks/hermes`,
       webhookTailnetUrl: tailnetUrl,
-      apiToken: token,
+      // Set, never its value: hermes:webhookSecret:copy hands it to the user
+      // (secret-handoff.ts). apiToken stays, empty, for the page that reads it.
+      apiTokenSet: !!token,
+      apiToken: '' as const,
       tailscale,
       serveCommand: `tailscale serve --bg --set-path /api/webhooks/hermes ${API_PORT}`,
     };
   });
+
+  ipcMain.handle('hermes:webhookSecret:copy', async () => ({ copied: copySecret(provisionWebhookSecret()) }));
 
   // The relay to the user's Telegram through their Hermes, as Settings, Hermes
   // shows it (services/hermes-relay.ts). Its changes are pushed on the same
@@ -336,7 +351,7 @@ export function registerHermesHandlers(): void {
     // it was the default port's, the SSH tunnel to JeanBrasse's Hermes on his machine.
     const configured = configuredHermesConnection();
     return {
-      connection,
+      connection: forTheForm(connection),
       baseUrl: configured && !('unusable' in configured) ? resolveHermesBaseUrl(configured.conn) : '',
       desktopConfigAvailable: fs.existsSync(HERMES_DESKTOP_CONFIG) || fs.existsSync(HERMES_DESKTOP_REGISTRY),
     };
@@ -350,7 +365,8 @@ export function registerHermesHandlers(): void {
   // restarted.
   ipcMain.handle('hermes:connection:save', async (_event, connection: HermesConnection) => {
     try {
-      writeConnection(connection);
+      // Read only for the token the form was shown as the mask.
+      writeConnection(keepToken(connection, readConnection().token));
       resetLiveSession();
       return { success: true };
     } catch (err) {
@@ -365,7 +381,7 @@ export function registerHermesHandlers(): void {
     resetLiveSession();
     return {
       success: true,
-      connection: imported.conn,
+      connection: forTheForm(imported.conn),
       baseUrl: resolveHermesBaseUrl(imported.conn),
       tokenNotImported: imported.tokenNotImported,
     };

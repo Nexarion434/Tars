@@ -4,8 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
- * The command lines Tars starts codex with, in every builder: an agent's terminal, a scheduled run and a one-shot
- * (2.0.4). Measured on codex-cli 0.163.0.
+ * The command lines Tars starts codex with, in every builder: an agent's terminal and a one-shot (2.0.4; the
+ * scheduled-script builders went with PR 466, no path of the app having built one since 1.8.0). Measured on
+ * codex-cli 0.163.0.
  *
  * The ways it fails:
  * 1. `--full-auto` anywhere: 0.163 refuses it ("unexpected argument", exit 2), so every codex agent in auto or bypass
@@ -162,31 +163,12 @@ describe('a session resumed or forked', () => {
   });
 });
 
-describe('a scheduled run and a one-shot', () => {
-  it("put codex exec's own options after exec, with the permission, the model and the effort", () => {
-    const scheduled = words(provider.buildScheduledCommand({ binaryPath: codex016, prompt: PROMPT, autonomous: true, outputFormat: 'stream-json', model: 'gpt-6-luna', effort: 'low' }));
-    expect(scheduled.slice(0, 2)).toEqual([codex016, 'exec']);
-    expect(scheduled).toEqual(expect.arrayContaining(['--json', '--approve-for-me', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort=low']));
-    expect(scheduled[scheduled.length - 1]).toBe(PROMPT);
-    expect(scheduled).not.toContain('--full-auto');
-
+describe('a one-shot', () => {
+  it("puts codex exec's own options after exec, with the model and the effort", () => {
     const oneShot = words(provider.buildOneShotCommand({ binaryPath: codex016, prompt: PROMPT, model: 'gpt-6-luna', effort: 'medium' }));
     expect(oneShot.slice(0, 2)).toEqual([codex016, 'exec']);
     expect(oneShot).toEqual(expect.arrayContaining(['--model', 'gpt-6-luna', '-c', 'model_reasoning_effort=medium']));
     expect(oneShot[oneShot.length - 1]).toBe(PROMPT);
-  });
-
-  it("a scheduled script's codex line, the same way", () => {
-    const script = provider.buildScheduledScript({
-      binaryPath: codex016, binaryDir: path.dirname(codex016), projectPath: '/tmp/project', prompt: PROMPT, autonomous: true,
-      mcpConfigPath: '', logPath: '/tmp/log', homeDir: '/tmp/home', model: 'gpt-6-luna', effort: 'high',
-    });
-    const line = script.split('\n').find(l => l.includes(codex016) && l.includes('exec'))!;
-    expect(line, script).toBeTruthy();
-    const argv = words(line.replace(/\s*>>.*$/, ''));
-    expect(argv.slice(0, 2)).toEqual([codex016, 'exec']);
-    expect(argv).toEqual(expect.arrayContaining(['--json', '--approve-for-me', '--model', 'gpt-6-luna', '-c', 'model_reasoning_effort=high']));
-    expect(argv[argv.length - 1]).toBe(PROMPT);
-    expect(script).not.toContain('--full-auto');
+    expect(oneShot).not.toContain('--full-auto');
   });
 });

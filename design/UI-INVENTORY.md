@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 265 root frames, 86 of them drawn and not built yet: the 75 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other hundred and ninety-three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 277 root frames, 86 of them drawn and not built yet: the 75 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other two hundred and five being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -128,9 +128,9 @@ part shows and what the Backend would provide.
 | Group | Sections |
 |---|---|
 | General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
-| AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
-| Hermes | Connection (+ link out to Schedules): Settings · Connection. Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
-| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
+| AI & Providers | Providers (an API key set, replaced or cleared, never shown: Secrets · Settings, Providers, an API key, and its light copy), Claude accounts, CLI Paths (what Tars found as it opens, the detection Providers reads too: Secrets · CLIs, one detection, and its light copy), Permissions |
+| Hermes | Connection (+ link out to Schedules): Settings · Connection; its token set and replaced, never shown, and the webhook's secret copied by Tars: Secrets · Settings, Hermes connection (and its light copy). Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
+| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy); every key and token of these sections set, replaced or cleared, never shown, and Telegram's auth token shown once by Tars in a window of its own: Secrets · Settings, Telegram (its light copy, the narrowest window), Secrets · states (and its light copy), Secrets · notes for the Backend |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 

@@ -1,8 +1,5 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
-import { dataPath, DATA_DIR_SHELL } from '../constants';
+import { loadSettingsWithSecrets } from '../services/settings-secrets';
 
 /**
  * Synchronously read the persisted app settings. Providers use this in
@@ -10,12 +7,8 @@ import { dataPath, DATA_DIR_SHELL } from '../constants';
  * initAgentPty and the automation handlers already use).
  */
 export function readAppSettingsFromDisk(): Partial<AppSettings> {
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    return JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as Partial<AppSettings>;
-  } catch {
-    return {};
-  }
+  // With their secrets, from ~/.tars-private (services/settings-secrets.ts).
+  return loadSettingsWithSecrets();
 }
 
 /**
@@ -53,21 +46,6 @@ export interface InteractiveCommandParams {
   forkSession?: boolean;
   /** The settings the command is built with: read from disk when absent (codex's key, services/cli-keys.ts). */
   appSettings?: AppSettings;
-}
-
-/**
- * Parameters for building a scheduled (non-interactive, one-shot) command.
- */
-export interface ScheduledCommandParams {
-  binaryPath: string;
-  prompt: string;
-  autonomous: boolean;
-  mcpConfigPath?: string;
-  outputFormat?: string;
-  verbose?: boolean;
-  /** The agent's model and effort, for a provider whose builder takes them (codex). */
-  model?: string;
-  effort?: AgentEffort;
 }
 
 /**
@@ -140,9 +118,6 @@ export interface CLIProvider {
   /** With taskTypedAfterLaunch: the text a launch types in for this task ('' for none). */
   typedTask?(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string;
 
-  /** Build command string for scheduled task execution */
-  buildScheduledCommand(params: ScheduledCommandParams): string;
-
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
@@ -188,23 +163,6 @@ export interface CLIProvider {
 
   /** Get the Tars --add-dir equivalent flag for this provider */
   getAddDirFlag(): string;
-
-  /** Generate the shell script content for scheduled tasks */
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    /** Optional skills list to inject as a prompt prefix (same as interactive sessions) */
-    skills?: string[];
-    /** The agent's model and effort, for a provider whose script takes them (codex). */
-    model?: string;
-    effort?: AgentEffort;
-  }): string;
 }
 
 /**
@@ -274,8 +232,7 @@ export function promptOperand(prompt: string | undefined): string {
  * backticks and line breaks reach the program as they are.
  *
  * Every folder a command hands its CLI (`--add-dir`, `--include-directories`)
- * goes through this. They used to be written `'${DATA_DIR}'`, and the scheduled
- * builders `"${DATA_DIR}"`, and DATA_DIR carries the home folder's own name:
+ * goes through this. They used to be written `'${DATA_DIR}'`, and DATA_DIR carries the home folder's own name:
  * a home such as `/Users/o'neil` closed the quote early and the command did
  * not run, and a name built to close it could add arguments of its own.
  */
@@ -361,40 +318,10 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
  *
  * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
  * would bring the question back, about itself, and go out as `x-api-key` to a
- * vendor it has nothing to do with. Scheduled runs (`claude -p`) take the key
- * the same way, from scheduledKeyExports.
+ * vendor it has nothing to do with.
  */
 export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
   return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
-}
-
-/**
- * The lines of a scheduled script that point `claude -p` at a key provider
- * and hand it the key, as keyProviderEnv does a terminal's (the Audit's M1 on
- * #458). Measured on claude 2.1.302 against a stand-in of the vendor:
- * `claude -p` with ANTHROPIC_API_KEY empty or unset, or ANTHROPIC_AUTH_TOKEN
- * empty, and a subscription signed in, sends the subscription's OAuth token
- * as a Bearer to the vendor's URL. So the key is read as the task runs, by
- * Tars's own node (the launcher its MCP servers run on, else `node`), never by
- * jq, which macOS ships only from 15, and never in an argument; with no key,
- * or settings it cannot read, the script says why in the task's log and ends
- * before claude starts.
- */
-export function scheduledKeyExports(baseUrl: string, setting: string, logPath: string): string {
-  const read = 'try{const v=JSON.parse(require("fs").readFileSync(process.env.TARS_SETTINGS,"utf8"))[process.env.TARS_KEY_NAME];'
-    + 'if(typeof v==="string"&&v.trim())process.stdout.write(v.trim())}catch(e){}';
-  return [
-    `export ANTHROPIC_BASE_URL=${shellQuote(baseUrl)}`,
-    `TARS_NODE="${DATA_DIR_SHELL}/bin/tars-mcp-node"; [ -x "$TARS_NODE" ] || TARS_NODE=node`,
-    `TARS_KEY="$(TARS_SETTINGS="${DATA_DIR_SHELL}/app-settings.json" TARS_KEY_NAME=${shellQuote(setting)} "$TARS_NODE" -e '${read}' 2>/dev/null)"`,
-    'if [ -z "$TARS_KEY" ]; then',
-    `  echo "=== Not run: no ${setting} in Tars's settings, or they could not be read. claude was not started, and nothing was sent to ${baseUrl} ===" >> ${shellQuote(logPath)}`,
-    '  exit 1',
-    'fi',
-    'export ANTHROPIC_AUTH_TOKEN="$TARS_KEY" ANTHROPIC_API_KEY=""',
-    'unset TARS_KEY TARS_NODE',
-    '',
-  ].join('\n');
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {

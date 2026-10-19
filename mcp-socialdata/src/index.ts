@@ -3,7 +3,7 @@
  * MCP server for Twitter/X data via SocialData API
  * Available to all Claude agents for searching tweets, getting user profiles, etc.
  *
- * API key is read from ~/.dorothy/app-settings.json (socialDataApiKey field)
+ * Tars makes the calls with the user's SocialData key, which it keeps in ~/.tars-private (utils/api.ts)
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

@@ -1,10 +1,12 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button, Input, PasswordInput } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
+import { secretIsSet } from '@/lib/secret-settings';
 import { SettingsCard } from './SettingsCard';
 import { OverseerAutonomy } from './OverseerAutonomy';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
 
@@ -12,6 +14,8 @@ interface MemorySectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
 }
 
 interface BackendRowsProps {
@@ -21,12 +25,15 @@ interface BackendRowsProps {
   enabled: boolean;
   url: string;
   urlPlaceholder: string;
-  token: string;
+  /** The setting secrets.set takes for the backend's secret, and whether main holds one. */
+  tokenField: 'memoryGbrainAuthToken' | 'memoryHonchoApiKey';
+  tokenSet: boolean;
   tokenLabel: string;
+  tokenHint: string;
   onToggle: (enabled: boolean) => void;
   /** `persist` is false while typing and true on blur - see the note below. */
   onUrlChange: (url: string, persist: boolean) => void;
-  onTokenChange: (token: string, persist: boolean) => void;
+  onSecretChanged: (field: string, set: boolean) => void;
 }
 
 /**
@@ -45,11 +52,13 @@ function BackendRows({
   enabled,
   url,
   urlPlaceholder,
-  token,
+  tokenField,
+  tokenSet,
   tokenLabel,
+  tokenHint,
   onToggle,
   onUrlChange,
-  onTokenChange,
+  onSecretChanged,
 }: BackendRowsProps) {
   return (
     <>
@@ -80,23 +89,20 @@ function BackendRows({
         }
       />
 
-      <SettingsRow
+      <SecretRow
+        field={tokenField}
         label={tokenLabel}
-        control={
-          <PasswordInput
-            width="control"
-            value={token}
-            onChange={e => onTokenChange(e.target.value, false)}
-            onBlur={e => onTokenChange(e.target.value.trim(), true)}
-            placeholder="Optional - sent as Authorization: Bearer …"
-          />
-        }
+        noun={tokenField === 'memoryHonchoApiKey' ? 'key' : 'token'}
+        set={tokenSet}
+        description={tokenHint}
+        clearWarning={`Clear the ${tokenLabel.toLowerCase()}? The backend is called without one from the next agent on.`}
+        onChanged={onSecretChanged}
       />
     </>
   );
 }
 
-export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: MemorySectionProps) => {
+export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onSecretChanged }: MemorySectionProps) => {
   const write = (updates: Partial<AppSettings>, persist: boolean) =>
     (persist ? onSaveAppSettings : onUpdateLocalSettings)(updates);
 
@@ -118,11 +124,13 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
         enabled={!!appSettings.memoryGbrainEnabled}
         url={appSettings.memoryGbrainMcpUrl || ''}
         urlPlaceholder="https://gbrain.example.com/mcp"
-        token={appSettings.memoryGbrainAuthToken || ''}
+        tokenField="memoryGbrainAuthToken"
+        tokenSet={secretIsSet(appSettings, 'memoryGbrainAuthToken')}
         tokenLabel="Auth token"
+        tokenHint="Sent as a bearer token to gbrain's MCP server."
         onToggle={enabled => onSaveAppSettings({ memoryGbrainEnabled: enabled })}
         onUrlChange={(url, persist) => write({ memoryGbrainMcpUrl: url }, persist)}
-        onTokenChange={(token, persist) => write({ memoryGbrainAuthToken: token }, persist)}
+        onSecretChanged={onSecretChanged}
       />
 
       {/* Obsidian is a folder of markdown, not an MCP endpoint, so it gets a
@@ -162,11 +170,13 @@ export const MemorySection = ({ appSettings, onSaveAppSettings, onUpdateLocalSet
         enabled={!!appSettings.memoryHonchoEnabled}
         url={appSettings.memoryHonchoMcpUrl || 'https://mcp.honcho.dev'}
         urlPlaceholder="https://mcp.honcho.dev"
-        token={appSettings.memoryHonchoApiKey || ''}
+        tokenField="memoryHonchoApiKey"
+        tokenSet={secretIsSet(appSettings, 'memoryHonchoApiKey')}
         tokenLabel="API key"
+        tokenHint="Sent to Honcho's MCP server."
         onToggle={enabled => onSaveAppSettings({ memoryHonchoEnabled: enabled })}
         onUrlChange={(url, persist) => write({ memoryHonchoMcpUrl: url }, persist)}
-        onTokenChange={(token, persist) => write({ memoryHonchoApiKey: token }, persist)}
+        onSecretChanged={onSecretChanged}
       />
 
       {/* Honcho only, so it is a sibling row rather than a fourth row on

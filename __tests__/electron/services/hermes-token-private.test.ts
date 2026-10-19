@@ -19,6 +19,8 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 5. A connection saved with no token leaves the old one in ~/.tars-private.
  */
 
+// The connection itself: in ~/.tars-private since 2.0.4, in ~/.dorothy before (services/settings-secrets.ts).
+const connectionFile = () => path.join(os.homedir(), '.tars-private', 'hermes-connection.json');
 const dorothyFile = () => path.join(os.homedir(), '.dorothy', 'hermes-connection.json');
 const privateFile = () => path.join(os.homedir(), '.tars-private', 'hermes-token');
 type Config = typeof import('../../../electron/services/hermes-config');
@@ -35,7 +37,8 @@ describe('the dashboard token', () => {
   it('1, 2, 4. is saved in ~/.tars-private, 0600 in 0700, never in ~/.dorothy, and read back by both readers', () => {
     config.writeHermesConnection({ mode: 'local', localPort: 9119, authMode: 'token', token: 'secret-dashboard-token' });
 
-    expect(fs.readFileSync(dorothyFile(), 'utf-8')).not.toContain('secret-dashboard-token');
+    expect(fs.existsSync(dorothyFile())).toBe(false);
+    expect(fs.readFileSync(connectionFile(), 'utf-8')).not.toContain('secret-dashboard-token');
     expect(fs.readFileSync(privateFile(), 'utf-8').trim()).toBe('secret-dashboard-token');
     if (hasPosixModes()) {
       expect(fs.statSync(privateFile()).mode & 0o777).toBe(0o600);
@@ -52,8 +55,9 @@ describe('the dashboard token', () => {
     const conn = config.usableHermesConnection();
 
     expect(conn).toMatchObject({ mode: 'local', localPort: 9119, token: 'old-token' });
-    expect(fs.readFileSync(dorothyFile(), 'utf-8')).not.toContain('old-token');
-    expect(JSON.parse(fs.readFileSync(dorothyFile(), 'utf-8'))).toMatchObject({ mode: 'local', localPort: 9119 });
+    expect(fs.existsSync(dorothyFile())).toBe(false);
+    expect(fs.readFileSync(connectionFile(), 'utf-8')).not.toContain('old-token');
+    expect(JSON.parse(fs.readFileSync(connectionFile(), 'utf-8'))).toMatchObject({ mode: 'local', localPort: 9119 });
     expect(fs.readFileSync(privateFile(), 'utf-8').trim()).toBe('old-token');
   });
 

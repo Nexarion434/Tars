@@ -7,7 +7,8 @@ import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
-import { API_PORT, API_TOKEN_FILE, privatePath } from '../constants';
+import { API_PORT, API_TOKEN_FILE, DATA_DIR, privatePath } from '../constants';
+import { moveOutOfAgentReach } from './settings-secrets';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
@@ -109,6 +110,8 @@ function setApiServerState(patch: Partial<ApiServerState>): void {
 function initApiToken(): string {
   // Windows: minted anew once, the first time this build starts (secret-file.ts).
   const rotated = privatePath('api-token-rotated');
+  // In ~/.dorothy, every agent's --add-dir, until 2.0.4 (services/settings-secrets.ts).
+  moveOutOfAgentReach(path.join(DATA_DIR, 'api-token'), API_TOKEN_FILE);
   try {
     if (!oneTimeRotationDue(rotated) && fs.existsSync(API_TOKEN_FILE)) {
       const existing = fs.readFileSync(API_TOKEN_FILE, 'utf-8').trim();

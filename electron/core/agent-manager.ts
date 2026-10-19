@@ -1237,16 +1237,10 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
 
   // Build PATH that includes user-configured paths, nvm, and other common locations for claude
   const cliExtraPaths: string[] = [];
-  let savedSettings: Record<string, unknown> = {};
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    if (fs.existsSync(settingsFile)) {
-      savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-      cliExtraPaths.push(...cliPathDirs(savedSettings.cliPaths as Record<string, unknown> | undefined));
-    }
-  } catch {
-    // Ignore settings load errors
-  }
+  // With their keys, from ~/.tars-private since 2.0.4 (services/settings-secrets.ts):
+  // app-settings.json alone holds none, and the terminal's environment needs them.
+  const savedSettings = readAppSettingsFromDisk() as Record<string, unknown>;
+  cliExtraPaths.push(...cliPathDirs(savedSettings.cliPaths as Record<string, unknown> | undefined));
   const fullPath = buildFullPath(cliExtraPaths);
 
   // For local provider, bake Tasmania env vars into the PTY process environment
