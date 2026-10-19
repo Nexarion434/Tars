@@ -129,7 +129,7 @@ export function targetsOf(message: BusMessage, room: BusRoom): string[] {
  *
  * A target that can be reached goes into the one queue Tars has, and is marked
  * delivered only when it actually reaches a terminal. A target that cannot is
- * recorded `not_sent` with its reason and waits for a human: amp, codex, grok,
+ * recorded `not_sent` with its reason and waits for a human: amp, grok,
  * opencode and pi never leave `running` in an interactive session, so a queue
  * for them would never drain. Nothing here reads silence as an end of turn.
  */
