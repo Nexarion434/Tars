@@ -392,6 +392,11 @@ export function seedSandbox(home, { chatRooms = false } = {}) {
     // version the machine had installed. See writeFakeCli.
     cliPath: fakeCli,
     ...a,
+    // The tars room's frame draws its Backend Engineer as a CLI with no turn
+    // signal. Codex stood for one until 2.0.4, which reads its turns from its
+    // session log (#465), so in the rooms it runs on amp, still hookless; the
+    // shared seed keeps codex, which every other baseline shows.
+    ...(chatRooms && a.id === 'a3' ? { provider: 'amp', model: 'default' } : {}),
     projectPath: a.projectPath === REL_PROJECT ? PROJECT : SECOND,
     ...(a.worktreePath ? { worktreePath: path.join(PROJECT, '.worktrees', a.branchName) } : {}),
     // loadAgents clears currentSessionId on every launch and keeps this one,
