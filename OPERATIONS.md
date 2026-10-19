@@ -230,7 +230,8 @@ else: a stand-in of Telegram's Bot API, which the bot's token travels to in ever
 `e2e/chat-senders.spec.ts`), and `DOROTHY_HEALTH_EVERY_MS` (how often the health samples are taken,
 200 ms at least; `e2e/health-reports.spec.ts` takes one a second). And one read by any development run,
 never by a packaged Tars (`app.isPackaged`): `DOROTHY_ERROR_REPORTS_DSN`, where error reports go, a
-stand-in of Sentry that records the envelopes (`e2e/health-reports.spec.ts`).
+stand-in of Sentry that records the envelopes (`e2e/health-reports.spec.ts`,
+`e2e/error-reports-coverage.spec.ts`).
 
 **Tars's health, on this machine.** Every 5 minutes Tars appends a sample to
 `~/.dorothy/health-samples.jsonl` (`0600`): the main process's heap and RSS, its event loop delay
@@ -239,6 +240,17 @@ open. 24 hours rolling, 256 KB at most: numbers, with the names of Tars's own ca
 content, no file path, no name (`services/health/`). To see how a session
 went before a crash, read that file; nothing in it leaves unless error reports are on (SPECS.md,
 Error reports).
+
+**Are the error reports going out?** With "Send error reports" on, main logs
+`[error-reports] error reports on, tars@<version>` once, at start or when the switch is turned on, and
+`[error-reports] sent a <kind> report: HTTP <status>` for each report (`error`, `handled`, `agent-tool`,
+`abrupt-end`, `diagnostic`; HTTP 0 when no answer came). The last answer is kept in
+`~/.dorothy/error-reports.json` (`last`), which the window reads (`errorReports:last`). On and no `sent`
+line: nothing reportable happened, or the day's budget is spent (`sent` in that file: 20 in 24 hours, the
+agents' tool errors 10 of them, the same error once). A `[uncaught]` line is an uncaught exception in
+main, which Tars runs past and never shows Electron's error box for. If Tars quits at launch, run it from
+a terminal (`/Applications/Tars.app/Contents/MacOS/Tars`): `[uncaught] it came before Tars finished
+loading` names what threw (SPECS.md, Error reports).
 
 ### Unit tests: `npm test`
 
