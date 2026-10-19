@@ -437,8 +437,16 @@ npm run electron:pack
 ```
 
 `tsc -p electron/tsconfig.json`, then build all seven MCP bundles, then
-`electron-builder --dir --mac`. Output: `release/mac-arm64/Tars.app`. This is what
-`scripts/sandbox.sh` expects.
+`electron-builder --dir --mac` as **Tars Sandbox**: its own name, bundle id
+(`xyz.cooperlabs.tars.sandbox`, so macOS keeps its settings, notifications and Application
+Support folder apart from Tars's) and icon (`build/sandbox-icon.icns`, the mark's grid in grey
+with a SANDBOX band, drawn from `public/icon.svg` by `node scripts/sandbox-icon.mjs`: run it
+again when the mark changes). Output: `release/mac-arm64/Tars Sandbox.app`. This is what
+`scripts/sandbox.sh` starts. A test copy never passes for the real Tars in the Dock, the app
+switcher, its menu bar item or a crash box (18/10: two Uncaught Exception boxes from a test
+copy looked like the maintainer's Tars looping). `npm run electron:build`, the release's, is
+unchanged. `e2e/sandbox-build.packed.spec.ts` checks a packed build:
+`TARS_PACKED_APP="release/mac-arm64/Tars Sandbox.app" npx playwright test e2e/sandbox-build.packed.spec.ts`.
 
 Note `electron:pack` does **not** run `next build`: it packages whatever is already in `out/`.
 Run `npm run build:renderer` first if the renderer changed.
