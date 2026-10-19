@@ -1239,7 +1239,7 @@ Each provider writes to its own config, CLI-first with a file fallback:
 | provider(s) | config dir | mechanism |
 |---|---|---|
 | `claude` (+ `openrouter`, `deepseek`, `mimo`, `moonshot`, `qwen`, `zhipu`, `minimax`, `nvidia`, `nous-portal`, all share the `claude` binary and `~/.claude`) | `~/.claude` | `claude mcp add -s user …`, fallback `~/.claude/mcp.json`; presence checked in both `~/.claude/mcp.json` and `~/.claude.json` |
-| `codex` | `~/.codex` | fallback writes `[mcp_servers.<name>]` into `config.toml` |
+| `codex` | `$CODEX_HOME`, else `~/.codex` | Tars's seven servers: the `[mcp_servers.<name>]` section written by Tars, with `env_vars` naming what they read (`codex mcp add` cannot say it); another server: `codex mcp add`, fallback writes the section into `config.toml` |
 | `gemini` | `~/.gemini` | fallback writes `settings.json` |
 | `grok` | `~/.grok` | fallback writes `[mcp_servers.<name>]` into `config.toml` with `enabled = true` |
 | `opencode` | `~/.opencode` | |
@@ -1260,7 +1260,10 @@ jq '.mcpServers | keys' ~/.claude/mcp.json 2>/dev/null
 jq '.mcpServers | keys' ~/.claude.json
 
 # Codex / Grok
-grep -A3 '^\[mcp_servers\.' ~/.codex/config.toml
+grep -A4 '^\[mcp_servers\.' ~/.codex/config.toml   # codex: env_vars lists the agent's token among the names
+# codex: what Tars read of its turns, and the folders it trusted for the agents
+ls -t ~/.codex/sessions/$(date +%Y/%m/%d)/ | head
+grep -A1 '^\[projects\.' ~/.codex/config.toml
 grep -A3 '^\[mcp_servers\.' ~/.grok/config.toml
 
 # Gemini
@@ -1505,7 +1508,10 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
 | a delegated agent "died while it waited", its work half done | before 2.0.4, `delegate_task` ran the task as one ACP turn in a temporary copy of the agent, stopped when it answered with its background work. Since 2.0.4 the task goes into the agent's own terminal and the session stays: if this is seen on 2.0.4, the orchestrator's MCP server is older (restart its CLI) |
-| `delegate_task` says a task was delivered, with no answer | the agent's CLI gives Tars no prompt hook (gemini, codex, opencode, amp, pi, grok): the task went into its terminal and Tars cannot see its turn end. Read the terminal (`get_agent_output`), or have it report with `send_message` to "requester" |
+| a codex agent's turns are not seen: its status rests, `delegate_task` says delivered | its session was not taken for its own, which takes evidence: Tars's identity line in its first message, its file held open by the agent's own codex (`lsof -p <its codex's pid> \| grep rollout`), or a fork of its own session. On macOS and Linux a lookup that fails (ps or lsof failed, or took more than its 5 s on a loaded machine) is asked again, 1, 2, 4, 8 and 16 s later; after the sixth, the log says `whose codex holds <file> was not learned in 6 lookups` and that session is not followed: restart the agent. On Windows a session its user began by typing into its terminal names nobody, and no tool there lists a process's files: it is not followed until a session Tars begins. A codex run outside Tars in the same folder is never the agent's, by design |
+| a codex agent's status: "codex asks to sign in: Tars starts it on ~/.codex, and your login is in <folder>, the CODEX_HOME your shell sets" | Tars hands the codex it starts its own home (`env CODEX_HOME=<Tars's home>` on the line), so that Tars and codex share one config and one sessions folder, and Tars started from the Dock or Finder reads no rc file: its home is `~/.codex`, where codex has no login. Sign in from the agent's terminal (codex shows its sign-in screen there; that writes `~/.codex/auth.json`, and every codex agent is then signed in), or give Tars the same `CODEX_HOME`: on macOS `launchctl setenv CODEX_HOME <folder>`, then quit and reopen Tars (until the next login; a LaunchAgent that runs it makes it last); on Linux in the session's environment (`~/.config/environment.d/codex.conf`: `CODEX_HOME=<folder>`), then log in again; or start Tars from that shell. Check with `CODEX_HOME=~/.codex codex login status`. Not said with a codex key in Settings, which codex takes instead of a login, nor on Windows, which reads no rc file |
+| a codex agent in auto starts with `--ask-for-approval never --sandbox workspace-write`, not `--approve-for-me` | that codex has no `--approve-for-me` (`codex --help \| grep approve-for-me`), or it did not answer `--help` within 10 s at that launch, on a loaded machine. The answer is read beside the window before each launch's line is built, kept per binary and version, and a codex that did not answer is asked again at the next launch: restart the agent |
+| `delegate_task` says a task was delivered, with no answer | the agent's CLI gives Tars no prompt hook (gemini, opencode, amp, pi, grok; codex, the row above): the task went into its terminal and Tars cannot see its turn end. Read the terminal (`get_agent_output`), or have it report with `send_message` to "requester" |
 | a delegated task's answer stops at 4000 characters | the transcript was not found, and the hooks' copy was returned: an API-key provider whose CLI keeps its transcripts outside `~/.claude` and the Claude account folders. `GET /api/tasks/<id>` shows what was read |
 | a delegated task never started: "its turn did not begin within 15 minutes" | the task was typed into the terminal but no UserPromptSubmit came: a field or a dialog held it, or the CLI's hooks are not installed. The queue moved on |
 | an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
@@ -2046,7 +2052,7 @@ up. An orchestrator is never put to sleep. SPECS.md, "An agent asleep", has the 
 | Symptom | Cause |
 |---|---|
 | An agent at rest for hours never sleeps | something keeps it: a timer of its own (a `/loop` ScheduleWakeup, a CronCreate) or a background agent its CLI runs, as its last Stop hook counted them (`STOP hook` lines in `/tmp/dorothy-hooks.log`), a process under its CLI (a dev server, a background task: `ps -A -o pid,ppid,command \| grep -A8 claude`), a draft in its field, a message, note or question waiting for it, an agent still holding work it handed out, or a conversation Tars cannot resume (a provider other than claude, or no transcript) |
-| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`), so there was nothing to resume |
+| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`; a codex agent's rollout, `$CODEX_HOME/sessions/<y>/<m>/<d>/rollout-*-<session>.jsonl`), so there was nothing to resume |
 | Its pane is blank while it sleeps | Tars restarted since it fell asleep: the last screen is kept in memory only, by choice (SPECS.md, "An agent asleep") |
 
 ### Agent stuck in the wrong directory
