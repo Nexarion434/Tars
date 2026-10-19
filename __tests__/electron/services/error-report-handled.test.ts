@@ -36,6 +36,11 @@ import {
  *     syscall, an exit status, a signal, one of Tars's own codes), its frames, and its causes the same way; Tars's own
  *     fixed sentences are kept. A 500's message is its route and status, never the route's error.
  * 13. The copy breaks on what is not an Error, or on a cause that loops.
+ * And from the Audit's re-check of #474 (L2, written red on f087392f, 2026-10-19):
+ * 14. Lines of the message that look like frames are kept as frames: a child process's stderr is in its error's
+ *     message, so in its stack, and a script that died with a stack trace puts its own `at` lines there, with a
+ *     client's folder and its function names (the Audit's probe PB). Only the frames after the message are the
+ *     error's; a stack that does not begin with its message gives none.
  */
 
 afterEach(() => setReportSinks(null));
@@ -283,5 +288,44 @@ describe("what a handled error is sent as (12, 13, the Audit's M1 on #474)", () 
     const named = made(new Error('x'));
     named.name = 'Acme merger failed';
     expect(withoutWords(named).name).toBe('Error');
+  });
+});
+
+describe("the frames a handled error is sent with (14, the Audit's L2 on #474)", () => {
+  const tars = [
+    '    at ChildProcess.exithandler (node:child_process:422:12)',
+    '    at runCheck (/Applications/Tars.app/Contents/Resources/app.asar/electron/dist/services/cli-updater.js:88:5)',
+  ];
+
+  it("probe PB: a child process's own stack trace, in its stderr, never becomes frames", () => {
+    const stderr = [
+      '/Users/jdoe/clients/acme-merger/scripts/build.js:3',
+      "    throw new Error('termsheet missing')",
+      '    ^',
+      'Error: termsheet missing',
+      '    at Object.<anonymous> (/Users/jdoe/clients/acme-merger/scripts/build.js:3:9)',
+      '    at loadTermsheetForAcmeBuyout (/Users/jdoe/clients/acme-merger/lib/terms.js:12:5)',
+    ].join('\n');
+    const error = Object.assign(new Error(`Command failed: node scripts/build.js\n${stderr}\n`), { code: 1, killed: false, signal: null });
+    error.stack = `Error: ${error.message}\n${tars.join('\n')}`;
+    const copy = withoutWords(error);
+    expect(copy.message).toBe('exit 1');
+    expect(copy.stack).toBe(['Error: exit 1', ...tars].join('\n'));
+    expect(copy.stack).not.toMatch(/acme|clients|termsheet|loadTermsheetForAcmeBuyout|jdoe/i);
+  });
+
+  it("14. the frames after the message are kept, whatever name the error took after it was made; a stack that does not begin with its message gives none", () => {
+    const renamed = new Error('codex exited with code 2, 0.4 s after its launch');
+    renamed.stack = `Error: ${renamed.message}\n${tars.join('\n')}`;
+    renamed.name = 'CliExitedAtLaunch';
+    expect(withoutWords(renamed).stack).toBe(['CliExitedAtLaunch: codex exited with code 2, 0.4 s after its launch', ...tars].join('\n'));
+
+    const empty = new Error('');
+    empty.stack = `Error\n${tars.join('\n')}`;
+    expect(withoutWords(empty).stack).toBe(['Error: (message not sent)', ...tars].join('\n'));
+
+    const rewritten = new Error('acme merger failed');
+    rewritten.stack = `    at loadTermsheetForAcmeBuyout (/Users/jdoe/clients/acme-merger/lib/terms.js:12:5)\n${tars.join('\n')}`;
+    expect(withoutWords(rewritten).stack).toBe('Error: (message not sent)');
   });
 });
