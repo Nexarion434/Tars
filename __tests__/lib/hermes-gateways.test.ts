@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowedProjects, gatewayAddresses, gatewayCaption, notSavedLine, projectPicks, projectsLine } from '@/lib/hermes-gateways';
+import { allowedProjects, chipsOf, gatewayAddresses, gatewayCaption, notSavedLine, projectPicks, projectsLine } from '@/lib/hermes-gateways';
 
 /**
  * What Settings, Hermes, Gateways says of each gateway (2.0.4, the window of #469; frames `Gateways · Settings,
@@ -12,7 +12,8 @@ import { allowedProjects, gatewayAddresses, gatewayCaption, notSavedLine, projec
  * 5. The address on this machine: a port other than the one main answers, or another gateway's route.
  * 6. The projects a gateway reaches: a project Tars lists named otherwise than Tars names it; one Tars no longer lists
  *    lost from the chips or from the pick list (it could not be unticked then); a path with a trailing slash taken
- *    for another project; one allowed twice shown twice.
+ *    for another project; one allowed twice shown twice; so many that their chips run out of the row instead of the
+ *    first ones and how many more.
  * 7. The Projects row: a gateway reaching nothing not said in the waiting tone, or one reaching some said to reach none.
  * 8. A refused save: a folder Tars may not write said as main's raw error, another reason lost, or no reason at all
  *    read as a save that went through.
@@ -91,6 +92,14 @@ describe('allowedProjects and projectPicks', () => {
       { path: '/Users/you/code/landing-site', name: 'landing-site', ticked: false },
       { path: '/Users/you/old/gone', name: 'gone', ticked: true },
     ]);
+  });
+});
+
+describe('chipsOf', () => {
+  it('shows up to three projects whole, and of more the first two and how many others (6)', () => {
+    expect(chipsOf([])).toEqual({ shown: [], more: 0 });
+    expect(chipsOf(['tars', 'harbor-billing', 'landing-site'])).toEqual({ shown: ['tars', 'harbor-billing', 'landing-site'], more: 0 });
+    expect(chipsOf(['a', 'b', 'c', 'd', 'e'])).toEqual({ shown: ['a', 'b'], more: 3 });
   });
 });
 
