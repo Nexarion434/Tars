@@ -1,8 +1,5 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
-import { dataPath } from '../constants';
+import { loadSettingsWithSecrets } from '../services/settings-secrets';
 
 /**
  * Synchronously read the persisted app settings. Providers use this in
@@ -10,12 +7,8 @@ import { dataPath } from '../constants';
  * initAgentPty and the automation handlers already use).
  */
 export function readAppSettingsFromDisk(): Partial<AppSettings> {
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    return JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as Partial<AppSettings>;
-  } catch {
-    return {};
-  }
+  // With their secrets, from ~/.tars-private (services/settings-secrets.ts).
+  return loadSettingsWithSecrets();
 }
 
 /**
@@ -53,18 +46,6 @@ export interface InteractiveCommandParams {
   forkSession?: boolean;
   /** The settings the command is built with: read from disk when absent (codex's key, services/cli-keys.ts). */
   appSettings?: AppSettings;
-}
-
-/**
- * Parameters for building a scheduled (non-interactive, one-shot) command.
- */
-export interface ScheduledCommandParams {
-  binaryPath: string;
-  prompt: string;
-  autonomous: boolean;
-  mcpConfigPath?: string;
-  outputFormat?: string;
-  verbose?: boolean;
 }
 
 /**
@@ -123,9 +104,6 @@ export interface CLIProvider {
   /** With taskTypedAfterLaunch: the text a launch types in for this task ('' for none). */
   typedTask?(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string;
 
-  /** Build command string for scheduled task execution */
-  buildScheduledCommand(params: ScheduledCommandParams): string;
-
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
@@ -167,20 +145,6 @@ export interface CLIProvider {
 
   /** Get the Tars --add-dir equivalent flag for this provider */
   getAddDirFlag(): string;
-
-  /** Generate the shell script content for scheduled tasks */
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    /** Optional skills list to inject as a prompt prefix (same as interactive sessions) */
-    skills?: string[];
-  }): string;
 }
 
 /**
@@ -250,8 +214,7 @@ export function promptOperand(prompt: string | undefined): string {
  * backticks and line breaks reach the program as they are.
  *
  * Every folder a command hands its CLI (`--add-dir`, `--include-directories`)
- * goes through this. They used to be written `'${DATA_DIR}'`, and the scheduled
- * builders `"${DATA_DIR}"`, and DATA_DIR carries the home folder's own name:
+ * goes through this. They used to be written `'${DATA_DIR}'`, and DATA_DIR carries the home folder's own name:
  * a home such as `/Users/o'neil` closed the quote early and the command did
  * not run, and a name built to close it could add arguments of its own.
  */
@@ -318,6 +281,29 @@ export function enforcesOrchestratorMode(binaryName: string): boolean {
 export function managedCliEnv(binaryName: string): Record<string, string> {
   if (binaryName !== 'claude') return {};
   return { DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_MOUSE_CLICKS: '1' };
+}
+
+/**
+ * What points the claude binary at a key provider's endpoint: its URL, and the
+ * key as ANTHROPIC_AUTH_TOKEN, which Claude Code sends as `Authorization:
+ * Bearer`. Never as ANTHROPIC_API_KEY: an interactive Claude Code asks before
+ * it uses an API key it finds in its environment ("Detected a custom API key
+ * in your environment. Do you want to use this API key?", No preselected), and
+ * nothing answers that in an agent's terminal, so no key-provider agent ever
+ * started by itself. The first Enter typed there, Tars's own included,
+ * answered No: the key was then refused for good in that folder's
+ * .claude.json, and a session with a subscription signed in went on with its
+ * OAuth token, sent to the vendor's URL. An auth token is never asked about,
+ * whichever Claude account folder the CLI reads, and is written nowhere
+ * (measured on claude 2.1.302). Every key provider's endpoint takes the
+ * Bearer: their own instructions for Claude Code say this variable.
+ *
+ * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
+ * would bring the question back, about itself, and go out as `x-api-key` to a
+ * vendor it has nothing to do with.
+ */
+export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
+  return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {

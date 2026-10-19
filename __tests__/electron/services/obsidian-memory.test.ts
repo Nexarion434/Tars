@@ -21,6 +21,10 @@ vi.mock('../../../electron/constants', () => ({
   DATA_DIR: home,
   dataPath: (f: string) => path.join(home, f),
   API_PORT: 31415,
+  // What the Hermes client loads with it since 2.0.4 (services/settings-secrets.ts).
+  PRIVATE_DIR: path.join(home, '.tars-private'),
+  privatePath: (...f: string[]) => path.join(home, '.tars-private', ...f),
+  APP_SETTINGS_FILE: path.join(home, 'app-settings.json'),
 }));
 
 let hub: typeof import('../../../electron/services/memory-hub');

@@ -5,13 +5,12 @@ import type { AppSettings } from '../types';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 export const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
@@ -98,17 +97,6 @@ export class OllamaProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = shellQuote(params.binaryPath);
-    if (params.autonomous) command += ' --dangerously-skip-permissions';
-    if (params.outputFormat) command += ` --output-format ${params.outputFormat}`;
-    if (params.verbose) command += ' --verbose';
-    if (params.mcpConfigPath) command += ` --mcp-config ${shellQuote(params.mcpConfigPath)}`;
-    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
-    command += ` -p '${params.prompt.replace(/'/g, "'\\''")}'`;
-    return command;
-  }
-
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
     command += ' -p';
@@ -129,10 +117,10 @@ export class OllamaProvider implements CLIProvider {
     // you sign up for, it's a local server that either answers or doesn't.
     // Settings > AI Providers checks reachability separately; this always
     // wires the configured (or default) address.
-    vars.ANTHROPIC_BASE_URL = stripV1(appSettings?.ollamaBaseUrl || OLLAMA_DEFAULT_BASE_URL);
-    // Ollama's Anthropic-compat endpoint requires the header be present but
-    // does not validate its value locally, so any non-empty string works.
-    vars.ANTHROPIC_API_KEY = 'ollama-local';
+    // Ollama's Anthropic-compat endpoint requires a credential be present but
+    // does not validate its value locally, so any non-empty string works; its
+    // own instructions for Claude Code hand it as the auth token.
+    Object.assign(vars, keyProviderEnv(stripV1(appSettings?.ollamaBaseUrl || OLLAMA_DEFAULT_BASE_URL), 'ollama-local'));
     // The claude binary preflights every turn with GET/POST
     // /v1/messages/count_tokens?beta=true, which Ollama does not implement
     // (404). Multiple users report that 404 then makes Ollama's own server
@@ -198,34 +186,4 @@ export class OllamaProvider implements CLIProvider {
   supportsSkills(): boolean { return true; }
   getMemoryBasePath(): string { return path.join(this.configDir, 'projects'); }
   getAddDirFlag(): string { return '--add-dir'; }
-
-  buildScheduledScript(params: {
-    binaryPath: string; binaryDir: string; projectPath: string; prompt: string;
-    autonomous: boolean; mcpConfigPath: string; logPath: string; homeDir: string;
-    skills?: string[];
-  }): string {
-    const flags = params.autonomous ? '--dangerously-skip-permissions' : '';
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-    // Scheduled tasks run as their own process later, so the base URL is read
-    // from disk at run time rather than baked in at generation time.
-    const baseUrlJq = '.ollamaBaseUrl // empty';
-    return `#!/bin/bash
-export HOME=${shellQuote(params.homeDir)}
-if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true; fi
-if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true; fi
-export PATH=${shellQuote(params.binaryDir)}:"$PATH"
-cd ${shellQuote(params.projectPath)}
-echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
-export CLAUDE_PROVIDER="ollama"
-OLLAMA_BASE="$(jq -r '${baseUrlJq}' "${DATA_DIR_SHELL}/app-settings.json")"
-export ANTHROPIC_BASE_URL="\${OLLAMA_BASE:-${OLLAMA_DEFAULT_BASE_URL}}"
-export ANTHROPIC_API_KEY="ollama-local"
-export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
-${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
-echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
-`;
-  }
 }

@@ -7,7 +7,7 @@ import { hermesDesktopConfigPath, tailscaleCandidates } from '../platform';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
-import { API_PORT, DATA_DIR, dataPath } from '../constants';
+import { API_PORT } from '../constants';
 import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
 import { relayStatus } from '../services/hermes-relay';
@@ -16,9 +16,10 @@ import { describeSecretFileError } from '../utils/secret-file';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
 import { provisionWebhookSecret } from '../services/hermes-webhook-secret';
+import { copySecret, showSecretOnce } from '../services/secret-handoff';
+import { SECRET_MASK } from '../services/settings-secrets';
 import {
-  addGateway, gatewaySecret, listGateways, removeGateway, rotateGatewaySecret, setGatewayProjects, webhookPathOf,
-  type HermesGateway,
+  addGateway, gatewaySecret, listGateways, removeGateway, rotateGatewaySecret, setGatewayProjects, webhookPathOf, type HermesGateway, gatewayById,
 } from '../services/hermes-gateways';
 
 /** A gateway as Settings, Hermes shows it: never its secret, which the window asks for apart. */
@@ -27,6 +28,12 @@ function gatewayView(gateway: HermesGateway) {
 }
 
 /** A gateway call that may refuse (an id that is not one, a list that is not paths): its reason, never a throw. */
+/** A gateway's new secret, shown once by the main process: never answered to the page (the Audit's L3 on #469). */
+function showGatewaySecret(label: string, secret: string): void {
+  void showSecretOnce(`Secret of the Hermes gateway "${label}"`, secret,
+    'Set it as the webhook secret of this gateway\'s Hermes, in its .env and never in a command line. Tars shows it only here: Copy puts it on the clipboard, and Copy secret in Settings, Hermes does again.');
+}
+
 function refusing<T extends object>(call: () => T): ({ success: true } & T) | { success: false; error: string } {
   try {
     return { success: true, ...call() };
@@ -74,6 +81,22 @@ const HERMES_DESKTOP_REGISTRY = path.join(path.dirname(HERMES_DESKTOP_CONFIG), '
 
 const readConnection = readHermesConnection;
 const writeConnection = writeHermesConnection;
+
+/**
+ * The connection as the Hermes form gets it: its dashboard token as the mask,
+ * never itself (the Audit's L2 on #466): a page that read it could reconfigure
+ * the user's Hermes. The form saves what it holds back.
+ */
+function forTheForm(conn: HermesConnection): HermesConnection {
+  return conn.token ? { ...conn, token: SECRET_MASK } : conn;
+}
+
+/** A save from the form: the mask, or nothing typed, keeps the token saved (`kept`); a token typed in replaces it. */
+function keepToken(incoming: HermesConnection, kept: string | undefined): HermesConnection {
+  const typed = typeof incoming.token === 'string' ? incoming.token.trim() : '';
+  if (typed && typed !== SECRET_MASK) return { ...incoming, token: typed };
+  return kept ? { ...incoming, token: kept } : { ...incoming, token: undefined };
+}
 
 /**
  * A call to the gateway, with the connection a file names: never the default
@@ -282,14 +305,6 @@ async function detectTailscale(): Promise<TailscaleInfo> {
   return { installed: false, running: false, serveConfigured: false };
 }
 
-function readApiToken(): string {
-  try {
-    return fs.readFileSync(dataPath('api-token'), 'utf-8').trim();
-  } catch {
-    return '';
-  }
-}
-
 /** POST JSON to the local API and resolve with {status, body}. */
 function postLocal(pathname: string, token: string, payload: unknown): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
@@ -330,7 +345,10 @@ export function registerHermesHandlers(): void {
       webhookPath: '/api/webhooks/hermes',
       webhookLocalUrl: `http://127.0.0.1:${API_PORT}/api/webhooks/hermes`,
       webhookTailnetUrl: tailnetUrl,
-      apiToken: token,
+      // Set, never its value: hermes:webhookSecret:copy hands it to the user
+      // (secret-handoff.ts). apiToken stays, empty, for the page that reads it.
+      apiTokenSet: !!token,
+      apiToken: '' as const,
       tailscale,
       serveCommand: `tailscale serve --bg --set-path /api/webhooks/hermes ${API_PORT}`,
     };
@@ -339,19 +357,27 @@ export function registerHermesHandlers(): void {
   // The Hermes gateways Tars takes work from (services/hermes-gateways.ts): each
   // has its own webhook route and secret, and reaches the projects the user
   // allows it, none until then (the Audit's NOW-3, R4.2 and R4.3, 2.0.4).
-  // Settings, Hermes lists them; a secret goes to the window when it asks for
-  // it, to be copied into that gateway's Hermes, and nowhere else.
+  // Settings, Hermes lists them. A gateway's secret never goes to the page (the
+  // Audit's L3 on #469, as #466 hands every other secret): the main process
+  // shows a new one once, in a dialog of its own, and copies it on request.
   ipcMain.handle('hermes:gateways:list', async () => ({ success: true, gateways: listGateways().map(gatewayView) }));
   ipcMain.handle('hermes:gateways:add', async (_event, params: { label: string }) =>
     refusing(() => {
       const gateway = addGateway(params?.label);
-      return { gateway: gatewayView(gateway), secret: gatewaySecret(gateway.id) };
+      showGatewaySecret(gateway.label, gatewaySecret(gateway.id));
+      return { gateway: gatewayView(gateway), set: true as const };
     }));
   ipcMain.handle('hermes:gateways:remove', async (_event, params: { id: string }) => ({ success: removeGateway(params?.id) }));
-  ipcMain.handle('hermes:gateways:secret', async (_event, params: { id: string }) => refusing(() => ({ secret: gatewaySecret(params?.id) })));
-  ipcMain.handle('hermes:gateways:rotate', async (_event, params: { id: string }) => refusing(() => ({ secret: rotateGatewaySecret(params?.id) })));
+  ipcMain.handle('hermes:gateways:copySecret', async (_event, params: { id: string }) => refusing(() => ({ copied: copySecret(gatewaySecret(params?.id)) })));
+  ipcMain.handle('hermes:gateways:rotate', async (_event, params: { id: string }) =>
+    refusing(() => {
+      const secret = rotateGatewaySecret(params?.id);
+      showGatewaySecret(gatewayById(params.id)?.label ?? params.id, secret);
+      return { set: true as const };
+    }));
   ipcMain.handle('hermes:gateways:setProjects', async (_event, params: { id: string; projects: string[] }) =>
     refusing(() => ({ gateway: gatewayView(setGatewayProjects(params?.id, params?.projects)) })));
+  ipcMain.handle('hermes:webhookSecret:copy', async () => ({ copied: copySecret(provisionWebhookSecret()) }));
 
   // The relay to the user's Telegram through their Hermes, as Settings, Hermes
   // shows it (services/hermes-relay.ts). Its changes are pushed on the same
@@ -371,7 +397,7 @@ export function registerHermesHandlers(): void {
     // it was the default port's, the SSH tunnel to JeanBrasse's Hermes on his machine.
     const configured = configuredHermesConnection();
     return {
-      connection,
+      connection: forTheForm(connection),
       baseUrl: configured && !('unusable' in configured) ? resolveHermesBaseUrl(configured.conn) : '',
       desktopConfigAvailable: fs.existsSync(HERMES_DESKTOP_CONFIG) || fs.existsSync(HERMES_DESKTOP_REGISTRY),
     };
@@ -385,7 +411,8 @@ export function registerHermesHandlers(): void {
   // restarted.
   ipcMain.handle('hermes:connection:save', async (_event, connection: HermesConnection) => {
     try {
-      writeConnection(connection);
+      // Read only for the token the form was shown as the mask.
+      writeConnection(keepToken(connection, readConnection().token));
       resetLiveSession();
       return { success: true };
     } catch (err) {
@@ -400,7 +427,7 @@ export function registerHermesHandlers(): void {
     resetLiveSession();
     return {
       success: true,
-      connection: imported.conn,
+      connection: forTheForm(imported.conn),
       baseUrl: resolveHermesBaseUrl(imported.conn),
       tokenNotImported: imported.tokenNotImported,
     };

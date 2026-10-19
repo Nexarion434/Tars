@@ -54,7 +54,7 @@ export const tool = <S extends Shape>(row: Tool<S>): Tool => row as unknown as T
  * real, overloaded signature is the SDK's, in each server's own version,
  * which this folder cannot name.
  */
-interface ToolServer {
+export interface ToolServer {
   tool(name: string, description: never, schema: never, run: never): unknown;
 }
 

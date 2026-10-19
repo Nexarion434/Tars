@@ -29,10 +29,15 @@ const AGENT_ENV = {
   CLAUDE_AGENT_NAME: "Lead",
 };
 
-/** The shared token file, for the sessions that have no token of their own. */
+/**
+ * The shared token file, where it was until 2.0.4 and where it is since: a session with no token of its own
+ * presented it until then, and presents none since (no server reads ~/.tars-private).
+ */
 function sharedTokenFile(home) {
-  fs.mkdirSync(path.join(home, ".dorothy"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".dorothy", "api-token"), "shared-token-file\n");
+  for (const dir of [".dorothy", ".tars-private"]) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, "api-token"), "shared-token-file\n");
+  }
 }
 
 // ---------------------------------------------------------------- orchestrator
@@ -371,7 +376,12 @@ const vaultNoToken = [
 
 // ------------------------------------------------------------------ socialdata
 
-const SOCIAL = { socialDataApiKey: "sd-key" };
+/** What Tars answers for SocialData and X since 2.0.4 (/api/socialdata/request, /api/x/request): the service's status and body. */
+const svc = (status, json) => ok({ status, data: JSON.stringify(json) });
+const svcRaw = (status, text) => ok({ status, data: text });
+
+/** The plain settings since 2.0.4: no key (Tars holds it in ~/.tars-private). */
+const SOCIAL = {};
 const tweet = (extra = {}) => ({
   id_str: "1001", full_text: "Hello world", tweet_created_at: "2026-09-24T08:00:00.000000Z",
   user: { id_str: "44", name: "Demo", screen_name: "demo", description: "bio", followers_count: 12345, friends_count: 678, verified: false, profile_image_url_https: "https://img" },
@@ -384,83 +394,84 @@ const user = (extra = {}) => ({
 });
 
 const socialdata = [
-  { name: "twitter_search, a page and a cursor", tool: "twitter_search", args: { query: "from:demo tars", type: "Top", cursor: "c0" }, tars: [ok({ tweets: [tweet(), tweet({ id_str: "1002", full_text: "Second" })], next_cursor: "c1" })] },
-  { name: "twitter_search, last page", tool: "twitter_search", args: { query: "tars" }, tars: [ok({ tweets: [tweet()], next_cursor: null })] },
-  { name: "twitter_search, nothing", tool: "twitter_search", args: { query: "zzz" }, tars: [ok({ tweets: [] })] },
-  { name: "twitter_search, no tweets field", tool: "twitter_search", args: { query: "zzz" }, tars: [ok({})] },
-  { name: "twitter_search, no API key", tool: "twitter_search", args: { query: "tars" }, settings: {} },
-  { name: "twitter_search, no settings file", tool: "twitter_search", args: { query: "tars" }, settings: null },
-  { name: "twitter_search, settings that are not JSON", tool: "twitter_search", args: { query: "tars" }, settings: "{ broken" },
-  { name: "twitter_search, settings that are null", tool: "twitter_search", args: { query: "tars" }, settings: "null" },
-  { name: "twitter_search, out of credits", tool: "twitter_search", args: { query: "tars" }, tars: [fail(402, { status: "error" })] },
-  { name: "twitter_search, not found", tool: "twitter_search", args: { query: "tars" }, tars: [fail(404, { status: "error" })] },
-  { name: "twitter_search, validation", tool: "twitter_search", args: { query: "tars" }, tars: [fail(422, { message: "bad query" })] },
-  { name: "twitter_search, another error", tool: "twitter_search", args: { query: "tars" }, tars: [fail(500, { message: "down" })] },
-  { name: "twitter_search, not JSON", tool: "twitter_search", args: { query: "tars" }, tars: [raw(200, "x".repeat(600))] },
+  { name: "twitter_search, a page and a cursor", tool: "twitter_search", args: { query: "from:demo tars", type: "Top", cursor: "c0" }, tars: [svc(200, { tweets: [tweet(), tweet({ id_str: "1002", full_text: "Second" })], next_cursor: "c1" })] },
+  { name: "twitter_search, last page", tool: "twitter_search", args: { query: "tars" }, tars: [svc(200, { tweets: [tweet()], next_cursor: null })] },
+  { name: "twitter_search, nothing", tool: "twitter_search", args: { query: "zzz" }, tars: [svc(200, { tweets: [] })] },
+  { name: "twitter_search, no tweets field", tool: "twitter_search", args: { query: "zzz" }, tars: [svc(200, {})] },
+  { name: "twitter_search, no API key: Tars refuses", tool: "twitter_search", args: { query: "tars" }, tars: [fail(400, { error: "SocialData API key not configured. Please add your API key in Tars Settings > SocialData." })] },
+  { name: "twitter_search, SocialData unreachable: Tars says so", tool: "twitter_search", args: { query: "tars" }, tars: [fail(502, { error: "SocialData API request failed: no answer within 60 s" })] },
+  { name: "twitter_search, out of credits", tool: "twitter_search", args: { query: "tars" }, tars: [svc(402, { status: "error" })] },
+  { name: "twitter_search, not found", tool: "twitter_search", args: { query: "tars" }, tars: [svc(404, { status: "error" })] },
+  { name: "twitter_search, validation", tool: "twitter_search", args: { query: "tars" }, tars: [svc(422, { message: "bad query" })] },
+  { name: "twitter_search, another error", tool: "twitter_search", args: { query: "tars" }, tars: [svc(500, { message: "down" })] },
+  { name: "twitter_search, not JSON", tool: "twitter_search", args: { query: "tars" }, tars: [svcRaw(200, "x".repeat(600))] },
   { name: "twitter_search, the connection drops", tool: "twitter_search", args: { query: "tars" }, tars: [drop] },
-  { name: "twitter_search, a validation error with a null body", tool: "twitter_search", args: { query: "tars" }, tars: [fail(422, null)] },
-  { name: "twitter_search, an answer that is null", tool: "twitter_search", args: { query: "tars" }, tars: [ok(null)] },
+  { name: "twitter_search, a validation error with a null body", tool: "twitter_search", args: { query: "tars" }, tars: [svc(422, null)] },
+  { name: "twitter_search, an answer that is null", tool: "twitter_search", args: { query: "tars" }, tars: [svc(200, null)] },
   { name: "twitter_search, a type that does not exist", tool: "twitter_search", args: { query: "tars", type: "Oldest" } },
   {
     name: "twitter_get_tweet, everything", tool: "twitter_get_tweet", args: { tweet_id: "1001" },
-    tars: [ok(tweet({ in_reply_to_screen_name: "elon", in_reply_to_status_id_str: "999", entities: {
+    tars: [svc(200, tweet({ in_reply_to_screen_name: "elon", in_reply_to_status_id_str: "999", entities: {
       hashtags: [{ text: "ai" }, { text: "agents" }], urls: [{ expanded_url: "https://a.dev", display_url: "a.dev" }, { expanded_url: "https://b.dev", display_url: "b.dev" }],
       media: [{ type: "photo", media_url_https: "https://m/1.jpg" }], user_mentions: [{ screen_name: "alice" }, { screen_name: "bob" }],
     } }))],
   },
-  { name: "twitter_get_tweet, bare", tool: "twitter_get_tweet", args: { tweet_id: "1001" }, tars: [ok(tweet({ entities: { hashtags: [], urls: [], media: [], user_mentions: [] } }))] },
-  { name: "twitter_get_tweet, error", tool: "twitter_get_tweet", args: { tweet_id: "1" }, tars: [fail(404, {})] },
-  { name: "twitter_get_tweet_comments, a page", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001", cursor: "c0" }, tars: [ok({ tweets: [tweet({ full_text: "Nice" })], next_cursor: "c2" })] },
-  { name: "twitter_get_tweet_comments, last page", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [ok({ tweets: [tweet({ full_text: "Nice" })] })] },
-  { name: "twitter_get_tweet_comments, none", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [ok({ tweets: [] })] },
-  { name: "twitter_get_tweet_comments, error", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [fail(500, { message: "down" })] },
-  { name: "twitter_get_user, with an @", tool: "twitter_get_user", args: { username: "@demo" }, tars: [ok(user())] },
-  { name: "twitter_get_user, bare profile", tool: "twitter_get_user", args: { username: "ghost" }, tars: [ok(user({ description: "", location: "", url: null, protected: true, verified: false, can_dm: false }))] },
-  { name: "twitter_get_user, error", tool: "twitter_get_user", args: { username: "ghost" }, tars: [fail(404, {})] },
-  { name: "twitter_get_user_tweets, with replies and a cursor", tool: "twitter_get_user_tweets", args: { user_id: "44", include_replies: true, cursor: "c0" }, tars: [ok({ tweets: [tweet(), tweet({ id_str: "1003" })], next_cursor: "c3" })] },
-  { name: "twitter_get_user_tweets, tweets only", tool: "twitter_get_user_tweets", args: { user_id: "44", include_replies: false }, tars: [ok({ tweets: [tweet()] })] },
-  { name: "twitter_get_user_tweets, none", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [ok({ tweets: [] })] },
-  { name: "twitter_get_user_tweets, error", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [fail(402, {})] },
+  { name: "twitter_get_tweet, bare", tool: "twitter_get_tweet", args: { tweet_id: "1001" }, tars: [svc(200, tweet({ entities: { hashtags: [], urls: [], media: [], user_mentions: [] } }))] },
+  { name: "twitter_get_tweet, error", tool: "twitter_get_tweet", args: { tweet_id: "1" }, tars: [svc(404, {})] },
+  { name: "twitter_get_tweet_comments, a page", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001", cursor: "c0" }, tars: [svc(200, { tweets: [tweet({ full_text: "Nice" })], next_cursor: "c2" })] },
+  { name: "twitter_get_tweet_comments, last page", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [svc(200, { tweets: [tweet({ full_text: "Nice" })] })] },
+  { name: "twitter_get_tweet_comments, none", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [svc(200, { tweets: [] })] },
+  { name: "twitter_get_tweet_comments, error", tool: "twitter_get_tweet_comments", args: { tweet_id: "1001" }, tars: [svc(500, { message: "down" })] },
+  { name: "twitter_get_user, with an @", tool: "twitter_get_user", args: { username: "@demo" }, tars: [svc(200, user())] },
+  { name: "twitter_get_user, bare profile", tool: "twitter_get_user", args: { username: "ghost" }, tars: [svc(200, user({ description: "", location: "", url: null, protected: true, verified: false, can_dm: false }))] },
+  { name: "twitter_get_user, error", tool: "twitter_get_user", args: { username: "ghost" }, tars: [svc(404, {})] },
+  { name: "twitter_get_user_tweets, with replies and a cursor", tool: "twitter_get_user_tweets", args: { user_id: "44", include_replies: true, cursor: "c0" }, tars: [svc(200, { tweets: [tweet(), tweet({ id_str: "1003" })], next_cursor: "c3" })] },
+  { name: "twitter_get_user_tweets, tweets only", tool: "twitter_get_user_tweets", args: { user_id: "44", include_replies: false }, tars: [svc(200, { tweets: [tweet()] })] },
+  { name: "twitter_get_user_tweets, none", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [svc(200, { tweets: [] })] },
+  { name: "twitter_get_user_tweets, error", tool: "twitter_get_user_tweets", args: { user_id: "44" }, tars: [svc(402, {})] },
   { name: "twitter_search, SocialData never answers", tool: "twitter_search", args: { query: "tars" }, tars: [hold] },
 ];
 
 // ------------------------------------------------------------------------- x
 
-const X = { xApiKey: "ck", xApiSecret: "cs", xAccessToken: "at", xAccessTokenSecret: "ats", xPostingEnabled: true };
+/** The plain settings since 2.0.4: the switch, and no key (Tars holds them in ~/.tars-private). */
+const X = { xPostingEnabled: true };
 
 const x = [
-  { name: "x_post_tweet", tool: "x_post_tweet", args: { text: "Hello from Tars" }, tars: [ok({ data: { id: "2001", text: "Hello from Tars" } })] },
-  { name: "x_post_tweet, a quote", tool: "x_post_tweet", args: { text: "Look", quote_tweet_id: "1001" }, tars: [ok({ data: { id: "2002", text: "Look" } })] },
-  { name: "x_post_tweet, no data back", tool: "x_post_tweet", args: { text: "Hi" }, tars: [ok({ meta: { sent: true } })] },
-  { name: "x_post_tweet, nothing back", tool: "x_post_tweet", args: { text: "Hi" }, tars: [{ status: 204 }] },
+  { name: "x_post_tweet", tool: "x_post_tweet", args: { text: "Hello from Tars" }, tars: [svc(201, { data: { id: "2001", text: "Hello from Tars" } })] },
+  { name: "x_post_tweet, a quote", tool: "x_post_tweet", args: { text: "Look", quote_tweet_id: "1001" }, tars: [svc(201, { data: { id: "2002", text: "Look" } })] },
+  { name: "x_post_tweet, no data back", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svc(201, { meta: { sent: true } })] },
+  { name: "x_post_tweet, nothing back", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svcRaw(204, "")] },
   { name: "x_post_tweet, posting is off", tool: "x_post_tweet", args: { text: "Hi" }, settings: { ...X, xPostingEnabled: false } },
   { name: "x_post_tweet, posting on as a string is off", tool: "x_post_tweet", args: { text: "Hi" }, settings: { ...X, xPostingEnabled: "true" } },
   { name: "x_post_tweet, no settings file", tool: "x_post_tweet", args: { text: "Hi" }, settings: null },
   { name: "x_post_tweet, settings that are null", tool: "x_post_tweet", args: { text: "Hi" }, settings: "null" },
-  { name: "x_post_tweet, no credentials", tool: "x_post_tweet", args: { text: "Hi" }, settings: { xPostingEnabled: true, xApiKey: "ck" } },
-  { name: "x_post_tweet, an error with a detail", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(403, { detail: "You are not permitted to perform this action." })] },
-  { name: "x_post_tweet, an error with errors", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(400, { errors: [{ message: "Duplicate content" }] })] },
-  { name: "x_post_tweet, an error with neither", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(429, { title: "Too Many Requests" })] },
-  { name: "x_post_tweet, not JSON", tool: "x_post_tweet", args: { text: "Hi" }, tars: [raw(500, "y".repeat(600))] },
+  { name: "x_post_tweet, no credentials: Tars refuses", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(400, { error: "X API credentials not configured. Please add your API keys in Tars Settings > X (Twitter)." })] },
+  { name: "x_post_tweet, posting off in Tars's settings: Tars refuses", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(403, { error: "Posting is off in Tars Settings > X (Twitter), so nothing was sent." })] },
+  { name: "x_post_tweet, an error with a detail", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svc(403, { detail: "You are not permitted to perform this action." })] },
+  { name: "x_post_tweet, an error with errors", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svc(400, { errors: [{ message: "Duplicate content" }] })] },
+  { name: "x_post_tweet, an error with neither", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svc(429, { title: "Too Many Requests" })] },
+  { name: "x_post_tweet, not JSON", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svcRaw(500, "y".repeat(600))] },
   { name: "x_post_tweet, the connection drops", tool: "x_post_tweet", args: { text: "Hi" }, tars: [drop] },
-  { name: "x_post_tweet, an error whose body is null", tool: "x_post_tweet", args: { text: "Hi" }, tars: [fail(500, null)] },
-  { name: "x_post_tweet, an empty answer", tool: "x_post_tweet", args: { text: "Hi" }, tars: [raw(200, "")] },
+  { name: "x_post_tweet, an error whose body is null", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svc(500, null)] },
+  { name: "x_post_tweet, an empty answer", tool: "x_post_tweet", args: { text: "Hi" }, tars: [svcRaw(200, "")] },
   { name: "x_post_tweet, over 280 characters", tool: "x_post_tweet", args: { text: "z".repeat(281) } },
-  { name: "x_reply_tweet", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [ok({ data: { id: "2003", text: "Agreed" } })] },
-  { name: "x_reply_tweet, no data back", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [ok({})] },
+  { name: "x_reply_tweet", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [svc(201, { data: { id: "2003", text: "Agreed" } })] },
+  { name: "x_reply_tweet, no data back", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [svc(201, {})] },
   { name: "x_reply_tweet, posting is off", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, settings: { ...X, xPostingEnabled: false } },
-  { name: "x_reply_tweet, error", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [fail(404, { detail: "Not found" })] },
-  { name: "x_delete_tweet", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [ok({ data: { deleted: true } })] },
-  { name: "x_delete_tweet, not deleted", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [ok({ data: { deleted: false } })] },
+  { name: "x_reply_tweet, error", tool: "x_reply_tweet", args: { text: "Agreed", reply_to_id: "1001" }, tars: [svc(404, { detail: "Not found" })] },
+  { name: "x_delete_tweet", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [svc(201, { data: { deleted: true } })] },
+  { name: "x_delete_tweet, not deleted", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [svc(201, { data: { deleted: false } })] },
   { name: "x_delete_tweet, posting is off", tool: "x_delete_tweet", args: { tweet_id: "2001" }, settings: { ...X, xPostingEnabled: false } },
-  { name: "x_delete_tweet, error", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [fail(403, { detail: "Not yours" })] },
+  { name: "x_delete_tweet, error", tool: "x_delete_tweet", args: { tweet_id: "2001" }, tars: [svc(403, { detail: "Not yours" })] },
   { name: "x_post_tweet, X never answers", tool: "x_post_tweet", args: { text: "Hi" }, tars: [hold] },
 ];
 
 // -------------------------------------------------------------------- telegram
 
-const TG = { telegramBotToken: "123:tok", telegramChatId: "111", telegramAuthorizedChatIds: ["222"] };
-const tgOk = ok({ ok: true, result: { message_id: 1 } });
+/** The plain settings since 2.0.4: the chats, and no token (Tars holds it and sends: /api/telegram/send*). */
+const TG = { telegramChatId: "111", telegramAuthorizedChatIds: ["222"] };
+const tgOk = ok({ success: true });
 
 /** Files to send, and the ones the guard must refuse, under the sandbox HOME. */
 function telegramFiles(home) {
@@ -487,13 +498,13 @@ const telegram = [
   { name: "send_telegram, an authorized chat, long", tool: "send_telegram", args: { message: long, chat_id: "222" }, tars: [tgOk] },
   { name: "send_telegram, a chat id as a number", tool: "send_telegram", args: { message: "Hi", chat_id: 111 }, tars: [tgOk] },
   { name: "send_telegram, a chat that is not authorized", tool: "send_telegram", args: { message: "Hi", chat_id: "999" } },
-  { name: "send_telegram, no bot token", tool: "send_telegram", args: { message: "Hi" }, settings: { telegramChatId: "111" } },
-  { name: "send_telegram, no chat anywhere", tool: "send_telegram", args: { message: "Hi" }, settings: { telegramBotToken: "123:tok" } },
+  { name: "send_telegram, no bot in Tars: Tars refuses", tool: "send_telegram", args: { message: "Hi" }, tars: [fail(400, { error: "Telegram not configured or no chat ID. Set a default chat in Settings > Telegram." })] },
+  { name: "send_telegram, no chat anywhere", tool: "send_telegram", args: { message: "Hi" }, settings: {} },
   { name: "send_telegram, no settings file", tool: "send_telegram", args: { message: "Hi" }, settings: null },
   { name: "send_telegram, settings that are not JSON", tool: "send_telegram", args: { message: "Hi" }, settings: "{ broken" },
   { name: "send_telegram, settings that are null", tool: "send_telegram", args: { message: "Hi" }, settings: "null" },
-  { name: "send_telegram, Telegram refuses", tool: "send_telegram", args: { message: "Hi" }, tars: [ok({ ok: false, description: "Bad Request: can't parse entities" })] },
-  { name: "send_telegram, Telegram refuses without a word", tool: "send_telegram", args: { message: "Hi" }, tars: [ok({ ok: false })] },
+  { name: "send_telegram, Telegram refuses", tool: "send_telegram", args: { message: "Hi" }, tars: [fail(500, { error: "Failed to send: Error: ETELEGRAM: 400 Bad Request: can't parse entities" })] },
+  { name: "send_telegram, Telegram refuses without a word", tool: "send_telegram", args: { message: "Hi" }, tars: [fail(500, {})] },
   { name: "send_telegram, not JSON", tool: "send_telegram", args: { message: "Hi" }, tars: [raw(502, "Bad gateway")] },
   { name: "send_telegram, the connection drops", tool: "send_telegram", args: { message: "Hi" }, tars: [drop] },
   { name: "send_telegram, an answer that is null", tool: "send_telegram", args: { message: "Hi" }, tars: [ok(null)] },
@@ -507,17 +518,17 @@ const telegram = [
   { name: "send_telegram_photo, through a symlink to .dorothy", tool: "send_telegram_photo", args: { photo_path: "<home>/work/innocent/app-settings.json.bak" } },
   { name: "send_telegram_photo, not there", tool: "send_telegram_photo", args: { photo_path: "<home>/work/missing.png" } },
   { name: "send_telegram_photo, an unauthorized chat", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png", chat_id: "999" } },
-  { name: "send_telegram_photo, Telegram refuses", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [ok({ ok: false, description: "Bad Request: PHOTO_INVALID_DIMENSIONS" })] },
+  { name: "send_telegram_photo, Telegram refuses", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [fail(500, { error: "Failed to send photo: Error: ETELEGRAM: 400 Bad Request: PHOTO_INVALID_DIMENSIONS" })] },
   { name: "send_telegram_photo, not JSON", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [raw(502, "Bad gateway")] },
   { name: "send_telegram_photo, an answer that is null", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [ok(null)] },
   { name: "send_telegram_photo, the connection drops", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [drop] },
   { name: "send_telegram_video", tool: "send_telegram_video", args: { video_path: "<home>/work/clip.mp4", caption: "Demo" }, tars: [tgOk] },
   { name: "send_telegram_video, a .env", tool: "send_telegram_video", args: { video_path: "<home>/work/project/.env" } },
-  { name: "send_telegram_video, no bot token", tool: "send_telegram_video", args: { video_path: "<home>/work/clip.mp4" }, settings: { telegramChatId: "111" } },
+  { name: "send_telegram_video, no bot in Tars: Tars refuses", tool: "send_telegram_video", args: { video_path: "<home>/work/clip.mp4" }, tars: [fail(400, { error: "Telegram not configured or no chat ID" })] },
   { name: "send_telegram_document", tool: "send_telegram_document", args: { document_path: "<home>/work/report.pdf" }, tars: [tgOk] },
   { name: "send_telegram_document, a .env.local", tool: "send_telegram_document", args: { document_path: "<home>/work/project/.env.local" } },
   { name: "send_telegram_document, a hard link into .tars-private", tool: "send_telegram_document", args: { document_path: "<home>/work/notes.txt" } },
-  { name: "send_telegram_document, no chat anywhere", tool: "send_telegram_document", args: { document_path: "<home>/work/report.pdf" }, settings: { telegramBotToken: "123:tok" } },
+  { name: "send_telegram_document, no chat anywhere", tool: "send_telegram_document", args: { document_path: "<home>/work/report.pdf" }, settings: {} },
   { name: "send_telegram_photo, Telegram never answers", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [hold] },
 ];
 
@@ -533,7 +544,7 @@ export const SERVERS = [
     id: "orchestrator", dir: "mcp-orchestrator",
     variants: [
       { name: "an agent's own token and identity", env: AGENT_ENV, scenarios: orchestratorAgent },
-      { name: "the shared token file, no identity", env: {}, setup: sharedTokenFile, scenarios: orchestratorShared },
+      { name: "the shared token file, no identity: no token presented since 2.0.4", env: {}, setup: sharedTokenFile, scenarios: orchestratorShared },
       { name: "a project and no agent id", env: { CLAUDE_PROJECT_PATH: "/projects/alpha" }, scenarios: orchestratorProjectOnly },
       { name: "no token at all", env: {}, scenarios: orchestratorNoToken },
     ],
@@ -560,7 +571,7 @@ export const SERVERS = [
     id: "kanban", dir: "mcp-kanban",
     variants: [
       { name: "an agent's own token", env: AGENT_ENV, scenarios: kanbanAgent },
-      { name: "no agent token, the shared file present", env: {}, setup: sharedTokenFile, scenarios: kanbanNoToken },
+      { name: "no agent token, the shared file present: no token presented", env: {}, setup: sharedTokenFile, scenarios: kanbanNoToken },
     ],
   },
   {
@@ -568,16 +579,16 @@ export const SERVERS = [
     variants: [
       { name: "an agent's own token and name", env: AGENT_ENV, scenarios: vaultAgent },
       { name: "an agent id and no name", env: { CLAUDE_MGR_API_TOKEN: "agent-token-lead", CLAUDE_AGENT_ID: "agent-lead" }, scenarios: vaultNoName },
-      { name: "no identity, the shared token file", env: {}, setup: sharedTokenFile, scenarios: vaultNoIdentity },
+      { name: "no identity, the shared token file: no token presented since 2.0.4", env: {}, setup: sharedTokenFile, scenarios: vaultNoIdentity },
       { name: "no token at all", env: {}, scenarios: vaultNoToken },
     ],
   },
   {
     id: "socialdata", dir: "mcp-socialdata",
-    variants: [{ name: "an agent, a SocialData key", env: AGENT_ENV, settings: SOCIAL, scenarios: socialdata }],
+    variants: [{ name: "an agent, its key held by Tars", env: AGENT_ENV, settings: SOCIAL, scenarios: socialdata }],
   },
   {
     id: "x", dir: "mcp-x",
-    variants: [{ name: "an agent, X credentials, posting on", env: AGENT_ENV, settings: X, scenarios: x }],
+    variants: [{ name: "an agent, posting on, the credentials held by Tars", env: AGENT_ENV, settings: X, scenarios: x }],
   },
 ];

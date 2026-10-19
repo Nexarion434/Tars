@@ -1,9 +1,6 @@
-import * as https from "https";
-import { API_WAIT_MS, send } from "../../../mcp-shared/src/http.js";
+import { API_WAIT_MS, TARS_WAIT_MS } from "../../../mcp-shared/src/http.js";
 import { readAppSettings } from "../../../mcp-shared/src/settings.js";
-import { generateOAuthHeader, type OAuthCredentials } from "./oauth.js";
-
-const X_API_HOST = "api.x.com";
+import { apiRequest } from "../../../mcp-shared/src/tars-api.js";
 
 /** Tars's settings as they are now, or nothing when the file cannot be read. */
 function readSettings(): Record<string, unknown> | null | undefined {
@@ -29,48 +26,22 @@ export function assertPostingEnabled(): void {
   }
 }
 
-function getCredentials(): OAuthCredentials {
-  const settings = readSettings();
-  if (
-    settings?.xApiKey &&
-    settings.xApiSecret &&
-    settings.xAccessToken &&
-    settings.xAccessTokenSecret
-  ) {
-    return {
-      apiKey: String(settings.xApiKey),
-      apiSecret: String(settings.xApiSecret),
-      accessToken: String(settings.xAccessToken),
-      accessTokenSecret: String(settings.xAccessTokenSecret),
-    };
-  }
-  throw new Error(
-    "X API credentials not configured. Please add your API keys in Tars Settings > X (Twitter)."
-  );
-}
-
+/**
+ * One call to X, made by Tars with the account's keys (POST /api/x/request,
+ * services/api-routes/integration-routes.ts): until 2.0.4 this server read
+ * them out of app-settings.json and signed the call itself; they are in
+ * ~/.tars-private now, which nothing handed to an agent reads. Tars answers
+ * X's status and body as they came, read here as they always were, or refuses
+ * (Posting off, no credentials, a call the tools do not make) with why.
+ */
 export async function xApiRequest(
   method: string,
   endpoint: string,
   body?: Record<string, unknown>
 ): Promise<unknown> {
-  const creds = getCredentials();
-  const url = `https://${X_API_HOST}${endpoint}`;
-  const bodyStr = body ? JSON.stringify(body) : undefined;
-  const authHeader = generateOAuthHeader(method, url, creds, bodyStr);
-
-  const { status, data } = await send(https, {
-    hostname: X_API_HOST,
-    port: 443,
-    path: endpoint,
-    method,
-    headers: {
-      Authorization: authHeader,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    timeout: API_WAIT_MS,
-  }, bodyStr, (err) => new Error(`X API request failed: ${err.message}`));
+  const { status, data } = (await apiRequest(
+    "/api/x/request", "POST", { method, endpoint, ...(body ? { body } : {}) }, API_WAIT_MS + TARS_WAIT_MS,
+  )) as { status: number; data: string };
 
   // An error whose body is JSON null reads as unparseable, as it always has:
   // its .detail is read inside the try.

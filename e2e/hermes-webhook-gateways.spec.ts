@@ -26,7 +26,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    404;
  * 5. no refusal names an agent, a project or a mode it is in;
  * 6. one gateway's secret on another's route is refused 403, a rotated secret opens nothing, the new one does;
- * 7. each secret is in its own file of ~/.tars-private, 0600, in its 0700 folder, and in no file of ~/.dorothy.
+ * 7. each secret is in its own file of ~/.tars-private, 0600, in its 0700 folder, and in no file of ~/.dorothy;
+ * 8. the page never holds a gateway's secret (the Audit's L3 on #469): add and rotate answer `set`, and the main
+ *    process shows the new secret once, in a dialog of its own; copySecret copies it, from the main process. The
+ *    dialog and the clipboard are recorded in the main process, so the user's own clipboard is never touched.
  * The artefact: values.json (each call and its answer, the launches) and the screenshot.
  */
 
@@ -36,9 +39,9 @@ const OLGA = 'cccc3333-0000-4000-8000-0000000000c3';
 type View = { id: string; label: string; projects: string[]; path: string };
 type Api = { electronAPI: { hermes: { gateways: {
   list(): Promise<{ success: true; gateways: View[] }>;
-  add(p: { label: string }): Promise<{ success: true; gateway: View; secret: string }>;
-  secret(p: { id: string }): Promise<{ success: true; secret: string }>;
-  rotate(p: { id: string }): Promise<{ success: true; secret: string }>;
+  add(p: { label: string }): Promise<{ success: true; gateway: View; set: true }>;
+  copySecret(p: { id: string }): Promise<{ success: true; copied: boolean }>;
+  rotate(p: { id: string }): Promise<{ success: true; set: true }>;
   setProjects(p: { id: string; projects: string[] }): Promise<{ success: true; gateway: View }>;
 } } } };
 
@@ -117,21 +120,46 @@ for (const newInterface of [false, true]) {
       expect.soft(oldRoster.status).toBe(404);
       expect.soft(naming(oldRoster.body), 'the 404 names agents').toEqual([]);
 
+      // What the main process shows in its own dialog, and what it copies: recorded there, never the user's clipboard.
+      await app.evaluate(({ dialog, clipboard }) => {
+        const g = globalThis as unknown as { shownSecrets: string[]; copiedSecrets: string[] };
+        g.shownSecrets = [];
+        g.copiedSecrets = [];
+        dialog.showMessageBox = (async (...args: unknown[]) => {
+          const options = args[args.length - 1] as { message?: string; detail?: string };
+          g.shownSecrets.push(`${options.message}\n${options.detail}`);
+          return { response: 1, checkboxChecked: false };
+        }) as typeof dialog.showMessageBox;
+        clipboard.writeText = ((text: string) => { g.copiedSecrets.push(text); }) as typeof clipboard.writeText;
+      });
+      const shownLast = async () => {
+        await expect.poll(() => app!.evaluate(() => (globalThis as unknown as { shownSecrets: string[] }).shownSecrets.length), { timeout: 10_000 }).toBeGreaterThan(0);
+        const shown = await app!.evaluate(() => (globalThis as unknown as { shownSecrets: string[] }).shownSecrets.splice(0));
+        return /\n([A-Za-z0-9_-]{32,})\n/.exec(shown[shown.length - 1])![1];
+      };
+      const copiedLast = () => app!.evaluate(() => (globalThis as unknown as { copiedSecrets: string[] }).copiedSecrets.pop() ?? '');
+
       // The gateways, as the window sets them up (hermes:gateways:*).
       const gateways = {
         list: () => page.evaluate(() => (window as unknown as Api).electronAPI.hermes.gateways.list()),
         add: (label: string) => page.evaluate((l) => (window as unknown as Api).electronAPI.hermes.gateways.add({ label: l }), label),
         setProjects: (id: string, projects: string[]) => page.evaluate((a) => (window as unknown as Api).electronAPI.hermes.gateways.setProjects(a), { id, projects }),
-        secret: (id: string) => page.evaluate((i) => (window as unknown as Api).electronAPI.hermes.gateways.secret({ id: i }), id),
+        copySecret: (id: string) => page.evaluate((i) => (window as unknown as Api).electronAPI.hermes.gateways.copySecret({ id: i }), id),
         rotate: (id: string) => page.evaluate((i) => (window as unknown as Api).electronAPI.hermes.gateways.rotate({ id: i }), id),
       };
       const before = await gateways.list();
       const added = await gateways.add('VPS');
       const vps = added.gateway;
+      const vpsSecret = await shownLast();
       await gateways.setProjects(vps.id, [alpha]);
-      const defaultSecret = (await gateways.secret('default')).secret;
-      const vpsSecret = added.secret;
-      keep({ before: before.gateways, vps });
+      const copied = await gateways.copySecret('default');
+      const defaultSecret = await copiedLast();
+      keep({ before: before.gateways, vps, added, copied });
+      // 8. The page holds no secret: add answers it is set, copySecret that it copied.
+      expect(added).toMatchObject({ success: true, set: true });
+      expect(copied).toEqual({ success: true, copied: true });
+      expect(JSON.stringify([added, copied]), 'a secret reached the page').not.toContain(vpsSecret);
+      expect(JSON.stringify([added, copied]), 'a secret reached the page').not.toContain(heldSecret);
       expect(before.gateways.map(g => [g.id, g.projects])).toEqual([['default', [alpha]]]);
       expect(defaultSecret, 'the secret Hermes holds was replaced').toBe(heldSecret);
       expect(vps.path).toBe(`/api/webhooks/hermes/${vps.id}`);
@@ -175,7 +203,10 @@ for (const newInterface of [false, true]) {
         expect.soft(crossed.status, what).toBe(403);
         expect.soft(naming(crossed.body), what).toEqual([]);
       }
-      const fresh = (await gateways.rotate(vps.id)).secret;
+      const rotated = await gateways.rotate(vps.id);
+      const fresh = await shownLast();
+      expect.soft(rotated).toEqual({ success: true, set: true });
+      expect.soft(JSON.stringify(rotated), 'the new secret reached the page').not.toContain(fresh);
       expect.soft((await hook('the old vps secret', vpsSecret, vps.path, { agent_id: WREN, message: 'HOOK-7 old', dry_run: true })).status).toBe(401);
       expect.soft((await hook('the new vps secret', fresh, vps.path, { agent_id: WREN, message: 'HOOK-7 new', dry_run: true })).status).toBe(200);
 

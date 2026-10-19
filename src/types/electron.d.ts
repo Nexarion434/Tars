@@ -1629,8 +1629,24 @@ export interface ElectronAPI {
     set: (id: CliKeyId, patch: { key?: string | null; envVar?: string | null }) => Promise<{ success: boolean; error?: string; state?: CliKeyState }>;
   };
 
+  /**
+   * A secret of the settings (2.0.4): a bot token, a provider's key, Hermes's
+   * gateway token, a memory backend's key, kept by Tars in ~/.tars-private.
+   * `value` a new one, null to clear it. Never answers the value: whether it
+   * is set. The CLIs' own keys go through cliKeys.
+   */
+  secrets?: {
+    set: (field: string, value: string | null) => Promise<{ success: boolean; error?: string; set?: boolean }>;
+  };
+
   appSettings?: {
+    /**
+     * Since 2.0.4 no secret comes back: a secret field is a mask of bullets when
+     * it is set and '' when not, and `secretsSet` says which are set. Saving
+     * the mask back keeps the key; secrets.set clears one.
+     */
     get: () => Promise<{
+      secretsSet?: Record<string, boolean>;
       notificationsEnabled: boolean;
       notifyOnWaiting: boolean;
       notifyOnComplete: boolean;
@@ -1845,7 +1861,13 @@ export interface ElectronAPI {
   telegram?: {
     test: () => Promise<{ success: boolean; botName?: string; error?: string }>;
     sendTest: () => Promise<{ success: boolean; error?: string }>;
-    generateAuthToken: () => Promise<{ success: boolean; token?: string; error?: string }>;
+    /**
+     * A new token, shown to the user once by the main process (a dialog the
+     * page cannot read) and never answered: `token` is gone since 2.0.4 (the
+     * Audit's L2 on PR 466). copyAuthToken copies the current one again.
+     */
+    generateAuthToken: () => Promise<{ success: boolean; set?: boolean; token?: never; error?: string }>;
+    copyAuthToken: () => Promise<{ copied: boolean }>;
     removeAuthorizedChatId: (chatId: string) => Promise<{ success: boolean; error?: string }>;
   };
 
@@ -2204,12 +2226,17 @@ export interface ElectronAPI {
     kanbanUpdateTask: (params: { taskId: string; patch: Record<string, unknown> }) => Promise<{ success: boolean; task?: unknown; error?: string; needsSignIn?: boolean }>;
     kanbanDeleteTask: (params: { taskId: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
     kanbanAddComment: (params: { taskId: string; body: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
+    /** The webhook secret, put on the clipboard by the main process (the Audit's L2 on PR 466). */
+    copyWebhookSecret: () => Promise<{ copied: boolean }>;
     getConnectionInfo: () => Promise<{
       apiPort: number;
       webhookPath: string;
       webhookLocalUrl: string;
       webhookTailnetUrl?: string;
-      apiToken: string;
+      /** Whether the webhook secret exists; its value is never answered (copyWebhookSecret), since 2.0.4. */
+      apiTokenSet: boolean;
+      /** Always empty since 2.0.4: kept for the page that still reads it, until it copies through copyWebhookSecret. */
+      apiToken: '';
       tailscale: { installed: boolean; running: boolean; dnsName?: string; ip?: string; serveConfigured: boolean };
       serveCommand: string;
     }>;
@@ -2223,10 +2250,13 @@ export interface ElectronAPI {
      */
     gateways: {
       list: () => Promise<{ success: true; gateways: HermesGatewayView[] }>;
-      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; secret: string } | { success: false; error: string }>;
+      /** Its secret is shown once by the main process, in a dialog of its own; the page never holds it. */
+      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; set: true } | { success: false; error: string }>;
       remove: (params: { id: string }) => Promise<{ success: boolean }>;
-      secret: (params: { id: string }) => Promise<{ success: true; secret: string } | { success: false; error: string }>;
-      rotate: (params: { id: string }) => Promise<{ success: true; secret: string } | { success: false; error: string }>;
+      /** Copies the gateway's secret to the clipboard, from the main process. */
+      copySecret: (params: { id: string }) => Promise<{ success: true; copied: boolean } | { success: false; error: string }>;
+      /** The new secret is shown once by the main process, as at add. */
+      rotate: (params: { id: string }) => Promise<{ success: true; set: true } | { success: false; error: string }>;
       setProjects: (params: { id: string; projects: string[] }) => Promise<{ success: true; gateway: HermesGatewayView } | { success: false; error: string }>;
     };
     /**

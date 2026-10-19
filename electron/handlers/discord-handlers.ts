@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import type { AppSettings } from '../types';
 import { inviteUrlFromToken, sendDiscordMessage, testDiscordToken } from '../services/discord-bot';
+import { SECRET_MASK } from '../services/settings-secrets';
 
 /**
  * The channels behind Settings > Discord: "test token" asks Discord who the
@@ -11,7 +12,10 @@ import { inviteUrlFromToken, sendDiscordMessage, testDiscordToken } from '../ser
 export function registerDiscordHandlers(deps: { getAppSettings: () => AppSettings }): void {
   ipcMain.handle('discord:test', async () => testDiscordToken(deps.getAppSettings().discordBotToken));
 
-  ipcMain.handle('discord:inviteUrl', async (_event, token: unknown) => inviteUrlFromToken(token));
+  // The page holds the saved token as a mask only (settings-secrets.ts): for
+  // that one, the link is made from the token Tars keeps.
+  ipcMain.handle('discord:inviteUrl', async (_event, token: unknown) =>
+    inviteUrlFromToken(token === SECRET_MASK ? deps.getAppSettings().discordBotToken : token));
 
   ipcMain.handle('discord:sendTest', async () => {
     const settings = deps.getAppSettings();
