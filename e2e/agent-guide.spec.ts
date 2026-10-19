@@ -28,7 +28,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. an opencode worker handed a task with delegate_task gets it in its prompt, in its own terminal (2.0.4): the TUI
  *    started with the task as --prompt, never `opencode run`. Until 2.0.4 this step read the prompt of a run over ACP,
  *    a temporary copy of the agent; no task is delegated over ACP any more;
- * 5. the folder exists, outside the project, with tools/, notes/ and reports/;
+ * 5. the folder exists, outside the project, with tools/ and reports/ (notes/ went into reports/notes with #471);
  * 6. an opencode worker started from the window (agent:start, the launcher behind the Dashboard's Start, a wake and a
  *    restart) gets the section in its prompt with a task (the Audit's M1 on #448); without one it starts on no prompt,
  *    and the section goes in with the first message Tars types into it, under Tars's own line, and not with the next
@@ -241,7 +241,7 @@ for (const newInterface of [false, true]) {
       // 5. The folder, outside the project.
       const listing = fs.readdirSync(folder!).sort();
       keep({ listing });
-      expect.soft(listing).toEqual(['notes', 'reports', 'tools']);
+      expect.soft(listing).toEqual(['reports', 'tools']);
       expect.soft(fs.realpathSync(folder!).startsWith(fs.realpathSync(project))).toBe(false);
       await stepShot(page, newInterface ? 'agents-new-interface' : 'agents');
     } finally {
