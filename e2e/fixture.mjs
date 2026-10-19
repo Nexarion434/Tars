@@ -484,7 +484,8 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
 export async function launchSandboxed(electron, sandboxHome, { env = {}, profile = 'electron-profile', ...options } = {}) {
   const app = await electron.launch({
     ...options,
-    args: ['.', `--user-data-dir=${path.join(sandboxHome, profile)}`],
+    // A packed app (executablePath, e2e/sandbox-build.packed.spec.ts) runs its own code: no '.' to name it.
+    args: [...(options.executablePath ? [] : ['.']), `--user-data-dir=${path.join(sandboxHome, profile)}`],
     env: { ...inheritable(process.env), PATH: sandboxPath(sandboxHome), DOROTHY_TAILSCALE_BIN: writeFakeTailscale(sandboxHome), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
   });
   // What the app inherited, checked the way its folders are below: a run

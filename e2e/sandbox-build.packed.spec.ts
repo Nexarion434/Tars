@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { recordValues, removeHome } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { apiPort } from './ports.mjs';
 
 /**
@@ -53,10 +53,11 @@ test('a test build is Tars Sandbox: its name, its bundle id, its icon, and what 
 
   // 2. Launched, on a sandbox HOME and profile, as scripts/sandbox.sh starts it.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-packed-'));
-  const launched = await electron.launch({
+  // Through the fixture, as every launch: HOME, CFFIXED_USER_HOME and the profile in the sandbox, and none of the caller's
+  // CLAUDE_, DOROTHY_, ANTHROPIC_ or TARS_ variables (an agent running this spec would hand the app its live token).
+  const launched = await launchSandboxed(electron, home, {
     executablePath: path.join(app, 'Contents', 'MacOS', info.CFBundleExecutable),
-    args: [`--user-data-dir=${path.join(home, 'electron-profile')}`],
-    env: { ...process.env, HOME: home, CFFIXED_USER_HOME: home, DOROTHY_API_PORT: apiPort(31388), DOROTHY_E2E: '1' },
+    env: { DOROTHY_API_PORT: apiPort(31388), DOROTHY_E2E: '1' },
   });
   try {
     const seen = await launched.evaluate(({ app }) => {
