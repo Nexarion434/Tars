@@ -21,8 +21,8 @@ import { cleanLine, clockOf, elapsedSince, sendersOf } from '../../src/lib/task-
 describe('cleanLine (1, 2)', () => {
   it('flattens what breaks or turns a line around into one space', () => {
     expect(cleanLine('Make the grid\ngrow', 100)).toBe('Make the grid grow');
-    expect(cleanLine('QA‮evil', 100)).toBe('QA evil');
-    expect(cleanLine('Lead​​Engineer', 100)).toBe('Lead Engineer');
+    expect(cleanLine('QA\u202Eevil', 100)).toBe('QA evil');
+    expect(cleanLine('Lead\u200B\u200BEngineer', 100)).toBe('Lead Engineer');
     expect(cleanLine('  spaced  ', 100)).toBe('spaced');
   });
   it('caps at the given count of characters, never splitting an emoji', () => {
