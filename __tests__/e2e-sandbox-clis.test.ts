@@ -25,7 +25,9 @@ import { SANDBOX_CLIS, inheritable, sandboxPath } from '../e2e/fixture.mjs';
  *    with loggedIn false and exit 1 (claude 2.1.303, measured).
  * 4. A stand-in started as an agent's CLI exits instead of drawing its screen
  *    and holding its terminal, as fake-cli.cjs does.
- * 5. The node running the suite is not on that PATH, with its npm and npx.
+ * 5. The node running the suite is not on that PATH, with its npm and npx;
+ *    or it is there as a link into the account's home, which a removal of the
+ *    sandbox reads as a write there (home-isolation.ts refused it).
  * 6. The app inherits what Tars puts in its agents' terminals, where QA and the
  *    agents run the suite (TARS_CLAUDE_ACCOUNT, TARS_INSTANCE_ID,
  *    TARS_CHATS_READ), beside the CLAUDE, DOROTHY and ANTHROPIC families it was
@@ -91,16 +93,18 @@ describe.skipIf(process.platform === 'win32')('the PATH an E2E sandbox hands the
     expect(code).toBe(0);
   });
 
-  it('5. puts the node running the suite on it, with its npm and npx', () => {
+  it('5. puts the node running the suite on it, with its npm and npx, and no link into the account\'s home', () => {
     const PATH = sandboxPath(sandbox(), INHERITED, accountHome);
     const [dir] = PATH.split(path.delimiter);
 
-    expect(fs.realpathSync(path.join(dir, 'node'))).toBe(fs.realpathSync(process.execPath));
+    expect(fs.readdirSync(dir).filter(name => fs.lstatSync(path.join(dir, name)).isSymbolicLink())).toEqual([]);
+    const node = spawnSync('/bin/sh', ['-c', 'command -v node && node -p process.version'], { encoding: 'utf8', env: { PATH } });
+    expect(node.stdout.trim().split('\n')).toEqual([path.join(dir, 'node'), process.version]);
     for (const name of ['npm', 'npx']) {
-      if (fs.existsSync(path.join(path.dirname(process.execPath), name))) expect(fs.existsSync(path.join(dir, name)), name).toBe(true);
+      if (!fs.existsSync(path.join(path.dirname(process.execPath), name))) continue;
+      const run = spawnSync('/bin/sh', ['-c', `command -v ${name} && ${name} --version`], { encoding: 'utf8', env: { PATH }, timeout: 30_000 });
+      expect([name, run.status, run.stdout.split('\n')[0]]).toEqual([name, 0, path.join(dir, name)]);
     }
-    const which = spawnSync('/bin/sh', ['-c', 'command -v node'], { encoding: 'utf8', env: { PATH } });
-    expect(which.stdout.trim()).toBe(path.join(dir, 'node'));
   });
 });
 
