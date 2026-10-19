@@ -127,6 +127,18 @@ export function consumeResumeSessionId(
  * pick up where it was, whichever sender wakes it and however often this run
  * has started it before.
  */
+/**
+ * A launch that names the session it resumes, or that it resumes none (a
+ * restart, a chat's runner relaunched by its chat), is the run's first launch
+ * too: the next start resumes nothing, as after any other. Left unspent, a
+ * stop then a start resumed the session the stop had just made the agent's
+ * tombstone, under its own id, and Tars refused every post of it (the Audit's
+ * M1 on #475).
+ */
+export function spendResume(agentId: string): void {
+  startedThisRun.add(agentId);
+}
+
 export function resumeOnNextStart(agentId: string): void {
   startedThisRun.delete(agentId);
 }
