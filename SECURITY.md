@@ -601,6 +601,23 @@ it led to. What is left:
 the check and the read are two calls, so a link swapped in between is
 followed, by a process that could open the file itself (§1).
 
+The Vault's channels for each project's folder (2.0.4, `vault:project-folders`,
+`vault:project-files`, `vault:project-file:read`, `vault:project-file:write`,
+`vault:project-file:show`, `electron/services/vault-project-files.ts`) take a
+folder's key, `reports` or `tools`, and a file name, never a path, each one
+segment (no separator, no colon, no NUL, not hidden). Every folder and file is
+checked where it really lies: a symbolic link, a second name (a hard link) or a
+subfolder that is a link is never read, written or gone through. The window
+writes text and scripts only (`.md .txt .json .yaml .yml .sh .py .ts .js .mjs`),
+1 MB at most, no NUL, to a new file of its own renamed over the old one, 0600
+and never executable, and never over a file that changed since it was opened.
+What a compromised window can still do there: write text into `reports/` and
+`tools/` of the project folders Tars keeps, which that project's agents read
+and may run (`bash tools/x.sh`), and nothing else under `~/.dorothy` or in a
+repository. An agent of the project reads and writes the same folder (it is in
+its `--add-dir`): the folder is shared with every agent of the project, and is
+no boundary between them.
+
 Made on a new install by the first save, the directory came out `0755`, since
 only the migration asked for `0700`. Whichever write makes it now, the
 migration or the first save of the conversation or of the webhook secret, makes
