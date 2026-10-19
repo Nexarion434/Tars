@@ -165,7 +165,7 @@ export const useSettings = () => {
         // changed, so it says the same of its own copy, or Settings, Telegram
         // would go on showing a bot that no longer runs.
         if (newSettings.hermesRelayEnabled === true) {
-          setAppSettings(prev => withSecretState({ ...prev, telegramEnabled: false }, 'telegramBotToken', false));
+          setAppSettings(prev => withSecretState({ ...prev, telegramEnabled: false, telegramBotToken: '' }, 'telegramBotToken', false));
         }
       }
     } catch (err) {
