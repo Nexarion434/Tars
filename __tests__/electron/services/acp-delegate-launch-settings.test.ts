@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * A task delegated over ACP runs on the agent's model and effort.
@@ -18,6 +19,9 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-settings-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 // Retried: on Windows the run's agent, whose working directory this is, is
 // ended by taskkill after the delegation has answered (acp/client.ts stop).
 afterAll(() => fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
@@ -88,7 +92,7 @@ import type { AgentStatus } from '../../../electron/types';
 /** What the agent was set to before the turn, in the order it was sent. */
 async function settingsOfARun(fields: Partial<AgentStatus>, offers?: string[]): Promise<string[][]> {
   const script = path.join(tmp, 'agent.mjs');
-  fs.writeFileSync(script, FAKE_AGENT);
+  fs.writeFileSync(script, RECORDS_ITS_PID + FAKE_AGENT);
   launch = { command: process.execPath, args: [script] };
   process.env.FAKE_OFFERS = JSON.stringify(offers ?? ['model', 'effort']);
 
@@ -109,7 +113,7 @@ async function settingsOfARun(fields: Partial<AgentStatus>, offers?: string[]): 
 /** What Tars answered when the agent asked to edit a file during the turn. */
 async function answerToAnEdit(fields: Partial<AgentStatus>): Promise<unknown> {
   const script = path.join(tmp, 'agent.mjs');
-  fs.writeFileSync(script, FAKE_AGENT);
+  fs.writeFileSync(script, RECORDS_ITS_PID + FAKE_AGENT);
   launch = { command: process.execPath, args: [script] };
   process.env.FAKE_ASK_EDIT = '1';
   const answers: unknown[] = [];

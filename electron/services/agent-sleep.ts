@@ -64,6 +64,8 @@ export interface SleepFacts {
   fieldInUse: boolean;
   procs: Proc[] | undefined;
   terminalPid: number | undefined;
+  /** Which CLI runs in the terminal, as the process table names it: claude, unless codex (2.0.4). */
+  binary?: 'claude' | 'codex';
 }
 
 function atRest(agent: SleepFacts['agent']): boolean {
@@ -94,7 +96,7 @@ export function sleepRefusal(f: SleepFacts, opts: { anyAge?: boolean } = {}): Sl
   if (f.pending) return 'pending';
   if (f.fieldInUse) return 'field';
   if (!f.procs || f.terminalPid === undefined) return 'no-process-table';
-  const cli = cliProcess(f.terminalPid, f.procs);
+  const cli = cliProcess(f.terminalPid, f.procs, f.binary);
   if (!cli) return 'no-process-table';
   if (toolAtWork(cli.pid, f.procs) || signOfLife(cli.pid, f.procs)) return 'busy';
   return null;
@@ -111,9 +113,10 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
     cliRunning: cliRunningIn(terminal),
     starting: sessionStarting(agent),
     // Tars resumes the claude binary's conversations, the providers that run
-    // it included, and only once their transcript is on disk: what the wake
-    // resumes is what this finds (consumeResumeSessionId).
-    resumable: getProvider(agent.provider).binaryName === 'claude' && resolveResumeSessionId(agent) !== null,
+    // it included, and codex's (2.0.4, `codex resume`), and only once their
+    // transcript or rollout is on disk: what the wake resumes is what this
+    // finds (consumeResumeSessionId).
+    resumable: ['claude', 'codex'].includes(getProvider(agent.provider).binaryName) && resolveResumeSessionId(agent) !== null,
     owed: holdsFor(agent.id)
       || owedKanban().some((k) => k.agentId === agent.id)
       || waitingDeliveries().some((d) => d.targetAgentId === agent.id)
@@ -128,6 +131,7 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
     fieldInUse: !!terminal && !!fieldInUse(terminal),
     procs,
     terminalPid: terminal?.pid,
+    binary: getProvider(agent.provider).binaryName === 'codex' ? 'codex' : 'claude',
   };
 }
 

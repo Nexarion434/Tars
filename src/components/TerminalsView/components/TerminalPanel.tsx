@@ -11,6 +11,7 @@ import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { useRestartPending } from '@/hooks/useRestartPending';
 import { asleepHint } from '@/lib/asleep-line';
 import TerminalPanelHeader from './TerminalPanelHeader';
+import TaskBanner from '@/components/TaskBanner';
 
 interface TerminalPanelProps {
   agent: AgentStatus;
@@ -151,6 +152,10 @@ function TerminalPanel({
           dialog (the state mod): the terminal shows nothing, so the question and its
           three answers are here. Frame: `Permission asked of Tars`. */}
       <PermissionAskNotice agent={agent} layout="panel" />
+
+      {/* The task this agent works on, who gave it and what waits behind it.
+          Frame: `Task banner · Dashboard, a panel on a given task`. */}
+      <TaskBanner agent={agent} />
 
       {/* A message is waiting for this terminal's input field, and only the
           person at that keyboard can let it in. Under the header rather than
