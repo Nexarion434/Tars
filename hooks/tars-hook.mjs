@@ -378,8 +378,12 @@ async function geminiUserPromptSubmit(input) {
   const { hookLog } = logPaths();
   const sessionId = jqRaw(input, ['session_id']);
   appendLog(hookLog, `[${stamp()}] GEMINI USER_PROMPT_SUBMIT hook. AGENT_ID=${env.DOROTHY_AGENT_ID || 'unset'} SESSION_ID=${sessionId}`);
+  // A turn begins, with its prompt, as userPromptSubmit says it for Claude Code.
   await postJson(`${apiUrl()}/api/hooks/status`, token(),
-    JSON.stringify({ agent_id: geminiAgent(sessionId), session_id: sessionId, status: 'running' }));
+    JSON.stringify({
+      agent_id: geminiAgent(sessionId), session_id: sessionId, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit',
+      current_task: echoHead(jqRaw(input, ['prompt']), 200),
+    }));
   return CONTINUE;
 }
 
@@ -418,12 +422,19 @@ async function geminiPostToolUse(input) {
   return CONTINUE;
 }
 
-// gemini/on-stop.sh (wired on AfterAgent)
+// gemini/on-stop.sh (wired on AfterAgent): the turn's answer, then its end
 async function geminiOnStop(input) {
   const sessionId = jqRaw(input, ['session_id']);
   if (jqRaw(input, ['stop_hook_active'], 'false') === 'true') return CONTINUE;
+  const agentId = geminiAgent(sessionId);
+  // The turn's answer (prompt_response), cut as onStop cuts Claude Code's, then its end: idle.
+  const response = jqRaw(input, ['prompt_response']);
+  if (response) {
+    await postJson(`${apiUrl()}/api/hooks/output`, token(),
+      JSON.stringify({ agent_id: agentId, hook: 'Stop', session_id: sessionId, output: subst(headBytes(response, 4000)) }));
+  }
   await postJson(`${apiUrl()}/api/hooks/status`, token(),
-    JSON.stringify({ agent_id: geminiAgent(sessionId), session_id: sessionId, status: 'waiting' }));
+    JSON.stringify({ agent_id: agentId, hook: 'Stop', session_id: sessionId, status: 'idle' }));
   return CONTINUE;
 }
 

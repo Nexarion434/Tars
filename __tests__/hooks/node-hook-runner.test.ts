@@ -59,6 +59,12 @@ import * as path from 'node:path';
  *     TARS_INSTANCE_ID, and no Authorization header at all otherwise. The
  *     server here answers the check for INSTANCE, outside the recorded
  *     requests; node-hook-checks-the-instance.test.ts holds the check itself.
+ * 17. (19/10, the QA's CLI matrix) A Gemini turn that Tars never sees open or
+ *     end. BeforeAgent posted `running` with no `event` and no prompt, so no
+ *     turn opened in the ledger and no delegated task's turn was found; and
+ *     AfterAgent posted `waiting` with no reason, which Tars reads as a turn
+ *     still asking, so every later task waited behind it for ever. Its answer
+ *     (`prompt_response`, gemini 0.64.0) was never posted. Both runners.
  *
  * Where bash, curl and jq exist (CI on Linux and macOS) the .sh runs too,
  * against the same server, on every case but the two Windows fixes: the same
@@ -625,12 +631,12 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'Gemini BeforeAgent (user-prompt-submit) sets running',
+    name: 'Gemini BeforeAgent (user-prompt-submit) opens a turn, with its prompt (17)',
     event: 'gemini/user-prompt-submit',
-    payload: { session_id: S, prompt: 'hi' },
+    payload: { session_id: S, prompt: 'review the notes', hook_event_name: 'BeforeAgent' },
     env: GEMINI_AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'running' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit', current_task: 'review the notes\n' } },
     ],
     stdout: CONTINUE,
   },
@@ -645,12 +651,34 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'Gemini AfterAgent sets waiting',
+    name: 'Gemini AfterAgent posts its answer, then ends the turn: idle (17)',
+    event: 'gemini/on-stop',
+    payload: { session_id: S, prompt: 'review the notes', prompt_response: 'Reviewed: "two" fixes', stop_hook_active: false, hook_event_name: 'AfterAgent' },
+    env: GEMINI_AGENT,
+    requests: [
+      { method: 'POST', path: '/api/hooks/output', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, output: 'Reviewed: "two" fixes' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'Gemini AfterAgent with no answer ends the turn all the same (17)',
     event: 'gemini/on-stop',
     payload: { session_id: S },
     env: GEMINI_AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'waiting' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'Gemini AfterAgent cuts a long answer at 4000 bytes, as Stop does (17)',
+    event: 'gemini/on-stop',
+    payload: { session_id: S, prompt_response: `${'a'.repeat(3999)}é` },
+    env: GEMINI_AGENT,
+    requests: [
+      { method: 'POST', path: '/api/hooks/output', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
     ],
     stdout: CONTINUE,
   },

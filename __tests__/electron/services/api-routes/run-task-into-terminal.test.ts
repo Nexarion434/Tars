@@ -66,6 +66,16 @@ import { EventEmitter } from 'node:events';
  *      task's turn.
  *  D17. (W2) A task whose turn writes no text is answered with the previous
  *      task's final message.
+ *
+ * Added 19/10 (the QA's CLI matrix, gemini as B), before the code:
+ *  G1. A gemini agent, whose hooks say when its turn begins (BeforeAgent) and
+ *      ends (AfterAgent), is taken for a CLI with no hook: its task is said
+ *      delivered at once, its answer never read, its end never told.
+ *  G2. A second task to it waits for ever behind the first's turn, or goes in
+ *      before that turn ended.
+ *  G3. (the Audit's L2 on #478) A gemini whose hooks never post (a version
+ *      older than them, or an install that failed) is followed to a turn that
+ *      never begins, for ever, and every task behind it waits for ever too.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-terminal-'));
@@ -361,6 +371,68 @@ describe('a task delegated into the agent\'s own terminal', () => {
     expect(String(task.error)).toMatch(/opencode/);
     expect(String(task.error)).toMatch(/cannot see when its turn ends/);
   });
+});
+
+describe('a task delegated into a gemini agent, whose hooks say when its turns begin and end', () => {
+  it('(G1) is followed to its turn\'s end, and answered with what its hooks gave', async () => {
+    orchestrator();
+    const gem = liveAgent('gem', { provider: 'gemini' });
+    const { data } = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'review the notes', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(gem, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(((await call('GET', `/api/tasks/${data.taskId}`, 'lead').answer).data.task as Record<string, unknown>).outcome).toBe('running');
+    // AfterAgent: its answer (prompt_response), then the rest.
+    gem.lastCleanOutput = 'The notes are fine.';
+    rests(gem);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: 'The notes are fine.' });
+  });
+
+  it('(G2) a second task goes in at the first\'s end, and is answered with its own', async () => {
+    orchestrator();
+    const gem = liveAgent('gem', { provider: 'gemini' });
+    const first = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'first job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(gem, promptOf(typed[0]));
+    const second = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'second job', answer: 'started' }).answer;
+    expect(second.data).toMatchObject({ queued: true, outcome: 'queued' });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(typed).toHaveLength(1);
+    gem.lastCleanOutput = 'first answer';
+    rests(gem);
+    expect(((await call('GET', `/api/tasks/${first.data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>).result).toBe('first answer');
+    await until(() => typed.length === 2);
+    turnBegins(gem, promptOf(typed[1]));
+    await new Promise((r) => setTimeout(r, 30));
+    gem.lastCleanOutput = 'second answer';
+    rests(gem);
+    expect(((await call('GET', `/api/tasks/${second.data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>)).toMatchObject({ outcome: 'completed', result: 'second answer' });
+  });
+});
+
+describe('a task delegated into a gemini whose hooks never post (the Audit\'s L2 on #478)', () => {
+  it('(G3) ends as an error once its turn has not begun within the wait, and the next task goes in', async () => {
+    orchestrator();
+    liveAgent('gem', { provider: 'gemini' });
+    const first = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'first job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    const second = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'second job', answer: 'started' }).answer;
+    expect(second.data).toMatchObject({ queued: true });
+    // The wait for its turn is counted from when it went in: the clock is taken from there on.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    try {
+      // No BeforeAgent ever comes: nothing but the wait ends it.
+      await vi.advanceTimersByTimeAsync(15 * 60_000 + 5_000);
+      const ended = (await call('GET', `/api/tasks/${first.data.taskId}?wait=5`, 'lead').answer).data.task as Record<string, unknown>;
+      expect(ended.outcome).toBe('error');
+      expect(String(ended.error)).toMatch(/did not begin within 15 minutes/);
+      await until(() => typed.length === 2);
+      expect(typed[1].data).toContain('second job');
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 120_000);
 });
 
 describe('a task delegated to a codex agent', () => {

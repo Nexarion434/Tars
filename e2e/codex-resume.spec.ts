@@ -146,7 +146,7 @@ for (const newInterface of [false, true]) {
 
       // 3. A task after the restart, in the same conversation.
       const after = await second.tool('delegate_task', { id: codyId, prompt: 'RECALL', timeoutSeconds: 60 });
-      const recall = entries().filter(e => e.turn && String(e.text).includes('RECALL')).at(-1);
+      const recall = entries().filter(e => e.turn && (String(e.head ?? '') + String(e.text)).includes('RECALL')).at(-1);
       keep({ after, recall, rolloutsAfter: rollouts() });
       expect.soft(after.text, "the task after the restart, in Cody's same conversation").toContain(`recall r${nonce}`);
       expect.soft(recall?.session, 'the session the task ran in').toBe(session);

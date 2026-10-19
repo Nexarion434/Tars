@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawn } from 'child_process';
-import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
+import { inheritable, launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { apiPort } from './ports.mjs';
 
 /**
@@ -82,7 +82,8 @@ test('a test build started on the account\'s own home refuses to start, and touc
   const info = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', path.join(app, 'Contents', 'Info.plist')], { encoding: 'utf8' })) as Record<string, string>;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-packed-own-home-'));
   const child = spawn(path.join(app, 'Contents', 'MacOS', info.CFBundleExecutable), [`--user-data-dir=${path.join(home, 'electron-profile')}`], {
-    env: { ...process.env, HOME: home, CFFIXED_USER_HOME: home, DOROTHY_API_PORT: apiPort(31387), DOROTHY_E2E: '1', DOROTHY_E2E_PASSWD_HOME: home },
+    // None of the caller's CLAUDE_, DOROTHY_, ANTHROPIC_ or TARS_ variables, as launchSandboxed hands none (the Audit's Low on train 1).
+    env: { ...inheritable(process.env), HOME: home, CFFIXED_USER_HOME: home, DOROTHY_API_PORT: apiPort(31387), DOROTHY_E2E: '1', DOROTHY_E2E_PASSWD_HOME: home },
   });
   let said = '';
   child.stdout.on('data', (d) => { said += d; });
