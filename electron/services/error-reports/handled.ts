@@ -214,9 +214,26 @@ function factsOf(e: Loose): string {
 }
 
 /**
+ * The frames of an error's stack: the `at` lines after its message, never a line of the message itself. A child
+ * process's stderr is in its error's message, so in its stack, and a script that died with a stack trace puts its
+ * own `at` lines there, with its folders and its function names (the Audit's probe PB, L2 on #474). The stack begins
+ * with the error's name as it was when it was made (and Node's code, in brackets), then its message; one that does
+ * not begin with its message gives no frame.
+ */
+function framesAfterMessage(stack: unknown, message: unknown): string[] {
+  if (typeof stack !== 'string' || typeof message !== 'string') return [];
+  // Node's own errors add their code in brackets: `TypeError [ERR_INVALID_ARG_TYPE]: <message>`.
+  const name = /^[A-Za-z_$][\w$.]*(?: \[[A-Z0-9_]{2,60}\])?/.exec(stack)?.[0];
+  if (!name) return [];
+  const head = message === '' ? name : `${name}: ${message}`;
+  if (!stack.startsWith(head) || (stack.length > head.length && stack[head.length] !== '\n')) return [];
+  return stack.slice(head.length).split('\n').filter(line => /^\s+at /.test(line));
+}
+
+/**
  * The copy of a handled error that the reports are handed: its type, Tars's own fixed sentence when it is one of
- * Tars's errors, else its closed facts (`code ENOENT, syscall open`, `exit 128`) or WITHHELD, its stack's frames
- * without the lines that repeat its message, and its causes copied the same way, four at most. Never its words.
+ * Tars's errors, else its closed facts (`code ENOENT, syscall open`, `exit 128`) or WITHHELD, the frames after its
+ * message, and its causes copied the same way, four at most. Never its words.
  */
 export function withoutWords(error: unknown, depth = 0): Error {
   const e: Loose = error !== null && typeof error === 'object' ? error as Loose : {};
@@ -226,7 +243,7 @@ export function withoutWords(error: unknown, depth = 0): Error {
   const cause = depth < MAX_CAUSES && e.cause !== undefined && e.cause !== error ? withoutWords(e.cause, depth + 1) : undefined;
   const copy = cause ? new Error(message, { cause }) : new Error(message);
   copy.name = name;
-  const frames = typeof e.stack === 'string' ? e.stack.split('\n').filter(line => /^\s+at /.test(line)) : [];
+  const frames = framesAfterMessage(e.stack, e.message);
   copy.stack = [`${name}: ${message}`, ...frames].join('\n');
   return copy;
 }
