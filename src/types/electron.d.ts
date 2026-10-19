@@ -277,6 +277,27 @@ interface VaultProjectFileRead {
   truncated: boolean;
   editable: boolean;
 }
+type ReviewProjectState = 'gone' | 'unreachable' | 'no-git' | 'repository' | 'repositories';
+interface ReviewRepositoryState {
+  path: string;
+  branch: string;
+  changed: Array<{ file: string; status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; additions: number | null; deletions: number | null }>;
+  base: string | null;
+  ahead: number | null;
+  agents: Array<{ id: string; name: string }>;
+  error?: string;
+}
+interface ReviewProjectSnapshot { state: ReviewProjectState; skipped: Array<{ path: string; why: string }>; repositories: ReviewRepositoryState[] }
+type ReviewRepositoriesEvent = { scanId: string; projectPath: string } & (
+  | { kind: 'progress'; foldersRead: number; repos: number }
+  | { kind: 'found'; repo: string }
+  | { kind: 'repository'; repository: ReviewRepositoryState }
+  | { kind: 'done'; state?: ReviewProjectState; skipped?: Array<{ path: string; why: string }>; foldersRead?: number; repos?: number; error?: string }
+);
+type ReviewSearchEvent = { searchId: string } & (
+  | { kind: 'batch'; groups: Array<{ project: string; repo: string; branch: string; nameMatch: boolean; files: string[] }> }
+  | { kind: 'done'; total?: number; cancelled?: boolean; error?: string }
+);
 
 export interface VaultDocumentElectron {
   id: string;
@@ -1623,6 +1644,20 @@ export interface ElectronAPI {
     file: (repoPath: string, file: string, baseBranch?: string) =>
       Promise<{ success: boolean; patch?: string; error?: string }>;
     repo: (repoPath: string) => Promise<{ success: boolean; summary?: RepoSummary; error?: string }>;
+    /**
+     * A project's repositories (electron/services/review-repositories.ts): its
+     * last scan at once (`cached`), and with `refresh`, or never scanned, a
+     * scan whose findings come through onRepositoriesEvent under `scanId`.
+     * `diff`, `file` and `repo` refuse a path Tars did not find in a project or
+     * an agent's folder.
+     */
+    repositories: (projectPath: string, opts?: { refresh?: boolean }) =>
+      Promise<{ scanId?: string; cached?: ReviewProjectSnapshot } | { error: string; code: string }>;
+    /** Every repository's name and path and every changed file, every project, no limit: batches through onSearchEvent. */
+    search: (query: string) => Promise<{ searchId: string } | { error: string; code: string }>;
+    cancel: (id: string) => Promise<{ cancelled: boolean }>;
+    onRepositoriesEvent: (callback: (event: ReviewRepositoriesEvent) => void) => () => void;
+    onSearchEvent: (callback: (event: ReviewSearchEvent) => void) => () => void;
   };
 
   /** Federated memory: every source probed for real, searchable from one place. */

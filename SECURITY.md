@@ -440,6 +440,14 @@ and its filter ran on Review's first status and diff; now none does, in the unit
 (`e2e/review-hostile-repo.spec.ts`). What it is not: an agent's own CLI runs git with the repository's
 configuration, in its own permission mode, as it always did.
 
+Review reads only what Tars found (2.0.4, the Audit's R2.4): a repository a scan
+found in a project Tars knows (its list, its agents' folders), a project, or an
+agent's folder. `review:diff`, `review:file` and `review:repo` took any path the
+window named, and ran git there. The scan of a project follows no link, so a
+link to the home in a project brings none of its repositories in, and reads no
+file outside git; the search matches names and paths Tars already holds, so a
+query is text, never an option or a pattern.
+
 ## 5. What is where on disk
 
 | Path | Holds | Reachable by an agent |

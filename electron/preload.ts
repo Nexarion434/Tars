@@ -395,6 +395,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('review:file', { repoPath, file, baseBranch }),
     repo: (repoPath: string) =>
       ipcRenderer.invoke('review:repo', { repoPath }),
+    // Every repository of a project (services/review-repositories.ts): what was kept at once, a scan's findings as events.
+    repositories: (projectPath: string, opts?: { refresh?: boolean }) =>
+      ipcRenderer.invoke('review:repositories', { projectPath, refresh: opts?.refresh === true }),
+    search: (query: string) =>
+      ipcRenderer.invoke('review:search', { query }),
+    cancel: (id: string) =>
+      ipcRenderer.invoke('review:cancel', { id }),
+    onRepositoriesEvent: (callback: (event: Record<string, unknown>) => void) => {
+      const listener = (_: unknown, data: Record<string, unknown>) => callback(data);
+      ipcRenderer.on('review:repositories:event', listener);
+      return () => ipcRenderer.removeListener('review:repositories:event', listener);
+    },
+    onSearchEvent: (callback: (event: Record<string, unknown>) => void) => {
+      const listener = (_: unknown, data: Record<string, unknown>) => callback(data);
+      ipcRenderer.on('review:search:event', listener);
+      return () => ipcRenderer.removeListener('review:search:event', listener);
+    },
   },
 
   memoryHub: {
