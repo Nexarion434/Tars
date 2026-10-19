@@ -169,4 +169,4 @@ export interface AppSettings {
   secretsSet?: SecretsSet;
 }
 
-export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'hermes-gateways' | 'memory' | 'mcp' | 'cli' | 'system';

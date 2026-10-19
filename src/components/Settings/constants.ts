@@ -68,6 +68,7 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     icon: Send,
     children: [
       { id: 'hermes', label: 'Connection', description: 'Where your Hermes gateway lives.', icon: Send },
+      { id: 'hermes-gateways', label: 'Gateways', description: 'Each Hermes that hands Tars work: the address it posts to, its secret, and the projects it may reach.', icon: Send },
     ],
   },
   {

@@ -308,7 +308,7 @@ Per surface the spec does two things:
 - `toHaveScreenshot()` against `e2e/__screenshots__/<name>.png` with
   `maxDiffPixelRatio: 0.005`, `animations: 'disabled'`.
 
-The manifest is `e2e/surfaces.mjs`: **18 pages + 18 settings sections + 3 overlays = 39
+The manifest is `e2e/surfaces.mjs`: **20 pages + 19 settings sections + 3 overlays = 42
 surfaces**. `e2e/__screenshots__/` holds one PNG per surface, plus the six Chat rooms that
 their own spec photographs.
 
