@@ -18,6 +18,9 @@ import * as path from 'node:path';
  *    the reports are rebuilt with carry no vocabulary, and every agent tool error is dropped.
  * 6. (F2) A report's answer is not logged with Sentry's status, or not kept; the window cannot read the last one, or
  *    reading it while the reports are off makes the reports' file (an install id the user never asked for).
+ * And from the Audit's gate of #474 (M1, written red on 106e1f41, 2026-10-19):
+ * 7. (F1) The SDK is handed the logged or captured error itself, its message and its causes' with it: it must be
+ *    handed a copy with its type, its closed facts and its frames only (handled.ts withoutWords).
  */
 
 const loaded = vi.hoisted(() => ({ count: 0 }));
@@ -97,11 +100,18 @@ describe('what main logs, and what Tars captures (F1)', () => {
   it('3. an Error logged at error level reaches the SDK as handled, once the reports are on', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     await start(() => true);
-    const error = new Error('could not save the agents');
+    const error = Object.assign(new Error("ENOENT: no such file or directory, open '/Users/jdoe/clients/acme/agents.json'"), { code: 'ENOENT', syscall: 'open' });
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     console.error('[agents] save failed:', error);
     spy.mockRestore();
-    expect(captured.exceptions).toEqual([{ error, hint: { data: { mechanism: { type: 'tars.logged', handled: true } } } }]);
+    expect(captured.exceptions).toHaveLength(1);
+    const [{ error: sent, hint }] = captured.exceptions;
+    expect(hint).toEqual({ data: { mechanism: { type: 'tars.logged', handled: true } } });
+    // 7. A copy: its type, its closed facts and its frames, never its words.
+    expect(sent).not.toBe(error);
+    expect((sent as Error).message).toBe('code ENOENT, syscall open');
+    expect((sent as Error).stack).not.toMatch(/acme|jdoe/);
+    expect((sent as Error).stack).toContain(error.stack!.split('\n')[1]);
   });
 
   it("3. an IPC handler's fault is reported under its channel's name", async () => {
@@ -114,7 +124,10 @@ describe('what main logs, and what Tars captures (F1)', () => {
     const [only] = captured.exceptions;
     expect((only.error as Error).name).toBe('IpcHandlerError');
     expect((only.error as Error).message).toBe('agent:start');
-    expect((only.error as Error).cause).toBe(fault);
+    // 7. Its cause is copied too: the fault's type and frames, not its words.
+    expect(((only.error as Error).cause as Error).name).toBe('TypeError');
+    expect(((only.error as Error).cause as Error).message).toBe('(message not sent)');
+    expect((only.error as Error).cause).not.toBe(fault);
   });
 
   it('3. nothing is hooked while the reports are off', async () => {
@@ -131,7 +144,11 @@ describe('what main logs, and what Tars captures (F1)', () => {
     const { reportHandledError } = await handled();
     const error = Object.assign(new Error('codex exited with code 2, 0.4 s after its launch'), { name: 'CliExitedAtLaunch' });
     reportHandledError(error);
-    expect(captured.exceptions).toEqual([{ error, hint: { data: { mechanism: { type: 'tars.handled', handled: true } } } }]);
+    expect(captured.exceptions).toHaveLength(1);
+    expect(captured.exceptions[0].hint).toEqual({ data: { mechanism: { type: 'tars.handled', handled: true } } });
+    // Tars's own fixed sentence, built from closed facts, is kept.
+    expect((captured.exceptions[0].error as Error).name).toBe('CliExitedAtLaunch');
+    expect((captured.exceptions[0].error as Error).message).toBe('codex exited with code 2, 0.4 s after its launch');
     on = false;
     reportHandledError(new Error('while off'));
     expect(captured.exceptions).toHaveLength(1);

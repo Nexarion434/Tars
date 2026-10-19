@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   LAUNCH_WINDOW_MS, apiAnswerReports, cliLaunchExit, isHandlerRefusal, reportAgentToolError, reportHandledError,
-  routeName, setReportSinks, watchLoggedErrors,
+  routeName, setReportSinks, watchLoggedErrors, withoutWords,
 } from '../../../electron/services/error-reports/handled';
 
 /**
@@ -30,6 +30,12 @@ import {
  * 10. An agent's CLI that exits with a failure code within 30 s of its launch is not reported; one that exits 0, that
  *     was ended by a signal, that the user interrupted (130) or that ran longer is.
  * 11. A report with no sink set, or a sink that throws, breaks the code that met the error.
+ * And from the Audit's gate of #474 (M1, written red on 106e1f41, 2026-10-19):
+ * 12. A handled error leaves with its message, or its cause's: the world's words (a command line, a path, a file's
+ *     start, a URL, a prompt). What it is sent as is a copy: its type, its closed facts (an errno code and its
+ *     syscall, an exit status, a signal, one of Tars's own codes), its frames, and its causes the same way; Tars's own
+ *     fixed sentences are kept. A 500's message is its route and status, never the route's error.
+ * 13. The copy breaks on what is not an Error, or on a cause that loops.
  */
 
 afterEach(() => setReportSinks(null));
@@ -145,13 +151,14 @@ describe("the API's answers (F1, F3)", () => {
     expect(routeName(undefined)).toBe('(no route)');
   });
 
-  it('8. a 500 answered without a throw is a handled error; a throw is reported by its log line; a 4xx is not Tars\'s fault', () => {
-    const answered = apiAnswerReports({ ...base, status: 500, errorText: 'Error: SQLITE_BUSY: database is locked' });
+  it('8, 12. a 500 answered without a throw is a handled error, named by its route and status only; a throw is reported by its log line; a 4xx is not Tars\'s fault', () => {
+    const answered = apiAnswerReports({ ...base, status: 500 });
     expect(answered.handled?.name).toBe('ApiRouteError');
-    expect(answered.handled?.message).toBe('POST /api/agents/:id/message answered 500: Error: SQLITE_BUSY: database is locked');
+    expect(answered.handled?.message).toBe('POST /api/agents/:id/message answered 500');
+    expect(apiAnswerReports({ ...base, status: 503, bodyCode: 'agent_busy' }).handled?.message).toBe('POST /api/agents/:id/message answered 503 agent_busy');
+    expect(apiAnswerReports({ ...base, status: 500, bodyCode: 'Zephyrine said no' }).handled?.message).toBe('POST /api/agents/:id/message answered 500');
     expect(apiAnswerReports({ ...base, status: 500, threw: true }).handled).toBeUndefined();
     expect(apiAnswerReports({ ...base, status: 409 }).handled).toBeUndefined();
-    expect(apiAnswerReports({ ...base, status: 503 }).handled?.message).toBe('POST /api/agents/:id/message answered 503');
   });
 
   it("9. an agent's MCP call answered 400 or more is an agent tool error: the status, Tars's tool, the agent's CLI", () => {
@@ -211,5 +218,68 @@ describe('the sinks', () => {
     reportAgentToolError({ code: 'never-started', tool: 'delegate_task', cli: 'claude' });
     expect(handled).toHaveBeenCalledWith(error);
     expect(agentTool).toHaveBeenCalledWith({ code: 'never-started', tool: 'delegate_task', cli: 'claude' });
+  });
+});
+
+describe("what a handled error is sent as (12, 13, the Audit's M1 on #474)", () => {
+  const WORDS = /acme|buyout|lawyer|termsheet|patient|diagnosis|48213|atlassian|summarise|minutes|CFO|clients|worktree|branch|fatal|myself|unexpected|jdoe|toLowerCase/i;
+  const at = '    at saveAgents (/Applications/Tars.app/Contents/Resources/app.asar/electron/dist/core/agent-manager.js:42:7)';
+  /** An error as Node makes it: its message, its own properties, a stack whose first lines repeat the message. */
+  const made = <T extends Error>(error: T, props: Record<string, unknown> = {}): T => {
+    Object.assign(error, props);
+    error.stack = `${error.name}: ${error.message}\n${at}`;
+    return error;
+  };
+
+  it("12. the probe PA's five errors leave as their type and closed facts, with their frames, and no word of them", () => {
+    const cases: Array<[Error, string]> = [
+      [made(new Error("Command failed: git --no-optional-locks -C /Users/jdoe/clients/acme-merger worktree add -b feat/acme-buyout-terms /Users/jdoe/clients/acme-merger/.worktrees/lawyer HEAD\nfatal: a branch named 'feat/acme-buyout-terms' already exists"), { code: 128, killed: false, signal: null, cmd: 'git -C /Users/jdoe/clients/acme-merger worktree add' }), 'exit 128'],
+      [made(new Error("ENOENT: no such file or directory, open '/Users/jdoe/clients/acme-merger/reports/termsheet-draft-v3.md'"), { code: 'ENOENT', errno: -2, syscall: 'open', path: '/Users/jdoe/clients/acme-merger/reports/termsheet-draft-v3.md' }), 'code ENOENT, syscall open'],
+      [made(new SyntaxError('Unexpected token \'p\', "patient_id=48213;diagnosis=..." is not valid JSON')), '(message not sent)'],
+      [made(new Error('request to https://acme-legal.atlassian.net/rest/api/3/myself failed, reason: getaddrinfo ENOTFOUND acme-legal.atlassian.net'), { code: 'ENOTFOUND', errno: 'ENOTFOUND', type: 'system' }), 'code ENOTFOUND'],
+      [made(new Error('Command failed: claude -p Summarise the board minutes for the Acme acquisition and draft the email to the CFO'), { status: 1, signal: null }), 'exit 1'],
+    ];
+    for (const [error, said] of cases) {
+      const copy = withoutWords(error);
+      expect(copy.message, error.message).toBe(said);
+      expect(copy.name).toBe(error.name);
+      expect(`${copy.message}\n${copy.stack}`, error.message).not.toMatch(WORDS);
+      expect(copy.stack).toContain(at);
+      expect(copy).not.toBe(error);
+    }
+  });
+
+  it("12. its causes are copied the same way, and Tars's own fixed sentences are kept", () => {
+    const lookup = made(new Error('getaddrinfo ENOTFOUND acme-legal.atlassian.net'), { code: 'ENOTFOUND', syscall: 'getaddrinfo', hostname: 'acme-legal.atlassian.net' });
+    const fetchFailed = made(new TypeError('fetch failed', { cause: lookup }));
+    const copy = withoutWords(fetchFailed);
+    expect(copy.message).toBe('(message not sent)');
+    expect((copy.cause as Error).message).toBe('code ENOTFOUND, syscall getaddrinfo');
+    expect(JSON.stringify([copy.message, (copy.cause as Error).message, (copy.cause as Error).stack])).not.toMatch(WORDS);
+
+    const ipc = new Error('project:search-files', { cause: made(new TypeError('query.toLowerCase is not a function')) });
+    ipc.name = 'IpcHandlerError';
+    const ipcCopy = withoutWords(ipc);
+    expect(ipcCopy.name).toBe('IpcHandlerError');
+    expect(ipcCopy.message).toBe('project:search-files');
+    expect((ipcCopy.cause as Error).name).toBe('TypeError');
+    expect((ipcCopy.cause as Error).message).toBe('(message not sent)');
+
+    for (const fixed of [cliLaunchExit({ provider: 'codex', exitCode: 2, livedMs: 400 })!, apiAnswerReports({ method: 'POST', route: '/api/agents', status: 500, threw: false, fromMcp: false, tools: new Set() }).handled!]) {
+      expect(withoutWords(fixed).message).toBe(fixed.message);
+    }
+  });
+
+  it('13. not an Error, a cause that loops, a name that is not a name: never a throw, never their words', () => {
+    expect(withoutWords('Acme said: ship the termsheet').message).toBe('(message not sent)');
+    expect(withoutWords(undefined).message).toBe('(message not sent)');
+    const loop = made(new Error('acme loop'));
+    (loop as { cause?: unknown }).cause = loop;
+    let depth = 0;
+    for (let e: unknown = withoutWords(loop); e instanceof Error; e = e.cause) depth++;
+    expect(depth).toBeLessThanOrEqual(5);
+    const named = made(new Error('x'));
+    named.name = 'Acme merger failed';
+    expect(withoutWords(named).name).toBe('Error');
   });
 });

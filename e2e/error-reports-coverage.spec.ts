@@ -17,7 +17,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * - (F2) the log says the reports are on, with the version;
  * - (F1) an error Tars handles gives one envelope: an agent's CLI that exits at its launch, in a session the API starts
  *   (CliExitedAtLaunch), an IPC handler that faults (IpcHandlerError, its channel, the fault as its cause), an API route
- *   that answers 500 without throwing (ApiRouteError);
+ *   that answers 500 without throwing (ApiRouteError); and none of them carries what the error said (the Audit's M1 on
+ *   #474): the fault leaves as its type and frames, the 500 as its route and status;
  * - (F3) an agent's tool error gives one envelope with its code, its tool and its CLI, and nothing of the agent: a worker's
  *   delegate_task, refused, through the real mcp-orchestrator with the worker's own identity;
  * - (F2) each send is logged with Sentry's status, and errorReports.last() gives the last one, a 503 included;
@@ -227,6 +228,7 @@ for (const newInterface of [false, true]) {
       const ipcFault = sentry.events.find((e) => typesOf(e).includes('IpcHandlerError'));
       expect.soft(typesOf(ipcFault ?? {})).toEqual(['TypeError', 'IpcHandlerError']);
       expect.soft(lastOf(ipcFault ?? {})?.value).toBe('project:search-files');
+      expect.soft(ipcFault?.exception?.values?.[0]?.value, "the fault's own words").toBe('(message not sent)');
       keep({ ipcAnswer, ipcFault });
 
       // ── F1: an API route that answers 500 without throwing ──
@@ -238,7 +240,7 @@ for (const newInterface of [false, true]) {
       expect(vault.status).toBe(500);
       await expect.soft.poll(() => sentry.events.filter((e) => typesOf(e).includes('ApiRouteError')).length, { timeout: 30_000, message: 'one report of the 500' }).toBe(1);
       const api500 = sentry.events.find((e) => typesOf(e).includes('ApiRouteError'));
-      expect.soft(lastOf(api500 ?? {})?.value ?? '').toMatch(/^POST \/api\/vault\/documents answered 500: /);
+      expect.soft(lastOf(api500 ?? {})?.value, "the route and status, never the route's error").toBe('POST /api/vault/documents answered 500');
       keep({ vault, api500 });
 
       // ── F3: a worker's delegate_task, refused, through the real MCP server with the worker's own identity ──
@@ -291,6 +293,9 @@ for (const newInterface of [false, true]) {
         expect.soft(text).not.toContain(home);
         expect.soft(text).not.toContain(NAME);
         expect.soft(text).not.toContain('Acme');
+        // What the handled errors said (the Audit's M1 on #474): the fault's message, the route's error.
+        expect.soft(text).not.toContain('toLowerCase');
+        expect.soft(text).not.toContain(String((vault.body as { error?: string }).error ?? 'none'));
       }
       for (const text of sentry.raw.filter((t) => t.includes('"agent-tool"'))) {
         expect.soft(text).not.toContain(SECRET);

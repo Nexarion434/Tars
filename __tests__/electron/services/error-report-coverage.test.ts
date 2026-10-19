@@ -31,6 +31,14 @@ import {
  * 9. The window is told a report's answer without its kind, or the kind is wrong (an unhandled error, a handled one,
  *    an agent tool error, a health report).
  * 10. Over-correction: an ordinary error, or a health report, no longer leaves as it did.
+ * And from the Audit's gate of #474 (M1, written red on 106e1f41, 2026-10-19):
+ * 11. A handled error's message leaves, or a cause's: what Tars logs is the world's words (a git command line with a
+ *     client's folder and branch, a file's path in a client's project, the start of a file a parse choked on, the
+ *     user's Jira site, a prompt). The Audit's probe PA, its five messages, under both handled mechanisms.
+ * 12. Under-correction of 11: what a handled error may say is lost, its closed facts (an errno code, a syscall, an
+ *     exit status, a signal, one of Tars's own codes) or Tars's own fixed sentences (the channel of an IPC fault, the
+ *     route of a 500, a CLI's launch exit, a task never started); or a value that only looks like one of them leaves.
+ * 13. Over-correction of 11: an error nobody caught loses its message, as it never did.
  */
 
 const HOME = os.homedir();
@@ -224,8 +232,10 @@ describe('through the real client (F1, F2, F3)', () => {
     expect(sent).toHaveLength(1);
     const [report] = events();
     expect(report.exception.values.at(-1)!.mechanism).toEqual({ type: 'tars.logged', handled: true });
-    expect(report.exception.values.at(-1)!.value).toBe('could not write ~/clients/acme/agents.json');
-    for (const absent of [PROMPT, NAME, HOME, '"extra"']) expect(sent[0], absent).not.toContain(absent);
+    // Its words never leave (11): it says nothing it does not know for sure, and its frames say where.
+    expect(report.exception.values.at(-1)!.value).toBe('(message not sent)');
+    expect(report.exception.values.at(-1)!.stacktrace?.frames.at(-1)?.function).toBe('saveAgents');
+    for (const absent of [PROMPT, NAME, HOME, '"extra"', 'acme', 'agents.json']) expect(sent[0], absent).not.toContain(absent);
     expect(answers).toEqual([{ id: report.event_id, status: 200, kind: 'handled' }]);
   });
 
@@ -256,5 +266,67 @@ describe('through the real client (F1, F2, F3)', () => {
     expect(sent).toHaveLength(1);
     expect(events()[0].exception.values.at(-1)!.mechanism).toEqual({ type: 'generic', handled: false });
     expect(answers).toEqual([{ id: events()[0].event_id, status: 503, kind: 'error' }]);
+  });
+});
+
+describe("a handled error's words never leave (11 to 13, the Audit's M1 on #474)", () => {
+  const jdoe: ReportFacts = { ...facts, home: '/Users/jdoe', host: 'MacBook-Pro-de-jdoe.local' };
+  /** The Audit's probe PA: five errors Tars logs, as their messages read. */
+  const PA = [
+    "Command failed: git --no-optional-locks -C /Users/jdoe/clients/acme-merger worktree add -b feat/acme-buyout-terms /Users/jdoe/clients/acme-merger/.worktrees/lawyer HEAD\nfatal: a branch named 'feat/acme-buyout-terms' already exists",
+    "ENOENT: no such file or directory, open '/Users/jdoe/clients/acme-merger/reports/termsheet-draft-v3.md'",
+    'Unexpected token \'p\', "patient_id=48213;diagnosis=..." is not valid JSON',
+    'request to https://acme-legal.atlassian.net/rest/api/3/myself failed, reason: getaddrinfo ENOTFOUND acme-legal.atlassian.net',
+    'Command failed: claude -p Summarise the board minutes for the Acme acquisition and draft the email to the CFO',
+  ];
+  const WORDS = /acme|buyout|lawyer|termsheet|patient|diagnosis|48213|atlassian|summarise|minutes|CFO|clients|worktree|branch|fatal|myself|unexpected/i;
+  const frame = { filename: '/Applications/Tars.app/Contents/Resources/app.asar/electron/dist/core/agent-manager.js', function: 'saveAgents', lineno: 42, colno: 7, in_app: true };
+
+  for (const mechanism of ['tars.logged', 'tars.handled']) {
+    it(`11. probe PA under ${mechanism}: no word of the message leaves, nor of its cause's`, () => {
+      for (const message of PA) {
+        const report = toReport({ exception: { values: [
+          { type: 'Error', value: message, mechanism: { type: 'chained', handled: true } },
+          { type: 'Error', value: message, mechanism: { type: mechanism, handled: true }, stacktrace: { frames: [frame] } },
+        ] } }, jdoe)!;
+        expect(JSON.stringify(report), message).not.toMatch(WORDS);
+        expect(report.exception.values.map(v => v.value), message).toEqual(['(message not sent)', '(message not sent)']);
+        // Where it happened still leaves: Tars's own frames.
+        expect(report.exception.values[1].stacktrace?.frames).toEqual([{ ...frame, filename: frame.filename }]);
+      }
+    });
+  }
+
+  it("12. what a handled error may say: its closed facts, and Tars's own fixed sentences", () => {
+    const said = (type: string, value: string) =>
+      toReport({ exception: { values: [{ type, value, mechanism: { type: 'tars.handled', handled: true } }] } }, facts)!.exception.values[0].value;
+    for (const [type, value] of [
+      ['Error', 'code ENOENT, syscall open'],
+      ['Error', 'code ERR_INVALID_ARG_TYPE'],
+      ['Error', 'exit 128'],
+      ['Error', 'signal SIGTERM'],
+      ['Error', 'code worker_may_not_order'],
+      ['CliExitedAtLaunch', 'codex exited with code 2, 0.4 s after its launch'],
+      ['TaskNeverStarted', 'claude: the task never started, 600 s after it was sent'],
+      ['IpcHandlerError', 'project:search-files'],
+      ['ApiRouteError', 'POST /api/vault/documents answered 500'],
+      ['ApiRouteError', 'POST /api/agents/:id/run-task answered 503 agent_busy'],
+    ]) expect(said(type, value), `${type}: ${value}`).toBe(value);
+    // What only looks like one of them: withheld.
+    for (const [type, value] of [
+      ['Error', 'code ENOENT, open /Users/x/acme.md'],
+      ['Error', 'code CFO'],
+      ['Error', 'exit 128 because the board said so'],
+      ['IpcHandlerError', 'project:search-files acme merger'],
+      ['ApiRouteError', 'POST /api/vault/documents answered 500: Error: acme'],
+      ['CliExitedAtLaunch', 'acme exited because the board said so'],
+      ['TaskNeverStarted', 'Acme: the task never started'],
+      ['Error', 'IpcHandlerError'],
+    ]) expect(said(type, value), `${type}: ${value}`).toBe('(message not sent)');
+  });
+
+  it('13. an error nobody caught keeps its message, as before', () => {
+    const report = toReport({ exception: { values: [{ type: 'Error', value: `could not read ${HOME}/clients/acme/notes.md`, mechanism: { type: 'generic', handled: false } }] } }, facts)!;
+    expect(report.exception.values[0].value).toBe('could not read ~/clients/acme/notes.md');
   });
 });
