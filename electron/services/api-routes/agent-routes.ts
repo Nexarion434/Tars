@@ -21,6 +21,7 @@ import { planModeRefusal } from '../../providers/plan-mode';
 // refused is only what could not start, on the platform Tars runs on (2.0.2).
 import { cliPathProblem } from '../../platform/cli-path';
 import { skillsProblem } from '../../utils/skill-name';
+import { handedFolderProblem } from '../../utils/handed-folder';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
@@ -1752,6 +1753,8 @@ function updateFrom(body: unknown, agent: AgentStatus, ctx: RouteContext): { upd
     if (secondaryProjectPath !== null && (typeof secondaryProjectPath !== 'string' || !path.isAbsolute(secondaryProjectPath))) {
       return { status: 400, error: 'secondaryProjectPath is an absolute path, or null to take it away' };
     }
+    const handed = secondaryProjectPath === null ? null : handedFolderProblem(secondaryProjectPath);
+    if (handed) return { status: 400, error: `Not changed: ${handed}` };
     update.secondaryProjectPath = secondaryProjectPath;
   }
   if (update.provider !== undefined && update.provider !== agent.provider) {
@@ -1796,7 +1799,7 @@ const WAIT_TEXT: Record<RestartWait, string> = {
  */
 function whenItApplies(
   agent: AgentStatus,
-  how: { cliWasUp: boolean; newCli: boolean; newBinary: boolean; changedAtLaunch: string[]; restart?: RestartOutcome },
+  how: { cliWasUp: boolean; newCli: boolean; newBinary: boolean; changed: string[]; changedAtLaunch: string[]; restart?: RestartOutcome },
 ): { applies: 'now' | 'when-free' | 'next-start'; session: 'kept' | 'new'; waitingFor?: RestartWait; text: string } {
   const cli = getProvider(agent.provider);
   const nextStart = (lead: string) => {
@@ -1809,6 +1812,19 @@ function whenItApplies(
   };
   if (how.newCli) return nextStart(`Its next start runs ${cli.displayName}${agent.cliPath ? ` (${agent.cliPath})` : ''}`);
   if (how.changedAtLaunch.length === 0) {
+    // Its name and skills are given to a session when it starts (the identity Tars types, CLAUDE_SKILLS), and are
+    // no launch setting: nothing restarts for them, and the session up keeps the old ones (the Audit's L2 on #480).
+    const name = how.changed.includes('name');
+    const skills = how.changed.includes('skills');
+    if (how.cliWasUp && (name || skills)) {
+      const old = name && skills ? 'under its old name and skills' : name ? 'under its old name' : 'with its old skills';
+      return {
+        applies: 'next-start',
+        session: 'kept',
+        text: `Changed in Tars now. The session in its terminal was given ${name && skills ? 'these' : name ? 'its name' : 'its skills'} when it `
+          + `started and goes on ${old}, untouched; its next session starts with the new ${name && !skills ? 'one' : 'ones'}.`,
+      };
+    }
     return { applies: 'now', session: 'kept', text: 'Changed. Nothing it reads when it starts was changed: its session goes on as it is.' };
   }
   if (!how.cliWasUp) return nextStart('No CLI runs in its terminal: its next start reads the new settings');
@@ -2113,6 +2129,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // the audit of lot 4; the code was brought to the document, since
     // creating in the wrong project is the mistake this guard exists for.
     if (!mayActIn(req, driver, projectPath, `a new agent would belong to project ${projectPath}`, sendJson)) return;
+    // The folder it is handed besides its project: never ~/.tars-private (the Audit's L1 on #480), as update_agent.
+    if (secondaryProjectPath !== undefined && secondaryProjectPath !== null && secondaryProjectPath !== '') {
+      const handed = typeof secondaryProjectPath === 'string'
+        ? handedFolderProblem(secondaryProjectPath)
+        : 'secondaryProjectPath is the path of a folder';
+      if (handed) {
+        sendJson({ error: handed }, 400);
+        return;
+      }
+    }
     if (provider !== undefined && !isValidProvider(provider)) {
       sendJson({ error: `Unknown provider "${provider}". Providers: ${getAllProviders().map((p) => p.id).join(', ')}.` }, 400);
       return;
@@ -2246,7 +2272,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({
         agent: projectAgent(result.agent),
         changed: result.changed,
-        ...whenItApplies(result.agent, { cliWasUp, newCli, newBinary, changedAtLaunch: result.changedAtLaunch, restart: result.restart }),
+        ...whenItApplies(result.agent, { cliWasUp, newCli, newBinary, changed: result.changed, changedAtLaunch: result.changedAtLaunch, restart: result.restart }),
       });
     });
   });
