@@ -13,6 +13,7 @@ import type {
 import { readAppSettingsFromDisk, isValidOpenAIBaseUrl, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv, scheduledKeyLines } from './cli-provider';
 import { DATA_DIR, OPENAI_BRIDGE_PORT } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
+import { getBridgeToken } from '../services/bridge-token';
 
 // claude appends /v1/messages; "custom" is this provider's fixed path segment
 // on Tars's shared OpenAI-compatible bridge (services/openai-bridge.ts), which
@@ -124,16 +125,11 @@ export class CustomOpenAIProvider implements CLIProvider {
     // parseable http(s) base URL is not.
     if (appSettings?.customOpenAIEnabled && isValidOpenAIBaseUrl(appSettings?.customOpenAIBaseUrl)) {
       // NOT the vendor key, same reasoning as venice-provider.ts: this is
-      // Tars's own local API token, which authenticates the request to the
-      // bridge; the bridge itself reads the real key from app-settings.json
-      // and attaches it to the outbound call, so it never reaches the PTY.
-      // Required here rather than imported: api-server pulls in api-routes,
-      // which pulls in this provider registry, so a top-level import is a
-      // cycle. getPtyEnvVars is synchronous, so await import() is not an
-      // option either.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
-      Object.assign(vars, keyProviderEnv(CUSTOM_BRIDGE_BASE_URL, getApiToken()));
+      // the bridge's own token (services/bridge-token.ts), which authenticates
+      // the request to the bridge and opens nothing else; the bridge itself
+      // reads the real key from the settings' secrets and attaches it to the
+      // outbound call, so it never reaches the PTY.
+      Object.assign(vars, keyProviderEnv(CUSTOM_BRIDGE_BASE_URL, getBridgeToken()));
     }
 
     return vars;
@@ -211,7 +207,7 @@ echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
 export CLAUDE_PROVIDER="custom-openai"
 export ANTHROPIC_BASE_URL="${CUSTOM_BRIDGE_BASE_URL}"
-${scheduledKeyLines('api-token', params.logPath)}
+${scheduledKeyLines('bridge-token', params.logPath)}
 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

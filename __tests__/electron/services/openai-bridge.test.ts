@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import * as fs from 'fs';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 
@@ -25,6 +26,8 @@ let upstream: http.Server;
 let upstreamUrl = '';
 
 vi.mock('../../../electron/constants', () => ({
+  // The bridge's own token (services/bridge-token.ts), in the suite's throwaway home.
+  get BRIDGE_TOKEN_FILE() { return `${process.env.HOME}/.tars-private/bridge-token`; },
   API_PORT: BRIDGE_PORT - 1,
   OPENAI_BRIDGE_PORT: BRIDGE_PORT,
   DATA_DIR: '/tmp/tars-bridge-test',
@@ -68,6 +71,8 @@ async function callBridge(
 }
 
 beforeAll(async () => {
+  fs.mkdirSync(`${process.env.HOME}/.tars-private`, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(`${process.env.HOME}/.tars-private/bridge-token`, TOKEN, { mode: 0o600 });
   upstream = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', c => chunks.push(c as Buffer));

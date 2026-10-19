@@ -22,15 +22,16 @@ import { spawnSync } from 'node:child_process';
  *      uses (ANTHROPIC_AUTH_TOKEN, the Bearer, for every vendor since #458,
  *      which measured `claude -p` sending the user's own OAuth token with an
  *      empty one; ANTHROPIC_API_KEY for the bridges, which Tars's bridge reads
- *      as x-api-key), or a key of the user's shell under the other one goes
- *      along with it.
+ *      as x-api-key, its own token since the Audit's L3, never the shared
+ *      one), or a key of the user's shell under the other one goes along
+ *      with it.
  *  K5. A key with shell in it ($(...), a backtick) is run by the script.
  *  K6. A provider left out: every key provider's script is run here.
  */
 
 import { getProvider } from '../../../electron/providers';
 import { saveSettingsSplit, SECRETS_FILE } from '../../../electron/services/settings-secrets';
-import { API_TOKEN_FILE, DATA_DIR } from '../../../electron/constants';
+import { BRIDGE_TOKEN_FILE, DATA_DIR } from '../../../electron/constants';
 import type { AgentProvider, AppSettings } from '../../../electron/types';
 
 const HAS_BASH = process.platform !== 'win32' && spawnSync('bash', ['-c', 'true']).status === 0;
@@ -38,11 +39,11 @@ const KEY = 'sk-test-0123456789';
 
 /** Each key provider, the settings field its scheduled key is, and the variable it goes in. The bridges present Tars's own token. */
 type Variable = 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN';
-const CASES: Array<[AgentProvider, keyof AppSettings | 'api-token', Variable]> = [
+const CASES: Array<[AgentProvider, keyof AppSettings | 'bridge-token', Variable]> = [
   ['openrouter', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['deepseek', 'deepSeekApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['mimo', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'],
   ['moonshot', 'moonshotApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['qwen', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['zhipu', 'zhipuApiKey', 'ANTHROPIC_AUTH_TOKEN'],
   ['minimax', 'minimaxApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['nvidia', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['nous-portal', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'],
-  ['ollama-cloud', 'ollamaCloudApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['venice', 'api-token', 'ANTHROPIC_API_KEY'], ['custom-openai', 'api-token', 'ANTHROPIC_API_KEY'],
+  ['ollama-cloud', 'ollamaCloudApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['venice', 'bridge-token', 'ANTHROPIC_API_KEY'], ['custom-openai', 'bridge-token', 'ANTHROPIC_API_KEY'],
 ];
 
 let root: string;
@@ -52,11 +53,11 @@ const log = () => path.join(root, 'task.log');
 
 function seed(field: string, value: string | null): void {
   fs.rmSync(SECRETS_FILE, { force: true });
-  fs.rmSync(API_TOKEN_FILE, { force: true });
-  if (field === 'api-token') {
+  fs.rmSync(BRIDGE_TOKEN_FILE, { force: true });
+  if (field === 'bridge-token') {
     // A venice or custom endpoint key, so the provider builds its bridge's script.
     saveSettingsSplit({ veniceApiKey: 'v', customOpenAIApiKey: 'c', customOpenAIBaseUrl: 'https://x.example/v1' } as unknown as AppSettings);
-    if (value !== null) { fs.mkdirSync(path.dirname(API_TOKEN_FILE), { recursive: true }); fs.writeFileSync(API_TOKEN_FILE, value); }
+    if (value !== null) { fs.mkdirSync(path.dirname(BRIDGE_TOKEN_FILE), { recursive: true }); fs.writeFileSync(BRIDGE_TOKEN_FILE, value); }
   } else {
     saveSettingsSplit((value === null ? {} : { [field]: value }) as unknown as AppSettings);
   }

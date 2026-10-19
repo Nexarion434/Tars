@@ -343,8 +343,8 @@ export function keyProviderEnv(baseUrl: string, key: string): Record<string, str
  * that hand a key to the CLI: read at run time from ~/.tars-private, where the
  * keys live since 2.0.4 (services/settings-secrets.ts), and never written into
  * the script, which sits in ~/.dorothy, every agent's --add-dir. `field` is a
- * key of settings-secrets.json, or `api-token` for the bridge providers, which
- * present Tars's own token to Tars's bridge.
+ * key of settings-secrets.json, or `bridge-token` for the bridge providers,
+ * which present the bridge's own token (services/bridge-token.ts).
  *
  * Read by bash itself, with no other program: launchd and cron run the task
  * with a bare PATH (no /usr/bin, where sed and head live, in the scheduled
@@ -370,8 +370,8 @@ export function scheduledKeyLines(
 ): string {
   if (!/^[A-Za-z0-9-]+$/.test(field)) throw new Error(`not a settings field: ${field}`);
   const other = variable === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
-  const file = `"$HOME/${PRIVATE_DIR_NAME}/${field === 'api-token' ? 'api-token' : 'settings-secrets.json'}"`;
-  const read = field === 'api-token'
+  const file = `"$HOME/${PRIVATE_DIR_NAME}/${field === 'bridge-token' ? 'bridge-token' : 'settings-secrets.json'}"`;
+  const read = field === 'bridge-token'
     ? [`[ -r ${file} ] && IFS= read -r TARS_KEY < ${file}`]
     : [
       `TARS_P='  "${field}": "'`,
@@ -383,7 +383,7 @@ export function scheduledKeyLines(
       'case "$TARS_KEY" in *[\\"\\\\]*) TARS_KEY="" ;; esac',
       'unset TARS_LINE TARS_P',
     ];
-  const what = field === 'api-token' ? "Tars's local token" : field;
+  const what = field === 'bridge-token' ? "the bridge's token" : field;
   return [
     'TARS_KEY=""',
     ...read,

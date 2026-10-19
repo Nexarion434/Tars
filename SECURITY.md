@@ -446,10 +446,13 @@ file that does not parse is left as it is. What it closes and what it does not:
   tools make: a post, a reply or a delete on X while Posting is on, SocialData's Twitter reads, a send to a chat
   the user authorized. No hook and no Tars MCP server presents the shared token any more, from either place;
   a CLI Tars did not start reads nothing from Tars. The scheduled scripts read their key from the private file
-  at run time, never written into the script, and do not run without one.
+  at run time, never written into the script, and do not run without one. The agents and the scheduled tasks
+  on Tars's OpenAI bridge (Venice, a custom endpoint) present the bridge's own token
+  (`~/.tars-private/bridge-token`, `services/bridge-token.ts`), which the bridge alone takes and the API refuses:
+  they were handed the shared token, and an agent in bypass read it in its environment (the Audit's L3 on #466).
 - **Not closed**: an agent in bypass mode runs as the user and reads the whole disk, `~/.tars-private`
   included (§1: no confinement, JeanBrasse's decision of 2026-09-23). An agent's own key is in its environment,
-  as its CLI needs it (a CLI's key, `ANTHROPIC_API_KEY` for the providers on the claude binary), and so is
+  as its CLI needs it (a CLI's key, `ANTHROPIC_AUTH_TOKEN` for the providers on the claude binary), and so is
   readable to it and its children; a process's environment is the user's to read too: on macOS 26 `ps -E` and
   `ps eww` showed no other process's (measured on 2026-10-18), and on Linux `/proc/<pid>/environ` is readable by
   the same user (procfs's rule, not run here). gbrain's and Honcho's keys go into `~/.claude.json` as their MCP

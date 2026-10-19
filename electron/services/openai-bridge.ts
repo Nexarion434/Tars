@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { Readable } from 'stream';
 import { OPENAI_BRIDGE_PORT } from '../constants';
-import { getApiToken } from './api-server';
+import { bridgeAuthorized } from './bridge-token';
 import { readAppSettingsFromDisk, isValidOpenAIBaseUrl } from '../providers/cli-provider';
 import type { AppSettings } from '../types';
 
@@ -47,14 +47,15 @@ import type { AppSettings } from '../types';
  * either breaking that invariant with a fifth exemption, or the bridge would
  * 401 those requests before its own handler ever ran. So this runs as a
  * second, separate, loopback-only http.Server, and authenticates the same way
- * in spirit, for every upstream alike: it requires Tars's own local API token
- * (the same secret api-server.ts already generates and guards at 0600), as a
- * Bearer or as `x-api-key`. Each provider that routes through here
+ * in spirit, for every upstream alike: it requires a token of its own
+ * (services/bridge-token.ts, 0600 in ~/.tars-private), as a Bearer or as
+ * `x-api-key`. Until 2.0.4 it took Tars's local API token, so every agent on
+ * the bridge held the token that opens Tars's API (the Audit's L3 on #466). Each provider that routes through here
  * (venice-provider.ts, custom-openai-provider.ts) hands it to the PTY as
  * ANTHROPIC_AUTH_TOKEN, the Bearer, since an API key in its environment is
  * asked about at launch (keyProviderEnv); a scheduled script exports it as
  * ANTHROPIC_API_KEY, which `claude -p` uses unasked. The real vendor key never leaves
- * this process: it is read from app-settings.json per request and attached
+ * this process: it is read from the settings' secrets per request and attached
  * only to the outbound call to that vendor, never handed to the claude
  * binary.
  *
@@ -513,10 +514,8 @@ export function startOpenAIBridgeServer(): void {
   if (bridgeServer) return;
 
   bridgeServer = http.createServer(async (req, res) => {
-    const expected = getApiToken();
-    const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
-    if (req.headers['x-api-key'] !== expected && bearer !== expected) {
-      sendError(res, 401, 'authentication_error', "Not Tars's token, as a Bearer or as x-api-key");
+    if (!bridgeAuthorized(req.headers)) {
+      sendError(res, 401, 'authentication_error', "Not the bridge's token, as a Bearer or as x-api-key");
       return;
     }
 

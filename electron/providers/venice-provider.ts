@@ -13,6 +13,7 @@ import type {
 import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv, scheduledKeyLines } from './cli-provider';
 import { DATA_DIR, OPENAI_BRIDGE_PORT } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
+import { getBridgeToken } from '../services/bridge-token';
 
 // claude appends /v1/messages; "venice" is this vendor's path segment on
 // Tars's shared OpenAI-compatible bridge (see services/openai-bridge.ts for
@@ -26,8 +27,8 @@ const VENICE_BRIDGE_BASE_URL = `http://127.0.0.1:${OPENAI_BRIDGE_PORT}/venice`;
  * other alt provider here, the claude binary cannot reach it directly. It is
  * routed through Tars's own local translation bridge instead - see
  * services/openai-bridge.ts for the wire-format translation and, importantly,
- * for why ANTHROPIC_API_KEY below is Tars's own local API token and NOT the
- * user's Venice key.
+ * for why the key below is the bridge's own token (services/bridge-token.ts)
+ * and NOT the user's Venice key.
  */
 export class VeniceProvider implements CLIProvider {
   readonly id = 'venice' as const;
@@ -127,22 +128,11 @@ export class VeniceProvider implements CLIProvider {
     if (appSettings?.veniceApiKey) {
       // NOT the Venice key. The claude binary sends this as a Bearer
       // (keyProviderEnv) to whatever ANTHROPIC_BASE_URL points at; here that's
-      // Tars's own bridge on 127.0.0.1, which authenticates the request with Tars's local API
-      // token (the same one api-server.ts already guards /api/* with) and
-      // only then reads the real Venice key from app-settings.json itself to
+      // Tars's own bridge on 127.0.0.1, which authenticates the request with
+      // a token of its own, which opens nothing else (services/bridge-token.ts),
+      // and only then reads the real Venice key from the settings' secrets to
       // attach to the outbound call. See services/openai-bridge.ts.
-      //
-      // Lazy require, not a top-level import: providers/index.ts pulls this
-      // file in, and api-server.ts's route registration pulls in agent-routes.ts,
-      // which imports providers/index.ts back - the same cycle-avoidance
-      // agent-manager.ts already uses for tasmania-client.
-      // Required here rather than imported: api-server pulls in api-routes,
-      // which pulls in this provider registry, so a top-level import is a
-      // cycle. getPtyEnvVars is synchronous, so await import() is not an
-      // option either.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getApiToken } = require('../services/api-server') as typeof import('../services/api-server');
-      Object.assign(vars, keyProviderEnv(VENICE_BRIDGE_BASE_URL, getApiToken()));
+      Object.assign(vars, keyProviderEnv(VENICE_BRIDGE_BASE_URL, getBridgeToken()));
     }
 
     return vars;
@@ -220,7 +210,7 @@ echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
 unset CLAUDECODE
 export CLAUDE_PROVIDER="venice"
 export ANTHROPIC_BASE_URL="${VENICE_BRIDGE_BASE_URL}"
-${scheduledKeyLines('api-token', params.logPath)}
+${scheduledKeyLines('bridge-token', params.logPath)}
 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
 echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
 `;

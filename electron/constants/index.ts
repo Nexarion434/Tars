@@ -77,6 +77,8 @@ export const VAULT_DB_FILE = path.join(DATA_DIR, 'vault.db');
 /** The shared token of the local API: private since 2.0.4 (services/settings-secrets.ts), out of the
  *  directory every agent is handed. No agent presents it: each has its own (core/agent-tokens.ts). */
 export const API_TOKEN_FILE = path.join(PRIVATE_DIR, 'api-token');
+/** What Tars's OpenAI bridge, and nothing else, takes (services/bridge-token.ts). */
+export const BRIDGE_TOKEN_FILE = path.join(PRIVATE_DIR, 'bridge-token');
 /** The agent bus journal: rooms, threads, messages and deliveries. One file,
  *  written the way agents.json is (temp file then rename), no new service. */
 export const BUS_FILE = path.join(DATA_DIR, 'bus.json');
