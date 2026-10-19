@@ -366574,7 +366574,7 @@
           "id": "l5sUG",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Vault · project folders: nothing yet, an empty folder, a save refused, a file changed meanwhile, not text, too long",
+          "content": "Vault · project folders: nothing yet, an empty folder, a save refused, a file changed meanwhile, not text, too long, notes moved, links",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -366587,7 +366587,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "With no project folder and no document, each list says where things will come from. A save that fails says why, where it happened, and keeps what you typed. A file an agent changed while you edit it is never overwritten without asking. A file that is not text, or too long to edit, says so.",
+          "content": "With no project folder and no document, each list says where things will come from. A save that fails says why, where it happened, and keeps what you typed. A file an agent changed while you edit it is never overwritten without asking. A file that is not text, or too long to edit, says so. A project's notes, moved into reports/notes in 2.0.4, are said under its reports and opened from their folder. In a report, a link to a file of its folder opens it here and a link to a page opens the browser; a picture from the web stays a link, and nothing is fetched.",
           "lineHeight": 1.5,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -367856,6 +367856,582 @@
               ]
             }
           ]
+        },
+        {
+          "type": "frame",
+          "id": "ZUQ7b",
+          "name": "states 3",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "V6plIu",
+              "name": "state notes moved: since 2.0.4 a project's notes are in reports/notes, said under its reports and opened from their folder",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "y4a73U",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 440,
+                  "content": "notes moved: since 2.0.4 a project's notes are in reports/notes, said under its reports and opened from their folder",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "OyQ1c",
+                  "name": "Files",
+                  "width": "fill_container",
+                  "height": 250,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Z0DIAm",
+                      "name": "head",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        0,
+                        2,
+                        0
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bb4fx",
+                          "name": "caption",
+                          "fill": "$text-muted",
+                          "content": "TARS · REPORTS · 3 FILES",
+                          "lineHeight": 1.6,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal",
+                          "letterSpacing": 0.6
+                        },
+                        {
+                          "type": "text",
+                          "id": "x1Jfvp",
+                          "name": "sort",
+                          "fill": "$text-muted",
+                          "content": "newest first",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rfrnD",
+                      "name": "file usage-brain-followups-1810.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface-raised",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "hlplC",
+                          "name": "icon",
+                          "fill": "$accent",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "QY1vP",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "usage-brain-followups-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "J0saQf",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "NFe6F",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "today 14:35",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ORurE",
+                      "name": "file brain-fit-controls-1810.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "ZdMLA",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "b4vBl",
+                          "name": "n",
+                          "fill": "$text-secondary",
+                          "content": "brain-fit-controls-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "IyKCK",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "l5byB",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "today 05:41",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "x7K78",
+                      "name": "file release-2-0-3.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "FJ1jo",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "GIlX6",
+                          "name": "n",
+                          "fill": "$text-secondary",
+                          "content": "release-2-0-3.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "iBBw6",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "bZYoZ",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "17/10",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "eNbHh",
+                      "name": "spacer",
+                      "width": "fill_container",
+                      "height": "fill_container"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "SoYkL",
+                      "name": "notes",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "dSbpw",
+                          "name": "square",
+                          "fill": "$status-idle",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "aS5zA",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 240,
+                          "content": "Its notes are in reports/notes since 2.0.4, and are not listed here.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Chq4z",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "VvYXe",
+                          "name": "b show notes",
+                          "height": 26,
+                          "fill": "$surface",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "gap": 6,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "i3a5S",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show notes",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "CGHV6",
+              "name": "state a link in a report: a file of this folder opens here, a page opens the browser, a picture from the web stays a link and is never fetched",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "gcDOf",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 440,
+                  "content": "a link in a report: a file of this folder opens here, a page opens the browser, a picture from the web stays a link and is never fetched",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "ZlAaj",
+                  "name": "File panel",
+                  "width": "fill_container",
+                  "height": 250,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "B2L6Hd",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fUs6u",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "usage-brain-followups-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "cNwUc",
+                          "name": "chip md",
+                          "height": 20,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "gap": 5,
+                          "padding": [
+                            0,
+                            6
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "RuBYI",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "md",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "RVY1S",
+                      "name": "h",
+                      "fill": "$text-primary",
+                      "content": "Brain",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "M3w82",
+                      "name": "p1",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "BYxIa",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "content": "The fitted graph is described in",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "NsOza",
+                          "name": "link here",
+                          "fill": "$accent",
+                          "content": "brain-fit-controls-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "g7C89",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "(opens here).",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "p6ABac",
+                      "name": "p2",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "QTIYm",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "content": "Merged in",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "MCfX6",
+                          "name": "link page",
+                          "fill": "$accent",
+                          "content": "github.com/cooper-labs-tech/Tars/pull/456",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "P9LmcQ",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "(your browser).",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "KTkaH",
+                      "name": "picture",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 8,
+                      "padding": [
+                        7,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "kckwu",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 12,
+                          "height": 10
+                        },
+                        {
+                          "type": "text",
+                          "id": "JCPrM",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "picture from the web, not loaded:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "cKfgW",
+                          "name": "link page",
+                          "fill": "$accent",
+                          "content": "example.com/graph.png",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "WzI1d",
+                      "name": "note",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 440,
+                      "content": "A link to a file outside this folder, or to a folder, is shown as text.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "W6IrAH",
+              "name": "spare",
+              "width": "fill_container",
+              "height": 1
+            }
+          ]
         }
       ]
     },
@@ -367879,7 +368455,7 @@
           "id": "O4vk6",
           "name": "t",
           "fill": "$text-primary",
-          "content": "Vault · project folders: nothing yet, an empty folder, a save refused, a file changed meanwhile, not text, too long",
+          "content": "Vault · project folders: nothing yet, an empty folder, a save refused, a file changed meanwhile, not text, too long, notes moved, links",
           "lineHeight": 1.4,
           "fontFamily": "$font-display",
           "fontSize": 20,
@@ -367892,7 +368468,7 @@
           "fill": "$text-secondary",
           "textGrowth": "fixed-width",
           "width": 1100,
-          "content": "With no project folder and no document, each list says where things will come from. A save that fails says why, where it happened, and keeps what you typed. A file an agent changed while you edit it is never overwritten without asking. A file that is not text, or too long to edit, says so.",
+          "content": "With no project folder and no document, each list says where things will come from. A save that fails says why, where it happened, and keeps what you typed. A file an agent changed while you edit it is never overwritten without asking. A file that is not text, or too long to edit, says so. A project's notes, moved into reports/notes in 2.0.4, are said under its reports and opened from their folder. In a report, a link to a file of its folder opens it here and a link to a page opens the browser; a picture from the web stays a link, and nothing is fetched.",
           "lineHeight": 1.5,
           "fontFamily": "$font-ui",
           "fontSize": 12,
@@ -369159,6 +369735,582 @@
                   ]
                 }
               ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "XsLRv",
+          "name": "states 3",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "qZhag",
+              "name": "state notes moved: since 2.0.4 a project's notes are in reports/notes, said under its reports and opened from their folder",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "fobr8",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 440,
+                  "content": "notes moved: since 2.0.4 a project's notes are in reports/notes, said under its reports and opened from their folder",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "nGQqU",
+                  "name": "Files",
+                  "width": "fill_container",
+                  "height": 250,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 6,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "pZbRy",
+                      "name": "head",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        0,
+                        2,
+                        0
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "RYdBy",
+                          "name": "caption",
+                          "fill": "$text-muted",
+                          "content": "TARS · REPORTS · 3 FILES",
+                          "lineHeight": 1.6,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10,
+                          "fontWeight": "normal",
+                          "letterSpacing": 0.6
+                        },
+                        {
+                          "type": "text",
+                          "id": "hqIJT",
+                          "name": "sort",
+                          "fill": "$text-muted",
+                          "content": "newest first",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 10.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "oKvZ8",
+                      "name": "file usage-brain-followups-1810.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface-raised",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "x3d6D",
+                          "name": "icon",
+                          "fill": "$accent",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "n6kEOG",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "usage-brain-followups-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ZlRW7",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "XLlCC",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "today 14:35",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "TTvDx",
+                      "name": "file brain-fit-controls-1810.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "NRFFh",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "md6iJ",
+                          "name": "n",
+                          "fill": "$text-secondary",
+                          "content": "brain-fit-controls-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "j6W0k",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "Iiwfd",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "today 05:41",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Er4R5",
+                      "name": "file release-2-0-3.md",
+                      "width": "fill_container",
+                      "height": 32,
+                      "fill": "$surface",
+                      "gap": 10,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "eUOkL",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 10,
+                          "height": 12
+                        },
+                        {
+                          "type": "text",
+                          "id": "O44lU",
+                          "name": "n",
+                          "fill": "$text-secondary",
+                          "content": "release-2-0-3.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "EEdto",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "wtwUM",
+                          "name": "time",
+                          "fill": "$text-muted",
+                          "content": "17/10",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xzzFW",
+                      "name": "spacer",
+                      "width": "fill_container",
+                      "height": "fill_container"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "GBTqa",
+                      "name": "notes",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 10,
+                      "padding": [
+                        8,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "fewEp",
+                          "name": "square",
+                          "fill": "$status-idle",
+                          "width": 6,
+                          "height": 6
+                        },
+                        {
+                          "type": "text",
+                          "id": "Uf7Co",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 240,
+                          "content": "Its notes are in reports/notes since 2.0.4, and are not listed here.",
+                          "lineHeight": 1.45,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Vq2FM",
+                          "name": "spacer",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "U6ONH2",
+                          "name": "b show notes",
+                          "height": 26,
+                          "fill": "$surface",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "gap": 6,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "BtSy5",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show notes",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 11.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "v23NI",
+              "name": "state a link in a report: a file of this folder opens here, a page opens the browser, a picture from the web stays a link and is never fetched",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "WhjKt",
+                  "name": "caption",
+                  "fill": "$text-muted",
+                  "textGrowth": "fixed-width",
+                  "width": 440,
+                  "content": "a link in a report: a file of this folder opens here, a page opens the browser, a picture from the web stays a link and is never fetched",
+                  "lineHeight": 1.45,
+                  "fontFamily": "$font-mono",
+                  "fontSize": 10.5,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "PC3PE",
+                  "name": "File panel",
+                  "width": "fill_container",
+                  "height": 250,
+                  "fill": "$surface",
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "tuWRA",
+                      "name": "top",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uToEe",
+                          "name": "name",
+                          "fill": "$text-primary",
+                          "content": "usage-brain-followups-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "lSJRi",
+                          "name": "chip md",
+                          "height": 20,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "gap": 5,
+                          "padding": [
+                            0,
+                            6
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "P8wLB",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "md",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 10,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "eG5h1",
+                      "name": "h",
+                      "fill": "$text-primary",
+                      "content": "Brain",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "rYv3n",
+                      "name": "p1",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "jZZe9",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "content": "The fitted graph is described in",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "a4zcQ",
+                          "name": "link here",
+                          "fill": "$accent",
+                          "content": "brain-fit-controls-1810.md",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "eZui7",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "(opens here).",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "GYGdA",
+                      "name": "p2",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "S6MgBX",
+                          "name": "t",
+                          "fill": "$text-secondary",
+                          "content": "Merged in",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "yr1h7",
+                          "name": "link page",
+                          "fill": "$accent",
+                          "content": "github.com/cooper-labs-tech/Tars/pull/456",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "t3gDnZ",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "(your browser).",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "R41HX",
+                      "name": "picture",
+                      "width": "fill_container",
+                      "fill": "$surface-raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "gap": 8,
+                      "padding": [
+                        7,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "jZ56b",
+                          "name": "icon",
+                          "fill": "$text-muted",
+                          "width": 12,
+                          "height": 10
+                        },
+                        {
+                          "type": "text",
+                          "id": "AOBjT",
+                          "name": "t",
+                          "fill": "$text-muted",
+                          "content": "picture from the web, not loaded:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Azvzw",
+                          "name": "link page",
+                          "fill": "$accent",
+                          "content": "example.com/graph.png",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-mono",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "HHM01",
+                      "name": "note",
+                      "fill": "$text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": 440,
+                      "content": "A link to a file outside this folder, or to a folder, is shown as text.",
+                      "lineHeight": 1.45,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 11.5,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "gyDMq",
+              "name": "spare",
+              "width": "fill_container",
+              "height": 1
             }
           ]
         }
