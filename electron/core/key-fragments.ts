@@ -21,8 +21,12 @@ import { accountsRoot, readAccountsSettings } from '../services/claude-accounts/
 /** What a masked fragment becomes: the rest of the output, and the screen around it, stay as they were. */
 export const REMOVED = '[removed by Tars]';
 
-/** The question's own masking, then up to the 20 characters it shows of the key. */
-const MASKED_KEY = /sk-ant-\.\.\.([A-Za-z0-9_-]{1,20})/g;
+/**
+ * The question's own masking, then up to the 20 characters it shows of the key, whatever they are: Zhipu's keys are
+ * `id.secret`, and a class of letters and dashes stopped at the dot, leaving the 16 characters of a rotated key's
+ * secret half (the QA's L1 on #458). Up to the next space or escape, which the question prints after it.
+ */
+const MASKED_KEY = /sk-ant-\.\.\.([^\s\x1b]{1,20})/g;
 
 /**
  * The secrets a key provider of Tars's hands Claude Code (each provider's getPtyEnvVars), and Tars's own token, which
@@ -136,10 +140,39 @@ export function claudeConfigFiles(home: string = os.homedir()): string[] {
  * writes there: a Claude Code may be writing the same file, which is never written in place, nor at all when nothing
  * goes, and keeps its mode. Returns how many files lost entries.
  */
+/** The pid in a `.claude.json.tmp.<pid>.<hex>` Claude Code left, or null for any other file. */
+const leftoverPid = (file: string): number | null => {
+  const m = /^\.claude\.json\.tmp\.(\d+)\.[0-9a-f]+$/.exec(path.basename(file));
+  return m ? Number(m[1]) : null;
+};
+
+/** Whether a process runs with this pid: one Tars may not signal runs too. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 export function dropRejectedTails(keys: string[], files: string[] = claudeConfigFiles()): number {
   let cleaned = 0;
   for (const file of files) {
     if (!fs.existsSync(file)) continue;
+    // A write Claude Code never finished, whose process is gone: it will never be renamed into place, and one cut
+    // short does not parse, so the tail in it could not be taken out. Removed, as the run token folders of a Tars no
+    // longer running are (the QA's L2 on #458); one a running Claude Code still writes is left to it.
+    const pid = leftoverPid(file);
+    if (pid !== null && !running(pid)) {
+      try {
+        fs.rmSync(file, { force: true });
+        cleaned++;
+      } catch (err) {
+        console.warn(`[key-fragments] a leftover copy of .claude.json could not be removed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      continue;
+    }
     try {
       const outcome = updateSharedJsonSync<Record<string, unknown>>(file, config => withoutRejectedTails(config, keys));
       if (outcome === 'written') cleaned++;

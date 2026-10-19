@@ -164,8 +164,9 @@ describe('the rejected keys Claude Code kept, at the same load', () => {
     fs.writeFileSync(ACCOUNT_JSON(), JSON.stringify(config([]), null, 2), { mode: 0o600 });
     const homeBackup = path.join(HOME, '.claude', 'backups', '.claude.json.backup.1792350644690');
     const accountBackup = path.join(path.dirname(ACCOUNT_JSON()), 'backups', '.claude.json.backup.1792350644614');
-    const leftover = path.join(HOME, '.claude.json.tmp.78791.84efb0c4c9ae');
-    const accountLeftover = path.join(path.dirname(ACCOUNT_JSON()), '.claude.json.tmp.87662.f6a3bbbb8772');
+    // A running Claude Code's writes (this process stands for it): cleaned in place. One whose process is gone: 10.
+    const leftover = path.join(HOME, `.claude.json.tmp.${process.pid}.84efb0c4c9ae`);
+    const accountLeftover = path.join(path.dirname(ACCOUNT_JSON()), `.claude.json.tmp.${process.pid}.f6a3bbbb8772`);
     const copies: Array<[string, string[]]> = [[homeBackup, [tail(DEEPSEEK), tail(USERS_OWN)]], [accountBackup, [tail(OPENROUTER)]],
       [leftover, [tail(DEEPSEEK)]], [accountLeftover, [tail(DEEPSEEK)]]];
     for (const [file, rejected] of copies) {
