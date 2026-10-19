@@ -511723,7 +511723,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "aWGeb",
+                              "id": "HqnSX",
                               "name": "row Incoming webhook",
                               "width": "fill_container",
                               "stroke": "$border",
@@ -511740,7 +511740,7 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "STiuL",
+                                  "id": "B9lvu5",
                                   "name": "l",
                                   "width": 560,
                                   "layout": "vertical",
@@ -511748,10 +511748,10 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "IgvZL",
+                                      "id": "tzfD9",
                                       "name": "n",
                                       "fill": "$text-primary",
-                                      "content": "Incoming webhook",
+                                      "content": "Incoming webhooks",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 12.5,
@@ -511759,13 +511759,13 @@
                                     },
                                     {
                                       "type": "text",
-                                      "id": "k5hdKu",
+                                      "id": "SO5zC",
                                       "name": "h",
                                       "fill": "$text-muted",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "Hermes posts here with the webhook's secret as a bearer token. Copy secret has Tars put it on the clipboard.",
-                                      "lineHeight": 1.45,
+                                      "content": "Each Hermes that hands Tars work has its own address, secret and projects, set in Gateways.",
+                                      "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
                                       "fontWeight": "normal"
@@ -511774,65 +511774,31 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "h2i3n",
-                                  "name": "r",
-                                  "gap": 10,
+                                  "id": "yeIv6",
+                                  "name": "g",
+                                  "gap": 6,
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "gRwOt",
-                                      "name": "field",
-                                      "width": 196,
-                                      "height": 32,
-                                      "fill": "$surface-raised",
+                                      "id": "M9vMn7",
+                                      "name": "b",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
-                                      "gap": 8,
                                       "padding": [
-                                        0,
-                                        10
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "wD8bv",
-                                          "name": "v",
-                                          "fill": "$text-primary",
-                                          "content": "http://127.0.0.1:31415/…",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-mono",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "BWSoU",
-                                      "name": "b copy secret",
-                                      "height": 26,
-                                      "fill": "$surface",
-                                      "stroke": "$border",
-                                      "strokeWidth": 1,
-                                      "gap": 6,
-                                      "padding": [
-                                        0,
+                                        6,
                                         12
                                       ],
-                                      "justifyContent": "center",
-                                      "alignItems": "center",
                                       "children": [
                                         {
                                           "type": "text",
-                                          "id": "KAm2K",
+                                          "id": "gPLFY",
                                           "name": "l",
-                                          "fill": "$text-secondary",
-                                          "content": "copy secret",
+                                          "fill": "$text-muted",
+                                          "content": "open gateways",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
-                                          "fontSize": 11.5,
+                                          "fontSize": 11,
                                           "fontWeight": "normal"
                                         }
                                       ]
@@ -513497,7 +513463,7 @@
                             },
                             {
                               "type": "frame",
-                              "id": "rhRR5",
+                              "id": "Yd5Qx",
                               "name": "row Incoming webhook",
                               "width": "fill_container",
                               "stroke": "$border",
@@ -513514,7 +513480,7 @@
                               "children": [
                                 {
                                   "type": "frame",
-                                  "id": "kcPuo",
+                                  "id": "nSGuJ",
                                   "name": "l",
                                   "width": 560,
                                   "layout": "vertical",
@@ -513522,10 +513488,10 @@
                                   "children": [
                                     {
                                       "type": "text",
-                                      "id": "I7V6h7",
+                                      "id": "wDfid",
                                       "name": "n",
                                       "fill": "$text-primary",
-                                      "content": "Incoming webhook",
+                                      "content": "Incoming webhooks",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 12.5,
@@ -513533,13 +513499,13 @@
                                     },
                                     {
                                       "type": "text",
-                                      "id": "TA5Ny",
+                                      "id": "fxJrG",
                                       "name": "h",
                                       "fill": "$text-muted",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "Hermes posts here with the webhook's secret as a bearer token. Copy secret has Tars put it on the clipboard.",
-                                      "lineHeight": 1.45,
+                                      "content": "Each Hermes that hands Tars work has its own address, secret and projects, set in Gateways.",
+                                      "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
                                       "fontWeight": "normal"
@@ -513548,65 +513514,31 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "pOAxc",
-                                  "name": "r",
-                                  "gap": 10,
+                                  "id": "v3fWc",
+                                  "name": "g",
+                                  "gap": 6,
                                   "alignItems": "center",
                                   "children": [
                                     {
                                       "type": "frame",
-                                      "id": "y4v7aZ",
-                                      "name": "field",
-                                      "width": 196,
-                                      "height": 32,
-                                      "fill": "$surface-raised",
+                                      "id": "iBf0e",
+                                      "name": "b",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
-                                      "gap": 8,
                                       "padding": [
-                                        0,
-                                        10
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "maPXa",
-                                          "name": "v",
-                                          "fill": "$text-primary",
-                                          "content": "http://127.0.0.1:31415/…",
-                                          "lineHeight": 1.4,
-                                          "fontFamily": "$font-mono",
-                                          "fontSize": 11.5,
-                                          "fontWeight": "normal"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "Kzwfv",
-                                      "name": "b copy secret",
-                                      "height": 26,
-                                      "fill": "$surface",
-                                      "stroke": "$border",
-                                      "strokeWidth": 1,
-                                      "gap": 6,
-                                      "padding": [
-                                        0,
+                                        6,
                                         12
                                       ],
-                                      "justifyContent": "center",
-                                      "alignItems": "center",
                                       "children": [
                                         {
                                           "type": "text",
-                                          "id": "ZYhpo",
+                                          "id": "yA81R",
                                           "name": "l",
-                                          "fill": "$text-secondary",
-                                          "content": "copy secret",
+                                          "fill": "$text-muted",
+                                          "content": "open gateways",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-mono",
-                                          "fontSize": 11.5,
+                                          "fontSize": 11,
                                           "fontWeight": "normal"
                                         }
                                       ]
@@ -515482,7 +515414,7 @@
             {
               "type": "frame",
               "id": "OyYs5",
-              "name": "state Hermes's webhook secret: copy secret has Tars copy it; copied",
+              "name": "state Hermes's webhook secret: Connection's row points to Gateways, where copy secret on Hermes's block has Tars copy it (Gateways · states)",
               "width": "fill_container",
               "layout": "vertical",
               "gap": 8,
@@ -515494,7 +515426,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Hermes's webhook secret: copy secret has Tars copy it; copied",
+                  "content": "Hermes's webhook secret: Connection's row points to Gateways, where copy secret on Hermes's block has Tars copy it (Gateways · states)",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -515518,10 +515450,13 @@
                   "children": [
                     {
                       "type": "frame",
-                      "id": "FTiI1",
+                      "id": "Y3Phe3",
                       "name": "row Incoming webhook",
                       "width": "fill_container",
                       "stroke": "$border",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
                       "gap": 16,
                       "padding": [
                         11,
@@ -515532,18 +515467,18 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "Wn6Yo",
+                          "id": "S6p4Bn",
                           "name": "l",
-                          "width": 300,
+                          "width": 560,
                           "layout": "vertical",
                           "gap": 2,
                           "children": [
                             {
                               "type": "text",
-                              "id": "qYnOL",
+                              "id": "VJiYI",
                               "name": "n",
                               "fill": "$text-primary",
-                              "content": "Incoming webhook",
+                              "content": "Incoming webhooks",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 12.5,
@@ -515551,13 +515486,13 @@
                             },
                             {
                               "type": "text",
-                              "id": "Q2MFr",
+                              "id": "T6NEtN",
                               "name": "h",
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
-                              "width": 300,
-                              "content": "Hermes posts here with the webhook's secret as a bearer token.",
-                              "lineHeight": 1.45,
+                              "width": 560,
+                              "content": "Each Hermes that hands Tars work has its own address, secret and projects, set in Gateways.",
+                              "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 11,
                               "fontWeight": "normal"
@@ -515566,65 +515501,31 @@
                         },
                         {
                           "type": "frame",
-                          "id": "tDM6x",
-                          "name": "r",
-                          "gap": 10,
+                          "id": "fmsax",
+                          "name": "g",
+                          "gap": 6,
                           "alignItems": "center",
                           "children": [
                             {
                               "type": "frame",
-                              "id": "WerGs",
-                              "name": "field",
-                              "width": 196,
-                              "height": 32,
-                              "fill": "$surface-raised",
+                              "id": "ENh4j",
+                              "name": "b",
                               "stroke": "$border",
                               "strokeWidth": 1,
-                              "gap": 8,
                               "padding": [
-                                0,
-                                10
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "JHCKn",
-                                  "name": "v",
-                                  "fill": "$text-primary",
-                                  "content": "http://127.0.0.1:31415/…",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "cVDWv",
-                              "name": "b copied",
-                              "height": 26,
-                              "fill": "$surface",
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "gap": 6,
-                              "padding": [
-                                0,
+                                6,
                                 12
                               ],
-                              "justifyContent": "center",
-                              "alignItems": "center",
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "zccDP",
+                                  "id": "Xz7Ox",
                                   "name": "l",
-                                  "fill": "$text-secondary",
-                                  "content": "copied",
+                                  "fill": "$text-muted",
+                                  "content": "open gateways",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
+                                  "fontSize": 11,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -519671,7 +519572,7 @@
             {
               "type": "frame",
               "id": "d0U1og",
-              "name": "state Hermes's webhook secret: copy secret has Tars copy it; copied",
+              "name": "state Hermes's webhook secret: Connection's row points to Gateways, where copy secret on Hermes's block has Tars copy it (Gateways · states)",
               "width": "fill_container",
               "layout": "vertical",
               "gap": 8,
@@ -519683,7 +519584,7 @@
                   "fill": "$text-muted",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Hermes's webhook secret: copy secret has Tars copy it; copied",
+                  "content": "Hermes's webhook secret: Connection's row points to Gateways, where copy secret on Hermes's block has Tars copy it (Gateways · states)",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-mono",
                   "fontSize": 10.5,
@@ -519707,10 +519608,13 @@
                   "children": [
                     {
                       "type": "frame",
-                      "id": "mjbdh",
+                      "id": "AQDYO",
                       "name": "row Incoming webhook",
                       "width": "fill_container",
                       "stroke": "$border",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
                       "gap": 16,
                       "padding": [
                         11,
@@ -519721,18 +519625,18 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "HmNVW",
+                          "id": "L2yx1h",
                           "name": "l",
-                          "width": 300,
+                          "width": 560,
                           "layout": "vertical",
                           "gap": 2,
                           "children": [
                             {
                               "type": "text",
-                              "id": "qQl01",
+                              "id": "rzp7Q",
                               "name": "n",
                               "fill": "$text-primary",
-                              "content": "Incoming webhook",
+                              "content": "Incoming webhooks",
                               "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 12.5,
@@ -519740,13 +519644,13 @@
                             },
                             {
                               "type": "text",
-                              "id": "iAcPo",
+                              "id": "fcdXw",
                               "name": "h",
                               "fill": "$text-muted",
                               "textGrowth": "fixed-width",
-                              "width": 300,
-                              "content": "Hermes posts here with the webhook's secret as a bearer token.",
-                              "lineHeight": 1.45,
+                              "width": 560,
+                              "content": "Each Hermes that hands Tars work has its own address, secret and projects, set in Gateways.",
+                              "lineHeight": 1.4,
                               "fontFamily": "$font-ui",
                               "fontSize": 11,
                               "fontWeight": "normal"
@@ -519755,65 +519659,31 @@
                         },
                         {
                           "type": "frame",
-                          "id": "ymuzL",
-                          "name": "r",
-                          "gap": 10,
+                          "id": "ZPfCT",
+                          "name": "g",
+                          "gap": 6,
                           "alignItems": "center",
                           "children": [
                             {
                               "type": "frame",
-                              "id": "P54bHW",
-                              "name": "field",
-                              "width": 196,
-                              "height": 32,
-                              "fill": "$surface-raised",
+                              "id": "dO4ja",
+                              "name": "b",
                               "stroke": "$border",
                               "strokeWidth": 1,
-                              "gap": 8,
                               "padding": [
-                                0,
-                                10
-                              ],
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "l8BnZB",
-                                  "name": "v",
-                                  "fill": "$text-primary",
-                                  "content": "http://127.0.0.1:31415/…",
-                                  "lineHeight": 1.4,
-                                  "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "zwGE3",
-                              "name": "b copied",
-                              "height": 26,
-                              "fill": "$surface",
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "gap": 6,
-                              "padding": [
-                                0,
+                                6,
                                 12
                               ],
-                              "justifyContent": "center",
-                              "alignItems": "center",
                               "children": [
                                 {
                                   "type": "text",
-                                  "id": "Knj9g",
+                                  "id": "uFP94",
                                   "name": "l",
-                                  "fill": "$text-secondary",
-                                  "content": "copied",
+                                  "fill": "$text-muted",
+                                  "content": "open gateways",
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
-                                  "fontSize": 11.5,
+                                  "fontSize": 11,
                                   "fontWeight": "normal"
                                 }
                               ]
