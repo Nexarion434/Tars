@@ -68,6 +68,29 @@ export function stopTaskWatch(): void {
   setLiveTaskLedger(null);
 }
 
+/** When each agent's turn was last said interrupted by its CLI's own log. */
+const interruptedAt = new Map<string, number>();
+
+/**
+ * A turn its CLI's own log says was interrupted, Esc in its terminal (codex's
+ * turn_aborted, 2.0.4): no answer, and nothing else ends it. The agent's task
+ * stops there, before the rest the CLI comes to would end it as completed, and
+ * the delegation following it reads it interrupted (agent-routes.ts,
+ * runInTerminal). Only from the agent's current session: an older one's is
+ * not its task's.
+ */
+export function turnInterrupted(agentId: string, sessionId: string, at = Date.now()): void {
+  const agent = agents.get(agentId);
+  if (!agent || agent.currentSessionId !== sessionId) return;
+  interruptedAt.set(agentId, at);
+  liveTaskLedger()?.stateChanged({ id: agentId, status: 'stopped' });
+}
+
+/** When the agent's turn was last said interrupted by its CLI's own log, or undefined. */
+export function turnInterruptedAt(agentId: string): number | undefined {
+  return interruptedAt.get(agentId);
+}
+
 /** The tasks the Usage page asks for, priced: usage:tasks. */
 export async function tasksReport(query: TaskQuery = {}, now = Date.now()): Promise<TaskReport & { agentNames: Record<string, string> }> {
   const all: TaskRecord[] = liveTaskLedger()?.tasks() ?? [];

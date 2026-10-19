@@ -18,7 +18,7 @@ import { holdsMessages } from './one-task';
 import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
-import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty, agentShell, codexLaunching } from './agent-pty';
 import { killPty } from './pty-kill';
 import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
@@ -34,6 +34,7 @@ import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
 import { wakeFromSleep } from './agent-asleep';
+import { trustsTooMuch } from '../utils/trust-too-much';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -161,34 +162,6 @@ export function ensureProjectTrusted(projectPath: string): void {
   } catch (err) {
     console.warn(`ensureProjectTrusted: failed to update ${claudeJsonPath}:`, err);
   }
-}
-
-/**
- * Whether marking this directory trusted would trust far more than a project.
- *
- * Claude Code reads `hasTrustDialogAccepted` for its working directory and
- * every directory above it, so the flag on $HOME trusts everything the account
- * owns and the flag on `/` trusts the machine. Refused: the root, the home
- * directory, anything above it, and a relative path, which names whatever the
- * app's working directory happens to be. Compared by the path given and by the
- * path the filesystem resolves, which follows a link and, on macOS, gives the
- * case the disk stores, so neither a link nor another spelling gets through.
- * Claude Code then shows its own dialog, which is the point of it.
- */
-function trustsTooMuch(projectPath: string): boolean {
-  if (!path.isAbsolute(projectPath)) return true;
-  const spellings = (p: string) => {
-    const resolved = path.resolve(p);
-    try {
-      return [resolved, fs.realpathSync.native(resolved)];
-    } catch {
-      return [resolved];
-    }
-  };
-  const homes = spellings(os.homedir());
-  return spellings(projectPath).some(dir =>
-    dir === path.parse(dir).root
-    || homes.some(home => home === dir || home.startsWith(dir + path.sep)));
 }
 
 export let agentsLoaded = false;
@@ -1178,6 +1151,8 @@ export async function launchIntoTerminal(
   oweToFirstMessage(ptyProcess, '');
   if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
   if (opts.ready) await opts.ready(ptyProcess);
+  // codex typed into a shell already there, one reused too: noted as it starts (core/agent-pty.ts).
+  if (getProvider(agent.provider).binaryName === 'codex') codexLaunching(agent.id, start.cwd);
   if (opts.delayMs) {
     await new Promise<void>((resolve) => {
       setTimeout(() => {
