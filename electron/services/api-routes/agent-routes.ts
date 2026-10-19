@@ -294,6 +294,14 @@ async function spawnAgentSessionInSlot(
   const guideBlock = guide ? `\n\n${guide}` : '';
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
+  // The conversation to continue: the last session, once per run or after a
+  // sleep. The agent's own session is a tombstone once this launch ends its
+  // terminal (below): continued under its id, every post of it would be
+  // refused, so it continues under a new one, as a restart does
+  // (agent-restart.ts), and the ended CLI's late posts stay refused.
+  const resumeSessionId = consumeResumeSessionId(agent) ?? undefined;
+  const forkSession = !!resumeSessionId && resumeSessionId === agent.currentSessionId;
+
   // Build the CLI command through the provider so non-claude CLIs (codex,
   // gemini, grok, opencode, pi) get their own syntax instead of claude flags,
   // once what its line needs is read from the CLI (codex's flags), off the
@@ -302,7 +310,8 @@ async function spawnAgentSessionInSlot(
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
-      resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
+      resumeSessionId,
+      forkSession,
       binaryPath,
       prompt: taskPrompt,
       model: resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined,
@@ -395,8 +404,9 @@ async function spawnAgentSessionInSlot(
   if (agent.currentSessionId) {
     agent.lastKilledSessionId = agent.currentSessionId;
   }
-  // Whatever it resumes, this session is not a fork waiting on its first turn.
-  agent.forkedFromSessionId = undefined;
+  // A fork writes no transcript before its first turn: until it does, the
+  // conversation to resume is still the one it continues (resume-session.ts).
+  agent.forkedFromSessionId = forkSession ? resumeSessionId : undefined;
 
   // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd.
   ensureProjectTrusted(rawWorkingDir);

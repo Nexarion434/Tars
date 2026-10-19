@@ -49,6 +49,7 @@ export const CHANGELOG: Release[] = [
       'A codex agent\'s Tars tools know which agent they run for: its messages to other agents arrive as from that agent, where codex left its Tars tools without the agent\'s identity and send_message was refused.',
       'Starting a codex agent no longer freezes the window while codex says which options it has, which took up to ten seconds on a busy machine: Tars asks codex beside the window, once for each codex installed, and an agent in auto mode still starts with codex\'s automatic review.',
       'A codex agent that codex asks to sign in, because your login is in the CODEX_HOME your shell sets while Tars starts codex on its own folder, now says so in its status and names both folders, where it read as working and Tars saw nothing of it.',
+      'An agent put to sleep, then stopped, then started again is seen by Tars again. Its session was refused as the one its sleep had ended, so its card never showed it working and a task given to it never began, though its terminal answered. Started from the window, by a task or by a restart, it now picks up the conversation it slept in and takes its tasks one after the other.',
     ],
   },
   {
