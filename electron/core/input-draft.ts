@@ -51,12 +51,6 @@ export interface Draft {
    */
   state: 'known' | 'pending' | 'unknown';
   /**
-   * The field as it was before a lone Esc that made it `unknown`, and nothing
-   * typed since: what it holds again once that Esc is known to have cut a
-   * running turn, which leaves the field alone (escCutTheTurn).
-   */
-  beforeEsc?: { text: string; cursor: number };
-  /**
    * Known empty to the model, but the CLI may have put back, after a cut turn,
    * the message Tars typed to open it: at most this many characters, which
    * Tars takes out before it types (pty-manager.ts, noteTurnCut).
@@ -239,14 +233,14 @@ function apply(d: Draft, t: Token): Draft {
   // ever and only Ctrl+C ever got out of it, so a message held behind one
   // waited through a whole submission and a whole turn of the agent.
   if (t.k === 'enter' && d.state === 'unknown') return { text: '', cursor: 0, state: 'pending' };
-  // Lost track already: whatever the key, the field before an Esc is no longer what it holds.
-  if (d.state === 'unknown') return d.beforeEsc ? { text: d.text, cursor: d.cursor, state: d.state } : d;
+  // Lost track already: whatever the key.
+  if (d.state === 'unknown') return d;
 
   switch (t.k) {
     case 'esc':
       // On an idle field it arms a clear or opens the rewind dialog; in a turn
       // it cuts the turn and leaves the field. Which, only the transcript says.
-      return { ...d, state: 'unknown', beforeEsc: { text: d.text, cursor: d.cursor } };
+      return { ...d, state: 'unknown' };
     case 'text':
       return insert(d, t.s);
     case 'paste': {
@@ -283,23 +277,6 @@ function apply(d: Draft, t: Token): Draft {
     default:
       return { ...d, state: 'unknown' };
   }
-}
-
-/**
- * The field as it was before a lone Esc, and nothing after it, once that Esc is
- * known to have cut a running turn (the transcript recorded the cut after it).
- * Measured on Qwen Code 0.25.2 (2026-10-18): Esc in a turn cuts it; nothing was
- * typed in that run, so what the field held then was not measured. Read from
- * the CLIs' code (the Audit's M2 on #461): Qwen Code moves what was queued in
- * the turn back into the field, else puts the cut prompt back into an empty
- * field unless a tool is running; Claude Code 2.1.302 puts the last prompt
- * back into an empty field. So this is only the model's side: the writer
- * decides whether the CLI may have refilled it (noteTurnCut). Anything else is
- * left as it is.
- */
-export function escCutTheTurn(d: Draft): Draft {
-  if (d.state !== 'unknown' || !d.beforeEsc) return d;
-  return { text: d.beforeEsc.text, cursor: d.beforeEsc.cursor, state: 'known' };
 }
 
 /** The draft after one chunk of what the panel sent to the terminal. */

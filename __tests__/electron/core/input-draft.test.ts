@@ -3,7 +3,6 @@ import {
   clearKeys,
   confirmSubmitted,
   emptyDraft,
-  escCutTheTurn,
   feedDraft,
   isKeystroke,
   restoreKeys,
@@ -201,32 +200,16 @@ describe('the keys that empty a field and put it back', () => {
  * field stayed unknown, and the next task Tars had for the agent waited behind
  * it until somebody pressed Enter or Ctrl+C.
  *
+ * The cut is read by the terminal's writer since F9 (pty-manager.ts,
+ * noteTurnCut, from what Tars left in the field and what was typed since), not
+ * from the draft: escCutTheTurn and the field it kept before the Esc, with E2
+ * to E4, went with the Audit's L7 on #461. What stays is the draft's own part.
+ *
  * Every way it can fail, written before the code (2026-10-19):
  *  E1. A lone Esc is taken as known: on an idle field it may have armed a clear.
- *  E2. Once the turn is known to be cut by it, the field is still unknown, or
- *      is not what it held before the Esc.
- *  E3. A key typed after the Esc is not followed, yet the field is claimed
- *      known again.
- *  E4. Without an Esc, a field given up for another reason is claimed known.
  */
 describe('an Esc that cut a turn', () => {
   it('E1. a lone Esc gives the field up', () => {
     expect(feedDraft(type('salut'), '\x1b').state).toBe('unknown');
-  });
-
-  it('E2. the turn cut by it, the field is what it held before the Esc', () => {
-    const cut = escCutTheTurn(feedDraft(type('salut'), '\x1b'));
-    expect(cut).toMatchObject({ text: 'salut', cursor: 5, state: 'known' });
-    expect(escCutTheTurn(feedDraft(emptyDraft(), '\x1b'))).toMatchObject({ text: '', cursor: 0, state: 'known' });
-  });
-
-  it('E3. a key after the Esc keeps the field unknown', () => {
-    expect(escCutTheTurn(feedDraft(feedDraft(type('salut'), '\x1b'), 'x')).state).toBe('unknown');
-    expect(escCutTheTurn(feedDraft(feedDraft(type('salut'), '\x1b'), '\x1b')).state).toBe('unknown');
-  });
-
-  it('E4. a field given up for another reason stays given up', () => {
-    expect(escCutTheTurn(feedDraft(type('salut'), '\x1bOP')).state).toBe('unknown');
-    expect(escCutTheTurn(type('salut'))).toMatchObject({ text: 'salut', state: 'known' });
   });
 });
