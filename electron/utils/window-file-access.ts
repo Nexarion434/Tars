@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DATA_DIR, PRIVATE_DIR, VAULT_DIR } from '../constants';
 import { isUnder, samePath } from '../platform/path-compare';
 import { isHardLinkInto, isWithinDir } from './path-identity';
-import { landsUnderSafeRoot, realTarget } from './real-target';
+import { inCredentialPlace, landsUnderSafeRoot, realTarget } from './real-target';
 
 /**
  * What the window may read, write, and have local-file:// serve (the Audit's
@@ -42,7 +42,22 @@ const SECRET_NAMES = new Set([
 
 const nameIsSecret = (p: string) => {
   const name = path.basename(p).toLowerCase();
-  return SECRET_NAMES.has(name) || name.startsWith('app-settings.json.') || name.startsWith('settings-secrets.json.');
+  return SECRET_NAMES.has(name) || name.startsWith('app-settings.json.') || name.startsWith('settings-secrets.json.')
+    // .env.local, .env.production: a project's keys, as .env holds them (the Audit's L1 on #466).
+    || name.startsWith('.env.');
+};
+
+/**
+ * A CLI's settings that hold a key: Claude Code's settings.json and
+ * settings.local.json, whose `env` may set ANTHROPIC_API_KEY, in ~/.claude or
+ * a project's .claude, and Grok CLI's user-settings.json, where it keeps its
+ * API key (the Audit's L1 on #466). No page reads one.
+ */
+const cliSettingsWithKey = (p: string) => {
+  const name = path.basename(p).toLowerCase();
+  const dir = path.basename(path.dirname(p)).toLowerCase();
+  return (dir === '.claude' && (name === 'settings.json' || name === 'settings.local.json'))
+    || (dir === '.grok' && name === 'user-settings.json');
 };
 
 /** A file the window must never get, judged as spelled, where it really lies, and by inode. */
@@ -50,7 +65,7 @@ export function isSecretFile(target: string): boolean {
   const resolved = path.resolve(target);
   const real = realTarget(resolved);
   if (!real) return true;
-  if (nameIsSecret(resolved) || nameIsSecret(real)) return true;
+  if (nameIsSecret(resolved) || nameIsSecret(real) || cliSettingsWithKey(resolved) || cliSettingsWithKey(real)) return true;
   if (isUnder(resolved, PRIVATE_DIR) || samePath(resolved, PRIVATE_DIR) || isWithinDir(real, PRIVATE_DIR)) return true;
   return isHardLinkInto(real, PRIVATE_DIR);
 }
@@ -61,12 +76,30 @@ const inside = (root: string, p: string) => samePath(root, p) || isUnder(p, root
 const projectRoots = (projects: string[]) => projects.filter((p) => typeof p === 'string' && p
   && !inside(DATA_DIR, path.resolve(p)) && !inside(PRIVATE_DIR, path.resolve(p)));
 
+/**
+ * A folder a page may add as a project: one that exists, none of Tars's own
+ * folders, and no folder of credentials or one inside it, as spelled or where
+ * it really lies. A page added any folder as a project and then read it (the
+ * Audit's L1 on #466). The projects' list lives in ~/.dorothy, which every
+ * agent can write, so a read judges its own target too (windowMayRead).
+ */
+export function mayBeProject(p: unknown): boolean {
+  if (typeof p !== 'string' || !p) return false;
+  const resolved = path.resolve(p);
+  if (projectRoots([resolved]).length === 0) return false;
+  const real = realTarget(resolved);
+  return !!real && !inCredentialPlace(resolved, real);
+}
+
 export function windowMayRead(target: string, projects: string[]): boolean {
   const resolved = path.resolve(target);
   if (isSecretFile(resolved)) return false;
   if (samePath(resolved, path.join(DATA_DIR, 'CLAUDE.md'))) return true;
   const real = realTarget(resolved);
   if (!real || isWithinDir(real, DATA_DIR)) return false;
+  // The target's own place, never the list's: a project on a mount gone
+  // offline is not looked at to read another (fs-roots-home.test.ts, 7).
+  if (inCredentialPlace(resolved, real)) return false;
   const roots = [path.join(home(), '.claude'), path.join(home(), '.codex'), path.join(home(), '.gemini'), path.join(home(), '.grok'), ...projectRoots(projects)];
   return landsUnderSafeRoot(resolved, roots, inside, { linkedMarkdown: true });
 }

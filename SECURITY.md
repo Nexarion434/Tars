@@ -602,8 +602,16 @@ the project-files folders and Claude Code's memory folders. None of them, nor
 `fs:read-project-files`, hands the window a secret: nothing under
 `~/.tars-private`, by spelling, by real path or by a hard link into it, and no
 file named as one (the settings and their copies, `api-token`, the Hermes files,
-`.credentials.json`, codex's `auth.json`, gemini's `oauth_creds.json`, `.env`,
-`.netrc`, a key). `app:getSettings` and `settings:updated` carry no secret: a
+`.credentials.json`, codex's `auth.json`, gemini's `oauth_creds.json`, `.env`
+and every `.env.*`, `.netrc`, a key), no CLI settings that hold a key (Claude
+Code's `settings.json` and `settings.local.json`, whose `env` may set one, Grok
+CLI's `user-settings.json`), and nothing in a folder of credentials (`~/.ssh`,
+`~/.gnupg`, `~/.aws`, `~/.config`, `~/.kube`, `~/.docker`), as spelled or where
+it really lies, whatever names that folder as a project: a page could add any
+folder as a project and then read it, GitHub's token in `~/.config/gh` or a
+cluster's in `~/.kube` (the Audit's L1 on #466). `fs:add-custom-project` refuses
+such a folder, and since the projects' list lives in `~/.dorothy`, which every
+agent can write, each read judges its own target as well. `app:getSettings` and `settings:updated` carry no secret: a
 set one is a mask of bullets and `secretsSet` says which are set; `secrets:set`
 sets or clears one and answers whether it is set. Not closed there: the Hermes
 connection form (`hermes:connection:get`) still gets the dashboard's token, the

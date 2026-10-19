@@ -79,7 +79,7 @@ import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMi
 import { probeVersion } from '../core/version-probe';
 import { cliKeyStates, withCliKey } from '../services/cli-keys';
 import { keepSecrets, secretStates, setSecret, settingsForWindow, type SecretField } from '../services/settings-secrets';
-import { isSecretFile, windowMayRead, windowMayWrite } from '../utils/window-file-access';
+import { isSecretFile, mayBeProject, windowMayRead, windowMayWrite } from '../utils/window-file-access';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -2642,6 +2642,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     try {
       const clean = String(projectPath || '').trim();
       if (!clean || !fs.existsSync(clean)) return { success: false, error: 'Folder not found' };
+      if (!mayBeProject(clean)) return { success: false, error: 'A folder of credentials or of Tars\'s own cannot be a project' };
       const list = readCustomProjects();
       if (!list.includes(clean)) {
         list.push(clean);
