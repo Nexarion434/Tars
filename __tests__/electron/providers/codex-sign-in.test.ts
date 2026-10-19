@@ -27,7 +27,11 @@ import * as path from 'node:path';
  *    or one the shell does not set taken for a folder. It is read from a marked line of a login shell's own output.
  * 5. The window frozen while it is asked, or the login shell started at every launch: the shell and codex run off the
  *    main thread, the shell once per run once it has answered (one that failed or hung is asked again next time), and
- *    nothing on Windows, which reads no rc file.
+ *    nothing on Windows, which reads no rc file. Hung: an interactive shell ignores SIGTERM (macOS's /bin/zsh -ilc,
+ *    measured: a timeout's SIGTERM left it running), and what its rc files start can hold its output open after it.
+ *    Such a shell would never be given up on, the answer waited for for good and never asked again, and the shell
+ *    left running: it is ended at its time with what it started, and given up on then. Its time is not a healthy
+ *    shell's under load: 20 s, where a login zsh with its rc files took 7.6 s at a load average of 150.
  * 6. The login shown: signed in, `codex login status` names the account. Its output is looked at for "Not logged in"
  *    only, and never kept, logged or said.
  */
@@ -178,4 +182,31 @@ describe("the CODEX_HOME the user's shell sets", () => {
     expect(await loginShellCodexHome(windows.shell, 'win32')).toBeUndefined();
     expect(windows.runs()).toBe(0);
   });
+
+  it('5. a shell its rc files hold past its time, deaf to SIGTERM as an interactive zsh is, is ended with what they started, and asked again next time', async () => {
+    const dir = scratch();
+    const runs = path.join(dir, 'runs');
+    const pids = path.join(dir, 'pids');
+    const shell = path.join(dir, 'zsh');
+    // The shell ignores SIGTERM, and so does what its rc file starts, which holds the shell's output open.
+    fs.writeFileSync(shell, [
+      '#!/bin/sh',
+      `echo x >> '${runs}'`,
+      "trap '' TERM",
+      `sleep 30 & echo "$$ $!" >> '${pids}'`,
+      'wait',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+    const asked = Date.now();
+    expect(await loginShellCodexHome(shell, 'darwin', 2_000)).toBeUndefined();
+    expect(Date.now() - asked).toBeLessThan(10_000);
+    const [shellPid, rcPid] = fs.readFileSync(pids, 'utf8').trim().split('\n')[0].split(' ').map(Number);
+    await expect.poll(() => alive(shellPid), { timeout: 3_000 }).toBe(false);
+    await expect.poll(() => alive(rcPid), { timeout: 3_000 }).toBe(false);
+
+    expect(await loginShellCodexHome(shell, 'darwin', 2_000)).toBeUndefined();
+    expect(fs.readFileSync(runs, 'utf8').trim().split('\n')).toHaveLength(2);
+  }, 45_000);
 });
