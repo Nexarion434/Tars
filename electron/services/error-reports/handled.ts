@@ -1,4 +1,4 @@
-import { UNKNOWN_TOOL, type AgentToolError } from './report';
+import { UNKNOWN_TOOL, WITHHELD, handledValue, type AgentToolError } from './report';
 
 /**
  * Where the errors Tars handles are met, and which of them become reports (2.0.4, F1 and F3 of the maintainer's go
@@ -12,6 +12,10 @@ import { UNKNOWN_TOOL, type AgentToolError } from './report';
  *
  * Two sites the log does not reach report here: an API route that answers 500 without throwing, and an agent's CLI
  * that exits with a failure code at its launch. And the agents' tool errors, a report kind of their own (report.ts).
+ *
+ * None of these errors says what it said (the Audit's M1 on #474): a handled error is the world's, and its message
+ * carries a command line, a path, a file's start, a URL, a prompt. What leaves is a copy (withoutWords): its type,
+ * its closed facts, its frames, and its causes the same way; report.ts withholds anything else again.
  *
  * Kept free of electron and of the SDK: the sinks are set by index.ts once the reports start, and until then (or
  * while they are off) a report goes nowhere. Nothing here throws into the code that met the error.
@@ -119,8 +123,6 @@ export interface ApiAnswer {
   method: string;
   route: string | RegExp | undefined;
   status: number;
-  /** The `error` a route answered a 500 with, its own words. */
-  errorText?: string;
   /** The `code` its answer carried, when it did. */
   bodyCode?: unknown;
   /** The route threw: the API's own catch logged it, which reports it. */
@@ -139,22 +141,21 @@ export interface ApiAnswer {
 const BODY_CODE = /^[a-z][a-z_]{2,40}$/;
 
 /**
- * Which reports an answer makes: a 500 a route answered without throwing is a handled error (a route that threw is
- * reported by its log line); an agent's MCP call answered 400 or more is that agent's tool error, with the status and
- * the code the answer carried, the tool when it is one of Tars's, and the agent's CLI.
+ * Which reports an answer makes: a 500 a route answered without throwing is a handled error, named by its route and
+ * status and the code its answer carried, never by the route's error (a route that threw is reported by its log
+ * line); an agent's MCP call answered 400 or more is that agent's tool error, with the status and the code the
+ * answer carried, the tool when it is one of Tars's, and the agent's CLI.
  */
 export function apiAnswerReports(answer: ApiAnswer): { handled?: Error; agentTool?: AgentToolError } {
   const reports: { handled?: Error; agentTool?: AgentToolError } = {};
+  const bodyCode = typeof answer.bodyCode === 'string' && BODY_CODE.test(answer.bodyCode) ? answer.bodyCode : undefined;
   if (answer.status >= 500 && !answer.threw) {
-    const said = answer.errorText ? `: ${answer.errorText}` : '';
-    const error = new Error(`${answer.method} ${routeName(answer.route)} answered ${answer.status}${said}`);
+    const error = new Error(`${answer.method} ${routeName(answer.route)} answered ${answer.status}${bodyCode ? ` ${bodyCode}` : ''}`);
     error.name = 'ApiRouteError';
     reports.handled = error;
   }
   if (answer.agent && answer.fromMcp && answer.status >= 400) {
-    const code = typeof answer.bodyCode === 'string' && BODY_CODE.test(answer.bodyCode)
-      ? `${answer.status} ${answer.bodyCode}`
-      : String(answer.status);
+    const code = bodyCode ? `${answer.status} ${bodyCode}` : String(answer.status);
     const tool = answer.tool && answer.tools.has(answer.tool) ? answer.tool : UNKNOWN_TOOL;
     reports.agentTool = { code, tool, cli: answer.agent.provider };
   }
@@ -185,4 +186,47 @@ export function taskNeverStarted(provider: string, waitedMs: number): Error {
   const error = new Error(`${provider}: the task never started, ${Math.round(waitedMs / 1000)} s after it was sent`);
   error.name = 'TaskNeverStarted';
   return error;
+}
+
+/* ── What a handled error is sent as (the Audit's M1 on #474) ── */
+
+/** A system's or Node's code (ENOENT, ERR_INVALID_ARG_TYPE, undici's), or one of Tars's own (worker_may_not_order). */
+const ERROR_CODE = /^(?:E[A-Z0-9_]{2,40}|UND_ERR_[A-Z0-9_]{2,40}|ABORT_ERR|[a-z][a-z_]{2,40})$/;
+const SYSCALL = /^[a-z_]{2,30}$/;
+const SIGNAL = /^SIG[A-Z0-9]{2,10}$/;
+/** An error's type as code names it: anything else is not taken for one. */
+const TYPE_NAME = /^[A-Za-z_$][\w$.]{0,60}$/;
+/** The error and four causes: as many as a report keeps. */
+const MAX_CAUSES = 4;
+
+type Loose = { name?: unknown; message?: unknown; code?: unknown; syscall?: unknown; status?: unknown; signal?: unknown; stack?: unknown; cause?: unknown };
+
+/** What is known of an error for sure: its code, its syscall, its exit status, its signal, as report.ts reads them. */
+function factsOf(e: Loose): string {
+  const facts: string[] = [];
+  if (typeof e.code === 'string' && ERROR_CODE.test(e.code)) facts.push(`code ${e.code}`);
+  if (typeof e.syscall === 'string' && SYSCALL.test(e.syscall)) facts.push(`syscall ${e.syscall}`);
+  // A child process's: exec gives its exit status as `code`, execSync as `status`.
+  const exit = typeof e.code === 'number' ? e.code : e.status;
+  if (typeof exit === 'number' && Number.isInteger(exit)) facts.push(`exit ${exit}`);
+  if (typeof e.signal === 'string' && SIGNAL.test(e.signal)) facts.push(`signal ${e.signal}`);
+  return facts.join(', ');
+}
+
+/**
+ * The copy of a handled error that the reports are handed: its type, Tars's own fixed sentence when it is one of
+ * Tars's errors, else its closed facts (`code ENOENT, syscall open`, `exit 128`) or WITHHELD, its stack's frames
+ * without the lines that repeat its message, and its causes copied the same way, four at most. Never its words.
+ */
+export function withoutWords(error: unknown, depth = 0): Error {
+  const e: Loose = error !== null && typeof error === 'object' ? error as Loose : {};
+  const name = typeof e.name === 'string' && TYPE_NAME.test(e.name) ? e.name : 'Error';
+  const own = handledValue(name, typeof e.message === 'string' ? e.message : undefined);
+  const message = own !== WITHHELD ? own : (factsOf(e) || WITHHELD);
+  const cause = depth < MAX_CAUSES && e.cause !== undefined && e.cause !== error ? withoutWords(e.cause, depth + 1) : undefined;
+  const copy = cause ? new Error(message, { cause }) : new Error(message);
+  copy.name = name;
+  const frames = typeof e.stack === 'string' ? e.stack.split('\n').filter(line => /^\s+at /.test(line)) : [];
+  copy.stack = [`${name}: ${message}`, ...frames].join('\n');
+  return copy;
 }

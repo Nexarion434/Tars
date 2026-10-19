@@ -6,7 +6,7 @@ import { ReportBudget } from './budget';
 import { errorReportOptions } from './options';
 import { randomUUID } from 'crypto';
 import { agentToolEvent, healthEvent, reportFingerprint, toReport, UNKNOWN_TOOL, type AgentToolError, type HealthKind, type ReportFacts } from './report';
-import { setReportSinks, watchLoggedErrors } from './handled';
+import { setReportSinks, watchLoggedErrors, withoutWords } from './handled';
 import { errorReportsAvailable } from '../../platform/error-reports';
 
 /**
@@ -209,9 +209,10 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
         } as never);
         sentryOf = sentry;
         console.log(`[error-reports] error reports on, ${facts(budget).release}`);
+        // A handled error is sent as a copy without its words, nor its causes' (handled.ts withoutWords; the Audit's M1).
         const handled = (error: Error, type: string) => {
           if (!isEnabled()) return;
-          sentry.captureException(error, { data: { mechanism: { type, handled: true } } } as never);
+          sentry.captureException(withoutWords(error), { data: { mechanism: { type, handled: true } } } as never);
         };
         watchLoggedErrors(console as unknown as { error: (...args: unknown[]) => void }, error => handled(error, 'tars.logged'), wiring.channels ?? new Set());
         setReportSinks({

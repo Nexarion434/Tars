@@ -597,6 +597,7 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,
@@ -975,6 +976,3 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
 });
 
 export { appSettings, getTelegramBot };
-
-// Last: main has loaded, and from here an uncaught exception is one Tars runs on.
-uncaught.mainLoaded();

@@ -16,7 +16,9 @@ import { cleanSample, HEALTH_KEEP_MS, type HealthSample } from '../health/sample
  *   event_id, timestamp, platform, level
  *   release              `tars@<version>`
  *   exception.values[]   at most 5 (an error and its causes):
- *     type, value        the message: home folder as ~, machine name as <host>, secrets masked, 1000 characters at most
+ *     type, value        the message: home folder as ~, machine name as <host>, secrets masked, 1000 characters at most;
+ *                        for an error Tars handled (2.0.4), never the message: its closed facts, or Tars's own fixed
+ *                        sentence for its type (handledValue)
  *     mechanism          { type, handled }
  *     stacktrace.frames  the 50 nearest the throw: filename (home as ~), function, lineno, colno, in_app
  *   tags.process         main or renderer
@@ -200,6 +202,11 @@ export function toReport(raw: unknown, facts: ReportFacts): ErrorReport | null {
   // Sentry lists the causes first and the error thrown last: the last five are kept.
   const exceptions = values.slice(-MAX_EXCEPTIONS).map(v => toException(v, facts)).filter((v): v is ReportException => !!v);
   if (exceptions.length === 0) return null;
+  // An error Tars handled says nothing of its own, nor do its causes (the Audit's M1 on #474): what Tars logs and
+  // catches carries the world's words, a command line, a path, a file's start, a URL, a prompt.
+  if (exceptions.some(e => e.mechanism && HANDLED_MECHANISMS.has(e.mechanism.type))) {
+    for (const e of exceptions) e.value = handledValue(e.type, e.value);
+  }
 
   const tags = record(event.tags);
   const process = tags?.process === 'renderer' || tags?.['event.process'] === 'renderer' ? 'renderer' : 'main';
@@ -235,6 +242,38 @@ export function toReport(raw: unknown, facts: ReportFacts): ErrorReport | null {
   const level = text(event.level);
   if (level && LEVELS.has(level)) report.level = level;
   return report;
+}
+
+/** The mechanisms of the errors Tars handles (handled.ts): what main logs, and what Tars captures where it meets it. */
+const HANDLED_MECHANISMS: ReadonlySet<string> = new Set(['tars.logged', 'tars.handled']);
+
+/** What a handled error says when it may say nothing else. */
+export const WITHHELD = '(message not sent)';
+
+/** Tars's own sentences, each for its own type, built from closed facts where Tars meets the error (handled.ts). */
+const FIXED: ReadonlyMap<string, RegExp> = new Map([
+  ['CliExitedAtLaunch', /^[a-z][a-z0-9-]{1,30} exited with code -?\d{1,5}, \d{1,6}(?:\.\d)? s after its launch$/],
+  ['TaskNeverStarted', /^[a-z][a-z0-9-]{1,30}: the task never started, \d{1,7} s after it was sent$/],
+  ['IpcHandlerError', /^[A-Za-z][\w:.-]{0,99}$/],
+  ['ApiRouteError', /^(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS) \/[\w/:.-]{0,200} answered [1-5]\d\d(?: [a-z][a-z_]{2,40})?$/],
+]);
+
+/**
+ * One closed fact about an error: its code when it is a system's or Node's (ENOENT, ERR_INVALID_ARG_TYPE) or one of
+ * Tars's own (worker_may_not_order), the syscall, an exit status, a signal.
+ */
+const FACT = /^(?:code (?:E[A-Z0-9_]{2,40}|UND_ERR_[A-Z0-9_]{2,40}|ABORT_ERR|[a-z][a-z_]{2,40})|syscall [a-z_]{2,30}|exit -?\d{1,5}|signal SIG[A-Z0-9]{2,10})$/;
+
+/**
+ * What a handled error may say: Tars's own fixed sentence for its type, or its closed facts (`code ENOENT, syscall
+ * open`), and nothing else (the Audit's M1 on #474). Anything that only looks like one of them is withheld.
+ */
+export function handledValue(type: string | undefined, value: string | undefined): string {
+  if (value !== undefined) {
+    if (type && FIXED.get(type)?.test(value)) return value;
+    if (value.split(', ').every(part => FACT.test(part))) return value;
+  }
+  return WITHHELD;
 }
 
 /**

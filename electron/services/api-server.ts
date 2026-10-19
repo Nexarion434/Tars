@@ -391,11 +391,10 @@ export function startApiServer(
 
     // What was answered, for the reports (services/error-reports/handled.ts): a 500 a route answered without
     // throwing, and an agent's tool call answered 400 or more.
-    const answered: { status: number; errorText?: string; bodyCode?: unknown } = { status: 0 };
+    const answered: { status: number; bodyCode?: unknown } = { status: 0 };
     const sendJson = (data: unknown, status = 200) => {
-      const said = data && typeof data === 'object' ? data as { error?: unknown; code?: unknown } : {};
+      const said = data && typeof data === 'object' ? data as { code?: unknown } : {};
       answered.status = status;
-      answered.errorText = typeof said.error === 'string' ? said.error : undefined;
       answered.bodyCode = said.code;
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
@@ -464,7 +463,7 @@ export function startApiServer(
     } finally {
       const agent = callerAgent && !pathname.startsWith('/api/hooks/') ? agents.get(callerAgent) : undefined;
       const reports = apiAnswerReports({
-        method: req.method ?? '', route: matched, status: answered.status, errorText: answered.errorText, bodyCode: answered.bodyCode, threw,
+        method: req.method ?? '', route: matched, status: answered.status, bodyCode: answered.bodyCode, threw,
         agent: agent ? { provider: getProvider(agent.provider).id } : undefined, fromMcp, tool, tools: TOOL_NAMES,
       });
       if (reports.handled) reportHandledError(reports.handled);
