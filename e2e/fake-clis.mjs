@@ -347,14 +347,23 @@ export async function run() {
   const transcript = kind === 'claude' ? path.join(claudeDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${sid}.jsonl`)
     : kind === 'qwen-code' ? path.join(HOME, '.qwen', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), 'chats', `${sid}.jsonl`)
       : kind === 'gemini' ? path.join(HOME, '.gemini', 'tmp', crypto.createHash('sha256').update(cwd).digest('hex'), 'chats', `session-${sid}.json`)
-        : null;
+        // pi 1.3.0 writes its session in the folder Tars names for it (PI_CODING_AGENT_SESSION_DIR), which #483 follows.
+        : kind === 'pi' && process.env.PI_CODING_AGENT_SESSION_DIR
+          ? path.join(process.env.PI_CODING_AGENT_SESSION_DIR, `${new Date().toISOString().replace(/[:.]/g, '-')}_${sid}.jsonl`)
+          : null;
   if (transcript) fs.mkdirSync(path.dirname(transcript), { recursive: true });
   let n = 0;
   const record = (type, text, usage) => {
     if (!transcript || kind === 'gemini') return;
     n += 1;
     const at = new Date().toISOString();
-    if (kind === 'claude') {
+    if (kind === 'pi') {
+      // pi 1.3.0's lines, as fix/pi-turns-end's stand-in writes them: a header, then one message line each.
+      if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, JSON.stringify({ type: 'session', version: 3, id: sid, timestamp: at, cwd }) + '\n');
+      fs.appendFileSync(transcript, JSON.stringify({ type: 'message', id: `e${n}`, parentId: null, timestamp: at, message: type === 'user'
+        ? { role: 'user', content: text, timestamp: Date.now() }
+        : { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', timestamp: Date.now() } }) + '\n');
+    } else if (kind === 'claude') {
       fs.appendFileSync(transcript, JSON.stringify(type === 'user'
         ? { type: 'user', uuid: crypto.randomUUID(), sessionId: sid, cwd, timestamp: at, message: { role: 'user', content: text } }
         : { type: 'assistant', uuid: crypto.randomUUID(), sessionId: sid, cwd, requestId: `req_${sid}_${n}`, timestamp: at, isSidechain: false, message: { id: `msg_${sid}_${n}`, role: 'assistant', model: opts.model || 'claude-haiku-5-5', content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: usage ?? { input_tokens: 1200, output_tokens: 80 } } }) + '\n');
