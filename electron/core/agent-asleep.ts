@@ -23,6 +23,8 @@ import { isKeystroke } from './input-draft';
 
 const screens = new Map<string, string>();
 const wakers = new Map<string, { by: string; via: AgentWakeVia }>();
+/** The session each agent slept in, until the next start resumes it: asleep still, or stopped since. */
+const sleptIn = new Map<string, string>();
 
 /**
  * Asleep from `now`: its terminal, task and wait gone, and its session a
@@ -36,7 +38,10 @@ export function fallAsleep(agent: AgentStatus, screen: string | undefined, now: 
   agent.ptyId = undefined;
   agent.currentTask = undefined;
   agent.waitingReason = undefined;
-  if (agent.currentSessionId) agent.lastKilledSessionId = agent.currentSessionId;
+  if (agent.currentSessionId) {
+    agent.lastKilledSessionId = agent.currentSessionId;
+    sleptIn.set(agent.id, agent.currentSessionId);
+  }
   agent.currentSessionId = undefined;
   if (screen) screens.set(agent.id, screen);
   else screens.delete(agent.id);
@@ -61,16 +66,21 @@ export function noteWaker(agentId: string, by: string, via: AgentWakeVia): void 
  * Where an agent gets a terminal again: an asleep one is waking from now on.
  * Its conversation resumes under the session id it slept in (`--resume` keeps
  * it), so that session is not a tombstone any more: its hooks are the woken
- * session's own. Nothing for an agent that was not asleep.
+ * session's own. So too for an agent stopped while asleep, which a stop ended
+ * no CLI of: it is started, not woken, and its session was left a tombstone,
+ * every post of it refused, the agent never seen (19/10). Nothing else for an
+ * agent that was not asleep.
  */
 export function wakeFromSleep(agent: AgentStatus): void {
   const waker = wakers.get(agent.id);
   wakers.delete(agent.id);
+  const slept = sleptIn.get(agent.id);
+  sleptIn.delete(agent.id);
+  if (slept && agent.lastKilledSessionId === slept && agent.resumableSessionId === slept) agent.lastKilledSessionId = undefined;
   if (agent.status !== 'asleep') return;
   agent.status = 'idle';
   agent.asleepSince = undefined;
   agent.waking = { by: waker?.by ?? 'Tars', via: waker?.via ?? 'start', since: new Date().toISOString() };
-  if (agent.lastKilledSessionId && agent.lastKilledSessionId === agent.resumableSessionId) agent.lastKilledSessionId = undefined;
   screens.delete(agent.id);
 }
 

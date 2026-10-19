@@ -9,7 +9,9 @@
  * - MCP orchestrator integration
  */
 
-// First: every module required after it is compiled from the cache it keeps.
+// First of all: a test build on the account's own home stops before anything reads it.
+import { SANDBOX_BUILD } from './core/sandbox-guard';
+// Then: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
 
 import { startGithubWatch } from './services/github-watch';
@@ -147,6 +149,7 @@ import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
+import { checksForUpdates } from './core/sandbox-build';
 import { startCliUpdates } from './services/cli-updater';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
@@ -895,7 +898,7 @@ app.whenReady().then(async () => {
   // off stops the next check, and turning it on starts one within half an hour,
   // without a restart. It is the one switch for these and the CLIs' below.
   const check = () => {
-    if (appSettings.autoCheckUpdates === false) return;
+    if (appSettings.autoCheckUpdates === false || !checksForUpdates({ sandbox: SANDBOX_BUILD })) return;
     checkForUpdates().catch((err) => {
       console.error('Auto-update check failed:', err);
     });

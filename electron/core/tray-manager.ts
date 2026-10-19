@@ -62,12 +62,14 @@ let contextMenu: Menu | null = null;
  * The tray's right-click menu on Windows: the only way to quit once closing
  * the window hides it (desktop-lifecycle.ts). Quit Tars is app.quit(), so
  * before-quit saves the fleet and kills every terminal, as it always has.
+ * Under the app's own name, so a test build says "Tars Sandbox" (`npm run
+ * electron:pack`), never "Tars".
  */
 export function trayContextMenu(): Menu {
   contextMenu ??= Menu.buildFromTemplate([
-    { label: 'Show Tars', click: () => revealMainWindow() },
+    { label: `Show ${app.getName()}`, click: () => revealMainWindow() },
     { type: 'separator' },
-    { label: 'Quit Tars', click: () => app.quit() },
+    { label: `Quit ${app.getName()}`, click: () => app.quit() },
   ]);
   return contextMenu;
 }
@@ -82,7 +84,7 @@ function initWindowsTray() {
   normalIcon = nativeImage.createFromPath(resourcePath('tray.ico'));
   badgeIcon = nativeImage.createFromPath(resourcePath('tray-attention.ico'));
   tray = new Tray(normalIcon);
-  tray.setToolTip('Tars');
+  tray.setToolTip(app.getName());
   tray.setContextMenu(trayContextMenu());
   tray.on('click', () => {
     if (tray) toggleTrayPanel(tray.getBounds());
@@ -107,7 +109,7 @@ export function initTray() {
   normalIcon = icon;
 
   tray = new Tray(icon);
-  tray.setToolTip('Tars');
+  tray.setToolTip(app.getName());
 
   tray.on('click', () => {
     if (tray) {

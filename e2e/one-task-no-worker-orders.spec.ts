@@ -357,7 +357,13 @@ for (const newInterface of [false, true]) {
       const goneAnswer = await gone;
       await expect.poll(() => ocTurns().some((e) => e.answered === 'TASK-TYPED'), { timeout: 60_000 }).toBe(true).catch(() => undefined);
       const typedRef = /Task (t-[0-9a-f]{8}) is queued/.exec(typedTask.text)?.[1] ?? '';
-      const typedStatus = typedRef ? await lead.call('task_status', { taskId: typedRef }) : null;
+      // Tars closes a task once it has read its turn's end, a moment after the stand-in logs its answer: read at once,
+      // under load task_status still said running (QA-PR451.md). So it is read until it answers, 30 s at most.
+      let typedStatus = null as ToolAnswer | null;
+      if (typedRef) {
+        await expect.poll(async () => (typedStatus = await lead.call('task_status', { taskId: typedRef })).text, { timeout: 30_000 })
+          .toContain('answer for TASK-TYPED').catch(() => undefined);
+      }
       const nhOne = await lead.call('delegate_task', { id: 'nh', prompt: 'TASK-NHONE read the logs', timeoutSeconds: 60 });
       const nhTwo = await lead.call('delegate_task', { id: 'nh', prompt: 'TASK-NHTWO read the tests', timeoutSeconds: 60 });
       await expect.poll(() => nhLog().includes('TASK-NHTWO'), { timeout: 30_000 }).toBe(true).catch(() => undefined);

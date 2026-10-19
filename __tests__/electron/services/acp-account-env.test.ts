@@ -22,8 +22,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-account-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 const serverBundle = path.join(tmp, 'bundle.js');
 fs.writeFileSync(serverBundle, '');
 
@@ -51,7 +55,7 @@ function handle(msg) {
 }
 `;
 const script = path.join(tmp, 'agent.mjs');
-fs.writeFileSync(script, SCRIPT);
+fs.writeFileSync(script, RECORDS_ITS_PID + SCRIPT);
 
 vi.mock('../../../electron/services/acp/registry', () => ({
   acpLaunchFor: () => ({ command: process.execPath, args: [script] }),
