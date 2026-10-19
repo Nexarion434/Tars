@@ -22,13 +22,17 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * then brought back one way, and given two tasks by lead, the second while the first works:
  * - `start`: started from the window;
  * - `task`: the first task starts it (delegate_task into a stopped agent);
- * - `restart`: the Dashboard's restart, which continues the conversation under a new id.
+ * - `restart`: the Dashboard's restart, which continues the conversation under a new id;
+ * - `restart-first` (the Audit's M1 on #475): no sleep; the Dashboard's restart is the first launch of the run, on a
+ *   session a previous run left, then a stop, then a start from the window, which must resume nothing.
  * Asserted, with the classic shell and with the new interface:
  * 1. its new session is registered: the agent's session is the one its CLI runs, and its CLI is said running;
  * 2. it continues the conversation it slept in (`--resume` and that session);
  * 3. both tasks run and end with their own answers, and the second goes in at the first's end;
  * 4. the ledger has both, from lead, completed.
  * Red on main (e2363ae0) for `start` and `task`: the session is never registered, and the first task never begins.
+ * `restart-first` red on ba963f4d: the start after the stop resumes the restarted session, the stop's tombstone, under
+ * its own id, and the same.
  * The artefact: values.json (the stand-in's log, the agent as read, both answers, the ledger's tasks), the app's trace.
  */
 
@@ -105,12 +109,19 @@ type Api = { electronAPI: {
 
 const lines = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
-const CASES = ['start', 'task', 'restart'] as const;
-const PORTS: Record<(typeof CASES)[number], [number, number]> = { start: [31391, 31392], task: [31393, 31394], restart: [31395, 31396] };
+const CASES = ['start', 'task', 'restart', 'restart-first'] as const;
+const PORTS: Record<(typeof CASES)[number], [number, number]> = {
+  start: [31391, 31392], task: [31393, 31394], restart: [31395, 31396], 'restart-first': [31397, 31398],
+};
+/** The session a previous run of Tars left dev on, for `restart-first`. */
+const LEFT = '3e9a1f0c-7b2d-4c8e-9f60-1a2b3c4d5e6f';
 
 for (const how of CASES) {
   for (const newInterface of [false, true]) {
-    test(`an agent asleep, then stopped, brought back by ${how}, is seen and takes its tasks${newInterface ? ' (new interface)' : ''}`, async () => {
+    const title = how === 'restart-first'
+      ? 'an agent restarted as its first launch of the run, then stopped, then started, is seen and takes its tasks'
+      : `an agent asleep, then stopped, brought back by ${how}, is seen and takes its tasks`;
+    test(`${title}${newInterface ? ' (new interface)' : ''}`, async () => {
       test.setTimeout(300_000);
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-sleep-stop-'));
       const project = path.join(home, 'projects', 'demo');
@@ -123,7 +134,14 @@ for (const how of CASES) {
         id, name, character: 'robot', provider: 'claude', status: 'idle', role, projectPath: project, skills: [], permissionMode: 'normal', cliPath: claude,
         createdAt: '2026-10-19T08:00:00.000Z', lastActivity: '2026-10-19T08:00:00.000Z',
       });
-      fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('lead', 'Project Lead', 'orchestrator'), agent('dev', 'Build Agent', 'worker')], null, 2));
+      const dev = how === 'restart-first' ? { ...agent('dev', 'Build Agent', 'worker'), resumableSessionId: LEFT } : agent('dev', 'Build Agent', 'worker');
+      fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('lead', 'Project Lead', 'orchestrator'), dev], null, 2));
+      if (how === 'restart-first') {
+        // Where the stand-in, as Claude Code, files the transcript: under the real path of the folder it runs in.
+        const transcripts = path.join(home, '.claude', 'projects', fs.realpathSync(project).replace(/[^a-zA-Z0-9]/g, '-'));
+        fs.mkdirSync(transcripts, { recursive: true });
+        fs.writeFileSync(path.join(transcripts, `${LEFT}.jsonl`), `${JSON.stringify({ type: 'system', timestamp: '2026-10-19T07:00:00.000Z', sessionId: LEFT })}\n`);
+      }
       fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
       fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
       fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
@@ -147,10 +165,19 @@ for (const how of CASES) {
         const get = async (id: string) => (await page.evaluate((i) => (window as unknown as Api).electronAPI.agent.get(i), id))!;
         const devLaunches = () => lines(log).filter((e) => e.id === 'dev' && e.launched);
 
+        let slept: string | null = null;
+        if (how === 'restart-first') {
+          // The Dashboard's restart as the first launch of this run, then a stop: the fork it ran is the tombstone.
+          keep({ restartedFirst: await page.evaluate(() => (window as unknown as Api).electronAPI.agent.restart('dev')) });
+          await expect.poll(async () => { const a = await get('dev'); return !!(a.cliRunning && a.currentSessionId); }, { timeout: 60_000 }).toBe(true);
+          await page.evaluate(() => (window as unknown as Api).electronAPI.agent.stop('dev'));
+          await expect.poll(async () => (await get('dev')).status, { timeout: 15_000 }).toBe('stopped');
+          await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'dev', prompt: '' }));
+        } else {
         // dev's session, started from the window.
         await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'dev', prompt: '' }));
         await expect.poll(async () => { const a = await get('dev'); return !!(a.cliRunning && a.currentSessionId); }, { timeout: 60_000 }).toBe(true);
-        const slept = (await get('dev')).currentSessionId!;
+        slept = (await get('dev')).currentSessionId!;
 
         // Put to sleep by the pass that runs every minute, as after 40 minutes of rest.
         await expect.poll(() => app.evaluate(async (_e, { dist }) => {
@@ -172,6 +199,7 @@ for (const how of CASES) {
         // Brought back.
         if (how === 'start') await page.evaluate(() => (window as unknown as Api).electronAPI.agent.start({ id: 'dev', prompt: '' }));
         if (how === 'restart') keep({ restarted: await page.evaluate(() => (window as unknown as Api).electronAPI.agent.restart('dev')) });
+        }
         if (how !== 'task') {
           await expect.poll(() => devLaunches().length, { timeout: 30_000, message: 'its CLI launched again' }).toBe(2);
           // 1. Seen: the session its CLI runs is the agent's (on main, never: the SessionStart is refused).
@@ -232,7 +260,9 @@ for (const how of CASES) {
         expect.soft(after.currentSessionId, 'the agent\'s session').toBe(launches[1]?.sid);
         expect.soft(after.cliRunning).toBe(true);
         // 2. On the conversation it slept in.
-        expect.soft(launches[1]?.resume, 'resumed the session it slept in').toBe(slept);
+        // restart-first: the restart resumed what the last run left, and the start after the stop resumes nothing.
+        if (how === 'restart-first') expect.soft(launches[0]?.resume, 'the restart continued the session left').toBe(LEFT);
+        expect.soft(launches[1]?.resume, how === 'restart-first' ? 'the start after the stop resumed nothing' : 'resumed the session it slept in').toBe(slept);
         expect.soft(launches[1]?.forked, '--fork-session only for the restart').toBe(how === 'restart');
         // 3. Both run and end, each with its answer, the second at the first's end.
         expect.soft(one.isError, one.text.slice(0, 400)).toBe(false);
