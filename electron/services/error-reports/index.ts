@@ -5,7 +5,8 @@ import { DATA_DIR } from '../../constants';
 import { ReportBudget } from './budget';
 import { errorReportOptions } from './options';
 import { randomUUID } from 'crypto';
-import { healthEvent, reportFingerprint, toReport, type HealthKind, type ReportFacts } from './report';
+import { agentToolEvent, healthEvent, reportFingerprint, toReport, UNKNOWN_TOOL, type AgentToolError, type HealthKind, type ReportFacts } from './report';
+import { setReportSinks, watchLoggedErrors } from './handled';
 import { errorReportsAvailable } from '../../platform/error-reports';
 
 /**
@@ -25,6 +26,14 @@ import { errorReportsAvailable } from '../../platform/error-reports';
  * OpenTelemetry, and no offline queue on disk that would send later. The
  * renderer's errors come through Tars's own preload (IPCMode.Classic): the
  * window is sandboxed and cannot load the SDK's preload.
+ *
+ * Since 2.0.4 (F1 to F4 of the maintainer's go of 2026-10-18): the errors Tars
+ * handles leave through the same gates (handled.ts: what main logs at error
+ * level, an API route's 500, a CLI that exits at its launch), and the agents'
+ * tool errors as a kind of their own (report.ts); a line says the reports are
+ * on, and one per report what Sentry answered, the last answer kept for the
+ * window; and the SDK is handed main's onFatalError, so it never shows
+ * Electron's error box (core/uncaught-guard.ts).
  */
 
 /** Tars's Sentry project (the maintainer's organisation, EU). A DSN is public by design: it only lets a client send. */
@@ -32,8 +41,9 @@ export const ERROR_REPORTS_DSN = 'https://d3d853ef128291b07daad0c136b0c82d@o4511
 
 const OS_NAMES: Partial<Record<NodeJS.Platform, string>> = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
 
-function facts(budget: ReportBudget): ReportFacts {
+function facts(budget: ReportBudget, agentTools?: ReportFacts['agentTools']): ReportFacts {
   return {
+    agentTools,
     installId: budget.installId,
     release: `tars@${app.getVersion()}`,
     home: os.homedir(),
@@ -117,8 +127,30 @@ export const HEALTH_REFUSALS = {
 /** How long a health report waits for Sentry's answer before it says it could not be reached. */
 const HEALTH_SEND_MS = 10_000;
 
+/** The last report's answer, for the window's Settings line (errorReports:last). */
+export interface LastReportView {
+  /** When Sentry answered, ISO. */
+  at: string;
+  /** error, handled, agent-tool, abrupt-end or diagnostic. */
+  kind: string;
+  /** Sentry's HTTP status; 0 when none came. */
+  status: number;
+}
+
+/** What main hands the reports at their start (main.ts). */
+export interface ErrorReportWiring {
+  /** core/uncaught-guard.ts's: called by the SDK after its flush, in place of showing Electron's error box. */
+  onFatalError?: (error: Error) => void;
+  /** What an agent tool error may name: Tars's tools and the CLIs it runs. */
+  vocabulary?: ReportFacts['agentTools'];
+  /** The IPC channels Tars registered, which a handler's error is reported under. */
+  channels?: ReadonlySet<string>;
+}
+
 export interface ErrorReports {
   sync(): Promise<void>;
+  /** The last report's answer, kept in error-reports.json; null when none was. Never makes the file. */
+  lastReport(): LastReportView | null;
   /** Why nothing may be sent now (Windows, the switch off), or null. */
   refusal(): string | null;
   /**
@@ -130,7 +162,8 @@ export interface ErrorReports {
 }
 
 /** Never on a platform whose build may not send (errorReportsAvailable: not on win32). */
-export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Platform = process.platform): ErrorReports {
+export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Platform = process.platform, wiring: ErrorReportWiring = {}): ErrorReports {
+  const file = path.join(DATA_DIR, 'error-reports.json');
   let starting: Promise<void> | undefined;
   let sentryOf: typeof import('@sentry/electron/main') | undefined;
   let budgetOf: ReportBudget | undefined;
@@ -143,19 +176,26 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
     starting = (async () => {
       try {
         const sentry = await import('@sentry/electron/main');
-        const budget = new ReportBudget(path.join(DATA_DIR, 'error-reports.json'));
+        const budget = new ReportBudget(file);
         budgetOf = budget;
         sentry.init({
           ...errorReportOptions({
             dsn: dsn(),
             isEnabled,
-            facts: () => facts(budget),
+            facts: () => facts(budget, wiring.vocabulary),
             budget,
             makeTransport: sentry.makeElectronTransport as never,
             preAdmitted,
             healthPayloads,
-            onSent: (eventId, status) => { answers.set(eventId, status); },
+            onSent: (eventId, status, kind) => {
+              answers.set(eventId, status);
+              // Kept before it is said, so that whoever reads the line finds the answer kept.
+              budget.noteAnswer(kind, status);
+              console.log(`[error-reports] sent ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind} report: HTTP ${status}${status === 0 ? ' (no answer)' : ''}`);
+            },
           }),
+          // After its flush, the SDK shows Electron's error box unless it is handed this (core/uncaught-guard.ts).
+          ...(wiring.onFatalError ? { onFatalError: wiring.onFatalError } : {}),
           defaultIntegrations: false,
           integrations: [
             sentry.onUncaughtExceptionIntegration(),
@@ -168,6 +208,20 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
           skipOpenTelemetrySetup: true,
         } as never);
         sentryOf = sentry;
+        console.log(`[error-reports] error reports on, ${facts(budget).release}`);
+        const handled = (error: Error, type: string) => {
+          if (!isEnabled()) return;
+          sentry.captureException(error, { data: { mechanism: { type, handled: true } } } as never);
+        };
+        watchLoggedErrors(console as unknown as { error: (...args: unknown[]) => void }, error => handled(error, 'tars.logged'), wiring.channels ?? new Set());
+        setReportSinks({
+          handled: error => handled(error, 'tars.handled'),
+          agentTool: (error: AgentToolError) => {
+            if (!isEnabled()) return;
+            const tool = wiring.vocabulary?.tools.has(error.tool) ? error.tool : UNKNOWN_TOOL;
+            sentry.captureEvent(agentToolEvent({ ...error, tool }) as never);
+          },
+        });
       } catch (err) {
         console.warn('[error-reports] could not start:', err instanceof Error ? err.message : err);
       }
@@ -209,6 +263,10 @@ export function startErrorReports(isEnabled: () => boolean, platform: NodeJS.Pla
       answers.delete(id);
     }
   };
+  const lastReport = (): LastReportView | null => {
+    const last = budgetOf?.last ?? ReportBudget.readLast(file);
+    return last ? { at: new Date(last.at).toISOString(), kind: last.kind, status: last.status } : null;
+  };
   void sync();
-  return { sync, refusal, sendHealth };
+  return { sync, refusal, sendHealth, lastReport };
 }

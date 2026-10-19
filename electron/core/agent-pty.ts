@@ -12,6 +12,7 @@ import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
+import { cliLaunchExit, reportHandledError } from '../services/error-reports/handled';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -133,6 +134,7 @@ export function spawnAgentPty(opts: {
   // CLI" and says nothing to Tars then (gate of #380). Never handed on.
   delete env.CLAUDE_PID;
 
+  const spawnedAt = Date.now();
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
     cols: size.cols,
@@ -185,13 +187,20 @@ export function spawnAgentPty(opts: {
   if (agentId) rememberTerminalOwner(spawned, agentId);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
-  spawned.onExit(() => {
+  spawned.onExit(({ exitCode, signal }: { exitCode?: number; signal?: number } = {}) => {
     terminalExited(spawned);
     // And what it was spawned as: gone, node-pty on Linux still names the
     // shell it spawned, and a terminal handed a command read as a running CLI.
     spawnedAs.delete(spawned);
     // And its token: a stopped CLI's stayed valid until the agent's next launch.
     if (agentId && token) revokeTerminalToken(agentId, token);
+    // An agent's CLI that failed to start, where the terminal is the CLI (the API's sessions everywhere, every
+    // terminal on Windows): it exited on its own with a failure code at its launch (2.0.4, F1). A CLI typed into
+    // a shell leaves the shell behind, and its code with it.
+    const failed = agentId && opts.runsCommand && exitCode !== undefined
+      ? cliLaunchExit({ provider: opts.binaryName, exitCode, signal, livedMs: Date.now() - spawnedAt })
+      : null;
+    if (failed) reportHandledError(failed);
   });
   // Before any caller subscribes, so a chunk is in the mirror before it is
   // broadcast. Here for the reason above: every agent terminal needs one. The

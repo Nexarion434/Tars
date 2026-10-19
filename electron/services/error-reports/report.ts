@@ -20,9 +20,10 @@ import { cleanSample, HEALTH_KEEP_MS, type HealthSample } from '../health/sample
  *     mechanism          { type, handled }
  *     stacktrace.frames  the 50 nearest the throw: filename (home as ~), function, lineno, colno, in_app
  *   tags.process         main or renderer
- *   tags.kind            abrupt-end or diagnostic, for the two reports of Tars's health only
+ *   tags.kind            abrupt-end or diagnostic, for the two reports of Tars's health, or agent-tool (2.0.4)
  *   contexts.os          { name, version }
- *   contexts.tars        for those two only, numbers rebuilt field by field (healthEvent, below)
+ *   contexts.tars        for those three only: a health report's numbers rebuilt field by field (healthEvent,
+ *                        below), or an agent tool error's code, tool and CLI, each from a closed list (agentToolEvent)
  *   contexts.runtime     { name: Electron, version }
  *   user.id              a random id for the installation, made on this machine
  */
@@ -37,6 +38,11 @@ export interface ReportFacts {
   host: string;
   os: { name: string; version: string };
   electron: string;
+  /**
+   * What an agent tool error may name: Tars's own tools (agent-guide.ts TOOL_TOPIC) and the CLIs it runs. Without it,
+   * no agent tool error leaves: one that cannot be checked is not sent.
+   */
+  agentTools?: { tools: ReadonlySet<string>; clis: ReadonlySet<string> };
 }
 
 interface ReportFrame {
@@ -61,8 +67,8 @@ export interface ErrorReport {
   level?: string;
   release: string;
   exception: { values: ReportException[] };
-  tags: { process: 'main' | 'renderer'; kind?: HealthKind };
-  contexts: { os: { name: string; version: string }; runtime: { name: 'Electron'; version: string }; tars?: AbruptEnd | Diagnostic };
+  tags: { process: 'main' | 'renderer'; kind?: HealthKind | 'agent-tool' };
+  contexts: { os: { name: string; version: string }; runtime: { name: 'Electron'; version: string }; tars?: AbruptEnd | Diagnostic | AgentToolError };
   user: { id: string };
 }
 
@@ -212,6 +218,15 @@ export function toReport(raw: unknown, facts: ReportFacts): ErrorReport | null {
     report.tags.kind = kind;
     report.contexts.tars = kind === 'abrupt-end' ? cleanAbruptEnd(record(record(event.contexts)?.tars)) : cleanDiagnostic(record(record(event.contexts)?.tars));
   }
+  if (isAgentToolKind(tags?.kind, exceptions)) {
+    // Rebuilt from its three fields alone, each from its closed list, or not sent: its message and stack too, so
+    // nothing the event carried beside them can leave with it.
+    const error = cleanAgentToolError(record(record(event.contexts)?.tars), facts.agentTools);
+    if (!error) return null;
+    report.tags.kind = 'agent-tool';
+    report.contexts.tars = error;
+    report.exception.values = [{ type: AGENT_TOOL_TYPE, value: agentToolValue(error), mechanism: { type: AGENT_TOOL_MECHANISM, handled: true } }];
+  }
   const id = text(event.event_id);
   if (id && /^[0-9a-f]{32}$/.test(id)) report.event_id = id;
   if (count(event.timestamp) !== undefined) report.timestamp = count(event.timestamp);
@@ -220,6 +235,18 @@ export function toReport(raw: unknown, facts: ReportFacts): ErrorReport | null {
   const level = text(event.level);
   if (level && LEVELS.has(level)) report.level = level;
   return report;
+}
+
+/**
+ * What a report is, as the budget counts it and the window is told (2.0.4): one of Tars's three own kinds, or an error
+ * Tars handled (its mechanism says handled), or one it did not.
+ */
+export type ReportKindName = 'error' | 'handled' | HealthKind | 'agent-tool';
+export const REPORT_KINDS: ReadonlySet<string> = new Set(['error', 'handled', 'abrupt-end', 'diagnostic', 'agent-tool']);
+
+export function reportKind(report: ErrorReport): ReportKindName {
+  if (report.tags.kind) return report.tags.kind;
+  return report.exception.values.at(-1)?.mechanism?.handled === true ? 'handled' : 'error';
 }
 
 /** The same error, whatever its event id, its time or its process: its types, messages and in-app frames. */
@@ -326,4 +353,57 @@ function cleanDiagnostic(raw: Loose | undefined): Diagnostic {
   const samples = (Array.isArray(raw?.samples) ? raw.samples : [])
     .map(cleanSample).filter((s): s is HealthSample => !!s);
   return { samples: samples.slice(-MAX_SAMPLES) };
+}
+
+
+/* ── The agents' tool errors (2.0.4, F3 of the maintainer's go of 2026-10-18) ── */
+
+/**
+ * An agent's tool call that Tars answered with an error, or a task it delivered that never started: its code (the
+ * status Tars answered with and the code that answer carries, `403 worker_may_not_order`, or one of Tars's own words,
+ * `never-started`), the tool (one of Tars's own, or `unknown`) and the CLI the agent runs. Never the agent's text, a
+ * path or a name: nothing else is read from the event.
+ */
+export interface AgentToolError {
+  code: string;
+  tool: string;
+  cli: string;
+}
+
+const AGENT_TOOL_TYPE = 'TarsAgentToolError';
+const AGENT_TOOL_MECHANISM = 'tars-agent-tool';
+/** A status, with the code Tars's answer carried; or one of Tars's own words. */
+const AGENT_TOOL_CODE = /^[1-5]\d\d(?: [a-z][a-z_]{2,40})?$/;
+const TARS_CODES: ReadonlySet<string> = new Set(['never-started']);
+/** Said when the MCP server named no tool of Tars's, or an older one named none. */
+export const UNKNOWN_TOOL = 'unknown';
+
+const agentToolValue = (e: AgentToolError) => `${e.tool} answered ${e.code} (${e.cli})`;
+
+/** The SDK event of an agent tool error. No `type`: the SDK runs beforeSend only for an event without one. */
+export function agentToolEvent(error: AgentToolError): Record<string, unknown> {
+  return {
+    platform: 'node',
+    level: 'warning',
+    timestamp: Date.now() / 1000,
+    exception: { values: [{ type: AGENT_TOOL_TYPE, value: agentToolValue(error), mechanism: { type: AGENT_TOOL_MECHANISM, handled: true } }] },
+    tags: { kind: 'agent-tool' },
+    contexts: { tars: { code: error.code, tool: error.tool, cli: error.cli } },
+  };
+}
+
+function isAgentToolKind(tag: unknown, exceptions: ReportException[]): boolean {
+  const [only] = exceptions;
+  return tag === 'agent-tool' && exceptions.length === 1 && only.type === AGENT_TOOL_TYPE && only.mechanism?.type === AGENT_TOOL_MECHANISM;
+}
+
+function cleanAgentToolError(raw: Loose | undefined, vocabulary: ReportFacts['agentTools']): AgentToolError | null {
+  if (!vocabulary) return null;
+  const code = text(raw?.code);
+  const tool = text(raw?.tool);
+  const cli = text(raw?.cli);
+  if (!code || !(AGENT_TOOL_CODE.test(code) || TARS_CODES.has(code))) return null;
+  if (!tool || !(tool === UNKNOWN_TOOL || vocabulary.tools.has(tool))) return null;
+  if (!cli || !vocabulary.clis.has(cli)) return null;
+  return { code, tool, cli };
 }

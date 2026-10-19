@@ -944,6 +944,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     send: () => ipcRenderer.invoke('diagnostic:send'),
   },
 
+  // The last error report's answer (2.0.4): for Settings' line beside the switch.
+  errorReports: {
+    last: () => ipcRenderer.invoke('errorReports:last'),
+  },
+
   // Platform info
   platform: process.platform,
 });

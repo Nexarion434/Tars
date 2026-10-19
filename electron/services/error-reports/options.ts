@@ -1,4 +1,4 @@
-import { toReport, reportFingerprint, keepErrorsOnly, type ReportFacts } from './report';
+import { toReport, reportFingerprint, reportKind, keepErrorsOnly, type ErrorReport, type ReportFacts } from './report';
 import type { ReportBudget } from './budget';
 
 /**
@@ -32,8 +32,8 @@ export interface ErrorReportDeps {
   makeTransport: (options: never) => Transport;
   /** Event ids the budget already counted (a health report, index.ts sendHealth): not counted twice. */
   preAdmitted?: Set<string>;
-  /** Told each event's answer from Sentry: its HTTP status, 0 when none came. */
-  onSent?: (eventId: string, status: number) => void;
+  /** Told each event's answer from Sentry: its HTTP status, 0 when none came, and what kind of report it was. */
+  onSent?: (eventId: string, status: number, kind: string) => void;
   /**
    * A health report's numbers, by event id, put back after the SDK's
    * normalization: it cuts what an event holds below a depth of 3, and a
@@ -53,13 +53,14 @@ function gated(base: Transport, deps: ErrorReportDeps): Transport {
         const kept = keepErrorsOnly(envelope as never, deps.facts());
         if (!kept) return {};
         const id = typeof kept[0].event_id === 'string' ? kept[0].event_id : undefined;
+        const kind = reportKind(kept[1][0][1] as ErrorReport);
         return Promise.resolve(base.send(kept)).then(
           (answer) => {
-            if (id) deps.onSent?.(id, Number((answer as { statusCode?: unknown })?.statusCode) || 0);
+            if (id) deps.onSent?.(id, Number((answer as { statusCode?: unknown })?.statusCode) || 0, kind);
             return answer;
           },
           (err) => {
-            if (id) deps.onSent?.(id, 0);
+            if (id) deps.onSent?.(id, 0, kind);
             throw err;
           },
         );
@@ -95,7 +96,7 @@ export function errorReportOptions(deps: ErrorReportDeps) {
       const report = toReport(whole, deps.facts());
       if (!report) return null;
       if (report.event_id && deps.preAdmitted?.has(report.event_id)) return report as never;
-      if (!deps.budget.admit(reportFingerprint(report))) return null;
+      if (!deps.budget.admit(reportFingerprint(report), reportKind(report))) return null;
       return report as never;
     },
     transport: (options: never) => gated(deps.makeTransport(options), deps) as never,
