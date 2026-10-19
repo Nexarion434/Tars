@@ -79,7 +79,9 @@ for (const newInterface of [false, true]) {
     });
     try {
       const page = await app.firstWindow();
-      await page.goto(`${DEV_URL}/review`, { waitUntil: 'domcontentloaded' });
+      // The channels are driven from Settings: the Review page scans every project as it opens (#488), and a
+      // project it scanned first is answered kept, with no scan id, where step 1 and 2 wait for a scan's events.
+      await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
       await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(newInterface ? 1 : 0, { timeout: 30_000 });
       await page.evaluate(() => {
@@ -142,6 +144,7 @@ for (const newInterface of [false, true]) {
       expect.soft(outside).toMatchObject({ success: false });
       expect.soft(inside.success).toBe(true);
 
+      await page.goto(`${DEV_URL}/review`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(800);
       await stepShot(page, newInterface ? 'review-new-interface' : 'review');
     } finally {
