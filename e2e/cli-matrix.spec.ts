@@ -37,7 +37,6 @@ import { writeFakeClis } from './fake-clis.mjs';
  *     where opencode and pi do not read theirs (documented by them, not measured on a real install);
  *   - gemini's first task is never closed, and holds every later one;
  *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok) nor from gemini;
- *   - grok's delegation to claude runs and is reported as never started (H1, until fix/second-delegation-into-claude).
  * OpenRouter starts since #458, and codex since fix/codex-works, which made their rules go; their own tasks to gemini
  * now wait behind gemini's first.
  * KNOWN_RED has the rules, each with what its cells must say. A project of its own since 19/10 (playwright.config.ts):
@@ -82,7 +81,6 @@ const KNOWN_RED: Rule[] = [
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
   { to: ['opencode', 'pi'], steps: ['reply'], why: 'no Tars tools where opencode and pi read their MCP servers (above; documented, not measured)', seen: /no Tars server/ },
-  { from: ['grok'], to: ['claude'], steps: ['delegate.answer'], why: 'the task ran in claude\'s terminal, typed without its task line, and delegate_task told grok it never started (the Audit\'s H1 symptom on #453): until fix/second-delegation-into-claude. A race: amp\'s delegation to claude went the same way once, at a load of 150', seen: /never started/ },
 ];
 
 const expectedRed = (cell: Cell): Rule | undefined => KNOWN_RED.find((r) =>
