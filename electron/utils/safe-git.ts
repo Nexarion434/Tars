@@ -39,7 +39,27 @@ const NO_PROGRAMS = [
   `gpg.x509.program=${os.devNull}`,
   `gpg.ssh.allowedSignersFile=${os.devNull}`,
   'credential.helper=',
+  // A fetch goes out by https, http or ssh, and by nothing else (the QA's main
+  // red of 2.0.4: `protocol.allow=never` alone refused them too, so a chat
+  // runner's fetch never left Tars). Each policy is named: a repository's own
+  // `protocol.<name>.allow` beats `protocol.allow` wherever it is set, so
+  // ext:: (runs a command), fd::, file:// and local paths (git-upload-pack
+  // here, which `remote.<name>.uploadpack` names) and git:// (core.gitProxy,
+  // whose first value wins, so it cannot be switched off from here) are
+  // refused by name. Any other helper stays under the default, never, unless
+  // the repository allows it and a git-remote-<name> is on the PATH.
   'protocol.allow=never',
+  'protocol.https.allow=always',
+  'protocol.http.allow=always',
+  'protocol.ssh.allow=always',
+  'protocol.ext.allow=never',
+  'protocol.fd.allow=never',
+  'protocol.file.allow=never',
+  'protocol.git.allow=never',
+  // What ssh and http would run: the repository's ssh command, and an askpass
+  // for a password (credential.helper= above already empties the helpers).
+  'core.sshCommand=ssh',
+  'core.askPass=',
   'submodule.recurse=false',
   'diff.ignoreSubmodules=all',
   'status.submoduleSummary=false',
