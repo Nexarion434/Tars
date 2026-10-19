@@ -133,8 +133,10 @@ describe('main.ts (F4)', () => {
   const imports = [...main.matchAll(/^import [^;]*;$/gm)].map(m => m[0]);
 
   it('8. installs the guard right after the compile cache, before any other module loads', () => {
-    expect(imports[0]).toBe("import './core/compile-cache';");
-    expect(imports[1]).toMatch(/^import \{ uncaught \} from '\.\/uncaught';$/);
+    // Only #477's sandbox guard comes before them: it exits a sandbox build before the data folder is read.
+    expect(imports[0]).toBe("import { SANDBOX_BUILD } from './core/sandbox-guard';");
+    expect(imports[1]).toBe("import './core/compile-cache';");
+    expect(imports[2]).toMatch(/^import \{ uncaught \} from '\.\/uncaught';$/);
     const install = fs.readFileSync(path.join(__dirname, '../../../electron/uncaught.ts'), 'utf-8');
     expect(install).toMatch(/guardUncaught\(process,/);
   });
