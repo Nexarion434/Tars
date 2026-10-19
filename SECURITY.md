@@ -607,7 +607,10 @@ cluster's in `~/.kube` (the Audit's L1 on #466). `fs:add-custom-project` refuses
 such a folder, and since the projects' list lives in `~/.dorothy`, which every
 agent can write, each read judges its own target as well. `app:getSettings` and `settings:updated` carry no secret: a
 set one is a mask of bullets and `secretsSet` says which are set; `secrets:set`
-sets or clears one and answers whether it is set. The last three the window
+sets or clears one and answers whether it is set. Settings puts no mask in a
+field (`components/Settings/SecretRow.tsx`): a set secret reads set, replace
+opens an empty field, and no save sends a secret, so nothing typed after a mask
+is ever taken for a new key (`lib/secret-settings.ts`). The last three the window
 saw go through the main process since the Audit's L2 on #466
 (`services/secret-handoff.ts`): the Telegram auth token Settings mints is shown
 once in a dialog of the main process, which the page cannot read, and

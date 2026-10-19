@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WINDOW_SECRETS, withoutSecrets, secretIsSet, withSecretState } from '../../src/lib/secret-settings';
+import { WINDOW_SECRETS, SECRET_MASK as WINDOW_MASK, withoutSecrets, secretIsSet, withSecretState } from '../../src/lib/secret-settings';
 import { SECRET_FIELDS, WINDOW_SET_FIELDS, SECRET_MASK } from '../../electron/services/settings-secrets';
 import { computeProviderAvailability } from '../../src/lib/providers';
 
@@ -24,6 +24,8 @@ import { computeProviderAvailability } from '../../src/lib/providers';
  *    said of the other secrets.
  * 9. A provider reads as usable from its key's value: the mask for a key main no longer holds makes New agent offer a
  *    provider that cannot start, and a key set with no value in the window hides one that can.
+ * 10. The mask the window sends for "the token Tars keeps" (Discord's invite link) is not the one main hands it and
+ *     takes back, so main makes the link from the mask itself.
  */
 
 describe('a save never sends a secret (1, 2, 3, 4)', () => {
@@ -107,5 +109,11 @@ describe('a provider is usable from secretsSet, never from a value (9)', () => {
     expect([on.openrouter, on.qwen, on.moonshot]).toEqual([true, true, true]);
     const off = computeProviderAvailability({}, { openRouterEnabled: true, openRouterApiKey: SECRET_MASK, secretsSet: { openRouterApiKey: false } });
     expect([off.openrouter, off.qwen]).toEqual([false, false]);
+  });
+});
+
+describe("the mask is main's (10)", () => {
+  it('is the very string main hands the window and takes back', () => {
+    expect(WINDOW_MASK).toBe(SECRET_MASK);
   });
 });

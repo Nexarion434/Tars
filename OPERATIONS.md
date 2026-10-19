@@ -1956,6 +1956,9 @@ additions, then probes the common directories above for
 `claude, codex, gemini, grok, qwencode, opencode, pi, gws, gcloud, gh, node, minimax`.
 A path you set by hand in Settings → AI & Providers → CLI Paths wins, provided the file exists.
 Results are cached to `~/.dorothy/cli-paths.json` so MCP servers can read them too.
+Settings → CLI Paths shows this detection as it opens, and Settings → Providers says a CLI is ready
+where it found one and asks that very file its version (`src/hooks/useCliDetection.ts`, since 2.0.4):
+the two pages read the same answer, and `detect now` looks again for both.
 
 ```bash
 jq . ~/.dorothy/cli-paths.json

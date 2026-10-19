@@ -1,6 +1,6 @@
 # Tars Privacy Policy
 
-Last updated: 2026-10-01.
+Last updated: 2026-10-19.
 
 This policy covers two things: the Tars desktop app, and the website that offers it for download.
 
@@ -21,7 +21,7 @@ Tars is open-source software published by Cooper Labs (contact@cooperlabs.xyz). 
 Tars keeps its data in these places:
 
 - **`~/.dorothy/`** (the folder keeps the project's former name). It holds:
-  - your settings, including the API keys, bot tokens and passwords you enter (`app-settings.json`);
+  - your settings (`app-settings.json`), which since 2.0.4 hold none of your keys, tokens or passwords;
   - your agents and the last part of each agent's terminal output (`agents.json`, with a backup copy);
   - projects and templates;
   - the kanban tasks of the local board Tars used before 1.8.1, kept as a backup since the board moved to Hermes;
@@ -33,11 +33,10 @@ Tars keeps its data in these places:
   - the model catalogue cache;
   - Claude rate-limit and token counters;
   - a log of CLI updates;
-  - the token that local programs use to talk to Tars;
   - if you turned error reports on, the random id of your installation and when the last reports left (`error-reports.json`).
 
   At every start, Tars closes this folder to the other accounts on your Mac: the folder and its subfolders can be opened by your user account only, and the files directly in it are readable by your account only.
-- **`~/.tars-private/`**: your conversation with the super chat (the fleet overseer), the list of Hermes sessions that conversation was held in, the Hermes webhook secret, and, if you use several Claude accounts, their list: each account's name, its place in the order and the thresholds, never a credential. This folder is readable by your user account only, and Tars does not point the agents it starts at it. When an agent searches memory, the super chat's Hermes sessions are left out of what it gets back.
+- **`~/.tars-private/`**: the API keys, bot tokens and passwords you enter in Settings (`settings-secrets.json`), the token that local programs use to talk to Tars, your Hermes connection and its sign-in, your conversation with the super chat (the fleet overseer), the list of Hermes sessions that conversation was held in, the Hermes webhook secret, and, if you use several Claude accounts, their list: each account's name, its place in the order and the thresholds, never a credential. This folder is readable by your user account only, and Tars does not point the agents it starts at it. Settings says whether a key is set and never shows it back, and Tars shows the Telegram token it creates in a window of its own. When an agent searches memory, the super chat's Hermes sessions are left out of what it gets back.
 - **`~/.claude/` and your other CLIs' settings.** So that it can follow your agents, Tars adds entries to the configuration of the command-line tools it runs:
   - hooks in `~/.claude/settings.json`, which run in every Claude Code session on your account, including sessions you start outside Tars. They report only to Tars's local address, 127.0.0.1;
   - its own MCP servers, and a "trusted folder" mark for each project folder, in `~/.claude.json`. Tars never marks your home folder, the root of the disk or a folder above your home;
