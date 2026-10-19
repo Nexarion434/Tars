@@ -1,4 +1,13 @@
 /** What "Send a diagnostic" answers: how many samples left and their first and last time (ISO), or why nothing did. */
+/** The last error report's answer (errorReports:last). */
+export interface ErrorReportsLast {
+  /** When Sentry answered, ISO. */
+  at: string;
+  kind: 'error' | 'handled' | 'agent-tool' | 'abrupt-end' | 'diagnostic';
+  /** Sentry's HTTP status; 0 when none came. */
+  status: number;
+}
+
 export type DiagnosticAnswer =
   | { sent: true; samples: number; from: string; to: string }
   | { sent: false; reason: string };
@@ -2431,6 +2440,14 @@ export interface ElectronAPI {
   diagnostic: {
     /** Sends the last 24 hours of health samples (numbers, with the names of Tars's own calls and pages) once; refused with the reason, a sentence shown as is. */
     send: () => Promise<DiagnosticAnswer>;
+  };
+
+  errorReports: {
+    /**
+     * The last error report sent and Sentry's answer (2.0.4), kept across restarts, or null when none was. `kind` is
+     * error, handled, agent-tool, abrupt-end or diagnostic; `status` is Sentry's HTTP status, 0 when none came.
+     */
+    last: () => Promise<ErrorReportsLast | null>;
   };
 
   // Platform info

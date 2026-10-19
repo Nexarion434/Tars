@@ -13,6 +13,9 @@
 import { SANDBOX_BUILD } from './core/sandbox-guard';
 // Then: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
+// Then the guard that keeps an uncaught exception from freezing main behind
+// Electron's error box, before any other module loads (core/uncaught-guard.ts).
+import { uncaught } from './uncaught';
 
 import { startGithubWatch } from './services/github-watch';
 import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
@@ -178,6 +181,8 @@ import {
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
 import { endAuthCommands } from './services/claude-accounts/auth';
+import { TOOL_TOPIC } from './services/agent-guide';
+import { getAllProviders } from './providers';
 
 // ============== App Settings Management ==============
 
@@ -198,7 +203,12 @@ let recovery: { flush: () => void } | null = null;
 // (services/health/monitor.ts): before any of them is registered.
 timeIpcHandlers(ipcMain as unknown as Parameters<typeof timeIpcHandlers>[0]);
 
-const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
+const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true, process.platform, {
+  onFatalError: uncaught.onFatalError,
+  // What an agent tool error may name (2.0.4): Tars's own tools and the CLIs it runs.
+  vocabulary: { tools: new Set(Object.keys(TOOL_TOPIC)), clis: new Set(getAllProviders().map(provider => provider.id)) },
+  channels: ipcChannels.known(),
+});
 
 /** The health samples, ~/.dorothy, on this machine only (services/health/samples.ts). */
 const HEALTH_FILE = dataPath('health-samples.jsonl');
@@ -602,6 +612,7 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,

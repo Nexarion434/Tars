@@ -25533,7 +25533,7 @@
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
                                           "width": 560,
-                                          "content": "Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id.",
+                                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 11,
@@ -25589,24 +25589,44 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "B6N1og",
-                                  "name": "Toggle off",
-                                  "width": 30,
-                                  "height": 16,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "layout": "none",
+                                  "id": "c2Ctl3",
+                                  "name": "r",
+                                  "gap": 12,
+                                  "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "rectangle",
-                                      "id": "i7Flo",
-                                      "x": 2,
-                                      "y": 1,
-                                      "name": "knob",
-                                      "fill": "$text-secondary",
-                                      "width": 12,
-                                      "height": 12
+                                      "type": "text",
+                                      "id": "CKMVM",
+                                      "name": "last report",
+                                      "fill": "$text-muted",
+                                      "content": "No report sent yet",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "YxSqL",
+                                      "name": "Toggle off",
+                                      "width": 30,
+                                      "height": 16,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "layout": "none",
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "M2WKgH",
+                                          "x": 2,
+                                          "y": 1,
+                                          "name": "knob",
+                                          "fill": "$text-secondary",
+                                          "width": 12,
+                                          "height": 12
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -139466,7 +139486,7 @@
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
                                           "width": 560,
-                                          "content": "Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id.",
+                                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 11,
@@ -139522,24 +139542,44 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "MFQWn",
-                                  "name": "Toggle off",
-                                  "width": 30,
-                                  "height": 16,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "layout": "none",
+                                  "id": "vJko4",
+                                  "name": "r",
+                                  "gap": 12,
+                                  "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "rectangle",
-                                      "id": "K6vZCw",
-                                      "x": 2,
-                                      "y": 1,
-                                      "name": "knob",
-                                      "fill": "$text-secondary",
-                                      "width": 12,
-                                      "height": 12
+                                      "type": "text",
+                                      "id": "OWEA4",
+                                      "name": "last report",
+                                      "fill": "$text-muted",
+                                      "content": "No report sent yet",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "D2TCd",
+                                      "name": "Toggle off",
+                                      "width": 30,
+                                      "height": 16,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "layout": "none",
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "dSEiJ",
+                                          "x": 2,
+                                          "y": 1,
+                                          "name": "knob",
+                                          "fill": "$text-secondary",
+                                          "width": 12,
+                                          "height": 12
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -285992,7 +286032,7 @@
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
                                           "width": 560,
-                                          "content": "Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id.",
+                                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 11,
@@ -286048,24 +286088,44 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "BeTti",
-                                  "name": "Toggle off",
-                                  "width": 30,
-                                  "height": 16,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "layout": "none",
+                                  "id": "Nx1BS",
+                                  "name": "r",
+                                  "gap": 12,
+                                  "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "rectangle",
-                                      "id": "u6RDZY",
-                                      "x": 2,
-                                      "y": 1,
-                                      "name": "knob",
-                                      "fill": "$text-secondary",
-                                      "width": 12,
-                                      "height": 12
+                                      "type": "text",
+                                      "id": "KszpR",
+                                      "name": "last report",
+                                      "fill": "$text-muted",
+                                      "content": "No report sent yet",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "g2PWXN",
+                                      "name": "Toggle off",
+                                      "width": 30,
+                                      "height": 16,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "layout": "none",
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "O8VDR5",
+                                          "x": 2,
+                                          "y": 1,
+                                          "name": "knob",
+                                          "fill": "$text-secondary",
+                                          "width": 12,
+                                          "height": 12
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -287482,7 +287542,7 @@
                                           "fill": "$text-secondary",
                                           "textGrowth": "fixed-width",
                                           "width": 560,
-                                          "content": "Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id.",
+                                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
                                           "lineHeight": 1.4,
                                           "fontFamily": "$font-ui",
                                           "fontSize": 11,
@@ -287538,24 +287598,44 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "X2hkj",
-                                  "name": "Toggle off",
-                                  "width": 30,
-                                  "height": 16,
-                                  "fill": "$surface-raised",
-                                  "stroke": "$border",
-                                  "strokeWidth": 1,
-                                  "layout": "none",
+                                  "id": "Exsgx",
+                                  "name": "r",
+                                  "gap": 12,
+                                  "alignItems": "center",
                                   "children": [
                                     {
-                                      "type": "rectangle",
-                                      "id": "A1Hhw1",
-                                      "x": 2,
-                                      "y": 1,
-                                      "name": "knob",
-                                      "fill": "$text-secondary",
-                                      "width": 12,
-                                      "height": 12
+                                      "type": "text",
+                                      "id": "j8ZmA",
+                                      "name": "last report",
+                                      "fill": "$text-muted",
+                                      "content": "No report sent yet",
+                                      "lineHeight": 1.4,
+                                      "fontFamily": "$font-ui",
+                                      "fontSize": 11.5,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "fBdSU",
+                                      "name": "Toggle off",
+                                      "width": 30,
+                                      "height": 16,
+                                      "fill": "$surface-raised",
+                                      "stroke": "$border",
+                                      "strokeWidth": 1,
+                                      "layout": "none",
+                                      "children": [
+                                        {
+                                          "type": "rectangle",
+                                          "id": "sijeO",
+                                          "x": 2,
+                                          "y": 1,
+                                          "name": "knob",
+                                          "fill": "$text-secondary",
+                                          "width": 12,
+                                          "height": 12
+                                        }
+                                      ]
                                     }
                                   ]
                                 }
@@ -598120,6 +598200,1438 @@
               "fontFamily": "$font-ui",
               "fontSize": 14,
               "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "DnGla",
+      "x": 0,
+      "y": 96000,
+      "name": "Settings · Preferences · error reports, the last report",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 16,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "hyte4",
+          "name": "title",
+          "fill": "$text-primary",
+          "content": "Send error reports: the last report beside the switch",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "z1V4b1",
+          "name": "intro",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": 1200,
+          "content": "When the last report left, which kind it was, and what Sentry answered, from errorReports:last. Nothing is shown of what it carried.",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-ui",
+          "fontSize": 12.5,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "EK2Iy",
+          "name": "state off, nothing sent yet",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "j2HbR",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "off, nothing sent yet",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "PuaCq",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ODWrV",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "CasSf",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bkEu3",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "T0s7DU",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "YJ6uM",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "T4xaCj",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "No report sent yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "V2zMz",
+                          "name": "Toggle off",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "PfBDe",
+                              "x": 2,
+                              "y": 1,
+                              "name": "knob",
+                              "fill": "$text-secondary",
+                              "width": 12,
+                              "height": 12
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bp82E",
+          "name": "state on: when, which kind, and Sentry's answer",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "WS8Zo",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "on: when, which kind, and Sentry's answer",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "FSwQO",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "m1fUOW",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "jhd2G",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "QuvOS",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "dXao9",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "q6wznk",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "F84XlY",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 3 min ago (handled), Sentry answered 200",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "l3pQrw",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "QDPGo",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "y72UT",
+          "name": "state Sentry did not answer",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "PusYN",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "Sentry did not answer",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "OBEc4",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ofJFq",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "anoQb",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "XeWcz",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "etM9P",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "TWxCa",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "hNd0O",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 12 min ago (uncaught), no answer from Sentry",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "d7oypt",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "OkzG5",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "S3W2Es",
+          "name": "state Sentry refused it, or was busy",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "G8rmL",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "Sentry refused it, or was busy",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "mvfBW",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "VmynC",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "y3z6oR",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rR0OU",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "PveYf",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "UpGkM",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rRqbz",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: yesterday at 18:02 (agent tool), Sentry answered 429",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ScZX8",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "Xqgqp",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "MRKeg",
+          "name": "state off again: the last report stays said",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "Y3KPnn",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "off again: the last report stays said",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "a09Cy",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "r7iPgr",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mnkJd",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "vUbbb",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "asA8L",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Ulrq5",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ulKPw",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 2 days ago (abrupt end), Sentry answered 200",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "egaEH",
+                          "name": "Toggle off",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "b6mu5",
+                              "x": 2,
+                              "y": 1,
+                              "name": "knob",
+                              "fill": "$text-secondary",
+                              "width": 12,
+                              "height": 12
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "eCqVo",
+      "x": 1540,
+      "y": 96000,
+      "name": "Settings · Preferences · error reports, the last report · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 16,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "O5v3wI",
+          "name": "title",
+          "fill": "$text-primary",
+          "content": "Send error reports: the last report beside the switch",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "Nuxt8",
+          "name": "intro",
+          "fill": "$text-secondary",
+          "textGrowth": "fixed-width",
+          "width": 1200,
+          "content": "When the last report left, which kind it was, and what Sentry answered, from errorReports:last. Nothing is shown of what it carried.",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-ui",
+          "fontSize": 12.5,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "ZXfn5",
+          "name": "state off, nothing sent yet",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "e9Vic",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "off, nothing sent yet",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "nzezY",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "yBJKp",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "V5owjN",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "lYAf7",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "h8G1Fh",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "oyr6y",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "nr9W6",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "No report sent yet",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "NPwAV",
+                          "name": "Toggle off",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "wIlNM",
+                              "x": 2,
+                              "y": 1,
+                              "name": "knob",
+                              "fill": "$text-secondary",
+                              "width": 12,
+                              "height": 12
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bRyR9",
+          "name": "state on: when, which kind, and Sentry's answer",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "C22CH0",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "on: when, which kind, and Sentry's answer",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "B0pO2o",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "EkI3Y",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "vQJkq",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "S2A7F",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "rWGe0",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "WUPzq",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "nWv1H",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 3 min ago (handled), Sentry answered 200",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "MBBNH",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "WzK4I",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "z2xh0",
+          "name": "state Sentry did not answer",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "GiOWR",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "Sentry did not answer",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "e3MdK",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "TKEgk",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "rxOR6",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Efhiv",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "tQ0Xu",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ubWpX",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "xcuJV",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 12 min ago (uncaught), no answer from Sentry",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "V5WIq",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "fNKxF",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "yIdzC",
+          "name": "state Sentry refused it, or was busy",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "K4azv",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "Sentry refused it, or was busy",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "heHtL",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "oxUid",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "EnuWi",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "PZZL7",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "lZ6PR",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "RcHIM",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bzgqE",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: yesterday at 18:02 (agent tool), Sentry answered 429",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "eF82E",
+                          "name": "Toggle on",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$accent",
+                          "stroke": "$accent",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "tk9el",
+                              "x": 16,
+                              "y": 3,
+                              "name": "knob",
+                              "fill": "$on-accent",
+                              "width": 10,
+                              "height": 10
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bgY15",
+          "name": "state off again: the last report stays said",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "D8lVr",
+              "name": "caption",
+              "fill": "$text-muted",
+              "content": "off again: the last report stays said",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "ohyiY",
+              "name": "box",
+              "width": "fill_container",
+              "fill": "$surface",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "padding": [
+                4,
+                16,
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ZFVuY",
+                  "name": "row Send error reports",
+                  "width": "fill_container",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    11,
+                    0
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sGPRc",
+                      "name": "l",
+                      "width": 520,
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Oun6C",
+                          "name": "n",
+                          "fill": "$text-primary",
+                          "content": "Send error reports",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "UTkyi",
+                          "name": "sent",
+                          "fill": "$text-secondary",
+                          "textGrowth": "fixed-width",
+                          "width": 520,
+                          "content": "Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "m4kLS",
+                      "name": "r",
+                      "gap": 12,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "x5uAw",
+                          "name": "last report",
+                          "fill": "$text-muted",
+                          "content": "Last report: 2 days ago (abrupt end), Sentry answered 200",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11.5,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Cnb7C",
+                          "name": "Toggle off",
+                          "width": 30,
+                          "height": 16,
+                          "fill": "$surface-raised",
+                          "stroke": "$border",
+                          "strokeWidth": 1,
+                          "layout": "none",
+                          "children": [
+                            {
+                              "type": "rectangle",
+                              "id": "ADUDs",
+                              "x": 2,
+                              "y": 1,
+                              "name": "knob",
+                              "fill": "$text-secondary",
+                              "width": 12,
+                              "height": 12
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

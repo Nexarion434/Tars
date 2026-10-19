@@ -38,6 +38,11 @@ const KEEP_ALIVE_GRACE_MS = 55_000;
 // so. Re-exported here because callers reach it through this file.
 export { emitAgentStatus } from './agent-events';
 import { agentStatusEmitter } from './agent-events';
+import { inApiCall } from './api-routes/call-context';
+import { apiAnswerReports, reportAgentToolError, reportHandledError } from './error-reports/handled';
+import { TOOL_TOPIC } from './agent-guide';
+import { agents } from '../core/agent-manager';
+import { getProvider } from '../providers';
 export { agentStatusEmitter };
 
 let apiServer: http.Server | null = null;
@@ -228,6 +233,9 @@ export function resolveCaller(
   return { ok: false, status: 401, error: 'Unauthorized' };
 }
 
+/** Tars's own tools, which an agent tool error may name (agent-guide.ts). */
+const TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(TOOL_TOPIC));
+
 function createRouteApp(): RouteApp {
   const app: RouteApp = {
     routes: [],
@@ -384,10 +392,19 @@ export function startApiServer(
       }
     }
 
+    // What was answered, for the reports (services/error-reports/handled.ts): a 500 a route answered without
+    // throwing, and an agent's tool call answered 400 or more.
+    const answered: { status: number; bodyCode?: unknown } = { status: 0 };
     const sendJson = (data: unknown, status = 200) => {
+      const said = data && typeof data === 'object' ? data as { code?: unknown } : {};
+      answered.status = status;
+      answered.bodyCode = said.code;
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
     };
+    const fromMcp = req.headers['x-tars-client'] === 'mcp';
+    const tool = typeof req.headers['x-tars-tool'] === 'string' ? req.headers['x-tars-tool'] : undefined;
+    const callerAgent = caller.ok ? caller.agentId : undefined;
 
     // A hook runs inside an agent's CLI, whose environment carries that
     // terminal's own token (CLAUDE_MGR_API_TOKEN, minted per spawn), and posts
@@ -414,12 +431,15 @@ export function startApiServer(
       }
     }
 
+    let matched: string | RegExp | undefined;
+    let threw = false;
     try {
       // Dispatch to first matching route
       for (const route of routeApp.routes) {
         if (route.method !== req.method) continue;
         const params = matchRoute(route.pattern, pathname);
         if (params === null) continue;
+        matched = route.pattern;
 
         const routeReq: RouteRequest = {
           method: req.method!,
@@ -434,14 +454,23 @@ export function startApiServer(
           internal: caller.ok ? caller.internal === true : false,
           hermes: caller.ok ? caller.hermes === true : false,
         };
-        await route.handler(routeReq, sendJson, ctx);
+        await inApiCall({ tool, fromMcp, agentId: callerAgent }, () => route.handler(routeReq, sendJson, ctx));
         return;
       }
 
       sendJson({ error: 'Not found' }, 404);
     } catch (error) {
+      threw = true;
       console.error('API error:', error);
       sendJson({ error: 'Internal server error' }, 500);
+    } finally {
+      const agent = callerAgent && !pathname.startsWith('/api/hooks/') ? agents.get(callerAgent) : undefined;
+      const reports = apiAnswerReports({
+        method: req.method ?? '', route: matched, status: answered.status, bodyCode: answered.bodyCode, threw,
+        agent: agent ? { provider: getProvider(agent.provider).id } : undefined, fromMcp, tool, tools: TOOL_NAMES,
+      });
+      if (reports.handled) reportHandledError(reports.handled);
+      if (reports.agentTool) reportAgentToolError(reports.agentTool);
     }
   });
 

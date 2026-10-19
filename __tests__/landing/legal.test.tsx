@@ -74,12 +74,13 @@ describe('the structure of a document (3)', () => {
     expect(text(dorothy[2])).toMatch(/^At every start, Tars closes this folder/);
     expect(claude.map(b => b.kind)).toEqual(['paragraph', 'list', 'paragraph']);
     expect(text(claude[2])).toMatch(/^Claude Code writes its own conversation transcripts/);
-    // An item with a nested list and three paragraphs after it keeps all of them.
+    // An item with a nested list and four paragraphs after it keeps all of them (the agents' tool errors' since 2.0.4).
     const leaves = lists(privacy).find(l => text(l.items[0][0]).startsWith('AI coding CLIs you installed'))!;
     const errors = leaves.items.find(item => text(item[0]).startsWith('Error reports, to Sentry'))!;
-    expect(errors.map(b => b.kind)).toEqual(['paragraph', 'list', 'paragraph', 'paragraph', 'paragraph']);
+    expect(errors.map(b => b.kind)).toEqual(['paragraph', 'list', 'paragraph', 'paragraph', 'paragraph', 'paragraph']);
     expect(lists(errors)[0].items).toHaveLength(5);
-    expect(text(errors[4])).toMatch(/^Like any connection, the report reaches Sentry/);
+    expect(text(errors[3])).toMatch(/^When Tars refuses a tool call one of your agents made to it/);
+    expect(text(errors[5])).toMatch(/^Like any connection, the report reaches Sentry/);
     // The list ends where the unindented paragraph starts.
     expect(text(privacy[privacy.indexOf(stays) + 1])).toBe('Local traffic stays local. Tars listens on 127.0.0.1 only: port 31415 for its hooks and tools, and 31416 for its OpenAI-compatible bridge. It does not accept connections from other machines.');
     // The lists, items and paragraphs of the markup, every other tag and attribute out.

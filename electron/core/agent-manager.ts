@@ -34,6 +34,9 @@ import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
 import { wakeFromSleep } from './agent-asleep';
+import { currentApiCall } from '../services/api-routes/call-context';
+import { reportAgentToolError, reportHandledError, taskNeverStarted } from '../services/error-reports/handled';
+import { UNKNOWN_TOOL } from '../services/error-reports/report';
 import { trustsTooMuch } from '../utils/trust-too-much';
 
 /**
@@ -879,6 +882,8 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     agent.currentSessionId = undefined;
   }
   const ownerAtArming = agent.currentSessionId;
+  // Who delivered the task (2.0.4): an agent's tool, through the API, makes its never starting that tool's error.
+  const deliveredBy = currentApiCall();
 
   const timer = setTimeout(() => {
     const live = agents.get(agent.id);
@@ -912,6 +917,13 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     // that dispatched it hang off.
     scheduleTick();
     emitAgentStatus(live.id);
+    // And in the reports, when they are on: never the agent's name or the task's words.
+    const cli = getProvider(live.provider).id;
+    if (deliveredBy?.fromMcp && deliveredBy.agentId) {
+      reportAgentToolError({ code: 'never-started', tool: deliveredBy.tool ?? UNKNOWN_TOOL, cli });
+    } else {
+      reportHandledError(taskNeverStarted(cli, TASK_START_GRACE_MS));
+    }
   }, TASK_START_GRACE_MS);
   // A pending check must never be the reason the app cannot quit.
   timer.unref();

@@ -12,6 +12,7 @@ import * as fs from "fs";
 import * as http from "http";
 import { createHash, randomBytes } from "crypto";
 import { noAnswerWithin, send, TARS_WAIT_MS } from "./http.js";
+import { toolCall } from "./tool-call.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
 
@@ -126,6 +127,11 @@ export async function apiRequest(
   }
   if (CALLER_AGENT_ID) {
     headers["X-Tars-Caller-Id"] = CALLER_AGENT_ID;
+  }
+  // The tool this call runs for, so that Tars can report an error it answers with as that tool's (tool-call.ts).
+  const tool = toolCall.getStore();
+  if (tool) {
+    headers["X-Tars-Tool"] = tool;
   }
   if (CALLER_PROJECT_PATH) {
     headers["X-Tars-Caller-Project"] = CALLER_PROJECT_PATH;
