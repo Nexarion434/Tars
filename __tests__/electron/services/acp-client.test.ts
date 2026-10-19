@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { AcpSession } from '../../../electron/services/acp/client';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * A fake agent that speaks just enough ACP to prove the client's contract:
@@ -15,7 +16,7 @@ const started: AcpSession[] = [];
 
 function fakeAgent(script: string): { command: string; args: string[] } {
   const file = path.join(tmp, `agent-${Math.abs(hash(script))}.mjs`);
-  fs.writeFileSync(file, script);
+  fs.writeFileSync(file, RECORDS_ITS_PID + script);
   return { command: process.execPath, args: [file] };
 }
 
@@ -39,8 +40,12 @@ process.stdin.on('data', chunk => {
 });
 `;
 
+const leftovers = new Leftovers();
 afterEach(() => {
   for (const s of started.splice(0)) s.stop();
+  // Ended by its id too, stopped or not, whatever stop() got to (leftover-processes.ts).
+  leftovers.push(...takePidsRecordedIn(tmp));
+  leftovers.end();
 });
 
 function track(session: AcpSession): AcpSession {

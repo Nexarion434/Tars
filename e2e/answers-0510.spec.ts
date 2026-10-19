@@ -58,7 +58,8 @@ test('Delete keeps the work on wip/, a restart after a stop says whose stop, a f
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent('d1', 'Backend Engineer', { worktreePath: wt, branchName: 'feat/x' }),
     agent('s1', 'Night Worker'),
-    agent('o1', 'Project Lead'),
+    // The project's orchestrator: since #449 only Tars, the window and an orchestrator stop, restart or remove another agent.
+    agent('o1', 'Project Lead', { role: 'orchestrator' }),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
