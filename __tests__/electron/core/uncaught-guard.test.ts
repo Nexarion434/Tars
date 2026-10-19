@@ -81,7 +81,7 @@ describe('an uncaught exception in main (F4)', () => {
     const { proc } = processWithElectron();
     const lines: string[] = [];
     const quit = vi.fn();
-    const guard = guardUncaught(proc as never, { log: line => lines.push(line), quit, quitAfterMs: 2_000 });
+    guardUncaught(proc as never, { log: line => lines.push(line), quit, quitAfterMs: 2_000 });
     // The ready callback rejected before it opened the window, the SDK listening too.
     proc.on('unhandledRejection', () => undefined);
     proc.emit('unhandledRejection', new Error('createWindow threw'), Promise.resolve());
