@@ -38,6 +38,10 @@ import { EventEmitter } from 'events';
  *     executable file, a skill name, an empty name or one with ", task t-",
  *     plan on a provider without plan mode, a key provider without its key.
  * 12. A value of the wrong type reaches the record (skills as a string).
+ * 12b. A folder handed besides the project (secondaryProjectPath) that is
+ *     ~/.tars-private, inside it, or holds it (the home folder, the root) is
+ *     taken, by update_agent or by create_agent: the agent would be handed
+ *     what agents are never handed (the Audit's L1 on #480).
  *
  * When it applies (a running turn is never cut)
  * 13. A change of provider or CLI path while a CLI runs, or starts, in the
@@ -60,7 +64,10 @@ import { EventEmitter } from 'events';
  *        only on its first start since Tars opened;
  *     e. a change of CLI: at its next start, on a new conversation, even with
  *        an older conversation of the new CLI on disk;
- *     f. a name or skills only: now, nothing restarted.
+ *     f. a name or skills only: nothing restarted, and the answer says the
+ *        session in its terminal goes on under its old name and skills, its
+ *        next session taking the new ones (the Audit's L2 on #480: it said
+ *        "now", and "nothing it reads when it starts was changed").
  */
 
 const mockPtyProcess = { onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), write: vi.fn() };
@@ -109,6 +116,7 @@ import * as path from 'path';
 import * as pty from 'node-pty';
 import { POSIX_ROOT, type PosixEntry } from '../../platform/posix-fake-disk';
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
+import { PRIVATE_DIR } from '../../../../electron/constants';
 import { launchBegins, resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents, saveAgents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
@@ -183,6 +191,22 @@ async function update(id: string, body: Record<string, unknown>, caller: Caller 
   } as RouteRequest;
   await route!.handler(req, sendJson, ctx);
   expect(sendJson).toHaveBeenCalledTimes(1);
+  const [answer, status] = sendJson.mock.calls[0] as [Record<string, unknown>, number | undefined];
+  return { answer, status: status ?? 200 };
+}
+
+/** POST /api/agents, what create_agent calls, as `caller` (the lead by default), and its answer. */
+async function create(body: Record<string, unknown>, caller: Caller = { callerAgentId: 'lead' }) {
+  const app = makeRouteApp();
+  registerAgentRoutes(app, ctx);
+  const route = app.routes.find(r => r.method === 'POST' && r.pattern === '/api/agents');
+  expect(route, 'POST /api/agents is registered').toBeDefined();
+  const sendJson = vi.fn();
+  const req = {
+    method: 'POST', pathname: '/api/agents', url: new URL('http://localhost/api/agents'),
+    body, raw: {} as never, res: {} as never, params: {}, ...caller,
+  } as RouteRequest;
+  await route!.handler(req, sendJson, ctx);
   const [answer, status] = sendJson.mock.calls[0] as [Record<string, unknown>, number | undefined];
   return { answer, status: status ?? 200 };
 }
@@ -359,6 +383,30 @@ describe('what may change', () => {
   });
 });
 
+describe('the folder handed besides the project', () => {
+  const never = [PRIVATE_DIR, path.join(PRIVATE_DIR, 'claude-accounts.json'), `${PRIVATE_DIR}/`, os.homedir(), path.parse(os.homedir()).root];
+
+  it('12b. update_agent refuses ~/.tars-private, a folder inside it or one that holds it, and writes nothing', async () => {
+    for (const folder of never) {
+      const before = recordOf('w2');
+      const { answer, status } = await update('w2', { secondaryProjectPath: folder });
+      expect(status, folder).toBe(400);
+      expect(String(answer.error), folder).toMatch(/tars-private/);
+      expect(recordOf('w2'), folder).toEqual(before);
+    }
+    expect(saveAgents).not.toHaveBeenCalled();
+  });
+
+  it('12b. create_agent refuses the same, and creates nothing', async () => {
+    for (const folder of never) {
+      const { answer, status } = await create({ projectPath: PROJECT, name: 'Helper', secondaryProjectPath: folder });
+      expect(status, folder).toBe(400);
+      expect(String(answer.error), folder).toMatch(/tars-private/);
+    }
+    expect([...agents.keys()].sort()).toEqual(['far', 'far-lead', 'lead', 'runner', 'w1', 'w2']);
+  });
+});
+
 describe('when it applies: a running turn is never cut', () => {
   afterEach(() => {
     fs.rmSync(path.join(os.homedir(), '.claude'), { recursive: true, force: true });
@@ -484,7 +532,7 @@ describe('when it applies: a running turn is never cut', () => {
     expect(consumeResumeSessionId(agents.get('w1')!)).toBeNull();
   });
 
-  it('16f. a name or skills only: applied now, nothing restarted', async () => {
+  it('16f. a name or skills only: nothing restarted, its running session keeps the old ones until its next start', async () => {
     liveCli('pty-w2', 'claude');
     agents.get('w2')!.ptyId = 'pty-w2';
     vi.mocked(restartForSettings).mockImplementation((_id, changed) => (changed.length === 0
@@ -492,9 +540,15 @@ describe('when it applies: a running turn is never cut', () => {
       : { action: 'restarted' }));
     const { answer, status } = await update('w2', { name: 'Reviewer', skills: ['react'] });
     expect(status).toBe(200);
-    expect(answer).toMatchObject({ applies: 'now', session: 'kept' });
+    expect(answer).toMatchObject({ applies: 'next-start', session: 'kept' });
+    expect(String(answer.text)).toMatch(/goes on under its old name and skills/);
+    expect(String(answer.text)).toMatch(/next session/);
+    expect(String(answer.text)).not.toMatch(/Nothing it reads when it starts/);
     expect(agents.get('w2')).toMatchObject({ name: 'Reviewer', skills: ['react'] });
     expect(vi.mocked(restartForSettings).mock.calls.filter(([, changed]) => changed.length > 0)).toEqual([]);
+
+    const character = await update('w2', { character: 'wizard' });
+    expect(character.answer).toMatchObject({ applies: 'now', session: 'kept' });
   });
 
   it('answers with the agent as GET /api/agents/:id shows it, without its output buffer', async () => {
