@@ -33,6 +33,10 @@ import { EventEmitter } from 'node:events';
  *  S6. A task Tars itself hands over (the super chat), whose line carries no
  *      id, leaves its spare hand-off behind: the next turn the user types
  *      into that terminal is filed as Tars's task, with Tars's old words.
+ *  P1. The target's CLI is not running (stopped, asleep, exited), so Tars
+ *      starts a session with the task as its prompt: a task from an asker it
+ *      once handed work to is filed as Tars's, or under the target's own
+ *      requester, a third agent (the Audit's M1 on #470).
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-second-'));
@@ -60,6 +64,8 @@ vi.mock('../../../../electron/services/memory-hub', () => ({
 }));
 
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
+import { spawnAgentPty } from '../../../../electron/core/agent-pty';
+import { resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, rememberTerminalOwner } from '../../../../electron/core/pty-manager';
 import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-ledger';
@@ -258,5 +264,56 @@ describe('two tasks delegated in a row into one claude agent, from two other age
     const own = liveTaskLedger()!.task(String(typedByUser));
     expect(own).toMatchObject({ source: 'terminal', requesterAgentId: null });
     expect(own?.text).toBe('what does this file do?');
+  });
+});
+
+describe('a task delegated into a claude agent whose CLI is not running', () => {
+  // The launch each test starts is under way for CLI_BOOT_MS (core/agent-launch.ts): not the next test's.
+  afterEach(() => resetLaunches());
+
+  /** The task from `from`, which starts the agent's session: its first turn run and answered, then what its asker reads. */
+  async function startedBy(from: string, linked: boolean) {
+    const dev = target();
+    // Stopped: no terminal, no session. The task starts one, its prompt the task.
+    ptyProcesses.clear();
+    Object.assign(dev.agent, { status: 'stopped', ptyId: undefined, currentSessionId: undefined, waitingReason: undefined });
+    const launched: string[] = [];
+    vi.mocked(spawnAgentPty).mockImplementationOnce((o) => {
+      launched.push((o.args ?? []).join(' '));
+      return { pid: 4343, write: vi.fn(), onExit: vi.fn(), onData: vi.fn(), kill: vi.fn(), resize: vi.fn() } as never;
+    });
+    asker(from, 'Amp Agent', linked ? 'dev' : undefined);
+    // The dev agent's own requester, a third agent: never this task's asker.
+    dev.agent.requestedBy = { agentId: 'x-lead', ptyId: 'pty-old', taskRef: 't-0000bbbb' };
+    for (const a of agents.values()) if (a.id !== 'dev') a.role = a.id === from ? 'orchestrator' : 'worker';
+    const started = await call('POST', '/api/agents/dev/run-task', from, { task: 'PROBE-TASK in a new session', answer: 'started' });
+    expect(started.status, JSON.stringify(started.data)).toBe(200);
+    expect(launched).toHaveLength(1);
+    const ref = String(started.data.taskId);
+    // SessionStart, UserPromptSubmit on the launch's prompt (no sender line), the reply, then the Stop.
+    dev.agent.currentSessionId = 'sid-new';
+    dev.agent.status = 'running';
+    noteTurn(dev.agent, { sessionId: 'sid-new', text: 'PROBE-TASK in a new session' });
+    emitAgentStatus('dev');
+    await new Promise((r) => setTimeout(r, 30));
+    reply(dev.agent, 'probe answer');
+    dev.agent.status = 'waiting';
+    dev.agent.waitingReason = 'idle';
+    emitAgentStatus('dev');
+    const ended = await call('GET', `/api/tasks/${ref}?wait=3`, from);
+    await until(() => !oneTaskQueue.busyRun('dev'));
+    return ended;
+  }
+
+  it('(P1) from an asker it once handed work to: the task is that asker\'s, not Tars\'s nor its own requester\'s', async () => {
+    const ended = await startedBy('x-amp', true);
+    expect(ended.status, JSON.stringify(ended.data)).toBe(200);
+    expect(ended.data.task).toMatchObject({ outcome: 'completed', source: 'agent', requesterAgentId: 'x-amp', result: 'probe answer' });
+  });
+
+  it('(P1, control) from an asker with no link to it, as before: the task is that asker\'s', async () => {
+    const ended = await startedBy('x-amp', false);
+    expect(ended.status, JSON.stringify(ended.data)).toBe(200);
+    expect(ended.data.task).toMatchObject({ outcome: 'completed', source: 'agent', requesterAgentId: 'x-amp', result: 'probe answer' });
   });
 });
