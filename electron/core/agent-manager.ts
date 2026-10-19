@@ -15,7 +15,7 @@ import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
 import { holdsMessages } from './one-task';
-import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
+import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, setTurnInProgressProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
@@ -99,6 +99,8 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && holdsMessages(agent);
   });
+  // The CLI's own turn, and nothing wider: what tells a message that opens a turn (pty-manager.ts, noteTurnCut).
+  setTurnInProgressProbe(agentId => agents.get(agentId)?.status === 'running');
 }
 
 /**

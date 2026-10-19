@@ -349,6 +349,21 @@ export function setTurnProbe(probe: TurnProbe | null): void {
   turnProbe = probe;
 }
 
+/**
+ * Whether the CLI's own turn runs now, and nothing else (agent-manager: the
+ * agent's status is running): what tells a message that opens a turn from one
+ * typed into a running turn, which the CLI queues (noteTurnCut). The turn
+ * probe above is wider: a delegated task in hand holds messages before its
+ * turn begins, so read as a running turn it made every delegated task one
+ * typed into a turn, and the next task after an Esc waited for ever (#461's
+ * E2E, 19/10).
+ */
+let turnInProgress: TurnProbe | null = null;
+
+export function setTurnInProgressProbe(probe: TurnProbe | null): void {
+  turnInProgress = probe;
+}
+
 export type DialogProbe = (agentId: string) => boolean;
 let dialogProbe: DialogProbe | null = null;
 
@@ -914,7 +929,13 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   state.held = [];
   // Whether this message opens a turn, or goes into one that runs (the CLI queues it).
   const owner = item.origin?.agentId ?? state.agentId ?? terminalOwner.get(ptyProcess);
-  const opensTurn = !(owner && turnProbe && turnRunning(owner));
+  let inTurn = false;
+  try {
+    inTurn = !!(owner && turnInProgress?.(owner));
+  } catch {
+    inTurn = true;
+  }
+  const opensTurn = !inTurn;
 
   const done = () => {
     const held = state.held ?? [];
