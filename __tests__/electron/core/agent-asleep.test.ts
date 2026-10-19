@@ -29,6 +29,11 @@ import * as path from 'path';
  * 16. (the Frontend's question on #324) A lone Esc or Ctrl+C typed into the pane
  *    of an asleep agent wakes it: both ask it to stop, not to work. Or a mouse,
  *    focus or terminal report does.
+ * 17. (19/10) Asleep, then stopped, then started: the start resumes the session
+ *    it slept in (a stop of an asleep agent ends no CLI), and that session is
+ *    left a tombstone because the agent no longer reads `asleep`: its hooks are
+ *    refused and Tars never sees it. Or the stop's who and why are taken for a
+ *    wake. Or a session it slept in once, woken since, lifts a later tombstone.
  */
 
 const { tmp, AGENTS_FILE } = vi.hoisted(() => {
@@ -133,6 +138,28 @@ describe('asleep', () => {
     b.lastKilledSessionId = 'another-session';
     wakeFromSleep(b);
     expect(b.lastKilledSessionId).toBe('another-session');
+  });
+
+  it('17. asleep, then stopped: the start lifts the tombstone of the session it slept in, and reads no waking', () => {
+    const a = agent();
+    fallAsleep(a, undefined, Date.now());
+    // Stopped while asleep, as agent-stop.ts does: no CLI to end, the tombstone the sleep's.
+    Object.assign(a, { status: 'stopped', stoppedBy: 'You' });
+    expect(consumeResumeSessionId(a, tmp)).toBe(SID);
+    wakeFromSleep(a);
+    expect(a.lastKilledSessionId).toBeUndefined();
+    expect(a.status, 'a start, not a wake: clearStop says it is over').toBe('stopped');
+    expect(a.waking).toBeUndefined();
+  });
+
+  it('17. a session it slept in, woken since, lifts no later tombstone', () => {
+    const a = agent();
+    fallAsleep(a, undefined, Date.now());
+    wakeFromSleep(a);
+    // Up again on SID, then stopped awake: its CLI ended, SID a tombstone again.
+    Object.assign(a, { status: 'stopped', lastKilledSessionId: SID, currentSessionId: undefined });
+    wakeFromSleep(a);
+    expect(a.lastKilledSessionId).toBe(SID);
   });
 
   it('11. says it is waking, who woke it and how, for as long as its launch is on its way', () => {

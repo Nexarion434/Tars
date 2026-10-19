@@ -5,6 +5,7 @@ import type { AgentStatus } from '@/types/electron';
 import { BrandSpinner, DialogShell, SegmentedControl } from '@/components/ui';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
 import PermissionAskNotice from '@/components/PermissionAskNotice';
+import TaskBanner from '@/components/TaskBanner';
 import { useMessageWaiting } from '@/hooks/useMessagesWaiting';
 import { TERMINAL_SURFACE_CLASS } from '@/lib/terminal-theme';
 import { stopLine } from '@/lib/stop-line';
@@ -288,6 +289,7 @@ export default function AgentTerminalDialog({
             {/* A permission question Tars holds for this agent, in full, with
                 when it was asked. Frame: `Permission asked of Tars`. */}
             <PermissionAskNotice agent={agent} layout="window" />
+            <TaskBanner agent={agent} />
             <MessageWaitingNotice waiting={messageWaiting} />
             <div className="flex-1 min-h-0 relative">
               <div

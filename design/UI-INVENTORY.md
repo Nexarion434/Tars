@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 259 root frames, 73 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other hundred and eighty-seven being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 277 root frames, 86 of them drawn and not built yet: the 75 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other two hundred and five being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -108,6 +108,20 @@ the room relates to the chats and what follows the Backend's v2.2.
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |
 | `/tray-panel` | Tray panel (menu-bar popover) | Tray panel |
+
+## Usage: the activity grid, drawn only
+
+Drawn on 2026-10-18 for the maintainer's approval and not built: no data channel gives
+a day's tokens per model yet. The first column names no route, so `npm run e2e:guard`
+does not read this table.
+
+| Surface | Frames |
+|---|---|
+| The Usage page's activity card, under the four tiles: one square per local day over the last 53 weeks, Monday to Sunday, in five steps of the accent; the period's totals above the grid (tokens, cost, active days, longest streak, most used model); a day's tooltip with its tokens per model (the six largest, then +N others) and its cost | `tars-redesign.pen`: Usage · activity |
+| Its states: no usage yet, loading, the narrowest window (1200 by 800), where the squares keep 16 px and the grid scrolls inside its card while the page does not, and a wide window (1920 by 1080), where the squares stop at 22 px and the grid sits centred in its card; in between, the squares grow with the card so the grid ends at its right edge | `tars-redesign.pen`: Usage · activity · no usage yet, Usage · activity · loading, Usage · activity · narrowest window, Usage · activity · wide window |
+
+Each frame has its `· light` copy below it. Usage · activity · notes says what each
+part shows and what the Backend would provide.
 
 ## Settings (6 groups, 19 sections)
 
@@ -215,6 +229,25 @@ read the transcript instead, is gone since 1.9.2.
 | Restart pending · notice | The line a panel shows while a changed setting waits to restart its agent: which settings, and what the restart waits on (and its light copy) |
 | Permission asked of Tars | The question Claude Code would put to its permission dialog, asked of Tars by the state mod instead: the line a panel shows, with allow, deny with a reason and ask in terminal; a call too long for that line, shown whole in the panel before allow; the same question in full in the agent's window, with why Claude Code asks and the rule that asked under the call, and on its card; too late, when the question went back first (and its light copy) |
 
+## The task banner above an agent's terminal
+
+A task someone gives an agent (delegate_task, a chat, Tars, a channel) goes into the
+agent's own terminal, the permanent one, and runs there as one of its turns. While the
+agent works on such a task, a banner above its terminal says who gave it, since when,
+its first line, how many tasks wait and from whom, and offers stop task. Built in 2.0.4
+(`src/components/TaskBanner.tsx`) on the Dashboard's panel and in the agent's window;
+the new interface's project page row is drawn and not built yet (listed at the end).
+The first column names no route, so `npm run e2e:guard` does not read this table.
+
+| Surface | Frames |
+|---|---|
+| The banner on the Dashboard's panel, in both shells: a task in hand with nothing waiting; two waiting, and the list the count opens; 660, 582 and 420 wide; the smallest pane, 3x3 in a 1200 by 800 window | `tars-redesign.pen`: Task banner · above the agent's terminal, Task banner · Dashboard, a panel on a given task |
+| The agent's window: the banner over its terminal column | `tars-redesign.pen`: Task banner · above the agent's terminal |
+| The new interface's project page, which shows no terminal: the agent's row in the team carries the banner, with the senders of what waits on a third line (not built yet) | `tars-redesign.pen`: Task banner · new interface, the project page's team |
+
+Each frame has its `· light` copy beside it. Task banner · notes, what the Backend
+sends lists the fields, the push and the call the window needs from the main process.
+
 ## States every data surface must show
 
 Loading (three stages: nothing under 400ms, skeleton, then a named slow
@@ -246,6 +279,8 @@ For 2.0.4:
   narrowest window), · states (and its light copy), · notes for the Backend.
 - Providers, one panel per CLI: Providers · one panel per CLI · Codex, · Claude Code (Codex with its light copy and at
   the narrowest window), · states (and its light copy), · notes for the Backend.
+- The task banner on the new interface's project page, in the agent's row of the team: Task banner · new interface,
+  the project page's team (and its light copy).
 
 For 2.0.5:
 - File panel, opened from anywhere (a terminal, Brain, Review, the Vault): File panel (2.0.5) · opened from an agent's
