@@ -1148,13 +1148,25 @@ async function runInTerminal(
       return { status: 200, body };
     }
     onHanded(handed);
-    const latest = Date.now() + TURN_START_MAX_MS;
+    const handedAt = Date.now();
+    const latest = handedAt + TURN_START_MAX_MS;
     while (!turnTask) {
       if (gaveUp) return never('the terminal gave it up before it went in');
       if (withdrawn) return never('it was cancelled', 409, { code: 'cancelled' });
       if (agents.get(agent.id) !== agent) return never('its agent was removed');
       if (agent.status === 'stopped') return never('its agent was stopped before its turn began');
-      if (Date.now() > latest) return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      if (Date.now() > latest) {
+        // Its CLI never said a turn began (a gemini older than its hooks, or
+        // whose hooks were not installed): the `running` Tars set as it typed
+        // the task is undone, or every task behind this one waited for a turn
+        // that would never end (the Audit's L2 on #478).
+        if (agent.status === 'running' && !(Date.parse(agent.lastTurnStartedAt ?? '') >= handedAt)) {
+          agent.status = 'idle';
+          agent.lastActivity = new Date().toISOString();
+          emitAgentStatus(agent.id);
+        }
+        return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      }
       await sleep(TASK_WAIT_STEP_MS);
     }
     const taskId = turnTask;
