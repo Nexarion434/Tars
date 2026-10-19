@@ -9,7 +9,7 @@ import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
-import { Draft, clearKeys, confirmSubmitted, emptyDraft, escCutTheTurn, feedDraft, isKeystroke, restoreKeys } from './input-draft';
+import { Draft, clearKeys, confirmSubmitted, emptyDraft, feedDraft, isKeystroke, restoreKeys } from './input-draft';
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { envelopeValue } from '../utils/envelope-value';
 import { AgentMessageWaiting } from '../types';
@@ -545,9 +545,11 @@ interface TerminalInput {
    * Since the last message Tars typed that opened a turn: how many characters
    * it typed, everything typed into the terminal after it, and whether another
    * message of Tars's went into that turn. What an Esc that cut the turn may
-   * have made the CLI put back depends on it (noteTurnCut).
+   * have made the CLI put back depends on it (noteTurnCut). `fieldAfter`: what
+   * Tars left in the field once its message went in, the user's draft it typed
+   * back, or nothing.
    */
-  sinceTurnOpened?: { chars: number; keys: string; alone: boolean };
+  sinceTurnOpened?: { chars: number; keys: string; alone: boolean; fieldAfter: string };
 }
 
 const inputs = new WeakMap<pty.IPty, TerminalInput>();
@@ -707,20 +709,21 @@ export function noteSubmitted(ptyProcess: pty.IPty): void {
  * M2 on #461): Qwen Code 0.25.2 moves what was queued during the turn back
  * into it, else puts the cut prompt back into an empty field unless a tool is
  * running; Claude Code 2.1.302 puts the last prompt back into an empty field
- * (auto_restore_cancel). So the field is known again only when nothing but
- * that one Esc was typed since Tars's message opened the turn, and no other
- * message of Tars's went into it: then it holds nothing, or that message, and
- * Tars takes it out with as many backspaces before typing (takeField), which
- * do nothing in an empty field. Anything else leaves it unknown, and the task
- * waits, as before.
+ * (auto_restore_cancel). So the field is known again only when Tars left it
+ * empty after its message opened the turn, nothing but that one Esc was typed
+ * since, and no other message of Tars's went into it: then it holds nothing, or
+ * that message, and Tars takes it out with as many backspaces before typing
+ * (takeField), which do nothing in an empty field. Anything else leaves it
+ * unknown, and the task waits, as before. Read from what Tars typed and what
+ * was typed since, not from the draft's mark of the Esc: the turn's
+ * UserPromptSubmit, which confirms the submission, may land after that Esc and
+ * reset the draft to an empty field, and the cut went unseen (F9).
  */
 export function noteTurnCut(ptyProcess: pty.IPty): void {
   const state = inputOf(ptyProcess);
   const since = state.sinceTurnOpened;
-  if (!since || !since.alone || since.keys !== '\x1b') return;
-  const cut = escCutTheTurn(state.draft);
-  if (cut === state.draft || cut.text !== '') return;
-  state.draft = { ...cut, refilled: since.chars };
+  if (!since || !since.alone || since.keys !== '\x1b' || since.fieldAfter !== '') return;
+  state.draft = { ...emptyDraft(), refilled: since.chars };
   state.sinceTurnOpened = undefined;
   if (state.queue.length > 0) pump(ptyProcess);
   fieldChanged(ptyProcess);
@@ -962,7 +965,7 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   const owed = owedToFirstMessage.get(ptyProcess);
   owedToFirstMessage.delete(ptyProcess);
   const chars = writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
-  if (opensTurn) state.sinceTurnOpened = { chars, keys: '', alone: true };
+  if (opensTurn) state.sinceTurnOpened = { chars, keys: '', alone: true, fieldAfter: draft.text };
   else if (state.sinceTurnOpened) state.sinceTurnOpened.alone = false;
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
