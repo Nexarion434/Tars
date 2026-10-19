@@ -17,9 +17,22 @@ import { decide } from '../../scripts/scope-checks.mjs';
  * incomparably more than the three minutes it saved.
  *
  * So the assertions below are mostly about what still runs.
+ *
+ * The CLI matrix (e2e/cli-matrix.spec.ts) is a Playwright project of its own since 19/10, out of the default suite:
+ * 27 minutes for its two shells, which nearly doubled `npm run e2e`. It runs at every release gate, and here when a
+ * diff touches what a delegation between two CLIs goes through. The ways that decision can fail, written before it:
+ * 1. a diff to a provider, an MCP server, the hooks, the state mod or the delivery and ledger code skips the matrix,
+ *    and a CLI pair breaks unseen until the release gate;
+ * 2. a diff to MCP servers or hooks alone, which skips the surfaces, skips the matrix with them;
+ * 3. a diff to the matrix itself, its stand-ins or the suite's configuration skips it;
+ * 4. no diff to reason about rules the matrix out, where it rules nothing out for the surfaces;
+ * 5. a diff that touches none of it (a page, the window, a document, a unit test, another spec, a design file) runs it
+ *    for nothing;
+ * 6. it runs the matrix without saying which file called for it.
  */
 
 const runs = (files: string[]) => decide(files).runE2E;
+const matrix = (files: string[]) => decide(files).runMatrix;
 
 describe('changes that cannot reach a rendered surface', () => {
   it.each([
@@ -427,5 +440,66 @@ describe.concurrent('a reference change, as git reports it', { timeout: 30_000 }
     expect(run.output).toContain(`Base: ${repo.fresh.slice(0, 12)}`);
     expect(run.output).toMatch(/e2e\/__screenshots__\/\S+: the suite itself/);
     expect(run.suite).toBe('playwright test');
+  });
+});
+
+describe('the CLI matrix, a project of its own', () => {
+  it.each([
+    ['a provider', ['electron/providers/codex-provider.ts']],
+    ['an MCP server', ['mcp-orchestrator/src/tools/agents.ts']],
+    ["the MCP servers' shared client", ['mcp-shared/src/tars-api.ts']],
+    ['a shell hook', ['hooks/on-stop.sh']],
+    ['the state mod', ['mods/tars-state/hooks.mjs']],
+    ['the delegation routes', ['electron/services/api-routes/agent-routes.ts']],
+    ['the hooks routes', ['electron/services/api-routes/hooks-routes.ts']],
+    ['the bus routes', ['electron/services/api-routes/bus-routes.ts']],
+    ['the bus', ['electron/services/bus-delivery.ts']],
+    ["the bus's IPC", ['electron/handlers/bus-handlers.ts']],
+    ['the task requests', ['electron/core/task-requests.ts']],
+    ['typing into a terminal', ['electron/core/pty-manager.ts']],
+    ["an agent's token", ['electron/core/agent-tokens.ts']],
+    ['the MCP configuration each CLI gets', ['electron/services/mcp-orchestrator.ts']],
+    ["a terminal's answer", ['electron/services/terminal-answer.ts']],
+    ['the task ledger', ['electron/services/task-ledger.ts']],
+    ['the usage ledger', ['electron/services/usage-ledger.ts']],
+    ['the task banner', ['electron/services/task-banner.ts']],
+    ['the state mod service', ['electron/services/state-mod.ts']],
+    ['the delegation over ACP', ['electron/services/acp/delegate.ts']],
+    ['the matrix itself', ['e2e/cli-matrix.spec.ts']],
+    ['its live twin', ['e2e/cli-matrix.live.spec.ts']],
+    ['its stand-ins', ['e2e/fake-clis.mjs', 'e2e/fake-codex.mjs']],
+    ['the suite configuration', ['playwright.config.ts']],
+  ])('1, 3. runs the matrix for %s', (_name, files) => {
+    expect(matrix(files as string[])).toBe(true);
+  });
+
+  it.each([
+    ['a page', ['src/app/usage/page.tsx']],
+    ['the window', ['electron/core/window-manager.ts']],
+    ['a service no delegation goes through', ['electron/services/overseer.ts']],
+    ['documentation', ['README.md', 'OPERATIONS.md']],
+    ['unit tests', ['__tests__/electron/providers/codex-provider.test.ts']],
+    ['another spec', ['e2e/usage-pages.spec.ts']],
+    ['a design file', ['design/tars-redesign.pen']],
+  ])('5. leaves the matrix out for %s', (_name, files) => {
+    expect(matrix(files as string[])).toBe(false);
+  });
+
+  it('2. runs it for MCP servers or hooks alone, though the surfaces are skipped', () => {
+    const decision = decide(['mcp-orchestrator/src/index.ts', 'hooks/on-stop.sh']);
+
+    expect(decision.runE2E).toBe(false);
+    expect(decision.runMatrix).toBe(true);
+  });
+
+  it('4. runs it when there is no diff to reason about', () => {
+    expect(matrix([])).toBe(true);
+  });
+
+  it('6. names the files that called for it, and why', () => {
+    const decision = decide(['electron/providers/codex-provider.ts', 'README.md', 'hooks/on-stop.sh']);
+
+    expect(decision.matrixForcing.map(f => f.file)).toEqual(['electron/providers/codex-provider.ts', 'hooks/on-stop.sh']);
+    for (const entry of decision.matrixForcing) expect(entry.why.length).toBeGreaterThan(0);
   });
 });
