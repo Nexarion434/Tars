@@ -855,7 +855,7 @@ Files Tars writes **outside** its own directory:
 
 | Path | Why |
 |---|---|
-| `~/.claude.json` → `projects[path].hasTrustDialogAccepted` | `--dangerously-skip-permissions` skips *runtime* prompts; Claude Code's workspace-trust dialog is a separate gate keyed on this flag. Pre-writing it is the only way a bypass-mode agent never sees it. Never written for the root, the home directory or a directory above it, by the path given or the one it resolves to: Claude Code reads the flag for every directory above its own, so on `$HOME` it trusted everything the account owns. Claude Code asks there instead |
+| `~/.claude.json` → `projects[path].hasTrustDialogAccepted` | `--dangerously-skip-permissions` skips *runtime* prompts; Claude Code's workspace-trust dialog is a separate gate keyed on this flag. Pre-writing it is the only way a bypass-mode agent never sees it. Written under the path Tars saved and, when it differs, under its real path, the one Claude Code starts in and reads (a project behind a link, anything under macOS's `/var` or `/tmp`). Never written for the root, the home directory or a directory above it, by the path given or the one it resolves to: Claude Code reads the flag for every directory above its own, so on `$HOME` it trusted everything the account owns. Claude Code asks there instead |
 | `~/.claude.json` → `mcpServers.{gbrain,honcho}` | remote memory backends |
 | `~/.claude/settings.json` → `hooks`, `statusLine` | eight hook types, merged rather than replaced |
 | `~/.claude/mcp.json` | fallback when `claude mcp add` fails |
