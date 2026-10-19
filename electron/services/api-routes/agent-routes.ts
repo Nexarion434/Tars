@@ -51,6 +51,7 @@ import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
+import { turnInterruptedAt } from '../task-watch';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
@@ -282,12 +283,16 @@ async function spawnAgentSessionInSlot(
   // never becomes a turn.
   // And how Tars works (services/agent-guide.ts): a claude terminal gets it
   // in its bootstrap, a CLI without that hook here.
-  const guide = guideForPrompt(agent, cliProvider.configDir);
+  // Its own header says who the agent is: the guide without the line.
+  const guide = guideForPrompt(agent, cliProvider.configDir, { identity: false });
   const guideBlock = guide ? `\n\n${guide}` : '';
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
   // Build the CLI command through the provider so non-claude CLIs (codex,
-  // gemini, grok, opencode, pi) get their own syntax instead of claude flags.
+  // gemini, grok, opencode, pi) get their own syntax instead of claude flags,
+  // once what its line needs is read from the CLI (codex's flags), off the
+  // main thread.
+  await cliProvider.prepareLaunch?.(binaryPath, effectiveMode);
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
@@ -1012,12 +1017,14 @@ function followTask(workerId: string, askerId: string): () => void {
 
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
- * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
- * the providers that run it, and Qwen Code. Gemini's BeforeAgent hook posts `running` with no
- * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ * UserPromptSubmit post, which opens the ledger's task) and end: claude, the
+ * providers that run it, Qwen Code (Claude Code's hooks), and codex, whose
+ * session log Tars reads and posts as those hooks would, the answer in full
+ * (2.0.4, services/codex-sessions.ts). Gemini's BeforeAgent hook posts
+ * `running` with no prompt, and opencode, amp, pi and grok have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  return hasClaudeHooks(agent);
+  return hasClaudeHooks(agent) || getProvider(agent.provider).getHookConfig().turnsReported === true;
 }
 
 /** Whether its final answer can be read from a transcript Tars knows: Claude Code's, Qwen Code's. */
@@ -1186,6 +1193,8 @@ async function runInTerminal(
       }
       const ended = ledger?.task(taskId);
       const outcome = ended?.outcome === 'running' || !ended ? 'stopped' : ended.outcome;
+      // Or its CLI's own log said the turn was interrupted, which stopped its task (codex: task-watch.ts).
+      if (!interrupted && outcome === 'stopped' && ended && (turnInterruptedAt(agent.id) ?? -Infinity) >= ended.startedAt) interrupted = true;
       const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
       const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
         ?? agent.lastCleanOutput ?? undefined;

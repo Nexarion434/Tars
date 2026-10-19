@@ -210,13 +210,15 @@ describe('9. every provider round-trips', () => {
     const bin = path.join(tmpDir, "fake cli (x86)'s");
     for (const provider of getAllProviders()) {
       for (const [label, prompt] of ADVERSARIAL) {
-        const words = posixWords(await commandOf(provider.id, prompt, bin));
-        // Amp takes its task typed in once it runs (core/typed-task.ts): no prompt on its line.
+        const all = posixWords(await commandOf(provider.id, prompt, bin));
+        // codex's line hands it Tars's home first, on macOS and Linux (`env CODEX_HOME=<home>`, the Audit's L4 on #465).
+        const words = all[0] === 'env' && all[1]?.startsWith('CODEX_HOME=') ? all.slice(2) : all;
         if (provider.taskTypedAfterLaunch) {
+          // Amp's line never carries the task: it is typed in once its TUI runs (core/typed-task.ts, 2.0.4).
           expect([provider.id, label, words[0], words.includes(prompt)]).toEqual([provider.id, label, bin, false]);
-          continue;
+        } else {
+          expect([provider.id, label, words[0], words.at(-1)]).toEqual([provider.id, label, bin, prompt]);
         }
-        expect([provider.id, label, words[0], words.at(-1)]).toEqual([provider.id, label, bin, prompt]);
       }
     }
   });

@@ -892,7 +892,7 @@ export type BusDeliveryState = 'queued' | 'held' | 'not_sent' | 'delivered' | 'd
 
 /** Why a delivery is not going anywhere, as a value the Chat page can render
  *  without matching on English. The sentence in `reason` is for a human.
- *  `no_end_of_turn` names the five providers that never leave `running`. */
+ *  `no_end_of_turn` names the four providers that never leave `running`. */
 export type BusDeliveryReason =
   | 'no_end_of_turn'
   | 'no_live_session'
