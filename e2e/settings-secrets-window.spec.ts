@@ -22,8 +22,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    show the new token in its own dialog, never in the page; copy token has Tars copy it. OpenRouter's key: set and
  *    cleared through its row, its label says so. A save of a switch leaves every secret as it was.
  * 2. Hermes: the form's token reads set and is in no field, and its row says switching to OAuth keeps it, unused
- *    (nothing in the form clears it); replace then save puts a new one in its connection; copy secret has Tars copy the
- *    webhook's secret, which the page never holds.
+ *    (nothing in the form clears it); replace then save puts a new one in its connection; copy secret, on Hermes's
+ *    block in Gateways since #469's window, has Tars copy the webhook's secret, which the page never holds.
  * 3. One detection: CLI Paths shows, as it opens, the codex set in the settings (a stand-in that answers
  *    `codex-cli 9.9.9`), and Providers lists it as `codex 9.9.9`, its Command row naming that path, set in CLI Paths;
  *    for every CLI, CLI Paths shows a path exactly when Providers says ready.
@@ -266,15 +266,20 @@ for (const newInterface of [false, true]) {
       expect(await held(page, [HERMES_TOKEN, MASK]), 'Hermes holds no token').toEqual([]);
       await stepShot(page, '01-hermes-token-set');
 
-      await rowOf(page, 'Incoming webhook').getByRole('button', { name: 'copy secret', exact: true }).click();
-      await expect(rowOf(page, 'Incoming webhook').getByRole('button', { name: 'copied', exact: true })).toBeVisible();
+      // The webhook's secret is the default gateway's: Gateways shows it on Hermes's block since #469's window.
+      await section(page, 'Hermes', 'Gateways');
+      const webhookRow = page.getByRole('region', { name: 'Hermes', exact: true }).locator('[data-settings-row]')
+        .filter({ has: page.locator('[data-settings-label]', { hasText: /^Secret$/ }) });
+      await webhookRow.getByRole('button', { name: 'copy secret', exact: true }).click({ timeout: 30_000 });
+      await expect(webhookRow.getByRole('button', { name: 'copied', exact: true })).toBeVisible();
       const secret = s.webhookSecret();
       expect(secret.length).toBeGreaterThan(20);
       expect((await handoffs(s.app)).copied).toEqual([secret]);
       expect(await held(page, [secret]), 'the webhook secret is held nowhere').toEqual([]);
       await stepShot(page, '02-hermes-secret-copied');
 
-      await auth.getByRole('button', { name: 'replace', exact: true }).click();
+      await section(page, 'Hermes', 'Connection');
+      await auth.getByRole('button', { name: 'replace', exact: true }).click({ timeout: 30_000 });
       await expect(auth.locator('input')).toHaveValue('');
       await auth.locator('input').fill(NEW_HERMES);
       await rowOf(page, 'Status').getByRole('button', { name: 'save', exact: true }).click();
