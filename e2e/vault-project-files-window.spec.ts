@@ -69,6 +69,12 @@ const opened = (app: ElectronApplication) => app.evaluate(() => (globalThis as u
 const filesRegion = (page: Page) => page.getByRole('region', { name: 'Files' });
 const fileRegion = (page: Page) => page.getByRole('region', { name: 'File' });
 const projects = (page: Page) => page.getByRole('navigation', { name: 'Project folders' });
+/** The caret at the end of the text, as a user who clicks after the last line puts it. */
+const toTheEnd = (editor: ReturnType<Page['getByRole']>) => editor.evaluate((el) => {
+  const area = el as HTMLTextAreaElement;
+  area.focus();
+  area.setSelectionRange(area.value.length, area.value.length);
+});
 const fileRow = (page: Page, name: string) => filesRegion(page).getByRole('button', { name: new RegExp(`^${name.replace(/\./g, '\\.')}`) });
 
 for (const newInterface of [false, true]) {
@@ -148,7 +154,7 @@ for (const newInterface of [false, true]) {
       await file.getByRole('button', { name: 'edit', exact: true }).click();
       const editor = file.getByRole('textbox', { name: 'Edit release.md' });
       await expect(editor).toHaveValue(RELEASE);
-      await editor.press('End');
+      await toTheEnd(editor);
       await editor.pressSequentially('Edited in the window.');
       await expect(file).toContainText('unsaved');
       await stepShot(page, '03-editing');
@@ -158,7 +164,7 @@ for (const newInterface of [false, true]) {
       await expect(file).toContainText('Edited in the window.');
 
       await file.getByRole('button', { name: 'edit', exact: true }).click();
-      await editor.press('End');
+      await toTheEnd(editor);
       await editor.pressSequentially(' Mine.');
       const agents = '# Release 2.0.4\n\nThe agent wrote this version.\n';
       fs.writeFileSync(report('release.md'), agents);
