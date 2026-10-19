@@ -199,6 +199,11 @@ describe('after the Audit\'s gate of 06a46bcb', () => {
     expect(settingsJson()).not.toHaveProperty('anthropicApiKey');
     expect(settingsJson().telegramEnabled).toBe(true);
     expect(readSecrets().anthropicApiKey).toBe('sk-ant-old-111');
+    // Loaded back with the others, it never reaches the window, and a save keeps it where it is.
+    expect(JSON.stringify(settingsForWindow(loadSettingsWithSecrets()))).not.toContain('sk-ant-old-111');
+    saveSettingsSplit(loadSettingsWithSecrets() as AppSettings);
+    expect(settingsJson()).not.toHaveProperty('anthropicApiKey');
+    expect(readSecrets().anthropicApiKey).toBe('sk-ant-old-111');
   });
 
   it('P12. a private folder it cannot write: nothing thrown, nothing lost, the key a backup alone holds kept', () => {

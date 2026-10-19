@@ -34,7 +34,18 @@ export const SECRET_FIELDS = [
 ] as const satisfies readonly (keyof AppSettings)[];
 
 export type SecretField = typeof SECRET_FIELDS[number];
-type Secrets = Partial<Pick<AppSettings, SecretField>>;
+
+/**
+ * Keys an older Tars saved that are no field of AppSettings any more, so the
+ * inventory above never names them: Claude Code's panel kept an
+ * anthropicApiKey until #460, which Tars never used. Moved out of
+ * app-settings.json with the others, and kept in the private file, never
+ * read (the Audit's re-check of #460).
+ */
+const LEGACY_SECRET_FIELDS = ['anthropicApiKey'] as const;
+type LegacySecrets = Partial<Record<typeof LEGACY_SECRET_FIELDS[number], string>>;
+type Secrets = Partial<Pick<AppSettings, SecretField>> & LegacySecrets;
+const MOVED_FIELDS: readonly string[] = [...SECRET_FIELDS, ...LEGACY_SECRET_FIELDS];
 
 /**
  * The ones the window sets and clears through secrets:set, and is shown as a
@@ -44,7 +55,8 @@ type Secrets = Partial<Pick<AppSettings, SecretField>>;
 export const WINDOW_SET_FIELDS = [...SECRET_FIELDS.filter((f) => f !== 'cliApiKeys' && f !== 'ampApiKey'), 'sentryAuthToken'] as const;
 type WindowField = typeof WINDOW_SET_FIELDS[number];
 
-const isSecretField = (f: string): f is SecretField => (SECRET_FIELDS as readonly string[]).includes(f);
+/** A field the move takes out of app-settings.json: a secret, or a legacy one. */
+const isSecretField = (f: string): boolean => MOVED_FIELDS.includes(f);
 
 /** A value worth keeping: a non-empty string, or an object with something in it. */
 function holds(value: unknown): boolean {
@@ -54,7 +66,7 @@ function holds(value: unknown): boolean {
 
 function secretsOf(settings: Record<string, unknown>): Secrets {
   const out: Record<string, unknown> = {};
-  for (const f of SECRET_FIELDS) if (holds(settings[f])) out[f] = settings[f];
+  for (const f of MOVED_FIELDS) if (holds(settings[f])) out[f] = settings[f];
   return out as Secrets;
 }
 
@@ -105,7 +117,7 @@ function readJson(file: string): Record<string, unknown> | null {
 /** The settings without a secret field, empty ones included. */
 export function withoutSecrets<T extends object>(settings: T): Omit<T, SecretField> {
   const out = { ...settings } as Record<string, unknown>;
-  for (const f of SECRET_FIELDS) delete out[f];
+  for (const f of MOVED_FIELDS) delete out[f];
   return out as Omit<T, SecretField>;
 }
 
@@ -283,17 +295,31 @@ export const MOVED_FILES: ReadonlyArray<readonly [string, string]> = [
  * cannot be read: nothing is written over a key the app cannot read. Run
  * again, it writes nothing.
  */
-export function migrateSecrets(): { moved: number; copiesRemoved: number; filesMoved: number } {
+export function migrateSecrets(): { moved: number; copiesRemoved: number; filesMoved: number; failed?: true } {
+  // Run at module load, before any window (main.ts): a throw here stops Tars
+  // on Electron's error box (the Audit's M1 on #466). A step that cannot write
+  // (a private folder Tars may not write, a full disk) leaves every key where
+  // it was, the keys are read from there, and the next start goes on.
   let filesMoved = 0;
-  for (const [legacy, target] of MOVED_FILES) if (moveOutOfAgentReach(legacy, target)) filesMoved++;
+  try {
+    for (const [legacy, target] of MOVED_FILES) if (moveOutOfAgentReach(legacy, target)) filesMoved++;
+    if (filesMoved) console.log(`[secrets] out of ~/.dorothy: ${filesMoved} credential file(s) moved`);
+    return { ...moveKeys(), filesMoved };
+  } catch (err) {
+    console.error(`[secrets] the keys could not all leave ~/.dorothy (${describeSecretFileError(err)}): they stay where they are, are read from there, and the next start tries again`);
+    return { moved: 0, copiesRemoved: 0, filesMoved, failed: true };
+  }
+}
 
+/** The keys of app-settings.json and of its copies, into the private file, in an order a stop at any step loses none of. */
+function moveKeys(): { moved: number; copiesRemoved: number } {
   const current = readSecretsFile();
-  if (current === null) return { moved: 0, copiesRemoved: 0, filesMoved };
+  if (current === null) return { moved: 0, copiesRemoved: 0 };
   const liveExists = fs.existsSync(APP_SETTINGS_FILE);
   const live = liveExists ? readJson(APP_SETTINGS_FILE) : {};
   if (live === null) {
     console.error(`[secrets] ${path.basename(APP_SETTINGS_FILE)} does not parse: its keys stay where they are until it does`);
-    return { moved: 0, copiesRemoved: 0, filesMoved };
+    return { moved: 0, copiesRemoved: 0 };
   }
 
   const fromLive = secretsOf(live);
@@ -305,6 +331,7 @@ export function migrateSecrets(): { moved: number; copiesRemoved: number; filesM
     for (const [f, v] of Object.entries(secretsOf(saved))) if (!holds(merged[f])) merged[f] = v;
   }
   const moved = Object.keys(fromLive).length;
+  // Written before any copy is erased: a write that fails leaves the key a backup alone holds in it.
   if (JSON.stringify(merged) !== JSON.stringify(current)) writeSecrets(merged as Secrets);
   // The copies before the live file: its write removes a temp file of its own
   // name without writing over it first.
@@ -313,8 +340,8 @@ export function migrateSecrets(): { moved: number; copiesRemoved: number; filesM
   if (liveExists && Object.keys(live).some(isSecretField)) {
     writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(withoutSecrets(live), null, 2));
   }
-  if (moved || copiesRemoved || filesMoved) {
-    console.log(`[secrets] out of ~/.dorothy: ${moved} key(s) of app-settings.json, ${copiesRemoved} copy(ies) of it erased, ${filesMoved} credential file(s) moved`);
+  if (moved || copiesRemoved) {
+    console.log(`[secrets] out of ~/.dorothy: ${moved} key(s) of app-settings.json, ${copiesRemoved} copy(ies) of it erased`);
   }
-  return { moved, copiesRemoved, filesMoved };
+  return { moved, copiesRemoved };
 }
