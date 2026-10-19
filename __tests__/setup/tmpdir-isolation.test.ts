@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
+import { processesUnder } from './leftover-processes';
 
 /**
  * Every test file writes its temporary folders into a folder of its own, which
@@ -46,6 +47,20 @@ import { stripVTControlCharacters } from 'node:util';
  *    folder.
  * 8. The guard cannot tell a file that ran its hooks from one that ran none:
  *    the mark the setup leaves in a file's folder when its hooks run is missing.
+ *
+ * Written on 2026-10-19, before the guard below, after 130 fake ACP agents were
+ * found stopped (state T, parent 1), started from
+ * /T/tars-vitest-run-<id>/tars-vitest-file-<id>/tars-acp-<id>/ and ended by hand
+ * by their ids: a delegated run's stop sends SIGSTOP and reads ps before its
+ * SIGTERM and SIGCONT, and a worker that ended in between left them stopped. The
+ * run removed its folder, and nothing looked at what had been started from it.
+ * 9. A process a test started from its folder outlives the run stopped, and the
+ *    run passes.
+ * 10. The same with a process that still runs.
+ * 11. The run fails on them and leaves them behind, stopped or running.
+ * 12. The run fails without saying which processes: id, state, command line.
+ * 13. A run whose processes all ended fails all the same (6 and 7 above run
+ *     with the guard, and pass or fail on their folders alone).
  */
 
 const FILE_PREFIX = 'tars-vitest-file-';
@@ -66,7 +81,7 @@ const VITEST = path.join(path.dirname(createRequire(import.meta.url).resolve('vi
  * variables (CLAUDECODE), and colours its output on CI: these tests passed
  * under an agent and failed on CI, 2026-10-05.
  */
-function runFixtures(args: string[]): { status: number | null; output: string; left: string[] } {
+function runFixtures(args: string[]): { status: number | null; output: string; left: string[]; tmp: string } {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'child-run-'));
   // The child is a run of its own, not a worker of this one.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('VITEST')));
@@ -76,7 +91,7 @@ function runFixtures(args: string[]): { status: number | null; output: string; l
     encoding: 'utf8',
     timeout: 60_000,
   });
-  return { status: child.status, output: stripVTControlCharacters(`${child.stdout}${child.stderr}`), left: fs.readdirSync(tmp) };
+  return { status: child.status, output: stripVTControlCharacters(`${child.stdout}${child.stderr}`), left: fs.readdirSync(tmp), tmp };
 }
 
 describe('the temporary folder of a test file', () => {
@@ -129,6 +144,24 @@ describe('the guard at the end of a run', () => {
     expect(run.status).toBe(1);
     expect(run.output).toMatch(/The run left 2 entries in its temporary folder \(.*tars-vitest-file-outlived.*\)/);
     expect(run.output).toMatch(/The run left 2 entries in its temporary folder \(.*written-past.*\)/);
+    expect(run.left).toEqual([]);
+  }, 90_000);
+
+  it.skipIf(process.platform === 'win32')('9, 11, 12. fails the run on a process started from its folder and left stopped, ends it, and names it', () => {
+    const run = runFixtures(['left-stopped']);
+    expect(run.output).toMatch(/Test Files {2}1 passed \(1\)/);
+    expect(processesUnder(run.tmp), 'the stopped process outlived the run').toEqual([]);
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toMatch(/The run left 1 process running from its temporary folder, now ended: \d+ T\S* .*left-stopped-agent\.js/);
+    expect(run.left).toEqual([]);
+  }, 90_000);
+
+  it('10, 11, 12. fails the run on a process started from its folder and left running, ends it, and names it', () => {
+    const run = runFixtures(['left-running']);
+    expect(run.output).toMatch(/Test Files {2}1 passed \(1\)/);
+    expect(processesUnder(run.tmp), 'the running process outlived the run').toEqual([]);
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toMatch(/The run left 1 process running from its temporary folder, now ended: \d+ \S+ .*left-running-agent\.js/);
     expect(run.left).toEqual([]);
   }, 90_000);
 });
