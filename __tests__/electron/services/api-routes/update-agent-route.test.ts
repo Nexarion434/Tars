@@ -43,6 +43,10 @@ import { EventEmitter } from 'events';
  * 13. A change of provider or CLI path while a CLI runs, or starts, in the
  *     agent's terminal ends that terminal and whatever it was doing: it must be
  *     refused (cli_running), with nothing written and the terminal alive.
+ *     b. ...a launch under way in a bare shell is cut the same way;
+ *     c. ...but right after stop_agent, the launch the stop ended still reads
+ *        as one for CLI_BOOT_MS (15 s), and the change the orchestrator
+ *        stopped the agent for is refused (found while writing the E2E).
  * 14. A change of provider keeps the model and the CLI path, which named the
  *     old CLI's: the next start runs claude on a codex model, or the codex
  *     binary for a claude agent.
@@ -105,7 +109,7 @@ import * as path from 'path';
 import * as pty from 'node-pty';
 import { POSIX_ROOT, type PosixEntry } from '../../platform/posix-fake-disk';
 import { registerAgentRoutes } from '../../../../electron/services/api-routes/agent-routes';
-import { resetLaunches } from '../../../../electron/core/agent-launch';
+import { launchBegins, resetLaunches } from '../../../../electron/core/agent-launch';
 import { agents, saveAgents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
@@ -374,6 +378,27 @@ describe('when it applies: a running turn is never cut', () => {
     }
     expect(terminal.kill).not.toHaveBeenCalled();
     expect(ptyProcesses.get('pty-w1')).toBe(terminal);
+  });
+
+  it('13b. refuses a change of CLI while a launch is under way in a bare shell, the launch untouched', async () => {
+    const shell = bareShell('pty-w1');
+    agents.get('w1')!.ptyId = 'pty-w1';
+    launchBegins('w1');
+    const { answer, status } = await update('w1', { provider: 'claude' });
+    expect(status).toBe(409);
+    expect(answer.code).toBe('cli_running');
+    expect(shell.kill).not.toHaveBeenCalled();
+    expect(agents.get('w1')!.provider).toBe('codex');
+  });
+
+  it('13c. takes a change of CLI right after stop_agent: the launch the stop ended starts nothing', async () => {
+    launchBegins('w1');
+    // What stop_agent leaves (core/agent-stop.ts): no terminal, `stopped`, and the launch still marked for CLI_BOOT_MS.
+    Object.assign(agents.get('w1')!, { status: 'stopped', ptyId: undefined, stoppedAt: new Date().toISOString(), stoppedBy: 'Lead' });
+    const { answer, status } = await update('w1', { provider: 'claude' });
+    expect(status, String(answer.error)).toBe(200);
+    expect(answer).toMatchObject({ applies: 'next-start', session: 'new' });
+    expect(agents.get('w1')!.provider).toBe('claude');
   });
 
   it('14. a change of provider clears the model and CLI path of the old CLI', async () => {
