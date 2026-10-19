@@ -2,7 +2,7 @@
  * The agents' kanban, on the Hermes board.
  *
  * The board lives in Hermes; the Kanban page shows it and nothing else. The
- * agents' kanban tools used to write ~/.dorothy/kanban-tasks.json, a board no
+ * agents' kanban tools used to write ~/.tars/kanban-tasks.json, a board no
  * page shows, so a task an agent said it had filed was nowhere to be seen. They
  * now go through Tars to Hermes, and this decides where an agent's task sits on
  * that board and who may move it.
@@ -656,7 +656,7 @@ interface LocalTask {
 }
 
 /**
- * Every task of ~/.dorothy/kanban-tasks.json that is not done, onto the Hermes
+ * Every task of ~/.tars/kanban-tasks.json that is not done, onto the Hermes
  * board, parked on its project. Once: `record` keeps what moved, and Hermes's
  * idempotency key catches a task whose record was lost. The local file is read
  * and never written: it stays as the backup. What fails is left for the next

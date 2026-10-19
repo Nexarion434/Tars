@@ -9,7 +9,7 @@ import * as path from 'node:path';
  * Who an agent is on the local API: the agent its token was minted for, and
  * nothing it writes.
  *
- * Every agent used to authenticate with ~/.dorothy/api-token, one secret for
+ * Every agent used to authenticate with ~/.tars/api-token, one secret for
  * the whole machine that every agent can read, and name itself in
  * X-Tars-Caller-Id. The server believed the name. So an agent could put a
  * colleague's id in that header and read the colleague's project room, or
@@ -44,7 +44,7 @@ function freePort(): Promise<number> {
 
 // Everything the server could write goes to the temp dir. saveBus() in
 // particular writes on every call, and unredirected it would write over the
-// real ~/.dorothy/bus.json.
+// real ~/.tars/bus.json.
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
   return {
@@ -257,7 +257,7 @@ describe('an agent that holds its own token and names another', () => {
 });
 
 describe('a call on the shared token', () => {
-  // Every agent can read ~/.dorothy/api-token. So whatever comes with it is
+  // Every agent can read ~/.tars/api-token. So whatever comes with it is
   // what any agent could have written, and none of it can make the call an
   // agent. Each test here is the header being believed again, played out.
 
@@ -426,8 +426,8 @@ describe('the MCP servers that call the API', () => {
     // The other way to be beta: drop the token, and let the client fall back to
     // the file every agent can read, with beta's id in the environment.
     const sharedHome = fs.mkdtempSync(path.join(tmp, 'shared-home-'));
-    fs.mkdirSync(path.join(sharedHome, '.dorothy'));
-    fs.writeFileSync(path.join(sharedHome, '.dorothy', 'api-token'), sharedToken);
+    fs.mkdirSync(path.join(sharedHome, '.tars'));
+    fs.writeFileSync(path.join(sharedHome, '.tars', 'api-token'), sharedToken);
     asAgent({ HOME: sharedHome, CLAUDE_AGENT_ID: BETA.id, CLAUDE_PROJECT_PATH: BETA.projectPath });
     const { apiRequest } = await orchestratorClient();
 

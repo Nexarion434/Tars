@@ -373,7 +373,7 @@ function chatJournal(paths) {
 export function seedSandbox(home, { chatRooms = false } = {}) {
   PROJECT = path.join(home, REL_PROJECT);
   SECOND = path.join(home, REL_SECOND);
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
 
   const chatPaths = {
@@ -457,7 +457,7 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
  * The one way a spec starts the app: inside its sandbox, Chromium profile
  * included, or not at all.
  *
- * HOME moves ~/.dorothy and ~/.claude and nothing else. Electron finds its own
+ * HOME moves ~/.tars and ~/.claude and nothing else. Electron finds its own
  * folders through macOS, which answers with the account's home whatever HOME
  * says, so a launch with HOME alone opened ~/Library/Application Support/tars.
  * On a case-insensitive disk that is the installed Tars's own profile, the same

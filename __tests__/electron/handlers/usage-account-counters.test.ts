@@ -10,7 +10,7 @@ import * as path from 'path';
  * accounts, only account 1's status lines write rate-limits.json, the file the
  * Usage page reads, so the page showed account 1's bars under "Claude" even
  * while every agent ran on account 2, or account 1 sat at its limit. Each
- * account's counters live in ~/.dorothy/rate-limits.d/<account>.json (#267),
+ * account's counters live in ~/.tars/rate-limits.d/<account>.json (#267),
  * and reached Settings only. `claude:getData`, what the Usage page loads, now
  * hands them too: `accountRateLimits`, one pair of windows per account.
  *
@@ -21,7 +21,7 @@ import * as path from 'path';
  *    on a fresh window, for hours when no agent runs).
  * 4. The accounts come in another order than the list the user set in
  *    Settings, or without the label that list gives them.
- * 5. A counter file an agent planted (~/.dorothy is every agent's) reaches
+ * 5. A counter file an agent planted (~/.tars is every agent's) reaches
  *    the page as anything but two percentages and two times.
  * 6. account 1's own rateLimits, what the page shows today, changes.
  */
@@ -101,7 +101,7 @@ function accounts(over: Partial<ClaudeAccountsSettings> = {}, disabled: string[]
 }
 
 function counters(id: string, fiveHour: [number, number] | null, sevenDay: [number, number] | null, extra: Record<string, unknown> = {}): void {
-  const dir = path.join(tmpHome, '.dorothy', 'rate-limits.d');
+  const dir = path.join(tmpHome, '.tars', 'rate-limits.d');
   fs.mkdirSync(dir, { recursive: true });
   const w = (x: [number, number] | null) => (x ? { used_percentage: x[0], resets_at: x[1] } : undefined);
   fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
@@ -116,7 +116,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   fs.rmSync(tmpHome, { recursive: true, force: true });
-  fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(tmpHome, '.tars'), { recursive: true });
 });
 
 afterAll(() => {
@@ -173,7 +173,7 @@ describe.skipIf(claudeAccountsNotPorted())('claude:getData, for the Usage page',
   it("6. keeps account 1's rateLimits as the page reads them today", async () => {
     accounts();
     const legacy = { five_hour: { used_percentage: 12, resets_at: NOW_S + 3600 } };
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'rate-limits.json'), JSON.stringify(legacy));
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'rate-limits.json'), JSON.stringify(legacy));
     expect((await getData()).rateLimits).toEqual(legacy);
   });
 });

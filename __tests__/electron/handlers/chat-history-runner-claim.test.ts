@@ -6,7 +6,7 @@ import * as path from 'node:path';
 /**
  * A chat's conversation is read from the runner the fleet confirms, never from
  * the agent its record names (GATE-PR371-DELTA5, L1; chats.json is in
- * ~/.dorothy, which every agent may write, and #379 checks the record against
+ * ~/.tars, which every agent may write, and #379 checks the record against
  * the fleet before anything is done for it: recordedRunner).
  *
  * How it fails:

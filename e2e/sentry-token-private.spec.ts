@@ -6,7 +6,7 @@ import { launchSandboxed, recordValues, seedSandbox } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * The Sentry token leaves ~/.dorothy, which every agent is handed, for
+ * The Sentry token leaves ~/.tars, which every agent is handed, for
  * ~/.tars-private, which none is (the Audit's gates of #242 and #292), in the
  * real app: a token saved by an older Tars in app-settings.json moves at the
  * first start, the settings the app hands its pages still carry it, and a
@@ -21,10 +21,10 @@ type Api = { electronAPI: { appSettings: {
 const OLD = 'sntryu_e2e-token-saved-by-an-older-tars';
 const NEW = 'sntryu_e2e-token-typed-in-settings';
 
-test('the Sentry token moves out of ~/.dorothy at the first start, and a save never writes it back', async () => {
+test('the Sentry token moves out of ~/.tars at the first start, and a save never writes it back', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-sentry-token-'));
   seedSandbox(home);
-  const settingsFile = path.join(home, '.dorothy', 'app-settings.json');
+  const settingsFile = path.join(home, '.tars', 'app-settings.json');
   const seeded = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
   fs.writeFileSync(settingsFile, JSON.stringify({ ...seeded, sentryAuthToken: OLD, sentryTriageProject: '/work/tars' }, null, 2));
   const privateFile = path.join(home, '.tars-private', 'sentry-token');

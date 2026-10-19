@@ -28,7 +28,7 @@ export const slowCalls = new SlowCalls();
 
 /**
  * The channels this process registered: what a sample may name when it
- * leaves (samples.ts, Vocabulary). The samples file is in ~/.dorothy, which
+ * leaves (samples.ts, Vocabulary). The samples file is in ~/.tars, which
  * agents may write, so a word in the channel's pattern is not one of them.
  */
 export class IpcChannels {

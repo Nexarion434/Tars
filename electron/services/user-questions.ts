@@ -30,7 +30,7 @@ import { dialogShown } from '../core/agent-launch';
  *   into, and the user is told.
  * - One open question per agent, 20 a day for the whole fleet, and 4 hours to answer: then the agent is told there was
  *   no answer, by the time it asked, never by its words, and a later reply is refused.
- * - Kept in ~/.tars-private (0600), not in ~/.dorothy, which every agent can write: a record rewritten there would
+ * - Kept in ~/.tars-private (0600), not in ~/.tars, which every agent can write: a record rewritten there would
  *   send their answer to another agent.
  */
 

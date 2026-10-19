@@ -10,7 +10,7 @@ import { shHooksNotShipped } from '../../setup/platform-limits';
  * The status line's token-stats lock, with several Claude sessions rendering
  * at once.
  *
- * Each render that has a session id adds it to ~/.dorothy/token-stats.json
+ * Each render that has a session id adds it to ~/.tars/token-stats.json
  * under a mkdir lock. The script took the lock, set an EXIT trap to remove it,
  * and removed it itself once its write was done. Then it went on, running git
  * for the branch, and exited, and the trap removed the lock a second time. If
@@ -42,7 +42,7 @@ beforeAll(() => {
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 afterEach(() => {
@@ -53,12 +53,12 @@ afterEach(() => {
 function bench(name: 'git' | 'date', body: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-stats-lock-'));
   dirs.push(home);
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
   const bin = path.join(home, 'bin');
   fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  const lock = path.join(home, '.dorothy', 'token-stats.lock');
-  const stats = path.join(home, '.dorothy', 'token-stats.json');
+  const lock = path.join(home, '.tars', 'token-stats.lock');
+  const stats = path.join(home, '.tars', 'token-stats.json');
   const render = () => spawnSync('bash', [script], {
     input: JSON.stringify({ session_id: 's1', model: { display_name: 'Opus 5' }, context_window: {}, cost: {} }),
     cwd: home, encoding: 'utf-8', env: { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: home },
@@ -73,7 +73,7 @@ describe.skipIf(shHooksNotShipped())('the token-stats lock of the status line', 
     // takes the lock is while this one waits on it. `took` says it could:
     // this render had released its own lock by then, so the lock left at the
     // end is the other render's.
-    const b = bench('git', `mkdir "$HOME/.dorothy/token-stats.lock" && touch "$HOME/took"\necho main`);
+    const b = bench('git', `mkdir "$HOME/.tars/token-stats.lock" && touch "$HOME/took"\necho main`);
 
     const run = b.render();
 

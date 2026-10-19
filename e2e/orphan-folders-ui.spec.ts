@@ -46,7 +46,7 @@ test('the folders no agent owns are listed, asked about first, kept on cancel, a
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-orphans-ui-'));
   const project = path.join(fs.realpathSync(home), 'projects', 'tars-hermes');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   git(project, 'init', '-q', '-b', 'main');
@@ -201,7 +201,7 @@ test('a folder that could not be removed says why in its title, never with its p
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-orphans-stuck-'));
   const realHome = fs.realpathSync(home);
   const project = path.join(realHome, 'projects', 'tars-hermes');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   git(project, 'init', '-q', '-b', 'main');

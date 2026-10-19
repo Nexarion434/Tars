@@ -51,8 +51,8 @@ beforeEach(() => {
   delete process.env.CLAUDE_MGR_API_TOKEN;
   process.env.TARS_INSTANCE_ID = INSTANCE;
   // The shared file an agent without a token of its own falls back to.
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'the-shared-token-from-the-file');
   restoreHome = moveTestHome(home);
 });
 

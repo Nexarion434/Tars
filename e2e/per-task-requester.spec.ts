@@ -70,7 +70,7 @@ test("each result goes back to the agent that asked for that piece of work", asy
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-per-task-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const cliFor = (id: string) => {
@@ -226,7 +226,7 @@ test('a request sent during another request\'s turn: each end goes to its own as
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qa-interleave-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const cliFor = (id: string) => {

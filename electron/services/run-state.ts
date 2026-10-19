@@ -15,7 +15,7 @@ import { writeSecretFileSync } from '../utils/secret-file';
  * record still open at the next launch is a run that ended abruptly: a crash,
  * a kill, a power cut or a reboot that did not quit Tars.
  *
- * In ~/.tars-private (0600), which no agent is handed: in ~/.dorothy, a record
+ * In ~/.tars-private (0600), which no agent is handed: in ~/.tars, a record
  * any agent wrote made Tars start, at the next launch, whatever agents it
  * named, at-rest ones of any project included (the Audit's gate of #310).
  *

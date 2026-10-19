@@ -837,7 +837,7 @@ export function writeAtomic(file: string, text: string) { fs.writeFileSync(\`\${
 export async function save() {
   const { writeAtomic } = await import('./utils/atomic');
   writeAtomic(path.join(os.homedir(), '.claude', 'settings.json'), '{}');
-  writeAtomic(path.join(os.homedir(), '.dorothy', 'settings.json'), '{}');
+  writeAtomic(path.join(os.homedir(), '.tars', 'settings.json'), '{}');
 }
 `,
     });

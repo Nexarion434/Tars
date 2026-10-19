@@ -17,7 +17,7 @@
  *    the shipped mod no longer has stays, or a changed one is not updated,
  *    or the read-only copy cannot be replaced at all.
  * 4. The shipped folder itself is handed, or a folder every agent is handed
- *    (~/.dorothy), from which an agent could change the code that runs inside
+ *    (~/.tars), from which an agent could change the code that runs inside
  *    every other agent's claude.
  * 5. A copy that fails hands a half folder, or throws into the launch: the
  *    launch must go on without the mod, on the shell hooks.
@@ -160,7 +160,7 @@ describe('the mod Tars hands to claude', () => {
     const dir = stateModDir();
     expect(dir).toBe(path.join(userData, 'mods', 'tars-state'));
     expect(dir.startsWith(path.join(process.cwd(), 'mods'))).toBe(false);
-    expect(dir.includes(`${path.sep}.dorothy${path.sep}`)).toBe(false);
+    expect(dir.includes(`${path.sep}.tars${path.sep}`)).toBe(false);
     expect(writable(path.join(dir, 'hooks', 'register.ts'))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'hooks', 'register.ts'))).toBe(true);
   });

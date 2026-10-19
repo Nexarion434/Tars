@@ -90,7 +90,7 @@ describe('removeHome, against the roots it is given', () => {
   });
 
   it('5. removes a sandbox in a root, and an absent one quietly', async () => {
-    put(path.join(root, 'sandbox', '.dorothy', 'agents.json'));
+    put(path.join(root, 'sandbox', '.tars', 'agents.json'));
     await removeHome(path.join(root, 'sandbox'), [root]);
     expect(fs.existsSync(path.join(root, 'sandbox'))).toBe(false);
     await expect(removeHome(path.join(root, 'sandbox'), [root])).resolves.toBeUndefined();

@@ -18,7 +18,7 @@ vi.mock('child_process', async (importOriginal) => {
 
 /**
  * The secret files as the app writes them, on Windows: `app-settings.json`,
- * `hermes-connection.json` and `api-token` in ~/.dorothy, the ones main.ts
+ * `hermes-connection.json` and `api-token` in ~/.tars, the ones main.ts
  * names at startup, and everything in ~/.tars-private end with the current
  * user and SYSTEM on their access list and nobody else (platform/owner-only.ts
  * holds the primitive and its own failure list). The startup pass is what
@@ -40,7 +40,7 @@ vi.mock('child_process', async (importOriginal) => {
  *  7. darwin/linux: icacls or whoami is started, or what lands on disk is not
  *     what it was (the contents, the 0600 mode).
  *  8. Over-reach: an ordinary state file (agents.json, written by
- *     writeAtomicSync) is closed too. ~/.dorothy is the agents' directory, and
+ *     writeAtomicSync) is closed too. ~/.tars is the agents' directory, and
  *     a Codex sandbox reads it through the access list its setup grants there.
  *  9. A secret the startup pass does not name (hermes-session.json, written on
  *     every gateway reply that sets a cookie) starts an icacls on every write,

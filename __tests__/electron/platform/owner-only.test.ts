@@ -253,8 +253,8 @@ describe('restrictToOwnerSync with an injected runner', () => {
   it('9: darwin and linux run nothing and report it', async () => {
     for (const platform of ['darwin', 'linux'] as const) {
       const { calls, deps } = runner({});
-      expect(restrictToOwnerSync('/home/u/.dorothy/api-token', {}, { ...deps, platform })).toBe('skipped');
-      expect(await restrictToOwner('/home/u/.dorothy/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(restrictToOwnerSync('/home/u/.tars/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(await restrictToOwner('/home/u/.tars/api-token', {}, { ...deps, platform })).toBe('skipped');
       expect(await restrictDirToOwner('/home/u/.tars-private', { ...deps, platform })).toBe('skipped');
       expect(calls).toEqual([]);
     }
@@ -263,14 +263,14 @@ describe('restrictToOwnerSync with an injected runner', () => {
   it('5: an unparseable whoami answer never reaches icacls', () => {
     const warned: string[] = [];
     const { calls, deps } = runner({ 'whoami.exe': 'ERROR: something' });
-    expect(restrictToOwnerSync('C:\\u\\.dorothy\\api-token', {}, { ...deps, warn: m => warned.push(m) })).toBe('failed');
+    expect(restrictToOwnerSync('C:\\u\\.tars\\api-token', {}, { ...deps, warn: m => warned.push(m) })).toBe('failed');
     expect(calls.map(c => path.win32.basename(c.file))).toEqual(['whoami.exe']);
     expect(warned).toHaveLength(1);
   });
 
   it('runs icacls and whoami from System32, never a name looked up on the PATH, with the path as one argument', () => {
     const { calls, deps } = runner({ 'whoami.exe': '"a\\b","S-1-5-21-1-2-3-1001"' });
-    const target = 'C:\\Users\\a b\\.dorothy\\app-settings.json" /grant *S-1-1-0:(F)';
+    const target = 'C:\\Users\\a b\\.tars\\app-settings.json" /grant *S-1-1-0:(F)';
     expect(restrictToOwnerSync(target, {}, deps)).toBe('restricted');
     expect(calls.map(c => c.file)).toEqual(['C:\\Windows\\System32\\whoami.exe', 'C:\\Windows\\System32\\icacls.exe']);
     expect(calls[1].args).toEqual([target, '/inheritance:r', '/grant:r', '*S-1-5-21-1-2-3-1001:(F)', `*${SYSTEM_SID}:(F)`]);
@@ -293,7 +293,7 @@ describe('restrictToOwnerSync with an injected runner', () => {
     };
     const tick = () => new Promise(r => setImmediate(r));
     let settled = false;
-    const pending = restrictToOwner('C:\\u\\.dorothy\\app-settings.json', { replaceExplicit: true }, deps).then(r => { settled = true; return r; });
+    const pending = restrictToOwner('C:\\u\\.tars\\app-settings.json', { replaceExplicit: true }, deps).then(r => { settled = true; return r; });
     // Back in the caller's hands while whoami has not answered.
     expect(started).toEqual(['whoami.exe']);
     waiting.shift()!('"a\\b","S-1-5-21-1-2-3-1001"');

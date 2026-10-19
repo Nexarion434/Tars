@@ -57,11 +57,11 @@ function turn(id: string, msAgo: number, model = 'claude-opus-5', output = 100) 
 
 /** What the status line writes, per session. */
 function tokenStats(sessions: Record<string, { provider: string; account?: string }>) {
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
   const entries = Object.fromEntries(Object.entries(sessions).map(([sid, s]) => [sid, {
     in: 1000, out: 100, cost: 0.01, model: 'x', extra: false, date: ago(0).slice(0, 10), ...s,
   }]));
-  fs.writeFileSync(path.join(home, '.dorothy', 'token-stats.json'), JSON.stringify(entries));
+  fs.writeFileSync(path.join(home, '.tars', 'token-stats.json'), JSON.stringify(entries));
 }
 
 beforeEach(() => {

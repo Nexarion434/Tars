@@ -32,7 +32,7 @@ test('the folders no agent owns are listed, and removed when asked, but the one 
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-orphans-'));
   const project = path.join(fs.realpathSync(home), 'projects', 'tars-hermes');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   git(project, 'init', '-q', '-b', 'main');

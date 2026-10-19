@@ -14,7 +14,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
  * folder above it (`/Users`, `/home`), made every file of the home readable,
  * and through fs:write-text-file writable (a shell profile, an SSH key).
  * fs:read-project-files refused the home by its exact string only. One
- * "Add project" in the UI, or one line in ~/.dorothy/projects.json, which
+ * "Add project" in the UI, or one line in ~/.tars/projects.json, which
  * every agent can write.
  *
  * How it can fail, written before the fix (2026-09-28):

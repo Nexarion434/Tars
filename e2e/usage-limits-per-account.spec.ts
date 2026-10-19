@@ -38,7 +38,7 @@ async function budgetRows(page: Page) {
 test('Budget & limits shows each Claude account\'s windows, and Claude\'s own with the option off', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-limits-per-account-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   fs.mkdirSync(path.join(dir, 'rate-limits.d'), { recursive: true });
   fs.mkdirSync(priv, { recursive: true, mode: 0o700 });

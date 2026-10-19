@@ -35,7 +35,7 @@ vi.mock('electron', () => ({
 }));
 
 const HOME = os.homedir();
-const DATA = path.join(HOME, '.dorothy');
+const DATA = path.join(HOME, '.tars');
 const AGENTS = path.join(DATA, 'agents.json');
 const BACKUP = path.join(DATA, 'agents.backup.json');
 const CLAUDE_JSON = path.join(HOME, '.claude.json');

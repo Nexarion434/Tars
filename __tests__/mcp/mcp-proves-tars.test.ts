@@ -18,7 +18,7 @@ import { moveTestHome } from '../setup/test-home';
  * How it fails, written before the code:
  * 1. A port that does not prove it knows the CLI's TARS_INSTANCE_ID gets the
  *    agent's token, from any of the four servers.
- * 2. It gets the shared token from ~/.dorothy/api-token instead.
+ * 2. It gets the shared token from ~/.tars/api-token instead.
  * 3. Over-correction: the Tars that started the CLI no longer gets the token.
  * 4. A proof kept for the server's life (the Audit's M1 on #376): a server
  *    proves itself at its first tool call, so a CLI that outlived a quit,
@@ -81,8 +81,8 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), SHARED);
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'api-token'), SHARED);
 });
 afterAll(async () => {
   server.closeAllConnections();

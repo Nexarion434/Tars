@@ -162,7 +162,7 @@ describe('POST /api/memory/remember', () => {
     const { data } = await call(handler, { body: { agent_id: 'a1', project_path: PROJECT, content: 'y'.repeat(900), type: 'command' } });
     expect(data).toMatchObject({ success: true });
 
-    const ledger = path.join(h.home, '.dorothy', 'observations', `${ENCODED}.jsonl`);
+    const ledger = path.join(h.home, '.tars', 'observations', `${ENCODED}.jsonl`);
     const lines = fs.readFileSync(ledger, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(1);
     const rec = JSON.parse(lines[0]);

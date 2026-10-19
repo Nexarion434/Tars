@@ -9071,11 +9071,11 @@
           }
         },
         {
-          "scenario": "send_telegram_photo, in .dorothy",
+          "scenario": "send_telegram_photo, in .tars",
           "call": {
             "tool": "send_telegram_photo",
             "arguments": {
-              "photo_path": "<home>/.dorothy/app-settings.json.bak"
+              "photo_path": "<home>/.tars/app-settings.json.bak"
             }
           },
           "requests": [],
@@ -9083,7 +9083,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Error sending photo to Telegram: Refused: .dorothy holds credentials and cannot be sent"
+                "text": "Error sending photo to Telegram: Refused: .tars holds credentials and cannot be sent"
               }
             ],
             "isError": true
@@ -9109,7 +9109,7 @@
           }
         },
         {
-          "scenario": "send_telegram_photo, through a symlink to .dorothy",
+          "scenario": "send_telegram_photo, through a symlink to .tars",
           "call": {
             "tool": "send_telegram_photo",
             "arguments": {
@@ -9121,7 +9121,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Error sending photo to Telegram: Refused: .dorothy holds credentials and cannot be sent"
+                "text": "Error sending photo to Telegram: Refused: .tars holds credentials and cannot be sent"
               }
             ],
             "isError": true

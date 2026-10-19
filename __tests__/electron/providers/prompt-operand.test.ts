@@ -149,7 +149,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(tmpDir, 'system-prompt.md'), '# system');
   fs.mkdirSync(path.join(tmpDir, 'second project'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, "JeanBrasse's vault"), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.tars'), { recursive: true });
 });
 
 afterEach(() => {

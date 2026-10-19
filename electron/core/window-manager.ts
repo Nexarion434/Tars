@@ -266,7 +266,7 @@ function isUnder(root: string, candidate: string): boolean {
 /**
  * Roots local-file:// may read from: the user's own project and app data.
  * None that is the home or above it, and judged where the file really lies: a
- * project added as `~`, or a link under ~/.dorothy or in a project, made any
+ * project added as `~`, or a link under ~/.tars or in a project, made any
  * file of the home a local-file:// URL (utils/real-target.ts).
  */
 function isUnderAllowedRoot(filePath: string): boolean {
@@ -363,7 +363,7 @@ export function setupProtocolHandler() {
       // came back out as a real traversal that path.join walked straight
       // through. The `app` scheme is registered secure and CORS-enabled, so it
       // is same-origin with the app's own page: a vault note holding
-      // `![](app://-/a/..%2f..%2f.dorothy%2fapp-settings.json)` fetched it the
+      // `![](app://-/a/..%2f..%2f.tars%2fapp-settings.json)` fetched it the
       // moment the note was opened, with no click, and handed every provider
       // API key to the renderer. Markdown images are never run through
       // isSafeUrl, and a vault document can be written by any agent.

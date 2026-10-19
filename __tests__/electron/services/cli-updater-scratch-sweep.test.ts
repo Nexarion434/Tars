@@ -31,7 +31,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  *     removed;
  *  5. a leftover the sweep cannot remove either stops the pass, or is said at
  *     every pass: it is said once;
- *  6. what the sweep removes goes unsaid in ~/.dorothy/cli-updates.log, the log
+ *  6. what the sweep removes goes unsaid in ~/.tars/cli-updates.log, the log
  *     that named the folder when it was left.
  * Not tested here: a folder that belongs to another user, which would take a
  * second account to make.

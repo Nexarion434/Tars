@@ -70,9 +70,9 @@ describe('an error report from Windows', () => {
   });
 
   it('5. whatever the case it is written in', () => {
-    const text = reported('EPERM: c:\\users\\SOMEBODY\\.dorothy\\agents.json', 'C:\\USERS\\SomeBody\\x.js');
+    const text = reported('EPERM: c:\\users\\SOMEBODY\\.tars\\agents.json', 'C:\\USERS\\SomeBody\\x.js');
     expect(text).not.toMatch(/somebody/i);
-    expect(text).toContain('~\\\\.dorothy');
+    expect(text).toContain('~\\\\.tars');
   });
 
   it('6. leaves a POSIX home to what it was: its user name is what follows its last slash', () => {

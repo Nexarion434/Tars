@@ -24,7 +24,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 1. A sample older than 24 hours is kept, or sent.
  * 2. The file grows without bound (samples written faster than planned, a clock that jumps): it must stay under its
  *    size, the oldest dropped first.
- * 3. A line that is not a sample (a broken write, a hand edit, an agent's write: the file is in ~/.dorothy) is read
+ * 3. A line that is not a sample (a broken write, a hand edit, an agent's write: the file is in ~/.tars) is read
  *    back and sent: a string field holding a path, a name or a conversation.
  * 4. A channel name that is not one (spaces, a slash, a path, too long) or a page that is not a bare path (a query, a
  *    home folder, too long) is kept.
@@ -32,13 +32,13 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 6. A sample dated in the future (a clock set back) stays for good.
  * 7. A file that cannot be read or parsed throws, at start or at a sample.
  * 8. The file is readable by other users (POSIX: 0600).
- * And from the Audit's Low 1 on #418: the file is in ~/.dorothy, which agents may write.
+ * And from the Audit's Low 1 on #418: the file is in ~/.tars, which agents may write.
  * 9. A channel or a page that only looks like one (a word an agent chose, in the pattern) leaves with a diagnostic or
  *    an abrupt end: what leaves must hold only the channels this Tars registered and the app's own pages.
  * 10. The list of the app's pages drifts from the app: a page added in src/app is dropped from every sample, or a
  *    page removed stays allowed.
  * And from the Audit's gate of #421: the privacy page says the file is readable by the user's account only.
- * 11. On Windows it is not: Node ignores the mode there, and a plain write keeps the list ~/.dorothy hands down. Named
+ * 11. On Windows it is not: Node ignores the mode there, and a plain write keeps the list ~/.tars hands down. Named
  *    at startup with the other owner-only files, each write must be born closed (in the closed staging directory,
  *    made the user's and SYSTEM's alone before the rename), and an icacls that fails must not lose the sample.
  */

@@ -9,7 +9,7 @@ import { isPlainAbsolute } from './cli-binary';
  * How Windows plays a notification sound, as a program and its
  * arguments, never a command line built from the file.
  *
- * The file's path comes from app-settings.json, which sits in ~/.dorothy, the
+ * The file's path comes from app-settings.json, which sits in ~/.tars, the
  * directory every agent is handed. It used to be pasted into PowerShell code
  * (`(New-Object Media.SoundPlayer '<path>').PlaySync()`), so a `'` in a file
  * name ended the string and the rest ran. Here the script is one fixed text,

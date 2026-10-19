@@ -441,7 +441,7 @@ describe.skipIf(claudeAccountsNotPorted())('the counters', () => {
   it("shows each account's 5 h and weekly counters, as its status line last left them, and drops a window that has reset", async () => {
     const a = await add('Max two');
     const now = Math.floor(Date.now() / 1000);
-    const dir = path.join(os.homedir(), '.dorothy', 'rate-limits.d');
+    const dir = path.join(os.homedir(), '.tars', 'rate-limits.d');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${a.id}.json`), JSON.stringify({ updatedAt: now - 30, rate_limits: { five_hour: { used_percentage: 42, resets_at: now + 3600 }, seven_day: { used_percentage: 61, resets_at: now + 86400 } } }));
     fs.writeFileSync(path.join(dir, 'default.json'), JSON.stringify({ updatedAt: now - 30, rate_limits: { five_hour: { used_percentage: 97, resets_at: now - 5 }, seven_day: { used_percentage: 20, resets_at: now + 86400 } } }));

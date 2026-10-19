@@ -35,7 +35,7 @@ ${CANVAS}::-webkit-scrollbar-track { background: #333; }`;
 const BOXES = 7;
 
 function seed(home: string, newInterface: boolean): void {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'atlas');
   for (const folder of [dir, path.join(home, '.claude'), project]) fs.mkdirSync(folder, { recursive: true });
   fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# atlas\n');

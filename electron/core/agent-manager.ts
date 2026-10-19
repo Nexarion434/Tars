@@ -1308,7 +1308,7 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
       ...providerEnvVars,
       // CLAUDE_MGR_API_URL is imposed by spawnAgentPty, on the one line that
       // starts a process, so the API-driven spawn cannot miss it as it did.
-      // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
+      // Load CLAUDE.md from --add-dir directories (e.g. ~/.tars)
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
       ...tasmaniaEnv,
     },

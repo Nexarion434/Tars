@@ -192,7 +192,7 @@ function tomorrowAtNine() {
 }
 
 function seed(cli) {
-  const dir = join(HOME, '.dorothy');
+  const dir = join(HOME, '.tars');
   mkdirSync(dir, { recursive: true });
   const agent = (id, name, projectPath, extra) => ({
     id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker', permissionMode: 'normal',

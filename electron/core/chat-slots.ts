@@ -142,7 +142,7 @@ export interface RecordedRunnerFacts {
 
 /**
  * The agent a chat's record names as its runner, as the fleet confirms it
- * (the Audit's Info on #361). chats.json sits in ~/.dorothy, which every agent
+ * (the Audit's Info on #361). chats.json sits in ~/.tars, which every agent
  * may write, so a record's runnerId is a claim: nothing is typed into,
  * launched, counted in a slot, put to sleep or renamed for it until this
  * agrees. Main's runner is the project's orchestrator; any other chat's is the
@@ -165,7 +165,7 @@ export function recordedRunner<A extends RecordedRunnerFacts>(
 
 /**
  * The agents marked as a chat's runner that no chat names (the Audit's L1 on
- * #379): `kind: 'chat'` comes from agents.json, in ~/.dorothy, which every
+ * #379): `kind: 'chat'` comes from agents.json, in ~/.tars, which every
  * agent may write, and it gives the orchestrator's powers. At launch these go
  * back to plain workers; a runner Tars makes later is its own.
  */

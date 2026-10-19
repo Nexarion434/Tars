@@ -5,9 +5,9 @@
 // what macOS and Linux run, and remains the reference.
 //
 // It renders the same line and writes the same files the Usage page reads:
-// ~/.dorothy/rate-limits.json (the `rate_limits` object as Claude Code sent
-// it, for account 1), each account's counter in ~/.dorothy/rate-limits.d,
-// and ~/.dorothy/token-stats.json (one entry per session, with its provider
+// ~/.tars/rate-limits.json (the `rate_limits` object as Claude Code sent
+// it, for account 1), each account's counter in ~/.tars/rate-limits.d,
+// and ~/.tars/token-stats.json (one entry per session, with its provider
 // and account), the last under the same mkdir lock, written beside itself
 // and renamed over.
 //
@@ -22,7 +22,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const DATA_DIR = path.join(os.homedir(), '.dorothy');
+// ~/.tars since 2.0.4; ~/.dorothy for a run of Tars that could not move it yet (core/data-dir-move.ts).
+const DATA_DIR = !fs.existsSync(path.join(os.homedir(), '.tars')) && fs.existsSync(path.join(os.homedir(), '.dorothy')) ? path.join(os.homedir(), '.dorothy') : path.join(os.homedir(), '.tars');
 
 function readStdin() {
   return new Promise(resolve => {

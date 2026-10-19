@@ -11,7 +11,7 @@ import * as path from 'node:path';
  * answered the temp directory. Everything that isolates a Tars (the sandbox
  * script, the e2e, a test) does it with HOME, so each such call was a way for
  * an isolated Tars to reach the real account: seven of them, handing agents the
- * real ~/.claude/mcp.json and writing a prompt file into the real ~/.dorothy.
+ * real ~/.claude/mcp.json and writing a prompt file into the real ~/.tars.
  * Seven sites on one cause is a class, so the cause is what is checked.
  *
  * Read from disk with fs rather than with grep: a grep that skips binary files

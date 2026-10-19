@@ -16,7 +16,7 @@ import { createHash, randomBytes } from "crypto";
 import { noAnswerWithin, send, TARS_WAIT_MS } from "./http.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
-const API_TOKEN_FILE = path.join(os.homedir(), ".dorothy", "api-token");
+const API_TOKEN_FILE = path.join(!fs.existsSync(path.join(os.homedir(), ".tars")) && fs.existsSync(path.join(os.homedir(), ".dorothy")) ? path.join(os.homedir(), ".dorothy") : path.join(os.homedir(), ".tars"), "api-token");
 
 // Caller identity, injected into the PTY environment by Tars when it spawns
 // the agent. Sent on every request so the server can scope agent listings and

@@ -14,7 +14,7 @@ export const HERMES_CONNECTION_FILE = path.join(DATA_DIR, 'hermes-connection.jso
 
 /**
  * The dashboard's session token, apart from the rest of the connection: in
- * ~/.tars-private, which no agent is handed, where ~/.dorothy is in every
+ * ~/.tars-private, which no agent is handed, where ~/.tars is in every
  * agent's --add-dir (JeanBrasse's decision 6, 2026-10-01). Whoever holds it can drive
  * the dashboard, and, with the tars-relay plugin on the server, write to the
  * user as Tars and read or delete their replies.
@@ -36,7 +36,7 @@ function writeToken(token: string | undefined): void {
 
 /**
  * What the file holds once its token is out of it. A connection saved before
- * 1.9.2 kept its token in ~/.dorothy: it moves to ~/.tars-private at the first
+ * 1.9.2 kept its token in ~/.tars: it moves to ~/.tars-private at the first
  * read, and the file is written again without it. A token found there wins: an
  * older Tars that ran since wrote it last.
  */

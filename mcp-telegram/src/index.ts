@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * MCP server that exposes Telegram tools for sending messages, photos, videos, and documents.
- * Works independently - reads its settings from ~/.dorothy/app-settings.json and sends directly to Telegram.
+ * Works independently - reads its settings from ~/.tars/app-settings.json and sends directly to Telegram.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -29,16 +29,16 @@ interface AppSettings {
  * itself - so the `isSafeTelegramPath` check on the app's own HTTP routes never
  * applied here. An agent that can call these tools could name any absolute path
  * and any chat id: `send_telegram_document` with
- * `~/.dorothy/app-settings.json` and the attacker's own chat id is a one-call
+ * `~/.tars/app-settings.json` and the attacker's own chat id is a one-call
  * exfiltration of every API key the app holds.
  *
  * Both halves of the guard are enforced here, in the same shape the app uses.
  */
 const BLOCKED_DIRS = [
-  ".ssh", ".gnupg", ".aws", ".claude", ".dorothy", ".config",
+  ".ssh", ".gnupg", ".aws", ".claude", ".tars", ".dorothy", ".config",
   ".kube", ".docker",
   // What Tars keeps out of the agents' directory: JeanBrasse's conversation with
-  // the super chat and the Hermes webhook secret. Blocking .dorothy alone made
+  // the super chat and the Hermes webhook secret. Blocking .tars alone made
   // them sendable again the moment they moved out of it.
   ".tars-private",
 ];

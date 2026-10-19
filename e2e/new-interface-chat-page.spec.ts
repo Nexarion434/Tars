@@ -53,7 +53,7 @@ test('a chat\'s page reads its conversation from the transcripts, follows it liv
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chat-page-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
   // The folder Claude Code names, every character but a letter or a digit as
   // `-`: macOS's own temp folder holds a `_`, which the older name kept.

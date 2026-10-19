@@ -337,7 +337,7 @@ async function spawnAgentSessionInSlot(
     CLAUDE_SKILLS: agent.skills?.join(',') || '',
     CLAUDE_AGENT_ID: agent.id,
     CLAUDE_PROJECT_PATH: agent.projectPath,
-    // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
+    // Load CLAUDE.md from --add-dir directories (e.g. ~/.tars)
     CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
   };
   for (const key of cliProvider.getEnvVarsToDelete()) {
@@ -726,14 +726,14 @@ function givenUp(agent: AgentStatus, ref: string | undefined): void {
 /**
  * Refused to a caller that is nobody, on every route that drives an agent.
  *
- * What it replaces, measured on b17db0f: a call on `~/.dorothy/api-token` with
+ * What it replaces, measured on b17db0f: a call on `~/.tars/api-token` with
  * no `x-tars-client` header stopped, started, messaged, dispatched to and
  * DELETEd an agent of any project, and got a 200. The guard only ever refused
  * a caller that volunteered `x-tars-client: mcp`, which is a header the caller
  * writes about itself: an agent that read the shared file and left that header
  * out had the whole fleet. Honouring it was the theatre; it is gone.
  *
- * Every agent can read that file (`--add-dir ~/.dorothy`, and on this machine
+ * Every agent can read that file (`--add-dir ~/.tars`, and on this machine
  * 37 of 42 agents run with `--dangerously-skip-permissions`, so its Bash reads
  * it whatever the flag says), so a call that presents it names nobody. This is
  * the same door the bus has had since the shared token stopped opening rooms.
@@ -1806,7 +1806,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
         `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
-        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.tars/CLAUDE.md, "Waiting on work you started").`
       );
     }
 

@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { AppSettings, CliApiKey, CliKeyId, CliKeyState } from '../types';
 
 /**
- * An API key per CLI (2.0.4): kept in ~/.dorothy/app-settings.json only, and
+ * An API key per CLI (2.0.4): kept in ~/.tars/app-settings.json only, and
  * handed to that CLI's agents only, through their terminal's environment (the
  * provider's getPtyEnvVars, which every launch and an ACP run read), under the
  * variable that CLI reads. Never in an argument, where ps shows it; never in

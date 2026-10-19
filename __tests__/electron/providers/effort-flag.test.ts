@@ -65,7 +65,7 @@ function params(effort: string | undefined) {
 beforeEach(() => {
   vi.resetModules();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'effort-flag-'));
-  fs.mkdirSync(path.join(tmpDir, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.tars'), { recursive: true });
 });
 
 afterEach(() => {

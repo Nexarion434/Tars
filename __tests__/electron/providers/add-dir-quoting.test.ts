@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
  *
  * Every provider wrote `--add-dir '${DATA_DIR}'` without escaping the quote,
  * and the scheduled builders `--add-dir "${DATA_DIR}"`, where `$` and a
- * backtick still expand. DATA_DIR is `~/.dorothy`, so the home folder's own
+ * backtick still expand. DATA_DIR is `~/.tars`, so the home folder's own
  * name went into the command line raw. What can go wrong, each checked below:
  *
  * 1. An apostrophe in the home (`/Users/o'neil`) closes the quote early: the
@@ -142,8 +142,8 @@ function scriptParams(homeDir: string) {
   const projectPath = path.join(homeDir, 'the project');
   fs.mkdirSync(projectPath, { recursive: true });
   // A key provider's script starts its CLI only with its key, read as it runs (scheduledKeyExports): one of each.
-  fs.mkdirSync(path.join(homeDir, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.dorothy', 'app-settings.json'), JSON.stringify(Object.fromEntries(
+  fs.mkdirSync(path.join(homeDir, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.tars', 'app-settings.json'), JSON.stringify(Object.fromEntries(
     ['deepSeekApiKey', 'moonshotApiKey', 'zhipuApiKey', 'minimaxApiKey', 'openRouterApiKey', 'ollamaCloudApiKey'].map(k => [k, `sk-${k}`]),
   )));
   const binaryPath = cliUnder(homeDir);
@@ -209,7 +209,7 @@ describe('a home folder whose name the shell would read', () => {
   it('reaches every provider\'s interactive CLI as the folder it is', async () => {
     const plain = await providersUnder(plainHome);
     const plainArgv = new Map(plain.getAllProviders().map(p => [p.id, argvOf(p.buildInteractiveCommand(interactiveParams(plainHome)))]));
-    const plainDataDir = path.join(plainHome, '.dorothy');
+    const plainDataDir = path.join(plainHome, '.tars');
 
     const hostile = await providersUnder(hostileHome);
     const wrong: string[] = [];
@@ -236,7 +236,7 @@ describe('a home folder whose name the shell would read', () => {
 
   it('reaches every provider\'s scheduled command as the folder it is', async () => {
     const plain = await providersUnder(plainHome);
-    const plainDataDir = path.join(plainHome, '.dorothy');
+    const plainDataDir = path.join(plainHome, '.tars');
     // The providers that hand their scheduled CLI the data folder, the ones this covers.
     const plainArgv = new Map(plain.getAllProviders()
       .map(p => [p.id, argvOf(p.buildScheduledCommand(scheduledParams(plainHome)))] as const)
@@ -262,7 +262,7 @@ describe('a home folder whose name the shell would read', () => {
 
   it('reaches every provider\'s scheduled script as the folder it is', async () => {
     const plain = await providersUnder(plainHome);
-    const plainDataDir = path.join(plainHome, '.dorothy');
+    const plainDataDir = path.join(plainHome, '.tars');
     const plainArgv = new Map<string, string[]>();
     const wrong: string[] = [];
     for (const provider of plain.getAllProviders()) {

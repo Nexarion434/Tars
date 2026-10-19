@@ -68,7 +68,7 @@ test('a mounted panel sends its terminal\'s replies to nobody, and the keys type
   fs.writeFileSync(cli, recorder(log), { mode: 0o755 });
   // The asker alone, idle and without a terminal, so the board's auto start
   // runs it through the agent's own CLI path.
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([{
     id: AGENT.id, name: AGENT.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cli,
     createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',

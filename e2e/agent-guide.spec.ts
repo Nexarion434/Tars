@@ -65,7 +65,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(240_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-guide-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
     const standInLog = path.join(home, 'stand-in.jsonl');
@@ -153,7 +153,7 @@ for (const newInterface of [false, true]) {
       expect.soft(kanbanTopic.text).toContain('assign_task');
       expect.soft(unknown.isError).toBe(true);
       expect.soft(unknown.text).toContain('- kanban: ');
-      const folder = /(\/\S+\/\.dorothy\/project-files\/demo-[0-9a-f]{10})/.exec(folderTopic.text)?.[1];
+      const folder = /(\/\S+\/\.tars\/project-files\/demo-[0-9a-f]{10})/.exec(folderTopic.text)?.[1];
       keep({ folder });
       expect(folder, folderTopic.text).toBeTruthy();
       expect(fs.realpathSync(path.dirname(path.dirname(folder!)))).toBe(fs.realpathSync(dir));

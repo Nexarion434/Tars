@@ -112,7 +112,7 @@ describe('the suite runs in a HOME of its own', () => {
 
   it.runIf(process.platform === 'win32')('on Windows, points USERPROFILE, APPDATA and LOCALAPPDATA at it too', () => {
     // os.homedir() reads USERPROFILE on Windows, not HOME: redirecting HOME
-    // alone left DATA_DIR on the real %USERPROFILE%\.dorothy.
+    // alone left DATA_DIR on the real %USERPROFILE%\.tars.
     const home = guard.throwawayHome;
     expect(os.homedir()).toBe(home);
     expect(process.env.USERPROFILE).toBe(home);
@@ -142,11 +142,11 @@ describe('the suite runs in a HOME of its own', () => {
   // home the run started in: both are protected, and one of them is the real one.
   const realHome = guard.accountHome || guard.originalHome;
 
-  it.skipIf(!realHome)('still refuses a write into the real ~/.dorothy, and the real app data folder', () => {
+  it.skipIf(!realHome)('still refuses a write into the real ~/.tars, and the real app data folder', () => {
     // Into a folder that does not exist, so that a guard that let it through
     // fails with ENOENT and writes nothing: the witness cannot become the leak.
     const probe = `tars-guard-probe-${process.pid}-${Date.now()}`;
-    const targets = [path.join(realHome as string, '.dorothy', probe, 'agents.json')];
+    const targets = [path.join(realHome as string, '.tars', probe, 'agents.json')];
     if (process.platform === 'win32') {
       // Electron's userData is %APPDATA%\tars: the real one, and the one the run started with.
       targets.push(path.join(realHome as string, 'AppData', 'Roaming', 'tars', probe, 'config.json'));

@@ -68,7 +68,7 @@ function writeStandIn(home: string, log: string): string {
 test("the Usage page is handed each Claude account's windows as Claude Code reads them, per-model weekly included", async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-account-probe-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   fs.mkdirSync(path.join(dir, 'rate-limits.d'), { recursive: true });
   fs.mkdirSync(priv, { recursive: true, mode: 0o700 });

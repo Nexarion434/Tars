@@ -849,7 +849,7 @@ export interface BusMembersChanged {
   dropped: number;
 }
 
-/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+/** A file staged for a room (`bus:stageFiles`): written under ~/.tars,
  *  which is in every agent's `--add-dir`, and named by its absolute path in
  *  what each target receives. */
 export interface BusAttachment {
@@ -1064,7 +1064,7 @@ export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { succe
 
 /* ── The chats of each project (electron/services/chats.ts, handlers/chat-handlers.ts) ── */
 
-/** A chat's record, as ~/.dorothy/chats.json keeps it. */
+/** A chat's record, as ~/.tars/chats.json keeps it. */
 export interface Chat {
   id: string;
   /** The project's path as Tars saved it (its orchestrator's). */
@@ -1491,7 +1491,7 @@ export interface ElectronAPI {
   };
 
   /**
-   * Spend from Tars's own ledger, ~/.dorothy/usage-ledger.jsonl, and nothing
+   * Spend from Tars's own ledger, ~/.tars/usage-ledger.jsonl, and nothing
    * else: one record per ACP turn, any provider. The Claude transcripts are not
    * in it; they come through `claude.getData`. A `claude` row here is a turn
    * the transcripts count as well, since the Claude ACP adapter runs the claude

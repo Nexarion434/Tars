@@ -157,7 +157,7 @@ const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
  *   X-Tars-Caller-Id naming somebody else alongside it is not a mistake any
  *   honest caller makes, since the id and the token come from the same
  *   environment, so the call is refused rather than quietly re-labelled.
- * - The **shared token**, `~/.dorothy/api-token`: authorised, and nobody. No
+ * - The **shared token**, `~/.tars/api-token`: authorised, and nobody. No
  *   header is read with it, neither the id nor the project. Every agent can
  *   read that file, so a name that comes with it proves nothing, and believing
  *   the name was how any agent could be any other. Who presents it: a curl run

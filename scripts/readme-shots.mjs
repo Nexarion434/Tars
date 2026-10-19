@@ -21,7 +21,7 @@
  *
  * Everything runs in a sandbox, through launchSandboxed (e2e/fixture.mjs): a
  * temp HOME, and Electron's profile moved with --user-data-dir and
- * CFFIXED_USER_HOME, then checked. HOME alone moved ~/.dorothy and ~/.claude
+ * CFFIXED_USER_HOME, then checked. HOME alone moved ~/.tars and ~/.claude
  * and nothing else: until 1.9.1 this script opened the installed Tars's own
  * profile (QA's note on #214).
  *
@@ -124,7 +124,7 @@ function newestChangelogId() {
  * terminal it starts (CLAUDE_MGR_API_TOKEN, CLAUDE_MGR_API_URL).
  */
 function writeStandIn(home) {
-  const agentsFile = join(home, '.dorothy', 'agents.json');
+  const agentsFile = join(home, '.tars', 'agents.json');
   const agents = JSON.parse(readFileSync(agentsFile, 'utf8'));
   // What a Claude agent at work has used so far, reply by reply, as Claude
   // Code's transcript says it: input, cache write, cache read and output tokens.
@@ -188,7 +188,7 @@ function writeStandIn(home) {
  * Returns the old name, which no picture may show.
  */
 function publicSeed(home) {
-  const dir = join(home, '.dorothy');
+  const dir = join(home, '.tars');
   const projectsFile = join(dir, 'projects.json');
   const projects = JSON.parse(readFileSync(projectsFile, 'utf8'));
   if (projects.length !== 2) throw new Error(`the seed has ${projects.length} projects, not 2: say which one to rename`);
@@ -249,7 +249,7 @@ const home = mkdtempSync('/tmp/tars-readme-');
 seedSandbox(home);
 const oldName = publicSeed(home);
 const hermes = await standInHermes();
-writeFileSync(join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: hermes.address().port, authMode: 'token' }, null, 2));
+writeFileSync(join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: hermes.address().port, authMode: 'token' }, null, 2));
 const startHere = writeStandIn(home);
 const seen = newestChangelogId();
 const hideDevIndicator = readFileSync(join('e2e', 'screenshot.css'), 'utf8');

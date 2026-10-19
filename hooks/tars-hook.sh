@@ -5,7 +5,10 @@
 # readable by every user of the machine and shared by every Tars on it, a
 # sandbox's included. They carry session ids and task text. They live in the
 # data folder of the Tars that owns the CLI now, readable by its user only.
-TARS_LOG_DIR="$HOME/.dorothy/logs"
+# ~/.tars since 2.0.4; ~/.dorothy for a Tars that could not move it yet.
+TARS_DATA_DIR="$HOME/.tars"
+[ ! -d "$TARS_DATA_DIR" ] && [ -d "$HOME/.dorothy" ] && TARS_DATA_DIR="$HOME/.dorothy"
+TARS_LOG_DIR="$TARS_DATA_DIR/logs"
 umask 077
 mkdir -p "$TARS_LOG_DIR" 2>/dev/null
 HOOK_LOG="$TARS_LOG_DIR/hooks.log"
@@ -64,6 +67,6 @@ tars_auth() {
 TARS_READ_TOKEN=""
 if [ "$TARS_TOKEN_OK" = yes ]; then
   TARS_READ_TOKEN="$CLAUDE_MGR_API_TOKEN"
-elif [ -z "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -f "$HOME/.dorothy/api-token" ]; then
-  TARS_READ_TOKEN=$(cat "$HOME/.dorothy/api-token" 2>/dev/null)
+elif [ -z "${CLAUDE_MGR_API_TOKEN:-}" ] && [ -f "$TARS_DATA_DIR/api-token" ]; then
+  TARS_READ_TOKEN=$(cat "$TARS_DATA_DIR/api-token" 2>/dev/null)
 fi

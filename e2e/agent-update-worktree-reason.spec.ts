@@ -84,7 +84,7 @@ test('a worktree git cannot make is not saved, and the answer is git\'s own reas
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-update-wt-'));
   const plain = path.join(home, 'projects', 'plain');
   const repo = path.join(home, 'projects', 'repo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [plain, repo, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

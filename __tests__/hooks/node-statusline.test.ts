@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url';
  *  6. A status line other than the bash one (colours, bar, rounding: awk
  *     prints 2500 tokens as "2k", round-half-even, not "3k").
  *  7. A crash on missing fields, or a token-stats entry for no session.
- *  8. Anything written outside ~/.dorothy of the HOME it runs in.
+ *  8. Anything written outside ~/.tars of the HOME it runs in.
  *  9. Its lock released twice: once when its write is done, and again as it
  *     exits, which removes the lock another render has taken in between. Two
  *     renders then hold it at once, both read the same file, and the last to
@@ -40,7 +40,7 @@ afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 function freshHome(): string {
   const home = fs.mkdtempSync(path.join(tmp, 'home-'));
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
   return home;
 }
 
@@ -99,7 +99,7 @@ describe('statusline.mjs', () => {
 
   it('1, 2, 3, 5. writes rate-limits.json and a token-stats entry, beside itself, lock released', async () => {
     const home = freshHome();
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     fs.writeFileSync(path.join(dir, 'token-stats.json'), JSON.stringify({ other: { in: 1 } }));
     await render(home, PAYLOAD, { CLAUDE_PROVIDER: 'kimi' });
 
@@ -116,7 +116,7 @@ describe('statusline.mjs', () => {
 
   it('2. starts again from {} when the file is not one JSON object, and marks extra usage', async () => {
     const home = freshHome();
-    const file = path.join(home, '.dorothy', 'token-stats.json');
+    const file = path.join(home, '.tars', 'token-stats.json');
     fs.writeFileSync(file, '[1,2');
     await render(home, { ...PAYLOAD, rate_limits: { five_hour: { used_percentage: 101 } } });
     expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toEqual({
@@ -131,7 +131,7 @@ describe('statusline.mjs', () => {
     const { code, out } = await render(home, rest);
     expect(code).toBe(0);
     expect(out).toContain('ctx:');
-    expect(fs.readdirSync(path.join(home, '.dorothy'))).toEqual(['statusline-cache']);
+    expect(fs.readdirSync(path.join(home, '.tars'))).toEqual(['statusline-cache']);
   });
 
   it('7. survives stdin that is not JSON', async () => {
@@ -143,24 +143,24 @@ describe('statusline.mjs', () => {
 
   it('4. clears a lock older than 5s, and takes it', async () => {
     const home = freshHome();
-    const lock = path.join(home, '.dorothy', 'token-stats.lock');
+    const lock = path.join(home, '.tars', 'token-stats.lock');
     fs.mkdirSync(lock);
     const old = new Date(Date.now() - 10_000);
     fs.utimesSync(lock, old, old);
     await render(home, PAYLOAD);
-    expect(JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'))).toHaveProperty(S);
+    expect(JSON.parse(fs.readFileSync(path.join(home, '.tars', 'token-stats.json'), 'utf-8'))).toHaveProperty(S);
     expect(fs.existsSync(lock)).toBe(false);
   });
 
   it('4. skips its write, and leaves the lock, when another render holds it', async () => {
     const home = freshHome();
-    const lock = path.join(home, '.dorothy', 'token-stats.lock');
+    const lock = path.join(home, '.tars', 'token-stats.lock');
     fs.mkdirSync(lock);
     const started = Date.now();
     const { out } = await render(home, PAYLOAD);
     expect(Date.now() - started).toBeGreaterThanOrEqual(900);
     expect(out).toContain('ctx:');
-    expect(fs.existsSync(path.join(home, '.dorothy', 'token-stats.json'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.tars', 'token-stats.json'))).toBe(false);
     expect(fs.existsSync(lock)).toBe(true);
   });
 
@@ -168,13 +168,13 @@ describe('statusline.mjs', () => {
     const home = freshHome();
     const ids = Array.from({ length: 6 }, (_, i) => `aaaaaaaa-bbbb-4ccc-8ddd-00000000000${i}`);
     await Promise.all(ids.map(id => render(home, { ...PAYLOAD, session_id: id })));
-    const stats = JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'));
+    const stats = JSON.parse(fs.readFileSync(path.join(home, '.tars', 'token-stats.json'), 'utf-8'));
     expect(Object.keys(stats).sort()).toEqual(ids);
   }, 30_000);
 
   it('9. leaves alone, as it exits, a lock another render took after it released its own', async () => {
     const home = freshHome();
-    const lock = path.join(home, '.dorothy', 'token-stats.lock');
+    const lock = path.join(home, '.tars', 'token-stats.lock');
     // Loaded before the script, so this exit listener runs before any of the
     // script's own: the moment another render takes the lock between this
     // one's release and its exit, made certain instead of left to timing.
@@ -184,11 +184,11 @@ describe('statusline.mjs', () => {
     const { code, err } = await render(home, PAYLOAD, { NODE_OPTIONS: `--import ${pathToFileURL(takeLock).href}` });
     expect(err).toBe('');
     expect(code).toBe(0);
-    expect(JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'))).toHaveProperty(S);
+    expect(JSON.parse(fs.readFileSync(path.join(home, '.tars', 'token-stats.json'), 'utf-8'))).toHaveProperty(S);
     expect(fs.existsSync(lock)).toBe(true);
   });
 
-  it('6. reads the branch in a git checkout, and caches it in ~/.dorothy', async () => {
+  it('6. reads the branch in a git checkout, and caches it in ~/.tars', async () => {
     const home = freshHome();
     const repo = path.join(home, 'repo');
     fs.mkdirSync(repo);
@@ -204,7 +204,7 @@ describe('statusline.mjs', () => {
       child.stdin.end(JSON.stringify(PAYLOAD));
     });
     expect(out).toContain(`${E}35mfeat-x${E}0m`);
-    const cache = fs.readdirSync(path.join(home, '.dorothy', 'statusline-cache'));
+    const cache = fs.readdirSync(path.join(home, '.tars', 'statusline-cache'));
     expect(cache).toHaveLength(1);
     expect(cache[0].startsWith('git')).toBe(true);
     expect(cache[0]).not.toMatch(/[\\/:]/);
@@ -259,7 +259,7 @@ const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 const waitFor = (names, ms = 30000) => { for (let n = 0; n < ms / 50 && !names.some(x => fs.existsSync(at(x))); n++) sleep(50); };
 const realNow = Date.now.bind(Date);
 if (env.FREEZE_NOW) Date.now = () => Number(env.FREEZE_NOW) * 1000;
-const lock = path.join(home, '.dorothy', 'token-stats.lock');
+const lock = path.join(home, '.tars', 'token-stats.lock');
 const statSync = fs.statSync;
 fs.statSync = function (p, ...rest) {
   if (String(p) !== lock) return statSync.call(fs, p, ...rest);
@@ -314,7 +314,7 @@ describe('statusline.mjs: taking over the token-stats lock, and releasing it', (
   function bench() {
     const home = freshHome();
     homes.push(home);
-    const dorothy = path.join(home, '.dorothy');
+    const dorothy = path.join(home, '.tars');
     const preload = path.join(home, 'preload.mjs');
     fs.writeFileSync(preload, PRELOAD);
     const lock = path.join(dorothy, 'token-stats.lock');
@@ -505,19 +505,19 @@ describe('statusline.mjs: the account of a render, and its counters', () => {
   };
   const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf-8'));
   const counters = (home: string) => {
-    const dir = path.join(home, '.dorothy', 'rate-limits.d');
+    const dir = path.join(home, '.tars', 'rate-limits.d');
     return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
   };
 
   it('16. writes the account beside the provider, and none for a session that names none', async () => {
     const named = freshHome();
     await render(named, PAYLOAD, { TARS_CLAUDE_ACCOUNT: 'acct-1a2b3c', CLAUDE_PROVIDER: 'claude' });
-    expect(readJson(path.join(named, '.dorothy', 'token-stats.json'))[S])
+    expect(readJson(path.join(named, '.tars', 'token-stats.json'))[S])
       .toEqual({ in: 12345, out: 2500, cost: 0.12, model: 'claude-opus-4', extra: false, date: today(), provider: 'claude', account: 'acct-1a2b3c' });
 
     const none = freshHome();
     await render(none, PAYLOAD);
-    expect(readJson(path.join(none, '.dorothy', 'token-stats.json'))[S]).toMatchObject({ provider: 'claude', account: '' });
+    expect(readJson(path.join(none, '.tars', 'token-stats.json'))[S]).toMatchObject({ provider: 'claude', account: '' });
   });
 
   it('17. with no account named, writes rate-limits.json as before, and default.json', async () => {
@@ -525,8 +525,8 @@ describe('statusline.mjs: the account of a render, and its counters', () => {
     const { code, err } = await render(home, withLimits(LIMITS));
     expect(err).toBe('');
     expect(code).toBe(0);
-    expect(readJson(path.join(home, '.dorothy', 'rate-limits.json'))).toEqual(LIMITS);
-    const text = fs.readFileSync(path.join(home, '.dorothy', 'rate-limits.d', 'default.json'), 'utf-8');
+    expect(readJson(path.join(home, '.tars', 'rate-limits.json'))).toEqual(LIMITS);
+    const text = fs.readFileSync(path.join(home, '.tars', 'rate-limits.d', 'default.json'), 'utf-8');
     expect(text.endsWith('}\n')).toBe(true);
     const own = JSON.parse(text);
     expect(own.rate_limits).toEqual(LIMITS);
@@ -538,8 +538,8 @@ describe('statusline.mjs: the account of a render, and its counters', () => {
   it("17, 18. files a secondary account's render under its name, and leaves rate-limits.json alone", async () => {
     const home = freshHome();
     await render(home, withLimits(LIMITS), { TARS_CLAUDE_ACCOUNT: 'acct-1a2b3c' });
-    expect(readJson(path.join(home, '.dorothy', 'rate-limits.d', 'acct-1a2b3c.json')).rate_limits).toEqual(LIMITS);
-    expect(fs.existsSync(path.join(home, '.dorothy', 'rate-limits.json'))).toBe(false);
+    expect(readJson(path.join(home, '.tars', 'rate-limits.d', 'acct-1a2b3c.json')).rate_limits).toEqual(LIMITS);
+    expect(fs.existsSync(path.join(home, '.tars', 'rate-limits.json'))).toBe(false);
     expect(counters(home)).toEqual(['acct-1a2b3c.json']);
   });
 
@@ -548,7 +548,7 @@ describe('statusline.mjs: the account of a render, and its counters', () => {
     const { code } = await render(home, withLimits(LIMITS), { TARS_CLAUDE_ACCOUNT: name });
     expect(code).toBe(0);
     expect(counters(home)).toEqual([]);
-    expect(fs.existsSync(path.join(home, '.dorothy', 'rate-limits.json'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.tars', 'rate-limits.json'))).toBe(false);
     expect(fs.existsSync(path.join(home, 'evil.json'))).toBe(false);
     expect(fs.existsSync(path.join(home, 'x.json'))).toBe(false);
   });
@@ -559,7 +559,7 @@ describe('statusline.mjs: the account of a render, and its counters', () => {
     await render(home, withLimits(LIMITS), env);
     await render(home, withLimits(undefined), env);
     await render(home, withLimits(null), env);
-    expect(readJson(path.join(home, '.dorothy', 'rate-limits.d', 'acct-1a2b3c.json')).rate_limits).toEqual(LIMITS);
+    expect(readJson(path.join(home, '.tars', 'rate-limits.d', 'acct-1a2b3c.json')).rate_limits).toEqual(LIMITS);
     expect(counters(home)).toEqual(['acct-1a2b3c.json']);
   });
 });
@@ -586,9 +586,9 @@ describe('statusline.mjs: fields of an unexpected shape', () => {
     const { code, out } = await render(home, { ...PAYLOAD, model: 'Opus' });
     expect(code).toBe(0);
     expect(out).toContain(`${E}37m${E}1m...${E}0m`);
-    expect(readJson(path.join(home, '.dorothy', 'token-stats.json'))[S])
+    expect(readJson(path.join(home, '.tars', 'token-stats.json'))[S])
       .toEqual({ in: 12345, out: 2500, cost: 0.12, model: 'unknown', extra: false, date: today(), provider: 'claude', account: '' });
-    expect(readJson(path.join(home, '.dorothy', 'rate-limits.json'))).toEqual(PAYLOAD.rate_limits);
+    expect(readJson(path.join(home, '.tars', 'rate-limits.json'))).toEqual(PAYLOAD.rate_limits);
   });
 
   it('21. a cost that is not an object: its fields fall back to 0, the rest is written', async () => {
@@ -596,7 +596,7 @@ describe('statusline.mjs: fields of an unexpected shape', () => {
     const { code, out } = await render(home, { ...PAYLOAD, cost: 5 });
     expect(code).toBe(0);
     expect(out).toContain(`${E}32m+0${E}0m ${E}31m-0${E}0m`);
-    expect(readJson(path.join(home, '.dorothy', 'token-stats.json'))[S]).toMatchObject({ in: 12345, cost: 0, model: 'claude-opus-4' });
+    expect(readJson(path.join(home, '.tars', 'token-stats.json'))[S]).toMatchObject({ in: 12345, cost: 0, model: 'claude-opus-4' });
   });
 
   it('21. a rate limit window that is not an object: it reads as 0 used, and the rate limits are written as given', async () => {
@@ -604,8 +604,8 @@ describe('statusline.mjs: fields of an unexpected shape', () => {
     const rateLimits = { five_hour: 'soon', seven_day: { used_percentage: 101 } };
     const { code } = await render(home, { ...PAYLOAD, rate_limits: rateLimits });
     expect(code).toBe(0);
-    expect(readJson(path.join(home, '.dorothy', 'rate-limits.json'))).toEqual(rateLimits);
-    expect(readJson(path.join(home, '.dorothy', 'token-stats.json'))[S]).toMatchObject({ extra: true });
+    expect(readJson(path.join(home, '.tars', 'rate-limits.json'))).toEqual(rateLimits);
+    expect(readJson(path.join(home, '.tars', 'token-stats.json'))[S]).toMatchObject({ extra: true });
   });
 
   it('22. a field that holds an object fails the whole pass, as @tsv does: nothing is written', async () => {
@@ -613,6 +613,6 @@ describe('statusline.mjs: fields of an unexpected shape', () => {
     const { code, out } = await render(home, { ...PAYLOAD, cost: { ...PAYLOAD.cost, total_cost_usd: { usd: 1 } } });
     expect(code).toBe(0);
     expect(out).toContain(`${E}37m${E}1m...${E}0m`);
-    expect(fs.readdirSync(path.join(home, '.dorothy'))).toEqual(['statusline-cache']);
+    expect(fs.readdirSync(path.join(home, '.tars'))).toEqual(['statusline-cache']);
   });
 });

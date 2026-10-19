@@ -11,14 +11,14 @@ import { createRequire } from 'node:module';
  * fs:read-text-file, fs:write-text-file, fs:read-project-files and
  * local-file:// checked the path as spelled against their roots, then
  * readFileSync / writeFileSync / readFile followed the links on the way.
- * ~/.dorothy is a root of the first two and every agent can write in it, so
- * `ln -s ~ ~/.dorothy/h` opened the whole home, ~/.ssh and ~/.tars-private
+ * ~/.tars is a root of the first two and every agent can write in it, so
+ * `ln -s ~ ~/.tars/h` opened the whole home, ~/.ssh and ~/.tars-private
  * included, with no project added at all; a symlink inside a cloned
  * repository did the same through the project that holds it.
  *
  * How it can fail, written before the fix (2026-09-28):
  * 1. fs:read-text-file reads the home, ~/.ssh or ~/.tars-private through a
- *    link under ~/.dorothy.
+ *    link under ~/.tars.
  * 2. fs:write-text-file overwrites a file there, or creates a new one, the
  *    same way.
  * 3. A link inside a project (a folder link, or a symlinked file) reads or
@@ -150,7 +150,7 @@ function untouched() {
   expect(fs.existsSync(path.join(home, '.new-profile'))).toBe(false);
 }
 
-describe('1, 2. a link under ~/.dorothy', () => {
+describe('1, 2. a link under ~/.tars', () => {
   const through = [
     ['the home', path.join(DATA_DIR, 'h', '.ssh', 'id_rsa'), path.join(DATA_DIR, 'h', '.bashrc'), path.join(DATA_DIR, 'h', '.new-profile')],
     ['~/.ssh', path.join(DATA_DIR, 's', 'id_rsa'), path.join(DATA_DIR, 's', 'id_rsa'), path.join(DATA_DIR, 's', 'authorized_keys')],

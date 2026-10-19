@@ -20,7 +20,7 @@ import { cannotSymlink } from '../setup/symlink-privilege';
  * /usr/local/bin/node. A machine with no Node at all, which claude's native
  * installer does not need, got no Tars tools in any agent.
  *
- * The program is now a launcher Tars writes at ~/.dorothy/bin/tars-mcp-node at
+ * The program is now a launcher Tars writes at ~/.tars/bin/tars-mcp-node at
  * every start: it runs the app's own binary with ELECTRON_RUN_AS_NODE=1.
  *
  * How it fails, written before the code (2026-09-24):
@@ -55,7 +55,7 @@ import { cannotSymlink } from '../setup/symlink-privilege';
  * 13. A launcher whose app is gone runs nothing: it must fall back to `node`.
  * 14. An AppImage writes its /tmp mount point, gone once it quits: the
  *     AppImage file ($APPIMAGE) is the lasting path.
- * 15. A symlinked ~/.dorothy/bin is followed, and the launcher written, or
+ * 15. A symlinked ~/.tars/bin is followed, and the launcher written, or
  *     chmodded, wherever it points.
  * 16. The move-over repeats at every start for every provider while one of
  *     them fails (measured: 35 removals and 42 registrations per launch, the
@@ -141,7 +141,7 @@ import { delegateOverAcp } from '../../electron/services/acp/delegate';
 import { setupMcpOrchestrator, setupOrchestratorSetupHandler } from '../../electron/services/mcp-orchestrator';
 import { ipcMain } from 'electron';
 
-const launcher = () => path.join(home(), '.dorothy', 'bin', 'tars-mcp-node');
+const launcher = () => path.join(home(), '.tars', 'bin', 'tars-mcp-node');
 /** What the servers are registered on from this host: the launcher, or `node` on Windows (6). */
 const program = () => (process.platform === 'win32' ? 'node' : launcher());
 /** Windows runs no sh script: the launcher itself cannot be run there. */
@@ -237,7 +237,7 @@ describe('registering the servers', () => {
     (process as unknown as { resourcesPath: string }).resourcesPath = resources;
     registry.clear();
     calls.length = 0;
-    fs.rmSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'), { force: true });
+    fs.rmSync(path.join(home(), '.tars', 'mcp-servers-runtime.json'), { force: true });
   });
 
   it('8. moves the servers an older Tars registered with `node` over to the launcher, once', async () => {
@@ -270,10 +270,10 @@ describe('registering the servers', () => {
     expect(registry.get('claude-mgr-orchestrator')?.command).toBe(program());
 
     // A start that finds no bundle records nothing either.
-    fs.rmSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'), { force: true });
+    fs.rmSync(path.join(home(), '.tars', 'mcp-servers-runtime.json'), { force: true });
     (process as unknown as { resourcesPath: string }).resourcesPath = path.join(scratch, 'no-resources');
     await setupMcpOrchestrator({} as never);
-    expect(fs.existsSync(path.join(home(), '.dorothy', 'mcp-servers-runtime.json'))).toBe(false);
+    expect(fs.existsSync(path.join(home(), '.tars', 'mcp-servers-runtime.json'))).toBe(false);
   });
 
   it('9. registers nothing again at the next start', async () => {
@@ -289,7 +289,7 @@ describe('registering the servers', () => {
 
 describe('the gate of #201', { timeout: 30_000 }, () => {
   const resources = path.join(scratch, 'resources');
-  const runtimeFile = () => path.join(home(), '.dorothy', 'mcp-servers-runtime.json');
+  const runtimeFile = () => path.join(home(), '.tars', 'mcp-servers-runtime.json');
   beforeEach(() => {
     (process as unknown as { resourcesPath: string }).resourcesPath = resources;
     for (const dir of ['mcp-orchestrator', 'mcp-memory', 'mcp-kanban']) {
@@ -299,7 +299,7 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
     registry.clear(); otherRegistry.clear(); calls.length = 0;
     otherState.failing = false; providerList.value = 'one'; appState.isPackaged = true;
     fs.rmSync(runtimeFile(), { force: true });
-    fs.rmSync(path.join(home(), '.dorothy', 'bin'), { recursive: true, force: true });
+    fs.rmSync(path.join(home(), '.tars', 'bin'), { recursive: true, force: true });
   });
 
   it('12. leaves the launcher as the packaged Tars wrote it when another start is not a packaged one at a lasting place', () => {
@@ -348,10 +348,10 @@ describe('the gate of #201', { timeout: 30_000 }, () => {
     expect(fs.readFileSync(launcher(), 'utf-8')).toContain(appImage);
   });
 
-  it.skipIf(cannotSymlink())('15. writes nothing through a symlinked ~/.dorothy/bin', () => {
+  it.skipIf(cannotSymlink())('15. writes nothing through a symlinked ~/.tars/bin', () => {
     const elsewhere = path.join(scratch, 'elsewhere');
     fs.mkdirSync(elsewhere, { recursive: true });
-    fs.symlinkSync(elsewhere, path.join(home(), '.dorothy', 'bin'));
+    fs.symlinkSync(elsewhere, path.join(home(), '.tars', 'bin'));
 
     expect(mcpNodeCommand(fakeApp(path.join(scratch, 'fifteen')), 'darwin', true)).toBe('node');
     expect(fs.readdirSync(elsewhere)).toEqual([]);
@@ -402,7 +402,7 @@ describe('a start from a copy that will be gone', () => {
   const installed = path.join(scratch, 'Applications', 'Tars.app', 'Contents', 'Resources');
   const translocated = path.join(scratch, 'private', 'var', 'folders', 'xy', 'T', 'AppTranslocation', '0A1B2C', 'd', 'Tars.app', 'Contents', 'Resources');
   const names = { 'mcp-orchestrator': 'claude-mgr-orchestrator', 'mcp-memory': 'tars-memory', 'mcp-kanban': 'claude-mgr-kanban' } as const;
-  const runtimeFile = () => path.join(home(), '.dorothy', 'mcp-servers-runtime.json');
+  const runtimeFile = () => path.join(home(), '.tars', 'mcp-servers-runtime.json');
   beforeEach(() => {
     for (const resources of [installed, translocated]) {
       for (const dir of Object.keys(names)) {

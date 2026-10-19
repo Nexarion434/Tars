@@ -24,7 +24,7 @@ type Api = { electronAPI: { shell: { version(binary: string): Promise<unknown> }
 test('quitting ends a version probe still running, and what it started', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-probe-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   const writes = path.join(home, 'writes');
   const amp = path.join(home, 'slow-amp');

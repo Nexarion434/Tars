@@ -11,7 +11,7 @@
  * - an id is reused: an account's directory names its keychain item, so a new
  *   account given a removed one's id would sign in as whoever that was if the
  *   logout had failed. Ids are random, not the next free number;
- * - the folder taken from the file: every agent can write ~/.dorothy, and one
+ * - the folder taken from the file: every agent can write ~/.tars, and one
  *   that pointed an account at ~/Documents would have Tars write links there
  *   and Remove trash it (the Audit's B2). The folder is derived from the id,
  *   under ~/.claude-accounts, whatever the file says, and the file itself
@@ -284,9 +284,9 @@ describe('the file', () => {
     expect(fs.statSync(path.dirname(accountsFile())).mode & 0o777).toBe(0o700);
   });
 
-  it('puts the accounts outside the data directory the agents are given (--add-dir ~/.dorothy)', () => {
+  it('puts the accounts outside the data directory the agents are given (--add-dir ~/.tars)', () => {
     const root = accountsRoot();
     expect(root).toBe(path.join(fs.realpathSync(os.homedir()), '.claude-accounts'));
-    expect(root.startsWith(path.join(fs.realpathSync(os.homedir()), '.dorothy'))).toBe(false);
+    expect(root.startsWith(path.join(fs.realpathSync(os.homedir()), '.tars'))).toBe(false);
   });
 });

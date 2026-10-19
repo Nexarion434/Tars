@@ -61,7 +61,7 @@ function seed(home: string, now: number) {
     assistant('c3d', 'claude-opus-5', ago(3 * 24 * 60), 50_000),
   ].join('\n'));
   fs.writeFileSync(path.join(dir, 'sess-or.jsonl'), assistant('o2', 'claude-sonnet-5', ago(120), 60_000));
-  const dorothy = path.join(home, '.dorothy');
+  const dorothy = path.join(home, '.tars');
   fs.mkdirSync(dorothy, { recursive: true });
   fs.writeFileSync(path.join(dorothy, 'token-stats.json'), JSON.stringify({
     'sess-claude': { provider: 'claude', model: 'claude-opus-5', in: 0, out: 0, cost: 0 },

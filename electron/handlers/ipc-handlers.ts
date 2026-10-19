@@ -136,7 +136,7 @@ export interface IpcHandlerDependencies {
  * Register all IPC handlers
  */
 
-/** Projects the user added by hand. Kept in ~/.dorothy so they outlive app
+/** Projects the user added by hand. Kept in ~/.tars so they outlive app
  *  updates and are shared by every surface (the renderer's localStorage was
  *  neither durable nor visible outside the Projects page). */
 const CUSTOM_PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
@@ -2526,7 +2526,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
   /**
    * Under a root that is not the home nor above it, where the path really
    * lands: a project added as `~` or `/Users` made every file of the home
-   * readable and writable here, and so did a link under ~/.dorothy or in a
+   * readable and writable here, and so did a link under ~/.tars or in a
    * project, followed by the read or the write. One file link to a markdown
    * file may lead out, a CLAUDE.md kept in a dotfiles repository
    * (utils/real-target.ts).
@@ -2583,7 +2583,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    *
    * The handler used to accept any absolute base, unlike its confined siblings
    * fs:read-text-file/fs:write-text-file, so one call
-   * (`{ paths: ['~/.ssh', '~/.dorothy'], relative: ['id_rsa', 'api-token'] }`)
+   * (`{ paths: ['~/.ssh', '~/.tars'], relative: ['id_rsa', 'api-token'] }`)
    * turned it into a general file reader (neither `path.isAbsolute` nor
    * `!rel.includes('..')` says anything about where the base points).
    * DATA_DIR is deliberately not a root here: it holds api-token and
@@ -2955,7 +2955,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
    * AppleScript: a cwd of `/tmp/x" & (do shell script "id > /tmp/PWNED") & "`
    * ran its own shell command before Terminal was ever involved, and
    * `command` was a plain arbitrary-execution parameter: the primitive
-   * shell:exec was removed for. Project paths come from ~/.dorothy/projects.json
+   * shell:exec was removed for. Project paths come from ~/.tars/projects.json
    * and from folders the user picks, so a quote in one is not exotic.
    *
    * So: no shell (execFile with an argv array), no `command` parameter (no

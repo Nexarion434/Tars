@@ -13,8 +13,8 @@ import { isUnderSafeRoot } from '../../../electron/utils/home-root';
  * fs:read-text-file, fs:write-text-file, fs:read-project-files, local-file://
  * and /api/local-file judged the path as SPELLED against their roots, then
  * readFileSync / writeFileSync / a read stream followed every link on the way.
- * ~/.dorothy is a root of the first two and every agent can write in it, so
- * `ln -s ~ ~/.dorothy/h` opened the whole home, ~/.ssh and ~/.tars-private
+ * ~/.tars is a root of the first two and every agent can write in it, so
+ * `ln -s ~ ~/.tars/h` opened the whole home, ~/.ssh and ~/.tars-private
  * included, to read and to write; a symlink inside a cloned repository did the
  * same through the project that holds it. coversHome / isUnderSafeRoot look at
  * the ROOTS, never at where the target resolves.
@@ -32,7 +32,7 @@ import { isUnderSafeRoot } from '../../../electron/utils/home-root';
  *    through: realpath fails, the folder above is inside, and the write follows
  *    the link and creates the file where it points.
  * 6. A root that is itself reached through a link (a project on a linked
- *    folder, a moved ~/.dorothy) refuses its own files: the real target is
+ *    folder, a moved ~/.tars) refuses its own files: the real target is
  *    compared with the root's spelling, not its real location.
  * 7. A root that is the home or above it, which the real target is under by
  *    spelling, lets the real target through: the real check must skip those
@@ -54,13 +54,13 @@ import { isUnderSafeRoot } from '../../../electron/utils/home-root';
  * 12. It lets through a file that is not markdown (~/.npmrc, a key, a name
  *     that only ends in `md`, like `run.cmd`), or a folder named like one.
  * 13. It lets through a FOLDER link on the way: the file's parent really lies
- *     outside every root (~/.dorothy/h linked to the home is the escape itself).
+ *     outside every root (~/.tars/h linked to the home is the escape itself).
  * 14. It follows a chain of links only to the first one: a file link to a link
  *     into ~/.ssh is judged by the final file.
  * 15. It applies where it was not asked for. It is for the renderer's reads
  *     and writes of instruction files (fs:read-text-file, fs:write-text-file,
  *     fs:read-project-files); /api/local-file (no token) and local-file://
- *     stay strict, or a link planted under ~/.dorothy serves any note in the
+ *     stay strict, or a link planted under ~/.tars serves any note in the
  *     home.
  *
  * Folder links are made as junctions where the type is read (Windows, where
@@ -96,7 +96,7 @@ if (NO_FILE_LINKS) console.warn(`real-target.test.ts: ${NO_FILE_LINKS}`);
 const home = path.join(box, 'home');
 const ssh = path.join(home, '.ssh');
 const priv = path.join(home, '.tars-private');
-const data = path.join(home, '.dorothy');
+const data = path.join(home, '.tars');
 const atlas = path.join(home, 'projects', 'atlas');
 const docs = path.join(atlas, 'docs');
 const deps = { home };

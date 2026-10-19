@@ -53,7 +53,7 @@ test("a message to an idle agent goes in after its panel answered the terminal's
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-held-'));
   const project = path.join(home, 'projects', 'held');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

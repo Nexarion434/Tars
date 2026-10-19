@@ -113,7 +113,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   fs.rmSync(tmpHome, { recursive: true, force: true });
-  fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(tmpHome, '.tars'), { recursive: true });
   clearClaudeStatsCache();
   clearTranscriptUsageCache();
 });
@@ -235,7 +235,7 @@ describe('usage:by-provider, per day', () => {
   it('hands over every day of the ledger, keyed by local day, adding up to its totals', async () => {
     expect(new Date('2026-09-21T22:30:00.000Z').getDate()).toBe(22); // the zone took
     const old = new Date(Date.now() - 200 * 86_400_000).toISOString();
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'usage-ledger.jsonl'), [
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'usage-ledger.jsonl'), [
       ledgerLine(old, 'gemini', 'gemini-3-pro', 1000),
       ledgerLine('2026-09-21T22:30:00.000Z', 'codex', 'gpt-9', 1), // 02:30 on the 22nd in Tbilisi
       ledgerLine('2026-09-22T10:00:00.000Z', 'codex', 'gpt-9', 10),

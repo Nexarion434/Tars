@@ -100,9 +100,16 @@ export function home() {
   return os.homedir();
 }
 
+/** Tars's data folder: ~/.tars since 2.0.4, ~/.dorothy for a Tars that could not move it yet. */
+export function dataDir() {
+  const tars = path.join(home(), '.tars');
+  const old = path.join(home(), '.dorothy');
+  return !fs.existsSync(tars) && fs.existsSync(old) ? old : tars;
+}
+
 /** tars-hook.sh: where every hook logs, readable by its user only (umask 077). */
 export function logPaths() {
-  const dir = path.join(home(), '.dorothy', 'logs');
+  const dir = path.join(dataDir(), 'logs');
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   } catch {
@@ -165,14 +172,14 @@ export async function tarsProvesInstance(env = process.env) {
 /**
  * tars-hook.sh, TARS_READ_TOKEN: the token the bootstrap and memory calls
  * present. The CLI's own once the port proved it is this CLI's Tars
- * (`proven`, tarsProvesInstance); ~/.dorothy/api-token when Tars did not
+ * (`proven`, tarsProvesInstance); ~/.tars/api-token when Tars did not
  * start this CLI and gave it none; nothing otherwise, the shared file neither:
  * a squatter on the port would get it instead (the Audit's Info on #355).
  */
 export function tokenForReads(env = process.env, proven = false) {
   const own = env.CLAUDE_MGR_API_TOKEN || '';
   if (own) return proven ? own : '';
-  const file = path.join(home(), '.dorothy', 'api-token');
+  const file = path.join(dataDir(), 'api-token');
   return isFile(file) ? catFile(file) : '';
 }
 

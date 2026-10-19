@@ -48,7 +48,7 @@ const errors: string[] = [];
 function sandbox() {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-stopped-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   // In Node, not bash: a bash stand-in is named like the shell in the pty's
@@ -76,7 +76,7 @@ function sandbox() {
 }
 
 function settings(autoStart: boolean) {
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: autoStart, ollamaBaseUrl: 'http://127.0.0.1:9' }));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: autoStart, ollamaBaseUrl: 'http://127.0.0.1:9' }));
 }
 
 async function launch() {

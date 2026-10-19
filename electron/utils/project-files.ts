@@ -5,7 +5,7 @@ import { DATA_DIR } from '../constants';
 import { pathKey } from '../platform/path-compare';
 
 /**
- * The folder Tars keeps for each project: ~/.dorothy/project-files/<key>, with
+ * The folder Tars keeps for each project: ~/.tars/project-files/<key>, with
  * tools/, notes/ and reports/, where the project's agents keep the scripts,
  * notes and reports worth keeping. They kept them in temporary folders, which
  * a session's end or a cleanup empties, or under ~/Documents, which iCloud

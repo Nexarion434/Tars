@@ -51,7 +51,7 @@ test('a claude auth status Tars started ends with the quit and writes nothing af
   fs.mkdirSync(bin, { recursive: true });
   const cli = path.join(bin, 'claude');
   fs.writeFileSync(cli, `#!${process.execPath}\n${STAND_IN}`, { mode: 0o755 });
-  const settingsFile = path.join(home, '.dorothy', 'app-settings.json');
+  const settingsFile = path.join(home, '.tars', 'app-settings.json');
   const settings = fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {};
   fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, autoStartAgentsOnLaunch: false, cliPaths: { ...(settings.cliPaths ?? {}), claude: cli } }, null, 2));
   const started = () => (fs.existsSync(path.join(home, 'auth-status.jsonl'))

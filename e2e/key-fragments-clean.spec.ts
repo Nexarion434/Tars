@@ -58,7 +58,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(2 * 60_000);
     const home = fs.mkdtempSync('/tmp/dorothy-e2e-key-fragments-');
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     for (const d of [project, dir, path.join(home, '.tars-private')]) fs.mkdirSync(d, { recursive: true });
     const key = `sk-${randomBytes(16).toString('hex')}`;
     const users = `sk-ant-api03-${randomBytes(20).toString('hex')}`;
@@ -109,7 +109,7 @@ for (const newInterface of [false, true]) {
       const page = await app.firstWindow();
       // The cleaning's end, which a build without it never reaches: soft, so that its values.json says what was left.
       await expect.soft.poll(() => holding(home, tail(key)), { message: 'the key\'s 20 characters, left anywhere but in the settings', timeout: 30_000 })
-        .toEqual(['.dorothy/app-settings.json']);
+        .toEqual(['.tars/app-settings.json']);
       await stepShot(page, newInterface ? 'cleaned-new-interface' : 'cleaned');
 
       const saved = (file: string) => (JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')).agents as Array<{ output: string[] }>)[0].output.join('');
@@ -121,7 +121,7 @@ for (const newInterface of [false, true]) {
         rejected: (config.customApiKeyResponses?.rejected ?? []).map((t: string) => (t === tail(users) ? 'the user\'s own' : 'another')),
         claudeJsonMode: (fs.statSync(claudeJson).mode & 0o777).toString(8), goneFolder: fs.existsSync(gone), runningFolder: fs.existsSync(running),
       });
-      expect(values.before, 'the seed').toEqual(expect.arrayContaining(['.dorothy/agents.json', '.dorothy/agents.backup.json', '.claude.json',
+      expect(values.before, 'the seed').toEqual(expect.arrayContaining(['.tars/agents.json', '.tars/agents.backup.json', '.claude.json',
         '.claude/backups/.claude.json.backup.1792350644690', '.claude.json.tmp.78791.84efb0c4c9ae', '.claude-accounts/acct-0a1b2c/backups/.claude.json.backup.1792350644614']));
       expect.soft(JSON.parse(fs.readFileSync(homeBackup, 'utf8')).customApiKeyResponses?.rejected, "Claude Code's backup: the user's own entry").toEqual([tail(users)]);
       expect.soft(agentsVersion, 'agents.json').toBe(4);

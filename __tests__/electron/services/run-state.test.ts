@@ -20,7 +20,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 4. The crashed run's record is overwritten at launch before it is read, so a second launch reads the first as clean.
  * 5. A run that crashed again soon after resuming agents is resumed again, and again: a loop.
  * 6. The record carries more than it needs: a task's text past 200 characters.
- * 7. (the Audit's gate of #310) The record sits where an agent can write it (~/.dorothy, in every agent's --add-dir):
+ * 7. (the Audit's gate of #310) The record sits where an agent can write it (~/.tars, in every agent's --add-dir):
  *    a record an agent wrote makes Tars start, at the next launch, whatever agents it names, at-rest ones included.
  * And from the Audit's M1 on #418 (2026-10-15): macOS and Linux hold no single-instance lock, so a second Tars can run
  * on the same home (Linux: any second launch; macOS: open -n, another copy, a dev run on the real home).

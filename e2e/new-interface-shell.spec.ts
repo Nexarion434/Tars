@@ -39,7 +39,7 @@ const MORE = ['Agents', 'Review', 'Logs', 'Vault', 'Extensions', 'Usage', 'Brain
 test('with the new interface on, the shell of the frames: the main menu, Tars first, no made-up chats, More and its pages as cards; turned off, the shell before', async () => {
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-new-shell-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dir, 'projects.json'), '[]');

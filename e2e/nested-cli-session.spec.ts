@@ -87,7 +87,7 @@ test("a CLI run inside an agent's terminal does not take the agent's session", a
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-nested-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');
@@ -140,7 +140,7 @@ test("a CLI run inside an agent's terminal drives nothing when the agent's own s
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-nested-lost-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

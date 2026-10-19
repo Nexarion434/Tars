@@ -88,7 +88,7 @@ const UNREADABLE = '~/.tars-private/claude-accounts.json does not read as a list
 test('claude accounts: the section, the sign-in terminal, and an agent pinned from its card', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-ui-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'demo');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });

@@ -66,8 +66,8 @@ beforeAll(async () => {
   });
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
   port = (server.address() as { port: number }).port;
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), SHARED);
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'api-token'), SHARED);
   for (const name of ['session-start.sh', 'post-tool-use.sh', 'tars-hook.sh']) {
     const original = fs.readFileSync(path.join(HOOKS, name), 'utf-8');
     fs.writeFileSync(path.join(tmp, name), original.replaceAll('http://127.0.0.1:31415', `http://127.0.0.1:${port}`), { mode: 0o755 });

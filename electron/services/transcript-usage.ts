@@ -247,9 +247,9 @@ function transcriptRoots(homeDir: string): string[] {
   });
 }
 
-/** What the status line writes about each session, in ~/.dorothy/token-stats.json. */
+/** What the status line writes about each session, in ~/.tars/token-stats.json. */
 function sessionsFile(homeDir: string): string {
-  return path.join(homeDir, '.dorothy', 'token-stats.json');
+  return path.join(homeDir, '.tars', 'token-stats.json');
 }
 
 /**

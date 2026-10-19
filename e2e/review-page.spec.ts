@@ -62,7 +62,7 @@ function repo(dir: string, files: Record<string, string>, changes: Record<string
 
 /** Adds a project as Settings or the Projects page would: a path in projects.json. */
 function addProject(dir: string): void {
-  const file = path.join(home, '.dorothy', 'projects.json');
+  const file = path.join(home, '.tars', 'projects.json');
   const list = JSON.parse(fs.readFileSync(file, 'utf8')) as string[];
   fs.writeFileSync(file, JSON.stringify([...list, dir], null, 2));
 }
@@ -78,7 +78,7 @@ test.beforeAll(async () => {
   // An agent at work in a repository of its own, for its window's Code panel.
   const code = path.join(home, 'projects', 'code');
   repo(code, { 'main.ts': lines(3000, 'old') }, { 'main.ts': lines(3000, 'new') });
-  const agentsFile = path.join(home, '.dorothy', 'agents.json');
+  const agentsFile = path.join(home, '.tars', 'agents.json');
   const agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8')) as Array<Record<string, unknown>>;
   agents.push({
     id: 'coder', name: 'Code Reader', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',

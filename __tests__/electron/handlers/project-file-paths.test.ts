@@ -50,7 +50,7 @@ import { agents } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import type { AppSettings } from '../../../electron/types';
 
-fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
+fs.mkdirSync(path.join(tmpHome, '.tars'), { recursive: true });
 function deps(): IpcHandlerDependencies {
   const fixed: Record<string, unknown> = { agents, ptyProcesses, saveAgents: vi.fn(), getAppSettings: () => ({} as AppSettings) };
   return new Proxy(fixed, {

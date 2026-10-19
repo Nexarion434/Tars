@@ -15,7 +15,7 @@ import { coversHome, withoutHomeCover, isUnderSafeRoot } from '../../../electron
  * the home, or to a folder above it (`/Users`, `/home`), made every file of the
  * home a file of a root, `~/.ssh`, `~/.tars-private` and the shell's startup
  * files included, and through fs:write-text-file a writable one.
- * ~/.dorothy/projects.json, which lists them, is under the directory every
+ * ~/.tars/projects.json, which lists them, is under the directory every
  * agent is handed.
  *
  * How it can fail, written before the code (2026-09-28):

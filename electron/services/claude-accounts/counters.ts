@@ -14,7 +14,7 @@ import { probedUsage } from './usage-probe';
  * The status line script (utils/statusline.ts) writes one file per account,
  * named by TARS_CLAUDE_ACCOUNT, which the launch sets: rate-limits.d/<id>.json,
  * `{ updatedAt: <epoch s>, rate_limits: <what Claude Code gave it> }`. Only
- * account names are read, and only numbers from them: ~/.dorothy is every
+ * account names are read, and only numbers from them: ~/.tars is every
  * agent's, and a planted file must at worst skew one choice, never reach a
  * path or the page as anything but a percentage.
  */

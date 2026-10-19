@@ -11,9 +11,9 @@ import type { AddressInfo } from 'node:net';
  *
  * The one route besides /api/health that takes no token: any process on this
  * machine that can reach the loopback can call it, another account's
- * included. It compared the SPELLED path with ~/.dorothy/vault/attachments,
+ * included. It compared the SPELLED path with ~/.tars/vault/attachments,
  * then streamed whatever that path led to. Every agent can write under
- * ~/.dorothy, so one symlink in the attachments folder served the home,
+ * ~/.tars, so one symlink in the attachments folder served the home,
  * ~/.ssh or ~/.tars-private to anyone who asked, with no token, and a hard
  * link served the file it names.
  *

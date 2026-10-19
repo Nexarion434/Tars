@@ -235,7 +235,7 @@ async function operationInProgress(ctx, at) {
 
 const real = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 
-/** The Tars agent whose worktree this is, by ~/.dorothy/agents.json, or null. */
+/** The Tars agent whose worktree this is, by ~/.tars/agents.json, or null. */
 function agentOf(ctx, at) {
   const here = real(at);
   const found = ctx.agentWorktrees().map(w => (typeof w === 'string' ? { path: w, name: w } : w))
@@ -659,10 +659,10 @@ async function processCwds() {
   return found;
 }
 
-/** The worktrees of Tars's own agents, from ~/.dorothy/agents.json (a list, or { agents }). */
+/** The worktrees of Tars's own agents, from ~/.tars/agents.json (a list, or { agents }). */
 function tarsAgentWorktrees() {
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.dorothy', 'agents.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(path.join(!fs.existsSync(path.join(os.homedir(), '.tars')) && fs.existsSync(path.join(os.homedir(), '.dorothy')) ? path.join(os.homedir(), '.dorothy') : path.join(os.homedir(), '.tars'), 'agents.json'), 'utf8'));
     const list = Array.isArray(raw) ? raw : raw.agents ?? [];
     return list.filter(a => a && typeof a.worktreePath === 'string')
       .map(a => ({ path: a.worktreePath, name: a.name || a.id }));

@@ -590,7 +590,7 @@ describe.skipIf(!onWindows)('what cli-updater.test.ts pins beyond the layout, on
 });
 
 describe.skipIf(!onWindows)('the schedule main.ts starts, on Windows', () => {
-  it('14. updates the native claude a launch would find, 5 s after it starts, into ~/.dorothy/cli-updates.log', async () => {
+  it('14. updates the native claude a launch would find, 5 s after it starts, into ~/.tars/cli-updates.log', async () => {
     // The suite's throwaway home, where the app's paths point: buildFullPath
     // adds its ~/.local/bin. The PATH it starts from is narrowed to System32
     // for the case, so no CLI of this machine's is on it.
@@ -605,7 +605,7 @@ describe.skipIf(!onWindows)('the schedule main.ts starts, on Windows', () => {
       await vi.waitFor(() => {
         expect(fs.existsSync(CLI_UPDATES_LOG) && fs.readFileSync(CLI_UPDATES_LOG, 'utf8')).toContain('claude updated 1.0.0 to 1.0.1');
       }, { timeout: 30_000, interval: 250 });
-      expect(CLI_UPDATES_LOG).toBe(path.join(home, '.dorothy', 'cli-updates.log'));
+      expect(CLI_UPDATES_LOG).toBe(path.join(home, '.tars', 'cli-updates.log'));
       expect(recorded()).toEqual([['claude', 'update']]);
     } finally {
       process.env.PATH = saved.path;

@@ -42,7 +42,7 @@ test('a project whose memory an older Tars kept elsewhere is one row, which name
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-memory-older-'));
   const project = path.join(home, 'projects', 'my_proj');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
     id: 'a1', name: 'Builder', character: 'robot', provider: 'claude', status: 'idle', role: 'worker', skills: [],

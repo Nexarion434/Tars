@@ -63,7 +63,7 @@ const ROWS: Record<string, Record<string, string>> = {
 
 /** A home holding the six agents, their tasks, and the transcripts the counted ones wrote. */
 function seed(home: string, newInterface: boolean): void {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const project = (name: string) => path.join(home, 'projects', name);
   for (const folder of [dir, ...['tars', 'site', 'atlas', 'mercury'].map(project)]) fs.mkdirSync(folder, { recursive: true });
   const agent = (id: string, name: string, where: string, provider = 'claude') => ({

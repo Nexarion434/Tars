@@ -32,7 +32,7 @@ const SCRIPTS: Array<[provider: string, setting: string]> = [
 ];
 
 const home = os.homedir();
-const settingsFile = path.join(home, '.dorothy', 'app-settings.json');
+const settingsFile = path.join(home, '.tars', 'app-settings.json');
 let bin: string;
 let claude: string;
 let record: string;

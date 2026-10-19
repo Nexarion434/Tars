@@ -100,7 +100,7 @@ test('the main process heap under a working fleet', async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-heap-hunt-'));
   const project = path.join(home, 'projects', 'fleet');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

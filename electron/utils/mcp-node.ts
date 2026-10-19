@@ -22,7 +22,7 @@ import { DATA_DIR } from '../constants';
  *
  * The CLIs take a command and arguments and no environment of Tars's choosing
  * (and the same files are read by the user's own sessions), so the variable is
- * set by a launcher, ~/.dorothy/bin/tars-mcp-node, which names the app binary.
+ * set by a launcher, ~/.tars/bin/tars-mcp-node, which names the app binary.
  * Rewritten when the app has moved (an AppImage mounts somewhere new at each
  * launch), left alone otherwise. This relies on Electron's RunAsNode fuse,
  * which is on by default and which Tars does not turn off; turning it off
@@ -39,7 +39,7 @@ import { DATA_DIR } from '../constants';
  * and leaves it as it is, or names `node` when there is none. On Linux the
  * AppImage file ($APPIMAGE) is named, not its mount point under /tmp. And the
  * script itself falls back to the `node` on the PATH when the app it names is
- * gone. A symlinked ~/.dorothy/bin, or a symlinked launcher, is not written
+ * gone. A symlinked ~/.tars/bin, or a symlinked launcher, is not written
  * through.
  */
 export function mcpNodeCommand(
@@ -53,7 +53,7 @@ export function mcpNodeCommand(
   const isLink = (p: string) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
   if (!mayWrite) return fs.existsSync(launcher) && !isLink(bin) && !isLink(launcher) ? launcher : 'node';
   if (isLink(bin) || isLink(launcher)) {
-    console.warn('[mcp] ~/.dorothy/bin/tars-mcp-node is a link: not written through, the MCP servers run on `node`');
+    console.warn('[mcp] ~/.tars/bin/tars-mcp-node is a link: not written through, the MCP servers run on `node`');
     return 'node';
   }
   const quoted = `'${appBinary.replace(/'/g, `'\\''`)}'`;

@@ -26,7 +26,7 @@ import * as path from 'node:path';
  *     makes SessionStart a status change instead of a registration; a
  *     `current_task` without the .sh trailing newline; `opened_at` absent).
  *  3. Ignores CLAUDE_MGR_API_URL and posts to 31415, i.e. into the live Tars.
- *  4. Uses the shared ~/.dorothy/api-token where the .sh uses the CLI token,
+ *  4. Uses the shared ~/.tars/api-token where the .sh uses the CLI token,
  *     or the reverse (memory calls fall back to the file, hook posts never).
  *  5. stdout that is not what Claude Code parses: SessionStart context lost,
  *     `continue` missing, a stack trace printed, or output where the .sh
@@ -41,7 +41,7 @@ import * as path from 'node:path';
  *  9. Blocks the CLI: an API that is down, or accepts and never answers, must
  *     cost a bounded time and still exit 0, as curl --max-time does.
  * 10. A non-zero exit or a crash on bad stdin, where the .sh exits 0.
- * 11. Logs written elsewhere than ~/.dorothy/logs of the HOME it runs in.
+ * 11. Logs written elsewhere than ~/.tars/logs of the HOME it runs in.
  * 12. The Windows bugs kept: a backslash path pasted raw into JSON or into a
  *     query string.
  * 13. An unknown event swallowed silently instead of failing loudly.
@@ -316,8 +316,8 @@ const CASES: Case[] = [
     payload: { session_id: S, cwd: PROJECT },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
     setup: home => {
-      fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok\n');
+      fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'shared-tok\n');
     },
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
@@ -404,8 +404,8 @@ const CASES: Case[] = [
     payload: { session_id: S, cwd: PROJECT, tool_name: 'Bash', tool_input: { command: 'npm test', description: 'Run tests' } },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
     setup: home => {
-      fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok');
+      fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'shared-tok');
     },
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
@@ -867,12 +867,12 @@ describe('a long transcript', () => {
 });
 
 describe('the runner logs where the .sh logs', () => {
-  it('appends to hooks.log and hooks-debug.log under ~/.dorothy/logs of its HOME', async () => {
+  it('appends to hooks.log and hooks-debug.log under ~/.tars/logs of its HOME', async () => {
     const home = caseHome('logs');
     responder = () => ({});
     await runNode('session-start', baseEnv(home, AGENT), JSON.stringify({ session_id: S, cwd: PROJECT }));
     await runNode('on-stop', baseEnv(home, AGENT), JSON.stringify({ session_id: S, last_assistant_message: 'hello' }));
-    const dir = path.join(home, '.dorothy', 'logs');
+    const dir = path.join(home, '.tars', 'logs');
     const hooksLog = fs.readFileSync(path.join(dir, 'hooks.log'), 'utf-8');
     expect(hooksLog).toMatch(new RegExp(`SESSION_START hook\\. AGENT_ID=agent-1 SESSION_ID=${S}`));
     expect(hooksLog).toContain('SESSION_START curl result: {"success":true}');

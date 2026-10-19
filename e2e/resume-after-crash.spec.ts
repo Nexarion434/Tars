@@ -105,7 +105,7 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-resume-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const privateDir = path.join(home, '.tars-private');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
@@ -212,7 +212,7 @@ test('after an abrupt stop, the working agents are resumed with a note, the rest
   recordValues({ runStateAfterQuit: ended });
   expect(ended.cleanExit).toBe(true);
   expect(ended.resumed.sort()).toEqual(['lead', 'worker']);
-  // Out of every agent's reach (the Audit's gate of #310): nothing of either in ~/.dorothy, each 0600.
+  // Out of every agent's reach (the Audit's gate of #310): nothing of either in ~/.tars, each 0600.
   expect(['run-state.json', 'carry-over.json'].filter((f) => fs.existsSync(path.join(dir, f)))).toEqual([]);
   expect(['run-state.json', 'carry-over.json'].map((f) => fs.statSync(path.join(privateDir, f)).mode & 0o777)).toEqual([0o600, 0o600]);
 });

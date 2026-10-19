@@ -979,7 +979,7 @@ export async function sendForChat(
  * The orchestrator's instructions for a launch from Telegram, as a file: its
  * own, with Telegram's appended when there are any, in a file of this Tars's
  * data folder (which follows HOME; Electron's home does not on macOS, so a
- * sandboxed Tars wrote it into the real ~/.dorothy).
+ * sandboxed Tars wrote it into the real ~/.tars).
  */
 function telegramSystemPromptFile(): string | undefined {
   let systemPromptFile: string | undefined;

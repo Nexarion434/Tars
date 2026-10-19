@@ -101,7 +101,7 @@ describe('the guide knows every tool an agent can see, and names no other', () =
 });
 
 describe('the identity section, by role', () => {
-  const folder = '/home/u/.dorothy/project-files/demo-0123456789';
+  const folder = '/home/u/.tars/project-files/demo-0123456789';
 
   it('gives an orchestrator delegation, the long run and the user, and a worker none of it (5)', () => {
     const lead = identitySection('orchestrator', folder).join('\n');
@@ -135,9 +135,9 @@ describe('tars_guide answers', () => {
   it('stamps the index and a topic with the version, and an unknown topic with nothing (9)', () => {
     expect(guideIndex('2.0.4')).toMatch(/^Tars 2\.0\.4/);
     for (const t of GUIDE_TOPICS) expect(guideIndex('2.0.4')).toContain(`- ${t.id}: `);
-    const topic = guideTopic('project-folder', '2.0.4', '/x/.dorothy/project-files/demo-0123456789')!;
+    const topic = guideTopic('project-folder', '2.0.4', '/x/.tars/project-files/demo-0123456789')!;
     expect(topic).toMatch(/^Tars 2\.0\.4, /);
-    expect(topic).toContain('/x/.dorothy/project-files/demo-0123456789');
+    expect(topic).toContain('/x/.tars/project-files/demo-0123456789');
     expect(topic).not.toContain('{folder}');
     expect(guideTopic('KANBAN ', '2.0.4', null)).toContain('assign_task');
     expect(guideTopic('nope', '2.0.4', null)).toBeNull();
@@ -159,7 +159,7 @@ describe('what the guide says is what the code does (the Audit of #448)', () => 
   const lead = identitySection('orchestrator', '/f').join('\n');
 
   it('names the reason a folder could not be made, not the path (11)', () => {
-    const why = 'Tars could not make /h/.dorothy/project-files/demo-0123456789: ENOSPC: no space left on device';
+    const why = 'Tars could not make /h/.tars/project-files/demo-0123456789: ENOSPC: no space left on device';
     const none = identitySection('worker', null, why).join('\n');
     expect(none).toContain('ENOSPC');
     expect(none).not.toMatch(/absolute/);

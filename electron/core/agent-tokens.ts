@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
  * what it holds rather than by what it says.
  *
  * Until this existed, an agent proved nothing. The bearer token on every MCP
- * call was `~/.dorothy/api-token`, one file every agent can read, so it proved
+ * call was `~/.tars/api-token`, one file every agent can read, so it proved
  * "a process of this machine" and never "this agent". Which agent was carried
  * in the X-Tars-Caller-Id header, written by the caller, believed by the
  * server: any agent could put a colleague's id in it and be that colleague for
@@ -131,16 +131,16 @@ export function agentForToken(token: string): string | undefined {
  *
  * One caller: the super chat. It posts to /api/agents/:id/dispatch rather than
  * writing to a terminal by hand, so that a message from JeanBrasse takes exactly the
- * path a delegation takes. It authenticated with `~/.dorothy/api-token`, and
+ * path a delegation takes. It authenticated with `~/.tars/api-token`, and
  * that is precisely why that token could not be refused on the routes that
- * drive an agent: every agent can read the file (`--add-dir ~/.dorothy`, and
+ * drive an agent: every agent can read the file (`--add-dir ~/.tars`, and
  * its Bash reads it whatever the flag says), so refusing the file would have
  * taken the super chat down with whoever else had read it.
  *
  * Minted here rather than in a file, because a file is what made the shared
  * token shared. It exists in this process's memory, is never written to disk,
  * never enters the environment of a child, and is not the shared token: an
- * agent that reads `~/.dorothy` or the process table of its colleagues finds
+ * agent that reads `~/.tars` or the process table of its colleagues finds
  * nothing that opens these routes. Lazily, and once per run of the app: the
  * super chat outlives no restart, and neither does an agent's token.
  *

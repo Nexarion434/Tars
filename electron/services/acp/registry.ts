@@ -84,7 +84,7 @@ interface CacheShape {
  * the binary we execute: `manifestToEntry` used to splice
  * `distribution.npx.package` straight into `npx -y <package>`, so a single
  * commit in the third-party agentclientprotocol/registry repo (or a write to
- * ~/.dorothy/acp-registry.json) could point that spawn at any package on npm,
+ * ~/.tars/acp-registry.json) could point that spawn at any package on npm,
  * which then ran as the user inside the user's project with the user's
  * environment, and stuck in the cache for the whole TTL.
  *

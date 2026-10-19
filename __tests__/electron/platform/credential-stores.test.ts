@@ -108,14 +108,14 @@ describe.runIf(process.platform === 'win32')('2, 6. both Telegram guards refuse 
   let server: { windowsCredentialStoreDirs: (home: string, env: NodeJS.ProcessEnv) => string[] };
   beforeAll(async () => {
     restoreHome = moveTestHome(home);
-    fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ telegramBotToken: 'not-a-real-bot', telegramChatId: '1' }));
+    fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ telegramBotToken: 'not-a-real-bot', telegramChatId: '1' }));
     for (const [specifier, fake] of Object.entries(FAKE_SDK)) vi.doMock(whereTheServerFinds(specifier), fake);
     server = await import('../../../mcp-telegram/src/index');
   });
   afterAll(() => {
     restoreHome();
-    fs.rmSync(path.join(home, '.dorothy'), { recursive: true, force: true });
+    fs.rmSync(path.join(home, '.tars'), { recursive: true, force: true });
   });
 
   it('the server keeps the same list as the app (it is built on its own)', () => {

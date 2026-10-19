@@ -11,7 +11,7 @@ import type { BusAttachment } from '../types';
  *
  * The renderer has the bytes and no path (Electron stopped exposing a real
  * path on its File objects), and an agent needs a path it can read. So the
- * bytes are written here, under ~/.dorothy, which is in every agent's
+ * bytes are written here, under ~/.tars, which is in every agent's
  * `--add-dir`, one folder per file so two files of the same name never meet,
  * and the message that sends them names each by its absolute path. Staged in
  * memory until a message takes them: a staged file nobody sends stays on disk
@@ -40,7 +40,7 @@ export const STAGED_FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * The folder, made sure of: a real directory, not a link. Every agent can
- * write under ~/.dorothy, and one that replaced bus-files with a link sent the
+ * write under ~/.tars, and one that replaced bus-files with a link sent the
  * next file wherever it pointed (the Audit, gate of #169). Null when it is not.
  */
 function stagingRoot(): string | null {

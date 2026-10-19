@@ -47,7 +47,7 @@ test('quitting ends a CLI deaf to the hangup, refuses a /start mid-quit, and exi
   const step = (what: string) => console.log(`[quit-e2e] +${Date.now() - t0} ms ${what}`);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-quit-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const pidsFile = path.join(home, 'cli-pids');

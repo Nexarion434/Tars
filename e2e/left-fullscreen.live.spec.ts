@@ -45,7 +45,7 @@ function seed(claude) {
   // Spelled /tmp, not /private/tmp: the fixture compares the app's folders with it.
   const home = fs.mkdtempSync('/tmp/tars-lfs-');
   const project = path.join(home, 'projects', 'lfs');
-  for (const dir of [path.join(home, '.claude'), path.join(home, '.dorothy'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [path.join(home, '.claude'), path.join(home, '.tars'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
   execFileSync('git', ['init', '-q', project]);
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({
     tui: 'fullscreen', theme: 'dark', skipDangerousModePermissionPrompt: true,
@@ -68,12 +68,12 @@ function seed(claude) {
     projectPath: project, skills: [], output: [], permissionMode: 'bypass', cliPath,
     lastActivity: new Date().toISOString(),
   });
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([
     agent('full', NAMES.full, claude), agent('left', NAMES.left, claude), agent('inline', NAMES.inline, inline),
   ], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude },
   }, null, 2));
   return home;

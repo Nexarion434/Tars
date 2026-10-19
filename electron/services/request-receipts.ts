@@ -15,7 +15,7 @@ import { privatePath } from '../constants';
  * constant id would otherwise turn its own sends into silent no-ops for 24 h).
  *
  * Kept in ~/.tars-private/request-receipts.jsonl, which no agent is handed
- * (~/.dorothy is in every agent's --add-dir): the key, a SHA-256 of the
+ * (~/.tars is in every agent's --add-dir): the key, a SHA-256 of the
  * payload, the outcome's ids and states, and the time. Never the message
  * text: outcomes are cut to the fields in OUTCOME_FIELDS. Rewritten whole at
  * each write (0600, atomic), receipts older than 24 h dropped.

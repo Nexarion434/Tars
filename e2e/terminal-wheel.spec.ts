@@ -81,13 +81,13 @@ test('the wheel types nothing into a full-screen program, and the keys still do'
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-wheel-'));
   seedSandbox(home);
   // Nothing else starts: the recorder is the only program in a terminal.
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false }, null, 2));
   // The app keeps the folders added by hand as a list of paths and drops any
   // entry that is not a string, so the objects the shared seed writes there
   // leave the Projects page empty. This sandbox lists its project the way the
   // app writes it.
   const project = path.join(home, 'projects', 'tars');
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project], null, 2));
   const recorder = path.join(home, 'recorder.cjs');
   fs.writeFileSync(recorder, RECORDER, { mode: 0o755 });
   const log = path.join(home, 'received.bin');

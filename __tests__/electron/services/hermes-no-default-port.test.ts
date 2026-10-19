@@ -57,7 +57,7 @@ vi.mock('child_process', async importOriginal => ({
 }));
 
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
-const file = path.join(home, '.dorothy', 'hermes-connection.json');
+const file = path.join(home, '.tars', 'hermes-connection.json');
 
 let usableHermesConnection: () => unknown;
 // The handlers bring the overseer with them: loaded once, with the time that takes.

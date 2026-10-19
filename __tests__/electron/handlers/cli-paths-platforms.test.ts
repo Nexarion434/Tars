@@ -7,7 +7,7 @@ import { CMD_SHIM_EXE, CMD_SHIM_NODE, GCLOUD_CMD, SH_SHIM, fakeWinFs, pinPlatfor
 
 /**
  * Settings > CLI paths: detecting the CLIs, and the PATH written for them to
- * ~/.dorothy/cli-paths.json (audit B/C-01..C-04).
+ * ~/.tars/cli-paths.json (audit B/C-01..C-04).
  *
  * How it fails, written before the code (2026-09-25):
  * 1. PATH split on `:` and joined with `:`: `C:\a;D:\b` is cut at the drive
@@ -110,7 +110,7 @@ beforeEach(() => {
   shellPathAnswer = '';
   fakeExisting = new Set();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-cli-paths-'));
-  fs.mkdirSync(path.join(tmpDir, '.dorothy'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.tars'), { recursive: true });
 });
 
 afterEach(() => {
@@ -207,7 +207,7 @@ describe('cli-paths.json fullPath on win32', () => {
 
     await handlers.get('cliPaths:save')!({}, { claude: '', additionalPaths: ['C:\\tools', 'D:\\a b (x)'] });
 
-    const written = JSON.parse(fs.readFileSync(path.join(tmpDir, '.dorothy', 'cli-paths.json'), 'utf-8'));
+    const written = JSON.parse(fs.readFileSync(path.join(tmpDir, '.tars', 'cli-paths.json'), 'utf-8'));
     const entries = pathEntries(written.fullPath, 'win32');
     expect(entries.slice(0, 2)).toEqual(['C:\\tools', 'D:\\a b (x)']);
     expect(entries).toContain('C:\\Windows\\System32');
@@ -293,7 +293,7 @@ describe.each(['darwin', 'linux'] as const)('%s: detection and fullPath as befor
       path.join(tmpDir, '.yarn/bin'), path.join(tmpDir, '.nvm/versions/node', 'v20.0.0', 'bin')];
     const old = (extra: string[], envPath: string | undefined) => [...new Set([...extra, ...defaults, ...(envPath || '').split(':')])].join(':');
     const mod = await register();
-    const file = path.join(tmpDir, '.dorothy', 'cli-paths.json');
+    const file = path.join(tmpDir, '.tars', 'cli-paths.json');
 
     for (const envPath of ['/usr/bin:/bin::/opt/x', undefined]) {
       setEnv({ PATH: envPath });

@@ -37,7 +37,7 @@ test('the agent window of a gemini agent shows the rows its CLI placed with curs
   test.setTimeout(120_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-window-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const cli = path.join(home, 'fake-gemini.cjs');

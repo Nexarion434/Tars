@@ -97,7 +97,7 @@ process.stdout.write('stand-in ready\n');
 function sandbox(prefix: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const received = (id: string) => path.join(home, `${id}.received`);
