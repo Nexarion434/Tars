@@ -26,6 +26,12 @@ import * as path from 'path';
  *    folder's `backups/` (`~/.claude/backups/` for ~/.claude.json; five kept, 0600, measured on 2.1.302), and what a
  *    write of its own it never finished left beside the file, `.claude.json.tmp.<pid>.<hex>` (five in a real home,
  *    two of them empty); or one of those, empty or cut short, rewritten.
+ * Added before their code after the QA's gate of #458 (2026-10-19):
+ * 9. (L1) A rotated key whose last 20 characters hold a dot (Zhipu's `id.secret`): the question's masking stopped at
+ *    the dot, and the 16 characters of its secret half stayed in agents.json and its backup.
+ * 10. (L2) A `.claude.json.tmp.<pid>.<hex>` cut short, which does not parse, is left with the tail in it even when
+ *    the Claude Code that was writing it is gone and will never finish it; or one a running Claude Code still writes
+ *    is touched.
  */
 
 vi.mock('electron', () => ({
@@ -149,7 +155,7 @@ describe('the rejected keys Claude Code kept, at the same load', () => {
     expect(fs.statSync(ACCOUNT_JSON()).mode & 0o777).toBe(0o600);
   });
 
-  it("8. lose them in the copies Claude Code keeps of each file, and a copy it left empty or cut short stays as it is", () => {
+  it("8. lose them in the copies Claude Code keeps of each file, and a copy a running Claude Code left empty or cut short stays as it is", () => {
     writeAgents(AGENTS, 3, [agent('a1', [])]);
     fs.writeFileSync(CLAUDE_JSON, JSON.stringify(config([]), null, 2), { mode: 0o600 });
     fs.mkdirSync(path.join(HOME, '.tars-private'), { recursive: true });
@@ -166,8 +172,9 @@ describe('the rejected keys Claude Code kept, at the same load', () => {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify(config(rejected), null, 2), { mode: 0o600 });
     }
-    const empty = path.join(HOME, '.claude.json.tmp.45327.de5af454b2b8');
-    const cutShort = path.join(HOME, '.claude.json.tmp.81815.427406b7e72f');
+    // Written by a Claude Code still running (this process stands for it): left as they are.
+    const empty = path.join(HOME, `.claude.json.tmp.${process.pid}.de5af454b2b8`);
+    const cutShort = path.join(HOME, `.claude.json.tmp.${process.pid}.427406b7e72f`);
     const cut = JSON.stringify(config([tail(DEEPSEEK)]), null, 2).slice(0, -3);
     fs.writeFileSync(empty, '', { mode: 0o600 });
     fs.writeFileSync(cutShort, cut, { mode: 0o600 });
@@ -201,4 +208,31 @@ describe('the rejected keys Claude Code kept, at the same load', () => {
     expect(said).toMatch(/key/i);
     for (const secret of [DEEPSEEK, OPENROUTER, tail(DEEPSEEK), tail(OPENROUTER)]) expect(said).not.toContain(secret);
   });
+
+  it('10. a copy cut short whose Claude Code is gone is removed, tail and all', () => {
+    writeAgents(AGENTS, 3, [agent('a1', [])]);
+    fs.writeFileSync(CLAUDE_JSON, JSON.stringify(config([]), null, 2), { mode: 0o600 });
+    // A pid no process has: the highest a pid gets on macOS and Linux is far below it.
+    const gone = path.join(HOME, '.claude.json.tmp.99999999.0a1b2c3d4e5f');
+    fs.writeFileSync(gone, JSON.stringify(config([tail(DEEPSEEK)]), null, 2).slice(0, -3), { mode: 0o600 });
+    manager.loadAgents();
+    expect(fs.existsSync(gone)).toBe(false);
+  });
 });
+
+describe("a rotated key with a dot in its tail (the QA's L1 on #458)", () => {
+  it('9. loses its whole tail, the secret half after the dot included', () => {
+    const zhipu = `${'0123456789abcdef'.repeat(2)}.SECRETsecret1234`;
+    const output = [question(zhipu), 'and went on\r\n'];
+    writeAgents(AGENTS, 3, [agent('a1', output)]);
+    writeAgents(BACKUP, 3, [agent('a1', output)]);
+    manager.loadAgents();
+    for (const file of [AGENTS, BACKUP]) {
+      const kept = outputOf(file, 'a1').join('');
+      expect(kept, file).not.toContain('SECRETsecret1234');
+      expect(kept, file).not.toContain(tail(zhipu));
+      expect(kept, file).toContain('Do\x1b[6Gyou');
+    }
+  });
+});
+
