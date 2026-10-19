@@ -22,8 +22,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// ~/.tars since 2.0.4; ~/.dorothy for a run of Tars that could not move it yet (core/data-dir-move.ts).
-const DATA_DIR = !fs.existsSync(path.join(os.homedir(), '.tars')) && fs.existsSync(path.join(os.homedir(), '.dorothy')) ? path.join(os.homedir(), '.dorothy') : path.join(os.homedir(), '.tars');
+// Tars's data folder, by pickDataDir's rule (electron/core/data-dir-move.ts): ~/.tars when it is a folder, else ~/.dorothy; of two different folders, ~/.dorothy only when it alone holds Tars's records.
+function dataDir() {
+  const tars = path.join(os.homedir(), '.tars');
+  const old = path.join(os.homedir(), '.dorothy');
+  const folder = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const present = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const records = (d) => ['agents.json', 'app-settings.json'].some((f) => { try { return fs.statSync(path.join(d, f)).isFile(); } catch { return false; } });
+  if (!folder(tars)) return present(tars) || folder(old) ? old : tars;
+  if (!folder(old) || real(tars) === real(old)) return tars;
+  return records(old) && !records(tars) ? old : tars;
+}
+const DATA_DIR = dataDir();
 
 function readStdin() {
   return new Promise(resolve => {

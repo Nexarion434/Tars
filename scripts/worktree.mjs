@@ -659,10 +659,23 @@ async function processCwds() {
   return found;
 }
 
+/** Tars's data folder, by pickDataDir's rule (electron/core/data-dir-move.ts): ~/.tars when it is a folder, else ~/.dorothy; of two different folders, ~/.dorothy only when it alone holds Tars's records. */
+export function tarsDataDir() {
+  const tars = path.join(os.homedir(), '.tars');
+  const old = path.join(os.homedir(), '.dorothy');
+  const folder = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const present = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const records = (d) => ['agents.json', 'app-settings.json'].some((f) => { try { return fs.statSync(path.join(d, f)).isFile(); } catch { return false; } });
+  if (!folder(tars)) return present(tars) || folder(old) ? old : tars;
+  if (!folder(old) || real(tars) === real(old)) return tars;
+  return records(old) && !records(tars) ? old : tars;
+}
+
 /** The worktrees of Tars's own agents, from ~/.tars/agents.json (a list, or { agents }). */
 function tarsAgentWorktrees() {
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(!fs.existsSync(path.join(os.homedir(), '.tars')) && fs.existsSync(path.join(os.homedir(), '.dorothy')) ? path.join(os.homedir(), '.dorothy') : path.join(os.homedir(), '.tars'), 'agents.json'), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(path.join(tarsDataDir(), 'agents.json'), 'utf8'));
     const list = Array.isArray(raw) ? raw : raw.agents ?? [];
     return list.filter(a => a && typeof a.worktreePath === 'string')
       .map(a => ({ path: a.worktreePath, name: a.name || a.id }));

@@ -22,7 +22,7 @@ import { broadcastToAllWindows } from '../utils/broadcast';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { DATA_DIR, dataPath } from '../constants';
+import { DATA_DIR, DATA_DIR_MOVE, dataPath } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 import * as pty from 'node-pty';
 import TelegramBot from 'node-telegram-bot-api';
@@ -1977,6 +1977,9 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     const { app } = await import('electron');
     return { version: app.getVersion() };
   });
+
+  // The data folder this run uses, and what the user must be told about it (core/data-dir-move.ts).
+  ipcMain.handle('app:dataDir', async () => ({ dir: DATA_DIR, did: DATA_DIR_MOVE.did, ...(DATA_DIR_MOVE.notice ? { notice: DATA_DIR_MOVE.notice } : {}) }));
 
   // Never a CLI's key: the window learns only whether one is set (cliKeys:list).
   ipcMain.handle('app:getSettings', async () => {

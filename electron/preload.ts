@@ -370,6 +370,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App settings (notifications, etc.)
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    dataDir: () => ipcRenderer.invoke('app:dataDir'),
   },
 
   usage: {

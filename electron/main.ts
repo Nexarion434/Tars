@@ -17,7 +17,7 @@ import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, sta
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, Notification } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -594,6 +594,12 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Two data folders (core/data-dir-move.ts): which one Tars runs on is said
+  // where the user sees it, once per start, and the window can ask for it
+  // (app:dataDir). Never from an E2E run, which must put nothing on the screen.
+  if (DATA_DIR_MOVE.notice && process.env.DOROTHY_E2E !== '1' && Notification.isSupported()) {
+    new Notification({ title: 'Tars: two data folders', body: DATA_DIR_MOVE.notice }).show();
+  }
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,

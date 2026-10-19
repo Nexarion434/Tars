@@ -1488,6 +1488,8 @@ export interface ElectronAPI {
   // App settings (notifications, etc.)
   app?: {
     getVersion: () => Promise<{ version: string }>;
+    /** The data folder this run uses; `notice` when two folders stood at ~/.tars and ~/.dorothy, for the window to say. */
+    dataDir: () => Promise<{ dir: string; did: 'moved' | 'already' | 'kept-old' | 'both' | 'none'; notice?: string }>;
   };
 
   /**
