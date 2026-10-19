@@ -1671,7 +1671,9 @@ why it carries its own credential. A Hermes job set up with the master token nee
 from Settings > Hermes instead.
 
 Rotating a secret: from Settings > Hermes (`hermes:gateways:rotate`), then give that gateway's
-Hermes the new one; the old one opens nothing from then on. Worth doing once after upgrading to
+Hermes the new one; the old one opens nothing from then on. Tars shows the new secret once, in a
+dialog of its own, and Copy secret (`hermes:gateways:copySecret`) copies it again: the window
+never holds a gateway's secret. Worth doing once after upgrading to
 1.7.6: until then the secret sat in `~/.dorothy`, which every agent can read.
 
 Response mirrors `/dispatch` (`{success, mode, agent}`); poll `GET /api/agents/:id` for the

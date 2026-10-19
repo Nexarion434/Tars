@@ -2250,10 +2250,13 @@ export interface ElectronAPI {
      */
     gateways: {
       list: () => Promise<{ success: true; gateways: HermesGatewayView[] }>;
-      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; secret: string } | { success: false; error: string }>;
+      /** Its secret is shown once by the main process, in a dialog of its own; the page never holds it. */
+      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; set: true } | { success: false; error: string }>;
       remove: (params: { id: string }) => Promise<{ success: boolean }>;
-      secret: (params: { id: string }) => Promise<{ success: true; secret: string } | { success: false; error: string }>;
-      rotate: (params: { id: string }) => Promise<{ success: true; secret: string } | { success: false; error: string }>;
+      /** Copies the gateway's secret to the clipboard, from the main process. */
+      copySecret: (params: { id: string }) => Promise<{ success: true; copied: boolean } | { success: false; error: string }>;
+      /** The new secret is shown once by the main process, as at add. */
+      rotate: (params: { id: string }) => Promise<{ success: true; set: true } | { success: false; error: string }>;
       setProjects: (params: { id: string; projects: string[] }) => Promise<{ success: true; gateway: HermesGatewayView } | { success: false; error: string }>;
     };
     /**

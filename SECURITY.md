@@ -168,7 +168,7 @@ status. Now:
   404 like one that does not exist.
 What it is not: a gateway's message is still typed into an agent that may run in
 bypass by the user's choice, and does there what the agent may do; and an agent that
-reads the private folder holds every gateway's secret, as it holds the conversation.
+reads the private folder holds every gateway's secret, as it holds the conversation. The window never holds one: adding a gateway or rotating its secret shows the new secret once in a dialog of the main process, which the page cannot read, and Copy secret copies it from the main process (`services/secret-handoff.ts`, as for the Telegram auth token and the default gateway's secret).
 
 **What the ceiling for delegated runs was, and is not** (1.9.6, `core/permission-ceiling.ts`).
 Since 2.0.4 a delegated task is no run: `delegate_task` and `/run-task` type it into the
