@@ -35,7 +35,7 @@ import { usableHermesConnection } from '../hermes-config';
 import { consumeResumeSessionId } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
-import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
+import { handOffFrom, liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
 import { typeLaunchTask } from '../../core/typed-task';
@@ -80,6 +80,13 @@ type SpawnOpts = {
   wokenBy?: { by: string; via: AgentWakeVia };
   /** The request this prompt runs (core/task-requests.ts): delivered as the session starts. */
   taskRef?: string;
+  /**
+   * Who sent the prompt, when it is a dispatch: its task is that sender's when
+   * no request names its asker. An asker the agent once handed work to queues
+   * none (requestFor), and its task, starting the session, was filed as Tars's
+   * or under the agent's own requester (the Audit's M1 on #470).
+   */
+  sender?: MessageSender;
 };
 
 /**
@@ -446,10 +453,14 @@ async function spawnAgentSessionInSlot(
   agent.workHandedAt = new Date().toISOString();
   // Work handed over, for the task its first turn opens (task-ledger.ts).
   if (prompt.trim()) {
-    const asker = request?.requesterAgentId ?? agent.requestedBy?.agentId;
+    const asker = request?.requesterAgentId;
     noteHandOff(agent.id, asker
       ? { source: 'agent', requesterAgentId: asker, text: prompt }
-      : { source: 'tars', text: prompt });
+      : opts.sender && opts.sender.kind !== 'tars'
+        ? { ...handOffFrom(opts.sender), text: prompt }
+        : agent.requestedBy?.agentId
+          ? { source: 'agent', requesterAgentId: agent.requestedBy.agentId, text: prompt }
+          : { source: 'tars', text: prompt });
   }
   agent.currentTask = prompt;
   agent.output = [];
@@ -1534,7 +1545,7 @@ async function performDispatchLocked(
   // No session: spawn a fresh one with the message as the prompt.
   const since = new Date().toISOString();
   const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef }, ctx, sendJson))) {
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef, sender: opts.sender }, ctx, sendJson))) {
     dropped(agent, taskRef);
     return;
   }
@@ -2050,7 +2061,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson);
     });
     if (!spawned) {
       dropped(agent, taskRef);
@@ -2413,7 +2424,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
         const since = new Date().toISOString();
-        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef }, ctx, sendJson))) {
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson))) {
           dropped(agent, taskRef);
           return;
         }
