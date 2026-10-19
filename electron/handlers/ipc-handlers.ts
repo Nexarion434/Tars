@@ -60,7 +60,7 @@ import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledg
 import { tasksReport } from '../services/task-watch';
 import type { TaskQuery } from '../services/task-cost';
 import { oneReadingAtATime } from '../core/one-reading-at-a-time';
-import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
+import { consumeResumeSessionId, resolveResumeSessionId, spendResume } from '../utils/resume-session';
 import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { orchestratorMoved } from '../core/chat-identity';
 import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
@@ -828,6 +828,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the header, the conversation answers from its history, and the
     // transcript is a new file under a new id.
     const namedResume = options?.resumeSessionId;
+    if (namedResume !== undefined) spendResume(agent.id);
     const resumeSessionId = namedResume === undefined
       ? consumeResumeSessionId(agent)
       : namedResume === null
