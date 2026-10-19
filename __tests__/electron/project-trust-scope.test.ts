@@ -129,7 +129,8 @@ describe('ensureProjectTrusted still trusts a project', () => {
     ensureProjectTrusted(project);
     ensureProjectTrusted(beside);
 
-    expect(trusted().sort()).toEqual([beside, project].sort());
+    // The project also under its real path when the throwaway home is reached through a link (case 9); `beside` does not exist.
+    expect(trusted().sort()).toEqual([...new Set([beside, project, fs.realpathSync.native(project)])].sort());
   });
 });
 
@@ -143,6 +144,6 @@ describe('ensureProjectTrusted trusts a project reached through a link', () => {
 
     ensureProjectTrusted(saved);
 
-    expect(trusted().sort()).toEqual([fs.realpathSync(saved), saved].sort());
+    expect(trusted().sort()).toEqual([fs.realpathSync.native(saved), saved].sort());
   });
 });
