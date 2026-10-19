@@ -694,7 +694,7 @@ export interface BusMessage {
  *
  * `queued` waits for the target to leave `running`, `delivered` was written
  * into its session, `dropped` will never be sent and says why. `not_sent` is
- * the fourth state and the one that needs saying: amp, codex, grok, opencode
+ * the fourth state and the one that needs saying: amp, grok, opencode
  * and pi never leave `running` in an interactive session, so nothing can be
  * delivered to them at rest. A message aimed at one of those is neither queued
  * nor delivered on its own: it is kept, shown as NOT SENT with its reason, and
@@ -714,7 +714,7 @@ export type BusDeliveryState = 'queued' | 'held' | 'not_sent' | 'delivered' | 'd
  * wording change silently turns a visible state invisible. The sentence stays
  * beside it for a human to read.
  *
- * `no_end_of_turn` is the one that names the five: amp, codex, grok, opencode
+ * `no_end_of_turn` is the one that names the four: amp, grok, opencode
  * and pi never leave `running` in an interactive session. `session_replaced`
  * is a message queued for a session that was killed before it drained: it
  * belongs to that session and is not handed to whatever took its place.

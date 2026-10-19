@@ -32,9 +32,6 @@ import { posixWords, PosixWordsError } from '../../../electron/platform/posix-wo
  * 8. The error does not say which code or where (index).
  * 9. A provider's real command, with every option Tars can set, does not
  *    round-trip: the words differ from bash's own reading of the line.
- *    Since 2.0.4 a CLI whose launch types the task in once it runs
- *    (taskTypedAfterLaunch, amp) never has it on its command line: there the
- *    prompt is in none of the words, and its last word is not the prompt.
  */
 
 let tmpDir: string;
@@ -208,17 +205,20 @@ describe('9. every provider round-trips', () => {
     expect(getAllProviders()).toHaveLength(20);
   });
 
-  it('first word the binary, last word the prompt or no word at all for a CLI the task is typed into, the rest from the grammar, for every adversarial prompt', async () => {
+  it('first word the binary, last word the prompt, the rest from the grammar, for every adversarial prompt', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
     const bin = path.join(tmpDir, "fake cli (x86)'s");
     for (const provider of getAllProviders()) {
       for (const [label, prompt] of ADVERSARIAL) {
-        const words = posixWords(await commandOf(provider.id, prompt, bin));
+        const all = posixWords(await commandOf(provider.id, prompt, bin));
+        // codex's line hands it Tars's home first, on macOS and Linux (`env CODEX_HOME=<home>`, the Audit's L4 on #465).
+        const words = all[0] === 'env' && all[1]?.startsWith('CODEX_HOME=') ? all.slice(2) : all;
         if (provider.taskTypedAfterLaunch) {
+          // Amp's line never carries the task: it is typed in once its TUI runs (core/typed-task.ts, 2.0.4).
           expect([provider.id, label, words[0], words.includes(prompt)]).toEqual([provider.id, label, bin, false]);
-          continue;
+        } else {
+          expect([provider.id, label, words[0], words.at(-1)]).toEqual([provider.id, label, bin, prompt]);
         }
-        expect([provider.id, label, words[0], words.at(-1)]).toEqual([provider.id, label, bin, prompt]);
       }
     }
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -22,6 +22,14 @@ import {
  * backed by a file on disk must never reach the command line: an agent that
  * starts fresh is a worse outcome than resuming, and an agent that does not
  * start at all is much worse than both.
+ *
+ * A codex agent (2.0.4): codex keeps a session in its own rollout file,
+ * $CODEX_HOME/sessions/<y>/<m>/<d>/rollout-<time>-<id>.jsonl, under the day it
+ * began, which `codex resume <id>` continues (measured on 0.163). How it fails:
+ * its id refused because no Claude transcript has it, so a codex agent began
+ * anew after every restart; an id resumed whose rollout is gone; the rollout
+ * looked for under today's folder only, when a session resumed days later
+ * lives under the day it began; a Claude agent resumed on a codex rollout.
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-resume-'));
@@ -93,6 +101,34 @@ describe('finding the transcript', () => {
       writeTranscript(PROJECT, bad);
       expect(resolveResumeSessionId({ resumableSessionId: bad, projectPath: PROJECT }, home)).toBeNull();
     }
+  });
+});
+
+describe("a codex agent's session", () => {
+  const CODEX = '01a14fb7-9e95-7c81-8980-2b82c8316805';
+  const codexHome = path.join(home, '.codex');
+  const rollout = (day: string) => {
+    const dir = path.join(codexHome, 'sessions', ...day.split('/'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `rollout-2026-10-15T09-00-00-${CODEX}.jsonl`), '{"type":"session_meta","payload":{}}\n');
+  };
+  beforeEach(() => {
+    fs.rmSync(codexHome, { recursive: true, force: true });
+    vi.stubEnv('CODEX_HOME', codexHome);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('resumes when codex has its rollout, under the day it began', () => {
+    rollout('2026/10/15');
+    expect(resolveResumeSessionId({ provider: 'codex', resumableSessionId: CODEX, projectPath: PROJECT }, home)).toBe(CODEX);
+    expect(consumeResumeSessionId({ id: 'cx', provider: 'codex', resumableSessionId: CODEX, projectPath: PROJECT }, home)).toBe(CODEX);
+    expect(consumeResumeSessionId({ id: 'cx', provider: 'codex', resumableSessionId: CODEX, projectPath: PROJECT }, home)).toBeNull();
+  });
+
+  it('refuses when the rollout is gone, and a Claude agent never resumes on a rollout', () => {
+    expect(resolveResumeSessionId({ provider: 'codex', resumableSessionId: CODEX, projectPath: PROJECT }, home)).toBeNull();
+    rollout('2026/10/15');
+    expect(resolveResumeSessionId({ provider: 'claude', resumableSessionId: CODEX, projectPath: PROJECT }, home)).toBeNull();
   });
 });
 
