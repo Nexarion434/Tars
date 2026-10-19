@@ -91,7 +91,8 @@ test('a test build started on the account\'s own home refuses to start, and touc
     child.on('exit', (c) => { clearTimeout(timer); resolve(c); });
   });
   if (code === 'still running') child.kill('SIGTERM');
-  const left = fs.readdirSync(home).filter((n) => n !== 'electron-profile').sort();
+  // What Tars itself writes in a home: Electron's own folders (its profile, macOS's Library) are not Tars's to hold.
+  const left = fs.readdirSync(home).filter((n) => ['.dorothy', '.tars', '.tars-private', '.claude', '.claude.json'].includes(n)).sort();
   recordValues({ app, code, said: said.slice(-2000), left });
   try {
     expect.soft(code, 'its exit').toBe(1);
