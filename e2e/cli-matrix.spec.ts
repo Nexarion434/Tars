@@ -32,14 +32,13 @@ import { writeFakeClis } from './fake-clis.mjs';
  * A cell is green or red, with what was seen. KNOWN_RED says which cells are red on main today and why; the spec
  * fails when a cell outside it is red (a regression) and when a cell in it turns green or goes red for another
  * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
- *   - codex does not start in bypass mode (--full-auto, fix/codex-works), and Qwen Code has no provider
- *     (feat/qwen-code);
+ *   - Qwen Code has no provider (feat/qwen-code);
  *   - gemini, opencode and pi cannot call Tars: gemini's MCP servers get no TOKEN variable, and Tars writes its server
  *     where opencode and pi do not read theirs (documented by them, not measured on a real install);
  *   - gemini's first task is never closed, and holds every later one;
  *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok) nor from gemini;
- *   - grok's delegation to claude runs and is reported as never started (H1, until fix/second-delegation-into-claude).
- * OpenRouter starts since #458, which made its rules go; its own tasks to gemini now wait behind gemini's first.
+ * OpenRouter starts since #458, and codex since fix/codex-works, which made their rules go; their own tasks to gemini
+ * now wait behind gemini's first.
  * KNOWN_RED has the rules, each with what its cells must say. A project of its own since 19/10 (playwright.config.ts):
  * `npm run e2e:matrix`, run at every release gate and by `npm run e2e:auto` (OPERATIONS.md).
  * The artefact, in the run directory: matrix.json (pair, step, result, detail), matrix.md, the fakes' logs,
@@ -70,22 +69,18 @@ type Rule = { from?: string[]; to?: string[]; steps: Array<Step | 'starts'>; why
 const ALL: Step[] = ['delegate.reaches', 'delegate.answer', 'turn', 'message', 'reply'];
 // First match wins: the CLIs that do not start, then what A cannot do, then what B cannot do.
 const KNOWN_RED: Rule[] = [
-  { from: ['codex'], to: ['codex'], steps: ['starts'], why: 'codex 0.163 refuses --full-auto, which Tars passes it in bypass mode (fix/codex-works)', seen: /refused "--full-auto"/ },
   { from: ['qwen-code'], to: ['qwen-code'], steps: ['starts'], why: 'no Qwen Code provider on main (feat/qwen-code): its agent runs as claude, with flags qwen 0.25.2 refuses', seen: /refused .*dangerously-skip-permissions/ },
-  { from: ['codex'], steps: ALL, why: 'codex does not start (above)', seen: /codex's CLI is not running/ },
   { from: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
-  { to: ['codex'], steps: ALL, why: 'codex does not start (above)', seen: /codex's CLI is not running/ },
   { to: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
   { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
   { from: ['opencode', 'pi'], steps: ALL, why: 'Tars writes its MCP server into ~/.opencode/config.json and ~/.pi/config.json, where opencode (~/.config/opencode/opencode.json, `mcp`) and pi (~/.pi/agent/mcp.json) do not read (documented by them, not measured on a real install: neither is installed here)', seen: /no Tars server|B never got the message|no task reached B/ },
-  { to: ['gemini'], from: ['amp', 'grok', 'openrouter'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
+  { to: ['gemini'], from: ['amp', 'grok', 'openrouter', 'codex'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
   { to: ['gemini'], steps: ['delegate.answer'], why: 'run-task treats gemini as a CLI without hooks: no answer read from it', seen: /gives Tars no hook/ },
   { to: ['gemini'], steps: ['turn'], why: 'its BeforeAgent and AfterAgent reach /api/hooks/status, but the window never shows the turn', seen: /before/ },
   { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /identity of your own/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
   { to: ['opencode', 'pi'], steps: ['reply'], why: 'no Tars tools where opencode and pi read their MCP servers (above; documented, not measured)', seen: /no Tars server/ },
-  { from: ['grok'], to: ['claude'], steps: ['delegate.answer'], why: 'the task ran in claude\'s terminal, typed without its task line, and delegate_task told grok it never started (the Audit\'s H1 symptom on #453): until fix/second-delegation-into-claude. A race: amp\'s delegation to claude went the same way once, at a load of 150', seen: /never started/ },
 ];
 
 const expectedRed = (cell: Cell): Rule | undefined => KNOWN_RED.find((r) =>

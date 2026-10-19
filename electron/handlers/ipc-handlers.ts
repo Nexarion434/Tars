@@ -60,7 +60,7 @@ import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledg
 import { tasksReport } from '../services/task-watch';
 import type { TaskQuery } from '../services/task-cost';
 import { oneReadingAtATime } from '../core/one-reading-at-a-time';
-import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
+import { consumeResumeSessionId, resolveResumeSessionId, spendResume } from '../utils/resume-session';
 import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { orchestratorMoved } from '../core/chat-identity';
 import { launchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
@@ -78,6 +78,7 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
+import { readCodexModels } from '../providers/codex-cli';
 import { cliKeyStates, keepCliKeys, withCliKey, withoutCliKeys } from '../services/cli-keys';
 
 /**
@@ -755,6 +756,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const appSettingsForCommand = getAppSettings();
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await cliProvider.prepareLaunch?.(binaryPath, options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'));
 
     // The orchestrator's powers: its project's orchestrator (the toggle, never
     // the name) or a chat's runner (core/agent-role.ts).
@@ -826,6 +829,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the header, the conversation answers from its history, and the
     // transcript is a new file under a new id.
     const namedResume = options?.resumeSessionId;
+    if (namedResume !== undefined) spendResume(agent.id);
     const resumeSessionId = namedResume === undefined
       ? consumeResumeSessionId(agent)
       : namedResume === null
@@ -1835,6 +1839,15 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     if (provider === 'custom-openai') {
       const model = getAppSettings().customOpenAIModel?.trim();
       return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
+    }
+    // The models of the account codex is signed in with, from codex's own
+    // list: models.dev's OpenAI list offered gpt-5-codex-mini, which codex
+    // refuses for a ChatGPT account (codex-cli.ts).
+    if (provider === 'codex') {
+      const listed = readCodexModels();
+      if (listed.length > 0) {
+        return { models: listed.map(m => ({ id: m.id, name: m.name, description: m.description, effortValues: m.efforts, contextWindow: m.contextWindow })) };
+      }
     }
     await loadCatalog();
     return { models: modelsForProvider(provider) };

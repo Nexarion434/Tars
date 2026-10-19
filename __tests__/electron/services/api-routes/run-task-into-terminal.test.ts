@@ -40,8 +40,15 @@ import { EventEmitter } from 'node:events';
  *      for ever as `starting`, and the queue stays held.
  *  D11. A model asked for one task is said taken while the agent's session was
  *      already open, which a model cannot change.
- *  D12. A CLI whose turns Tars cannot see (no hook: codex, opencode, amp, pi,
- *      grok) is followed for ever, or said to have answered what it did not.
+ *  D12. A CLI whose turns Tars cannot see (no hook: opencode, amp, pi, grok)
+ *      is followed for ever, or said to have answered what it did not.
+ *
+ * Added with codex's session log (fix/codex-works, 2026-10-18), before the code:
+ *  D18. codex, whose turns Tars reads from its session log and posts as the
+ *      hooks would (services/codex-sessions.ts), is said delivered as a CLI
+ *      Tars cannot see, or followed to its end without its answer.
+ *  D19. A codex turn interrupted (its log's turn_aborted, then the rest it
+ *      comes to) ends the task as completed, or never ends it.
  *  D13. Another project's orchestrator that passed allowCrossProject: true is
  *      refused, or its task goes anywhere but the target's terminal (moved
  *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
@@ -76,13 +83,17 @@ const typed: Typed[] = [];
 let writeOutcome: 'written' | 'refused' = 'written';
 vi.mock('../../../../electron/core/pty-manager', async (original) => {
   const real = await original<typeof import('../../../../electron/core/pty-manager')>();
+  const ledger = await import('../../../../electron/services/task-ledger');
   return {
     ...real,
     ptyProcesses: new Map(),
-    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
+    // As the real writer does (takeField): the line's id only under a sender, and the hand-off the turn takes noted once written.
+    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { agentId: string; taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
       if (writeOutcome === 'refused') return 'refused';
-      typed.push({ ptyId: pty.id, data, taskRef: origin?.taskRef, sender: origin?.sender });
+      const taskRef = origin?.sender ? origin.taskRef : undefined;
+      typed.push({ ptyId: pty.id, data, taskRef, sender: origin?.sender });
       origin?.onWritten?.();
+      if (origin) ledger.noteHandOff(origin.agentId, { ...ledger.handOffFrom(origin.sender as never), text: data, ref: taskRef });
       return 'written';
     }),
   };
@@ -108,7 +119,7 @@ import { registerAgentRoutes } from '../../../../electron/services/api-routes/ag
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-ledger';
-import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
+import { startTaskWatch, stopTaskWatch, turnInterrupted } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
 import { transcriptPath } from '../../../../electron/utils/resume-session';
@@ -349,6 +360,53 @@ describe('a task delegated into the agent\'s own terminal', () => {
     expect(task.outcome).toBe('delivered');
     expect(String(task.error)).toMatch(/opencode/);
     expect(String(task.error)).toMatch(/cannot see when its turn ends/);
+  });
+});
+
+describe('a task delegated to a codex agent', () => {
+  it("(D18) is followed to its turn's end, as codex's session log tells it, and answered with its final message", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // The answer codex wrote at the turn's end (task_complete's last_agent_message), posted in full.
+    const long = `Done. ${'detail '.repeat(1200)}END`;
+    dev.lastCleanOutput = long;
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: long });
+  });
+});
+
+describe('a task delegated to a codex agent, its turn interrupted', () => {
+  it('(D19) ends as stopped, interrupted, when codex logs the turn aborted, then rests', async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a long job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // What the session watch does on codex's turn_aborted (main.ts wires it to this), then its post of the rest.
+    turnInterrupted(dev.id, dev.currentSessionId!);
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+  });
+
+  it("(D19) an interrupt from a session that is not the agent's is not its task's", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    turnInterrupted(dev.id, 'an-older-session');
+    dev.lastCleanOutput = 'all done';
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: 'all done' });
   });
 });
 

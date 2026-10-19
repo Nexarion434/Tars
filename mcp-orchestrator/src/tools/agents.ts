@@ -626,7 +626,7 @@ const AGENT_TOOLS: Tool[] = [
       secondaryProjectPath: z.string().optional().describe("Secondary project path to add as context (--add-dir)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow creating the agent in ANOTHER project than yours (normally rejected)"),
       provider: z.string().optional().describe(`${PROVIDERS} Default claude.`),
-      model: z.string().optional().describe("The model, as the provider's CLI names it (e.g. 'opus' or 'sonnet' for claude). Omit for the provider's default."),
+      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-6-luna' for codex). Omit for the provider's default."),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort. Omit for the CLI's own."),
       permissionMode: z
         .enum(["plan", "normal", "auto", "bypass"])

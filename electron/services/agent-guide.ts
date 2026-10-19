@@ -41,9 +41,9 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     text: [
       'You delegate to the agents of your own project: `list_agents` shows them, `whoami` shows you. Another project is refused unless the tool takes allowCrossProject and you set it.',
       '`delegate_task` is the way to hand work: the task goes into the agent\'s own terminal, the session its card shows, which keeps its conversation, its memory and its background work. With no CLI running there, Tars starts that session on its conversation, with the task. No temporary copy of the agent is ever made. Tars answers at once with a taskId, and the tool follows the task in steps of two minutes.',
-      'You get back the agent\'s full final message for the task, why it ended (completed, error, stopped, interrupted), and its tokens and cost. That is read from the session itself, and only where its CLI lets Tars read it: claude (and the API-key providers that run it) gives all of it, from its hooks and its transcript. gemini, codex, opencode, amp, pi and grok give Tars no prompt hook: the task goes into their terminal, in their interactive session, which stays after it (opencode and gemini started with it as their first prompt, amp with it typed in), and the tool says it was delivered, with no answer, tokens or cost. Read their terminal with `get_agent_output`, or ask them to report with send_message to "requester".',
+      'You get back the agent\'s full final message for the task, why it ended (completed, error, stopped, interrupted), and its tokens and cost. That is read from the session itself, and only where its CLI lets Tars read it: claude (and the API-key providers that run it) gives all of it, from its hooks and its transcript. codex gives its final message and why it ended, from its own session log, but not its tokens or cost. gemini, opencode, amp, pi and grok give Tars no prompt hook: the task goes into their terminal, in their interactive session, which stays after it (opencode and gemini started with it as their first prompt, amp with it typed in), and the tool says it was delivered, with no answer, tokens or cost. Read their terminal with `get_agent_output`, or ask them to report with send_message to "requester".',
       'A task you delegate runs in the permission mode of the agent that receives it, whatever yours: from a sender in a narrower mode (plan, say) it arrives marked so, "(sender in plan mode, you in bypass mode)", which asks that agent and does not bind it. Delegate to an agent whose own mode fits the work.',
-      'One task at a time: an agent at work (a task in hand, or a turn in its terminal, which counts only on a CLI that tells Tars its turns end: not amp, codex, grok, opencode or pi) gets the task queued, and delegate_task keeps waiting and returns its real result, or says which task it waits behind, from whom and since when. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now. A task still queued when Tars restarts is lost and never ran: ask for it again.',
+      'One task at a time: an agent at work (a task in hand, or a turn in its terminal, which counts only on a CLI that tells Tars its turns end: not amp, grok, opencode or pi) gets the task queued, and delegate_task keeps waiting and returns its real result, or says which task it waits behind, from whom and since when. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now. A task still queued when Tars restarts is lost and never ran: ask for it again.',
       'timeoutSeconds is how long the tool waits: 3600 s (an hour) when you give none. The task is never stopped there: it goes on in the agent\'s terminal, and `task_status` reads its end later.',
       'If delegate_task says the task may still be working (Tars was out of reach for a while), do not send it again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting its turn can be taken back with `task_cancel`.',
       'A `model` given to delegate_task applies only when Tars starts the agent\'s session for the task; an open session keeps its own, and the answer says so.',
@@ -282,13 +282,27 @@ export function agentGuideSection(agent: AgentStatus): string {
 }
 
 /**
+ * Who the agent is, in Tars's identity line, as spawnAgentSession's header
+ * begins it: what a CLI with no bootstrap to tell it learns first, and the line
+ * a codex session is bound to its agent by (services/codex-sessions.ts, the
+ * Audit's M1 on #465).
+ */
+export function identityLine(agent: AgentStatus): string {
+  const role = agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker';
+  return `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ${role} of project ${agent.projectPath}.]`;
+}
+
+/**
  * The section for the prompt a session starts on, once: a CLI whose config
  * folder is not Claude's has no SessionStart hook to fetch the bootstrap, so
- * it gets it here; a claude CLI, in a terminal or over ACP, gets it from its
- * bootstrap, and nothing here. Every launch that builds a CLI's first prompt
- * reads it: spawnAgentSession, the window's (Start, a wake, a restart), the
- * bots', and a run over ACP.
+ * it gets it here, after the agent's identity line; a claude CLI, in a
+ * terminal or over ACP, gets it from its bootstrap, and nothing here. Every
+ * launch that builds a CLI's first prompt reads it: spawnAgentSession (whose
+ * own header says who the agent is, `identity: false`), the window's (Start, a
+ * wake, a restart), the bots', and a run over ACP.
  */
-export function guideForPrompt(agent: AgentStatus, providerConfigDir: string): string {
-  return needsPromptInjection(providerConfigDir) ? agentGuideSection(agent) : '';
+export function guideForPrompt(agent: AgentStatus, providerConfigDir: string, opts: { identity?: boolean } = {}): string {
+  if (!needsPromptInjection(providerConfigDir)) return '';
+  const section = agentGuideSection(agent);
+  return opts.identity === false ? section : `${identityLine(agent)}\n\n${section}`;
 }

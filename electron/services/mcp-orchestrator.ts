@@ -11,6 +11,7 @@ import { mcpNodeCommand, isTransientAppPath } from '../utils/mcp-node';
 import { writeAtomicSync } from '../utils/secret-file';
 import { bundledMcpServersFor, retireTelegramMcp } from './hermes-relay-switch';
 import { DATA_DIR } from '../constants';
+import { TARS_MCP_ENV } from './mcp-orchestrator-env';
 
 /**
  * MCP Orchestrator Service
@@ -160,7 +161,9 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
 
       for (const provider of providers) {
         try {
-          const registered = provider.isMcpServerRegistered(name, serverPath);
+          // Every one of Tars's servers reads the agent's identity and token
+          // from its environment, which codex hands only by name.
+          const registered = provider.isMcpServerRegistered(name, serverPath, TARS_MCP_ENV);
           const moveOver = mayMove && !isTypeScript && !movedBefore.has(provider.id);
           if (!registered || moveOver) {
             // Registering spawns a CLI, and this is the main thread, the one
@@ -170,7 +173,7 @@ export async function setupMcpOrchestrator(appSettings?: AppSettings): Promise<v
             // Removed and added again: the entry is Tars's, and whatever was
             // added to it by hand (an env, say) is not kept.
             if (registered) await provider.removeMcpServer(name);
-            await provider.registerMcpServer(name, command, args);
+            await provider.registerMcpServer(name, command, args, TARS_MCP_ENV);
           }
         } catch (err) {
           failed.add(provider.id);
