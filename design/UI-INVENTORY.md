@@ -98,7 +98,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy), Agents · an agent deleted, what stays and where (its worktree kept, why and where, and its work on a wip/ branch, above the grid until ok; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
-| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy; every repository of every project since 2.0.4: Review · projects and their repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the narrowest window), · states (and its light copy), · notes for the Backend |
+| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy; every repository of every project since 2.0.4: Review · projects and their repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the narrowest window), · states (and its light copy), · notes for the Backend; their old-shop row, a project added by hand whose folder is gone, with its removal, is drawn for 2.0.5 (listed at the end) |
 | `/logs` | Logs | Logs · dark |
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
@@ -280,6 +280,12 @@ For 2.0.4:
   the project page's team (and its light copy).
 
 For 2.0.5:
+- Review, a project added by hand whose folder is gone, said once with its removal asking once (the orchestrator's
+  decision of 19/10): the old-shop row of Review · projects and their repositories (each of its copies) and the state
+  "a project whose folder is gone: remove asks once" of Review · projects and their repositories · states (and its
+  light copy). A state within frames built in 2.0.4, so the counts above stay as they are. Not built: the window is
+  not told of such a project (fs:list-projects leaves it out), and the removal of a project known only from its
+  agents' paths is not decided yet.
 - File panel, opened from anywhere (a terminal, Brain, Review, the Vault): File panel (2.0.5) · opened from an agent's
   terminal (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend.
 - Connectors and Decisions, approved on 17/10: Decisions · waiting, rules and decided, Decisions · nothing waits,

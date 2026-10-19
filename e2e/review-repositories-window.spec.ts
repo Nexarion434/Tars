@@ -12,19 +12,20 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * #472). Frames: `Review · projects and their repositories` (its light copy, the narrowest window), `· search`,
  * `· a folder with no git` (and its light copy), `· states` (and its light copy).
  *
- * The real app on a sandbox HOME with three projects added in Tars: meridian, holding three repositories at three
- * depths, two with a change; field-notes, with no git; old-shop, a folder gone. Finder is stood in for in the main
- * process. Asserted, once with the classic shell and once with the new interface:
+ * The real app on a sandbox HOME with two projects added in Tars: meridian, holding three repositories at three
+ * depths, two with a change; field-notes, with no git. Finder is stood in for in the main process. Asserted, once
+ * with the classic shell and once with the new interface:
  * 1. meridian lists its three repositories under MERIDIAN · 3 REPOSITORIES, each with its branch, and says which
  *    changed, 2 in all.
  * 2. field-notes says once that it has no git, and picked, explains it with its folder to show.
- * 3. old-shop says its folder is gone; remove from Tars asks once, then takes it out of Tars's list, its folder name
- *    alone, nothing on disk.
- * 4. A repository picked: its title, its branch against main and how far ahead, its files; a file picked, its patch.
- * 5. Search: a changed file of any repository, picked, opens that repository and that file; a word found nowhere says
+ * 3. A repository picked: its title, its branch against main and how far ahead, its files; a file picked, its patch.
+ * 4. Search: a changed file of any repository, picked, opens that repository and that file; a word found nowhere says
  *    so, naming how many repositories and projects were searched.
+ * A project added by hand whose folder is gone, said once with its removal asking once, is drawn (`· states`) and
+ * waits for 2.0.5, the orchestrator's decision of 19/10: the window is not told of such a project, and the removal
+ * of a project known only from its agents' paths is not decided yet.
  * Red on 1953bd6f (#472's head, the page before this): no repository of meridian in the list.
- * The artefact: values.json (the rows read, what Tars would have opened, the projects left), the screenshots, and with
+ * The artefact: values.json (the rows read, what Tars would have opened), the screenshots, and with
  * E2E_TRACE=on the app's trace.
  */
 
@@ -61,7 +62,6 @@ for (const newInterface of [false, true]) {
     const dir = path.join(home, '.dorothy');
     const meridian = path.join(home, 'projects', 'meridian');
     const fieldNotes = path.join(home, 'projects', 'field-notes');
-    const oldShop = path.join(home, 'projects', 'old-shop');
     fs.mkdirSync(dir, { recursive: true });
     fs.mkdirSync(fieldNotes, { recursive: true });
     fs.writeFileSync(path.join(fieldNotes, 'notes.txt'), 'no git here');
@@ -75,7 +75,7 @@ for (const newInterface of [false, true]) {
     git(sdk, 'add', '-A');
     git(sdk, 'commit', '-q', '-m', 'client');
     fs.writeFileSync(path.join(sdk, 'src', 'indexer', 'client.ts'), 'export const a = 1;\n');
-    fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([meridian, fieldNotes, oldShop]));
+    fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([meridian, fieldNotes]));
     fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface }));
     const values: Record<string, unknown> = { newInterface };
@@ -114,38 +114,28 @@ for (const newInterface of [false, true]) {
       await expect.poll(async () => (await opened(app)).at(-1) ?? '', { timeout: 10_000 }).toBe(fieldNotes);
       await stepShot(page, '02-no-git');
 
-      // 3. old-shop: gone, removed from Tars after one question, nothing on disk.
-      await expect(list).toContainText('is gone: moved, renamed or deleted.');
-      await list.getByRole('button', { name: 'remove from Tars', exact: true }).click();
-      const ask = page.getByRole('alertdialog', { name: 'Remove old-shop from Tars' });
-      await expect(ask).toContainText('Nothing on your disk changes.');
-      await stepShot(page, '03-remove-asks');
-      await ask.getByRole('button', { name: 'remove', exact: true }).click();
-      await expect.poll(() => JSON.parse(fs.readFileSync(path.join(dir, 'projects.json'), 'utf8')) as string[], { timeout: 15_000 }).toEqual([meridian, fieldNotes]);
-      await expect(list).not.toContainText('OLD-SHOP');
-
-      // 4. A repository and a file.
+      // 3. A repository and a file.
       await repoRow(page, 'sdk-js').click();
       const files = page.getByRole('region', { name: 'Changed files' });
       await expect(files).toContainText('meridian / sdk-js', { timeout: 15_000 });
       await expect(files).toContainText('feat/indexer vs main · 1 commit ahead');
       await files.getByRole('button', { name: /src\/indexer\/client\.ts/ }).click();
       await expect(page.getByText('+export const a = 1;', { exact: true })).toBeVisible({ timeout: 15_000 });
-      await stepShot(page, '04-repository-and-file');
+      await stepShot(page, '03-repository-and-file');
 
-      // 5. Search: a changed file anywhere, picked; then a word found nowhere.
+      // 4. Search: a changed file anywhere, picked; then a word found nowhere.
       const search = page.getByRole('searchbox', { name: 'Search every repository and changed file' });
       await search.fill('client');
       await expect(list).toContainText('RESULTS · EVERY PROJECT, NO LIMIT', { timeout: 15_000 });
       await list.getByRole('button', { name: /sdk-js\/src\/indexer\/client\.ts/ }).click();
       await expect(files).toContainText('meridian / sdk-js', { timeout: 15_000 });
       await expect(page.getByText('+export const a = 1;', { exact: true })).toBeVisible({ timeout: 15_000 });
-      await stepShot(page, '05-search');
+      await stepShot(page, '04-search');
       await search.fill('fetchTicker');
       await expect(list).toContainText('Nothing named fetchTicker in the 3 repositories of your 2 projects, nor in their changed files.', { timeout: 15_000 });
-      await stepShot(page, '06-search-nothing');
+      await stepShot(page, '05-search-nothing');
 
-      keep({ opened: await opened(app), projectsLeft: JSON.parse(fs.readFileSync(path.join(dir, 'projects.json'), 'utf8')), oldShopOnDisk: fs.existsSync(oldShop), pageErrors: errors });
+      keep({ opened: await opened(app), pageErrors: errors });
       expect(errors, errors.join('\n')).toEqual([]);
     } finally {
       await app.close().catch(() => { /* gone */ });
