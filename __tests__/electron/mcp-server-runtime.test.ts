@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { hasPosixModes, skipOnWindows } from '../setup/platform-limits';
 import { cannotSymlink } from '../setup/symlink-privilege';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../setup/leftover-processes';
 
 /**
  * Tars's own MCP servers run on the Node inside the app, not on whatever
@@ -162,6 +163,9 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-mcp-node-'));
 // working folder this is, holds it until the taskkill its stop() started has
 // run, which a synchronous retry would keep from running.
 afterAll(() => fs.promises.rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(scratch)); leftovers.end(); });
 
 // 30 s, not vitest's 5: these cases run the launcher through a real shell, and under a
 // gate's load (load average 100 to 180 on 2026-10-01) case 13 took 6.8 s and case 3
@@ -468,7 +472,7 @@ describe('a delegated run', () => {
     (process as unknown as { resourcesPath: string }).resourcesPath = resources;
     const report = path.join(scratch, 'acp-servers.json');
     const agentScript = path.join(scratch, 'acp-agent.mjs');
-    fs.writeFileSync(agentScript, `
+    fs.writeFileSync(agentScript, RECORDS_ITS_PID + `
 import { writeFileSync } from 'node:fs';
 let buf = '';
 const send = m => process.stdout.write(JSON.stringify(m) + '\\n');
