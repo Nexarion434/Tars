@@ -4,7 +4,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { pinPlatform } from './win-fake-disk';
-import { TARS_MCP_ENV } from '../../../electron/services/mcp-orchestrator-env';
 
 /**
  * The config.toml fallback Codex and Grok write when `<cli> mcp add` cannot
@@ -155,9 +154,6 @@ const configOf = (dir: string) => fs.readFileSync(path.join(tmpDir, dir, 'config
 
 const WIN_NODE = 'C:\\Program Files\\nodejs\\node.exe';
 const WIN_BUNDLE = 'C:\\Users\\x\\AppData\\Local\\Programs\\Tars\\resources\\mcp-orchestrator\\dist\\bundle.js';
-/** What codex hands a Tars server from the agent's environment, since 2.0.4 (codex-mcp-agent-env.test.ts). */
-/** The names a Tars server is handed, from the one list (services/mcp-orchestrator-env.ts). */
-const AGENT_ENV_VARS = [...TARS_MCP_ENV];
 
 describe('codex config.toml fallback', () => {
   it('Windows paths parse back to themselves', async () => {
@@ -165,7 +161,7 @@ describe('codex config.toml fallback', () => {
     await p.registerMcpServer('claude-mgr-orchestrator', WIN_NODE, [WIN_BUNDLE, 'C:\\a\\b c (x)\\d.js']);
 
     const table = parseTomlSubset(configOf('.codex'))['mcp_servers\u0000claude-mgr-orchestrator'];
-    expect(table).toEqual({ command: WIN_NODE, args: [WIN_BUNDLE, 'C:\\a\\b c (x)\\d.js'], env_vars: AGENT_ENV_VARS });
+    expect(table).toEqual({ command: WIN_NODE, args: [WIN_BUNDLE, 'C:\\a\\b c (x)\\d.js'] });
   });
 
   it('a quote in a name or a path, a dotted name, parse back to themselves', async () => {
@@ -198,7 +194,6 @@ describe('codex config.toml fallback', () => {
       '[mcp_servers.claude-mgr-orchestrator]',
       'command = "node"',
       'args = ["/Applications/Tars.app/Contents/Resources/mcp-orchestrator/dist/bundle.js"]',
-      `env_vars = [${AGENT_ENV_VARS.map((v) => `"${v}"`).join(', ')}]`,
       '',
       '[mcp_servers."tasmania.local"]',
       'command = "npx"',

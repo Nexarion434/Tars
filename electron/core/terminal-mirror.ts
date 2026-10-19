@@ -268,7 +268,53 @@ export function dialogOnScreen(pty: IPty | undefined): boolean {
     const text = buffer.getLine(y)?.translateToString(true).trim() ?? '';
     if (text) rows.push(text);
   }
-  return rows.some(row => /\bEsc\s+to\s+cancel\b/.test(row));
+  return rows.some(row => /\bEsc\s+to\s+cancel\b/.test(row)) || codexDialogOnScreen(pty) !== undefined;
+}
+
+/**
+ * codex's approval dialogs, by their titles (codex-cli 0.163.0's own strings), and the form it draws before each
+ * call of an MCP server's tool in normal mode (measured: `Allow the probe MCP server to run tool "ping"?`).
+ */
+const CODEX_DIALOG_TITLES = [
+  /Would you like to run the following command\?/,
+  /Would you like to make the following edits\?/,
+  /Would you like to grant these permissions\?/,
+  /Do you want to approve network access to\b/,
+  /Would you like to send input to terminal\b/,
+  /\bMCP server to run tool ".*"\?/,
+];
+/** And one of its answers under the title: a sentence in the conversation is not a dialog. */
+const CODEX_DIALOG_ANSWER = /\b(?:Yes, proceed|Yes, just this once|Yes, and don't ask again|No, and tell Codex what to do differently|No, continue without|Run the tool and continue|Cancel this tool call)\b/;
+/** One of its options, numbered, the selected one marked: never what the dialog asks about. */
+const CODEX_DIALOG_OPTION = /^(?:[›>]\s*)?\d+\.\s/;
+
+/**
+ * codex's approval dialog on the screen of `pty`, as one line (its title and what it asks about), or undefined.
+ * codex asks before a command, an edit, a permission, network access or an MCP tool's call in normal mode, and
+ * says so in no file: the screen is where Tars sees it (services/codex-sessions.ts), and where a writer must not
+ * type, since an Enter answers it (dialogOnScreen).
+ */
+export function codexDialogOnScreen(pty: IPty | undefined): string | undefined {
+  const mirror = pty && mirrors.get(pty);
+  if (!mirror) return undefined;
+  const buffer = mirror.term.buffer.active;
+  const rows: string[] = [];
+  for (let y = buffer.viewportY; y < buffer.viewportY + mirror.term.rows; y++) {
+    rows.push(buffer.getLine(y)?.translateToString(true).trim() ?? '');
+  }
+  // The lowest title with an answer under it: a title quoted higher up, in the conversation, is not the dialog.
+  for (let at = rows.length - 1; at >= 0; at--) {
+    if (!CODEX_DIALOG_TITLES.some(title => title.test(rows[at]))) continue;
+    const below = rows.slice(at + 1);
+    if (!below.some(row => CODEX_DIALOG_ANSWER.test(row))) continue;
+    const title = rows[at].replace(/^[^A-Za-z]+/, '');
+    // What it asks about lies between the title and its first option: below that, a row is an option or the end
+    // of one, carried onto a row of its own in a terminal narrower than the dialog.
+    const options = below.findIndex(row => CODEX_DIALOG_OPTION.test(row) || CODEX_DIALOG_ANSWER.test(row));
+    const subject = below.slice(0, options).find(row => row && !/\b(?:enter|esc)\b/i.test(row));
+    return subject ? `${title} ${subject.replace(/^[│|]\s*/, '')}` : title;
+  }
+  return undefined;
 }
 
 /**
