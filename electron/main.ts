@@ -136,7 +136,8 @@ import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
 import { filesOpenBy, openFilesReadable } from './platform/open-files';
-import { startCodexSessionWatch } from './services/codex-sessions';
+import { startCodexSessionWatch, type HookPost } from './services/codex-sessions';
+import { startPiSessionWatch, piSessionDir } from './services/pi-sessions';
 import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
 import { codexKeyConfig } from './services/cli-keys';
 import { getProvider } from './providers';
@@ -742,20 +743,29 @@ app.whenReady().then(async () => {
   startSleepWatch();
   // codex's turns, read from its session log and posted as its terminal's hooks
   // would post them, with that terminal's own token (services/codex-sessions.ts).
+  // What a CLI without Tars's hooks would have posted, posted as its terminal,
+  // with that terminal's own token, on the routes its hooks use.
+  const postAsTerminal = (watch: string) => async (agentId: string, { path: route, body }: HookPost) => {
+    const token = terminalTokenOf(agentId);
+    if (!token) return;
+    try {
+      await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      console.warn(`[${watch}] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+    }
+  };
+  // pi's turns, read from its session file (services/pi-sessions.ts).
+  startPiSessionWatch({
+    dirOf: (agentId) => piSessionDir(DATA_DIR, agentId),
+    post: postAsTerminal('pi-sessions'),
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+  });
   startCodexSessionWatch({
-    post: async (agentId, { path: route, body }) => {
-      const token = terminalTokenOf(agentId);
-      if (!token) return;
-      try {
-        await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(body),
-        });
-      } catch (err) {
-        console.warn(`[codex-sessions] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
-      }
-    },
+    post: postAsTerminal('codex-sessions'),
     dialogTitle: (agentId) => {
       const agent = agents.get(agentId);
       return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);

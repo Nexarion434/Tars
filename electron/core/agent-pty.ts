@@ -13,6 +13,7 @@ import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
 import { noteCodexLaunch } from '../services/codex-sessions';
+import { piSessionWatch } from '../services/pi-sessions';
 import { ensureCodexProjectTrusted } from '../providers/codex-cli';
 
 export { setAccountEnvResolver } from './account-env';
@@ -201,6 +202,8 @@ export function spawnAgentPty(opts: {
   // codex reports no turn through a hook: its session log does, and the one
   // this terminal's codex begins is the agent's (services/codex-sessions.ts).
   if (agentId && opts.binaryName === 'codex') codexLaunching(agentId, opts.cwd);
+  // pi's, from the session file it writes in the agent's own folder (services/pi-sessions.ts).
+  if (agentId && opts.binaryName === 'pi') piSessionWatch.noteLaunch(agentId);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {
