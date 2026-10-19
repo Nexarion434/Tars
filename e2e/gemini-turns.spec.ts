@@ -27,7 +27,6 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The artefact: values.json (both answers, the stand-in's log, the ledger's tasks), the app's trace.
  */
 
-const HOOKS = path.resolve('hooks');
 
 const STAND_IN = String.raw`
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
