@@ -197,7 +197,7 @@ for (const newInterface of [false, true]) {
 
       // ── Turned on from the window, as a user does (F2: the line that says so) ──
       await api((a) => a.appSettings.save({ errorReportsEnabled: true }));
-      await expect.poll(() => log.find((l) => l.includes('[error-reports] error reports on')) ?? '', { timeout: 30_000, message: 'the line that says the reports are on' })
+      await expect.soft.poll(() => log.find((l) => l.includes('[error-reports] error reports on')) ?? '', { timeout: 30_000, message: 'the line that says the reports are on' })
         .toContain(`[error-reports] error reports on, tars@${version}`);
       // The window's own reports start with its next load.
       await page.reload({ waitUntil: 'domcontentloaded' });
