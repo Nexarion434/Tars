@@ -9,6 +9,7 @@ import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutp
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
+import { hasEndOfTurn } from '../../core/end-of-turn';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
 import { diskRefusal, freeSpace } from '../../core/disk-space';
@@ -1010,12 +1011,13 @@ function followTask(workerId: string, askerId: string): () => void {
 
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
- * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
- * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
- * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ * UserPromptSubmit post, which opens the ledger's task) and end: every CLI
+ * whose hooks say both (core/end-of-turn.ts), claude, the providers that run
+ * it, and gemini (BeforeAgent and AfterAgent, hooks/gemini/, since 2.0.4).
+ * codex, opencode, amp, pi and grok have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasEndOfTurn(agent);
 }
 
 /** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
