@@ -9,6 +9,7 @@ import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutp
 import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
+import { hasEndOfTurn } from '../../core/end-of-turn';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
 import { diskRefusal, freeSpace } from '../../core/disk-space';
@@ -1036,15 +1037,15 @@ function followTask(workerId: string, askerId: string): () => void {
 
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
- * UserPromptSubmit post, which opens the ledger's task) and end: claude, the
- * providers that run it, and codex, whose session log Tars reads and posts as
- * those hooks would, the answer in full (2.0.4, services/codex-sessions.ts).
- * Gemini's BeforeAgent hook posts `running` with no prompt, and opencode, amp,
- * pi and grok have no such hook.
+ * UserPromptSubmit post, which opens the ledger's task) and end: every CLI
+ * whose hooks say both, or whose turns Tars reads and posts as those hooks
+ * would (core/end-of-turn.ts): claude, the providers that run it, gemini
+ * (BeforeAgent and AfterAgent, hooks/gemini/, since 2.0.4), and codex, from
+ * its session log (services/codex-sessions.ts). opencode, amp, pi and grok
+ * have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  const provider = getProvider(agent.provider);
-  return provider.binaryName === 'claude' || provider.getHookConfig().turnsReported === true;
+  return hasEndOfTurn(agent);
 }
 
 /** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
@@ -1174,13 +1175,25 @@ async function runInTerminal(
       return { status: 200, body };
     }
     onHanded(handed);
-    const latest = Date.now() + TURN_START_MAX_MS;
+    const handedAt = Date.now();
+    const latest = handedAt + TURN_START_MAX_MS;
     while (!turnTask) {
       if (gaveUp) return never('the terminal gave it up before it went in');
       if (withdrawn) return never('it was cancelled', 409, { code: 'cancelled' });
       if (agents.get(agent.id) !== agent) return never('its agent was removed');
       if (agent.status === 'stopped') return never('its agent was stopped before its turn began');
-      if (Date.now() > latest) return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      if (Date.now() > latest) {
+        // Its CLI never said a turn began (a gemini older than its hooks, or
+        // whose hooks were not installed): the `running` Tars set as it typed
+        // the task is undone, or every task behind this one waited for a turn
+        // that would never end (the Audit's L2 on #478).
+        if (agent.status === 'running' && !(Date.parse(agent.lastTurnStartedAt ?? '') >= handedAt)) {
+          agent.status = 'idle';
+          agent.lastActivity = new Date().toISOString();
+          emitAgentStatus(agent.id);
+        }
+        return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      }
       await sleep(TASK_WAIT_STEP_MS);
     }
     const taskId = turnTask;

@@ -222,7 +222,7 @@ describe.each(shells().map(s => [s.name, s] as const))('Claude hooks through %s'
 describe('Gemini hooks through PowerShell (the shell Gemini CLI uses on Windows)', () => {
   const ps = shells().find(s => s.name === 'powershell') ?? shells()[0];
 
-  it('SessionStart registers, BeforeAgent runs, AfterAgent waits', async () => {
+  it('SessionStart registers, BeforeAgent runs, AfterAgent ends the turn: idle (it said waiting, a turn still asking, until 2.0.4)', async () => {
     const agent = putAgent('gem-e2e', 'gemini');
     const env = agentEnv({ DOROTHY_AGENT_ID: agent.id, CLAUDE_AGENT_ID: agent.id, CLAUDE_MGR_API_TOKEN: mintAgentToken(agent.id), DOROTHY_PROJECT_PATH: tmp });
 
@@ -233,6 +233,6 @@ describe('Gemini hooks through PowerShell (the shell Gemini CLI uses on Windows)
     expect(agents.get(agent.id)?.status).toBe('running');
 
     expect((await ps.run(commandFor(geminiHooks, 'AfterAgent'), env, JSON.stringify({ session_id: S2 }))).status).toBe(0);
-    expect(agents.get(agent.id)?.status).toBe('waiting');
+    expect(agents.get(agent.id)?.status).toBe('idle');
   }, 60_000);
 });
