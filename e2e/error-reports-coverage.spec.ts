@@ -232,7 +232,7 @@ for (const newInterface of [false, true]) {
       keep({ ipcAnswer, ipcFault });
 
       // ── F1: an API route that answers 500 without throwing ──
-      const shared = fs.readFileSync(path.join(home, '.dorothy', 'api-token'), 'utf8').trim();
+      const shared = fs.readFileSync(path.join(home, '.tars-private', 'api-token'), 'utf8').trim();
       const vault = await fetch(`http://127.0.0.1:${port}/api/vault/documents`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${shared}` },
         body: JSON.stringify({ title: { not: 'a string' }, content: 'x' }),
