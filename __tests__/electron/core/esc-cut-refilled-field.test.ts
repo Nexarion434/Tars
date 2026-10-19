@@ -37,7 +37,7 @@ vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: () 
 
 import {
   PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, noteTurnCut, rememberTerminalOwner, resetTerminalInput,
-  setTurnProbe, writeHumanInput, writeProgrammaticInput,
+  setTurnProbe, setTurnInProgressProbe, writeHumanInput, writeProgrammaticInput,
 } from '../../../electron/core/pty-manager';
 
 type Flavour = 'qwen' | 'claude';
@@ -86,7 +86,9 @@ let made: ReturnType<typeof fakeCli>;
 function start(flavour: Flavour, opts: { toolRunning?: boolean } = {}) {
   made = fakeCli(flavour, opts);
   rememberTerminalOwner(made.pty, 'qw');
+  // Both probes, as the app wires them; with no task in hand they agree.
   setTurnProbe(() => made.cli.turn);
+  setTurnInProgressProbe(() => made.cli.turn);
   expect(writeProgrammaticInput(made.pty, T1, true, origin)).toBe('written');
   settle();
   expect(made.cli.submitted).toEqual([T1]);
@@ -97,6 +99,7 @@ beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => {
   if (made) resetTerminalInput(made.pty);
   setTurnProbe(null);
+  setTurnInProgressProbe(null);
   vi.useRealTimers();
 });
 
@@ -157,4 +160,22 @@ describe('the next task after an Esc that cut a turn', () => {
     settle();
     expect(cli.submitted).toEqual([T1, T2]);
   });
+
+  it.each<Flavour>(['qwen', 'claude'])('F6. %s, a delegated task in hand (the agent holds messages while no turn runs): its turn is known opened, and after the Esc the next task goes in alone', (flavour) => {
+    // As the app wires them (agent-manager.ts): a task in hand holds messages; only the CLI's own turn is a turn running.
+    made = fakeCli(flavour);
+    rememberTerminalOwner(made.pty, 'qw');
+    setTurnProbe(() => true);
+    setTurnInProgressProbe(() => made.cli.turn);
+    const { cli, pty } = made;
+    writeProgrammaticInput(pty, T1, true, origin);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    writeHumanInput(pty, '\x1b');
+    writeProgrammaticInput(pty, T2, true, { ...origin });
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1, T2]);
+  });
 });
+
