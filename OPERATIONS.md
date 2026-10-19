@@ -330,6 +330,43 @@ not be re-baselining thirty.
 The HTML report is written to `e2e/report/` (gitignored); open `e2e/report/index.html`.
 Traces are `retain-on-failure`.
 
+### The CLI matrix: `npm run e2e:matrix`
+
+```bash
+npx tsc -p electron/tsconfig.json && (cd mcp-orchestrator && npm run build)
+npm run e2e:matrix                                               # both shells, about 14 minutes each
+E2E_MATRIX_ONLY=claude,amp,grok npm run e2e:matrix               # the pairs of these CLIs only
+E2E_MATRIX_SHELL=classic npm run e2e:matrix                      # one shell (classic or new)
+TARS_CLI_MATRIX_LIVE=1 npm run e2e:matrix -- e2e/cli-matrix.live.spec.ts   # the real CLIs, on purpose only
+```
+
+`e2e/cli-matrix.spec.ts` starts nine agents in one project, one per CLI Tars drives, each on a stand-in faithful to
+its CLI where Tars depends on it (`e2e/fake-clis.mjs`, `e2e/fake-codex.mjs`). It makes each in turn the orchestrator
+and has it delegate to, message and hear back from every other: 72 ordered pairs, five cells each.
+
+**Its own project, `matrix`, out of the default suite since 19/10.** Its two shells take 27 minutes, which nearly
+doubled `npm run e2e`. The project exists only with `E2E_MATRIX=1`, which `npm run e2e:matrix` sets
+(`e2e/matrix.mjs`).
+
+**When it runs:**
+- **at every release gate**, beside `npm run e2e`;
+- **by `npm run e2e:auto`** whenever a diff touches what a delegation between two CLIs goes through
+  (`REACHES_THE_MATRIX` in `scripts/scope-checks.mjs`):
+  - the providers, the MCP servers and the hooks;
+  - the state mod;
+  - the delivery and ledger code: the delegation, hooks and bus routes, the bus, the task requests, what is typed
+    into a terminal, an agent's token, the MCP configuration each CLI gets, a terminal's answer, the task and usage
+    ledgers, the task banner;
+  - the matrix's own files and `playwright.config.ts`.
+
+  e2e:auto names every file that called for it, or says it left the matrix out.
+
+**A red cell is expected where `KNOWN_RED` says so.** Each rule says why and what the failure reads like. The spec
+fails on a red cell no rule expects, on a rule whose cell turned green, and on a cell red for another reason than its
+rule's. So the PR that fixes a pair removes its rule.
+
+**The artefact:** `values.json` in the run directory holds every cell, its result and what was read, in both shells.
+
 ### Coverage guard: `npm run e2e:guard`
 
 ```bash
@@ -579,7 +616,7 @@ another's.
 
 Before it, as always: the version bumped in `package.json`, its entry at the top of
 `src/data/changelog.ts`, merged into `main`, and the gate passed (`npm test`, both `tsc`, lint,
-the final e2e).
+the final e2e and the CLI matrix, `npm run e2e:matrix`).
 
 ```bash
 npm run release -- --dry-run   # the checks, the artifacts of this version if built, the notes; nothing else

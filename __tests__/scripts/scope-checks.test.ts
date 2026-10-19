@@ -228,6 +228,8 @@ describe('the screenshot references', () => {
  * spends its time waiting on git.
  */
 const SCRIPT = path.join(__dirname, '../../scripts/scope-checks.mjs');
+/** What a run that rules nothing out starts: the default suite, then the CLI matrix with its variable. */
+const EVERYTHING = 'playwright test\nplaywright test --project=matrix E2E_MATRIX=1';
 const run = promisify(execFile);
 const gitEnv = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const git = async (cwd: string, ...args: string[]) => (await run('git', args, { cwd, env: gitEnv })).stdout.trim();
@@ -253,10 +255,11 @@ async function e2eAuto(cwd: string, env: Record<string, string> = {}) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-scope-npx-'));
   made.push(bin);
   const calls = path.join(bin, 'calls');
-  fs.writeFileSync(path.join(bin, 'npx'), `#!/bin/sh\necho "$*" >> "${calls}"\n`, { mode: 0o755 });
+  // With E2E_MATRIX when it is set: without it the matrix's project does not exist (playwright.config.ts).
+  fs.writeFileSync(path.join(bin, 'npx'), `#!/bin/sh\necho "$*\${E2E_MATRIX:+ E2E_MATRIX=$E2E_MATRIX}" >> "${calls}"\n`, { mode: 0o755 });
   // On Windows the script runs npx as node <npm's bin>\npx-cli.js (scripts/npm-command.mjs), found
   // through npm_execpath: the same fake, in JavaScript. macOS and Linux still take `npx` off the PATH.
-  fs.writeFileSync(path.join(bin, 'npx-cli.js'), `require('fs').appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n');\n`);
+  fs.writeFileSync(path.join(bin, 'npx-cli.js'), `require('fs').appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + (process.env.E2E_MATRIX ? ' E2E_MATRIX=' + process.env.E2E_MATRIX : '') + '\\n');\n`);
   const childEnv: NodeJS.ProcessEnv = { ...gitEnv, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` };
   delete childEnv.SCOPE_BASE;
   // Every spelling: a worker can hold NPM_EXECPATH, and Windows would hand the child that one, the real npm.
@@ -363,8 +366,8 @@ describe.concurrent('the base a branch is compared against', { timeout: 30_000 }
     // Against the main this clone holds, only a test changed, and the suite was
     // skipped on a base nobody could say was current.
     expect(run.output).toContain('could not fetch origin/main');
-    expect(run.output).toContain('Nothing can be ruled out: running the whole end to end suite.');
-    expect(run.suite).toBe('playwright test');
+    expect(run.output).toContain('Nothing can be ruled out: running the whole end to end suite, then the CLI matrix.');
+    expect(run.suite).toBe(EVERYTHING);
   });
 
   it('takes SCOPE_BASE as it is, without fetching', async ({ expect }) => {
@@ -391,7 +394,7 @@ describe.concurrent('the base a branch is compared against', { timeout: 30_000 }
     // A base git could not find read as "nothing committed": the uncommitted
     // test was all that got classified, and the renderer change was skipped.
     expect(run.output).toContain('SCOPE_BASE=mian is not a commit git can find');
-    expect(run.suite).toBe('playwright test');
+    expect(run.suite).toBe(EVERYTHING);
   });
 
   it('runs the whole suite when git cannot compare the branch with its base', async ({ expect }) => {
@@ -407,6 +410,30 @@ describe.concurrent('the base a branch is compared against', { timeout: 30_000 }
     const run = await e2eAuto(repo.dir);
 
     expect(run.output).toContain('could not list the changes');
+    expect(run.suite).toBe(EVERYTHING);
+  });
+
+  it('runs the CLI matrix alone for a change to an MCP server, which skips the surfaces', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    write(repo.dir, 'mcp-orchestrator/src/tools/agents.ts', 'export const delegated = 1;\n');
+    await commitAll(repo.dir, 'an MCP server change');
+
+    const run = await e2eAuto(repo.dir);
+
+    expect(run.output).toContain('SKIPPING the end to end suite.');
+    expect(run.output).toContain("Running the CLI matrix: 1 changed file(s) on a delegation's way.");
+    expect(run.output).toContain('mcp-orchestrator/src/tools/agents.ts: an MCP server');
+    expect(run.suite).toBe('playwright test --project=matrix E2E_MATRIX=1');
+  });
+
+  it('leaves the CLI matrix out, and says so, for a renderer change', async ({ expect }) => {
+    const repo = await cloneBehindOrigin('fresh');
+    write(repo.dir, 'src/components/Card.tsx', 'export const width = 4;\n');
+    await commitAll(repo.dir, 'a renderer change');
+
+    const run = await e2eAuto(repo.dir);
+
+    expect(run.output).toContain("Leaving the CLI matrix out: no changed file is on a delegation's way.");
     expect(run.suite).toBe('playwright test');
   });
 });
