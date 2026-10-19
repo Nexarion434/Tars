@@ -1,6 +1,6 @@
+import { safeGit } from '../utils/safe-git';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFile } from 'child_process';
 import { transcriptPath, transcriptRoots } from '../utils/resume-session';
 import { qwenTranscriptPath } from './qwen-code';
 
@@ -51,8 +51,7 @@ export function currentBranch(cwd: string | undefined): string | null {
   // Mark it fresh before the call, so a burst of list rebuilds spawns one git
   // rather than one per rebuild.
   branchCache.set(cwd, { value: hit?.value ?? null, at: now });
-  execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }, (err, stdout) => {
-    const value = err ? null : stdout.trim() || null;
+  safeGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']).then(({ stdout }) => stdout.trim() || null, () => null).then((value) => {
     // HEAD detached reads as "HEAD", which is not a branch name worth showing.
     branchCache.set(cwd, { value: value === 'HEAD' ? null : value, at: Date.now() });
   });
