@@ -67,7 +67,8 @@ async function standInForShell(app: ElectronApplication) {
 const opened = (app: ElectronApplication) => app.evaluate(() => (globalThis as unknown as { __e2eOpened: Opened }).__e2eOpened);
 
 const filesRegion = (page: Page) => page.getByRole('region', { name: 'Files' });
-const fileRegion = (page: Page) => page.getByRole('region', { name: 'File' });
+/** The file panel by its exact name: a region's name is matched as a substring, and the list's is Files. */
+const fileRegion = (page: Page) => page.getByRole('region', { name: 'File', exact: true });
 const projects = (page: Page) => page.getByRole('navigation', { name: 'Project folders' });
 /** The caret at the end of the text, as a user who clicks after the last line puts it. */
 const toTheEnd = (editor: ReturnType<Page['getByRole']>) => editor.evaluate((el) => {
