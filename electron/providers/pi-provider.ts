@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
 import { keyEnvFor } from '../services/cli-keys';
+import { DATA_DIR } from '../constants';
+import { piSessionDir } from '../services/pi-sessions';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -112,6 +114,9 @@ export class PiProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
       // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
       ...keyEnvFor('pi', appSettings),
+      // Its sessions in a folder of its own, which pi ranks above its own setting:
+      // every file there is this agent's, read for its turns (services/pi-sessions.ts).
+      PI_CODING_AGENT_SESSION_DIR: piSessionDir(DATA_DIR, agentId),
     };
   }
 
@@ -122,6 +127,8 @@ export class PiProvider implements CLIProvider {
   getHookConfig(): HookConfig {
     return {
       supportsNativeHooks: false,
+      // Its turns are read from its session file and posted as the hooks would (services/pi-sessions.ts).
+      turnsReported: true,
       configDir: this.configDir,
       settingsFile: path.join(this.configDir, 'config.json'),
     };
