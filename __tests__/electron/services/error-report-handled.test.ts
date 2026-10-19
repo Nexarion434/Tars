@@ -324,6 +324,11 @@ describe("the frames a handled error is sent with (14, the Audit's L2 on #474)",
     empty.stack = `Error\n${tars.join('\n')}`;
     expect(withoutWords(empty).stack).toBe(['Error: (message not sent)', ...tars].join('\n'));
 
+    // Node's own errors name their code in the stack's first line: their frames are kept too.
+    const coded = Object.assign(new TypeError('The "path" argument must be of type string. Received undefined'), { code: 'ERR_INVALID_ARG_TYPE' });
+    coded.stack = `TypeError [ERR_INVALID_ARG_TYPE]: ${coded.message}\n${tars.join('\n')}`;
+    expect(withoutWords(coded).stack).toBe(['TypeError: code ERR_INVALID_ARG_TYPE', ...tars].join('\n'));
+
     const rewritten = new Error('acme merger failed');
     rewritten.stack = `    at loadTermsheetForAcmeBuyout (/Users/jdoe/clients/acme-merger/lib/terms.js:12:5)\n${tars.join('\n')}`;
     expect(withoutWords(rewritten).stack).toBe('Error: (message not sent)');
