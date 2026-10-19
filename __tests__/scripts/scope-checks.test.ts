@@ -26,9 +26,13 @@ import { decide } from '../../scripts/scope-checks.mjs';
  * 2. a diff to MCP servers or hooks alone, which skips the surfaces, skips the matrix with them;
  * 3. a diff to the matrix itself, its stand-ins or the suite's configuration skips it;
  * 4. no diff to reason about rules the matrix out, where it rules nothing out for the surfaces;
- * 5. a diff that touches none of it (a page, the window, a document, a unit test, another spec, a design file) runs it
- *    for nothing;
- * 6. it runs the matrix without saying which file called for it.
+ * 5. a diff that touches none of it (a page, a document, a unit test, another spec, a design file) runs it for
+ *    nothing;
+ * 6. it runs the matrix without saying which file called for it;
+ * 7. a diff to a file on a delegation's way that no list names (the task routes, the queue of a second task, the
+ *    PTY, the agent's identity, the hooks' installer) skips it. A list of what reaches a delegation is never whole:
+ *    the first one missed eleven such files (the Audit's M1 on #464). So the rule names what cannot reach one, as
+ *    the surfaces' rule does, and a path it has never heard of runs the matrix.
  */
 
 const runs = (files: string[]) => decide(files).runE2E;
@@ -421,19 +425,20 @@ describe.concurrent('the base a branch is compared against', { timeout: 30_000 }
     const run = await e2eAuto(repo.dir);
 
     expect(run.output).toContain('SKIPPING the end to end suite.');
-    expect(run.output).toContain("Running the CLI matrix: 1 changed file(s) on a delegation's way.");
-    expect(run.output).toContain('mcp-orchestrator/src/tools/agents.ts: an MCP server');
+    expect(run.output).toContain('Running the CLI matrix: 1 changed file(s) can reach a delegation.');
+    expect(run.output).toContain('mcp-orchestrator/src/tools/agents.ts: can reach a delegation, or is unclassified');
     expect(run.suite).toBe('playwright test --project=matrix E2E_MATRIX=1');
   });
 
-  it('leaves the CLI matrix out, and says so, for a renderer change', async ({ expect }) => {
+  it('leaves the CLI matrix out, and says why, for a renderer change', async ({ expect }) => {
     const repo = await cloneBehindOrigin('fresh');
     write(repo.dir, 'src/components/Card.tsx', 'export const width = 4;\n');
     await commitAll(repo.dir, 'a renderer change');
 
     const run = await e2eAuto(repo.dir);
 
-    expect(run.output).toContain("Leaving the CLI matrix out: no changed file is on a delegation's way.");
+    expect(run.output).toContain('Leaving the CLI matrix out: all 1 changed file(s) cannot reach a delegation.');
+    expect(run.output).toMatch(/src\/components\/Card\.tsx: the renderer/);
     expect(run.suite).toBe('playwright test');
   });
 });
@@ -502,14 +507,51 @@ describe('the CLI matrix, a project of its own', () => {
 
   it.each([
     ['a page', ['src/app/usage/page.tsx']],
-    ['the window', ['electron/core/window-manager.ts']],
-    ['a service no delegation goes through', ['electron/services/overseer.ts']],
+    ['a public asset', ['public/icon.svg']],
     ['documentation', ['README.md', 'OPERATIONS.md']],
+    ['agent prompt text, which the stand-ins never read', ['electron/resources/agent-instructions.md']],
+    ["the tray's pictures", ['electron/resources/trayTemplate@2x.png', 'electron/resources/tray.ico']],
     ['unit tests', ['__tests__/electron/providers/codex-provider.test.ts']],
     ['another spec', ['e2e/usage-pages.spec.ts']],
+    ["the surfaces' reference pictures", ['e2e/__screenshots__/agents.png']],
     ['a design file', ['design/tars-redesign.pen']],
+    ["the README's pictures", ['screenshots/dashboard.png']],
+    ['build tooling', ['scripts/sandbox.sh', 'scripts/scope-checks.mjs']],
+    ['CI configuration', ['.github/workflows/ci.yml']],
+    ['the landing site', ['landing/src/app/page.tsx']],
+    ['a Hermes plugin', ['hermes-plugins/tars-relay/relay_core.py']],
   ])('5. leaves the matrix out for %s', (_name, files) => {
     expect(matrix(files as string[])).toBe(false);
+  });
+
+  it.each([
+    ['the task routes, which delegate_task waits on', ['electron/services/api-routes/task-routes.ts']],
+    ['the queue that holds a second task', ['electron/core/one-task.ts']],
+    ['the watch of turns and interruptions', ['electron/services/task-watch.ts']],
+    ["an agent's terminal", ['electron/core/agent-pty.ts']],
+    ['the agent manager', ['electron/core/agent-manager.ts']],
+    ["the API server, which names the caller", ['electron/services/api-server.ts']],
+    ["the hooks' installer", ['electron/services/hooks-manager.ts']],
+    ['the field model behind every typed task', ['electron/core/input-draft.ts']],
+    ['the agent guide', ['electron/services/agent-guide.ts']],
+    ["codex's turns", ['electron/services/codex-sessions.ts']],
+    ["qwen code's settings and hooks", ['electron/services/qwen-code.ts']],
+    ['the window, which the matrix types through', ['electron/core/window-manager.ts']],
+    ['any other service of the main process, which the matrix launches whole', ['electron/services/overseer.ts']],
+    ['a service born tomorrow', ['electron/services/a-service-born-tomorrow.ts']],
+    ['a folder born tomorrow', ['a-folder-born-tomorrow/index.ts']],
+    ['the dependency set, node-pty and electron among it', ['package.json', 'package-lock.json']],
+    ['the launcher the matrix starts the app with', ['e2e/fixture.mjs']],
+    ['the ports it takes', ['e2e/ports.mjs']],
+  ])('7. runs the matrix for %s: no list has to name it', (_name, files) => {
+    expect(matrix(files as string[])).toBe(true);
+  });
+
+  it('7. names every file that leaves the matrix out, and why', () => {
+    const decision = decide(['README.md', 'src/app/usage/page.tsx']);
+
+    expect(decision.matrixSkipped.map(s => s.file)).toEqual(['README.md', 'src/app/usage/page.tsx']);
+    for (const entry of decision.matrixSkipped) expect(entry.why.length).toBeGreaterThan(0);
   });
 
   it('2. runs it for MCP servers or hooks alone, though the surfaces are skipped', () => {
