@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Leftovers, RECORDS_ITS_PID, endLeftUnder, pidsRecordedIn, processesUnder } from './leftover-processes';
+import { Leftovers, RECORDS_ITS_PID, endLeftUnder, processesUnder, takePidsRecordedIn } from './leftover-processes';
 
 /**
  * The witness for leftover-processes.ts, which the ACP tests end their
@@ -37,7 +37,9 @@ import { Leftovers, RECORDS_ITS_PID, endLeftUnder, pidsRecordedIn, processesUnde
  *     the run ends, its workers' children read the end of their stdin and go;
  *  8. a fake agent's id, which the code under test starts and the test never
  *     sees, is not where the test's teardown reads it, so the teardown ends
- *     nothing.
+ *     nothing;
+ *  9. an id a teardown took is taken again by the next one, and ended again:
+ *     on Windows another process may hold it by then, seen as new.
  * A zombie, exited and not yet reaped, has no command line any more (ps shows
  * `<defunct>` on macOS and Linux), so no folder can be read from it; the code
  * skips one all the same where a ps would show it.
@@ -182,10 +184,27 @@ describe('what still runs from a folder, at the end of a run', { timeout: 60_000
 
     expect(await exited(child)).toBe(true);
     expect(child.exitCode).toBe(0);
-    expect(pidsRecordedIn(dir)).toEqual([child.pid]);
+    expect(takePidsRecordedIn(dir)).toEqual([child.pid]);
   });
 
   it('8. reads no id from a folder where no fake agent started', () => {
-    expect(pidsRecordedIn(folder('none'))).toEqual([]);
+    expect(takePidsRecordedIn(folder('none'))).toEqual([]);
+  });
+
+  it('9. gives each id once: the next teardown takes only those recorded since', async () => {
+    const dir = folder('acp');
+    const script = path.join(dir, 'agent.mjs');
+    fs.writeFileSync(script, `${RECORDS_ITS_PID}process.stdout.write('ready');\n`);
+    const first = spawn(process.execPath, [script], { stdio: 'ignore' });
+    started.push(first);
+    expect(await exited(first)).toBe(true);
+
+    expect(takePidsRecordedIn(dir)).toEqual([first.pid]);
+    expect(takePidsRecordedIn(dir), 'taken twice').toEqual([]);
+
+    const second = spawn(process.execPath, [script], { stdio: 'ignore' });
+    started.push(second);
+    expect(await exited(second)).toBe(true);
+    expect(takePidsRecordedIn(dir)).toEqual([second.pid]);
   });
 });
