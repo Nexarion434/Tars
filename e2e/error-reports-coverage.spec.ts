@@ -15,9 +15,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *
  * Both shells. Started with "Send error reports" off, then turned on from the window as a user does:
  * - (F2) the log says the reports are on, with the version;
- * - (F1) an error Tars handles gives one envelope: an agent's CLI that exits at its launch (CliExitedAtLaunch), an IPC
- *   handler that faults (IpcHandlerError, its channel, the fault as its cause), an API route that answers 500 without
- *   throwing (ApiRouteError);
+ * - (F1) an error Tars handles gives one envelope: an agent's CLI that exits at its launch, in a session the API starts
+ *   (CliExitedAtLaunch), an IPC handler that faults (IpcHandlerError, its channel, the fault as its cause), an API route
+ *   that answers 500 without throwing (ApiRouteError);
  * - (F3) an agent's tool error gives one envelope with its code, its tool and its CLI, and nothing of the agent: a worker's
  *   delegate_task, refused, through the real mcp-orchestrator with the worker's own identity;
  * - (F2) each send is logged with Sentry's status, and errorReports.last() gives the last one, a 503 included;
@@ -35,7 +35,6 @@ import { DEV_URL, apiPort } from './ports.mjs';
 type Exception = { type?: string; value?: string; mechanism?: { type?: string; handled?: boolean } };
 type Event = { level?: string; tags?: { kind?: string; process?: string }; contexts?: { tars?: Record<string, unknown> }; exception?: { values?: Exception[] } };
 type Api = { electronAPI: {
-  agent: { start(p: { id: string; prompt: string }): Promise<unknown> };
   appSettings: { save(s: Record<string, unknown>): Promise<unknown> };
   project: { searchFiles(root: string, query: unknown): Promise<unknown>; searchContent(root: string, query: unknown): Promise<unknown> };
   errorReports?: { last(): Promise<{ at: string; kind: string; status: number } | null> };
@@ -205,13 +204,22 @@ for (const newInterface of [false, true]) {
       await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
       keep({ startLine: log.find((l) => l.includes('[error-reports] error reports on')) });
 
-      // ── F1: an agent's CLI that exits at its launch ──
-      await api((a) => a.agent.start({ id: 'crash', prompt: '' }));
+      const ids = await app.evaluate((_e, { dist }) => {
+        const tokens = (process as unknown as { mainModule: NodeJS.Module }).mainModule.require(`${dist}/core/agent-tokens.js`);
+        return { dev: tokens.mintRunToken('dev').token as string, tars: tokens.internalToken() as string, instance: tokens.tarsInstanceId() as string };
+      }, { dist: path.resolve('electron', 'dist') });
+
+      // ── F1: an agent's CLI that exits at its launch, in a session the API starts (its terminal is the CLI) ──
+      const started = await fetch(`http://127.0.0.1:${port}/api/agents/crash/start`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ids.tars}` },
+        body: JSON.stringify({ prompt: 'start' }),
+      }).then(async (r) => ({ status: r.status, body: await r.json() }));
+      expect(started.status, JSON.stringify(started.body)).toBe(200);
       await expect.soft.poll(() => sentry.events.filter((e) => typesOf(e).includes('CliExitedAtLaunch')).length, { timeout: 30_000, message: 'one report of the CLI that exited at its launch' }).toBe(1);
       const cliExit = sentry.events.find((e) => typesOf(e).includes('CliExitedAtLaunch'));
       expect.soft(lastOf(cliExit ?? {})?.value ?? '').toMatch(/^claude exited with code 2, [\d.]+ s after its launch$/);
       expect.soft(lastOf(cliExit ?? {})?.mechanism).toEqual({ type: 'tars.handled', handled: true });
-      keep({ cliExit });
+      keep({ started, cliExit });
 
       // ── F1: an IPC handler that faults (a number where its query is a string) ──
       const ipcAnswer = await api((a) => a.project.searchFiles('/', 42).then(() => 'answered', (e: Error) => String(e)));
@@ -234,10 +242,6 @@ for (const newInterface of [false, true]) {
       keep({ vault, api500 });
 
       // ── F3: a worker's delegate_task, refused, through the real MCP server with the worker's own identity ──
-      const ids = await app.evaluate((_e, { dist }) => {
-        const tokens = (process as unknown as { mainModule: NodeJS.Module }).mainModule.require(`${dist}/core/agent-tokens.js`);
-        return { dev: tokens.mintRunToken('dev').token as string, instance: tokens.tarsInstanceId() as string };
-      }, { dist: path.resolve('electron', 'dist') });
       const dev = mcpAs(home, project, port, 'dev', ids.dev, ids.instance);
       servers.push(dev);
       const refused = await dev.call('delegate_task', { id: 'lead', prompt: `TASK for Acme: merge ${SECRET}`, timeoutSeconds: 30 });
