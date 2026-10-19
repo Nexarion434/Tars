@@ -350,16 +350,20 @@ doubled `npm run e2e`. The project exists only with `E2E_MATRIX=1`, which `npm r
 
 **When it runs:**
 - **at every release gate**, beside `npm run e2e`;
-- **by `npm run e2e:auto`** whenever a diff touches what a delegation between two CLIs goes through
-  (`REACHES_THE_MATRIX` in `scripts/scope-checks.mjs`):
-  - the providers, the MCP servers and the hooks;
-  - the state mod;
-  - the delivery and ledger code: the delegation, hooks and bus routes, the bus, the task requests, what is typed
-    into a terminal, an agent's token, the MCP configuration each CLI gets, a terminal's answer, the task and usage
-    ledgers, the task banner;
-  - the matrix's own files and `playwright.config.ts`.
+- **by `npm run e2e:auto`** whenever a diff touches a file that can reach a delegation between two CLIs, in the same
+  direction as the surfaces' rule: a path `CANNOT_REACH_A_DELEGATION` (`scripts/scope-checks.mjs`) does not name runs
+  the matrix.
+  - **It runs for** the whole main process (`electron/`), the MCP servers, the hooks, the state mod, the dependency
+    set and the suite's own code: the matrix launches the app whole and types into its agents through the window's
+    preload bridge. An MCP server or a hook alone skips the surfaces and still runs it.
+  - **It is left out only for** the renderer (`src/`, `public/`), the agent prompt text and the tray's pictures in
+    `electron/resources/`, the unit tests, the other specs and the surfaces' reference pictures, the documents, the
+    Pencil files and the README's pictures, the tooling (`scripts/`, `.github/`), the landing site and the Hermes
+    plugins.
+  - It was a list of what reaches a delegation until the Audit's M1 on #464, and it missed eleven files a task goes
+    through (its routes, the queue of a second task, the terminal, the agent's identity, the hooks' installer).
 
-  e2e:auto names every file that called for it, or says it left the matrix out.
+  e2e:auto names every file that called for it, or every file it left the matrix out for, and why.
 
 **A red cell is expected where `KNOWN_RED` says so.** Each rule says why and what the failure reads like. The spec
 fails on a red cell no rule expects, on a rule whose cell turned green, and on a cell red for another reason than its
