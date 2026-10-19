@@ -45,7 +45,10 @@ import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
  *      repository allows one itself (`protocol.ext.allow=always` in its
  *      config is a policy of its own, which `protocol.allow` on the command
  *      line does not override), git:// runs its core.gitProxy, or it rewrites an http remote into one
- *      (`url.<ext::...>.insteadOf`).
+ *      (`url.<ext::...>.insteadOf`). Or it allows a helper that is installed
+ *      (the Audit's M1 on #495: `protocol.<x>.allow=always`, then an `<x>::`
+ *      remote or `remote.<name>.vcs=<x>`, and git runs git-remote-<x> from
+ *      the PATH: ftp, ftps, keybase on a Mac with them).
  *  G11. Allowed, ssh and http run what the repository names for them: its
  *      core.sshCommand on an ssh fetch, its core.askPass or a credential
  *      helper of its own for that remote (`credential.<url>.helper`) when an
@@ -199,6 +202,25 @@ describe('a fetch reaches its remote, by a transport that runs nothing the repos
       expect(said, url).toMatch(/not allowed|unable to find remote helper|does not appear to be a git repository|transport/);
     }
     expect(fs.existsSync(marker), 'ext:: ran its command').toBe(false);
+  });
+
+  it('G10. a helper that is installed and that the repository allows itself is refused, by an <x>:: remote or remote.<name>.vcs', async () => {
+    const marker = path.join(h.root, 'helper-ran');
+    const bin = path.join(h.root, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'git-remote-tarstestx'), `#!/bin/sh\necho "$*" >> '${marker}'\nexit 1\n`, { mode: 0o755 });
+    execFileSync('git', ['config', 'protocol.tarstestx.allow', 'always'], { cwd: h.repo });
+    execFileSync('git', ['config', 'remote.viahelper.url', 'tarstestx::somewhere'], { cwd: h.repo });
+    execFileSync('git', ['config', 'remote.viavcs.url', 'https://example.invalid/x'], { cwd: h.repo });
+    execFileSync('git', ['config', 'remote.viavcs.vcs', 'tarstestx'], { cwd: h.repo });
+    const was = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${was ?? ''}`;
+    try {
+      for (const remoteName of ['viahelper', 'viavcs']) await tryGit(['fetch', remoteName]);
+    } finally {
+      process.env.PATH = was;
+    }
+    expect(fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : '', 'git-remote-tarstestx ran with').toBe('');
   });
 
   it('G11. an ssh fetch runs no core.sshCommand the repository names, an http one no core.askPass', async () => {
