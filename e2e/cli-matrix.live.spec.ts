@@ -162,12 +162,18 @@ for (const newInterface of [false, true]) {
       expect(cells.filter((c) => c.step !== 'starts').length, 'every pair has its cells').toBe(agents.length * (agents.length - 1) * 4);
     } finally {
       await app.close().catch(() => undefined);
-      // codex refreshed its login in the copy: the same account's newer tokens go back, atomically.
+      // codex refreshed its login in the copy: the same account's newer tokens go back, atomically, and only over the
+      // real file as it was copied. Changed meanwhile (the user's own codex refreshed it, or a new sign-in), the real
+      // file is newer than anything here, and stays as it is (the Audit's L1 on #464).
       const after = authText(codexAuth.copy);
       if (authAtStart && after && after !== authAtStart && accountOf(after) !== undefined && accountOf(after) === accountOf(authAtStart)) {
-        const tmp = `${codexAuth.real}.tars-e2e-${process.pid}`;
-        fs.writeFileSync(tmp, after, { mode: 0o600 });
-        fs.renameSync(tmp, codexAuth.real);
+        if (authText(codexAuth.real) !== authAtStart) {
+          console.log('[cli-matrix live] ~/.codex/auth.json changed during the run: the refresh made in the sandbox is not written back');
+        } else {
+          const tmp = `${codexAuth.real}.tars-e2e-${process.pid}`;
+          fs.writeFileSync(tmp, after, { mode: 0o600 });
+          fs.renameSync(tmp, codexAuth.real);
+        }
       }
       await removeHome(home);
     }
