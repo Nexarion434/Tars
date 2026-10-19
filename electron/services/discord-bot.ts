@@ -1,4 +1,4 @@
-import { withoutCliKeys } from './cli-keys';
+import { settingsForWindow } from './settings-secrets';
 import * as fs from 'fs';
 import { Client, Events, GatewayIntentBits, Partials, type Message, type MessageCreateOptions } from 'discord.js';
 import { AgentStatus, AppSettings } from '../types';
@@ -163,7 +163,7 @@ async function onMessage(
   if (settings.discordChannelId !== message.channelId) {
     settings.discordChannelId = message.channelId;
     onSettingsChanged(settings);
-    mainWindow?.webContents.send('settings:updated', withoutCliKeys(settings));
+    mainWindow?.webContents.send('settings:updated', settingsForWindow(settings));
   }
   await handleDiscordCommand(text, message.channelId, say, settings);
 }

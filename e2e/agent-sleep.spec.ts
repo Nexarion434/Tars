@@ -196,7 +196,8 @@ test('an agent with no turn for 30 minutes is put to sleep, keeps its screen, an
     const screen = (await get('worker')).output?.join('') ?? '';
     const runState = JSON.parse(fs.readFileSync(path.join(home, '.tars-private', 'run-state.json'), 'utf8'));
     await expect.poll(() => alive(firstLaunch.worker.pid), { timeout: 15_000, message: 'the worker\'s CLI ended' }).toBe(false);
-    const token = fs.readFileSync(path.join(dir, 'api-token'), 'utf8').trim();
+    // In ~/.tars-private since 2.0.4 (services/settings-secrets.ts).
+    const token = fs.readFileSync(path.join(home, '.tars-private', 'api-token'), 'utf8').trim();
     const wait = await fetch(`http://127.0.0.1:${port}/api/agents/worker/wait?timeout=30`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json()) as { status: string; asleepSince?: string };
     recordValues({ checked, statuses: Object.fromEntries(Object.values(asleep).map((a) => [a.id, a.status])), workerAsleepSince: asleep.worker.asleepSince, screenHasWorker: screen.includes('SCREEN-OF-worker'), wait });

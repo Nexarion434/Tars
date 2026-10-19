@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { Readable } from 'stream';
 import { OPENAI_BRIDGE_PORT } from '../constants';
-import { getApiToken } from './api-server';
+import { bridgeAuthorized } from './bridge-token';
 import { readAppSettingsFromDisk, isValidOpenAIBaseUrl } from '../providers/cli-provider';
 import type { AppSettings } from '../types';
 
@@ -42,16 +42,18 @@ import type { AppSettings } from '../types';
  * <token>`, except exactly four paths (see its own comment and CLAUDE.md's
  * Backend Agent rules - that count is a hard invariant, not a suggestion).
  * The claude binary does not send an Authorization header to whatever
- * ANTHROPIC_BASE_URL points at by default; it sends `x-api-key`. Putting this
- * behind /api/* would mean either breaking that invariant with a fifth
- * exemption, or the bridge would 401 every request before its own handler
- * ever ran. So this runs as a second, separate, loopback-only http.Server,
- * and authenticates the same way in spirit, for every upstream alike: it
- * requires `x-api-key` to equal Tars's own local API token (the same secret
- * api-server.ts already generates and guards at 0600), which each provider
- * that routes through here (venice-provider.ts, custom-openai-provider.ts)
- * hands to the PTY as ANTHROPIC_API_KEY. The real vendor key never leaves
- * this process: it is read from app-settings.json per request and attached
+ * ANTHROPIC_BASE_URL points at by default; it sends `x-api-key`. Putting this behind /api/* would mean
+ * either breaking that invariant with a fifth exemption, or the bridge would
+ * 401 those requests before its own handler ever ran. So this runs as a
+ * second, separate, loopback-only http.Server, and authenticates the same way
+ * in spirit, for every upstream alike: it requires a token of its own
+ * (services/bridge-token.ts, 0600 in ~/.tars-private), as a Bearer or as
+ * `x-api-key`. Until 2.0.4 it took Tars's local API token, so every agent on
+ * the bridge held the token that opens Tars's API (the Audit's L3 on #466). Each provider that routes through here
+ * (venice-provider.ts, custom-openai-provider.ts) hands it to the PTY as
+ * ANTHROPIC_AUTH_TOKEN, the Bearer, since an API key in its environment is
+ * asked about at launch (keyProviderEnv). The real vendor key never leaves
+ * this process: it is read from the settings' secrets per request and attached
  * only to the outbound call to that vendor, never handed to the claude
  * binary.
  *
@@ -510,10 +512,8 @@ export function startOpenAIBridgeServer(): void {
   if (bridgeServer) return;
 
   bridgeServer = http.createServer(async (req, res) => {
-    const expected = getApiToken();
-    const provided = req.headers['x-api-key'];
-    if (provided !== expected) {
-      sendError(res, 401, 'authentication_error', 'Invalid x-api-key');
+    if (!bridgeAuthorized(req.headers)) {
+      sendError(res, 401, 'authentication_error', "Not the bridge's token, as a Bearer or as x-api-key");
       return;
     }
 

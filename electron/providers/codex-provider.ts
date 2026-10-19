@@ -7,12 +7,25 @@ import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
 import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
+import { TARS_MCP_ENV } from '../services/mcp-orchestrator-env';
+
+/*
+ * What a Tars MCP server reads of its agent's environment is TARS_MCP_ENV
+ * (services/mcp-orchestrator-env.ts, the one list, #465's). Codex hands its
+ * servers none of its environment but TERM, SHELL, TMPDIR, USER, PATH, HOME
+ * and LOGNAME (measured on codex 0.148, 2026-10-13): without these names, a
+ * codex agent's Tars tools presented the shared ~/.dorothy/api-token, which
+ * since 2.0.4 is out of every agent's reach, and got a 401. Names only: the
+ * values stay in the agent's own environment (`codex mcp get` lists them
+ * masked).
+ */
+/** The bundled servers (mcp-orchestrator.ts): a server of the user's own is handed none of it. */
+const isTarsServer = (name: string) => /^(claude-mgr-|tars-|dorothy-)/.test(name);
 
 export class CodexProvider implements CLIProvider {
   readonly id = 'codex' as const;
@@ -87,23 +100,6 @@ export class CodexProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
-
-    if (params.autonomous) {
-      command += ' --full-auto';
-    }
-
-    if (params.outputFormat) {
-      command += ' --json';
-    }
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` exec '${escaped}'`;
-
-    return command;
-  }
-
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
@@ -166,6 +162,7 @@ export class CodexProvider implements CLIProvider {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
+      this.forwardAgentEnv(name);
       console.log(`[codex] Registered MCP server ${name} via codex mcp add`);
       return;
     } catch (err) {
@@ -194,7 +191,7 @@ export class CodexProvider implements CLIProvider {
     // quote or control character to escape.
     const sectionKey = this.escapeTomlKey(name);
     const argsToml = args.map(a => this.tomlString(a)).join(', ');
-    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n`;
+    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n${this.envVarsLine(name)}`;
 
     content = content.trimEnd() + '\n' + section;
     fs.writeFileSync(configPath, content);
@@ -237,10 +234,41 @@ export class CodexProvider implements CLIProvider {
       const sectionKey = this.escapeTomlKey(name);
       const headerRegex = new RegExp(`\\[mcp_servers\\.${sectionKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`);
       if (!headerRegex.test(content)) return false;
+      // Registered before 2.0.4, a Tars server forwards none of the agent's variables: it is registered again.
+      if (isTarsServer(name) && !this.sectionOf(content, name).includes('"CLAUDE_MGR_API_TOKEN"')) return false;
       // The path as written: escaped, so a Windows path reads back doubled.
       return content.includes(expectedServerPath) || content.includes(this.tomlString(expectedServerPath).slice(1, -1));
     } catch {
       return false;
+    }
+  }
+
+  /** `env_vars = [...]` for a Tars server, with its newline; nothing for another. */
+  private envVarsLine(name: string): string {
+    return isTarsServer(name) ? `env_vars = [${TARS_MCP_ENV.map((v) => this.tomlString(v)).join(', ')}]\n` : '';
+  }
+
+  private sectionOf(content: string, name: string): string {
+    const escapedKey = this.escapeTomlKey(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\[mcp_servers\\.${escapedKey}\\]\\n(?:(?!\\[)[^\\n]*\\n?)*`).exec(content)?.[0] ?? '';
+  }
+
+  /**
+   * After `codex mcp add`, which takes static values only (--env): the names
+   * of the variables codex is to hand a Tars server from the agent's own
+   * environment. Written under the server's header, once.
+   */
+  private forwardAgentEnv(name: string): void {
+    if (!isTarsServer(name)) return;
+    const configPath = path.join(this.configDir, 'config.toml');
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const section = this.sectionOf(content, name);
+      if (!section || section.includes('env_vars')) return;
+      const header = section.slice(0, section.indexOf('\n') + 1);
+      fs.writeFileSync(configPath, content.replace(section, header + this.envVarsLine(name) + section.slice(header.length)));
+    } catch (err) {
+      console.warn(`[codex] could not name the agent's variables for ${name}: ${cliFailureText(err)}`);
     }
   }
 
@@ -308,46 +336,5 @@ export class CodexProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--add-dir';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const flags = params.autonomous ? '--full-auto' : '';
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
-
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
-fi
-
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" ${flags} --json exec '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
-`;
   }
 }

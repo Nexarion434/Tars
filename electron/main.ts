@@ -143,10 +143,12 @@ import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-bo
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
+import { SECRETS_FILE, migrateSecrets, readSecrets, saveSettingsSplit } from './services/settings-secrets';
 import { agentStatusEmitter } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
-import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
+import { sweepRunTokenFolders } from './services/acp/run-token-file';
+import { describeSecretFileError, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
 import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
 import { probeHermes } from './services/hermes-client';
@@ -271,28 +273,30 @@ function loadAppSettings(): AppSettings {
       additionalPaths: [],
     },
   };
+  // Every key out of ~/.dorothy before anything reads one (services/settings-secrets.ts).
+  migrateSecrets();
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
-      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
+      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts),
+      // and so are the other secrets (settings-secrets.json).
       // The switch is on only for the boolean true: the file is in ~/.dorothy,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
-      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
+      return { ...defaults, ...sentryTokenOutOf(saved), ...readSecrets(), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
-    console.error('Failed to load app settings:', err);
+    console.error(`Failed to load app settings: ${describeSecretFileError(err)}`);
   }
-  return { ...defaults, ...sentryTokenOutOf({}) };
+  return { ...defaults, ...sentryTokenOutOf({}), ...readSecrets() };
 }
 
 function saveAppSettingsToFile(settings: AppSettings) {
   try {
     ensureDataDir();
-    // 0600 and atomic: this file carries every provider API key, the Hermes
-    // gateway token and the memory-backend credentials.
-    // Everything but the Sentry token, which goes to ~/.tars-private.
-    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settingsToSave(settings), null, 2));
+    // 0600 and atomic. The secrets go to ~/.tars-private (settings-secrets.json,
+    // and the Sentry token's own file), the rest to app-settings.json.
+    saveSettingsSplit(settingsToSave(settings) as AppSettings);
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
@@ -512,7 +516,7 @@ app.whenReady().then(async () => {
   // Narrow the credential files on installs that predate the 0600 write.
   // A `mode` passed to writeFileSync only applies at creation, so an
   // app-settings.json already sitting at 0644 would keep it forever.
-  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
+  for (const secret of [APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
     ensureSecretFileMode(secret);
   }
   // And the directory itself with everything in it: the fleet, the board, the
@@ -531,7 +535,7 @@ app.whenReady().then(async () => {
   // set in the background (it never rejects, each failure is logged).
   // The health samples too: the privacy page says they are readable by the
   // user's account only.
-  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -559,6 +563,8 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // And the run token folders a delegated run or a crash left behind (services/acp/run-token-file.ts).
+  sweepRunTokenFolders();
   // Whether the last run stopped abruptly, and who was working then, read
   // before this run's record replaces it (services/run-state.ts).
   previousRun = beginRun({ appVersion: app.getVersion() });

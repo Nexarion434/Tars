@@ -79,8 +79,17 @@ beforeAll(async () => {
   (await import('../../../electron/handlers/hermes-handlers')).registerHermesHandlers();
 }, 60_000);
 
+/**
+ * The import as it lands: the page is answered the token as the mask, never
+ * itself (the Audit's L2 on #466), and the token imported is the one saved.
+ */
 async function importDesktop() {
-  return await handlers.get('hermes:connection:import')!({}) as { success: boolean; connection?: Record<string, unknown>; error?: string; tokenNotImported?: boolean };
+  const r = await handlers.get('hermes:connection:import')!({}) as { success: boolean; connection?: Record<string, unknown>; error?: string; tokenNotImported?: boolean };
+  if (!r.connection || r.connection.token === undefined) return r;
+  const { SECRET_MASK } = await import('../../../electron/services/settings-secrets');
+  const { readHermesConnection } = await import('../../../electron/services/hermes-config');
+  expect(r.connection.token, 'the token answered to the page').toBe(SECRET_MASK);
+  return { ...r, connection: { ...r.connection, token: readHermesConnection().token } };
 }
 
 beforeEach(() => { fs.rmSync(desktopDir, { recursive: true, force: true }); });

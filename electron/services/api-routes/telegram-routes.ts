@@ -54,6 +54,25 @@ function defaultChat(ctx: RouteContext): string | undefined {
   return settings.telegramChatId || settings.telegramAuthorizedChatIds?.[0];
 }
 
+/**
+ * Where a file send goes: the chat the caller named, when the user authorized
+ * it, or the default one. mcp-telegram's file tools name a chat as its message
+ * does, since they go through these routes (2.0.4); the routes sent every file
+ * to the default chat. Undefined, with the refusal sent, when it cannot go.
+ */
+function fileChat(ctx: RouteContext, chatId: unknown, bot: unknown, sendJson: SendJson): string | undefined {
+  const target = chatId ? String(chatId) : defaultChat(ctx);
+  if (!bot || !target) {
+    sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
+    return undefined;
+  }
+  if (!authorizedChats(ctx).has(target)) {
+    sendJson({ error: 'That chat is not one of the chats authorized in Settings > Telegram.' }, 403);
+    return undefined;
+  }
+  return target;
+}
+
 export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
   // POST /api/telegram/send
   app.post('/api/telegram/send', async (req, sendJson) => {
@@ -104,7 +123,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
       textOnly(sendJson);
       return;
     }
-    const { photo_path, caption } = req.body as { photo_path: string; caption?: string };
+    const { photo_path, caption, chat_id } = req.body as { photo_path: string; caption?: string; chat_id?: string };
     if (!photo_path) {
       sendJson({ error: 'photo_path is required' }, 400);
       return;
@@ -115,11 +134,8 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = defaultChat(ctx);
-    if (!telegramBot || !targetChatId) {
-      sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
-      return;
-    }
+    const targetChatId = fileChat(ctx, chat_id, telegramBot, sendJson);
+    if (!telegramBot || !targetChatId) return;
 
     try {
       if (!fs.existsSync(photo_path)) {
@@ -144,7 +160,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
       textOnly(sendJson);
       return;
     }
-    const { video_path, caption } = req.body as { video_path: string; caption?: string };
+    const { video_path, caption, chat_id } = req.body as { video_path: string; caption?: string; chat_id?: string };
     if (!video_path) {
       sendJson({ error: 'video_path is required' }, 400);
       return;
@@ -155,11 +171,8 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = defaultChat(ctx);
-    if (!telegramBot || !targetChatId) {
-      sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
-      return;
-    }
+    const targetChatId = fileChat(ctx, chat_id, telegramBot, sendJson);
+    if (!telegramBot || !targetChatId) return;
 
     try {
       if (!fs.existsSync(video_path)) {
@@ -184,7 +197,7 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
       textOnly(sendJson);
       return;
     }
-    const { document_path, caption } = req.body as { document_path: string; caption?: string };
+    const { document_path, caption, chat_id } = req.body as { document_path: string; caption?: string; chat_id?: string };
     if (!document_path) {
       sendJson({ error: 'document_path is required' }, 400);
       return;
@@ -195,11 +208,8 @@ export function registerTelegramRoutes(app: RouteApp, ctx: RouteContext): void {
     }
 
     const telegramBot = ctx.getTelegramBot();
-    const targetChatId = defaultChat(ctx);
-    if (!telegramBot || !targetChatId) {
-      sendJson({ error: 'Telegram not configured or no chat ID' }, 400);
-      return;
-    }
+    const targetChatId = fileChat(ctx, chat_id, telegramBot, sendJson);
+    if (!telegramBot || !targetChatId) return;
 
     try {
       if (!fs.existsSync(document_path)) {

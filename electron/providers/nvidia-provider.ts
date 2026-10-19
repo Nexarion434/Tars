@@ -5,13 +5,12 @@ import type { AppSettings } from '../types';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
-import { DATA_DIR, DATA_DIR_SHELL } from '../constants';
+import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv } from './cli-provider';
+import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'; // claude appends /v1/messages
@@ -80,17 +79,6 @@ export class NvidiaProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = shellQuote(params.binaryPath);
-    if (params.autonomous) command += ' --dangerously-skip-permissions';
-    if (params.outputFormat) command += ` --output-format ${params.outputFormat}`;
-    if (params.verbose) command += ' --verbose';
-    if (params.mcpConfigPath) command += ` --mcp-config ${shellQuote(params.mcpConfigPath)}`;
-    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
-    command += ` -p '${params.prompt.replace(/'/g, "'\\''")}'`;
-    return command;
-  }
-
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
     command += ' -p';
@@ -110,8 +98,7 @@ export class NvidiaProvider implements CLIProvider {
     // This vendor has no Anthropic-compatible endpoint; the claude binary
     // can only reach its models through OpenRouter.
     if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
 
     return vars;
@@ -169,29 +156,4 @@ export class NvidiaProvider implements CLIProvider {
   supportsSkills(): boolean { return true; }
   getMemoryBasePath(): string { return path.join(this.configDir, 'projects'); }
   getAddDirFlag(): string { return '--add-dir'; }
-
-  buildScheduledScript(params: {
-    binaryPath: string; binaryDir: string; projectPath: string; prompt: string;
-    autonomous: boolean; mcpConfigPath: string; logPath: string; homeDir: string;
-    skills?: string[];
-  }): string {
-    const flags = params.autonomous ? '--dangerously-skip-permissions' : '';
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-    return `#!/bin/bash
-export HOME=${shellQuote(params.homeDir)}
-if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true; fi
-if [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true; fi
-export PATH=${shellQuote(params.binaryDir)}:"$PATH"
-cd ${shellQuote(params.projectPath)}
-echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
-export CLAUDE_PROVIDER="nvidia"
-export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
-export ANTHROPIC_API_KEY="$(jq -r '.openRouterApiKey // empty' "${DATA_DIR_SHELL}/app-settings.json")"
-${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
-echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
-`;
-  }
 }

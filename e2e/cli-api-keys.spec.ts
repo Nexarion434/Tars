@@ -22,8 +22,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 3. each agent started from the window gets its own CLI's key, under its CLI's variable, and no other CLI's key;
  * 4. no argv carries a key; codex's carries the provider that names CODEX_API_KEY (its TUI reads no key otherwise,
  *    measured on 0.163);
- * 5. no file under the sandbox HOME but ~/.dorothy/app-settings.json holds a key (the CLIs' own folders, the
- *    window's profile);
+ * 5. no file under the sandbox HOME but ~/.tars-private/settings-secrets.json holds a key (the CLIs' own folders,
+ *    the window's profile; since 2.0.4 the keys are out of ~/.dorothy, secrets-private.spec.ts);
  * 6. codex's key cleared, and its CLI ended by itself (its shell stays, as when a CLI exits on its own): started
  *    again in that shell's place, it gets no CODEX_API_KEY and no provider of Tars's, its own login (the Audit's L1
  *    on #459: the reused shell kept the key it was spawned with).
@@ -162,10 +162,10 @@ for (const newInterface of [false, true]) {
       expect.soft(codexArgv).toContain('model_provider=');
       expect.soft(codexArgv).toContain('env_key="CODEX_API_KEY"');
 
-      // 5. No file but Tars's settings holds a key.
+      // 5. No file but Tars's private settings holds a key.
       const holding = filesHolding(home, allKeys).map((p) => path.relative(home, p));
       keep({ holding });
-      expect.soft(holding).toEqual([path.join('.dorothy', 'app-settings.json')]);
+      expect.soft(holding).toEqual([path.join('.tars-private', 'settings-secrets.json')]);
 
       // 6. Codex's key cleared: started again, it runs on its own login.
       const cleared = await api((a) => a.cliKeys.set('codex', { key: null }));
