@@ -482446,7 +482446,7 @@
                                       "name": "field",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -484246,7 +484246,7 @@
                                       "name": "field",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -486046,7 +486046,7 @@
                                       "name": "field",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -491482,7 +491482,7 @@
                                       "name": "select",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -491590,7 +491590,7 @@
                                       "name": "field",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -492100,7 +492100,7 @@
                                       "name": "field",
                                       "width": 196,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -493256,7 +493256,7 @@
                                       "name": "select",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -493364,7 +493364,7 @@
                                       "name": "field",
                                       "width": 300,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -493874,7 +493874,7 @@
                                       "name": "field",
                                       "width": 196,
                                       "height": 32,
-                                      "fill": "$bg",
+                                      "fill": "$surface-raised",
                                       "stroke": "$border",
                                       "strokeWidth": 1,
                                       "gap": 8,
@@ -494168,14 +494168,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -494185,8 +494186,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "kzjm1",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -494522,14 +494534,15 @@
                               "name": "field",
                               "width": 184,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -494539,8 +494552,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Qzcad",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -495014,13 +495038,14 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -495032,6 +495057,17 @@
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "rsijX",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -495172,13 +495208,14 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -495190,6 +495227,17 @@
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "jCK1b",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -495844,7 +495892,7 @@
                               "name": "field",
                               "width": 196,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -496245,16 +496293,17 @@
                               "type": "frame",
                               "id": "h8YQcT",
                               "name": "field",
-                              "width": 112,
+                              "width": 144,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -496264,8 +496313,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "yicux",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -497454,14 +497514,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -497471,8 +497532,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a secret",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "A49C4",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -497767,14 +497839,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -497784,8 +497857,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a key",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "DOXLy",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -498273,14 +498357,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -498290,8 +498375,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "q4ArEO",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -498627,14 +498723,15 @@
                               "name": "field",
                               "width": 184,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -498644,8 +498741,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "t8WXF",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -499119,13 +499227,14 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -499137,6 +499246,17 @@
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "jGd9A",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -499277,13 +499397,14 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -499295,6 +499416,17 @@
                                   "lineHeight": 1.4,
                                   "fontFamily": "$font-mono",
                                   "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "n9GS1Q",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -499949,7 +500081,7 @@
                               "name": "field",
                               "width": 196,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -500350,16 +500482,17 @@
                               "type": "frame",
                               "id": "ofPbY",
                               "name": "field",
-                              "width": 112,
+                              "width": 144,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$accent-focus",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -500369,8 +500502,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a token",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "aXtXk",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -501559,14 +501703,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -501576,8 +501721,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a secret",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "NYQ6Z",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -501872,14 +502028,15 @@
                               "name": "field",
                               "width": 252,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
                               "padding": [
-                                0,
+                                7,
                                 10
                               ],
+                              "justifyContent": "space_between",
                               "alignItems": "center",
                               "children": [
                                 {
@@ -501889,8 +502046,19 @@
                                   "fill": "$text-muted",
                                   "content": "Paste a key",
                                   "lineHeight": 1.4,
-                                  "fontFamily": "$font-ui",
-                                  "fontSize": 12,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 11.5,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "g5b2oT",
+                                  "name": "eye",
+                                  "fill": "$text-muted",
+                                  "content": "show",
+                                  "lineHeight": 1.4,
+                                  "fontFamily": "$font-mono",
+                                  "fontSize": 10,
                                   "fontWeight": "normal"
                                 }
                               ]
@@ -502959,7 +503127,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -503047,7 +503215,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -503135,7 +503303,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -503353,7 +503521,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -504113,7 +504281,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -504201,7 +504369,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -504289,7 +504457,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
@@ -504507,7 +504675,7 @@
                               "name": "field",
                               "width": 300,
                               "height": 32,
-                              "fill": "$bg",
+                              "fill": "$surface-raised",
                               "stroke": "$border",
                               "strokeWidth": 1,
                               "gap": 8,
