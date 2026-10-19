@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, PasswordInput, Select, SegmentedControl, StatusBadge, StatusSquare } from '@/components/ui';
 import type { AnyTone } from '@/components/ui';
+import { SECRET_MASK } from '@/lib/secret-settings';
 import { SettingsRow } from './SettingsRow';
 import { HermesRelayRow } from './HermesRelayRow';
 import type { AppSettings, } from './types';
@@ -29,7 +30,8 @@ interface ConnectionInfo {
   webhookPath: string;
   webhookLocalUrl: string;
   webhookTailnetUrl?: string;
-  apiToken: string;
+  /** Whether the webhook's secret exists: hermes.copyWebhookSecret copies it, the page never holds it (2.0.4). */
+  apiTokenSet: boolean;
   tailscale: { installed: boolean; running: boolean; dnsName?: string; ip?: string; serveConfigured: boolean };
   serveCommand: string;
 }
@@ -78,6 +80,10 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   // The last import came without the token Hermes Desktop keeps encrypted. Said
   // until something answers it: a sign-in, a token typed in, another import.
   const [tokenNotImported, setTokenNotImported] = useState(false);
+  // The form's token as main hands it: the mask when one is saved, never the
+  // token (#466). Replace empties the field; a save with nothing typed keeps it.
+  const [replacingToken, setReplacingToken] = useState(false);
+  const tokenSaved = conn.token === SECRET_MASK;
   const connDirty = JSON.stringify(conn) !== savedConn;
 
   /**
@@ -153,8 +159,13 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   async function handleSaveConn() {
     const r = await window.electronAPI?.hermes?.saveConnection(conn);
-    if (r?.success) setSavedConn(JSON.stringify(conn));
-    else setGatewayResult({ success: false, message: r?.error || 'Save failed' });
+    if (!r?.success) { setGatewayResult({ success: false, message: r?.error || 'Save failed' }); return; }
+    // Read back as main hands it: a token typed in comes back as the mask.
+    const saved = await window.electronAPI?.hermes?.getConnection();
+    const form = saved?.connection ?? conn;
+    setConn(form);
+    setSavedConn(JSON.stringify(form));
+    setReplacingToken(false);
   }
 
   const refreshInfo = () => {
@@ -352,7 +363,8 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
           description={
             (conn.authMode || 'token') === 'oauth'
               ? "The gateway's own sign-in. Use the row below."
-              : 'A static session token, sent as X-Hermes-Session-Token.'
+              // main keeps a saved token on the mask or an empty field, and nothing clears it (keepToken)
+              : 'A static session token, sent as X-Hermes-Session-Token. Switching to OAuth keeps it, unused.'
           }
           control={
             <div className="flex items-center gap-2 w-full justify-end">
@@ -367,14 +379,26 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
               {/* Only in token mode. Rendering it disabled under OAuth left a
                   dead field with a `show` affordance next to it, which read as
                   a broken button - OAuth has no static token to reveal. */}
-              {(conn.authMode || 'token') === 'token' && (
-                <PasswordInput
-                  className="min-w-0 flex-1"
-                  value={conn.token || ''}
-                  onChange={e => patchConn({ token: e.target.value })}
-                  placeholder="X-Hermes-Session-Token"
-                />
-              )}
+              {(conn.authMode || 'token') === 'token' && (tokenSaved && !replacingToken ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-[11.5px] text-success"><StatusSquare tone="running" />a token is set</span>
+                  <Button size="sm" className={ROW_ACTION} onClick={() => { setReplacingToken(true); patchConn({ token: '' }); }}>replace</Button>
+                </>
+              ) : (
+                <>
+                  <PasswordInput
+                    className="min-w-0 flex-1"
+                    aria-label="Hermes session token"
+                    autoComplete="off"
+                    value={conn.token === SECRET_MASK ? '' : conn.token || ''}
+                    onChange={e => patchConn({ token: e.target.value })}
+                    placeholder="Paste a token"
+                  />
+                  {replacingToken && (
+                    <Button size="sm" className={ROW_ACTION} onClick={() => { setReplacingToken(false); patchConn({ token: SECRET_MASK }); }}>cancel</Button>
+                  )}
+                </>
+              ))}
             </div>
           }
         />
@@ -475,11 +499,12 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
               size="sm"
               variant="ghost"
               className={ROW_ACTION}
-              disabled={!info}
-              title="Copy the bearer token Hermes must send in the Authorization header"
-              onClick={() => {
-                if (!info) return;
-                navigator.clipboard.writeText(info.apiToken);
+              disabled={!info?.apiTokenSet}
+              title="Tars copies the bearer token Hermes must send in the Authorization header"
+              onClick={async () => {
+                // Tars puts it on the clipboard itself: the page never holds it.
+                const r = await window.electronAPI?.hermes?.copyWebhookSecret().catch(() => null);
+                if (!r?.copied) return;
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}

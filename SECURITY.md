@@ -251,6 +251,10 @@ stop is `/bin/ps`, which is setuid root and therefore cannot be executed under
 any sandbox at all: the convenient route is closed, the syscall behind it is
 not.
 
+**codex hands its MCP servers what it is told to, by name.** Measured on codex-cli 0.163.0: a server gets HOME, PATH, TERM and the variables its config lists in `env_vars`, nothing else. Tars lists, in its own servers' sections of codex's config.toml, the names they read, the token among them: names only, so the token reaches them from the codex process's environment, where this section already says who can read it, and is written in no file and no command line.
+
+**A codex session posts as an agent only on evidence that it is the agent's.** Tars reads codex's turns from its session logs and posts them with the agent's own token (`services/codex-sessions.ts`). Until the Audit's gate of #465, the first session begun in a codex agent's folder after its launch was taken for the agent's: a codex its user ran in that folder had its turns posted as the agent's, a delegated task could be answered by it, and its id became the session the agent resumed after a restart or a wake. A session is bound now on the agent's identity line in its first message, on the agent's own codex holding its file open, or as a fork of the agent's own session its launch began; a first message naming another agent never is, and where a process's open files cannot be read (Windows), a session that names nobody stays nobody's. What this does not stop: whoever can type into the agent's terminal, or write its codex's rollout, can still make text read as the agent's turn. The boundary is the account, as everywhere in this file.
+
 **Gemini's redaction is let through on purpose.** Gemini CLI withholds from
 the processes it starts every variable whose name looks like a secret, and
 `CLAUDE_MGR_API_TOKEN` matches. Without it a Gemini agent's hooks could not
@@ -439,6 +443,22 @@ the first path nobody thought to list.
 
 ---
 
+**What a repository's own configuration can no longer run** (2.0.4, the Audit's Hole 3, `utils/safe-git.ts`).
+Any agent of a project, or anything it runs, can write that project's `.git/config`, and git runs the
+programs it names: `core.fsmonitor` on a status, `diff.external`, a diff command or a textconv on a diff, a
+filter's clean, smudge or process when a file meets the index, the hooks on a checkout, a commit or a ref
+update, `gpg.program` on a signed commit, and the verifier of each signature format (`gpg.program` or
+`gpg.openpgp.program`, `gpg.ssh.program`, `gpg.x509.program`) on a log or a show of a signed commit, which
+`log.showSignature` asks for every time (the Audit's M1 on #463). Opening Review ran them inside Tars's main process, outside every
+CLI's permission mode. Every git call the main process makes now switches them off on its command line,
+which git reads after every configuration file, so neither the repository's, the user's nor the system's
+configuration can turn one back on; submodules are not entered; Review reads no file through a link out of
+the repository; git gets an environment of Tars's own. Measured with a repository that names a program at
+each of these places (`__tests__/fixtures/hostile-repo.ts`): on main its fsmonitor, its submodule's, a hook
+and its filter ran on Review's first status and diff; now none does, in the unit tests and in the real app
+(`e2e/review-hostile-repo.spec.ts`). What it is not: an agent's own CLI runs git with the repository's
+configuration, in its own permission mode, as it always did.
+
 ## 5. What is where on disk
 
 | Path | Holds | Reachable by an agent |
@@ -626,7 +646,10 @@ cluster's in `~/.kube` (the Audit's L1 on #466). `fs:add-custom-project` refuses
 such a folder, and since the projects' list lives in `~/.dorothy`, which every
 agent can write, each read judges its own target as well. `app:getSettings` and `settings:updated` carry no secret: a
 set one is a mask of bullets and `secretsSet` says which are set; `secrets:set`
-sets or clears one and answers whether it is set. The last three the window
+sets or clears one and answers whether it is set. Settings puts no mask in a
+field (`components/Settings/SecretRow.tsx`): a set secret reads set, replace
+opens an empty field, and no save sends a secret, so nothing typed after a mask
+is ever taken for a new key (`lib/secret-settings.ts`). The last three the window
 saw go through the main process since the Audit's L2 on #466
 (`services/secret-handoff.ts`): the Telegram auth token Settings mints is shown
 once in a dialog of the main process, which the page cannot read, and

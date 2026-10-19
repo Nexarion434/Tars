@@ -70,7 +70,7 @@ describe('the structure of a document (3)', () => {
     expect(stays.items).toHaveLength(6);
     const [dorothy, , claude] = stays.items;
     expect(dorothy.map(b => b.kind)).toEqual(['paragraph', 'list', 'paragraph']);
-    expect(lists(dorothy)[0].items).toHaveLength(14);
+    expect(lists(dorothy)[0].items).toHaveLength(13);
     expect(text(dorothy[2])).toMatch(/^At every start, Tars closes this folder/);
     expect(claude.map(b => b.kind)).toEqual(['paragraph', 'list', 'paragraph']);
     expect(text(claude[2])).toMatch(/^Claude Code writes its own conversation transcripts/);
@@ -118,7 +118,7 @@ describe('bold, code and what is not markup (4, 5)', () => {
 });
 
 describe('the reviewed documents (6)', () => {
-  it.each([['privacy', 'Tars Privacy Policy', '2026-10-01'], ['terms', 'Tars Terms of Use', '2026-09-24']])('the %s page opens on its title, then its date', (name, title, day) => {
+  it.each([['privacy', 'Tars Privacy Policy', '2026-10-19'], ['terms', 'Tars Terms of Use', '2026-09-24']])('the %s page opens on its title, then its date', (name, title, day) => {
     const [heading, date] = parseMarkdown(doc(name));
     expect(heading).toEqual({ kind: 'heading', level: 1, spans: [{ text: title, strong: false, code: false }] });
     expect(date).toEqual({ kind: 'paragraph', spans: [{ text: `Last updated: ${day}.`, strong: false, code: false }] });

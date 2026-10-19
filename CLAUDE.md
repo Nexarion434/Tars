@@ -49,7 +49,7 @@
 | `src/components/ClientLayout.tsx` | The shell: sidebar + header, and the theme boot (`tars-theme` in `localStorage`, dark unless explicitly `light`) |
 | `src/components/TerminalsView/` | The xterm grid that is the Dashboard, including the scroll-lock and multi-terminal hooks |
 | `src/lib/providers.ts` | Frontend provider registry: icon, badge, models, default model. One entry per provider; NewChatModal and Settings both read it |
-| `design/tars-redesign.pen` | Pencil source of truth, 244 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
+| `design/tars-redesign.pen` | Pencil source of truth, 265 root frames. Written by the `pen` CLI as plain JSON: draw through the CLI (Workflow Rule 1), never the `pencil` MCP tools |
 | `design/chat-design.pen` | 72 of the same frames (71 with the same ids; `Agent error · reason` was drawn into both after the fork, so its ids differ), the two panel history frames `tars-redesign.pen` dropped with the history view, plus the 11 frames of the Chat room, which exist nowhere else: 85 in all. A fork, not a companion. Its room frames describe the Chat before its redesign: draw anything for the Chat in `chat-redesign-a.pen`, and anything else in `tars-redesign.pen` |
 | `design/chat-redesign-a.pen` | The Chat page's redesign, direction A (chosen by JeanBrasse on 2026-09-17), with its composer: the room and Hermes pages in every state a user can meet, and sheets for the team, the thread, Hermes, the composer and the room head, dark and light. What the Chat implements since #165 (merged 2026-09-24) |
 | `design/landing.pen` | The site in `landing/`: its page, its 404, its privacy and terms pages, and the picture link previews show. Forked from `tars-redesign.pen` on 2026-09-23, which no longer carries the landing |
@@ -77,6 +77,7 @@ DOROTHY_HERMES_SESSION_EVERY_MS # under DOROTHY_E2E only: how often Tars asks it
 DOROTHY_ERROR_REPORTS_DSN # a development run only: where error reports go (a stand-in of Sentry); a packaged Tars never reads it (app.isPackaged, services/error-reports/index.ts)
 ELECTRON_BUILD        # '1' switches next.config.ts to output: 'export' for packaging
 PATH SHELL HOME       # read when composing the PTY environment (buildFullPath, cli-paths detection)
+CODEX_HOME            # where codex keeps its config, sessions and model cache (else ~/.codex): Tars reads its sessions and model list there, writes its MCP servers and the agents' folder trust into its config.toml, and hands it to the codex it starts (in the command line on macOS and Linux, in the terminal's environment on Windows), whatever an rc file sets; the one a login shell sets is read once per run, only to say why a codex agent is not signed in
 APPLE_ID              # notarization; unset → scripts/notarize.js uses the 'Tars' keychain profile
 APPLE_APP_PASSWORD
 APPLE_TEAM_ID
@@ -134,7 +135,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 - **Read-only** everywhere else: report defects, do not patch them
 - **Done when**: both `tsc` passes are clean, `npm test` is green, `npm run lint`, `npm run lint:design` and `npm run check:names` are clean, `npm run e2e:auto` shows no new visual diff and no page error, and a feature's own E2E spec passes and leaves its artefact (Workflow Rule 3)
 - **Refused at the gate**: a unit test written after the code it tests, a test that restates a constant, a test that only checks a mock was called, and a spec nobody has seen turn red on the old build or a mutant
-- `npm run e2e:auto` decides from the diff whether the surfaces can have moved, and runs the full suite whenever they can. It skips only when every changed file is outside the running app (`__tests__/`, `mcp-*/`, `hooks/`, `scripts/`, root markdown), and says so at length when it does. Anything it cannot classify runs. `electron/` always runs: the suite boots the real app against a seeded home, so a main process change can and does move a screenshot
+- `npm run e2e:auto` decides from the diff whether the surfaces can have moved, and runs the full suite whenever they can. It skips only when every changed file is outside the running app (`__tests__/`, `mcp-*/`, `hooks/`, `scripts/`, root markdown), and says so at length when it does. Anything it cannot classify runs. `electron/` always runs: the suite boots the real app against a seeded home, so a main process change can and does move a screenshot. It also runs the CLI matrix, a Playwright project of its own (`npm run e2e:matrix`, OPERATIONS.md), for any change but those that cannot reach a delegation between two CLIs (the renderer, the documents, the unit tests, the other specs, the tooling): the whole main process, the MCP servers, the hooks and the state mod run it; every release gate runs the matrix
 - Reach for `npm run e2e` directly to force the full suite, and `npm run e2e:guard` when a surface was added
 - A visual diff is a finding, not a licence to re-record. `npm run e2e:update` is only run when the design was deliberately changed and the Pencil frame already reflects it
 

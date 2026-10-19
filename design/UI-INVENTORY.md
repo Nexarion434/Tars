@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 244 root frames, 79 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other hundred and seventy-two being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 265 root frames, 79 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other hundred and ninety-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -103,7 +103,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
-| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account, Usage · cost per task, Usage · cost per agent (each with its light copy; the agent table's headers, figures highest first, words A to Z, and focused, are its col header states) |
+| `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account, Usage · cost per task, Usage · cost per agent, Usage · pages (five rows a card, states, narrowest window; notes), Usage · cards while they read (each with its light copy; the agent table's headers, figures highest first, words A to Z, and focused, are its col header states) |
 | `/memory` | Brain (Projects / Agents / Backends) | Brain · Projects, Brain · Agents, Brain · Backends; a project's row naming the older copy of its memory: Brain · Projects · a row with an older copy · states (and its light copy); fifty agents and a thousand memory files fitted to the canvas, a project's memory one box, with the zoom controls: Brain · Agents · fifty agents, fitted; a project opened, the list of its memory files and one of them open: Brain · Agents · a project's memory files, Brain · Agents · a project's memory file, open (panel) |
 | `/whats-new` | What's new | What's new · dark |
 | `/settings` | Settings | see below |
@@ -114,9 +114,9 @@ the room relates to the chats and what follows the Backend's v2.2.
 | Group | Sections |
 |---|---|
 | General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
-| AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
-| Hermes | Connection (+ link out to Schedules): Settings · Connection. Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
-| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
+| AI & Providers | Providers (an API key set, replaced or cleared, never shown: Secrets · Settings, Providers, an API key, and its light copy), Claude accounts, CLI Paths (what Tars found as it opens, the detection Providers reads too: Secrets · CLIs, one detection, and its light copy), Permissions |
+| Hermes | Connection (+ link out to Schedules): Settings · Connection; its token set and replaced, never shown, and the webhook's secret copied by Tars: Secrets · Settings, Hermes connection (and its light copy). Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
+| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy); every key and token of these sections set, replaced or cleared, never shown, and Telegram's auth token shown once by Tars in a window of its own: Secrets · Settings, Telegram (its light copy, the narrowest window), Secrets · states (and its light copy), Secrets · notes for the Backend |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
