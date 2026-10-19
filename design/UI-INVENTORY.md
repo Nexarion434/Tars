@@ -4,7 +4,7 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 238 root frames, 73 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+rather than a companion to it. `design/tars-redesign.pen` holds 238 root frames, 64 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
 `design/chat-design.pen` holds 72 of those, the other hundred and sixty-six being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
@@ -98,7 +98,7 @@ the room relates to the chats and what follows the Backend's v2.2.
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy), Agents · an agent deleted, what stays and where (its worktree kept, why and where, and its work on a wip/ branch, above the grid until ok; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
-| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
+| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy; every repository of every project since 2.0.4: Review · projects and their repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the narrowest window), · states (and its light copy), · notes for the Backend |
 | `/logs` | Logs | Logs · dark |
 | `/vault` | Vault | Vault · dark |
 | `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
@@ -236,9 +236,6 @@ For 2.0.4:
 - Vault, what agents produce (each project's reports and tools, and the documents made here), read and edited in its
   file panel: Vault · project folders · a report, · a report, editing, · a tool (the first two with their light
   copies, editing at the narrowest window), · states (and its light copy), · notes for the Backend.
-- Review, every repository of every project, search with no limit, a folder with no git: Review · projects and their
-  repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the
-  narrowest window), · states (and its light copy), · notes for the Backend.
 - Memory, one picture (Brain links to the Vault): Memory · one picture · Settings, Memory Backends, · Brain, Backends
   (each with its light copy, Settings at the narrowest window), · states (and its light copy), · notes for the Backend.
 - Relay, one switch for every gateway Hermes has, a section under Settings, Hermes: Relay · Settings, Hermes · off,
