@@ -655,6 +655,9 @@ export function draftOf(ptyProcess: pty.IPty): Draft {
  */
 export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   const state = inputOf(ptyProcess);
+  // Counted before anything else, held keys included: a line the user types and
+  // sends while Tars writes is replayed into the turn, which qwen queues and an
+  // Esc moves back into the field (esc-cut-refilled-field.test.ts, F8).
   if (state.sinceTurnOpened) state.sinceTurnOpened.keys += data;
   // A key typed while the CLI shows a dialog answers the dialog: the field
   // behind it is as it was. Read as a key in the field, the arrow and the Enter

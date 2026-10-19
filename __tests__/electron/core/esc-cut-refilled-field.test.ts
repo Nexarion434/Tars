@@ -30,6 +30,14 @@ import type { IPty } from 'node-pty';
  * bytes as the CLIs do: a paste or keys into the field, a backspace out of it,
  * an Enter that submits (or queues, while a turn runs), and the Esc that cuts
  * the turn and refills the field, by the flavour's rule.
+ *
+ * Added after the Audit's re-check at 1368d779 (2026-10-19):
+ *  F7. (L5) The guard "the field was empty before the Esc" is pinned by no test:
+ *      the user's draft, set aside for a task and typed back, then a lone Esc,
+ *      and Tars would backspace into the draft.
+ *  F8. (L6) A line and Enter the user typed while Tars wrote the task, held then
+ *      replayed into the turn, not counted among the keys typed since: qwen
+ *      moves it back on the Esc, and Tars would backspace into it.
  */
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
@@ -176,6 +184,47 @@ describe('the next task after an Esc that cut a turn', () => {
     noteTurnCut(pty);
     settle();
     expect(cli.submitted).toEqual([T1, T2]);
+  });
+
+  it.each<Flavour>(['qwen', 'claude'])('F7. (the Audit\'s L5) %s: the user\'s draft, set aside for the task and typed back, then a lone Esc: the next task waits, and the draft is not touched', (flavour) => {
+    made = fakeCli(flavour);
+    rememberTerminalOwner(made.pty, 'qw');
+    setTurnProbe(() => made.cli.turn);
+    setTurnInProgressProbe(() => made.cli.turn);
+    const { cli, pty } = made;
+    for (const ch of 'my draft') writeHumanInput(pty, ch);
+    writeProgrammaticInput(pty, T1, true, origin);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.field, 'the draft typed back').toBe('my draft');
+    writeHumanInput(pty, '\x1b');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.field).toBe('my draft');
+  });
+
+  it('F8. (the Audit\'s L6) qwen: a line and Enter typed while Tars writes the task, queued by qwen and moved back by the Esc: the next task waits, the line kept', () => {
+    made = fakeCli('qwen');
+    rememberTerminalOwner(made.pty, 'qw');
+    setTurnProbe(() => made.cli.turn);
+    setTurnInProgressProbe(() => made.cli.turn);
+    const { cli, pty } = made;
+    writeProgrammaticInput(pty, T1, true, origin);
+    // In Tars's write window, before its Enter: held, then replayed after it, into the running turn.
+    for (const ch of 'mine') writeHumanInput(pty, ch);
+    writeHumanInput(pty, '\r');
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.queue, 'qwen queued the user\'s line').toEqual(['mine']);
+    writeHumanInput(pty, '\x1b');
+    expect(cli.field).toBe('mine');
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1]);
+    expect(cli.field).toBe('mine');
   });
 });
 
