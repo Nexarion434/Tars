@@ -160,6 +160,9 @@ setInterval(() => {}, 1 << 30);
           },
         });
         servers.push(server);
+        // A server that dies or never answers fails the call with what it said, rather than the test's timeout.
+        let said = '';
+        server.stderr.on('data', (chunk) => { said = (said + chunk).slice(-2000); });
         const replies = new Map<number, (msg: { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: unknown }) => void>();
         let buffered = '';
         server.stdout.on('data', (chunk) => {
@@ -173,9 +176,10 @@ setInterval(() => {}, 1 << 30);
           }
         });
         let nextId = 1;
-        const rpc = (method: string, params: unknown) => new Promise<Parameters<NonNullable<ReturnType<typeof replies.get>>>[0]>((resolve) => {
+        const rpc = (method: string, params: unknown) => new Promise<Parameters<NonNullable<ReturnType<typeof replies.get>>>[0]>((resolve, reject) => {
           const id = nextId++;
-          replies.set(id, resolve);
+          const late = setTimeout(() => reject(new Error(`the orchestrator MCP server of ${agentId} did not answer ${method} in 60 s; it said: ${said}`)), 60_000);
+          replies.set(id, (msg) => { clearTimeout(late); resolve(msg); });
           server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
         });
         await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
