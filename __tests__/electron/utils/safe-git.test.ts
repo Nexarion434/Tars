@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
 
@@ -43,7 +44,7 @@ import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
  *      name, and any other `<helper>::` runs git-remote-<helper>. Or the
  *      repository allows one itself (`protocol.ext.allow=always` in its
  *      config is a policy of its own, which `protocol.allow` on the command
- *      line does not override), or rewrites an http remote into one
+ *      line does not override), git:// runs its core.gitProxy, or it rewrites an http remote into one
  *      (`url.<ext::...>.insteadOf`).
  *  G11. Allowed, ssh and http run what the repository names for them: its
  *      core.sshCommand on an ssh fetch, its core.askPass or a credential
@@ -167,13 +168,33 @@ describe('a fetch reaches its remote, by a transport that runs nothing the repos
     }
   });
 
+  it('G9. a fetch over https or ssh opens its connection to the remote', async () => {
+    let connections = 0;
+    const server = net.createServer((socket) => { connections++; socket.destroy(); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      for (const url of [`https://127.0.0.1:${port}/repo.git`, `ssh://git@127.0.0.1:${port}/repo.git`]) {
+        const before = connections;
+        const said = await tryGit(['fetch', url]);
+        expect(said, url).not.toMatch(/not allowed/);
+        expect(connections, `${url}: connections`).toBeGreaterThan(before);
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('G10. ext::, fd::, a file:// or local path and another helper are refused, and run nothing', async () => {
     const marker = path.join(h.root, 'ext-ran');
     const bare = path.join(h.root, 'bare.git');
     execFileSync('git', ['init', '-q', '--bare', bare]);
-    for (const k of ['ext', 'fd', 'file']) execFileSync('git', ['config', `protocol.${k}.allow`, 'always'], { cwd: h.repo });
+    for (const k of ['ext', 'fd', 'file', 'git']) execFileSync('git', ['config', `protocol.${k}.allow`, 'always'], { cwd: h.repo });
+    const proxy = path.join(h.root, 'git-proxy.sh');
+    fs.writeFileSync(proxy, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+    execFileSync('git', ['config', 'core.gitProxy', proxy], { cwd: h.repo });
     execFileSync('git', ['config', `url.ext::sh -c touch% ${marker}#.insteadOf`, 'http://rewritten.invalid/'], { cwd: h.repo });
-    for (const url of [`ext::sh -c touch% ${marker}`, 'fd::3', `file://${bare}`, bare, 'tarsnohelper::x', 'http://rewritten.invalid/repo.git']) {
+    for (const url of [`ext::sh -c touch% ${marker}`, 'fd::3', `file://${bare}`, bare, 'tarsnohelper::x', 'http://rewritten.invalid/repo.git', 'git://127.0.0.1:1/repo.git']) {
       const said = await tryGit(['fetch', url, 'HEAD']);
       expect(said, url).toMatch(/not allowed|unable to find remote helper|does not appear to be a git repository|transport/);
     }
