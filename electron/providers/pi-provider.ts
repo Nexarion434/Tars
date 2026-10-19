@@ -11,6 +11,34 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
+import { updateSharedJsonSync } from '../utils/shared-file';
+
+/**
+ * Where pi reads its MCP servers (`@earendil-works/pi-coding-agent` 1.3.0,
+ * docs/mcp.md and docs/configuration.md, read on 19/10): `mcp.json` of its
+ * agent folder, `$PI_CODING_AGENT_DIR` or `~/.pi/agent`, under `mcpServers`,
+ * each started with pi's whole environment (pi-mcp 1.3.0, transports/stdio.js),
+ * the agent's token in it. `@mariozechner/pi-coding-agent`, its former name,
+ * has no MCP at all.
+ */
+function mcpConfigFile(): string {
+  return path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'mcp.json');
+}
+
+/** Where Tars wrote them until 2.0.4, which pi never reads. */
+const legacyMcpFile = (): string => path.join(os.homedir(), '.pi', 'config.json');
+
+type McpServersFile = { mcpServers?: Record<string, unknown>; [key: string]: unknown };
+
+/** The server out of `file`'s `mcpServers`, the rest of the file left as it is. */
+function dropServer(file: string, name: string): void {
+  updateSharedJsonSync<McpServersFile>(file, current => {
+    const servers = current?.mcpServers;
+    if (!servers || typeof servers !== 'object' || !(name in servers)) return undefined;
+    delete servers[name];
+    return current;
+  });
+}
 
 export class PiProvider implements CLIProvider {
   readonly id = 'pi' as const;
@@ -126,57 +154,32 @@ export class PiProvider implements CLIProvider {
   }
 
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
-    // Pi doesn't have built-in MCP support; it uses extensions instead.
-    // We can try writing to a config file if Pi supports it in the future.
-    const configPath = path.join(this.configDir, 'config.json');
-
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-
-    let config: Record<string, unknown> = {};
-    if (fs.existsSync(configPath)) {
-      try {
-        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-      config.mcpServers = {};
-    }
-
-    (config.mcpServers as Record<string, unknown>)[name] = { command, args };
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    console.log(`[pi] Registered MCP server ${name} in config.json`);
+    const file = mcpConfigFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const outcome = updateSharedJsonSync<McpServersFile>(file, current => {
+      const config: McpServersFile = current ?? {};
+      const servers = config.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers : {};
+      config.mcpServers = { ...servers, [name]: { command, args } };
+      return config;
+    }, { createMode: 0o644 });
+    if (outcome === 'unreadable') console.warn(`[pi] MCP server ${name} not registered: ${file} is not JSON, left untouched`);
+    else console.log(`[pi] Registered MCP server ${name} in ${file}`);
+    dropServer(legacyMcpFile(), name);
   }
 
   async removeMcpServer(name: string): Promise<void> {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return;
-
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (config.mcpServers && typeof config.mcpServers === 'object') {
-        delete config.mcpServers[name];
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-        console.log(`[pi] Removed MCP server ${name} from config.json`);
-      }
-    } catch {
-      // Ignore errors
-    }
+    dropServer(mcpConfigFile(), name);
+    dropServer(legacyMcpFile(), name);
   }
 
   isMcpServerRegistered(name: string, expectedServerPath: string): boolean {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return false;
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (!config.mcpServers?.[name]) return false;
+      const config = JSON.parse(fs.readFileSync(mcpConfigFile(), 'utf-8')) as McpServersFile;
+      const server = config.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers[name] : undefined;
+      if (!server) return false;
       // The path as JSON writes it too: a Windows path has every backslash
       // doubled there, never matched, and was registered again at every launch.
-      const entry = JSON.stringify(config.mcpServers[name]);
+      const entry = JSON.stringify(server);
       return entry.includes(expectedServerPath) || entry.includes(JSON.stringify(expectedServerPath).slice(1, -1));
     } catch {
       return false;
