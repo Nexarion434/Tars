@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store';
-import { Archive } from 'lucide-react';
+import { Archive, Brain } from 'lucide-react';
 import type { VaultDocumentElectron, VaultFolderElectron, VaultAttachmentElectron } from '@/types/electron';
 
 import { BrandSpinner, Button, PageHeader, Panel, PanelCaption } from '@/components/ui';
@@ -13,6 +14,10 @@ import DocumentViewer from './components/DocumentViewer';
 import DocumentEditor from './components/DocumentEditor';
 import { VaultEmptyState } from './shared';
 import { useDesktopApi } from '@/hooks/useDesktopApi';
+import { useProjectFolders, type ProjectPlace } from './project/useProjectFolders';
+import { ProjectFolders } from './project/ProjectFolders';
+import { ProjectFileList } from './project/ProjectFileList';
+import { ProjectFilePanel } from './project/ProjectFilePanel';
 
 function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI?.vault;
@@ -60,6 +65,22 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const setVaultUnreadCount = useStore(s => s.setVaultUnreadCount);
+
+  // Each project's reports and tools (2.0.4, #471), beside the documents made here.
+  const projects = useProjectFolders(hasVaultApi);
+  const [projectFile, setProjectFile] = useState<string | null>(null);
+  const openProjectPlace = (place: ProjectPlace) => {
+    projects.setPlace(place);
+    setProjectFile(null);
+    setSelectedDoc(null);
+    setViewMode('list');
+  };
+  const leaveProjects = () => {
+    projects.setPlace(null);
+    setProjectFile(null);
+  };
+  const projectFolder = projects.place ? projects.folders.find((f) => f.key === projects.place?.key) ?? null : null;
+  const projectNames = projects.list && 'files' in projects.list ? projects.list.files.map((f) => f.name) : [];
 
   // Sync unread count to global store for sidebar badge
   const unreadCount = useMemo(
@@ -199,6 +220,7 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
     try {
       const result = await window.electronAPI!.vault!.getDocument(id);
       if (result.document) {
+        leaveProjects();
         setSelectedDoc(result.document);
         setSelectedDocAttachments(result.attachments || []);
         setViewMode('view');
@@ -353,19 +375,23 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
 
   // Below lg there is no room for three columns, so the body takes the list's
   // place while a document is open - the two panels swap instead of stacking.
-  const showBody = viewMode === 'edit' || !!selectedDoc;
+  const showBody = viewMode === 'edit' || !!selectedDoc || !!projectFile;
 
-  const newDocumentButton = (
-    <Button
-      variant="primary"
-      size="md"
-      onClick={() => {
-        setSelectedDoc(null);
-        setViewMode('edit');
-      }}
-    >
-      + Document
-    </Button>
+  const headerActions = (
+    <>
+      <Button size="md" onClick={() => { void projects.refresh(); }}>Refresh</Button>
+      <Button
+        variant="primary"
+        size="md"
+        onClick={() => {
+          leaveProjects();
+          setSelectedDoc(null);
+          setViewMode('edit');
+        }}
+      >
+        + Document
+      </Button>
+    </>
   );
 
   return (
@@ -375,8 +401,8 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
           "+ Document" floating under the title instead of beside it. */}
       <PageHeader
         title="Vault"
-        subtitle={subtitle ?? 'Agent reports and working documents.'}
-        actions={newDocumentButton}
+        subtitle={subtitle ?? 'What your agents produce: each project\'s reports and tools, and the documents made here.'}
+        actions={headerActions}
       />
 
       {/* Three panels sharing one top and one bottom edge: folders, the list of
@@ -385,8 +411,10 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
       <div className="flex-1 flex gap-2 overflow-hidden min-h-0">
         {/* Folders */}
         <Panel fill padded={false} className="w-[236px] shrink-0 max-lg:hidden">
-          <PanelCaption className="px-3 pt-3 pb-2">FOLDERS</PanelCaption>
           <div className="flex-1 overflow-y-auto pb-2">
+            <ProjectFolders folders={projects.folders} place={projects.place} onPick={openProjectPlace} />
+            <div className="mx-3 border-t border-border" />
+            <PanelCaption className="px-3 pt-3 pb-2">{`Documents · ${folders.length}`}</PanelCaption>
             <FolderTree
               folders={folders}
               documents={allDocuments}
@@ -394,6 +422,7 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
               selectedDocId={selectedDoc?.id || null}
               readDocIds={readDocIds}
               onSelectFolder={(id) => {
+                leaveProjects();
                 setSelectedFolderId(id);
                 setViewMode('list');
                 setSelectedDoc(null);
@@ -403,15 +432,33 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
               onDeleteFolder={handleDeleteFolder}
             />
           </div>
+          {/* Brain is what agents know; the Vault is what they produce. */}
+          <div className="mx-3 mb-3 pt-3 border-t border-border">
+            <p className="text-[11px] leading-[1.45] text-muted-foreground">What agents know, their memory, is in Brain. Here is what they produce.</p>
+            <Link href="/memory" className="mt-2 inline-flex items-center gap-1.5 h-[26px] px-2.5 border border-border font-mono text-[11.5px] text-text-secondary hover:text-foreground">
+              <Brain className="w-3 h-3" />
+              open Brain
+            </Link>
+          </div>
         </Panel>
 
         {/* Document list - the opened row stays boxed as active */}
         <Panel
           fill
           padded={false}
-          className={`w-[300px] shrink-0 min-w-0 max-lg:w-auto max-lg:flex-1 ${showBody ? 'max-lg:hidden' : ''}`}
+          className={`${projects.place ? 'w-[400px]' : 'w-[300px]'} shrink-0 min-w-0 max-lg:w-auto max-lg:flex-1 ${showBody ? 'max-lg:hidden' : ''}`}
         >
-          {loading ? (
+          {projects.place && projectFolder ? (
+            <ProjectFileList
+              folder={projectFolder}
+              sub={projects.place.sub}
+              list={projects.list}
+              selected={projectFile}
+              notesMoved={projects.notes[projectFolder.key]}
+              onOpen={setProjectFile}
+              onShowFolder={() => { void window.electronAPI?.vault?.showProjectFile({ key: projectFolder.key, sub: projects.place!.sub }); }}
+            />
+          ) : loading ? (
             <div className="flex items-center justify-center h-full">
               <BrandSpinner size={30} label="Loading documents" />
             </div>
@@ -433,7 +480,24 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
         {/* Document body */}
         <Panel fill padded={false} className={`flex-1 min-w-0 ${showBody ? '' : 'max-lg:hidden'}`}>
           <AnimatePresence mode="wait">
-            {viewMode === 'edit' ? (
+            {projects.place && projectFile ? (
+              <motion.div
+                key={`file-${projects.place.key}-${projects.place.sub}-${projectFile}`}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
+                className="h-full overflow-hidden"
+              >
+                <ProjectFilePanel
+                  projectKey={projects.place.key}
+                  sub={projects.place.sub}
+                  name={projectFile}
+                  names={projectNames}
+                  changes={projects.changes}
+                  onOpenFile={setProjectFile}
+                />
+              </motion.div>
+            ) : viewMode === 'edit' ? (
               <motion.div
                 key="edit"
                 initial={{ opacity: 0, x: 10 }}
@@ -477,7 +541,7 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
                 animate={{ opacity: 1 }}
                 className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground"
               >
-                Pick a document on the left to read it.
+                {projects.place ? 'Pick a file in the list to read it.' : 'Pick a document on the left to read it.'}
               </motion.div>
             )}
           </AnimatePresence>

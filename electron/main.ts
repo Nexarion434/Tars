@@ -127,6 +127,7 @@ import { registerBusHandlers } from './handlers/bus-handlers';
 import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
+import { registerVaultProjectFilesHandlers } from './handlers/vault-project-files-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
@@ -691,6 +692,8 @@ app.whenReady().then(async () => {
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });
+  // Each project's reports/ and tools/, what its agents produce.
+  registerVaultProjectFilesHandlers();
 
 
   // The relay to the user's Telegram through their Hermes, following its switch

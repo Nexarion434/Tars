@@ -253,6 +253,31 @@ export interface AgentEvent {
   exitCode?: number;
 }
 
+type VaultSubfolder = 'reports' | 'tools';
+type VaultFailure = { error: string; code: string };
+interface VaultProjectFolder {
+  key: string;
+  /** The project's folder name when Tars knows the project, else the key without its hash. */
+  name: string;
+  projectPath: string | null;
+  reports: number | VaultFailure;
+  tools: number | VaultFailure;
+  notesMoved?: string;
+}
+interface VaultProjectFileEntry { name: string; size: number; mtimeMs: number; kind: 'markdown' | 'text' | 'code' | 'other'; runnable: boolean }
+interface VaultProjectFileRead {
+  name: string;
+  /** Where it is, as the system writes it. */
+  path: string;
+  kind: 'markdown' | 'text' | 'code' | 'other';
+  size: number;
+  mtimeMs: number;
+  runnable: boolean;
+  text?: string;
+  truncated: boolean;
+  editable: boolean;
+}
+
 export interface VaultDocumentElectron {
   id: string;
   title: string;
@@ -2076,6 +2101,22 @@ export interface ElectronAPI {
 
   // Vault
   vault?: {
+    /**
+     * Each project's folder, ~/.dorothy/project-files/<key>: what its agents
+     * produce, in reports/ and tools/ (electron/services/vault-project-files.ts).
+     * A file is named by its folder's key, a subfolder and a name, never a
+     * path; every failure is `{ error, code }`.
+     */
+    projectFolders: () => Promise<{ folders: VaultProjectFolder[] }>;
+    projectFiles: (params: { key: string; sub: VaultSubfolder }) => Promise<{ files: VaultProjectFileEntry[]; more?: number } | VaultFailure>;
+    /** The text whole up to 1 MB (editable), its first 200 KB past that (truncated, read only), none for a file that is not text. */
+    readProjectFile: (params: { key: string; sub: VaultSubfolder; name: string }) => Promise<VaultProjectFileRead | VaultFailure>;
+    /** Written unless it changed on disk since `mtimeSeen` (null for a new file): then `changed`, with its time, and nothing written. */
+    writeProjectFile: (params: { key: string; sub: VaultSubfolder; name: string; text: string; mtimeSeen: number | null }) =>
+      Promise<{ ok: true; mtimeMs: number } | { changed: true; mtimeMs: number | null } | VaultFailure>;
+    /** With a name, shows the file in its folder; without, opens the subfolder. */
+    showProjectFile: (params: { key: string; sub: VaultSubfolder; name?: string }) => Promise<{ success: true } | VaultFailure>;
+    onProjectFilesChanged: (callback: (event: { key: string; sub: VaultSubfolder }) => void) => () => void;
     listDocuments: (params?: { folder_id?: string; tags?: string[] }) => Promise<{ documents: VaultDocumentElectron[]; error?: string }>;
     getDocument: (id: string) => Promise<{ document?: VaultDocumentElectron; attachments?: VaultAttachmentElectron[]; error?: string }>;
     createDocument: (params: {
