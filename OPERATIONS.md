@@ -245,7 +245,7 @@ Error reports).
 `[error-reports] error reports on, tars@<version>` once, at start or when the switch is turned on, and
 `[error-reports] sent a <kind> report: HTTP <status>` for each report (`error`, `handled`, `agent-tool`,
 `abrupt-end`, `diagnostic`; HTTP 0 when no answer came). The last answer is kept in
-`~/.dorothy/error-reports.json` (`last`), which the window reads (`errorReports:last`). On and no `sent`
+`~/.dorothy/error-reports.json` (`last`), which Settings, Preferences says beside the switch (`errorReports:last`). On and no `sent`
 line: nothing reportable happened, or the day's budget is spent (`sent` in that file: 20 in 24 hours, the
 agents' tool errors 10 of them, the same error once). A `[uncaught]` line is an uncaught exception in
 main, which Tars runs past and never shows Electron's error box for. If Tars quits at launch, run it from
