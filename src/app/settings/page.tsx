@@ -188,6 +188,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onOpenClaudeAccounts={() => setActiveSection('claude-accounts')}
           />
         );
       case 'claude-accounts':
