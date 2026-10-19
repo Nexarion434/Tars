@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { test } from '@playwright/test';
 
 /**
@@ -799,6 +799,7 @@ function watchSlowClose(app) {
     const record = { pid, startedAt: new Date(started).toISOString(), trees: [], stacks: null, exit: null, tookMs: null };
     app.process().once('exit', (code, signal) => { record.exit = { code, signal, atMs: Date.now() - started }; });
     let next = null;
+    let stacks = null;
     const look = () => {
       try {
         const all = execFileSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,stat=,command='], { encoding: 'utf8', timeout: 5000 })
@@ -811,8 +812,10 @@ function watchSlowClose(app) {
           for (const p of all) if (!ids.has(p.pid) && ids.has(p.ppid)) { ids.add(p.pid); tree.push(p); grew = true; }
         }
         record.trees.push({ atMs: Date.now() - started, tree });
-        if (record.stacks === null && process.platform === 'darwin' && tree.some(p => p.pid === pid)) {
-          record.stacks = execFileSync('sample', [String(pid), '1', '-mayDie'], { encoding: 'utf8', timeout: 20_000, maxBuffer: 16 * 1024 * 1024 }).slice(0, 200_000);
+        // Beside the runner, never in its way: a `sample` run in line held a 9 s close for 23 s (measured on 19/10).
+        if (stacks === null && process.platform === 'darwin' && tree.some(p => p.pid === pid)) {
+          stacks = new Promise(resolve => execFile('sample', [String(pid), '1', '-mayDie'], { encoding: 'utf8', timeout: 20_000, maxBuffer: 16 * 1024 * 1024 },
+            (error, out) => resolve(error ? `sample failed: ${String(error).slice(0, 300)}` : out.slice(0, 200_000))));
         }
       } catch (error) {
         record.trees.push({ atMs: Date.now() - started, error: String(error).slice(0, 300) });
@@ -826,6 +829,7 @@ function watchSlowClose(app) {
       clearTimeout(slow);
       if (next) clearTimeout(next);
       record.tookMs = Date.now() - started;
+      if (stacks) record.stacks = await Promise.race([stacks, new Promise(resolve => setTimeout(() => resolve('sample still running after 20 s'), 20_000))]);
       if (record.trees.length > 0) {
         try {
           fs.writeFileSync(test.info().outputPath('close-hang.json'), JSON.stringify(record, null, 2));
