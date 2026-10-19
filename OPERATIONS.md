@@ -1201,8 +1201,8 @@ Each provider writes to its own config, CLI-first with a file fallback:
 | `codex` | `~/.codex` | fallback writes `[mcp_servers.<name>]` into `config.toml` |
 | `gemini` | `~/.gemini` | fallback writes `settings.json` |
 | `grok` | `~/.grok` | fallback writes `[mcp_servers.<name>]` into `config.toml` with `enabled = true` |
-| `opencode` | `~/.opencode` | |
-| `pi` | `~/.pi` | |
+| `opencode` | `~/.opencode` | writes `mcp.<name>` (`type: "local"`, `command` as one array) into `opencode.json` of `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`, where opencode 1.19.3 reads it (until 2.0.4, `~/.opencode/config.json`, which it never read; what Tars left there is taken out). A file that is not plain JSON (opencode takes JSONC) is left as it is |
+| `pi` | `~/.pi` | writes `mcpServers.<name>` into `mcp.json` of `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`, where pi 1.3.0 (`@earendil-works/pi-coding-agent`) reads it (until 2.0.4, `~/.pi/config.json`, which it never read; what Tars left there is taken out). `@mariozechner/pi-coding-agent`, its former name, has no MCP |
 
 Because the paths resolve through `process.resourcesPath`, **MCP registration only works in a
 packaged app, installed**: one opened from its disk image or translocated by macOS
