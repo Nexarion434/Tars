@@ -275,9 +275,11 @@ describe("what a handled error is sent as (12, 13, the Audit's M1 on #474)", () 
     expect(withoutWords(undefined).message).toBe('(message not sent)');
     const loop = made(new Error('acme loop'));
     (loop as { cause?: unknown }).cause = loop;
-    let depth = 0;
-    for (let e: unknown = withoutWords(loop); e instanceof Error; e = e.cause) depth++;
-    expect(depth).toBeLessThanOrEqual(5);
+    // Walked to 10 at most: a copy that kept the loop would never end.
+    const chain: unknown[] = [];
+    for (let e: unknown = withoutWords(loop); e instanceof Error && chain.length < 10; e = e.cause) chain.push(e);
+    expect(chain.length).toBeLessThanOrEqual(5);
+    expect(chain).not.toContain(loop);
     const named = made(new Error('x'));
     named.name = 'Acme merger failed';
     expect(withoutWords(named).name).toBe('Error');
