@@ -60,18 +60,33 @@ async function turn(prompt) {
 }
 process.stdout.write('pi stand-in ready\n');
 process.stdin.setRawMode(true);
+// As pi-tui 1.3.0 does (terminal.js): bracketed paste on, a paste goes into the editor whole, its newlines
+// included, and only an Enter typed outside it submits. A lone Esc cuts the turn in hand.
 let buffer = '';
+let pasting = false;
 let queue = Promise.resolve();
 process.stdin.on('data', (data) => {
-  let text = data.toString().replace(/\x1b\[20[01]~/g, '');
-  // A lone Esc cuts the turn in hand, as pi's does.
-  if (text.includes('\x1b')) { cut = true; text = text.replace(/\x1b/g, ''); }
-  buffer += text;
-  let end;
-  while ((end = buffer.search(/[\r\n]/)) !== -1) {
-    const line = buffer.slice(0, end);
-    buffer = buffer.slice(end + 1);
-    if (line.trim()) queue = queue.then(() => turn(line));
+  let s = data.toString();
+  while (s.length) {
+    if (pasting) {
+      const end = s.indexOf('\x1b[201~');
+      if (end === -1) { buffer += s; s = ''; } else { buffer += s.slice(0, end); s = s.slice(end + 6); pasting = false; }
+      continue;
+    }
+    const start = s.indexOf('\x1b[200~');
+    const keys = start === -1 ? s : s.slice(0, start);
+    s = start === -1 ? '' : s.slice(start + 6);
+    if (start !== -1) pasting = true;
+    for (const ch of keys) {
+      if (ch === '\x1b') { cut = true; continue; }
+      if (ch === '\r' || ch === '\n') {
+        const prompt = buffer;
+        buffer = '';
+        if (prompt.trim()) queue = queue.then(() => turn(prompt));
+        continue;
+      }
+      buffer += ch;
+    }
   }
 });
 process.stdin.resume();
