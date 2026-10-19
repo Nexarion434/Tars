@@ -184,7 +184,6 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
             and paste what it gives you.
           </>
         }
-        placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz…"
         clearWarning="Clear the bot token? The bot stops now, and starts again once a token is set."
         onChanged={onSecretChanged}
       />
