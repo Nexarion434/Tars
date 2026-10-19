@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 238 root frames, 73 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other hundred and sixty-six being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 244 root frames, 79 of them drawn and not built yet (listed at the end). Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other hundred and seventy-two being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -244,6 +244,9 @@ For 2.0.4:
 - Relay, one switch for every gateway Hermes has, a section under Settings, Hermes: Relay · Settings, Hermes · off,
   · turning on, · on, · could not turn on (off, on and could not turn on with their light copies, turning on at the
   narrowest window), · states (and its light copy), · notes for the Backend.
+- Gateways, every Hermes that hands Tars work (its addresses, its secret, the projects it may reach), a section under
+  Settings, Hermes, where Connection's Incoming webhook row now points: Gateways · Settings, Hermes (its light copy,
+  the narrowest window), · states (and its light copy), · notes for the Backend.
 - Providers, one panel per CLI: Providers · one panel per CLI · Codex, · Claude Code (Codex with its light copy and at
   the narrowest window), · states (and its light copy), · notes for the Backend.
 
