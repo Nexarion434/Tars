@@ -31,9 +31,29 @@ import * as path from 'node:path';
  *      escaped Windows path), is left there, or a name that only starts the
  *      same (`.dorothy-backup`) is changed; a file nothing changed in is
  *      written anyway, or loses its mode; a file not on the list is touched.
+ *
+ * And the Audit's Lows on #473 (850672d9), written before their code:
+ *  D10. ~/.dorothy is a link to a folder elsewhere beside a real ~/.tars (L1,
+ *      PB): it is taken for the link of 2.0.4 without looking where it leads,
+ *      and Tars runs on a ~/.tars without the user's agents and settings.
+ *  D11. ~/.tars is a link to a folder that is not Tars's (no agents.json, no
+ *      app-settings.json) beside a real ~/.dorothy that is (L1, PA): Tars runs
+ *      on the foreign folder.
+ *  D12. Two different folders, whichever is used: the user is not told, or told
+ *      only in the log. The outcome must carry a notice for the window.
+ *  D13. ~/.tars is not a folder (a file, a link to a file, a dangling link):
+ *      Tars uses it, or moves ~/.dorothy over it.
+ *  D14. ~/.dorothy is a dangling link: it is renamed to ~/.tars, and Tars runs
+ *      on a link that leads nowhere.
+ *  D15. The folder settleDataDir answers is not the one pickDataDir, the rule
+ *      every reader outside the app follows, reads on the home it leaves (L2).
+ *  W2. A file another program writes between Tars's read and its rename (every
+ *      claude session rewrites ~/.claude.json) loses that write (L3): the
+ *      rewrite must start again from what the file holds now, and leave the
+ *      file as the other writer made it when it keeps changing.
  */
 
-import { settleDataDir, rewriteLegacyPaths } from '../../../electron/core/data-dir-move';
+import { settleDataDir, pickDataDir, rewriteLegacyPaths } from '../../../electron/core/data-dir-move';
 
 let home: string;
 const tars = () => path.join(home, '.tars');
@@ -124,6 +144,100 @@ describe('the move', () => {
   });
 });
 
+describe('two folders, and a ~/.tars that is not a folder (the Audit\'s L1 and L2 on #473)', () => {
+  it('D10. a ~/.dorothy link to a folder elsewhere beside a ~/.tars without records: the folder with the records, and said', () => {
+    const disk = path.join(home, 'Volumes', 'ext', 'dorothy');
+    put(path.join(disk, 'agents.json'), '[ext]');
+    put(path.join(disk, 'app-settings.json'), '{}');
+    fs.symlinkSync(disk, old());
+    put(path.join(tars(), 'notes.txt'), 'not tars');
+    const r = settleDataDir(home);
+    expect(r).toMatchObject({ dir: old(), did: 'both', linked: false });
+    expect(r.notice).toContain(old());
+    expect(r.notice).toContain(tars());
+    expect(fs.readFileSync(path.join(r.dir, 'agents.json'), 'utf8')).toBe('[ext]');
+    expect(fs.readFileSync(path.join(tars(), 'notes.txt'), 'utf8')).toBe('not tars');
+    expect(fs.realpathSync(old())).toBe(fs.realpathSync(disk));
+  });
+
+  it('D10. the link of 2.0.4 itself, to ~/.tars, is no second folder: already, and nothing to say', () => {
+    put(path.join(tars(), 'agents.json'), '[1]');
+    fs.symlinkSync('.tars', old(), 'dir');
+    const r = settleDataDir(home);
+    expect(r).toMatchObject({ dir: tars(), did: 'already', linked: true });
+    expect(r.notice).toBeUndefined();
+  });
+
+  it('D11. a ~/.tars link to a foreign folder beside a ~/.dorothy with records: ~/.dorothy, and said', () => {
+    const foreign = path.join(home, 'elsewhere');
+    put(path.join(foreign, 'readme.md'), 'someone else');
+    fs.symlinkSync(foreign, tars());
+    put(path.join(old(), 'agents.json'), '[mine]');
+    const r = settleDataDir(home);
+    expect(r).toMatchObject({ dir: old(), did: 'both', linked: false });
+    expect(r.notice).toContain(old());
+    expect(fs.readdirSync(foreign)).toEqual(['readme.md']);
+    expect(fs.lstatSync(old()).isDirectory()).toBe(true);
+  });
+
+  it('D12. two folders that both hold records: ~/.tars, the other left as it is, and said in the notice', () => {
+    put(path.join(tars(), 'agents.json'), '[new]');
+    put(path.join(old(), 'app-settings.json'), '{"old":1}');
+    const r = settleDataDir(home);
+    expect(r).toMatchObject({ dir: tars(), did: 'both' });
+    expect(r.notice).toContain(old());
+    expect(fs.readFileSync(path.join(old(), 'app-settings.json'), 'utf8')).toBe('{"old":1}');
+  });
+
+  it('D12. a move, a first start and a refused move have nothing to tell the window', () => {
+    put(path.join(old(), 'agents.json'), '[1]');
+    expect(settleDataDir(home).notice).toBeUndefined();
+    const other = fs.mkdtempSync(path.join(os.homedir(), 'move-'));
+    expect(settleDataDir(other).notice).toBeUndefined();
+  });
+
+  it('D13. a ~/.tars that is a link to a file, or a dangling link, is not used and not written over', () => {
+    put(path.join(old(), 'agents.json'), '[1]');
+    put(path.join(home, 'a-file'), 'f');
+    fs.symlinkSync(path.join(home, 'a-file'), tars());
+    expect(settleDataDir(home)).toMatchObject({ dir: old(), did: 'kept-old' });
+    fs.rmSync(tars());
+    fs.symlinkSync(path.join(home, 'nowhere'), tars());
+    expect(settleDataDir(home)).toMatchObject({ dir: old(), did: 'kept-old' });
+    expect(fs.readlinkSync(tars())).toBe(path.join(home, 'nowhere'));
+    expect(fs.readFileSync(path.join(old(), 'agents.json'), 'utf8')).toBe('[1]');
+  });
+
+  it('D14. a dangling ~/.dorothy link is not moved: a first start on ~/.tars', () => {
+    fs.symlinkSync(path.join(home, 'gone'), old());
+    const r = settleDataDir(home);
+    expect(r).toMatchObject({ dir: tars(), did: 'none' });
+    expect(fs.existsSync(tars())).toBe(false);
+    expect(fs.readlinkSync(old())).toBe(path.join(home, 'gone'));
+  });
+
+  it('D15. settleDataDir answers what pickDataDir reads on the home it leaves, in every case above', () => {
+    const homes: Array<(h: string) => void> = [
+      () => {},
+      (h) => put(path.join(h, '.dorothy', 'agents.json')),
+      (h) => { put(path.join(h, '.tars', 'agents.json')); put(path.join(h, '.dorothy', 'agents.json')); },
+      (h) => { put(path.join(h, '.tars'), 'file'); put(path.join(h, '.dorothy', 'agents.json')); },
+      (h) => put(path.join(h, '.tars'), 'file'),
+      (h) => { put(path.join(h, 'ext', 'agents.json')); fs.symlinkSync(path.join(h, 'ext'), path.join(h, '.dorothy')); put(path.join(h, '.tars', 'x')); },
+      (h) => { put(path.join(h, 'ext', 'x')); fs.symlinkSync(path.join(h, 'ext'), path.join(h, '.tars')); put(path.join(h, '.dorothy', 'app-settings.json')); },
+      (h) => { fs.symlinkSync(path.join(h, 'gone'), path.join(h, '.tars')); put(path.join(h, '.dorothy', 'agents.json')); },
+      (h) => { put(path.join(h, '.tars', 'agents.json')); put(path.join(h, '.dorothy'), 'file'); },
+    ];
+    for (const seed of homes) {
+      const h = fs.mkdtempSync(path.join(os.homedir(), 'pick-'));
+      seed(h);
+      const r = settleDataDir(h);
+      expect(pickDataDir(h), `home ${homes.indexOf(seed)}`).toBe(r.dir);
+      expect(settleDataDir(h).dir, `home ${homes.indexOf(seed)}, a second start`).toBe(r.dir);
+    }
+  });
+});
+
 describe('W1. the old path, where Tars wrote it outside its folder', () => {
   it('is rewritten in every form Tars writes it, and nothing else is', () => {
     const abs = path.join(home, '.dorothy');
@@ -151,5 +265,33 @@ describe('W1. the old path, where Tars wrote it outside its folder', () => {
     expect(JSON.parse(fs.readFileSync(win, 'utf8')).c).toBe('C:\\Users\\u\\.tars\\bin\\tars-mcp-node.cmd');
     expect(fs.readFileSync(untouched, 'utf8')).toBe(`${abs}/kept`);
     expect(fs.statSync(unchanged).mtimeMs).toBe(mtime);
+  });
+});
+
+describe('W2. a file another program writes while Tars rewrites it (the Audit\'s L3 on #473)', () => {
+  const abs = () => path.join(home, '.dorothy');
+
+  it('starts again from what the file holds now, so the other write is kept', () => {
+    const file = put(path.join(home, '.claude.json'), JSON.stringify({ a: `${abs()}/x`, n: 1 }));
+    let writes = 0;
+    const changed = rewriteLegacyPaths({
+      home, files: [file],
+      beforeReplace: () => { if (writes++ === 0) fs.writeFileSync(file, JSON.stringify({ a: `${abs()}/x`, n: 2 })); },
+    });
+    expect(changed).toEqual([file]);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ a: `${path.join(home, '.tars')}/x`, n: 2 });
+    expect(fs.readdirSync(home).filter((n) => n.includes('tars-move'))).toEqual([]);
+  });
+
+  it('leaves the file as the other writer made it when it changes under every attempt', () => {
+    const file = put(path.join(home, '.claude.json'), JSON.stringify({ a: `${abs()}/x`, n: 0 }));
+    let n = 0;
+    const changed = rewriteLegacyPaths({
+      home, files: [file],
+      beforeReplace: () => { fs.writeFileSync(file, JSON.stringify({ a: `${abs()}/x`, n: ++n })); },
+    });
+    expect(changed).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ a: `${abs()}/x`, n });
+    expect(fs.readdirSync(home).filter((n) => n.includes('tars-move'))).toEqual([]);
   });
 });
