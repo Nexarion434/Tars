@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * A task delegated over ACP runs as its agent, not as nobody.
@@ -20,6 +21,9 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-token-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 const serverBundle = path.join(tmp, 'bundle.js');
 fs.writeFileSync(serverBundle, '');
 
@@ -110,7 +114,7 @@ interface Report {
 /** Runs one delegation, reading the fake agent's report while the turn is still open. */
 async function delegate(ending: 'end_turn' | 'error') {
   const script = path.join(tmp, `agent-${ending}.mjs`);
-  fs.writeFileSync(script, fakeAgentScript(ending));
+  fs.writeFileSync(script, RECORDS_ITS_PID + fakeAgentScript(ending));
   launch = { command: process.execPath, args: [script] };
 
   let report: Report | undefined;

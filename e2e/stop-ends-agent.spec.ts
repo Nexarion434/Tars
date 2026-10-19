@@ -48,12 +48,13 @@ test('stopping an agent ends its CLI deaf to the hangup, and records who stopped
     'process.stdin.resume();',
     '',
   ].join('\n'), { mode: 0o755 });
-  const agent = (id: string, name: string) => ({
-    id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+  // The lead is the project's orchestrator: since #449 only Tars, the window and an orchestrator stop, restart or remove another agent.
+  const agent = (id: string, name: string, role = 'worker') => ({
+    id, name, character: 'robot', provider: 'claude', status: 'idle', role,
     projectPath: project, skills: [], cliPath: cli,
     createdAt: '2026-10-01T08:00:00.000Z', lastActivity: '2026-10-01T08:00:00.000Z',
   });
-  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('s1', 'Frozen Worker'), agent('o1', 'Project Lead')], null, 2));
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('s1', 'Frozen Worker'), agent('o1', 'Project Lead', 'orchestrator')], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));

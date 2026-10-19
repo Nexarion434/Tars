@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * A task delegated over ACP calls back the Tars that started it.
@@ -25,6 +26,9 @@ import * as path from 'node:path';
 vi.hoisted(() => { process.env.DOROTHY_API_PORT = '31493'; });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-port-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 const serverBundle = path.join(tmp, 'bundle.js');
 fs.writeFileSync(serverBundle, '');
 
@@ -93,7 +97,7 @@ interface Report {
 
 async function delegate(): Promise<Report> {
   const script = path.join(tmp, 'agent.mjs');
-  fs.writeFileSync(script, FAKE_AGENT);
+  fs.writeFileSync(script, RECORDS_ITS_PID + FAKE_AGENT);
   launch = { command: process.execPath, args: [script] };
 
   let report: Report | undefined;

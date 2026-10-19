@@ -68,6 +68,7 @@ import { AcpSession } from '../../../electron/services/acp/client';
 import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 import { agentForToken } from '../../../electron/core/agent-tokens';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 const PRELUDE = `
 import * as fs from 'node:fs';
@@ -99,7 +100,7 @@ function handle(msg) {
 
 function script(name: string, body: string): string {
   const file = path.join(tmp, `${name}.mjs`);
-  fs.writeFileSync(file, body);
+  fs.writeFileSync(file, RECORDS_ITS_PID + body);
   return file;
 }
 
@@ -177,8 +178,12 @@ beforeEach(() => {
   savedPath = process.env.PATH;
 });
 
+const leftovers = new Leftovers();
 afterEach(async () => {
   for (const s of sessions.splice(0)) s.stop();
+  // Ended by its id too, stopped or not, whatever stop() got to (leftover-processes.ts).
+  leftovers.push(...takePidsRecordedIn(tmp));
+  leftovers.end();
   process.env.PATH = savedPath;
   // Whatever the case did, nothing it started may throw once it has returned.
   await settle();

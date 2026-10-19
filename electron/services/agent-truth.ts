@@ -563,7 +563,8 @@ export function lastInterruptAt(
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return undefined;
   const qwen = agent.provider === 'qwen-code';
-  const roots = qwen ? [agent.worktreePath, agent.projectPath].filter((r): r is string => !!r) : transcriptRoots(agent.worktreePath, agent.projectPath);
+  // Each path as saved, then its real path: qwen files its transcript under the folder it runs in, as Claude Code does.
+  const roots = transcriptRoots(agent.worktreePath, agent.projectPath);
   let latest: number | undefined;
   for (const root of roots) {
     const file = qwen ? qwenTranscriptPath(root, sessionId, homeDir) : transcriptPath(root, sessionId, homeDir);
