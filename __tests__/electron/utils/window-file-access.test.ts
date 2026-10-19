@@ -37,6 +37,10 @@ import * as path from 'node:path';
  *  W6. local-file:// serves outside what a page may show (vault attachments,
  *      the project-files folders, Claude Code's memory folders), or serves a
  *      secret through a link placed in one of those.
+ *  W7. (The Audit's mutant W3 on #466, added 2026-10-19) local-file:// serves
+ *      a file with a second name outside the private folder, which no name and
+ *      no inode check of Tars's knows: an agent's hard link, in its project's
+ *      folder of files, to an SSH key or a CLI's credentials.
  */
 
 import { windowMayRead, windowMayWrite, localFileServes } from '../../../electron/utils/window-file-access';
@@ -131,5 +135,15 @@ describe('what local-file:// serves', () => {
     const hard = path.join(DATA_DIR, 'project-files', 'tars-1', 'h.md');
     fs.linkSync(path.join(PRIVATE_DIR, 'api-token'), hard);
     expect(localFileServes(hard)).toBe(false);
+  });
+
+  it('W7. no file with a second name, wherever the other one is', () => {
+    const outside = [put(at('.ssh', 'id_ed25519'), 'PRIVATE KEY'), put(at('.claude', '.credentials.json'), '{"t":"x"}')];
+    outside.forEach((secret, i) => {
+      const hard = path.join(DATA_DIR, 'project-files', 'tars-1', 'reports', `notes-${i}.md`);
+      fs.mkdirSync(path.dirname(hard), { recursive: true });
+      fs.linkSync(secret, hard);
+      expect(localFileServes(hard), hard).toBe(false);
+    });
   });
 });

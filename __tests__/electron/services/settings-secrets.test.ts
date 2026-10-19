@@ -37,6 +37,17 @@ import * as path from 'node:path';
  *      keeps the key; secretsSet says which are set; secrets:set clears one.
  *      The Sentry token too, which keeps its own private file (sentry-token.ts)
  *      and which app:getSettings still handed the page.
+ * Added before their code after the Audit's gate of 06a46bcb (2026-10-19):
+ * P11. An old anthropicApiKey, which a Tars before #460 saved from Claude
+ *      Code's panel, stays in app-settings.json: it is no field of AppSettings
+ *      any more, so the inventory never names it.
+ * P12. (M1, the Audit's probe PA) A private folder Tars cannot write (EACCES)
+ *      or a full disk (ENOSPC) throws out of the migration, at module load:
+ *      Tars stops on Electron's error box at its first 2.0.4 launch. Or the
+ *      copies are erased before the keys are written, and a key a backup alone
+ *      held is lost (the Audit's mutant S1).
+ * P13. (The Audit's probe PB, its mutant S2) A save over a private file that
+ *      cannot be read writes over it, instead of setting it aside.
  */
 
 import {
@@ -178,5 +189,40 @@ describe('the secrets, in ~/.tars-private', () => {
     expect(keepSecrets(sentry, sentryShown as Partial<AppSettings>).sentryAuthToken).toBe('sntrys-e2e-1');
     const sentryCleared = setSecret(sentry, 'sentryAuthToken', null);
     expect(sentryCleared.ok && sentryCleared.settings.sentryAuthToken).toBe('');
+  });
+});
+
+describe('after the Audit\'s gate of 06a46bcb', () => {
+  it('P11. moves an old anthropicApiKey out of app-settings.json too', () => {
+    fs.writeFileSync(APP_SETTINGS_FILE, JSON.stringify({ anthropicApiKey: 'sk-ant-old-111', telegramEnabled: true }));
+    migrateSecrets();
+    expect(settingsJson()).not.toHaveProperty('anthropicApiKey');
+    expect(settingsJson().telegramEnabled).toBe(true);
+    expect(readSecrets().anthropicApiKey).toBe('sk-ant-old-111');
+  });
+
+  it('P12. a private folder it cannot write: nothing thrown, nothing lost, the key a backup alone holds kept', () => {
+    if (process.platform === 'win32') return;
+    fs.writeFileSync(APP_SETTINGS_FILE, JSON.stringify({ telegramEnabled: true }));
+    fs.writeFileSync(`${APP_SETTINGS_FILE}.bak`, JSON.stringify({ deepSeekApiKey: 'ds-only-in-bak' }));
+    fs.mkdirSync(PRIVATE_DIR, { recursive: true, mode: 0o700 });
+    fs.chmodSync(PRIVATE_DIR, 0o500);
+    let threw: unknown = null;
+    try { migrateSecrets(); } catch (err) { threw = err; } finally { fs.chmodSync(PRIVATE_DIR, 0o700); }
+    expect(threw, 'migrateSecrets threw out of the load').toBeNull();
+    expect(fs.existsSync(`${APP_SETTINGS_FILE}.bak`), 'the backup holding the only key').toBe(true);
+    // The next start, with a folder it can write, finishes it.
+    migrateSecrets();
+    expect(readSecrets().deepSeekApiKey).toBe('ds-only-in-bak');
+    expect(fs.existsSync(`${APP_SETTINGS_FILE}.bak`)).toBe(false);
+  });
+
+  it('P13. a save over a private file that cannot be read sets it aside, never writes over it', () => {
+    fs.mkdirSync(PRIVATE_DIR, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(PRIVATE_DIR, 'settings-secrets.json'), '{ broken', { mode: 0o600 });
+    saveSettingsSplit({ telegramEnabled: true } as unknown as AppSettings);
+    const aside = fs.readdirSync(PRIVATE_DIR).filter(n => n.startsWith('settings-secrets.json.unreadable-'));
+    expect(aside.length).toBe(1);
+    expect(fs.readFileSync(path.join(PRIVATE_DIR, aside[0]), 'utf8')).toBe('{ broken');
   });
 });
