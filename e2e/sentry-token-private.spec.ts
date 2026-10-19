@@ -9,14 +9,22 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The Sentry token leaves ~/.dorothy, which every agent is handed, for
  * ~/.tars-private, which none is (the Audit's gates of #242 and #292), in the
  * real app: a token saved by an older Tars in app-settings.json moves at the
- * first start, the settings the app hands its pages still carry it, and a
- * save, of that token or of anything else, never writes it back.
+ * first start, and a save, of that token or of anything else, never writes it
+ * back. The window is told whether it is set, never its value (PR 466: the
+ * mask when set, '' when not, and `secretsSet.sentryAuthToken`); a save that
+ * sends it empty keeps it, and only secrets.set clears it.
  */
 
-type Api = { electronAPI: { appSettings: {
-  get(): Promise<Record<string, unknown>>;
-  save(s: Record<string, unknown>): Promise<unknown>;
-} } };
+type Api = { electronAPI: {
+  appSettings: {
+    get(): Promise<Record<string, unknown> & { secretsSet?: Record<string, boolean> }>;
+    save(s: Record<string, unknown>): Promise<unknown>;
+  };
+  secrets: { set(field: string, value: string | null): Promise<unknown> };
+} };
+
+/** What the window is shown for a secret that is set (settings-secrets.ts, SECRET_MASK). */
+const MASK = '\u2022'.repeat(8);
 
 const OLD = 'sntryu_e2e-token-saved-by-an-older-tars';
 const NEW = 'sntryu_e2e-token-typed-in-settings';
@@ -39,28 +47,40 @@ test('the Sentry token moves out of ~/.dorothy at the first start, and a save ne
     const get = () => page.evaluate(() => (window as unknown as Api).electronAPI.appSettings.get());
     const save = (s: Record<string, unknown>) => page.evaluate((x) => (window as unknown as Api).electronAPI.appSettings.save(x), s);
     const onDisk = () => fs.readFileSync(settingsFile, 'utf8');
+    /** What the window is handed of the token: the mask or '', whether it is set, and whether its value is anywhere in it. */
+    const handed = async () => {
+      const s = await get();
+      return { shown: s.sentryAuthToken, set: s.secretsSet?.sentryAuthToken, value: /sntryu_/.test(JSON.stringify(s)) };
+    };
 
-    // Moved at the first start, and still handed to the pages.
+    // Moved at the first start; the window is told it is set, never what it is.
     const moved = { inSettings: onDisk().includes(OLD), private: fs.readFileSync(privateFile, 'utf8'), mode: (fs.statSync(privateFile).mode & 0o777).toString(8) };
     expect(moved).toEqual({ inSettings: false, private: OLD, mode: '600' });
-    expect((await get()).sentryAuthToken).toBe(OLD);
+    const handedAtStart = await handed();
+    expect(handedAtStart).toEqual({ shown: MASK, set: true, value: false });
 
     // A save of something else does not write it back.
     await save({ sentryTriageProject: '/work/other' });
     const afterOther = { inSettings: onDisk().includes(OLD), project: JSON.parse(onDisk()).sentryTriageProject, private: fs.readFileSync(privateFile, 'utf8') };
     expect(afterOther).toEqual({ inSettings: false, project: '/work/other', private: OLD });
 
-    // A new token goes to the private file only.
+    // A new token goes to the private file only, and the window is still shown the mask.
     await save({ sentryAuthToken: NEW });
-    const afterNew = { inSettings: /sntryu_/.test(onDisk()), private: fs.readFileSync(privateFile, 'utf8'), handed: (await get()).sentryAuthToken };
-    expect(afterNew).toEqual({ inSettings: false, private: NEW, handed: NEW });
+    const afterNew = { inSettings: /sntryu_/.test(onDisk()), private: fs.readFileSync(privateFile, 'utf8'), handed: await handed() };
+    expect(afterNew).toEqual({ inSettings: false, private: NEW, handed: { shown: MASK, set: true, value: false } });
 
-    // Cleared, it is gone.
+    // A save that sends it back as shown, or empty, keeps it.
+    await save({ sentryAuthToken: MASK });
     await save({ sentryAuthToken: '' });
-    const cleared = { privateExists: fs.existsSync(privateFile), handed: (await get()).sentryAuthToken };
-    expect(cleared).toEqual({ privateExists: false, handed: '' });
+    const kept = { private: fs.readFileSync(privateFile, 'utf8'), handed: await handed() };
+    expect(kept).toEqual({ private: NEW, handed: { shown: MASK, set: true, value: false } });
 
-    recordValues({ moved, afterOther, afterNew, cleared, keysOnDisk: Object.keys(JSON.parse(onDisk())).sort() });
+    // Cleared through secrets.set, it is gone.
+    await page.evaluate(() => (window as unknown as Api).electronAPI.secrets.set('sentryAuthToken', null));
+    const cleared = { privateExists: fs.existsSync(privateFile), handed: await handed() };
+    expect(cleared).toEqual({ privateExists: false, handed: { shown: '', set: false, value: false } });
+
+    recordValues({ moved, handedAtStart, afterOther, afterNew, kept, cleared, keysOnDisk: Object.keys(JSON.parse(onDisk())).sort() });
   } finally {
     await app.close();
   }
