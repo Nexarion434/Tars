@@ -31,16 +31,17 @@ import { writeFakeClis } from './fake-clis.mjs';
  *
  * A cell is green or red, with what was seen. KNOWN_RED says which cells are red on main today and why; the spec
  * fails when a cell outside it is red (a regression) and when a cell in it turns green or goes red for another
- * reason (the table is then out of date: the PR that fixed it removes its rule). On main (d96be134), in short:
+ * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
  *   - codex does not start in bypass mode (--full-auto, fix/codex-works), and Qwen Code has no provider
  *     (feat/qwen-code);
  *   - gemini, opencode and pi cannot call Tars: gemini's MCP servers get no TOKEN variable, and Tars writes its server
- *     where opencode and pi do not read theirs;
- *   - OpenRouter on the claude binary stops on Claude Code's custom API key question (#458), and the task that answers
- *     it holds every later one; gemini's first task is never closed either, with the same effect;
+ *     where opencode and pi do not read theirs (documented by them, not measured on a real install);
+ *   - gemini's first task is never closed, and holds every later one;
  *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok) nor from gemini;
- *   - grok's delegation to claude runs and is reported as never started.
- * KNOWN_RED has the rules, each with what its cells must say.
+ *   - grok's delegation to claude runs and is reported as never started (H1, until fix/second-delegation-into-claude).
+ * OpenRouter starts since #458, which made its rules go; its own tasks to gemini now wait behind gemini's first.
+ * KNOWN_RED has the rules, each with what its cells must say. A project of its own since 19/10 (playwright.config.ts):
+ * `npm run e2e:matrix`, run at every release gate and by `npm run e2e:auto` (OPERATIONS.md).
  * The artefact, in the run directory: matrix.json (pair, step, result, detail), matrix.md, the fakes' logs,
  * values.json, screenshots of the Agents page, reproduce.txt (the command).
  */
@@ -75,19 +76,16 @@ const KNOWN_RED: Rule[] = [
   { from: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
   { to: ['codex'], steps: ALL, why: 'codex does not start (above)', seen: /codex's CLI is not running/ },
   { to: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
-  { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (its documentation): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
-  { from: ['opencode', 'pi'], steps: ALL, why: 'Tars writes its MCP server into ~/.opencode/config.json and ~/.pi/config.json, where opencode (~/.config/opencode/opencode.json, `mcp`) and pi (~/.pi/agent/mcp.json) do not read (their documentation; neither installed here)', seen: /no Tars server|B never got the message|no task reached B/ },
-  { from: ['openrouter'], steps: ALL, why: 'Claude Code asks about the key in ANTHROPIC_API_KEY: the first line typed answers No, and every turn after it is "Not logged in" (#458)', seen: /never called|no answer|never got|no task reached B/ },
-  { to: ['openrouter'], steps: ['delegate.answer', 'turn', 'reply'], why: 'the question of #458 takes the first task typed in, which never ends: every later task waits behind it, and it answers nothing', seen: /no answer|nothing typed|still|queued|has not begun|never called|never got|no task reached B|before/ },
-  { to: ['openrouter'], from: ['amp', 'grok'], steps: ['delegate.reaches'], why: 'held behind the first task (above)', seen: /no answer|nothing typed|still|queued|never called/ },
-  { to: ['gemini'], from: ['amp', 'grok'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
+  { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
+  { from: ['opencode', 'pi'], steps: ALL, why: 'Tars writes its MCP server into ~/.opencode/config.json and ~/.pi/config.json, where opencode (~/.config/opencode/opencode.json, `mcp`) and pi (~/.pi/agent/mcp.json) do not read (documented by them, not measured on a real install: neither is installed here)', seen: /no Tars server|B never got the message|no task reached B/ },
+  { to: ['gemini'], from: ['amp', 'grok', 'openrouter'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
   { to: ['gemini'], steps: ['delegate.answer'], why: 'run-task treats gemini as a CLI without hooks: no answer read from it', seen: /gives Tars no hook/ },
   { to: ['gemini'], steps: ['turn'], why: 'its BeforeAgent and AfterAgent reach /api/hooks/status, but the window never shows the turn', seen: /before/ },
-  { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above)', seen: /identity of your own/ },
+  { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /identity of your own/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
-  { to: ['opencode', 'pi'], steps: ['reply'], why: 'no Tars tools where opencode and pi read their MCP servers (above)', seen: /no Tars server/ },
-  { from: ['grok'], to: ['claude'], steps: ['delegate.answer'], why: 'the task ran in claude\'s terminal, typed without its task line, and delegate_task told grok it never started (the Audit\'s H1 symptom on #453): in every run, for the Backend to reproduce', seen: /never started/ },
+  { to: ['opencode', 'pi'], steps: ['reply'], why: 'no Tars tools where opencode and pi read their MCP servers (above; documented, not measured)', seen: /no Tars server/ },
+  { from: ['grok'], to: ['claude'], steps: ['delegate.answer'], why: 'the task ran in claude\'s terminal, typed without its task line, and delegate_task told grok it never started (the Audit\'s H1 symptom on #453): until fix/second-delegation-into-claude. A race: amp\'s delegation to claude went the same way once, at a load of 150', seen: /never started/ },
 ];
 
 const expectedRed = (cell: Cell): Rule | undefined => KNOWN_RED.find((r) =>
@@ -122,7 +120,7 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface,
-      cliPaths: { claude: fakes.claude, codex: fakes.codex, gemini: fakes.gemini, opencode: fakes.opencode, pi: fakes.pi, amp: fakes.amp, grok: fakes.grok, qwen: fakes['qwen-code'], additionalPaths: [bin] },
+      cliPaths: { claude: fakes.claude, codex: fakes.codex, gemini: fakes.gemini, opencode: fakes.opencode, pi: fakes.pi, amp: fakes.amp, grok: fakes.grok, qwencode: fakes['qwen-code'], additionalPaths: [bin] },
       codexEnabled: true, geminiEnabled: true, opencodeEnabled: true, piEnabled: true, ampEnabled: true, grokEnabled: true, qwenEnabled: true, openRouterEnabled: true,
       openRouterApiKey: 'sk-or-e2e-matrix-0000',
     }));
