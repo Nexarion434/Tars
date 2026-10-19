@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * A model asked for one delegated run (delegate_task's `model`) that the
@@ -30,6 +31,9 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-refused-model-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 afterAll(() => fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 const FAKE_AGENT = `
@@ -87,7 +91,7 @@ import type { AgentStatus } from '../../../electron/types';
 /** One run asked on `asked`, for an agent saved on `own`: the values sent, what the run answered, what was filed. */
 async function runAsking(asked: string, own: string | undefined, refuse: string[]) {
   const script = path.join(tmp, 'agent.mjs');
-  fs.writeFileSync(script, FAKE_AGENT);
+  fs.writeFileSync(script, RECORDS_ITS_PID + FAKE_AGENT);
   launch = { command: process.execPath, args: [script] };
   process.env.FAKE_REFUSE = JSON.stringify(refuse);
   let sent: string[] | undefined;
