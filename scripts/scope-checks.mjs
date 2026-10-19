@@ -72,38 +72,43 @@ const CANNOT_REACH_THE_RENDERER = [
 const ALWAYS_RUNS = ['e2e/', 'playwright.config.ts'];
 
 /**
- * What a delegation between two CLIs goes through, which the CLI matrix
+ * Paths that cannot reach a delegation between two CLIs, which the CLI matrix
  * (e2e/cli-matrix.spec.ts, the Playwright project `matrix`) drives pair by
  * pair: 27 minutes for its two shells, out of the default suite since 19/10
  * (the orchestrator's decision), run at every release gate and here.
  *
- * Independent of the surfaces: an MCP server or a hook alone skips them, and
- * still breaks a pair. A list of what it depends on, unlike the surfaces' rule:
- * the release gate runs the matrix whatever this says.
+ * The same direction as the surfaces' rule, and for the same reason: a path
+ * this list has never heard of runs the matrix. It was a list of what reaches a
+ * delegation until the Audit's M1 on #464, and that list missed eleven files a
+ * task goes through: its routes, the queue of a second task, the terminal, the
+ * agent's identity, the hooks' installer. So the whole main process runs it, as
+ * do the MCP servers, the hooks and the state mod: the matrix launches the app
+ * whole and types into its agents through the window's preload bridge. An MCP
+ * server or a hook alone skips the surfaces, and still runs the matrix.
  */
-const REACHES_THE_MATRIX = [
-  { prefix: 'electron/providers/', why: 'a provider: how its CLI starts, with its hooks and MCP servers' },
-  { match: /^mcp-[^/]+\//, why: 'an MCP server, which delegate_task and send_message go through' },
-  { prefix: 'hooks/', why: "a CLI's hooks, which say its turns and answers" },
-  { prefix: 'mods/tars-state/', why: "the state mod, which says claude's turns" },
-  { prefix: 'electron/services/acp/', why: 'the delegation over ACP' },
-  { exact: 'electron/services/api-routes/agent-routes.ts', why: 'the delegation and message routes' },
-  { exact: 'electron/services/api-routes/hooks-routes.ts', why: "the routes a CLI's hooks post to" },
-  { exact: 'electron/services/api-routes/bus-routes.ts', why: 'the bus routes' },
-  { match: /^electron\/services\/bus-[^/]+\.ts$/, why: 'the bus, which delivers between agents' },
-  { exact: 'electron/handlers/bus-handlers.ts', why: "the bus's IPC" },
-  { exact: 'electron/core/task-requests.ts', why: 'who asked an agent for its task' },
-  { exact: 'electron/core/pty-manager.ts', why: 'what is typed into a terminal' },
-  { exact: 'electron/core/agent-tokens.ts', why: "an agent's own token, its identity" },
-  { exact: 'electron/services/mcp-orchestrator.ts', why: "the MCP servers written into each CLI's config" },
-  { exact: 'electron/services/terminal-answer.ts', why: "a task's answer, read from its terminal" },
-  { exact: 'electron/services/task-ledger.ts', why: 'the task ledger' },
-  { exact: 'electron/services/usage-ledger.ts', why: 'the usage ledger' },
-  { exact: 'electron/services/task-banner.ts', why: 'the task in hand and its queue' },
-  { exact: 'electron/services/state-mod.ts', why: "what the state mod reports" },
-  { match: /^e2e\/cli-matrix(\.live)?\.spec\.ts$/, why: 'the matrix itself' },
-  { match: /^e2e\/fake-(clis|codex)\.mjs$/, why: "the matrix's stand-ins of the CLIs" },
-  { exact: 'playwright.config.ts', why: 'the suite configuration' },
+const CANNOT_REACH_A_DELEGATION = [
+  { prefix: '__tests__/', why: 'unit tests, not shipped into the app' },
+  // The matrix types into its agents and reads them back through the preload bridge and the API, both in electron/.
+  { prefix: 'src/', why: "the renderer, which only hosts the preload bridge the matrix types through; a page that breaks is the surfaces' to see" },
+  { prefix: 'public/', why: "the renderer's static files" },
+  { prefix: 'design/', why: 'a Pencil document, which no running code reads' },
+  { prefix: 'screenshots/', why: "the README's pictures" },
+  { prefix: 'scripts/', why: 'build and development tooling' },
+  { prefix: '.github/', why: 'CI configuration' },
+  { prefix: 'landing/', why: 'the landing site, a separate app' },
+  { prefix: 'hermes-plugins/', why: 'a Hermes plugin, run by Hermes on its server' },
+  { match: /^electron\/resources\/[^/]+\.md$/, why: "agent prompt text, which the matrix's stand-ins never read" },
+  { match: /^electron\/resources\/tray[^/]*\.(ico|png)$/, why: "the tray's pictures" },
+  { prefix: 'e2e/__screenshots__/', why: "the surfaces' reference pictures" },
+  // playwright.config.ts: the matrix project loads cli-matrix.spec.ts and its live twin, and no other spec.
+  { match: /^e2e\/(?!cli-matrix(\.live)?\.spec\.ts$)[^/]+\.spec\.ts$/, why: 'another spec, which the matrix project does not load' },
+  { match: /^[^/]+\.md$/, why: 'documentation' },
+  { exact: '.gitignore', why: 'git configuration' },
+  { exact: '.gitattributes', why: 'git configuration' },
+  { exact: '.editorconfig', why: 'editor configuration' },
+  { exact: '.nvmrc', why: 'a Node version pin read by the shell' },
+  { exact: '.eslintignore', why: 'lint configuration' },
+  { exact: '.prettierignore', why: 'formatter configuration' },
 ];
 
 /** The rule a file matches, if any. */
@@ -129,6 +134,7 @@ export function decide(files) {
       skipped: [],
       runMatrix: true,
       matrixForcing: [],
+      matrixSkipped: [],
     };
   }
 
@@ -146,9 +152,11 @@ export function decide(files) {
   }
 
   const matrixForcing = [];
+  const matrixSkipped = [];
   for (const file of unique) {
-    const rule = matching(REACHES_THE_MATRIX, file);
-    if (rule) matrixForcing.push({ file, why: rule.why });
+    const safe = matching(CANNOT_REACH_A_DELEGATION, file);
+    if (safe) matrixSkipped.push({ file, why: safe.why });
+    else matrixForcing.push({ file, why: 'can reach a delegation, or is unclassified' });
   }
 
   return {
@@ -160,6 +168,7 @@ export function decide(files) {
     skipped,
     runMatrix: matrixForcing.length > 0,
     matrixForcing,
+    matrixSkipped,
   };
 }
 
@@ -292,10 +301,16 @@ async function main() {
   }
 
   if (!decision.runMatrix) {
-    console.log('[scope] Leaving the CLI matrix out: no changed file is on a delegation\'s way. Run `npm run e2e:matrix` to run it anyway.');
+    console.log(`[scope] Leaving the CLI matrix out: all ${decision.matrixSkipped.length} changed file(s) cannot reach a delegation. Run \`npm run e2e:matrix\` to run it anyway.`);
+    for (const { file, why } of decision.matrixSkipped.slice(0, 12)) {
+      console.log(`[scope]   ${file}: ${why}`);
+    }
+    if (decision.matrixSkipped.length > 12) {
+      console.log(`[scope]   and ${decision.matrixSkipped.length - 12} more`);
+    }
     return code;
   }
-  console.log(`[scope] Running the CLI matrix: ${decision.matrixForcing.length} changed file(s) on a delegation's way.`);
+  console.log(`[scope] Running the CLI matrix: ${decision.matrixForcing.length} changed file(s) can reach a delegation.`);
   for (const { file, why } of decision.matrixForcing.slice(0, 12)) {
     console.log(`[scope]   ${file}: ${why}`);
   }
