@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { pinPlatform } from './win-fake-disk';
+import { TARS_MCP_ENV } from '../../../electron/services/mcp-orchestrator-env';
 
 /**
  * The config.toml fallback Codex and Grok write when `<cli> mcp add` cannot
@@ -155,7 +156,8 @@ const configOf = (dir: string) => fs.readFileSync(path.join(tmpDir, dir, 'config
 const WIN_NODE = 'C:\\Program Files\\nodejs\\node.exe';
 const WIN_BUNDLE = 'C:\\Users\\x\\AppData\\Local\\Programs\\Tars\\resources\\mcp-orchestrator\\dist\\bundle.js';
 /** What codex hands a Tars server from the agent's environment, since 2.0.4 (codex-mcp-agent-env.test.ts). */
-const AGENT_ENV_VARS = ['CLAUDE_MGR_API_TOKEN', 'TARS_INSTANCE_ID', 'CLAUDE_AGENT_ID', 'CLAUDE_AGENT_NAME', 'CLAUDE_PROJECT_PATH', 'CLAUDE_MGR_API_URL', 'TARS_CHATS_READ'];
+/** The names a Tars server is handed, from the one list (services/mcp-orchestrator-env.ts). */
+const AGENT_ENV_VARS = [...TARS_MCP_ENV];
 
 describe('codex config.toml fallback', () => {
   it('Windows paths parse back to themselves', async () => {

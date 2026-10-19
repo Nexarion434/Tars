@@ -13,21 +13,18 @@ import type {
   HookConfig,
 } from './cli-provider';
 import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
+import { TARS_MCP_ENV } from '../services/mcp-orchestrator-env';
 
-/**
- * What a Tars MCP server reads of its agent's environment: its own token, the
- * instance it proves the port with, who it is, where its project is, the API's
- * address, and whether its chats read each other. Codex hands its servers none
- * of its environment but TERM, SHELL, TMPDIR, USER, PATH, HOME and LOGNAME
- * (measured on codex 0.148, 2026-10-13): without the names here, a codex
- * agent's Tars tools presented the shared ~/.dorothy/api-token, which since
- * 2.0.4 is out of every agent's reach, and got a 401. Names only: the values
- * stay in the agent's own environment (`codex mcp get` lists them masked).
+/*
+ * What a Tars MCP server reads of its agent's environment is TARS_MCP_ENV
+ * (services/mcp-orchestrator-env.ts, the one list, #465's). Codex hands its
+ * servers none of its environment but TERM, SHELL, TMPDIR, USER, PATH, HOME
+ * and LOGNAME (measured on codex 0.148, 2026-10-13): without these names, a
+ * codex agent's Tars tools presented the shared ~/.dorothy/api-token, which
+ * since 2.0.4 is out of every agent's reach, and got a 401. Names only: the
+ * values stay in the agent's own environment (`codex mcp get` lists them
+ * masked).
  */
-const AGENT_ENV_VARS = [
-  'CLAUDE_MGR_API_TOKEN', 'TARS_INSTANCE_ID', 'CLAUDE_AGENT_ID', 'CLAUDE_AGENT_NAME', 'CLAUDE_PROJECT_PATH',
-  'CLAUDE_MGR_API_URL', 'TARS_CHATS_READ',
-];
 /** The bundled servers (mcp-orchestrator.ts): a server of the user's own is handed none of it. */
 const isTarsServer = (name: string) => /^(claude-mgr-|tars-|dorothy-)/.test(name);
 
@@ -266,7 +263,7 @@ export class CodexProvider implements CLIProvider {
 
   /** `env_vars = [...]` for a Tars server, with its newline; nothing for another. */
   private envVarsLine(name: string): string {
-    return isTarsServer(name) ? `env_vars = [${AGENT_ENV_VARS.map((v) => this.tomlString(v)).join(', ')}]\n` : '';
+    return isTarsServer(name) ? `env_vars = [${TARS_MCP_ENV.map((v) => this.tomlString(v)).join(', ')}]\n` : '';
   }
 
   private sectionOf(content: string, name: string): string {
