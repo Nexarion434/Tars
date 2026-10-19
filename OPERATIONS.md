@@ -205,9 +205,14 @@ or a mock:
    needed), or the recording fake CLI through `cliPath`. The sweep's agents run the fake CLI
    `seedSandbox` writes; a spec that needs its own CLI writes one through `cliPath`, as
    `terminal-replay-modes.spec.ts` does. `launchSandboxed` refuses to hand the app the caller's
-   `CLAUDE_*`, `DOROTHY_*` or `ANTHROPIC_*`: a variable of that family the app needs is set in
-   the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
+   `CLAUDE_*`, `DOROTHY_*`, `ANTHROPIC_*` or `TARS_*`: a variable of that family the app needs is
+   set in the spec's `env`. Check which hook scripts the sandbox's `~/.claude/settings.json` names
    before a CLI starts: they must post to the sandbox's port.
+   The app finds no CLI of the machine: the PATH it is handed keeps no folder of the account's
+   home (`~/.local/bin`, nvm, npm, pnpm), and begins with the sandbox's own `sandbox-clis/`, where
+   stand-ins of claude, codex, qwen and amp answer `--version` and `claude auth status` as the real
+   ones do in an empty home (`SANDBOX_CLIS`, `sandboxPath` in `e2e/fixture.mjs`). A spec that needs
+   another PATH sets it in its `env`.
 3. **Assert** on what the user sees or the main process reports: the DOM,
    `window.electronAPI.agent.list()`, the files written. Never on a mock.
 4. **Leave the artefact.** `npx tsc -p electron/tsconfig.json`, then
@@ -256,6 +261,18 @@ checks a mock was called is refused at the gate.
 Config is `vitest.config.mts`: node environment,
 globals on, `include: ['__tests__/**/*.test.ts']`, and an `@` → `src/` alias so renderer
 modules resolve the same way Next resolves them.
+
+**What a run leaves fails it.** Each file runs in a temporary folder of its own inside the run's,
+and the run fails on a folder or a file left there (`__tests__/setup/tmpdir-run.ts`), and on a
+process still running from it at its end, which it ends first, stopped or not. A delegated run's
+stop stops its processes with SIGSTOP and reads ps before it continues them, and a worker that
+ended in between left 130 fake ACP agents stopped by 19/10. So a test that starts a process by way
+of the code under test ends it by its id in its own teardown: the fake agent's first line is
+`RECORDS_ITS_PID`, and `afterEach` hands `takePidsRecordedIn(tmp)` to `Leftovers`
+(`__tests__/setup/leftover-processes.ts`). A file starts without what Tars puts in its agents'
+terminals either (`TARS_CLAUDE_ACCOUNT`, `TARS_INSTANCE_ID`, `TARS_CHATS_READ`), where QA and the
+agents run the suite; the suite's own opt-ins (`TARS_STRESS`, `TARS_REAL_CLAUDE`,
+`TARS_HERMES_TREE`, `TARS_HERMES_PYTHON`) are kept (`__tests__/setup/env-isolation.ts`).
 
 Coverage (`v8`) is scoped to what is actually worth guarding: `electron/constants`,
 `electron/utils`, `electron/services`, `electron/handlers`, `electron/providers`, plus
