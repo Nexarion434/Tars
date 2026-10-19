@@ -55,6 +55,7 @@ import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory
 import { guideForPrompt } from '../services/agent-guide';
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
+import { refuseUnknownRepository } from './review-handlers';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { tasksReport } from '../services/task-watch';
@@ -2025,6 +2026,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     _event,
     { repoPath, baseBranch, listOnly }: { repoPath: string; baseBranch?: string; listOnly?: boolean },
   ) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch, listOnly: listOnly === true }) };
     } catch (err) {
@@ -2068,6 +2071,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, summary: await repoSummary(repoPath) };
     } catch (err) {
@@ -2079,6 +2084,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     _event,
     { repoPath, file, baseBranch }: { repoPath: string; file: string; baseBranch?: string },
   ) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, patch: await fileDiff(repoPath, file, baseBranch) };
     } catch (err) {
