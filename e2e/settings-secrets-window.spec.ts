@@ -12,9 +12,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * `· states`, `· CLIs, one detection` (each with its light copy).
  *
  * The real app on a sandbox HOME whose secrets are where 2.0.4 keeps them (~/.tars-private/settings-secrets.json, and
- * Hermes's connection with its token), every bot off. Tars's own dialog and the clipboard are stood in for in the main
- * process, so the run reads what Tars showed and copied, and never touches the machine's clipboard. Asserted, once
- * with the classic shell and once with the new interface:
+ * Hermes's connection with its token beside it, in hermes-token), every bot off. Tars's own dialog and the clipboard
+ * are stood in for in the main process, so the run reads what Tars showed and copied, and never touches the machine's
+ * clipboard. Asserted, once with the classic shell and once with the new interface:
  * 1. Telegram, Slack, Discord, X, Memory backends and Providers: each secret seeded reads set, and no field, text or
  *    attribute of the page holds it, or the mask main hands the window. Telegram's bot token: replace opens an empty
  *    field; a token set through it is the private file's and the row reads set again; clear asks once, then the file
@@ -68,12 +68,14 @@ function seed(newInterface: boolean, tag: string) {
     telegramRequireMention: false, cliPaths: { codex, additionalPaths: [] },
   }));
   fs.writeFileSync(path.join(priv, 'settings-secrets.json'), JSON.stringify(SEEDED), { mode: 0o600 });
-  fs.writeFileSync(path.join(priv, 'hermes-connection.json'), JSON.stringify({ mode: 'remote', url: 'http://127.0.0.1:9', authMode: 'token', token: HERMES_TOKEN }), { mode: 0o600 });
+  fs.writeFileSync(path.join(priv, 'hermes-connection.json'), JSON.stringify({ mode: 'remote', url: 'http://127.0.0.1:9', authMode: 'token' }), { mode: 0o600 });
+  fs.writeFileSync(path.join(priv, 'hermes-token'), HERMES_TOKEN, { mode: 0o600 });
   const secrets = () => JSON.parse(fs.readFileSync(path.join(priv, 'settings-secrets.json'), 'utf8')) as Record<string, string>;
   const settings = () => JSON.parse(fs.readFileSync(path.join(dir, 'app-settings.json'), 'utf8')) as Record<string, unknown>;
-  const hermes = () => JSON.parse(fs.readFileSync(path.join(priv, 'hermes-connection.json'), 'utf8')) as { token?: string };
+  /** The gateway's token, which Tars keeps apart from the rest of the connection (hermes-config.ts, since 1.9.2). */
+  const hermesToken = () => fs.readFileSync(path.join(priv, 'hermes-token'), 'utf8').trim();
   const webhookSecret = () => fs.readFileSync(path.join(priv, 'hermes-webhook-secret'), 'utf8').trim();
-  return { home, codex, secrets, settings, hermes, webhookSecret };
+  return { home, codex, secrets, settings, hermesToken, webhookSecret };
 }
 
 /**
@@ -273,7 +275,7 @@ for (const newInterface of [false, true]) {
       await expect(auth.locator('input')).toHaveValue('');
       await auth.locator('input').fill(NEW_HERMES);
       await rowOf(page, 'Status').getByRole('button', { name: 'save', exact: true }).click();
-      await expect.poll(() => s.hermes().token, { timeout: 15_000 }).toBe(NEW_HERMES);
+      await expect.poll(() => s.hermesToken(), { timeout: 15_000 }).toBe(NEW_HERMES);
       await expect(auth).toContainText('a token is set', { timeout: 15_000 });
       await expect(auth.locator('input')).toHaveCount(0);
       expect(await held(page, [HERMES_TOKEN, NEW_HERMES, MASK]), 'Hermes holds no token after').toEqual([]);
