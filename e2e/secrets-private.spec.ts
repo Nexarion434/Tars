@@ -28,7 +28,12 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. the window reads no secret: fs.readTextFile of app-settings.json, settings-secrets.json and api-token, and
  *    local-file:// of the first two, are refused, while local-file:// still serves a vault attachment;
  * 5. the window writes no hook: fs.writeTextFile of statusline.sh, bin/tars-mcp-node, a hook, ~/.claude/settings.json
- *    and a project's git hook is refused and the files are unchanged; a project's CLAUDE.md is still written.
+ *    and a project's git hook is refused and the files are unchanged; a project's CLAUDE.md is still written;
+ * 6. (the Audit's L1 on 06a46bcb) no folder of credentials is a project: fs.addCustomProject(~/.kube) is refused, and
+ *    ~/.kube/config is not read even once an agent has written ~/.kube into the projects' list; nor is a project's
+ *    .env.local, while its source still is;
+ * 7. (the Audit's M1) with ~/.tars-private not writable and a key still in app-settings.json, Tars starts, its
+ *    window opens, and the key reads as set: it stopped on Electron's error box at its first 2.0.4 launch.
  * Red on main f53cef0c: the keys stay in app-settings.json, which appSettings.get returns, and fs.readTextFile reads.
  * The artefact: values.json (what each call answered, the files scanned, the stand-ins' records), with E2E_TRACE=on
  * the app's trace.
@@ -62,7 +67,10 @@ type Rec = { agent: string | null; keys: string[]; hashes: Record<string, string
 type Api = { electronAPI: {
   appSettings: { get(): Promise<Record<string, unknown>>; save(s: unknown): Promise<unknown> };
   secrets: { set(field: string, value: string | null): Promise<{ success: boolean; set?: boolean; error?: string }> };
-  fs: { readTextFile(p: string): Promise<{ content: string; error?: string }>; writeTextFile(p: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }> };
+  fs: {
+    readTextFile(p: string): Promise<{ content: string; error?: string }>; writeTextFile(p: { filePath: string; content: string }): Promise<{ success: boolean; error?: string }>;
+    addCustomProject(p: string): Promise<{ success: boolean; error?: string }>;
+  };
   agent: { start(p: { id: string; prompt: string }): Promise<unknown> };
   hermes: { getConnection(): Promise<{ connection: Record<string, unknown> }> };
 } };
@@ -212,8 +220,69 @@ for (const newInterface of [false, true]) {
       expect.soft(after).toEqual(before);
       expect.soft(instructions).toMatchObject({ success: true });
       expect.soft(fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8')).toBe('# Demo\n');
+
+      // 6. No folder of credentials, as a project or through one; no .env of any kind.
+      const kube = path.join(home, '.kube');
+      fs.mkdirSync(kube, { recursive: true });
+      fs.writeFileSync(path.join(kube, 'config'), 'token: e2e-kube-token-ffff');
+      fs.writeFileSync(path.join(project, '.env.local'), 'KEY=e2e-env-local-gggg');
+      fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(project, 'src', 'a.ts'), 'export const a = 1;\n');
+      const added = await api((a, p) => a.fs.addCustomProject(p as string), kube);
+      // As an agent could: the projects' list lives in ~/.dorothy (projects.json).
+      fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project, kube]));
+      const reads6 = {
+        kube: await api((a, p) => a.fs.readTextFile(p as string), path.join(kube, 'config')),
+        envLocal: await api((a, p) => a.fs.readTextFile(p as string), path.join(project, '.env.local')),
+        source: await api((a, p) => a.fs.readTextFile(p as string), path.join(project, 'src', 'a.ts')),
+      };
+      keep({ added, reads6 });
+      expect.soft(added.success, 'a folder of credentials added as a project').toBe(false);
+      expect.soft(reads6.kube.content).not.toContain('e2e-kube-token');
+      expect.soft(reads6.envLocal.content).not.toContain('e2e-env-local');
     } finally {
       await app.close().catch(() => undefined);
+      await removeHome(home);
+    }
+  });
+}
+
+for (const newInterface of [false, true]) {
+  test(`Tars starts when the secrets cannot leave ~/.dorothy yet${newInterface ? ' (new interface)' : ''}`, async () => {
+    test.setTimeout(180_000);
+    test.skip(process.platform === 'win32', 'a folder made read-only by its mode');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-secrets-locked-'));
+    const dir = path.join(home, '.dorothy');
+    const priv = path.join(home, '.tars-private');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
+      autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface, deepSeekApiKey: SECRETS.deepSeekApiKey,
+    }));
+    fs.writeFileSync(path.join(dir, 'app-settings.json.bak'), JSON.stringify({ openRouterApiKey: BACKUP_KEY }));
+    // A private folder Tars may not write: EACCES on the move, as a full disk gives ENOSPC.
+    fs.mkdirSync(priv, { recursive: true, mode: 0o700 });
+    fs.chmodSync(priv, 0o500);
+    const port = apiPort(newInterface ? 31974 : 31973);
+    const values: Record<string, unknown> = { newInterface, home };
+    let app: ElectronApplication | undefined;
+    try {
+      app = await launchSandboxed(electron, home, {
+        env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' },
+      });
+      const page = await app.firstWindow();
+      await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => !!(window as unknown as Partial<Api>).electronAPI);
+      const got = await page.evaluate(() => (window as unknown as Api).electronAPI.appSettings.get());
+      const secretsSet = (got.secretsSet ?? {}) as Record<string, boolean>;
+      Object.assign(values, { started: true, secretsSet, backupKept: fs.existsSync(path.join(dir, 'app-settings.json.bak')) });
+      recordValues(values);
+      expect.soft(secretsSet.deepSeekApiKey, 'the key, read where it is').toBe(true);
+      expect.soft(secretsSet.openRouterApiKey === true || fs.existsSync(path.join(dir, 'app-settings.json.bak')), 'the key a backup alone holds, kept').toBe(true);
+      expect.soft(JSON.stringify(got)).not.toContain(SECRETS.deepSeekApiKey);
+    } finally {
+      recordValues({ ...values, started: values.started ?? false });
+      await app?.close().catch(() => undefined);
+      fs.chmodSync(priv, 0o700);
       await removeHome(home);
     }
   });
