@@ -38,13 +38,20 @@ import type { IPty } from 'node-pty';
  *  F8. (L6) A line and Enter the user typed while Tars wrote the task, held then
  *      replayed into the turn, not counted among the keys typed since: qwen
  *      moves it back on the Esc, and Tars would backspace into it.
+ *
+ * Added after the E2E of 759e43f6 (2026-10-19), before the fix:
+ *  F9. The turn's UserPromptSubmit, which confirms the submission, lands after
+ *      the Esc (the Esc came while Tars still held the field, and the hook's
+ *      post raced it): it resets the draft to an empty field and takes the
+ *      Esc's mark with it, the cut is not taken for one, and the next task is
+ *      sent with the cut one the CLI put back (classic shell, 2 runs in 4).
  */
 
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: () => {} }));
 
 import {
-  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, noteTurnCut, rememberTerminalOwner, resetTerminalInput,
+  PROGRAMMATIC_SUBMIT_DELAY_MS, TYPING_PAUSE_MS, messagesWaiting, noteSubmitted, noteTurnCut, rememberTerminalOwner, resetTerminalInput,
   setTurnProbe, setTurnInProgressProbe, writeHumanInput, writeProgrammaticInput,
 } from '../../../electron/core/pty-manager';
 
@@ -116,6 +123,18 @@ describe('the next task after an Esc that cut a turn', () => {
     const { cli, pty } = start(flavour);
     writeHumanInput(pty, '\x1b');
     expect(cli.field, 'the CLI put the cut task back').toBe(T1);
+    writeProgrammaticInput(pty, T2, true, origin);
+    noteTurnCut(pty);
+    settle();
+    expect(cli.submitted).toEqual([T1, T2]);
+  });
+
+  it.each<Flavour>(['qwen', 'claude'])('F9. %s: the submission confirmed after the Esc still lets the cut be taken for one: the next task is sent alone', (flavour) => {
+    const { cli, pty } = start(flavour);
+    writeHumanInput(pty, '\x1b');
+    expect(cli.field, 'the CLI put the cut task back').toBe(T1);
+    // UserPromptSubmit of the cut turn, its post later than the Esc.
+    noteSubmitted(pty);
     writeProgrammaticInput(pty, T2, true, origin);
     noteTurnCut(pty);
     settle();
