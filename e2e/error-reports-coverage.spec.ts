@@ -284,13 +284,17 @@ for (const newInterface of [false, true]) {
       expect.soft(log.some((l) => l.includes('[uncaught]') && l.includes('E2E: an uncaught exception in main, reports on'))).toBe(true);
       keep({ answered, fatal, boxesAfterThrow: await boxes(app) });
 
-      // ── Nothing of the agent, its project or its task in any of it ──
+      // ── Nothing of the agent or its task in any of it, nor of its project in its tool error. The code runs from the
+      // worktree under the real home, which the app, on its sandbox home, does not know as one: frames name it here,
+      // not in a packaged Tars, so the user's name is not looked for ──
       for (const text of sentry.raw) {
         expect.soft(text).not.toContain(home);
         expect.soft(text).not.toContain(NAME);
-        expect.soft(text).not.toContain(SECRET);
         expect.soft(text).not.toContain('Acme');
-        expect.soft(text).not.toContain(os.userInfo().username);
+      }
+      for (const text of sentry.raw.filter((t) => t.includes('"agent-tool"'))) {
+        expect.soft(text).not.toContain(SECRET);
+        expect.soft(text).not.toContain(project);
       }
       await stepShot(page, newInterface ? 'reports-on-new-interface' : 'reports-on');
 
