@@ -420,6 +420,22 @@ the first path nobody thought to list.
 
 ---
 
+**What a repository's own configuration can no longer run** (2.0.4, the Audit's Hole 3, `utils/safe-git.ts`).
+Any agent of a project, or anything it runs, can write that project's `.git/config`, and git runs the
+programs it names: `core.fsmonitor` on a status, `diff.external`, a diff command or a textconv on a diff, a
+filter's clean, smudge or process when a file meets the index, the hooks on a checkout, a commit or a ref
+update, `gpg.program` on a signed commit, and the verifier of each signature format (`gpg.program` or
+`gpg.openpgp.program`, `gpg.ssh.program`, `gpg.x509.program`) on a log or a show of a signed commit, which
+`log.showSignature` asks for every time (the Audit's M1 on #463). Opening Review ran them inside Tars's main process, outside every
+CLI's permission mode. Every git call the main process makes now switches them off on its command line,
+which git reads after every configuration file, so neither the repository's, the user's nor the system's
+configuration can turn one back on; submodules are not entered; Review reads no file through a link out of
+the repository; git gets an environment of Tars's own. Measured with a repository that names a program at
+each of these places (`__tests__/fixtures/hostile-repo.ts`): on main its fsmonitor, its submodule's, a hook
+and its filter ran on Review's first status and diff; now none does, in the unit tests and in the real app
+(`e2e/review-hostile-repo.spec.ts`). What it is not: an agent's own CLI runs git with the repository's
+configuration, in its own permission mode, as it always did.
+
 ## 5. What is where on disk
 
 | Path | Holds | Reachable by an agent |
