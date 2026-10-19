@@ -117,7 +117,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
 
     // Under AI & Providers, after Providers; off, with its three lines.
     await page.getByText('AI & Providers', { exact: true }).click();
-    await page.getByText('Claude accounts', { exact: true }).click();
+    await page.getByTestId('settings-nav').getByText('Claude accounts', { exact: true }).click();
     const toggle = page.getByRole('switch', { name: 'Use several Claude subscriptions' });
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByText('Each account signs in through Claude Code itself, in a terminal Tars opens. Tars never sees the sign-in.')).toBeVisible();
@@ -243,7 +243,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), '{ not a list');
     await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
     await page.getByText('AI & Providers', { exact: true }).click();
-    await page.getByText('Claude accounts', { exact: true }).click();
+    await page.getByTestId('settings-nav').getByText('Claude accounts', { exact: true }).click();
     await expect(page.getByText(UNREADABLE)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(UNREADABLE)).toHaveCount(1);
     await stepShot(page, '11-registry-unreadable');
