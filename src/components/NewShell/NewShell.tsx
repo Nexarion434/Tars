@@ -6,6 +6,7 @@ import { useAppPathname } from '@/hooks/useAppPathname';
 import NewSidebar from './NewSidebar';
 import { PageCard } from './PageCard';
 import { MORE_PAGES, type MorePageId } from './more-pages';
+import { DataFolderNotice } from '@/components/DataFolderNotice';
 
 /**
  * The new shell (plan 2.0.0), while Settings, Preferences, "New interface" is
@@ -29,7 +30,10 @@ export default function NewShell({ children }: { children: ReactNode }) {
       {/* The traffic lights' drag strip, the sidebar's width only, as before. */}
       <div className="window-drag fixed top-0 left-0 h-7 w-[240px] z-[60]" />
       <NewSidebar onOpenPage={setOpen} />
-      <main className="min-h-screen ml-[240px] px-[26px] pb-[22px] pt-[22px]">{children}</main>
+      <main className="min-h-screen ml-[240px] px-[26px] pb-[22px] pt-[22px]">
+        <DataFolderNotice className="-mx-[26px] -mt-[22px] mb-[22px]" />
+        {children}
+      </main>
       {page && <PageCard page={page} onClose={close} />}
     </>
   );
