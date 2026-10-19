@@ -249,8 +249,8 @@ Error reports).
 line: nothing reportable happened, or the day's budget is spent (`sent` in that file: 20 in 24 hours, the
 agents' tool errors 10 of them, the same error once). A `[uncaught]` line is an uncaught exception in
 main, which Tars runs past and never shows Electron's error box for. If Tars quits at launch, run it from
-a terminal (`/Applications/Tars.app/Contents/MacOS/Tars`): `[uncaught] it came before Tars finished
-loading` names what threw (SPECS.md, Error reports).
+a terminal (`/Applications/Tars.app/Contents/MacOS/Tars`): `[uncaught] it came before Tars opened its
+window` follows the line that names what threw (SPECS.md, Error reports).
 
 ### Unit tests: `npm test`
 
