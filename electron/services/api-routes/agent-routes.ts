@@ -14,7 +14,7 @@ import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../
 import { diskRefusal, freeSpace } from '../../core/disk-space';
 import { noteWaker, wakeFromSleep } from '../../core/agent-asleep';
 import type { AgentWakeVia } from '../../types';
-import { sessionStarted, sessionStarting, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown, takeSlot } from '../../core/agent-launch';
+import { sessionStarted, SENDER_WAIT_MS, launchBegins, launchAbandoned, dialogOpen, dialogShown, takeSlot } from '../../core/agent-launch';
 import { getAllProviders, getProvider, isValidProvider } from '../../providers';
 import { planModeRefusal } from '../../providers/plan-mode';
 // An agent may name any CLI, since an agent in bypass can run any binary itself (SECURITY.md): what is
@@ -51,7 +51,7 @@ import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
 import { noteLaunch, launchSettings, restartForSettings, forgetRestart, type RestartOutcome, type RestartWait } from '../../core/agent-restart';
-import { updateAgent, type AgentUpdate } from '../../core/agent-update';
+import { cliAtWork, updateAgent, type AgentUpdate } from '../../core/agent-update';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
@@ -2233,7 +2233,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         sendJson({ error: asked.error }, asked.status);
         return;
       }
-      const cliWasUp = cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined) || sessionStarting(agent);
+      const cliWasUp = cliAtWork(agent);
       const binaryBefore = getProvider(agent.provider).binaryName;
       const result = await updateAgent({ id: agent.id, ...asked.update }, { endsNoCli: true });
       if (!result.success) {

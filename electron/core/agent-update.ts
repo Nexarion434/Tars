@@ -71,6 +71,18 @@ export type AgentUpdateResult =
     restart?: RestartOutcome;
   };
 
+/**
+ * A CLI at work in the agent's terminal: one runs there, or a launch is under
+ * way (sessionStarting, core/agent-launch.ts), whose bare shell is about to
+ * take it. Not a launch a stop has ended since: stop_agent leaves it marked
+ * for up to CLI_BOOT_MS, and the agent stopped so that its CLI could be
+ * changed read as starting one.
+ */
+export function cliAtWork(agent: AgentStatus): boolean {
+  if (cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) return true;
+  return agent.status !== 'stopped' && sessionStarting(agent);
+}
+
 /** The record's fields an update can change, compared before and after for `changed`. */
 const FIELDS = [
   'name', 'character', 'provider', 'model', 'localModel', 'effort', 'permissionMode', 'cliPath', 'skills',
@@ -124,8 +136,7 @@ export async function updateAgent(params: AgentUpdate, opts: AgentUpdateOptions 
       ...(moving ? ['project'] : []),
       ...(makesWorktree ? ['worktree'] : []),
     ];
-    const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
-    if (ending.length > 0 && (cliRunningIn(terminal) || sessionStarting(agent))) {
+    if (ending.length > 0 && cliAtWork(agent)) {
       return {
         success: false,
         code: 'cli_running',
