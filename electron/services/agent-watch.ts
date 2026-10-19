@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { liveTaskLedger } from './task-ledger';
 import { AgentStatus, BusMessageAuthorKind } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput, PROGRAMMATIC_SUBMIT_DELAY_MS, type WriteOrigin } from '../core/pty-manager';
@@ -411,6 +412,8 @@ export function endInterruptedTurnsNow(): void {
 function endInterruptedTurns(): void {
   for (const agent of agents.values()) {
     if (agent.status !== 'running') continue;
+    // A delegated turn's run reads its own interrupt, and ends the task stopped before the rest (runInTerminal).
+    if (liveTaskLedger()?.delegatedOpen(agent.id)) continue;
     // The launch of the CLI now running counts too: a session resumed with
     // --fork-session copies the old conversation, old interruptions and their
     // dates included, and until its first UserPromptSubmit the last turn known
