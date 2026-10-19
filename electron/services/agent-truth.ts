@@ -1,7 +1,8 @@
+import { safeGit } from '../utils/safe-git';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFile } from 'child_process';
 import { transcriptPath, transcriptRoots } from '../utils/resume-session';
+import { qwenTranscriptPath } from './qwen-code';
 
 /**
  * What an agent is actually on, as opposed to what Tars last wrote down.
@@ -50,8 +51,7 @@ export function currentBranch(cwd: string | undefined): string | null {
   // Mark it fresh before the call, so a burst of list rebuilds spawns one git
   // rather than one per rebuild.
   branchCache.set(cwd, { value: hit?.value ?? null, at: now });
-  execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd }, (err, stdout) => {
-    const value = err ? null : stdout.trim() || null;
+  safeGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']).then(({ stdout }) => stdout.trim() || null, () => null).then((value) => {
     // HEAD detached reads as "HEAD", which is not a branch name worth showing.
     branchCache.set(cwd, { value: value === 'HEAD' ? null : value, at: Date.now() });
   });
@@ -549,17 +549,24 @@ export function clearAgentTruthCache(): void {
  * the dialog is gone. Read under both spellings of the project path, and
  * again only when the file has changed: the writer asks every second while a
  * message waits on a dialog.
+ *
+ * Qwen Code sends no Stop on Esc either (the Audit's L1 on #461), and writes
+ * the cut into its own transcript: a system ui_telemetry record, the request's
+ * lifecycle ended `cancelled`, with its `endedAt`, 146 ms after the Esc
+ * (measured on 0.25.2, 2026-10-18). A tool call the user refused is recorded
+ * cancelled under another event name, and is no cut turn.
  */
 export function lastInterruptAt(
-  agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { currentSessionId?: string; projectPath?: string; worktreePath?: string; provider?: string },
   homeDir = os.homedir(),
 ): number | undefined {
   const sessionId = agent.currentSessionId?.trim();
   if (!sessionId) return undefined;
-  const roots = transcriptRoots(agent.worktreePath, agent.projectPath);
+  const qwen = agent.provider === 'qwen-code';
+  const roots = qwen ? [agent.worktreePath, agent.projectPath].filter((r): r is string => !!r) : transcriptRoots(agent.worktreePath, agent.projectPath);
   let latest: number | undefined;
   for (const root of roots) {
-    const file = transcriptPath(root, sessionId, homeDir);
+    const file = qwen ? qwenTranscriptPath(root, sessionId, homeDir) : transcriptPath(root, sessionId, homeDir);
     let fd: number | undefined;
     try {
       fd = fs.openSync(file, 'r');
@@ -572,7 +579,7 @@ export function lastInterruptAt(
         const length = Math.min(size, LOCAL_COMMAND_TAIL);
         const tail = Buffer.alloc(length);
         fs.readSync(fd, tail, 0, length, size - length);
-        at = latestInterrupt(tail.toString('utf-8'));
+        at = qwen ? latestQwenCancel(tail.toString('utf-8')) : latestInterrupt(tail.toString('utf-8'));
         interruptReadOf.set(file, { size, mtimeMs, at });
       }
       if (at !== undefined && (latest === undefined || at > latest)) latest = at;
@@ -586,6 +593,25 @@ export function lastInterruptAt(
 }
 
 const interruptReadOf = new Map<string, { size: number; mtimeMs: number; at: number | undefined }>();
+
+/** The latest turn qwen recorded cut: its request's lifecycle ended `cancelled`. */
+function latestQwenCancel(lines: string): number | undefined {
+  let latest: number | undefined;
+  for (const line of lines.split('\n')) {
+    if (!line.includes('"cancelled"') || !line.includes('request_lifecycle')) continue;
+    let event: Record<string, unknown> | undefined;
+    try {
+      const entry = JSON.parse(line) as { type?: unknown; subtype?: unknown; systemPayload?: { uiEvent?: Record<string, unknown> } };
+      if (entry.type === 'system' && entry.subtype === 'ui_telemetry') event = entry.systemPayload?.uiEvent;
+    } catch {
+      continue;
+    }
+    if (!event || event['event.name'] !== 'request_lifecycle' || event.phase !== 'ended' || event.outcome !== 'cancelled') continue;
+    const at = typeof event.endedAt === 'number' ? event.endedAt : undefined;
+    if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+  }
+  return latest;
+}
 
 function latestInterrupt(lines: string): number | undefined {
   let latest: number | undefined;

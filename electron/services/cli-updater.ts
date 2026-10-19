@@ -482,8 +482,14 @@ export async function updateCli(cli: string, command: string, ctx: CliUpdateCont
   if (cli === 'claude' && install.kind === 'native') return outside(install.version) ?? updateNativeClaude(install, ctx);
   if (cli === 'amp' && install.kind === 'npm') return outside(install.version) ?? updateNpmGlobal(cli, install, ctx);
   if (cli === 'qwen' && install.kind === 'qwen-standalone') return outside(install.version) ?? updateQwenStandalone(install, ctx);
-  // Installed with npm (@qwen-code/qwen-code) instead: the global npm update amp has.
-  if (cli === 'qwen' && install.kind === 'npm' && install.pkg === '@qwen-code/qwen-code') return outside(install.version) ?? updateNpmGlobal(cli, install, ctx);
+  // Installed with npm (@qwen-code/qwen-code) instead: the global npm update amp
+  // has, unless the user turned qwen's own updates off, as for its own install
+  // (the Audit's L2 on #461).
+  if (cli === 'qwen' && install.kind === 'npm' && install.pkg === '@qwen-code/qwen-code') {
+    const off = qwenUpdatesOff(ctx);
+    if (off) return outside(install.version) ?? { cli: 'qwen', outcome: 'skipped', from: install.version, detail: off };
+    return outside(install.version) ?? updateNpmGlobal(cli, install, ctx);
+  }
 
   const how = install.kind === 'native' ? 'the native installer' : install.kind === 'npm' ? `npm (${install.pkg})` : install.kind === 'qwen-standalone' ? 'its own installer' : install.binary;
   const why = UPDATABLE.includes(cli as UpdatableCli)

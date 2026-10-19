@@ -30,7 +30,16 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    started with qw's own environment: lead's terminal receives it from "Qwen Worker" ("qw");
  * 5. a permission qw asks for reads `waiting` / `permission` in the window, as a claude agent's does;
  * 6. Tars restarted, qw started again continues its conversation (--resume with the session it had);
- * 7. Usage by task holds qw's tasks with their tokens and cost.
+ * 7. Usage by task holds qw's tasks with their tokens and cost;
+ * 8. (the Audit's M1 on #461) an administrator's system settings file, named by QWEN_CODE_SYSTEM_SETTINGS_PATH in
+ *    the environment Tars started with: qw's settings file of Tars's carries its controls, its values winning;
+ * 9. (the Audit's L1) Esc in a qw turn: qwen sends no Stop and writes the cancel into its transcript (measured on
+ *    0.25.2, 2026-10-18): the delegated task ends `interrupted`, and the next task goes in at once. And (the Audit's
+ *    M2) qwen puts the cut prompt back into the empty field, as the stand-in does: the next task goes in alone;
+ * 10. (M2) a message the user typed during a turn, which qwen queued and moves back into the field on Esc: the next
+ *    task waits, never typed after the user's words, and goes in once the user has cleared the field.
+ * The stand-in's field is qwen's, as its code reads (0.25.2): keys and pastes into it, a backspace out, Ctrl+C
+ * clearing it, an Enter during a turn queueing it, and on Esc the queue back into the field, else the cut prompt.
  * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.dorothy/qwen-code/mcp-servers.json),
  * seeded on this checkout's bundle: a dev run finds no bundle under its resources and registers none, for any CLI.
  * Red on feat/cli-api-keys (24469620), before the provider: qwen-code is Claude, and none of this holds.
@@ -95,6 +104,21 @@ async function turn(prompt) {
     log({ sent });
     answer = 'answer for TASK-SENDBACK: reported';
   }
+  if (task === 'TASK-LONG') {
+    // What qwen 0.25.2 does on Esc: the turn ends with no Stop, the request's end written as cancelled; what the user
+    // queued meanwhile goes back into the field, else, the field empty, the cut prompt does; its idle prompt
+    // notification comes a while later.
+    await new Promise((r) => { cancelTurn = r; setTimeout(r, 90000); });
+    cancelTurn = null;
+    write({ type: 'system', subtype: 'ui_telemetry', systemPayload: { uiEvent: { v: 1, kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: Date.now() } } });
+    const popped = pending.splice(0).join('\n');
+    if (popped) buffer = buffer ? popped + '\n' + buffer : popped;
+    else if (buffer === '') buffer = prompt;
+    cut = true;
+    log({ cancelled: task, field: buffer });
+    setTimeout(() => hook('Notification', { notification_type: 'idle_prompt', message: 'Qwen Code is waiting for your input', title: 'Qwen Code' }), 20000);
+    return;
+  }
   if (task === 'TASK-PERM') {
     hook('PermissionRequest', { tool_name: 'run_shell_command', tool_input: { command: 'touch x' } });
     hook('Notification', { notification_type: 'permission_prompt', message: 'Qwen Code needs your permission to use run_shell_command', title: 'Qwen Code' });
@@ -110,16 +134,32 @@ hook('SessionStart', { source: resume ? 'resume' : 'startup', model: flag('-m'),
 process.stdout.write('qwen stand-in ready\n');
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 let queue = Promise.resolve();
+let cancelTurn = null;
+let running = false;
+let cut = false;
+/** What the user typed and sent during a turn: qwen queues it, and sends it once the turn ends. */
+const pending = [];
+const run = (line) => {
+  running = true;
+  queue = queue.then(() => turn(line)).then(() => {
+    running = false;
+    if (cut) { cut = false; return; }
+    if (pending.length) run(pending.splice(0).join('\n'));
+  });
+};
 const first = flag('-i');
-if (first) queue = queue.then(() => turn(first));
+if (first) run(first);
 let buffer = '';
 process.stdin.on('data', (d) => {
-  buffer += d.toString();
+  const typed = d.toString();
+  if (typed === '\x1b' && cancelTurn) { cancelTurn(); return; }
+  for (const ch of typed.replace(/\x1b\[20[01]~/g, '')) buffer = ch === '\x7f' ? buffer.slice(0, -1) : ch === '\x03' ? '' : buffer + ch;
   let end;
   while ((end = buffer.search(/[\r\n]/)) !== -1) {
-    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
+    const line = buffer.slice(0, end);
     buffer = buffer.slice(end + 1);
-    if (line.trim()) queue = queue.then(() => turn(line));
+    if (!line.trim()) continue;
+    if (running) { pending.push(line); log({ queued: line }); } else run(line);
   }
 });
 process.stdin.resume();
@@ -192,7 +232,7 @@ function mcpAs(home: string, project: string, port: string, agentId: string, tok
 
 for (const newInterface of [false, true]) {
   test(`a qwen code agent does what a claude agent does${newInterface ? ' (new interface)' : ''}`, async () => {
-    test.setTimeout(420_000);
+    test.setTimeout(560_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qwen-'));
     const project = path.join(home, 'projects', 'demo');
     const dir = path.join(home, '.dorothy');
@@ -225,6 +265,11 @@ for (const newInterface of [false, true]) {
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
       autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { qwencode: qwen, additionalPaths: [bin] }, newInterface,
     }));
+    // An administrator's system settings, where the environment Tars starts with names them (qwen's own override).
+    const adminFile = path.join(home, 'admin', 'qwen-system.json');
+    const ADMIN = { permissions: { deny: ['run_shell_command(rm -rf *)'] }, slashCommands: { disabled: ['mcp'] } };
+    fs.mkdirSync(path.dirname(adminFile), { recursive: true });
+    fs.writeFileSync(adminFile, JSON.stringify(ADMIN));
     const port = apiPort(newInterface ? 31412 : 31411);
     const dist = path.resolve('electron', 'dist');
     const values: Record<string, unknown> = { newInterface, home };
@@ -233,7 +278,7 @@ for (const newInterface of [false, true]) {
       ? fs.readFileSync(path.join(home, 'qwen-stand-in.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as Rec) : []);
     const launches = () => records().filter((r) => r.launched);
 
-    const launch = () => launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1' } });
+    const launch = () => launchSandboxed(electron, home, { env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: port, DOROTHY_E2E: '1', QWEN_CODE_SYSTEM_SETTINGS_PATH: adminFile } });
     const open = async (app: ElectronApplication) => {
       const page: Page = await app.firstWindow();
       await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
@@ -285,12 +330,16 @@ for (const newInterface of [false, true]) {
       expect.soft(first?.launched?.join(' ') ?? '', 'the effort on the command line').not.toContain('high');
       expect.soft(first?.hashes?.DEEPSEEK_API_KEY, 'its key under its model\'s envKey').toBe(sha(KEY));
       expect.soft(first?.launched?.join(' ') ?? '').not.toContain(KEY);
-      const s = (first?.settings ?? {}) as { hooks?: Record<string, unknown>; mcpServers?: Record<string, unknown>; model?: unknown; general?: unknown };
+      const s = (first?.settings ?? {}) as { hooks?: Record<string, unknown>; mcpServers?: Record<string, unknown>; model?: unknown; general?: unknown; permissions?: unknown; slashCommands?: unknown };
       expect.soft(Object.keys(s.hooks ?? {}).sort()).toEqual(expect.arrayContaining(['Notification', 'PermissionRequest', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']));
       expect.soft(Object.keys(s.mcpServers ?? {})).toContain('claude-mgr-orchestrator');
       expect.soft(s.model).toEqual({ reasoningEffort: 'high' });
       expect.soft(s.general).toEqual({ enableAutoUpdate: false });
       expect.soft(JSON.stringify(s)).not.toMatch(new RegExp(`${KEY}|TOKEN`));
+      // 8. The administrator's controls, in the slot qwen gives them.
+      expect.soft(s.permissions, 'the administrator\'s denylist').toEqual(ADMIN.permissions);
+      expect.soft(s.slashCommands).toEqual(ADMIN.slashCommands);
+      expect.soft(first?.settingsFile, 'the administrator\'s file itself is never handed over').not.toBe(adminFile);
 
       // 4. A second task, into the same session, and a report back through Tars's MCP server.
       const two = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-SENDBACK report to me when done', timeoutSeconds: 120 });
@@ -308,12 +357,47 @@ for (const newInterface of [false, true]) {
       keep({ permAnswer });
       expect.soft(permAnswer.text).toContain('answer for TASK-PERM');
 
+      // 9. Esc in a turn: the task ends interrupted, and the next one goes in at once.
+      const long = lead.call('delegate_task', { id: 'qw', prompt: 'TASK-LONG write a very long report', timeoutSeconds: 120 });
+      await expect.poll(() => records().some((r) => r.turn === 'TASK-LONG'), { timeout: 30_000 }).toBe(true);
+      await page.evaluate(() => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } }).electronAPI.agent.sendInput({ id: 'qw', input: '\x1b' }));
+      const cut = await long;
+      const startedAfter = Date.now();
+      const after = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-AFTER one more thing', timeoutSeconds: 120 });
+      keep({ cut, after, afterTookMs: Date.now() - startedAfter });
+      expect.soft(cut.text).toContain('ended: interrupted');
+      expect.soft(after.text).toContain('answer for TASK-AFTER');
+      expect.soft(Date.now() - startedAfter, 'the next task waited for the idle notification').toBeLessThan(15_000);
+      expect.soft(records().filter((r) => r.turn === 'TASK-AFTER').map((r) => (r as { prompt?: string }).prompt ?? '').join('\n'), 'the cut task sent again with the next').not.toContain('TASK-LONG');
+
+      // 10. The user queued a message during the turn, which qwen moves back on Esc: the next task waits for them.
+      const sendInput = (input: string) => page.evaluate((i) => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } }).electronAPI.agent.sendInput({ id: 'qw', input: i }), input);
+      const long2 = lead.call('delegate_task', { id: 'qw', prompt: 'TASK-LONG write another long report', timeoutSeconds: 120 });
+      await expect.poll(() => records().filter((r) => r.turn === 'TASK-LONG').length, { timeout: 30_000 }).toBe(2);
+      for (const ch of 'my own idea') await sendInput(ch);
+      await sendInput('\r');
+      await expect.poll(() => records().some((r) => (r as { queued?: string }).queued === 'my own idea'), { timeout: 10_000 }).toBe(true);
+      await sendInput('\x1b');
+      const cut2 = await long2;
+      const held = await lead.call('delegate_task', { id: 'qw', prompt: 'TASK-HELD after the user', timeoutSeconds: 20 });
+      const heldTurnsBefore = records().filter((r) => r.turn === 'TASK-HELD');
+      // The user clears the field: the task goes in, alone.
+      await sendInput('\x03');
+      await expect.poll(() => records().filter((r) => r.turn === 'TASK-HELD').length, { timeout: 30_000 }).toBe(1);
+      const heldTurn = records().find((r) => r.turn === 'TASK-HELD') as { prompt?: string } | undefined;
+      keep({ cut2, held, heldTurnsBefore, heldTurn });
+      expect.soft(cut2.text).toContain('ended: interrupted');
+      expect.soft(heldTurnsBefore, 'the task typed after the user\'s words').toEqual([]);
+      expect.soft(held.text).toContain('has not begun');
+      expect.soft(heldTurn?.prompt ?? '', 'the user\'s words sent with the task').not.toContain('my own idea');
+
       // 7. Usage by task.
       const report = await page.evaluate(() => (window as unknown as Api).electronAPI.usage.tasks({ sinceDays: 1 }));
       const qwTasks = report.tasks.filter((t) => t.agentId === 'qw');
       keep({ qwTasks });
       expect.soft(qwTasks.length).toBeGreaterThanOrEqual(3);
-      expect.soft(qwTasks.every((t) => (t.costUSD ?? 0) > 0), 'a task of qw\'s with no cost').toBe(true);
+      // The task cut with Esc (9) ran no model turn to its end: no cost is right for it.
+      expect.soft(qwTasks.filter((t) => t.outcome === 'completed').every((t) => (t.costUSD ?? 0) > 0), 'a finished task of qw\'s with no cost').toBe(true);
 
       // 6. Tars restarted: qw continues its conversation.
       const sid = launches()[0].sid!;

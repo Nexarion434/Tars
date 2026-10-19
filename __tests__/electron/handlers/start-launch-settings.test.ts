@@ -99,6 +99,7 @@ import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { qwenTranscriptPath } from '../../../electron/services/qwen-code';
 
 // The launch these hold is darwin and linux's: a line typed into the shell, or
 // `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
@@ -1059,5 +1060,31 @@ describe('a deleted agent and the restart it waited for, through every way in', 
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(restartPushes()).toEqual([]);
+  });
+});
+
+// A Qwen Code agent (the Audit's L4 on #461): the same restart, continued with
+// qwen's own --resume and --fork-session (qwen 0.25.2 has both, `qwen --help`),
+// its conversation found in qwen's transcript folder, not Claude's.
+describe('a qwen code agent with a changed model', () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('restarts on its conversation, under --resume and --fork-session', async () => {
+    const transcript = qwenTranscriptPath(project, OLD_SESSION, tmpHome);
+    fs.mkdirSync(path.dirname(transcript), { recursive: true });
+    fs.writeFileSync(transcript, JSON.stringify({ sessionId: OLD_SESSION, type: 'user', message: { role: 'user', parts: [{ text: 'hello' }] } }) + '\n');
+    const { agent, terminal } = agentWithTerminal({
+      foreground: 'qwen', provider: 'qwen-code', model: 'deepseek-v4-flash', effort: 'high',
+      currentSessionId: OLD_SESSION, resumableSessionId: OLD_SESSION, sessionPtyId: 'pty-a',
+    });
+    const before = spawned.length;
+
+    await update({ id: agent.id, model: 'deepseek-v4-pro' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(terminal.kill).toHaveBeenCalled();
+    const restarted = newTerminal(before);
+    expect(restarted, 'no new terminal was opened').toBeDefined();
+    const typed = typedInto(restarted);
+    expect(typed).toContain(`--resume '${OLD_SESSION}' --fork-session`);
+    expect(typed).toContain("-m 'deepseek-v4-pro'");
   });
 });

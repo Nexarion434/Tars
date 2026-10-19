@@ -42,12 +42,28 @@ import * as path from 'node:path';
  *  Q10. Tars does not hear its turns (they read as never ending), or reads no
  *      answer, no tokens and no resume from its transcript, or reads the
  *      thinking as the answer.
+ *  Q11. (The Audit's L1 on #462, written before its code.) A model's baseUrl
+ *      carrying credentials (`https://user:key@host`, `?api_key=...`) reaches
+ *      the window whole in its description (models:cli).
+ *  Q12. (The Audit's L1 on #461, written before its code.) Esc in a qwen turn
+ *      sends no Stop: Tars never sees the turn cut, and a delegated task ends
+ *      `completed` instead of `interrupted`. What qwen 0.25.2 writes, measured
+ *      on 2026-10-18 (~/Documents/Tars-revue-2026-09-24/runs/qwen-fixes-1810):
+ *      a system ui_telemetry record, request_lifecycle, phase ended, outcome
+ *      cancelled, 146 ms after the Esc. A tool call the user refused is
+ *      cancelled too, and is no cut turn.
+ *  Q13. (L4) An agent id is used raw as its settings file's name: one with a
+ *      `/` or `..` writes outside Tars's folder.
+ *  Q14. (L4) `--resume` is handed an id that is not a session's: it must be
+ *      the UUID qwen names its transcripts by, or nothing.
  */
 
 import { getProvider } from '../../../electron/providers';
 import {
   qwenProjectDir, qwenTranscriptPath, qwenModels, qwenApprovalMode, qwenHookTable, QWEN_ORCHESTRATOR_EXCLUDED,
+  writeQwenAgentSettings,
 } from '../../../electron/services/qwen-code';
+import { lastInterruptAt } from '../../../electron/services/agent-truth';
 import { hasEndOfTurn } from '../../../electron/core/end-of-turn';
 import { readFinalAnswer } from '../../../electron/services/terminal-answer';
 import { readTaskCosts, clearTaskCostCache } from '../../../electron/services/task-cost';
@@ -132,6 +148,49 @@ describe('the qwen-code provider', () => {
     expect(qwenModels()).toEqual([]);
     fs.rmSync(path.join(home(), '.qwen'), { recursive: true });
     expect(qwenModels()).toEqual([]);
+  });
+
+  it('Q11. a model\'s address reaches the window without its credentials', () => {
+    userSettings({ modelProviders: { openai: [
+      { id: 'm1', baseUrl: 'https://user:s3cret-key@llm.example.com/v1?api_key=s3cret-q&x=1#frag' },
+      { id: 'm2', baseUrl: 'not a url, s3cret-raw' },
+      { id: 'm3', baseUrl: 'https://api.deepseek.com' },
+    ] } });
+    const models = qwenModels();
+    expect(JSON.stringify(models)).not.toMatch(/s3cret|user/);
+    expect(models.find((m) => m.id === 'm1')?.description).toBe('openai, https://llm.example.com/v1');
+    expect(models.find((m) => m.id === 'm2')?.description).toBe('openai');
+    expect(models.find((m) => m.id === 'm3')?.description).toBe('openai, https://api.deepseek.com');
+  });
+
+  it('Q12. a turn cut with Esc reads as cut, from qwen\'s own transcript, and a refused tool call does not', () => {
+    const sid = '1c0ffee0-1234-4abc-8def-0123456789ab';
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'qwen-esc-'));
+    const file = qwenTranscriptPath(project, sid);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const telemetry = (uiEvent: Record<string, unknown>) => JSON.stringify({ sessionId: sid, type: 'system', subtype: 'ui_telemetry', systemPayload: { uiEvent } });
+    const refused = telemetry({ 'event.name': 'qwen-code.tool_call', status: 'cancelled', decision: 'reject', 'event.timestamp': '2026-10-18T12:50:42.993Z' });
+    const finished = telemetry({ kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'completed', endedAt: 1792350000000 });
+    fs.writeFileSync(file, [refused, finished].join('\n') + '\n');
+    const agent = { provider: 'qwen-code', currentSessionId: sid, projectPath: project };
+    expect(lastInterruptAt(agent), 'a refused tool call or a finished turn read as a cut').toBeUndefined();
+    fs.appendFileSync(file, telemetry({ kind: 'request', 'event.name': 'request_lifecycle', phase: 'ended', outcome: 'cancelled', endedAt: 1792351006222 }) + '\n');
+    expect(lastInterruptAt(agent)).toBe(1792351006222);
+  });
+
+  it('Q13. an agent id never names a file outside Tars\'s folder', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qwen-ids-'));
+    for (const id of ['../../escape', 'a/b', '..', '/etc/passwd']) {
+      const file = writeQwenAgentSettings(id, {}, dataDir);
+      expect(path.dirname(file), id).toBe(path.join(dataDir, 'qwen-code', 'agents'));
+      expect(path.basename(file), id).toMatch(/^[A-Za-z0-9_-]+\.json$/);
+    }
+  });
+
+  it('Q14. --resume takes a session\'s id and nothing else', () => {
+    for (const id of ["x'; touch /tmp/owned; '", 'not-a-session', '0f9b3c1e-1234-4abc-8def-0123456789ab --yolo']) {
+      expect(provider().buildInteractiveCommand({ ...base, resumeSessionId: id }), id).not.toContain('--resume');
+    }
   });
 
   it('Q6. its key under its model\'s envKey, in its environment only', () => {
