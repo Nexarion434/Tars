@@ -32,7 +32,6 @@ import { writeFakeClis } from './fake-clis.mjs';
  * A cell is green or red, with what was seen. KNOWN_RED says which cells are red on main today and why; the spec
  * fails when a cell outside it is red (a regression) and when a cell in it turns green or goes red for another
  * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
- *   - Qwen Code has no provider (feat/qwen-code);
  *   - gemini, opencode and pi cannot call Tars: gemini's MCP servers get no TOKEN variable, and Tars writes its server
  *     where opencode and pi do not read theirs (documented by them, not measured on a real install);
  *   - gemini's first task is never closed, and holds every later one;
@@ -70,12 +69,9 @@ type Rule = { from?: string[]; to?: string[]; steps: Array<Step | 'starts'>; why
 const ALL: Step[] = ['delegate.reaches', 'delegate.answer', 'turn', 'message', 'reply'];
 // First match wins: the CLIs that do not start, then what A cannot do, then what B cannot do.
 const KNOWN_RED: Rule[] = [
-  { from: ['qwen-code'], to: ['qwen-code'], steps: ['starts'], why: 'no Qwen Code provider on main (feat/qwen-code): its agent runs as claude, with flags qwen 0.25.2 refuses', seen: /refused .*dangerously-skip-permissions/ },
-  { from: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
-  { to: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
   { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
   { from: ['opencode', 'pi'], steps: ALL, why: 'Tars writes its MCP server into ~/.opencode/config.json and ~/.pi/config.json, where opencode (~/.config/opencode/opencode.json, `mcp`) and pi (~/.pi/agent/mcp.json) do not read (documented by them, not measured on a real install: neither is installed here)', seen: /no Tars server|B never got the message|no task reached B/ },
-  { to: ['gemini'], from: ['amp', 'grok', 'openrouter', 'codex'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
+  { to: ['gemini'], from: ['amp', 'grok', 'openrouter', 'codex', 'qwen-code'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
   { to: ['gemini'], steps: ['delegate.answer'], why: 'run-task treats gemini as a CLI without hooks: no answer read from it', seen: /gives Tars no hook/ },
   { to: ['gemini'], steps: ['turn'], why: 'its BeforeAgent and AfterAgent reach /api/hooks/status, but the window never shows the turn', seen: /before/ },
   { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /identity of your own/ },
