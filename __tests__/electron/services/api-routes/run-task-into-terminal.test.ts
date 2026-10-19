@@ -66,6 +66,9 @@ import { EventEmitter } from 'node:events';
  *      delivered at once, its answer never read, its end never told.
  *  G2. A second task to it waits for ever behind the first's turn, or goes in
  *      before that turn ended.
+ *  G3. (the Audit's L2 on #478) A gemini whose hooks never post (a version
+ *      older than them, or an install that failed) is followed to a turn that
+ *      never begins, for ever, and every task behind it waits for ever too.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-terminal-'));
@@ -395,6 +398,30 @@ describe('a task delegated into a gemini agent, whose hooks say when its turns b
     rests(gem);
     expect(((await call('GET', `/api/tasks/${second.data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>)).toMatchObject({ outcome: 'completed', result: 'second answer' });
   });
+});
+
+describe('a task delegated into a gemini whose hooks never post (the Audit\'s L2 on #478)', () => {
+  it('(G3) ends as an error once its turn has not begun within the wait, and the next task goes in', async () => {
+    orchestrator();
+    liveAgent('gem', { provider: 'gemini' });
+    const first = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'first job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    const second = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'second job', answer: 'started' }).answer;
+    expect(second.data).toMatchObject({ queued: true });
+    // The wait for its turn is counted from when it went in: the clock is taken from there on.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    try {
+      // No BeforeAgent ever comes: nothing but the wait ends it.
+      await vi.advanceTimersByTimeAsync(15 * 60_000 + 5_000);
+      const ended = (await call('GET', `/api/tasks/${first.data.taskId}?wait=5`, 'lead').answer).data.task as Record<string, unknown>;
+      expect(ended.outcome).toBe('error');
+      expect(String(ended.error)).toMatch(/did not begin within 15 minutes/);
+      await until(() => typed.length === 2);
+      expect(typed[1].data).toContain('second job');
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 120_000);
 });
 
 describe('a task from another project', () => {
