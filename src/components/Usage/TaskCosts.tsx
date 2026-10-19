@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TaskReport } from '@/types/electron';
 import { useClaude } from '@/hooks/useClaude';
-import { Button, Dropdown, Panel, PanelCaption, SegmentedControl } from '@/components/ui';
+import { Button, Dropdown, Pager, Panel, PanelCaption, SegmentedControl, SortHeader } from '@/components/ui';
 import type { DropdownOption } from '@/components/ui';
 import { fmtTokens, getModelDisplayName } from '@/lib/usage-format';
-import { USAGE_VIEW_KEY, agentViewFilter, projectName, totalsByAgent, usageViewOf, viewCounts } from '@/lib/agent-costs';
-import type { AgentTotal, UsageView } from '@/lib/agent-costs';
+import { USAGE_VIEW_KEY, agentViewFilter, nextAgentSort, projectName, sortAgentRows, sortsAsWords, totalsByAgent, usageViewOf, viewCounts } from '@/lib/agent-costs';
+import type { AgentSort, AgentSortKey, AgentTotal, UsageView } from '@/lib/agent-costs';
 import {
   TASKS_PAGE,
   agentName,
@@ -31,6 +31,8 @@ import {
   totalText,
 } from '@/lib/task-costs';
 import type { AverageRow, FilterOption, TaskFilter } from '@/lib/task-costs';
+import { ROWS_CHOICES, ROWS_KEYS, pageButtons, pageRows, pagerShown, pagesShown, rangeText } from '@/lib/pager';
+import { useTablePages } from '@/hooks/useTablePages';
 
 /** The value of "All projects" and "All agents" in the pickers. */
 const ALL = '__all__';
@@ -61,6 +63,34 @@ const MONO = 'font-mono text-[11px] text-text-secondary';
 const WIDE = 'hidden min-[1400px]:table-cell';
 const MID = 'hidden xl:table-cell';
 
+/**
+ * The agent table's headers, its six columns' 26px buttons and the agent's
+ * name beside them, in the middle of the same row: as `Usage · cost per
+ * agent` draws them since 2.0.4.
+ */
+const AGENT_HEAD = 'pb-1 align-middle font-normal text-[10px] uppercase tracking-[0.08em] text-muted-foreground border-b border-border';
+
+/** The headers of the agent table, in its order: every column sorts, the agent's own name too. */
+const AGENT_COLUMNS: Array<{ key: AgentSortKey; label: string; className: string; align: 'left' | 'right' }> = [
+  { key: 'agent', label: 'Agent', className: '', align: 'left' },
+  { key: 'project', label: 'Project', className: `${CELL} w-[130px]`, align: 'left' },
+  { key: 'provider', label: 'Provider', className: `${CELL} ${MID} w-[150px]`, align: 'left' },
+  { key: 'tasks', label: 'Tasks', className: `${CELL} w-[70px] text-right`, align: 'right' },
+  { key: 'time', label: 'Time', className: `${CELL} w-[74px] text-right`, align: 'right' },
+  { key: 'tokens', label: 'Tokens', className: `${CELL} w-[74px] text-right`, align: 'right' },
+  { key: 'cost', label: 'Cost', className: `${CELL} w-[100px] text-right`, align: 'right' },
+];
+
+/** What the next click on a header does, said on hover: words A to Z first, figures highest first. */
+function sortHint(label: string, sort: AgentSort | null, key: AgentSortKey): string {
+  const next = nextAgentSort(sort, key);
+  if (!next) return 'Back to the default order, the dearest first';
+  const way = sortsAsWords(key)
+    ? (next.direction === 'ascending' ? 'A to Z' : 'Z to A')
+    : `${next.direction === 'descending' ? 'highest' : 'lowest'} first`;
+  return `Sort by ${label.toLowerCase()}, ${way}`;
+}
+
 const countOf = (n: number) => (n === 1 ? '1 task' : `${n} tasks`);
 const agentsOf = (n: number) => (n === 1 ? '1 agent' : `${n} agents`);
 
@@ -77,9 +107,10 @@ function withPicked(all: string, total: number, options: FilterOption[], picked:
  * twenty at a time, filtered by project and agent, and the averages per agent
  * and per model over the tasks listed. Frame: `Usage · cost per task`, and its
  * light copy. Or the same tasks by agent, one row each, from the switch at the
- * head of the list, which the page remembers: `Usage · cost per agent`.
+ * head of the list, which the page remembers: `Usage · cost per agent`. The agents and the two averages show five rows a
+ * page, a pager under each (`Usage · pages`). Memoised: a hover on the page's charts redraws none of it.
  */
-export function TaskCosts({ start, length, control }: {
+export const TaskCosts = memo(function TaskCosts({ start, length, control }: {
   /** The window's first moment: the page's own, not the 24-hour periods usage.tasks counts in. */
   start: Date;
   /** `14 DAYS`, for the captions. */
@@ -108,7 +139,12 @@ export function TaskCosts({ start, length, control }: {
   // An answer to an earlier question, arriving after a later one, is dropped.
   const asked = useRef(0);
 
+  // Read once the transcripts' figures are in, and again when they change or the timeframe moves. Not beside their
+  // first scan: both readings run on the main process's one thread, and asked together they slowed each other, the
+  // figures showing 16 to 20 s later on this Mac's data (reports/usage-pages-speed-1810.md). The card shows its
+  // loading ladder meanwhile (`Usage · cards while they read`).
   useEffect(() => {
+    if (!data) return;
     const read = window.electronAPI?.usage?.tasks;
     if (!read) return;
     const mine = ++asked.current;
@@ -161,7 +197,7 @@ export function TaskCosts({ start, length, control }: {
   } else if (view === 'agent') {
     body = (
       <>
-        <AgentTable rows={agents} names={names} />
+        <AgentTable rows={agents} names={names} listKey={listKey} />
         <p className="text-[11px] text-muted-foreground">{AGENT_ROWS_NOTE}</p>
         {notCounted > 0 && <p className="text-[11px] text-muted-foreground">{NOT_COUNTED_NOTE}</p>}
       </>
@@ -304,23 +340,45 @@ export function TaskCosts({ start, length, control }: {
       {/* The averages of the tasks listed: the timeframe, then the project picked, and by task the agent picked. */}
       {listed.length > 0 && !error && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-          <Averages which="agent" caption={`AVERAGE PER AGENT · ${length}`} rows={byAgent} nameOf={key => agentName(key, names)} known={key => key in names} />
-          <Averages which="model" caption={`AVERAGE PER MODEL · ${length}`} rows={byModel} nameOf={getModelDisplayName} mono />
+          <Averages which="agent" caption={`AVERAGE PER AGENT · ${length}`} rows={byAgent} listKey={listKey} nameOf={key => agentName(key, names)} known={key => key in names} />
+          <Averages which="model" caption={`AVERAGE PER MODEL · ${length}`} rows={byModel} listKey={listKey} nameOf={getModelDisplayName} mono />
         </div>
       )}
     </>
   );
+});
+
+/** A card's pager: none at five rows or fewer; past them its rows choice, and its pages when one page does not hold them. */
+function TablePager({ label, total, pages }: { label: string; total: number; pages: ReturnType<typeof useTablePages> }) {
+  if (!pagerShown(total)) return null;
+  return (
+    <Pager
+      label={label}
+      rows={pages.size}
+      choices={ROWS_CHOICES}
+      onRows={pages.pickSize}
+      range={rangeText(pages.page, pages.size, total)}
+      page={pages.page}
+      last={pages.last}
+      pages={pagesShown(total, pages.size) ? pageButtons(pages.page, pages.last) : []}
+      onPage={pages.goTo}
+    />
+  );
 }
 
-function Averages({ which, caption, rows, nameOf, known, mono = false }: {
+function Averages({ which, caption, rows, listKey, nameOf, known, mono = false }: {
   which: 'agent' | 'model';
   caption: string;
   rows: AverageRow[];
+  /** The tasks listed: another timeframe or project starts the pages again. */
+  listKey: string;
   nameOf: (key: string) => string;
   /** False for an agent deleted since: its name is gone, and it reads muted. */
   known?: (key: string) => boolean;
   mono?: boolean;
 }) {
+  const pages = useTablePages(which === 'agent' ? ROWS_KEYS.perAgent : ROWS_KEYS.perModel, listKey, rows.length);
+  const shown = useMemo(() => pageRows(rows, pages.page, pages.size), [rows, pages.page, pages.size]);
   return (
     <Panel data-task-averages={which} className="flex flex-col gap-2.5">
       <PanelCaption>{caption}</PanelCaption>
@@ -335,7 +393,7 @@ function Averages({ which, caption, rows, nameOf, known, mono = false }: {
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => (
+          {shown.map(row => (
             <tr key={row.key} data-average-row className="h-8 border-b border-border">
               <td data-cell="name" className={`truncate ${mono ? 'font-mono text-[11px]' : 'text-[12.5px]'} ${known && !known(row.key) ? 'text-muted-foreground' : 'text-foreground'}`}>
                 {nameOf(row.key)}
@@ -350,6 +408,7 @@ function Averages({ which, caption, rows, nameOf, known, mono = false }: {
           ))}
         </tbody>
       </table>
+      <TablePager label={which === 'agent' ? 'Average per agent' : 'Average per model'} total={rows.length} pages={pages} />
     </Panel>
   );
 }
@@ -358,57 +417,76 @@ function Averages({ which, caption, rows, nameOf, known, mono = false }: {
  * One row per agent over the tasks listed, the dearest first: its project, the
  * provider and account of its latest task with any other under it, its tasks
  * (the running ones said), the time of those that ended, its tokens and the
- * sum of its own costs, partial when a task of it is not counted.
+ * sum of its own costs, partial when a task of it is not counted. A click on
+ * a column's header sorts the rows by it, its words A to Z or its figures
+ * highest first, a second the other way, a third gives the dearest first back
+ * (JeanBrasse, 18/10). The sort lasts while the table does: a new reading of
+ * the tasks keeps it. Five rows a page (`Usage · pages`): every row is sorted,
+ * then the page cut, and a new sort starts at page 1.
  */
-function AgentTable({ rows, names }: { rows: AgentTotal[]; names: Record<string, string> }) {
+function AgentTable({ rows, names, listKey }: { rows: AgentTotal[]; names: Record<string, string>; listKey: string }) {
+  const [sort, setSort] = useState<AgentSort | null>(null);
+  const sorted = useMemo(() => sortAgentRows(rows, sort, names), [rows, sort, names]);
+  const pages = useTablePages(ROWS_KEYS.agents, `${listKey}|${sort?.key ?? ''}|${sort?.direction ?? ''}`, sorted.length);
+  const shown = useMemo(() => pageRows(sorted, pages.page, pages.size), [sorted, pages.page, pages.size]);
   return (
-    <table className="w-full table-fixed border-collapse text-left">
-      <thead>
-        <tr>
-          <th className={HEAD}>Agent</th>
-          <th className={`${HEAD} ${CELL} w-[130px]`}>Project</th>
-          <th className={`${HEAD} ${CELL} ${MID} w-[150px]`}>Provider</th>
-          <th className={`${HEAD} ${CELL} w-[70px] text-right`}>Tasks</th>
-          <th className={`${HEAD} ${CELL} w-[74px] text-right`}>Time</th>
-          <th className={`${HEAD} ${CELL} w-[74px] text-right`}>Tokens</th>
-          <th className={`${HEAD} ${CELL} w-[100px] text-right`}>Cost</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(row => {
-          const others = row.providers.slice(1).join(', ');
-          return (
-            <tr key={row.agentId} data-agent-row className="align-top border-b border-border hover:bg-secondary">
-              <td data-cell="agent" className="py-[7px]">
-                <p data-value className={`text-xs truncate ${row.agentId in names ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  {agentName(row.agentId, names)}
-                </p>
-              </td>
-              <td data-cell="project" className="py-[7px] pl-2.5">
-                <p data-value className="text-xs text-text-secondary truncate">{projectName(row.projectPath)}</p>
-              </td>
-              <td data-cell="provider" className={`py-[7px] pl-2.5 ${MID}`}>
-                <p data-value className="text-xs text-text-secondary truncate">{row.providers[0]}</p>
-                {others && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-muted-foreground truncate" title={others}>{`also ${others}`}</p>}
-              </td>
-              <td data-cell="tasks" className="py-[7px] pl-2.5 text-right">
-                <p data-value className={MONO}>{row.tasks}</p>
-                {row.running > 0 && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-status-running whitespace-nowrap">{`${row.running} running`}</p>}
-              </td>
-              <td data-cell="time" className="py-[7px] pl-2.5 text-right">
-                <p data-value className={`${MONO} whitespace-nowrap`}>{durationLabel(row.durationMs)}</p>
-              </td>
-              <td data-cell="tokens" className="py-[7px] pl-2.5 text-right">
-                <p data-value className={MONO}>{row.tokens === null ? '-' : fmtTokens(row.tokens)}</p>
-              </td>
-              <td data-cell="cost" className="py-[7px] pl-2.5 text-right whitespace-nowrap">
-                <p data-value className={`font-mono text-[11px] ${row.costUSD === null ? 'text-muted-foreground' : 'text-status-running'}`}>{moneyText(row.costUSD)}</p>
-                {row.partial && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">partial</p>}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <>
+      <table className="w-full table-fixed border-collapse text-left">
+        <thead>
+          <tr>
+            {AGENT_COLUMNS.map(column => {
+              const direction = sort?.key === column.key ? sort.direction : null;
+              return (
+                <th key={column.key} aria-sort={direction ?? 'none'} className={`${AGENT_HEAD} ${column.className}`}>
+                  <SortHeader
+                    label={column.label}
+                    direction={direction}
+                    align={column.align}
+                    title={sortHint(column.label, sort, column.key)}
+                    onClick={() => setSort(current => nextAgentSort(current, column.key))}
+                  />
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map(row => {
+            const others = row.providers.slice(1).join(', ');
+            return (
+              <tr key={row.agentId} data-agent-row className="align-top border-b border-border hover:bg-secondary">
+                <td data-cell="agent" className="py-[7px]">
+                  <p data-value className={`text-xs truncate ${row.agentId in names ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {agentName(row.agentId, names)}
+                  </p>
+                </td>
+                <td data-cell="project" className="py-[7px] pl-2.5">
+                  <p data-value className="text-xs text-text-secondary truncate">{projectName(row.projectPath)}</p>
+                </td>
+                <td data-cell="provider" className={`py-[7px] pl-2.5 ${MID}`}>
+                  <p data-value className="text-xs text-text-secondary truncate">{row.providers[0]}</p>
+                  {others && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-muted-foreground truncate" title={others}>{`also ${others}`}</p>}
+                </td>
+                <td data-cell="tasks" className="py-[7px] pl-2.5 text-right">
+                  <p data-value className={MONO}>{row.tasks}</p>
+                  {row.running > 0 && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-status-running whitespace-nowrap">{`${row.running} running`}</p>}
+                </td>
+                <td data-cell="time" className="py-[7px] pl-2.5 text-right">
+                  <p data-value className={`${MONO} whitespace-nowrap`}>{durationLabel(row.durationMs)}</p>
+                </td>
+                <td data-cell="tokens" className="py-[7px] pl-2.5 text-right">
+                  <p data-value className={MONO}>{row.tokens === null ? '-' : fmtTokens(row.tokens)}</p>
+                </td>
+                <td data-cell="cost" className="py-[7px] pl-2.5 text-right whitespace-nowrap">
+                  <p data-value className={`font-mono text-[11px] ${row.costUSD === null ? 'text-muted-foreground' : 'text-status-running'}`}>{moneyText(row.costUSD)}</p>
+                  {row.partial && <p data-sub className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">partial</p>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager label="Agents" total={sorted.length} pages={pages} />
+    </>
   );
 }

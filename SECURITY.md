@@ -77,6 +77,19 @@ Creation now follows the rule the other routes follow.
 **What this is.** A guard against mistakes, and against a *casual* reader of the
 token file. It is not isolation: see §3.
 
+**Who hands work, and who stops (2.0.4).** After the project, the routes that hand an
+agent work (`/start`, `/run-task`, a `/dispatch` carrying a task, a `steer`, and the
+kanban's claim for another agent, `assign_task` with `agent_id`) and those
+that end its CLI (`/stop`, `DELETE /api/agents/:id`, a `restart`) ask the caller's
+role (`core/one-task.ts`): Tars's own pass, an agent with the orchestrator's powers,
+or the agent itself; a worker is refused, and what it sends another worker is typed
+in as a labelled note once that agent's turn ends. The role
+is read from the fleet, which the token names, never from a header. It is still a
+guard against an agent's mistake, not a boundary: a worker that edits
+`~/.dorothy/agents.json` can give itself the orchestrator's role for the next
+launch, as below for a chat's runner, and `intent: 'task'` is a word the caller
+writes, so a worker that leaves it out gets a note through, never a task.
+
 **What it leaves open, deliberately.** The read routes (`GET /api/agents`, and
 per-agent status, output, health, wait, bootstrap) still accept the shared
 token. So a process holding that file can still enumerate the fleet and read any
@@ -138,10 +151,16 @@ any project through the webhook. And an agent that read it before the move
 still has it. Rotating it is deleting `~/.tars-private/hermes-webhook-secret`,
 opening Settings > Hermes, which mints a new one, and giving Hermes that.
 
-**What the ceiling for delegated runs is, and is not** (1.9.6, `core/permission-ceiling.ts`).
-A run over ACP (`delegate_task`, `/run-task`) takes the narrower of its asker's
-permission mode and the target agent's own, in the order plan < normal < auto <
-bypass. What that binds, measured:
+**What the ceiling for delegated runs was, and is not** (1.9.6, `core/permission-ceiling.ts`).
+Since 2.0.4 a delegated task is no run: `delegate_task` and `/run-task` type it into the
+target's own terminal, where it works in the target's own mode, whatever its asker's, its
+sender line marked when the asker runs in a narrower one (`modeGapMark`), as any message is.
+A delegated task runs in the permission mode of the agent that receives it: the
+maintainer's decision of 2026-10-18, made with delegation into the permanent terminal. An
+asker in plan therefore does not hold the task it delegates to plan: the mark asks, it
+does not bind. Until 2.0.4 a run over ACP took the narrower of its asker's permission mode
+and the target agent's own, in the order plan < normal < auto < bypass. What that bound,
+measured:
 
 - **plan binds.** The session is set to plan, and every permission request of the run
   is refused, the request to leave plan included (Claude leaves it through
@@ -153,8 +172,8 @@ bypass. What that binds, measured:
 - **normal, auto and bypass differ little.** Tars answers an ACP run's permission requests
   itself, so a run in normal has what it asks for approved, once at a time, short of the
   deny list. Below plan, the order narrows the session's starting mode and little else.
-- **A target with no ACP mode** is not a run: `delegate_task` types the task into its
-  terminal, where it works in its own mode, whatever its asker's.
+- **A target with no ACP mode** was not a run: `delegate_task` typed the task into its
+  terminal, where it worked in its own mode, whatever its asker's. Since 2.0.4 every target is.
 
 And it is **not a boundary**. A persistent worker keeps the mode JeanBrasse gave it, which is its
 configuration and not the asker's grant: `send_message` and `/dispatch` to a worker in
@@ -213,6 +232,10 @@ stop is `/bin/ps`, which is setuid root and therefore cannot be executed under
 any sandbox at all: the convenient route is closed, the syscall behind it is
 not.
 
+**codex hands its MCP servers what it is told to, by name.** Measured on codex-cli 0.163.0: a server gets HOME, PATH, TERM and the variables its config lists in `env_vars`, nothing else. Tars lists, in its own servers' sections of codex's config.toml, the names they read, the token among them: names only, so the token reaches them from the codex process's environment, where this section already says who can read it, and is written in no file and no command line.
+
+**A codex session posts as an agent only on evidence that it is the agent's.** Tars reads codex's turns from its session logs and posts them with the agent's own token (`services/codex-sessions.ts`). Until the Audit's gate of #465, the first session begun in a codex agent's folder after its launch was taken for the agent's: a codex its user ran in that folder had its turns posted as the agent's, a delegated task could be answered by it, and its id became the session the agent resumed after a restart or a wake. A session is bound now on the agent's identity line in its first message, on the agent's own codex holding its file open, or as a fork of the agent's own session its launch began; a first message naming another agent never is, and where a process's open files cannot be read (Windows), a session that names nobody stays nobody's. What this does not stop: whoever can type into the agent's terminal, or write its codex's rollout, can still make text read as the agent's turn. The boundary is the account, as everywhere in this file.
+
 **Gemini's redaction is let through on purpose.** Gemini CLI withholds from
 the processes it starts every variable whose name looks like a secret, and
 `CLAUDE_MGR_API_TOKEN` matches. Without it a Gemini agent's hooks could not
@@ -229,6 +252,25 @@ per terminal. It
 is no loss under this section: every one of those processes runs as the same
 user and could already read the token from the CLI's environment, as measured
 above.
+
+**Never in a command line.** The arguments of a process are another matter:
+every account on the machine reads them (`ps`; `/proc/<pid>/cmdline` on Linux),
+where the environment is read by this user's own processes only. A delegated
+run handed its MCP servers its token in the list of servers ACP carries, and
+the claude adapter writes that list into the `--mcp-config` JSON of the claude
+it starts: measured on 2026-10-17, and again on 2026-10-18, with
+claude-agent-acp 0.93.0, the run's token was in that process's arguments.
+Since 2.0.4 the list carries `CLAUDE_MGR_API_TOKEN_FILE`, the path of a `0600`
+file in a `0700` folder of the run's own, removed when the run ends, and the
+servers read the token there (`mcp-shared/src/tars-api.ts`). A folder a run or a
+crash left goes at Tars's next start; it names the Tars that made it, so another
+Tars's run under way keeps its own (`services/acp/run-token-file.ts`). Measured the same
+way: the path is in the arguments, the token is not. This is the one place a
+`0600` file buys something: nothing against this user's processes, which read
+it as they read the environment, but out of the other accounts' sight. A
+terminal's token never went there: spawnAgentPty puts it in the environment,
+and the shell hooks hand it to curl with `-H @<(printf ...)`, a builtin, never
+an argument.
 
 **The honest statement.** Per-agent tokens ended impersonation *by naming*: an
 agent can no longer become a colleague by writing a header. They do not, and
@@ -382,13 +424,39 @@ the first path nobody thought to list.
 
 ---
 
+**What a repository's own configuration can no longer run** (2.0.4, the Audit's Hole 3, `utils/safe-git.ts`).
+Any agent of a project, or anything it runs, can write that project's `.git/config`, and git runs the
+programs it names: `core.fsmonitor` on a status, `diff.external`, a diff command or a textconv on a diff, a
+filter's clean, smudge or process when a file meets the index, the hooks on a checkout, a commit or a ref
+update, `gpg.program` on a signed commit, and the verifier of each signature format (`gpg.program` or
+`gpg.openpgp.program`, `gpg.ssh.program`, `gpg.x509.program`) on a log or a show of a signed commit, which
+`log.showSignature` asks for every time (the Audit's M1 on #463). Opening Review ran them inside Tars's main process, outside every
+CLI's permission mode. Every git call the main process makes now switches them off on its command line,
+which git reads after every configuration file, so neither the repository's, the user's nor the system's
+configuration can turn one back on; submodules are not entered; Review reads no file through a link out of
+the repository; git gets an environment of Tars's own. Measured with a repository that names a program at
+each of these places (`__tests__/fixtures/hostile-repo.ts`): on main its fsmonitor, its submodule's, a hook
+and its filter ran on Review's first status and diff; now none does, in the unit tests and in the real app
+(`e2e/review-hostile-repo.spec.ts`). What it is not: an agent's own CLI runs git with the repository's
+configuration, in its own permission mode, as it always did.
+
 ## 5. What is where on disk
 
 | Path | Holds | Reachable by an agent |
 |---|---|---|
-| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, the Hermes gateway's connection (`hermes-connection.json`, without its token since 1.9.3), and the files staged for a room (`bus-files/`, a week, then removed), and each agent's temporary folder (`tmp/`: its commands' temporary files and Claude Code's scratchpad and background task output, kept 7 days, a day for a running agent's leftovers), and the task ledger (`task-ledger.jsonl`: who handed each task to whom, when it started and ended, its sessions and what it cost, without what it said) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
+| `~/.dorothy/` | the fleet, settings, the shared token, the vault, the bus journal, Tars's health samples (`health-samples.jsonl`, 24 h, numbers with the names of Tars's own calls and pages, `0600`, and on Windows closed to every account but the user's and SYSTEM, like `app-settings.json`: an agent may write it, so every line is rebuilt from numbers and checked words before anything is read or sent, SPECS.md, Error reports), the Hermes gateway's connection (`hermes-connection.json`, without its token since 1.9.3), and the files staged for a room (`bus-files/`, a week, then removed), and each agent's temporary folder (`tmp/`: its commands' temporary files and Claude Code's scratchpad and background task output, kept 7 days, a day for a running agent's leftovers), and the task ledger (`task-ledger.jsonl`: who handed each task to whom, when it started and ended, its sessions and what it cost, without what it said) | Yes, deliberately: it is in every agent's `--add-dir`. A file sent to one room can be read by every agent of every project, as its journal can; `bus-files/` is refused when it is a link, and each file is written in a folder of its own that must not exist yet |
 | `~/.tars-private/` | JeanBrasse's conversation with the super chat, the receipts of sends made with a `clientRequestId` (`request-receipts.jsonl`, 24 h, never the text) and what delegated runs answered (`task-results.jsonl`), the Hermes sessions it held that conversation in (`overseer-hermes-sessions.json`), the questions agents asked the user with `ask_user` and the Telegram messages they went out as (`user-questions.json`: kept here and not in `~/.dorothy`, which any agent can write, so no agent can point an answer at another), what the event reports counted and the GitHub watch has seen (`event-reports.json`, `github-watch.json`: kept out of the agents' reach so none can silence a report), the Hermes dashboard's token (`hermes-token`, JeanBrasse's decision 6 of 2026-10-01), what the relay sent and what waits for Hermes (`relay-sent.json`, `relay-outbox.json`, `relay-state.json`; each sent message with the chat it came from), what Tars's own Telegram bot sent for a chat (`telegram-sent.json`: Telegram's chat and message ids and the chat's id, never the text, 7 days: an agent able to write it could point the user's next reply at another chat), the user's go-aheads on Sentry's errors (`sentry-go-aheads.json`: an agent able to write it could hand a task on in the user's name), the error triage's Sentry token (`sentry-token`: it reads the organisation's issues, user reports included; in `app-settings.json` until 1.9.3, moved at the first start), the Hermes webhook secret, and the Claude accounts' registry (`claude-accounts.json`: the option, each account's id and name, the thresholds; no credential and no folder), and what carries across a restart (`run-state.json`: who was working, a task's first 200 characters; `carry-over.json`: the notes Tars owes agents), and what each task of the task ledger said (`task-texts.jsonl`: its first line, 200 characters at most, which holds JeanBrasse's typed prompts and the chat messages handed to orchestrators; in `task-ledger.jsonl` in `~/.dorothy` before 1.9.3 shipped, moved out at the first start, JeanBrasse's answer of 2026-10-05). Those two were in `~/.dorothy` until the Audit's gate of #310: a `carry-over.json` written by an agent had Tars type "Message from Telegram (JeanBrasse): ... I approve." into the orchestrator, and a `run-state.json` had it start the agents it named, in any project. A sender read back from `carry-over.json` is never typed as one either: a carried note goes as from Tars, its first sender quoted inside it | Not handed to any agent, never passed to a CLI, and refused by both ways an agent has of sending a file to Telegram and by the vault's attach route. Each file `0600`, in a directory Tars makes `0700`. The conversation also lives in Hermes, one session per turn: `memory_search` (`/api/memory/search`, what agents call) leaves out every session the super chat opened, every run of its cron job (recorded when it runs, so a run of a job replaced since is still left out), a session Hermes compressed out of one of those (the gateway answers a compressed conversation under its newest id, with its `lineage_root` and `parent_session_id`, which are checked too), a session branched or delegated from any of those (the gateway's lineage stops at a branch or a delegate edge, so each parent is read further up through `GET /api/sessions/{id}`, to a root; an ancestry that cannot be read to its end, a cycle, or more than 20 parents leaves the hit out), and any hit that names no session. The gateway is asked for its most (100) and the filter runs before the agent's `limit` is applied, so the super chat's hits do not take an agent's places. When 100 or more of the super chat's lineages match before any of JeanBrasse's, an agent gets no Hermes hit: the gateway gives no further page. Sessions opened before 1.9.0 were not recorded, so only their cron runs are left out; an agent holding `hermes-connection.json` can still ask the gateway itself (§5, the paragraph below) |
 | `~/.claude-accounts/<id>/` | each Claude account after the first, with several on: a Claude Code folder of its own, with its own `.claude.json` (the account's identity) and a copy of `~/.claude/settings.json`, its transcripts, history, sessions, CLAUDE.md, skills, agents, commands, plugins and output styles being links to `~/.claude`. The sign-in is Claude Code's, in the keychain item named after the folder (`.credentials.json` on Linux): Tars never opens it | Not in any agent's `--add-dir`; the agents started on an account run in its folder (`CLAUDE_CONFIG_DIR`), as account 1's run in `~/.claude`, and a folder that is not Tars's own is refused, never repaired |
+
+A CLI's API key (2.0.4, `cliApiKeys` in `app-settings.json`, SPECS.md "An API key per CLI") is handed to
+that CLI's agents only, in their terminal's environment, and to nothing else Tars starts: not an argument,
+which `ps` shows to every process of the machine, nor the CLI's own files. That is what Tars hands; it is not
+a boundary. The key sits in `~/.dorothy`, which every agent is handed, as every provider key there does, so an
+agent of any CLI that reads `app-settings.json` reads it. A process's environment is the user's to read too:
+on macOS 26 `ps -E` and `ps eww` showed no other process's environment (measured on 2026-10-18), and on Linux
+`/proc/<pid>/environ` is readable by the same user (procfs's rule, not run here), as `ANTHROPIC_API_KEY` is for
+the providers on the claude binary. Moving the keys to `~/.tars-private` would close the first; nothing short of
+the confinement JeanBrasse declined closes the second.
 
 So what the kanban tools let an agent do on the Hermes board (since #183, delete
 only a task it filed that nobody claimed, or one it claimed) is a rule of Tars's
@@ -397,6 +465,56 @@ gateway with it and edit or delete any task (the audit's gate of #183). Since
 1.9.3 that token is in `~/.tars-private/hermes-token`, out of the folder every
 agent is handed; an agent in bypass, which runs as the user, can still read it
 there (no confinement, JeanBrasse's decision of 2026-09-23).
+
+**A key provider's key goes to Claude Code as `ANTHROPIC_AUTH_TOKEN`**
+(`keyProviderEnv`, `electron/providers/cli-provider.ts`). Measured on claude
+2.1.302 on 2026-10-18, in a throwaway home against a stand-in of the vendor: an
+API key Claude Code finds in its environment is not used until someone answers
+"Do you want to use this API key?" at launch, No preselected. Until 2.0.4 Tars
+handed every key provider's key over that way, so the question waited in a
+terminal nobody watches, and the first Enter typed there, Tars's own included,
+answered No. The key was then refused for good in that folder's `.claude.json`,
+and a session with a subscription signed in sent the subscription's OAuth token,
+with its first request, to the vendor's URL. An auth token is never asked
+about, wins over a signed-in subscription (the stand-in got the key, never the
+OAuth token) and is written nowhere. `ANTHROPIC_API_KEY` is blanked: a key the
+user's shell exports would bring the question back, and go out to the vendor as
+`x-api-key`. Approving the key in `.claude.json` would have stopped the question
+too, and left the key's last 20 characters there and in each backup Claude Code
+makes of the file.
+
+A scheduled task takes the key the same way (`scheduledKeyExports`). Measured
+on 2.1.302: `claude -p` with `ANTHROPIC_API_KEY` empty or unset, or with
+`ANTHROPIC_AUTH_TOKEN` empty, and a subscription signed in, sends the
+subscription's OAuth token as a Bearer to the URL it is pointed at, the
+vendor's. The scripts read the key with jq, which macOS ships only from 15, and
+a key removed after the task was scheduled read empty the same way. Since 2.0.4
+the script reads it as the task runs, with Tars's own node (the launcher its MCP
+servers run on, or `node`), never in an argument, and with no key, or settings
+it cannot read, writes why in the task's log and ends before claude starts.
+
+What Tars before 2.0.4 left of those keys is cleaned once, at the first load of
+an `agents.json` from before it (`core/key-fragments.ts`): the question showed
+the key's last 20 characters (`sk-ant-...` then those 20), which the agents'
+kept output held in `agents.json` and `agents.backup.json`, in every agent's
+reach; they are masked there, the rest of the output kept. And Tars's keys' last
+20 characters are taken out of the `customApiKeyResponses.rejected` list of
+`~/.claude.json` and of each account folder's, and of the copies Claude Code
+keeps of each (its backups in the config home's `backups/`, one a minute at most,
+the last five kept, and a write of its own it never finished, beside the file),
+the user's own entries left, each file changed the way Tars writes its trust
+there (`updateSharedJsonSync`). A key since replaced in Settings is masked in the output, which shows it under the
+question's masking, but not found in a rejected list, which holds the 20
+characters alone.
+
+Nor is the line every task Tars files carries since 2.0.4 ("Tars task: it belongs to Tars's
+agents, ..."): it is a label for whoever opens the task. Hermes's assistant, whose board listing does not
+show a task's description (0.21.5), can still finish, block, unblock or send to review a Tars task,
+and none of that starts anything on a `tars:` lane. What
+keeps Hermes's dispatcher off a Tars task is Hermes's own rules, measured on 0.21.1 and 0.21.5: a
+task parked `scheduled`, or `ready` on a `tars:` lane that is no Hermes profile, is neither
+spawned, promoted nor decomposed. Whoever can move a task on the gateway can still put one where
+Hermes acts.
 
 **The relay to the user's Telegram** (`services/hermes-relay.ts`, on with
 `hermesRelayEnabled`). Who can reply: the tars-relay plugin on the Hermes server

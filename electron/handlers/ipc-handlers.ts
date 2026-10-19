@@ -1,8 +1,10 @@
+import { safeGit, safeGitSync } from '../utils/safe-git';
 import { ipcMain, dialog, shell, app } from 'electron';
+import { stopTask, taskBannerOf } from '../services/task-banner';
+import { typeLaunchTask } from '../core/typed-task';
 import { stopAgent } from '../core/agent-stop';
 import { removeAgent } from '../core/agent-remove';
 import { gitRefusal } from '../core/chat-slots';
-import { execFileSync } from 'child_process';
 import { restartRunnersOf } from '../services/chat-runners';
 import { diskSpace, listOrphanFolders, removeOrphanFolders } from '../services/orphan-folders';
 import { cloneDependencies, logDependencies } from '../services/worktree-deps';
@@ -27,7 +29,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp, LogLevel } from '@slack/bolt';
 
 // Import types
-import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters } from '../types';
+import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole, ClaudeAccountCounters, CliKeyId } from '../types';
 import { countersForUsagePage } from '../services/claude-accounts/counters';
 import { readAccountsSettings } from '../services/claude-accounts/registry';
 import { buildFullPath } from '../utils/path-builder';
@@ -41,15 +43,16 @@ import { writeAtomicSync } from '../utils/secret-file';
 import { getProvider, getAllProviders } from '../providers';
 import { planModeRefusal } from '../providers/plan-mode';
 import { retireTelegramMcp, settingsForRelay } from '../services/hermes-relay-switch';
-import { messagesWaiting, writeHumanInput } from '../core/pty-manager';
+import { messagesWaiting, oweToFirstMessage, writeHumanInput } from '../core/pty-manager';
 import { killPty } from '../core/pty-kill';
 import { agentStatusOnExit, refuseWhileQuitting } from '../core/quit-state';
-import { killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
+import { killStalePty, notePtyKeys, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch, launchIntoTerminal, cliStartRefusal } from '../core/agent-manager';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
 import { emitAgentStatus } from '../services/agent-events';
 import { loadCatalog, modelsForProvider, priceFor, catalogStatus } from '../services/model-catalog';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory, memoryStatus } from '../services/memory-hub';
+import { guideForPrompt } from '../services/agent-guide';
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
@@ -74,7 +77,8 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
-import { gitCommand } from '../platform/git-command';
+import { readCodexModels } from '../providers/codex-cli';
+import { cliKeyStates, keepCliKeys, withCliKey, withoutCliKeys } from '../services/cli-keys';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -176,7 +180,7 @@ async function makeAgentWorktree(projectPath: string, branchName: string): Promi
       // a quote or a space in it ("Bob's Projects") used to break the command,
       // or run its own. In the C locale: gitRefusal reads git's "fatal:",
       // which a translated git would not write.
-      const git = (args: string[]) => execFileSync(gitCommand(), args, { cwd: projectPath, stdio: 'pipe', env: { ...process.env, LC_ALL: 'C' } });
+      const git = (args: string[]) => safeGitSync(projectPath, args, { env: { LC_ALL: 'C' } });
       // An existing branch is checked out there, a new one is made: only the
       // add that applies runs, so a refusal is git's reason for it. Any failure
       // of the first used to be retried as a new branch, and the user read the
@@ -430,6 +434,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           ...providerEnvVars,
         },
       });
+      // The keys this shell's environment carries, for the start that reuses it (core/agent-manager.ts).
+      notePtyKeys(ptyProcess, { provider: config.provider, model: config.model } as AgentStatus, currentSettings);
       console.log(`PTY created successfully for agent ${id}, PID: ${ptyProcess.pid}`);
     } catch (err) {
       console.error(`Failed to create PTY for agent ${id}:`, err);
@@ -749,6 +755,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const appSettingsForCommand = getAppSettings();
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await cliProvider.prepareLaunch?.(binaryPath, options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'));
 
     // The orchestrator's powers: its project's orchestrator (the toggle, never
     // the name) or a chat's runner (core/agent-role.ts).
@@ -788,7 +796,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // CLIs without Claude's SessionStart hook get the project's memory in the
     // prompt instead - otherwise those agents start knowing nothing.
-    let promptWithMemory = prompt;
+    let memory = '';
     if (needsPromptInjection(cliProvider.configDir)) {
       try {
         const digest = await assembleDigest({
@@ -796,12 +804,20 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
           settings: appSettingsForCommand as never,
           hermes: usableHermesConnection(),
         });
-        const wrapped = wrapDigestForPrompt(digest);
-        if (wrapped) promptWithMemory = `${wrapped}\n\n${prompt}`;
+        memory = wrapDigestForPrompt(digest);
       } catch {
         // Memory is context, not a precondition.
       }
     }
+    // And how Tars works, which a claude terminal gets in its bootstrap
+    // (services/agent-guide.ts). Both go in the command with a task only. A
+    // start without one (Start, autostart, a restart, a wake) types no prompt:
+    // given one, `opencode run` and `amp -x` ran once and exited, and every
+    // other CLI started a turn nobody asked for (the Audit's N1 on #448). They
+    // are owed to the first message Tars types into that session instead
+    // (oweToFirstMessage, below).
+    const preamble = [guideForPrompt(agent, cliProvider.configDir), memory].filter(Boolean).join('\n\n');
+    const promptWithMemory = prompt.trim() ? [preamble, prompt].filter(Boolean).join('\n\n') : '';
 
     // Which conversation to continue. Without a word from the caller, the usual
     // rule: the last session, once per app run. A restart names the session it
@@ -919,6 +935,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       throw err;
     }
     noteLaunch(cliProcess, launched);
+    oweToFirstMessage(cliProcess, promptWithMemory ? '' : preamble);
+    // amp takes its task typed in, once it runs (core/typed-task.ts).
+    typeLaunchTask(cliProvider, cliProcess, { prompt: promptWithMemory, skills: allAgentSkills, isSuperAgent: isSuperAgentCheck });
     if (start.platform === 'win32') armTaskStartWatch(agent, agent.ptyId, promptWithMemory);
 
     // Save updated status
@@ -992,7 +1011,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       // terminal and its mirror are gone, the screen is kept (core/agent-asleep.ts).
       const kept = screenWhileAsleep(agent);
       const launching = sessionStarting(agent);
-      return { ...agent, ptyId: undefined, output: kept ? [kept] : [], cliRunning: false, leftFullscreen: false, launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent) };
+      return { ...agent, ptyId: undefined, output: kept ? [kept] : [], cliRunning: false, leftFullscreen: false, launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent), taskBanner: taskBannerOf(agent.id) };
     }
     // What a panel writes to show this agent: its terminal's screen as one
     // chunk, rather than the kept tail of the stream, which after a long turn
@@ -1007,6 +1026,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       cliRunning: cliRunningIn(ptyProcess),
       leftFullscreen: leftFullscreenIn(ptyProcess),
       launching, waking: publishedWaking(agent, launching), waitingOn: publishedWaitingOn(agent),
+      taskBanner: taskBannerOf(agent.id),
     };
   });
 
@@ -1025,7 +1045,15 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       cliRunning: cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       leftFullscreen: leftFullscreenIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined),
       launching: sessionStarting(agent), waking: publishedWaking(agent, sessionStarting(agent)), waitingOn: publishedWaitingOn(agent),
+      taskBanner: taskBannerOf(agent.id),
     }));
+  });
+
+  // The banner's stop (design PR #451): that task only. In hand, its turn
+  // ends and the session stays; waiting, it leaves the line (services/task-banner.ts).
+  ipcMain.handle('agent:task-stop', async (_event, agentId: string, ref: string) => {
+    if (typeof agentId !== 'string' || typeof ref !== 'string') return { success: false, error: 'agentId and ref are required' };
+    return stopTask(agentId, ref);
   });
 
   // Update an agent (supports all editable fields)
@@ -1953,8 +1981,22 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     return { version: app.getVersion() };
   });
 
+  // Never a CLI's key: the window learns only whether one is set (cliKeys:list).
   ipcMain.handle('app:getSettings', async () => {
-    return getAppSettings();
+    return withoutCliKeys(getAppSettings());
+  });
+
+  // An API key per CLI (2.0.4, services/cli-keys.ts): set here and nowhere
+  // else, kept in app-settings.json, never sent back to the window.
+  ipcMain.handle('cliKeys:list', async () => cliKeyStates(getAppSettings()));
+  ipcMain.handle('cliKeys:set', async (_event, id: unknown, patch: unknown) => {
+    const p = (patch && typeof patch === 'object' ? patch : {}) as { key?: unknown; envVar?: unknown };
+    const field = (v: unknown) => (v === null || typeof v === 'string' ? v : undefined);
+    const r = withCliKey(getAppSettings(), String(id) as CliKeyId, { key: field(p.key), envVar: field(p.envVar) });
+    if (!r.ok) return { success: false, error: r.error };
+    setAppSettings(r.settings);
+    saveAppSettings(r.settings);
+    return { success: true, state: cliKeyStates(r.settings).find((c) => c.id === id) };
   });
 
   // Live model + price catalogue. A new model or a price change lands here
@@ -1968,6 +2010,15 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     if (provider === 'custom-openai') {
       const model = getAppSettings().customOpenAIModel?.trim();
       return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
+    }
+    // The models of the account codex is signed in with, from codex's own
+    // list: models.dev's OpenAI list offered gpt-5-codex-mini, which codex
+    // refuses for a ChatGPT account (codex-cli.ts).
+    if (provider === 'codex') {
+      const listed = readCodexModels();
+      if (listed.length > 0) {
+        return { models: listed.map(m => ({ id: m.id, name: m.name, description: m.description, effortValues: m.efforts, contextWindow: m.contextWindow })) };
+      }
     }
     await loadCatalog();
     return { models: modelsForProvider(provider) };
@@ -2094,7 +2145,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // With the relay on, Hermes is the only voice on the user's Telegram: the
       // Tars bot's token is erased and the bot off, whatever else was saved
       // (hermes-relay-switch.ts).
-      const updatedSettings = settingsForRelay({ ...currentSettings, ...newSettings });
+      const updatedSettings = settingsForRelay(keepCliKeys(currentSettings, newSettings));
       const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
@@ -2213,7 +2264,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
     // Notify frontend of settings change
     const mainWindow = getMainWindow();
-    mainWindow?.webContents.send('settings:updated', appSettings);
+    mainWindow?.webContents.send('settings:updated', withoutCliKeys(appSettings));
 
     return { success: true };
   });
@@ -3041,11 +3092,7 @@ function registerShellHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('shell:branch', async (_event, { cwd }: { cwd: string }) => {
     if (!cwd || !fs.existsSync(cwd)) return { success: false, error: 'no such directory' };
     try {
-      const { execFile } = await import('child_process');
-      const { promisify } = await import('util');
-      const { stdout } = await promisify(execFile)(gitCommand(), ['rev-parse', '--abbrev-ref', 'HEAD'], {
-        cwd, timeout: 8000,
-      });
+      const { stdout } = await safeGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 8000 });
       return { success: true, output: stdout.trim() };
     } catch {
       return { success: false, error: 'not a git repository' };

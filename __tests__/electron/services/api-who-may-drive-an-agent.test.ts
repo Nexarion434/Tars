@@ -75,17 +75,9 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
 });
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 vi.mock('../../../electron/utils/broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
-// /run-task hands its task to the CLI over ACP. The transport is replaced, as
-// node-pty is: what is asked here is whether the route lets a call through,
-// and a call it let through is one that reached this.
-vi.mock('../../../electron/services/acp/delegate', () => ({
-  canDelegateOverAcp: () => true,
-  delegateOverAcp: vi.fn(async () => ({ ok: true, transport: 'acp', text: 'done', toolCalls: [] })),
-}));
 
 import * as pty from 'node-pty';
 import type { AgentStatus } from '../../../electron/types';
-import { delegateOverAcp } from '../../../electron/services/acp/delegate';
 
 // The launch these hold is darwin and linux's: a line typed into the shell, or
 // `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
@@ -205,7 +197,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(delegateOverAcp).mockClear();
+  vi.mocked(pty.spawn).mockClear();
   agents.clear();
   ptyProcesses.clear();
   putAgent(ALPHA);
@@ -603,6 +595,8 @@ describe('a call that is refused changes nothing', () => {
       for (const [who, token] of [['the shared token', sharedToken], ['an agent of another project', betaToken]] as const) {
         const res = await call('POST', `/api/agents/${worker.id}/${route}`, bearer(token), body);
         expect(res.status, `${who}: ${JSON.stringify(res.body)}`).toBe(403);
+        // Refused by the cross-project guard, not by the role rule a worker of another project meets after it (2.0.4).
+        if (token === betaToken) expect(String(res.body.error), `${who}: ${JSON.stringify(res.body)}`).toContain('Cross-project access denied');
         expect(worker.requestedBy, `${who} was refused and still rewrote who is owed the result`).toEqual(owed);
       }
       expect(terminal.written).toEqual([]);
@@ -621,7 +615,9 @@ describe('a call that is refused changes nothing', () => {
       const terminal = liveTerminal(worker);
       const owed = { agentId: ALPHA.id, ptyId: worker.ptyId! };
       worker.requestedBy = { ...owed };
-      putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath });
+      // The project's orchestrator: a worker is turned away for its role
+      // before its body is read (core/one-task.ts).
+      putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath }).role = 'orchestrator';
       const sameProject = tokens.mintAgentToken('agent-alpha-2');
 
       const res = await call('POST', `/api/agents/${worker.id}/${route}`, bearer(sameProject), {});
@@ -637,6 +633,8 @@ describe('a call that is refused changes nothing', () => {
     // had stopped recording would pass every test above.
     const worker = putAgent({ id: 'agent-alpha-worker', projectPath: ALPHA.projectPath });
     liveTerminal(worker);
+    // Only an agent with the orchestrator's powers hands work (core/one-task.ts).
+    agents.get(ALPHA.id)!.role = 'orchestrator';
 
     const { status, body } = await call('POST', `/api/agents/${worker.id}/dispatch`, bearer(alphaToken), { message: 'your turn' });
 
@@ -653,7 +651,10 @@ describe('an agent reporting to the agent that leads it', () => {
   // round. How it fails, written before the code (2026-10-04):
   // 1. a worker messaging the orchestrator that delegated to it becomes its requester;
   // 2. a worker messaging its project's orchestrator, with no link, does too;
-  // 3. over-correction: a message to a peer, which is delegation, records no link.
+  // 3. over-correction: a message to a peer, which was delegation, records no
+  //    link. Since 2.0.4 a worker's message to a peer is a note for
+  //    information (core/one-task.ts), which hands nothing over: what fails
+  //    now is a note that records a link, or that is not said to be a note.
   // And for the chats' runners (ORCHESTRATOR-PER-CHAT.md 4.2, PR D), written
   // before the code (2026-10-12):
   // 4. a worker messaging a chat's runner, which has the orchestrator's powers
@@ -672,13 +673,13 @@ describe('an agent reporting to the agent that leads it', () => {
     // Any agent that handed it work leads it for that work, role or not.
     orchestrator.role = undefined;
     worker.requestedBy = { agentId: orchestrator.id, ptyId: worker.ptyId! };
-    const askedByNoah = { agentId: ALPHA.id, ptyId: orchestrator.ptyId! };
-    orchestrator.requestedBy = { ...askedByNoah };
+    const askedByUser = { agentId: ALPHA.id, ptyId: orchestrator.ptyId! };
+    orchestrator.requestedBy = { ...askedByUser };
 
     const { status, body } = await call('POST', `/api/agents/${orchestrator.id}/message`, bearer(workerToken), { message: 'done, PR #301 is up' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(orchestrator.requestedBy, 'the worker became its own orchestrator\'s requester').toEqual(askedByNoah);
+    expect(orchestrator.requestedBy, 'the worker became its own orchestrator\'s requester').toEqual(askedByUser);
   });
 
   it("2. answering its project's orchestrator, with no link, makes none", async () => {
@@ -690,7 +691,10 @@ describe('an agent reporting to the agent that leads it', () => {
     expect(orchestrator.requestedBy).toBeUndefined();
   });
 
-  it('3. a message to a peer still records who asked', async () => {
+  // 3 again, since 2.0.4 (core/one-task.ts): a worker never orders work from
+  // another agent, so a message to a peer is not delegation any more but a
+  // note for information, and records no link either.
+  it('3. a message to a peer is a note, and records no link', async () => {
     const { worker, workerToken } = team();
     const peer = putAgent({ id: 'agent-alpha-peer', projectPath: ALPHA.projectPath });
     liveTerminal(peer);
@@ -699,7 +703,8 @@ describe('an agent reporting to the agent that leads it', () => {
     const { status, body } = await call('POST', `/api/agents/${peer.id}/message`, bearer(workerToken), { message: 'can you check this' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(peer.requestedBy).toMatchObject({ agentId: 'agent-alpha-worker', ptyId: peer.ptyId, taskRef: expect.stringMatching(/^t-/) });
+    expect(body.note).toBe(true);
+    expect(peer.requestedBy).toBeUndefined();
   });
 
   it("4. answering a chat's runner of its project, with no link, makes none", async () => {
@@ -716,15 +721,19 @@ describe('an agent reporting to the agent that leads it', () => {
   });
 });
 
+// ALPHA is a worker: since 2.0.4 (core/one-task.ts) what it sends another
+// agent of its project reaches it as a note for information, never as work.
 describe('an agent keeps exactly the rights it had', () => {
-  it('drives an agent of its own project', async () => {
+  it('reaches an agent of its own project, a worker with a note', async () => {
     const other = putAgent({ id: 'agent-alpha-2', projectPath: ALPHA.projectPath });
     const terminal = liveTerminal(other);
 
     const { status, body } = await call('POST', `/api/agents/${other.id}/dispatch`, bearer(alphaToken), { message: 'your turn' });
 
     expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.note, JSON.stringify(body)).toBe(true);
     expect(terminal.written.join('')).toContain('your turn');
+    expect(terminal.written.join('')).toContain('Note for information from');
   });
 
   it('is still refused another project\'s, with the message it has always had', async () => {
@@ -734,7 +743,7 @@ describe('an agent keeps exactly the rights it had', () => {
     expect(String(body.error)).toContain('Cross-project access denied');
   });
 
-  it('still crosses deliberately with allowCrossProject', async () => {
+  it('still crosses deliberately with allowCrossProject, a worker with a note', async () => {
     const beta = agents.get(BETA.id)!;
     const terminal = liveTerminal(beta);
 
@@ -743,6 +752,7 @@ describe('an agent keeps exactly the rights it had', () => {
     });
 
     expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.note, JSON.stringify(body)).toBe(true);
     expect(terminal.written.join('')).toContain('go');
   });
 
@@ -796,7 +806,7 @@ describe('an agent keeps exactly the rights it had', () => {
   });
 });
 
-describe('/run-task, the delegation that answers with what the agent did', () => {
+describe('/run-task, the delegation that hands a task to the agent\'s terminal', () => {
   // It gives an agent work as surely as /dispatch does, over ACP rather than
   // the terminal, and no test asked who may call it: the QA's gate of this lot
   // took its guard out and the whole suite stayed green (24f1889).
@@ -812,7 +822,7 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
       expect(String(body.error), who).toContain(refusal);
     }
 
-    expect(vi.mocked(delegateOverAcp), 'a refused caller had a task run').not.toHaveBeenCalled();
+    expect(vi.mocked(pty.spawn), 'a refused caller had a task run').not.toHaveBeenCalled();
     expect(beta.status, 'a refused caller set the agent running').toBe('idle');
     expect(beta.currentTask).toBeUndefined();
   });
@@ -821,38 +831,25 @@ describe('/run-task, the delegation that answers with what the agent did', () =>
     // The witness: the route is reachable and runs what it is handed, so the
     // refusals above are the guard's and not, say, a 409 for a CLI with no ACP
     // mode.
-    putAgent({ id: 'agent-beta-2', projectPath: BETA.projectPath });
+    putAgent({ id: 'agent-beta-2', projectPath: BETA.projectPath }).role = 'orchestrator';
     const sameProject = tokens.mintAgentToken('agent-beta-2');
 
-    const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
+    // Into the agent's own terminal since 2.0.4, its CLI at its prompt.
+    const beta = agents.get(BETA.id)!;
+    const { written } = liveTerminal(beta);
+    beta.status = 'waiting';
+    beta.waitingReason = 'idle';
+    const { status, body } = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over', answer: 'started' });
 
     expect(status, JSON.stringify(body)).toBe(200);
-    expect(body.text).toBe('done');
-    expect(vi.mocked(delegateOverAcp)).toHaveBeenCalledWith(expect.objectContaining({
-      agent: agents.get(BETA.id), task: 'take this over',
-    }));
+    expect(String(body.taskId)).toMatch(/^t-[0-9a-f]{8}$/);
+    expect(written.join('')).toContain('take this over');
+    beta.status = 'stopped';
   });
   // A run that started is an answer however it ended; 502 is what tells
   // delegate_task it may type the task into the terminal instead, and after a
   // run that started that runs it twice (sessions that died while they
   // waited, 2026-09-23). Written before the route changed.
-  it('answers 200 for a run that started and was stopped at its limit, 502 only for one that never started', async () => {
-    putAgent({ id: 'agent-beta-3', projectPath: BETA.projectPath });
-    const sameProject = tokens.mintAgentToken('agent-beta-3');
-    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
-      ok: false, transport: 'acp', started: true, stopReason: 'turn_limit', text: 'half', toolCalls: ['pnpm build'],
-      error: "stopped at the run's limit of 3600 s while the agent was still working",
-    } as never);
-    const stopped = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
-    vi.mocked(delegateOverAcp).mockResolvedValueOnce({
-      ok: false, transport: 'acp', started: false, text: '', toolCalls: [], error: 'spawn npx ENOENT',
-    } as never);
-    const neverStarted = await call('POST', `/api/agents/${BETA.id}/run-task`, bearer(sameProject), { task: 'take this over' });
-
-    expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
-    expect(stopped.body).toMatchObject({ started: true, stopReason: 'turn_limit', text: 'half' });
-    expect(neverStarted.status).toBe(502);
-  });
 });
 
 /**

@@ -149,6 +149,16 @@ then the sandbox opened the live install's profile, and spawned its agents with 
 `~/.claude/mcp.json`. The main process now takes its home from `os.homedir()` everywhere, and
 `CFFIXED_USER_HOME` moves the profile.
 
+**One Tars per profile, on every platform** (2.0.3; Windows had it before). A second launch on
+the same profile hands over: the first Tars's window comes forward, and the second ends before it
+has written anything (`claimSingleInstance`, `core/desktop-lifecycle.ts`; Chromium's lock, in the
+profile folder). The sandbox has a profile of its own (`CFFIXED_USER_HOME` moves it), and so does
+every e2e run (`--user-data-dir`), so they still run beside the live Tars. A dev run (`npm run
+electron:dev`) on your real home does not: it is named Tars, so it shares the installed app's
+profile, and while the installed Tars runs it brings that one forward and exits. Quit the
+installed Tars first, or run the dev build with `HOME` and `CFFIXED_USER_HOME` pointed at a
+sandbox, as `scripts/sandbox.sh` does.
+
 The sandbox is **persistent** across launches. To reset it:
 
 ```bash
@@ -219,7 +229,18 @@ moves `next dev` (3100) and every suite's API port together. Unset, nothing move
 Stand-ins a spec may point the app at, read only under `DOROTHY_E2E=1`: `TARS_CHAT_RAM_GB` (the RAM the
 chats' limit is computed from) and `DOROTHY_TELEGRAM_API_URL` (`http://127.0.0.1:<port>` and nothing
 else: a stand-in of Telegram's Bot API, which the bot's token travels to in every request's path;
-`e2e/chat-senders.spec.ts`).
+`e2e/chat-senders.spec.ts`), and `DOROTHY_HEALTH_EVERY_MS` (how often the health samples are taken,
+200 ms at least; `e2e/health-reports.spec.ts` takes one a second). And one read by any development run,
+never by a packaged Tars (`app.isPackaged`): `DOROTHY_ERROR_REPORTS_DSN`, where error reports go, a
+stand-in of Sentry that records the envelopes (`e2e/health-reports.spec.ts`).
+
+**Tars's health, on this machine.** Every 5 minutes Tars appends a sample to
+`~/.dorothy/health-samples.jsonl` (`0600`): the main process's heap and RSS, its event loop delay
+(p50, p95), the three slowest IPC handlers of the 5 minutes, the agents and how many run, the page
+open. 24 hours rolling, 256 KB at most: numbers, with the names of Tars's own calls and pages, no
+content, no file path, no name (`services/health/`). To see how a session
+went before a crash, read that file; nothing in it leaves unless error reports are on (SPECS.md,
+Error reports).
 
 ### Unit tests: `npm test`
 
@@ -332,6 +353,47 @@ not be re-baselining thirty.
 The HTML report is written to `e2e/report/` (gitignored); open `e2e/report/index.html`.
 Traces are `retain-on-failure`.
 
+### The CLI matrix: `npm run e2e:matrix`
+
+```bash
+npx tsc -p electron/tsconfig.json && (cd mcp-orchestrator && npm run build)
+npm run e2e:matrix                                               # both shells, about 14 minutes each
+E2E_MATRIX_ONLY=claude,amp,grok npm run e2e:matrix               # the pairs of these CLIs only
+E2E_MATRIX_SHELL=classic npm run e2e:matrix                      # one shell (classic or new)
+TARS_CLI_MATRIX_LIVE=1 npm run e2e:matrix -- e2e/cli-matrix.live.spec.ts   # the real CLIs, on purpose only
+```
+
+`e2e/cli-matrix.spec.ts` starts nine agents in one project, one per CLI Tars drives, each on a stand-in faithful to
+its CLI where Tars depends on it (`e2e/fake-clis.mjs`, `e2e/fake-codex.mjs`). It makes each in turn the orchestrator
+and has it delegate to, message and hear back from every other: 72 ordered pairs, five cells each.
+
+**Its own project, `matrix`, out of the default suite since 19/10.** Its two shells take 27 minutes, which nearly
+doubled `npm run e2e`. The project exists only with `E2E_MATRIX=1`, which `npm run e2e:matrix` sets
+(`e2e/matrix.mjs`).
+
+**When it runs:**
+- **at every release gate**, beside `npm run e2e`;
+- **by `npm run e2e:auto`** whenever a diff touches a file that can reach a delegation between two CLIs, in the same
+  direction as the surfaces' rule: a path `CANNOT_REACH_A_DELEGATION` (`scripts/scope-checks.mjs`) does not name runs
+  the matrix.
+  - **It runs for** the whole main process (`electron/`), the MCP servers, the hooks, the state mod, the dependency
+    set and the suite's own code: the matrix launches the app whole and types into its agents through the window's
+    preload bridge. An MCP server or a hook alone skips the surfaces and still runs it.
+  - **It is left out only for** the renderer (`src/`, `public/`), the agent prompt text and the tray's pictures in
+    `electron/resources/`, the unit tests, the other specs and the surfaces' reference pictures, the documents, the
+    Pencil files and the README's pictures, the tooling (`scripts/`, `.github/`), the landing site and the Hermes
+    plugins.
+  - It was a list of what reaches a delegation until the Audit's M1 on #464, and it missed eleven files a task goes
+    through (its routes, the queue of a second task, the terminal, the agent's identity, the hooks' installer).
+
+  e2e:auto names every file that called for it, or every file it left the matrix out for, and why.
+
+**A red cell is expected where `KNOWN_RED` says so.** Each rule says why and what the failure reads like. The spec
+fails on a red cell no rule expects, on a rule whose cell turned green, and on a cell red for another reason than its
+rule's. So the PR that fixes a pair removes its rule.
+
+**The artefact:** `values.json` in the run directory holds every cell, its result and what was read, in both shells.
+
 ### Coverage guard: `npm run e2e:guard`
 
 ```bash
@@ -386,6 +448,32 @@ of raw palette in `src/components/KanbanBoard/constants.ts` and `src/lib/provide
 lot: the Kanban table was dead code, the provider colours and marks moved into
 `src/components/ui/`, the terminal theme reads the tokens, and the `theme-color` tag was
 removed after measuring that nothing in the app listens for it.
+
+### Private names: `npm run check:names`
+
+```bash
+node scripts/check-private-names.mjs              # every hit, the name masked
+node scripts/check-private-names.mjs --quiet      # exit code only
+```
+
+The repository is public, and the names that must never appear in it (real first names, e-mail
+addresses) cannot be written into a check without publishing them. So the list lives outside it,
+in `~/.tars-private/private-names.txt` (`TARS_PRIVATE_NAMES` names another file), one entry per
+line, `#` for a comment. Without that file the check says it checked nothing and passes: CI and
+contributors have no list. A list that names nobody fails it, and so does a tree git cannot list.
+
+It reads every file git tracks or would add (`git ls-files --cached --others
+--exclude-standard`), as it stands on disk, and its path, which is published as much. A single word is found where it stands as a word,
+in any case: in prose, and in an identifier or a path, where camelCase, SCREAMING_CASE,
+snake_case, a dash, a plural `s` or an escape such as `%5c` or `\n` ends it. Inside another word
+it is that word, so a hash in `package-lock.json` holds no name. Anything else, an e-mail address
+or two words, is found exactly as written. Binary files are counted, not read: look at the
+pictures. Exit 1 lists each hit as `file:line:column` with the name masked, so the report can be
+pasted into a PR.
+
+What replaces a name: JeanBrasse, or "the maintainer", in prose; a neutral home in a path
+(`/Users/demo`, `C:\Users\owner`, `C:\Users\Sam Lee` where a test needs a space); the user in
+anything Tars says to an agent, a model or the window.
 
 ### CI
 
@@ -577,7 +665,7 @@ another's.
 
 Before it, as always: the version bumped in `package.json`, its entry at the top of
 `src/data/changelog.ts`, merged into `main`, and the gate passed (`npm test`, both `tsc`, lint,
-the final e2e).
+the final e2e and the CLI matrix, `npm run e2e:matrix`).
 
 ```bash
 npm run release -- --dry-run   # the checks, the artifacts of this version if built, the notes; nothing else
@@ -806,6 +894,7 @@ work.
 | `~/.dorothy/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh; its token is in `~/.tars-private/hermes-token` |
 | `~/.dorothy/kanban-tasks.json` | nothing (read at launch by `moveLocalKanbanToHermes`, `electron/main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.dorothy/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
+| `~/.dorothy/project-files/<name>-<hash>/` | `electron/utils/project-files.ts` | each project's folder, for its agents: `tools/`, `notes/`, `reports/`. `<name>` is the project folder's name in lower case letters, digits and dashes (40 at most), `<hash>` ten hex digits of the SHA-256 of its path as the platform compares paths (on Windows, case and separators do not count). Made when an agent of the project gets its identity or reads the guide's project-folder topic; never deleted by Tars, so a project removed from Tars keeps it: delete it by hand. Outside the repository, outside `~/.dorothy/tmp`, and not under `~/Documents`, which iCloud can evict |
 | `~/.dorothy/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.dorothy/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.dorothy/chats.json` | `electron/services/chats.ts` | the chats of each project: one record per chat (its number, title, runner and sessions, pinned, snoozed, settled, the inbox), and each project's last number (`numbers`). Not the conversations: those are the runners' transcripts (A chat's record, below) |
@@ -840,9 +929,9 @@ to a CLI, and Tars makes it `0700` whichever write creates it:
 | `~/.tars-private/hermes-webhook-secret` | `electron/services/hermes-webhook-secret.ts` (`provisionWebhookSecret`) | the bearer for `POST /api/webhooks/hermes` and the only credential that opens it: 32 random bytes hex, mode `0600`, minted the first time Settings > Hermes asks for it. Moved out of `~/.dorothy/hermes-webhook-secret` at the first startup that finds it there, value unchanged, so Hermes keeps working; read back before the old file is deleted, and while it cannot be moved the webhook opens to nobody. An old file found beside the private one opens nothing and is deleted |
 | `~/.tars-private/overseer-hermes-sessions.json` | `electron/services/overseer-store.ts` (`rememberHermesSessions`) | the ids of the Hermes sessions the super chat's turns ran in, the last 5000, mode `0600`: `memory_search` leaves them out, so no agent is handed the super chat through Hermes |
 | `~/.tars-private/claude-accounts.json` | `electron/handlers/claude-accounts-handlers.ts` | several Claude subscriptions: the option (off by default), each account's id and label, the thresholds. No credential and no folder: each account is the Claude Code folder `~/.claude-accounts/<id>`, derived from its id and signed in by `claude auth login`. `CLAUDE_CONFIG_DIR=<folder> claude auth status` says what Claude Code sees there. A file that does not parse freezes the list (every change refused, Settings says so) until it is fixed or removed; removing it leaves the folders signed in, so sign each out first with `CLAUDE_CONFIG_DIR=<folder> claude auth logout`. With the option on, Tars moves an unpinned agent to the account with most room when a limit cuts its turn (then types "Continue where you left off..." into the new session) or when a turn ends past a threshold, once per agent every ten minutes at most; each move is a `[claude-accounts] <agent>: moving from <id> to <id>` line in the main process log, and the blocks it sets are in memory only, gone at a restart of Tars |
-| `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
+| `~/.tars-private/run-state.json` | `electron/services/run-state.ts` | this run's record, mode `0600`: `cleanExit: false` while it runs, `true` after a quit. Open at a launch means the last run stopped abruptly, and the agents in `working` are resumed with a note, unless the Tars that wrote it still runs (its pid is a live process of yours that started when the record's `processStart` says, and the machine has not rebooted since; `ps -o lstart= -p <pid>` on macOS shows that start): a second Tars on the same home reads nothing from it and writes nothing to it. Here because it says whom Tars starts: in `~/.dorothy`, any agent could have had any agent started at the next launch |
 | `~/.tars-private/task-texts.jsonl` | `electron/services/task-ledger.ts` | what each task of the task ledger said, `{ id, text }`, its first line, 200 characters at most, mode `0600`: JeanBrasse's typed prompts and the chat messages handed to orchestrators, which no agent is handed. Moved out of `~/.dorothy/task-ledger.jsonl` at the first start that finds texts there |
-| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated run over ACP answered, `{ id, result }`, 8,000 characters at most, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
+| `~/.tars-private/task-results.jsonl` | `electron/services/task-ledger.ts` | what each delegated task answered (read from its terminal session since 2.0.4, a run over ACP before), `{ id, result }`, a terminal task's answer in full (1,000,000 characters at most), a run over ACP's 8,000, mode `0600`, kept for the tasks the ledger keeps. `task_status` and `GET /api/tasks/:id` read it |
 | `~/.tars-private/request-receipts.jsonl` | `electron/services/request-receipts.ts` | one receipt per send made with a `clientRequestId`: caller, id, SHA-256 of the payload, the outcome's ids and states, time; never the text. Mode `0600`, rewritten whole at each write, entries older than 24 h dropped. Deleting it only forgets which retries were already answered |
 | `~/.tars-private/carry-over.json` | `electron/services/carry-over.ts` | what Tars owes agents (delegation and kanban notes), mode `0600`, given at their first rest after a restart. A carried kanban note is typed as from Tars, its first sender named inside it, quoted |
 
@@ -1015,6 +1104,8 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/api/memory/status | jq
 | GET | `/api/health` |
 | GET | `/api/agents` · `/api/agents/:id` · `/:id/bootstrap` · `/:id/health` · `/:id/output` · `/:id/wait` |
 | POST | `/api/agents` · `/:id/start` · `/:id/dispatch` · `/:id/run-task` · `/:id/stop` · `/:id/message` (for `/dispatch` and `/message`, `:id` may be `requester` or `orchestrator`: whoever asked the caller for its current task, a chat's runner included, else its project's orchestrator; the answer's `deliveredTo` says which) |
+| GET | `/api/guide` · `/api/guide?topic=<id>` (what `tars_guide` reads: the topics of the agents' guide, `electron/services/agent-guide.ts`, stamped with the running Tars's version; a topic with the caller's project folder in it, an unknown one a 404 that lists the topics) |
+| GET | `/api/tasks/:id` · `/api/tasks?clientRequestId=` (a delegated task as the ledger keeps it; `?wait=<s>` holds the request until the task ends, 120 s at most, and answers `timeout: true` if it has not: what `delegate_task` waits on, segment after segment, since run-task answers once the run has started, with `answer: 'started'`) |
 | POST | `/api/tasks/:ref/cancel` (`{ reason? }`: a request still queued at a worker, taken back by its requester, or by the project's orchestrator with a reason; `not_your_task` 403, `reason_required` 400, `already_delivered` 409) |
 | DELETE | `/api/agents/:id` |
 | POST | `/api/hooks/{output,status,task-completed,agent-stopped,notification}` |
@@ -1186,6 +1277,32 @@ before. Under an older build the first has a `/bin/bash -l -c cd …` parent, an
 
 ---
 
+## Orchestration: one task at a time, and who hands work
+
+Since 2.0.4 (`electron/core/one-task.ts`, after the cross-project guard):
+
+- An agent that is working (a delegated task in hand, or a turn in its terminal) gets no second session. A
+  `delegate_task` to it waits its turn: `run-task` answers `outcome: 'queued'` with a task id
+  (`t-xxxxxxxx`) and `queuedBehind`, and the tool waits on that id as on any run. Its answer, when
+  its timeout ends first, names the task it is queued behind, who asked for it and since when.
+  `task_status` reads it, `task_cancel` takes it back (its asker, an orchestrator of its project,
+  or Tars). A `/dispatch` that would start a session beside a run is queued the same way
+  (`mode: 'queued'`); `/start` and `/message` answer `409 agent_busy`.
+- Only Tars, the window and an agent with the orchestrator's powers hand an agent work. A worker's
+  `start_agent`, `delegate_task` or `steer` is `403 worker_may_not_order`, telling it to ask its
+  orchestrator. Stopping is reserved the same way: a worker's `stop_agent`, `remove_agent` or
+  `restart` of another agent is `403 worker_may_not_stop`; an agent may still stop itself. Its `send_message` to another worker goes in as a labelled note once that
+  agent's turn ends, or is `409 note_needs_session` when that agent has no session open. Its message
+  to whoever leads it is a report and goes in as before.
+
+| Symptom | Cause and fix |
+|---|---|
+| `delegate_task` says the task is queued on an agent behind another task | that agent was working: the task starts once it is free. Follow it with `task_status` on the id it names, or `task_cancel` it |
+| a worker is answered `worker_may_not_order` | a worker does not hand work to another agent: it asks its orchestrator (`send_message` to `orchestrator`) |
+| a worker is answered `worker_may_not_stop` | a worker does not stop, restart or remove another agent: it asks its orchestrator, saying why |
+| a worker's message arrives as `[Note for information from ...]` after the recipient's turn | the rule, not a fault: a worker's message to another worker is a note |
+| a queued task is gone after a restart of Tars | the queue is in memory: what had not started was dropped. The asker's `delegate_task` says so (Tars restarted, never started, ask again), and `task_status` on its id answers with the time this Tars started. Delegate it again |
+
 ## MCP servers
 
 Seven servers ship inside the app, built from `mcp-*/` into `dist/bundle.js` and copied to
@@ -1235,7 +1352,7 @@ Each provider writes to its own config, CLI-first with a file fallback:
 | provider(s) | config dir | mechanism |
 |---|---|---|
 | `claude` (+ `openrouter`, `deepseek`, `mimo`, `moonshot`, `qwen`, `zhipu`, `minimax`, `nvidia`, `nous-portal`, all share the `claude` binary and `~/.claude`) | `~/.claude` | `claude mcp add -s user …`, fallback `~/.claude/mcp.json`; presence checked in both `~/.claude/mcp.json` and `~/.claude.json` |
-| `codex` | `~/.codex` | fallback writes `[mcp_servers.<name>]` into `config.toml` |
+| `codex` | `$CODEX_HOME`, else `~/.codex` | Tars's seven servers: the `[mcp_servers.<name>]` section written by Tars, with `env_vars` naming what they read (`codex mcp add` cannot say it); another server: `codex mcp add`, fallback writes the section into `config.toml` |
 | `gemini` | `~/.gemini` | fallback writes `settings.json` |
 | `grok` | `~/.grok` | fallback writes `[mcp_servers.<name>]` into `config.toml` with `enabled = true` |
 | `opencode` | `~/.opencode` | |
@@ -1256,7 +1373,10 @@ jq '.mcpServers | keys' ~/.claude/mcp.json 2>/dev/null
 jq '.mcpServers | keys' ~/.claude.json
 
 # Codex / Grok
-grep -A3 '^\[mcp_servers\.' ~/.codex/config.toml
+grep -A4 '^\[mcp_servers\.' ~/.codex/config.toml   # codex: env_vars lists the agent's token among the names
+# codex: what Tars read of its turns, and the folders it trusted for the agents
+ls -t ~/.codex/sessions/$(date +%Y/%m/%d)/ | head
+grep -A1 '^\[projects\.' ~/.codex/config.toml
 grep -A3 '^\[mcp_servers\.' ~/.grok/config.toml
 
 # Gemini
@@ -1464,9 +1584,9 @@ grep 'is going out now'
 
 `POST /api/agents/:id/dispatch` and `/message` answer `held: true` with a `heldReason` when the
 message was queued behind a field rather than typed in, so an MCP client is not told it was sent.
-`send_message`, `start_agent` and `delegate_task` say it too, in a result that begins `HELD:`;
-`delegate_task` then returns at once rather than wait on a turn that has not begun
-(`wait_for_agent` follows it). The agent it was for does not read `running` until the message is
+`send_message` says it too, in a result that begins `HELD:` (`wait_for_agent` follows it).
+`delegate_task` and `start_agent` go through `run-task` since 2.0.4, which follows the task
+itself: held, it reads `starting` until it is typed in and its turn begins. The agent it was for does not read `running` until the message is
 in. If the message is still held three minutes on while that agent rests, the agent that sent it
 is told again by Tars: why it waits, and that only a person at that terminal ends the wait (stop
 and start the agent to drop it, then send it again).
@@ -1500,7 +1620,13 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 | Symptom | Where to look |
 |---|---|
 | "X is now waiting" about an agent that is working | an idle prompt older than the minute, or a turn that sent no `Stop`. `~/.dorothy/logs/hooks.log` gives the prompt's time; compare with the last `UserPromptSubmit` |
-| a delegated agent "died while it waited", its work half done | `delegate_task` runs the task as one ACP turn. Its session (`"entrypoint":"sdk-ts"` in the transcript, and hook posts refused as `stale`) is stopped when the agent answers, and what it left in the background with it: the job's own notice reads `<status>killed</status>` two seconds later. At `timeoutSeconds` (at most 3600 s) the turn is stopped mid-command: the transcript ends on "The user doesn't want to proceed with this tool use" and `[Request interrupted by user for tool use]` exactly that many seconds after its first line. The result says which (`stopped when the run ended: …`, `ended: turn_limit`) |
+| a delegated agent "died while it waited", its work half done | before 2.0.4, `delegate_task` ran the task as one ACP turn in a temporary copy of the agent, stopped when it answered with its background work. Since 2.0.4 the task goes into the agent's own terminal and the session stays: if this is seen on 2.0.4, the orchestrator's MCP server is older (restart its CLI) |
+| a codex agent's turns are not seen: its status rests, `delegate_task` says delivered | its session was not taken for its own, which takes evidence: Tars's identity line in its first message, its file held open by the agent's own codex (`lsof -p <its codex's pid> \| grep rollout`), or a fork of its own session. On macOS and Linux a lookup that fails (ps or lsof failed, or took more than its 5 s on a loaded machine) is asked again, 1, 2, 4, 8 and 16 s later; after the sixth, the log says `whose codex holds <file> was not learned in 6 lookups` and that session is not followed: restart the agent. On Windows a session its user began by typing into its terminal names nobody, and no tool there lists a process's files: it is not followed until a session Tars begins. A codex run outside Tars in the same folder is never the agent's, by design |
+| a codex agent's status: "codex asks to sign in: Tars starts it on ~/.codex, and your login is in <folder>, the CODEX_HOME your shell sets" | Tars hands the codex it starts its own home (`env CODEX_HOME=<Tars's home>` on the line), so that Tars and codex share one config and one sessions folder, and Tars started from the Dock or Finder reads no rc file: its home is `~/.codex`, where codex has no login. Sign in from the agent's terminal (codex shows its sign-in screen there; that writes `~/.codex/auth.json`, and every codex agent is then signed in), or give Tars the same `CODEX_HOME`: on macOS `launchctl setenv CODEX_HOME <folder>`, then quit and reopen Tars (until the next login; a LaunchAgent that runs it makes it last); on Linux in the session's environment (`~/.config/environment.d/codex.conf`: `CODEX_HOME=<folder>`), then log in again; or start Tars from that shell. Check with `CODEX_HOME=~/.codex codex login status`. Not said with a codex key in Settings, which codex takes instead of a login, nor on Windows, which reads no rc file |
+| a codex agent in auto starts with `--ask-for-approval never --sandbox workspace-write`, not `--approve-for-me` | that codex has no `--approve-for-me` (`codex --help \| grep approve-for-me`), or it did not answer `--help` within 10 s at that launch, on a loaded machine. The answer is read beside the window before each launch's line is built, kept per binary and version, and a codex that did not answer is asked again at the next launch: restart the agent |
+| `delegate_task` says a task was delivered, with no answer | the agent's CLI gives Tars no prompt hook (gemini, opencode, amp, pi, grok; codex, the row above): the task went into its terminal and Tars cannot see its turn end. Read the terminal (`get_agent_output`), or have it report with `send_message` to "requester" |
+| a delegated task's answer stops at 4000 characters | the transcript was not found, and the hooks' copy was returned: an API-key provider whose CLI keeps its transcripts outside `~/.claude` and the Claude account folders. `GET /api/tasks/<id>` shows what was read |
+| a delegated task never started: "its turn did not begin within 15 minutes" | the task was typed into the terminal but no UserPromptSubmit came: a field or a dialog held it, or the CLI's hooks are not installed. The queue moved on |
 | an orchestrator never hears that its agent finished | the link and the queue. `jq '.agents[] \| select(.id=="<child>") \| {requestedBy, taskQueue}' ~/.dorothy/agents.json`: `requestedBy` absent means spent, a `ptyId` that is not the agent's current one is inert by design, and `taskQueue` lists the requests still out, `queued` (not typed yet) or `delivered` (waiting for their turn) |
 | the orchestrator reads the same end of turn twice | it was not in a `/wait` when the turn ended, so the note was written as well. Expected on any path that is not the long poll |
 
@@ -1700,7 +1826,16 @@ result afterwards.
 The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`, `assign_task`,
 `update_task_progress`, `mark_task_done`, `move_task`, `delete_task`) work on the Hermes board,
 the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
-and never write a file. `electron/services/kanban-board.ts` decides where a task sits:
+and never write a file. When Hermes is not configured, refuses, or does not answer, each tool's error
+says what happened, what was written, and what to do: the user connects or signs in to Hermes in
+Tars (Settings, Hermes); the agent says so once, keeps the task in its project folder's `notes/`, and
+goes on (2.0.4; a bare `Hermes refused: Unauthorized` before). "Nothing was written" is said only
+when it is known: Hermes refused, or the connection was never taken (`ECONNREFUSED`, `ENOTFOUND`,
+`EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH`). An answer lost after the request went (a timeout, a
+reset) says Hermes may have done it and to read the task on the board first, and a task created
+whose parking failed is named, with "Do not create it again": it is `ready` on the Tars lane, where
+Hermes does not start it, until the user parks it on the Kanban page.
+`electron/services/kanban-board.ts` decides where a task sits:
 
 | State | On the Hermes board | Who takes it |
 |---|---|---|
@@ -1711,6 +1846,47 @@ and never write a file. `electron/services/kanban-board.ts` decides where a task
 Measured against Hermes 0.21.1's own kanban code: `todo` is promoted to `ready` by the
 dispatcher and `triage` is decomposed by the gateway's aux model (`kanban.auto_decompose`), so
 neither is a place to park.
+
+Measured again on 18/10 on Hermes 0.21.5, the version the gateway runs (tag `v2026.9.24` of the
+Hermes repository), and on 0.21.1 (`v2026.9.7`), each with its own router and dispatcher ticking
+in a throwaway `HERMES_HOME` (`__tests__/fixtures/hermes-kanban-bench.py`). The same rules hold,
+plus these: the dispatcher spawns `review` as it spawns `ready`, and only for an assignee that is
+an existing Hermes profile; a task cannot be created `scheduled`, nor moved from `scheduled` to
+`done`, `blocked` or `review` (409); 0.21.5 refuses `done` with no result and no summary (400), so
+`mark_task_done` writes one when the agent gave none.
+
+- **Every task Tars files says it is Tars's agents'**: a line before `Filed by`, "Tars task: it
+  belongs to Tars's agents, ... Hermes does not take, start, promote or decompose it.", a label
+  for whoever opens the task. It keeps nobody off it: Hermes's dispatcher keeps off by its own rules
+  (above), and Hermes's assistant, whose board listing does not show a description, can still
+  finish, block or unblock it.
+- **A Hermes whose version was not measured** (`MEASURED_HERMES_VERSIONS` in `kanban-board.ts`,
+  read from `/api/status` once a minute): a claim moves the lane only and the task stays
+  `scheduled`, the one state safe on every version measured. Finishing it goes through `ready`
+  on the agent's lane, then `done`. `hermes:session:state` says the version is unmeasured.
+- **The session**: Tars asks the gateway every half hour, signed in (`services/hermes-session-watch.ts`,
+  started by `main.ts`). On 0.21.5's `basic` provider the access token lives 12 hours and the
+  refresh token 30 days, and the gateway mints a new refresh token at each refresh, so these
+  checks keep the session valid for as long as Tars runs. They also find it ended: a kanban call
+  refused for the session says so at once, and every kanban tool then answers "Tars is signed
+  out of Hermes: sign in again in Settings, Hermes. ...". `hermes:session:state` carries it
+  (`signed-in`, `signed-out`, `unreachable`, `none`) with that sentence, pushed at each change.
+  What no check can renew: a `basic` provider with no `dashboard.basic_auth.secret` (or
+  `HERMES_DASHBOARD_BASIC_AUTH_SECRET`) signs with a key drawn at each start of the gateway, so
+  every restart of Hermes ends every session. Set the secret on the Hermes server to keep them.
+- **A note that could not be written**: the "Claimed by" and "Released by" comments, when the
+  gateway refuses them, are said in the tool's answer, never dropped.
+- **Against a real Hermes**: `TARS_HERMES_TREE=<a Hermes source tree> TARS_HERMES_PYTHON=<its
+  python> npx vitest run __tests__/electron/services/kanban-hermes-live.test.ts`: two agents
+  file, claim, report, finish, release and delete while the dispatcher ticks, and none of their
+  tasks is spawned, promoted or listed for decomposition. Skipped where no Hermes is. In the
+  real app, with the same two variables: `npx playwright test e2e/kanban-hermes.live.spec.ts`
+  (through `pw-slot.sh`). Each agent's own kanban server (`mcp-kanban/dist/bundle.js`, built
+  first) runs with the identity Tars hands it; two agents of one project file, list, read,
+  claim, report, finish (one with no summary), release, hand a task to each other and delete
+  their own, an agent of another project sees none of them, the task handed over starts its
+  agent's CLI, and over at least six ticks after the last write the dispatcher spawns, promotes
+  and decomposes none. It leaves `values.json` and Hermes's own `ticks.jsonl`.
 
 - **An agent files a task**: `create_task` parks it on the agent's own project. If the project
   has an orchestrator whose CLI runs, Tars tells it, with its own sender line.
@@ -1887,8 +2063,9 @@ The environment is `process.env` plus:
   `~/.nvm/versions/node/v22.0.0/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`,
   and every `~/.nvm/versions/node/*/bin` (`~/.grok/bin`, `~/Library/pnpm` and `~/.yarn/bin`
   are only in `detectCLIPaths()`'s probe list, not the PTY PATH);
-- provider env (`getPtyEnvVars`, this is where `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` are
-  injected for the nine providers that drive the `claude` binary against another API);
+- provider env (`getPtyEnvVars`, this is where `ANTHROPIC_BASE_URL` and the key as
+  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` blank, are injected for the thirteen providers that
+  drive the `claude` binary against another API: `keyProviderEnv`);
 - `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, so `~/.dorothy/CLAUDE.md` is loaded via
   `--add-dir`;
 - Tasmania env, when applicable.
@@ -1988,7 +2165,7 @@ up. An orchestrator is never put to sleep. SPECS.md, "An agent asleep", has the 
 | Symptom | Cause |
 |---|---|
 | An agent at rest for hours never sleeps | something keeps it: a timer of its own (a `/loop` ScheduleWakeup, a CronCreate) or a background agent its CLI runs, as its last Stop hook counted them (`STOP hook` lines in `/tmp/dorothy-hooks.log`), a process under its CLI (a dev server, a background task: `ps -A -o pid,ppid,command \| grep -A8 claude`), a draft in its field, a message, note or question waiting for it, an agent still holding work it handed out, or a conversation Tars cannot resume (a provider other than claude, or no transcript) |
-| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`), so there was nothing to resume |
+| Woken, it started a new conversation | its transcript was not on disk any more at the wake (`~/.claude/projects/<encoded path>/<session>.jsonl`; a codex agent's rollout, `$CODEX_HOME/sessions/<y>/<m>/<d>/rollout-*-<session>.jsonl`), so there was nothing to resume |
 | Its pane is blank while it sleeps | Tars restarted since it fell asleep: the last screen is kept in memory only, by choice (SPECS.md, "An agent asleep") |
 
 ### Agent stuck in the wrong directory
@@ -2170,6 +2347,8 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.dorothy/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 | an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |
+| a delegated task ran twice, its second copy typed into the agent's terminal five minutes after the first, or `delegate_task` answered `clientRequestId ... was already used for another request: nothing was sent` while the run kept working | an orchestrator server older than 2.0.4: it held one `run-task` request for the whole run, Node's fetch cut it at 300 s (`fetch failed`), and the tool took that for "no run started". Since 2.0.4 run-task answers once the run has started and no request waits more than 150 s; a request that gets no answer is asked again under the same `clientRequestId`, and the terminal is used only when Tars answered that no run started (`retryWithDispatch`, or `502` with `started: false`). An agent started before the update keeps its old server until its CLI restarts |
+| `delegate_task` says the task may still be working | Tars did not answer for 90 s (asked again with backoff), or the task outlived `timeoutSeconds`, the tool's wait, which never stops it. Nothing else was started: follow it with `task_status` and the `clientRequestId` the result names, or the receipts line above |
 | a delegated task reads `stopReason: interrupted` | Tars stopped while the run worked; its asker was told at the next launch, and nothing was retried |
 | a task with no cost (`costUSD: null`) | none of its sessions left a transcript: another provider's CLI over PTY, or a turn whose hook sent no session id |
 | "of which ~$X over quota" never shows under the total cost | `~/.dorothy/token-stats.json` is 0 bytes. A status line script older than 2026-09-22 can never refill an empty file (jq given nothing prints nothing, and that is moved back over it); the fixed script is installed at the next launch while the status line is on |
@@ -2177,6 +2356,10 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 ---
 
 ## ACP transport
+
+Since 2.0.4 no task is delegated over ACP: `delegate_task` and `start_agent` hand every task to
+the agent's own terminal (SPECS.md, A delegated task). What follows describes the code in
+`electron/services/acp/`, which no route calls any more, until its removal.
 
 `electron/services/acp/` drives CLIs over the Agent Client Protocol instead of typing into a
 terminal: the same JSON-RPC conversation for Claude Code, Codex, Gemini, Grok, opencode and
@@ -2197,9 +2380,19 @@ rm ~/.dorothy/acp-registry.json    # force a refresh on next boot
 Provider → registry id: `claude→claude-acp`, `codex→codex-acp`, `gemini`, `grok`, `opencode`,
 `pi`. A provider absent from that map has no ACP path and runs over PTY only.
 
-A run is set to the agent's model, then its effort, with `session/set_config_option` once the
-session is open, when the agent offers those options. A value it refuses is logged as
+A run is set to its model, then the agent's effort, with `session/set_config_option` once the
+session is open, when the agent offers those options. Its model is the one `delegate_task` was
+given for this task (run-task's `model`), else the agent's own; the agent's saved model is never
+changed by it (2.0.4). A value it refuses is logged as
 `[acp] <agent>: this run is not on <model>` (or `... at <level> effort`) and the turn runs anyway.
+A model given with the task and refused is followed by the agent's own; the answer's
+`model: { asked, taken: false, own, ranOn }` says which one the run is on (`ranOn` absent: neither
+was taken, and the run is on the CLI's default), and so does `delegate_task`'s result
+(`This run is not on <model>: ...`). The turn's usage is filed under `ranOn`, the model the session
+took, and under no model when it took none (the Usage page then names the provider). Such a turn is
+priced only from the cost its adapter reports: Tars prices a turn from its model, and has none to
+price it from, so an adapter that reports no cost leaves it at $0 on the Usage page (its tokens are
+counted). A run whose agent did not take its own model, on a CLI that reports no cost, is the case.
 
 ---
 

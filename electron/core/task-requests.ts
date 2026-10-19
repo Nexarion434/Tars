@@ -51,12 +51,24 @@ export interface RequestWorker {
  * id are JSON strings (envelopeValue), read as such, so a quote or a
  * `, task t-...: ` inside the name cannot end it early: an agent named after
  * another request's id took that request (the Audit's gate of #351).
+ *
+ * Or after what the CLI was owed (oweToFirstMessage, pty-manager.ts: how Tars
+ * works and the memory, for a CLI with no SessionStart hook started on no
+ * task), which Tars types first, under its own line, `Message from Tars: `:
+ * then the envelope is the last one that begins a line. The owed block is not
+ * quoted, so a look-alike in the memory comes before the real one, and one in
+ * the message after it is quoted (quoteSenderLookAlikes) and begins no line
+ * with it. Measured with codex (2.0.4): its turn after such a block was never
+ * its task's, and delegate_task said the task never started.
  */
 const ENVELOPE = /^Message from agent "(?:[^"\\]|\\.)*" \(("(?:[^"\\]|\\.)*")\), task (t-[0-9a-f]{8}): /;
+const ENVELOPE_LINES = /(?:^|\n)Message from agent "(?:[^"\\]|\\.)*" \(("(?:[^"\\]|\\.)*")\), task (t-[0-9a-f]{8}): /g;
+const OWED_LINE = 'Message from Tars: ';
 
 /** The request id and its sender's id, from the envelope at the start of a prompt; undefined without one. */
 export function taskOfPrompt(prompt: string | undefined): { ref: string; senderId: string } | undefined {
-  const m = prompt ? ENVELOPE.exec(prompt) : null;
+  let m = prompt ? ENVELOPE.exec(prompt) : null;
+  if (!m && prompt?.startsWith(OWED_LINE)) for (const found of prompt.matchAll(ENVELOPE_LINES)) m = found;
   if (!m) return undefined;
   let senderId: unknown;
   try { senderId = JSON.parse(m[1]); } catch { return undefined; }

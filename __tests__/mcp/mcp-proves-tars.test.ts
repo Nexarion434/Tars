@@ -32,6 +32,15 @@ import { moveTestHome } from '../setup/test-home';
  *    late, the call leaves with no token and gets a 401 once Tars is back,
  *    where it used to wait. A port that never answers gets nothing however
  *    long the wait, so the proof waits as long as its call.
+ *
+ * Added on 2026-10-18 for a task queued in Tars's memory and lost with a
+ * restart (2.0.4, one task at a time), before the code:
+ * 8. A call refused because the port proved another instance (the token
+ *    withheld) is refused like any other: nothing tells its caller that the
+ *    Tars that started its CLI is gone, so delegate_task, waiting on a task
+ *    the restart dropped, retries for 90 s and says Tars could not be reached.
+ * 9. Over-correction: a refusal by the Tars that started the CLI, or a port
+ *    that answers nothing, reads as another Tars.
  */
 
 const INSTANCE = crypto.randomBytes(16).toString('hex');
@@ -54,6 +63,12 @@ beforeAll(async () => {
     received.push({ path: u.pathname, authorization: req.headers.authorization });
     req.resume();
     req.on('end', () => {
+      // As Tars answers a route that takes a token: 401 without one; and a refusal whatever is presented.
+      if ((u.pathname === '/api/needs-token' && !req.headers.authorization) || u.pathname === '/api/refused') {
+        res.writeHead(u.pathname === '/api/refused' ? 403 : 401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: u.pathname === '/api/refused' ? 'Refused.' : 'Unauthorized' }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (u.pathname === '/api/health') {
         const instance = mode === 'tars' ? INSTANCE : 'someone-else';
@@ -164,5 +179,37 @@ describe("the MCP servers' calls to Tars", () => {
       await call().catch(() => undefined);
       expect(calls().map((r) => r.authorization), name).toEqual([undefined]);
     }
+  });
+});
+
+describe('a call the token was withheld from, because another Tars holds the port', () => {
+  type Refusal = Error & { status?: number; anotherTars?: boolean };
+  async function refusal(env: Record<string, string | undefined>, endpoint: string): Promise<Refusal> {
+    await clients(env);
+    const { apiRequest } = await import('../../mcp-shared/src/tars-api');
+    return apiRequest(endpoint).then(() => { throw new Error(`answered: ${endpoint}`); }, (err: Refusal) => err);
+  }
+
+  it('8. says so on its refusal: the Tars that started the CLI is not the one that answered', async () => {
+    mode = 'squatter';
+    const err = await refusal({ CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE }, '/api/needs-token');
+    expect(calls().map((r) => r.authorization)).toEqual([undefined]);
+    expect(err.status).toBe(401);
+    expect(err.anotherTars).toBe(true);
+  });
+
+  it("9. a refusal by the CLI's own Tars, or a port that answers nothing, does not", async () => {
+    mode = 'tars';
+    const own = await refusal({ CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE }, '/api/refused');
+    expect(own.status).toBe(403);
+    expect(own.anotherTars).toBeUndefined();
+
+    const closed = http.createServer();
+    await new Promise<void>((r) => closed.listen(0, '127.0.0.1', r));
+    const nobody = `http://127.0.0.1:${(closed.address() as { port: number }).port}`;
+    await new Promise<void>((r) => closed.close(() => r()));
+    const down = await refusal({ CLAUDE_MGR_API_URL: nobody, CLAUDE_MGR_API_TOKEN: TOKEN, TARS_INSTANCE_ID: INSTANCE }, '/api/needs-token');
+    expect(down.status).toBeUndefined();
+    expect(down.anotherTars).toBeUndefined();
   });
 });

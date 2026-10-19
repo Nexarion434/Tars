@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
+import { keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -83,8 +84,9 @@ export class GrokProvider implements CLIProvider {
     }
 
     // Prompt (positional) with optional skills directive.
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // No task, no prompt: the skills line alone was a turn nobody asked for.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       const skillsList = params.skills.join(', ');
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
@@ -132,7 +134,7 @@ export class GrokProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -142,6 +144,8 @@ export class GrokProvider implements CLIProvider {
       // back to every project's agents instead of its own.
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('grok', appSettings),
     };
   }
 

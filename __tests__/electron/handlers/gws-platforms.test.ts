@@ -118,7 +118,7 @@ function setEnv(values: Record<string, string>) {
   }
 }
 
-const AUTH = { user: 'jeanbrasse@example.com', token_valid: true, has_refresh_token: true, auth_method: 'oauth2', scopes: ['https://www.googleapis.com/auth/drive'] };
+const AUTH = { user: 'demo@example.com', token_valid: true, has_refresh_token: true, auth_method: 'oauth2', scopes: ['https://www.googleapis.com/auth/drive'] };
 
 beforeEach(() => {
   vi.resetModules();
@@ -199,7 +199,7 @@ describe.runIf(process.platform === 'win32')('win32 (real files; the lookup itse
     expect(call.argv).toEqual(['auth', 'status', '--json']);
     expect(call.path.split(';')[0]).toBe(sdk);
     expect(status.authenticated).toBe(true);
-    expect(status.user).toBe('jeanbrasse@example.com');
+    expect(status.user).toBe('demo@example.com');
     expect(shellLines).toEqual([]);
   });
 

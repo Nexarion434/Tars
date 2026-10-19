@@ -12,6 +12,8 @@ import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
+import { noteCodexLaunch } from '../services/codex-sessions';
+import { ensureCodexProjectTrusted } from '../providers/codex-cli';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -84,6 +86,19 @@ const NODE_PTY_HELPER = 'spawn-helper';
  * checking nothing. Here they reach the real one and keep asserting what they
  * always did.
  */
+/**
+ * codex is starting for this agent (2.0.4): its folder trusted first, since
+ * codex asks "Trust this folder?" in a new one and waits there for good
+ * (providers/codex-cli.ts), and its launch noted, the session it begins or
+ * resumes being the agent's (services/codex-sessions.ts). At every spawn of a
+ * codex agent's terminal, and where a codex line is typed into a shell already
+ * there (agent-manager.ts, launchIntoTerminal).
+ */
+export function codexLaunching(agentId: string, cwd: string): void {
+  ensureCodexProjectTrusted(cwd);
+  noteCodexLaunch(agentId, cwd);
+}
+
 export function spawnAgentPty(opts: {
   /** The provider's binary, which decides what Tars is allowed to impose. */
   binaryName: string;
@@ -187,6 +202,9 @@ export function spawnAgentPty(opts: {
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // codex reports no turn through a hook: its session log does, and the one
+  // this terminal's codex begins is the agent's (services/codex-sessions.ts).
+  if (agentId && opts.binaryName === 'codex') codexLaunching(agentId, opts.cwd);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
   spawned.onExit(() => {

@@ -11,6 +11,7 @@ import { API_PORT, DATA_DIR, dataPath } from '../constants';
 import { configuredHermesConnection, readHermesConnection, writeHermesConnection } from '../services/hermes-config';
 import { resetLiveSession } from '../services/overseer';
 import { relayStatus } from '../services/hermes-relay';
+import { hermesSessionWatch } from '../services/hermes-session-watch';
 import { describeSecretFileError } from '../utils/secret-file';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
@@ -322,6 +323,11 @@ export function registerHermesHandlers(): void {
   // channel name; the switch is hermesRelayEnabled, saved with app:saveSettings.
   ipcMain.handle('hermes:relay:status', async () => relayStatus());
 
+  // Tars's Hermes session as the watch knows it (services/hermes-session-watch.ts):
+  // signed out, unreachable, or on a version whose rules were not measured, with
+  // the sentence to show. Its changes are pushed on the same channel name.
+  ipcMain.handle('hermes:session:state', async () => hermesSessionWatch()?.state() ?? { session: 'none', unmeasured: false });
+
   ipcMain.handle('hermes:connection:get', async () => {
     const connection = readConnection();
     // The form shows the default, to be saved. The base URL is what Settings >
@@ -393,6 +399,8 @@ export function registerHermesHandlers(): void {
     });
     if (!result.success) return result;
     resetLiveSession();
+    // The window stops saying signed out as soon as it is not.
+    void hermesSessionWatch()?.checkNow();
     const probe = await probeHermes(params.connection);
     return { success: true, version: probe.version, gatewayState: probe.gatewayState };
   });

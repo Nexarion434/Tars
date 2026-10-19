@@ -1,3 +1,5 @@
+import { keyPrintOf } from '../services/cli-keys';
+import { readAppSettingsFromDisk } from '../providers/cli-provider';
 import { agentRecovered, reportEvent } from '../services/event-reports';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -6,15 +8,17 @@ import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
-import { AGENTS_FILE, DATA_DIR, dataPath } from '../constants';
+import { AGENTS_FILE, API_TOKEN_FILE, DATA_DIR, dataPath } from '../constants';
+import { dropRejectedTails, keysHandedToClaude, maskKeyFragments } from './key-fragments';
 import { ensureDataDir, isSuperAgent } from '../utils';
 import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
-import { ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
+import { holdsMessages } from './one-task';
+import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
-import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty, agentShell, codexLaunching } from './agent-pty';
 import { killPty } from './pty-kill';
 import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
@@ -30,6 +34,7 @@ import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
 import { wakeFromSleep } from './agent-asleep';
+import { trustsTooMuch } from '../utils/trust-too-much';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -89,8 +94,12 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && dialogShown(agent, agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
   });
-  // What a message sent in `queue` mode waits out: the agent's turn.
-  setTurnProbe(agentId => agents.get(agentId)?.status === 'running');
+  // What a message sent in `queue` mode waits out: the agent's turn, a run of it
+  // over ACP, and the tasks waiting their turn before it (core/one-task.ts).
+  setTurnProbe(agentId => {
+    const agent = agents.get(agentId);
+    return !!agent && holdsMessages(agent);
+  });
 }
 
 /**
@@ -155,34 +164,6 @@ export function ensureProjectTrusted(projectPath: string): void {
   }
 }
 
-/**
- * Whether marking this directory trusted would trust far more than a project.
- *
- * Claude Code reads `hasTrustDialogAccepted` for its working directory and
- * every directory above it, so the flag on $HOME trusts everything the account
- * owns and the flag on `/` trusts the machine. Refused: the root, the home
- * directory, anything above it, and a relative path, which names whatever the
- * app's working directory happens to be. Compared by the path given and by the
- * path the filesystem resolves, which follows a link and, on macOS, gives the
- * case the disk stores, so neither a link nor another spelling gets through.
- * Claude Code then shows its own dialog, which is the point of it.
- */
-function trustsTooMuch(projectPath: string): boolean {
-  if (!path.isAbsolute(projectPath)) return true;
-  const spellings = (p: string) => {
-    const resolved = path.resolve(p);
-    try {
-      return [resolved, fs.realpathSync.native(resolved)];
-    } catch {
-      return [resolved];
-    }
-  };
-  const homes = spellings(os.homedir());
-  return spellings(projectPath).some(dir =>
-    dir === path.parse(dir).root
-    || homes.some(home => home === dir || home.startsWith(dir + path.sep)));
-}
-
 export let agentsLoaded = false;
 export let superAgentTelegramTask = false;
 export let superAgentOutputBuffer: string[] = [];
@@ -208,11 +189,27 @@ export function clearSuperAgentOutputBuffer() {
  * after its PTY was created: the running PTY keeps its old cwd, so
  * subsequent messages land in the main workspace instead of the worktree.
  */
+/**
+ * The key environment each agent terminal was spawned with, as a print
+ * (services/cli-keys.ts, keyPrintOf): a start in a reused shell must carry the
+ * keys set now (the Audit's L1 on #459). A codex key set after the shell was
+ * spawned had codex started on Tars's provider without CODEX_API_KEY, which it
+ * refuses; a key cleared stayed in the shell. In memory: a terminal does not
+ * outlive Tars.
+ */
+const ptyKeyPrints = new WeakMap<pty.IPty, string>();
+
+export function notePtyKeys(ptyProcess: pty.IPty, agent: AgentStatus, settings: AppSettings | Partial<AppSettings>): void {
+  ptyKeyPrints.set(ptyProcess, keyPrintOf(agent, settings));
+}
+
 export function killStalePty(agent: AgentStatus): boolean {
   if (!agent.ptyId) return false;
   const expectedCwd = agent.worktreePath || agent.projectPath;
-  if (agent.ptyCwd === expectedCwd) return false;
   const existing = ptyProcesses.get(agent.ptyId);
+  const printed = existing ? ptyKeyPrints.get(existing) : undefined;
+  const keysStale = printed !== undefined && printed !== keyPrintOf(agent, readAppSettingsFromDisk());
+  if (agent.ptyCwd === expectedCwd && !keysStale) return false;
   if (existing) {
     try {
       killPty(existing);
@@ -221,9 +218,9 @@ export function killStalePty(agent: AgentStatus): boolean {
     }
     ptyProcesses.delete(agent.ptyId);
   }
-  console.log(
-    `Killed stale PTY for agent ${agent.id}: ptyCwd=${agent.ptyCwd} expected=${expectedCwd}`
-  );
+  console.log(keysStale
+    ? `Killed stale PTY for agent ${agent.id}: its CLI's key changed since it was spawned`
+    : `Killed stale PTY for agent ${agent.id}: ptyCwd=${agent.ptyCwd} expected=${expectedCwd}`);
   agent.ptyId = undefined;
   agent.ptyCwd = undefined;
   return true;
@@ -385,8 +382,11 @@ export function handleStatusChangeNotification(
  * deliberately instead of hoping every field happens to still line up.
  * 3: the role is the Orchestrator toggle's, and no longer read from the name
  * (see core/agent-role.ts).
+ * 4: an agent's kept output carries no fragment of a key Tars hands Claude
+ * Code; a file below it is cleaned once, at load (cleanKeyFragments).
  */
-const AGENTS_SCHEMA_VERSION = 3;
+const AGENTS_SCHEMA_VERSION = 4;
+const KEY_FRAGMENTS_GONE_SINCE = 4;
 
 /**
  * Retained terminal chunks per agent, bounded. What reads them now is text:
@@ -700,9 +700,58 @@ export function loadAgents() {
 
     console.log(`Loaded ${agents.size} agents from disk`);
     agentsLoaded = true;
+    if (file.version < KEY_FRAGMENTS_GONE_SINCE) cleanKeyFragments();
   } catch (err) {
     console.error('Failed to load agents:', err);
     agentsLoaded = true;
+  }
+}
+
+/**
+ * Once, at the first load of a file from before 2.0.4 (the Audit's M2 on #458):
+ * what Claude Code's question about a key provider's key left, its last 20
+ * characters, in the agents' kept output, here and in the backup, and in the
+ * rejected list of every .claude.json (core/key-fragments.ts). Saved at once,
+ * at version 4, so the next load does not do it again. Says how many, never
+ * what.
+ */
+function cleanKeyFragments(): void {
+  let token: string | undefined;
+  try { token = fs.readFileSync(API_TOKEN_FILE, 'utf-8').trim() || undefined; } catch { /* none yet */ }
+  const keys = keysHandedToClaude(readAppSettingsFromDisk(), token);
+  let masked = 0;
+  for (const agent of agents.values()) {
+    const result = maskKeyFragments(agent.output, keys);
+    if (result.masked) {
+      agent.output = result.chunks;
+      masked += result.masked;
+    }
+  }
+  saveAgents();
+  // The backup this save has just filled with the generation before it.
+  let inBackup = 0;
+  const file = backupFile();
+  try {
+    const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) as unknown : undefined;
+    const list = Array.isArray(raw) ? raw : (raw as { agents?: unknown } | undefined)?.agents;
+    for (const a of Array.isArray(list) ? list as Array<{ output?: unknown }> : []) {
+      const result = maskKeyFragments(Array.isArray(a.output) ? a.output as string[] : [], keys);
+      if (result.masked) {
+        a.output = result.chunks;
+        inBackup += result.masked;
+      }
+    }
+    if (inBackup) {
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(raw, null, 2));
+      renameReplacingSync(tmp, file);
+    }
+  } catch (err) {
+    console.warn(`[key-fragments] ${file} could not be cleaned: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const configs = dropRejectedTails(keys);
+  if (masked || inBackup || configs) {
+    console.log(`[key-fragments] masked ${masked} key fragment(s) in the agents' kept output and ${inBackup} in its backup, and took Tars's keys out of the rejected list of ${configs} .claude.json file(s)`);
   }
 }
 
@@ -1095,8 +1144,15 @@ export async function launchIntoTerminal(
   start: Launch,
   opts: AgentTerminals & { delayMs?: number; ready?: (ptyProcess: pty.IPty) => Promise<void> },
 ): Promise<pty.IPty> {
+  // A CLI started here owes nothing of one started before it in this terminal:
+  // a bot's relaunch carries the guide section in its command, and the next
+  // message gave it again, with the memory as it was then (the Audit's L-B and
+  // QA's L1 on #448). A launch that owes it says so after (startAgentCli).
+  oweToFirstMessage(ptyProcess, '');
   if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
   if (opts.ready) await opts.ready(ptyProcess);
+  // codex typed into a shell already there, one reused too: noted as it starts (core/agent-pty.ts).
+  if (getProvider(agent.provider).binaryName === 'codex') codexLaunching(agent.id, start.cwd);
   if (opts.delayMs) {
     await new Promise<void>((resolve) => {
       setTimeout(() => {
@@ -1232,6 +1288,8 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
       ...tasmaniaEnv,
     },
   });
+  // The keys this shell's environment carries, for a start that reuses it.
+  notePtyKeys(ptyProcess, agent, savedSettings as unknown as AppSettings);
   return { ptyProcess, cwd };
 }
 

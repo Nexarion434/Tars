@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
+import { keyEnvFor } from '../services/cli-keys';
 import { DATA_DIR } from '../constants';
 import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
 import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
@@ -72,15 +73,18 @@ export class GeminiProvider implements CLIProvider {
     command += ` --include-directories ${shellQuote(DATA_DIR)}`;
 
     // Prompt with skills directive
-    let finalPrompt = params.prompt;
-    if (params.skills && params.skills.length > 0 && !params.isSuperAgent) {
+    // No task, no prompt: the skills line alone was a turn nobody asked for.
+    let finalPrompt = params.prompt?.trim() ? params.prompt : '';
+    if (finalPrompt && params.skills && params.skills.length > 0 && !params.isSuperAgent) {
       const skillsList = params.skills.join(', ');
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
 
     if (finalPrompt) {
       const escaped = finalPrompt.replace(/'/g, "'\\''");
-      command += ` '${escaped}'`;
+      // -i/--prompt-interactive: the task, then the session stays (0.64
+      // --help). A bare query ran one-shot and exited on releases before 0.64.
+      command += ` -i '${escaped}'`;
     }
 
     return command;
@@ -122,7 +126,7 @@ export class GeminiProvider implements CLIProvider {
     return command;
   }
 
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, _appSettings?: AppSettings): Record<string, string> {
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string> {
     return {
       DOROTHY_SKILLS: (skills ?? []).join(','),
       DOROTHY_AGENT_ID: agentId,
@@ -133,6 +137,8 @@ export class GeminiProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
+      ...keyEnvFor('gemini', appSettings),
     };
   }
 

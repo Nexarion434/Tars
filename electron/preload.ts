@@ -151,6 +151,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('agent:queue', listener);
       return () => ipcRenderer.removeListener('agent:queue', listener);
     },
+    stopTask: (agentId: string, ref: string) =>
+      ipcRenderer.invoke('agent:task-stop', agentId, ref),
+    onTask: (callback: (event: unknown) => void) => {
+      const listener = (_: unknown, event: unknown) => callback(event);
+      ipcRenderer.on('agent:task', listener);
+      return () => ipcRenderer.removeListener('agent:task', listener);
+    },
     onStatus: (callback: (event: { type: string; agentId: string; status: string; timestamp: string; waitingReason?: string; permissionAsk?: AgentStatus['permissionAsk'] | null }) => void) => {
       const listener = (_: unknown, event: { type: string; agentId: string; status: string; timestamp: string }) => callback(event);
       ipcRenderer.on('agent:status', listener);
@@ -408,6 +415,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('models:refresh'),
   },
 
+  // An API key per CLI (2.0.4, services/cli-keys.ts): the key goes in, never comes back.
+  cliKeys: {
+    list: () =>
+      ipcRenderer.invoke('cliKeys:list'),
+    set: (id: string, patch: { key?: string | null; envVar?: string | null }) =>
+      ipcRenderer.invoke('cliKeys:set', id, patch),
+  },
+
   appSettings: {
     get: () =>
       ipcRenderer.invoke('app:getSettings'),
@@ -594,6 +609,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_: unknown, status: unknown) => callback(status);
       ipcRenderer.on('hermes:relay:status', listener);
       return () => ipcRenderer.removeListener('hermes:relay:status', listener);
+    },
+    // Tars's Hermes session: signed out, unreachable or an unmeasured version, now and at each change.
+    sessionState: () =>
+      ipcRenderer.invoke('hermes:session:state'),
+    onSessionState: (callback: (state: unknown) => void) => {
+      const listener = (_: unknown, state: unknown) => callback(state);
+      ipcRenderer.on('hermes:session:state', listener);
+      return () => ipcRenderer.removeListener('hermes:session:state', listener);
     },
     testConnection: (connection: Record<string, unknown>) =>
       ipcRenderer.invoke('hermes:connection:test', connection),
@@ -914,6 +937,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectShells: () => ipcRenderer.invoke('desktop:detectShells'),
     setTitleBarOverlay: (colours: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke('desktop:setTitleBarOverlay', colours),
+  },
+
+  // "Send a diagnostic": the last 24 hours of health samples, once (handlers/diagnostic-handlers.ts).
+  diagnostic: {
+    send: () => ipcRenderer.invoke('diagnostic:send'),
   },
 
   // Platform info

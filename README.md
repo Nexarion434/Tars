@@ -59,11 +59,13 @@ remembered, so it cannot write to the wrong terminal.
 
 ![Chat: Hermes and a room per project in one list, Hermes asking before it writes to any agent](screenshots/chat.png)
 
-**Delegation that reports back.** An orchestrator hands work to another agent
-over the [Agent Client Protocol](https://agentclientprotocol.com), not by
-typing into its terminal and hoping. The call returns the agent's answer, why
-the turn ended, which tools it used and what it cost. Where a CLI has no ACP
-mode, Tars falls back to the terminal path rather than pretending.
+**Delegation that reports back, to permanent agents.** An orchestrator hands
+work to another agent itself: the task goes into that agent's own terminal, the
+session its card shows, with its conversation, its memory and its background
+work, never into a temporary copy. The call waits and returns the agent's whole
+final answer for the task, why it ended, and its tokens and cost, read from the
+agent's own session. A CLI that tells Tars nothing of its turns gets the task
+all the same, and the call says it was delivered rather than pretending.
 
 **Your fleet from Telegram, Slack or Discord.** Each bot answers only the people
 you let in, and takes the same commands: the fleet's status, an agent started on a
@@ -216,19 +218,21 @@ is required; Node 18 fails at startup.
               ▼
         Tars main process
               │
-              ├──▶ ACP  session/prompt ─────────▶ target agent's CLI
-              │        ◀── stopReason, usage, tool calls
+              ├──▶ the target's own terminal (its permanent session,
+              │    started on its conversation if no CLI runs there)
+              │        one task at a time: a busy agent queues it
               │
-              └──▶ PTY  (providers with no ACP mode)
-                       ◀── output only
+              └──◀ its turn, from the hooks and the transcript:
+                       the full final answer, why it ended, tokens, cost
 
-  Every turn is recorded in the usage ledger with its transport and cost.
+  Every task is recorded in the task ledger with who asked and what it cost.
 ```
 
-The distinction matters. Over ACP the orchestrator learns whether the task
-finished, what it cost, and can have a tool call denied by the protocol rather
-than by a flag one CLI happens to support. Over the PTY it learns that bytes
-were written. Tars tells you which one you got.
+The distinction matters. The agent that does the work is the one you see,
+with everything it already knows, and it is still there after the task.
+For claude agents the orchestrator learns how the task ended and what it
+cost; for a CLI without hooks it learns the task was delivered, and Tars says
+so rather than inventing an answer.
 
 ---
 
@@ -349,6 +353,7 @@ yours by its access list, Windows having no mode bits.
 | `hermes-connection.json` | Gateway address and session token. `0600` |
 | `projects.json` | The folders you added by hand |
 | `kanban-tasks.json` | The old local board, kept as a backup: its open tasks moved to the Hermes board |
+| `project-files/` | A folder per project for its agents' tools, notes and reports, outside the repository. Never deleted by Tars |
 | `vault.db` | Vault documents |
 | `observations/` | The per-project session ledger |
 | `model-catalog.json` | Cached model and price catalogue |
@@ -359,7 +364,9 @@ hooks and the bundled MCP servers call back into the app. It listens on
 
 Seven MCP servers ship with Tars (orchestration, memory, kanban, vault,
 Telegram, X and SocialData) and are registered with each provider in that
-provider's own config format.
+provider's own config format. Every agent is told how Tars works for its role
+when it starts, and its `tars_guide` tool gives the details, from the Tars that
+runs it.
 
 ---
 

@@ -17,7 +17,7 @@ import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, sta
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, dialog, ipcMain } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,7 +26,13 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR } from './constants';
+import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
+import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
+import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
+import { APP_PAGES } from './services/health/pages';
+import { abruptEndPayload } from './services/health/abrupt-end';
+import { crashTypeSince } from './platform/crash-type';
+import { registerDiagnosticHandlers } from './handlers/diagnostic-handlers';
 
 // Core modules
 import {
@@ -124,10 +130,19 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
-import { startTaskWatch } from './services/task-watch';
+import { startTaskWatch, turnInterrupted } from './services/task-watch';
+import { cliRunningIn } from './core/agent-pty';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
-import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
+import { filesOpenBy, openFilesReadable } from './platform/open-files';
+import { startCodexSessionWatch } from './services/codex-sessions';
+import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
+import { codexKeyConfig } from './services/cli-keys';
+import { getProvider } from './providers';
+import { scheduleTick } from './utils/agents-tick';
+import { terminalTokenOf } from './core/agent-tokens';
+import { codexDialogOnScreen } from './core/terminal-mirror';
 import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
@@ -137,11 +152,14 @@ import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-bo
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
-import { agentStatusEmitter } from './services/agent-events';
+import { agentStatusEmitter, emitAgentStatus } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
+import { sweepRunTokenFolders } from './services/acp/run-token-file';
 import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
-import { HERMES_CONNECTION_FILE } from './services/hermes-config';
+import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
+import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
+import { probeHermes } from './services/hermes-client';
 import { restartRunnersOf } from './services/chat-runners';
 
 // Utils
@@ -177,7 +195,19 @@ let stopTmpRetention: () => void = () => undefined;
 let previousRun: PreviousRun | null = null;
 let recovery: { flush: () => void } | null = null;
 // Off unless the user turned them on; followed live (services/error-reports).
+// Every IPC handler registered from here on is timed for the health samples
+// (services/health/monitor.ts): before any of them is registered.
+timeIpcHandlers(ipcMain as unknown as Parameters<typeof timeIpcHandlers>[0]);
+
 const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
+
+/** The health samples, ~/.dorothy, on this machine only (services/health/samples.ts). */
+const HEALTH_FILE = dataPath('health-samples.jsonl');
+/** Every 5 minutes; a test run may ask for a shorter period (DOROTHY_HEALTH_EVERY_MS, under DOROTHY_E2E only). */
+function healthEveryMs(): number {
+  const asked = Number(process.env.DOROTHY_HEALTH_EVERY_MS);
+  return process.env.DOROTHY_E2E === '1' && Number.isFinite(asked) && asked >= 200 ? asked : 5 * 60_000;
+}
 
 function loadAppSettings(): AppSettings {
   const defaults: AppSettings = {
@@ -446,12 +476,39 @@ function moveLocalKanbanToHermes() {
   }, err => console.warn('[kanban] local board to Hermes: not attempted:', err));
 }
 
+/**
+ * Tars's Hermes session, asked every half hour (services/hermes-session-watch.ts):
+ * each check is a signed-in request, which keeps the session renewed, and finds it
+ * when the gateway ended it. Only for a gateway a connection file names: none is
+ * asked for a sandbox or a test home with no file. A test run may ask for a
+ * shorter period (DOROTHY_HERMES_SESSION_EVERY_MS, under DOROTHY_E2E only).
+ */
+function hermesSessionEveryMs(): number {
+  const asked = Number(process.env.DOROTHY_HERMES_SESSION_EVERY_MS);
+  return process.env.DOROTHY_E2E === '1' && Number.isFinite(asked) && asked >= 200 ? asked : 30 * 60_000;
+}
+
+function startHermesSessionWatch() {
+  const watch = createHermesSessionWatch({
+    check: async () => {
+      const configured = configuredHermesConnection();
+      if (!configured || 'unusable' in configured) return { configured: false, reachable: false, authRequired: false, signedIn: false };
+      const p = await probeHermes(configured.conn);
+      return { configured: true, reachable: p.reachable, authRequired: p.authRequired, signedIn: p.signedIn, version: p.version };
+    },
+    everyMs: hermesSessionEveryMs(),
+    onChange: state => broadcastToAllWindows('hermes:session:state', state),
+  });
+  setHermesSessionWatch(watch);
+  watch.start();
+}
+
 // ============== App Initialization ==============
 
-// Windows: one Tars per profile. A second launch shows the first one's window
-// and ends here: it has read app-settings.json and nothing else, and it writes
-// nothing and starts nothing. Always true elsewhere.
-const isPrimaryInstance = claimSingleInstance(revealMainWindow);
+// One Tars per profile, on every platform. A second launch shows the first
+// one's window and ends here: it has read app-settings.json and nothing else,
+// and it writes nothing and starts nothing.
+const isPrimaryInstance = claimSingleInstance(showMainWindow);
 if (!isPrimaryInstance) app.exit(0);
 
 // Register protocol schemes before app is ready
@@ -470,7 +527,7 @@ app.whenReady().then(async () => {
   // Narrow the credential files on installs that predate the 0600 write.
   // A `mode` passed to writeFileSync only applies at creation, so an
   // app-settings.json already sitting at 0644 would keep it forever.
-  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE]) {
+  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
     ensureSecretFileMode(secret);
   }
   // And the directory itself with everything in it: the fleet, the board, the
@@ -487,7 +544,9 @@ app.whenReady().then(async () => {
   migrateWebhookSecretOutOfAgentReach();
   // Windows: the modes above do nothing there; an access list does the same,
   // set in the background (it never rejects, each failure is logged).
-  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE], PRIVATE_DIR);
+  // The health samples too: the privacy page says they are readable by the
+  // user's account only.
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -515,9 +574,25 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // And the run token folders a delegated run or a crash left behind (services/acp/run-token-file.ts).
+  sweepRunTokenFolders();
   // Whether the last run stopped abruptly, and who was working then, read
   // before this run's record replaces it (services/run-state.ts).
-  previousRun = beginRun();
+  previousRun = beginRun({ appVersion: app.getVersion() });
+  // A run that did not quit is reported once, at this launch, when error
+  // reports are on (services/health/abrupt-end.ts): its samples are read here,
+  // before this run's first, and sent once every handler is registered, below.
+  const lastRunSamples = previousRun ? readSamples(HEALTH_FILE) : [];
+  // What leaves names only the channels this Tars registered and the app's
+  // pages: the samples file is in ~/.dorothy, which agents may write.
+  const healthWords: Vocabulary = { channels: ipcChannels.known(), pages: APP_PAGES };
+  startHealthMonitor({
+    file: HEALTH_FILE,
+    everyMs: healthEveryMs(),
+    agents: () => ({ total: agents.size, running: [...agents.values()].filter((a) => a.status === 'running').length }),
+    page: () => pageOf(getMainWindow()?.webContents.getURL()),
+  });
+  registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE, known: healthWords });
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -575,6 +650,9 @@ app.whenReady().then(async () => {
       restartRunnersOf(agentId, ['claudeAccount']);
     },
   });
+  // Back from a terminal where a login may have changed a sign-in: Settings
+  // shows what Claude Code says now (handlers/claude-accounts-handlers.ts).
+  app.on('browser-window-focus', () => claudeAccounts.whenShown());
   // Every agent process asks which Claude account it starts on. With the
   // option off the answer is null and nothing changes (core/account-env.ts).
   setAccountEnvResolver((agentId, cwd, purpose) => {
@@ -622,6 +700,7 @@ app.whenReady().then(async () => {
     initAgentPty: (agent: AgentStatus) => initAgentPty(agent, getMainWindow(), handleStatusChangeNotificationWrapper, saveAgents),
   });
   onRelayStatus(status => broadcastToAllWindows('hermes:relay:status', status));
+  startHermesSessionWatch();
 
   // Initialize services
   initTelegramBot();
@@ -636,6 +715,15 @@ app.whenReady().then(async () => {
   // What the last run owed, its waiting room messages, the run record, and,
   // after an abrupt stop, the agents that were working resumed with a note
   // (services/restart-recovery.ts). After the launcher and the API are up.
+  // The abrupt end of the last run: its version, uptime, the OS's crash type,
+  // its last health sample, now that every handler is registered.
+  if (previousRun) {
+    const samples = lastRunSamples.map((s) => onlyKnown(s, healthWords));
+    const payload = abruptEndPayload(previousRun, samples, crashTypeSince(previousRun.startedAt));
+    void errorReports.sendHealth('abrupt-end', payload as unknown as Record<string, unknown>).then((result) => {
+      if (!result.sent) console.log(`[health] the abrupt end of the last run was not reported: ${result.reason}`);
+    });
+  }
   const restarted = startRestartRecovery(previousRun);
   recovery = restarted;
   startAgentWatch();
@@ -662,6 +750,81 @@ app.whenReady().then(async () => {
   startStallWatch();
   // Agents with no turn for 30 minutes sleep, orchestrators never (services/agent-sleep.ts).
   startSleepWatch();
+  // codex's turns, read from its session log and posted as its terminal's hooks
+  // would post them, with that terminal's own token (services/codex-sessions.ts).
+  startCodexSessionWatch({
+    post: async (agentId, { path: route, body }) => {
+      const token = terminalTokenOf(agentId);
+      if (!token) return;
+      try {
+        await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        console.warn(`[codex-sessions] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+      }
+    },
+    dialogTitle: (agentId) => {
+      const agent = agents.get(agentId);
+      return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+    },
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+    resumableSessionOf: (agentId) => agents.get(agentId)?.resumableSessionId,
+    codexRunning: (agentId) => {
+      const agent = agents.get(agentId);
+      const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      return !!terminal && cliRunningIn(terminal);
+    },
+    // Whose own codex holds a new session's file, read once per session that
+    // names nobody: the codex under each waiting agent's terminal and what it
+    // started (the Audit's M1 on #465). Unknown where files cannot be read, and
+    // asked again when ps or lsof failed (the Audit's L5).
+    openFilesReadable: () => openFilesReadable(),
+    heldOpenBy: async (file, agentIds) => {
+      if (!openFilesReadable()) return undefined;
+      const procs = await readProcesses();
+      if (!procs) return undefined;
+      let real: string;
+      try { real = fs.realpathSync(file); } catch { return null; }
+      for (const agentId of agentIds) {
+        const agent = agents.get(agentId);
+        const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+        const codex = terminal ? cliProcess(terminal.pid, procs, 'codex') : undefined;
+        if (!codex) continue;
+        const open = await filesOpenBy(processTreeOf(codex.pid, procs));
+        if (open === undefined) return undefined;
+        if (open.has(real)) return agentId;
+      }
+      return null;
+    },
+    // Why the agent's codex will start not signed in, asked at its launch (the
+    // Audit's L7 on #465): Tars hands codex its own home, and the user's login
+    // may be in the CODEX_HOME their shell sets. Said in its status: codex shows
+    // its sign-in screen and writes no session, so nothing else would say it.
+    signInGapOf: async (agentId) => {
+      const agent = agents.get(agentId);
+      if (!agent) return undefined;
+      return codexSignInGap({
+        binaryPath: agent.cliPath || getProvider(agent.provider).resolveBinaryPath(appSettings),
+        home: codexHome(),
+        keyed: codexKeyConfig(appSettings).length > 0,
+        shellHome: () => loginShellCodexHome(),
+      });
+    },
+    notSignedIn: (agentId, text) => {
+      const agent = agents.get(agentId);
+      if (!agent) return;
+      console.warn(`[codex] ${agent.name || agentId}: ${text}`);
+      agent.status = 'error';
+      agent.error = text;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      scheduleTick();
+      emitAgentStatus(agentId);
+    },
+  });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
   // first pass forward, for the e2e.
@@ -763,12 +926,27 @@ app.on('window-all-closed', () => {
 });
 
 // Re-create window on macOS when dock icon is clicked
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-    setUtilsMainWindow(getMainWindow());
-  }
-});
+/**
+ * The main window made again when it was closed: on macOS Tars keeps running
+ * without one. Not before the app is ready, when nothing can be made yet. Asked
+ * of the window manager, not of the window count: the tray panel is a window
+ * too, kept hidden once it exists.
+ */
+function remakeMainWindow(): void {
+  if (!app.isReady()) return;
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) return;
+  createWindow();
+  setUtilsMainWindow(getMainWindow());
+}
+
+/** A second launch's hand-over (claimSingleInstance): the window brought forward, made again first if it was closed. */
+function showMainWindow(): void {
+  remakeMainWindow();
+  revealMainWindow();
+}
+
+app.on('activate', remakeMainWindow);
 
 // Save agents and end every terminal before quitting. In two passes: the
 // first saves, stops what writes, and holds the quit while the terminals'

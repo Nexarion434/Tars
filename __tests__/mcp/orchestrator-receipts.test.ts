@@ -98,7 +98,8 @@ describe('a send of the orchestrator\'s tools', () => {
     mockApiRequest.mockResolvedValue(typed);
     await (await tool('send_message'))({ id: 'w1', message: 'review #280', clientRequestId: 'my-own-id-0001' });
     await (await tool('start_agent'))({ id: 'w1', prompt: 'review #280', clientRequestId: 'my-own-id-0002' });
-    expect(bodiesOf('/dispatch').map((body) => body.clientRequestId)).toEqual(['my-own-id-0001', 'my-own-id-0002']);
+    expect(bodiesOf('/dispatch').map((body) => body.clientRequestId)).toEqual(['my-own-id-0001']);
+    expect(bodiesOf('/run-task').map((body) => body.clientRequestId)).toEqual(['my-own-id-0002']);
   });
 
   it('5. names its id when every attempt failed, so the agent can try again with it', async () => {
@@ -137,8 +138,10 @@ describe('a delegated run, and its status', () => {
     });
     const delegated = await (await tool('delegate_task'))({ id: 'oc', prompt: 'review the notes', clientRequestId: 'cr-acp-0001' });
     expect(bodiesOf('/dispatch')).toHaveLength(0);
+    // Since 2.0.4 the run is waited on in the ledger: its end is the answer.
     expect(text(delegated)).toContain(taskId);
-    expect(text(delegated)).toMatch(/task_status/);
+    expect(text(delegated)).toContain('reviewed');
+    mockApiRequest.mockClear();
 
     const status = await tool('task_status');
     expect(text(await status({ taskId }))).toContain('reviewed');

@@ -11,7 +11,7 @@ import { getPath } from './path-env';
  * folder: a repository that carries a git.exe of its own would have it run,
  * by the status line every 5 s and as soon as the project is listed. Measured
  * on 2026-10-13 (Node 22.23 with libuv 1.51, Electron 44 with libuv 1.52):
- * execFileSync('git', args, { cwd }) ran a git.exe planted in cwd;
+ * execFileSync of the bare name, with { cwd }, ran a git.exe planted in cwd;
  * NoDefaultCurrentDirectoryInExePath=1 in the child's env did not stop it, in
  * the starting process's own env it did.
  */

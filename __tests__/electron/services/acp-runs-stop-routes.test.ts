@@ -139,7 +139,8 @@ afterEach(() => leftovers.end(), 60_000);
 
 /** An agent of the project running a delegated run, and the process its run started. */
 async function delegated(id: string): Promise<{ result: Promise<unknown>; work: number }> {
-  agents.set('orch', { id: 'orch', name: 'Orch', status: 'running', projectPath: tmpHome, provider: 'claude', skills: [], output: [], lastActivity: '' } as AgentStatus);
+  // The project's orchestrator: since 2.0.4 a worker stops and removes no other agent (core/one-task.ts).
+  agents.set('orch', { id: 'orch', name: 'Orch', status: 'running', role: 'orchestrator', projectPath: tmpHome, provider: 'claude', skills: [], output: [], lastActivity: '' } as AgentStatus);
   const agent = { id, name: id, status: 'running', projectPath: tmpHome, provider: 'claude', skills: [], output: [], lastActivity: '' } as AgentStatus;
   agents.set(id, agent);
   const a = busyAgent(id);

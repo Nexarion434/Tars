@@ -1,6 +1,6 @@
 {
   "name": "tars",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
@@ -21,7 +21,9 @@
     "e2e:auto": "node scripts/scope-checks.mjs",
     "e2e:update": "playwright test --update-snapshots",
     "e2e:guard": "node e2e/check-coverage.mjs",
+    "e2e:matrix": "node e2e/matrix.mjs",
     "check:dashes": "node scripts/check-dashes.mjs",
+    "check:names": "node scripts/check-private-names.mjs",
     "sandbox": "bash scripts/sandbox.sh",
     "build:renderer": "node scripts/build-renderer.mjs",
     "lint:design": "node scripts/design-lint.mjs"
@@ -195,6 +197,7 @@
     "react-dom": "^19.2.8",
     "react-grid-layout": "^2.2.2",
     "set-function-length": "^1.2.2",
+    "smol-toml": "1.9.0",
     "uuid": "^9.0.1",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
@@ -221,6 +224,7 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "undici": "6.28.0",
     "vitest": "^4.0.18",
     "wait-on": "^8.0.1"
   },

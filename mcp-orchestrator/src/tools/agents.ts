@@ -5,7 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { problem, registerTools, text, tool, type Tool } from "../../../mcp-shared/src/tools.js";
+import { problem, registerTools, text, tool, type Tool, type ToolResult } from "../../../mcp-shared/src/tools.js";
 import { apiRequest, getCallerIdentity } from "../utils/api.js";
 
 /** What each refusal of POST /api/tasks/:ref/cancel means, for the agent that asked (core/task-cancel.ts). */
@@ -33,7 +33,12 @@ type WaitResult = {
 
 type DispatchResult = {
   success: boolean;
-  mode: "message" | "start";
+  mode: "message" | "start" | "queued";
+  /** mode `queued`: the agent works on another task, and this one waits its turn (one task at a time). */
+  queuedBehind?: string;
+  queuedTask?: string;
+  /** A worker's message to another worker: typed in as a note for information, once that agent's turn ends. */
+  note?: boolean;
   /** Answered from the receipt of an earlier call with the same clientRequestId: nothing was sent again. */
   duplicate?: boolean;
   /** Sent in `queue` mode to an agent in a turn: it goes in once the turn ends. */
@@ -55,7 +60,7 @@ type DispatchResult = {
 };
 
 /** What a caller is told when its start undid somebody's stop, or nothing. */
-function restartNote(data: DispatchResult): string {
+function restartNote(data: Pick<DispatchResult, "restartedAfterStop">): string {
   const stop = data.restartedAfterStop;
   if (!stop) return "";
   // Another agent's words, or the user's: quoted as data, as the other tool
@@ -146,12 +151,60 @@ function duplicateNote(data: DispatchResult): string {
     : "";
 }
 
-type TaskView = { id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number; endedAt?: number | null };
+type TaskView = {
+  id: string; agentId: string; outcome: string; stopReason?: string; result?: string; startedAt?: number | null; endedAt?: number | null;
+  /** Queued: what it waits behind, and since when (one task at a time per agent). */
+  queuedBehind?: string; queuedAt?: string; error?: string;
+  /** Delivered: a task that waited its turn and went into the agent's terminal, typed in or as a session started on it. */
+  how?: "typed" | "started"; deliveredAt?: string;
+};
+
+/** A task waiting its turn, said for its asker: behind which task, from whom, since when, and how to follow it. */
+function queuedText(task: TaskView): string {
+  if (task.outcome === "starting") {
+    return `Task ${task.id} is going into agent ${task.agentId}'s terminal: its turn has not begun yet. Follow it with task_status({ taskId: "${task.id}" }).`;
+  }
+  return `Task ${task.id} is queued on agent ${task.agentId}${task.queuedAt ? ` since ${task.queuedAt}` : ""}`
+    + `${task.queuedBehind ? `, behind ${task.queuedBehind}` : ""}: an agent runs one task at a time, and this one starts once it is free. `
+    + `Follow it with task_status({ taskId: "${task.id}" }), or take it back with task_cancel({ taskId: "${task.id}" }).`;
+}
+
+/**
+ * A task that had not started when the wait on it lost Tars's answer. It waits
+ * its turn in Tars's memory only (one task at a time): a restart drops it, and
+ * keeping it across one is a later change. `err` is what the wait met:
+ * another Tars on the port (mcp-shared/src/tars-api.ts, `anotherTars`), this
+ * Tars no longer knowing it (404), or null for Tars out of reach past the
+ * grace period. Null when it is none of these.
+ */
+function notStartedText(task: TaskView, err: unknown): string | null {
+  if ((err as { anotherTars?: unknown } | null)?.anotherTars === true) {
+    return task.outcome === "starting"
+      ? `Tars restarted while task ${task.id} on agent ${task.agentId} was being started, so it may not have run. Tars keeps no task that waited its turn across a restart: unless Tars tells you it ran, ask for it again (delegate_task).`
+      : `Tars restarted while task ${task.id} waited its turn on agent ${task.agentId}${task.queuedAt ? ` (queued since ${task.queuedAt})` : ""}. A task waiting its turn is not kept across a restart: this one never started, and must be asked again (delegate_task).`;
+  }
+  if (answerOf(err)?.status === 404) {
+    return `Task ${task.id} on agent ${task.agentId} never started, and Tars no longer has it (${(err as Error).message}). Ask for it again if it still needs doing.`;
+  }
+  if (err === null) {
+    return `Tars could not be reached for ${FAILURE_GRACE_MS / 1000} s while task ${task.id} waited its turn on agent ${task.agentId}: it had not started. `
+      + `A task waiting its turn is not kept if Tars quits or restarts: once Tars answers, follow it with task_status({ taskId: "${task.id}" }), and ask for it again if Tars no longer has it.`;
+  }
+  return null;
+}
 
 /** A delegated task as the ledger keeps it, said for the caller. */
 function taskText(task: TaskView): string {
+  if (task.outcome === "queued" || task.outcome === "starting") return queuedText(task);
+  if (task.outcome === "delivered") {
+    return `Task ${task.id} on agent ${task.agentId} waited its turn and went into its terminal`
+      + `${task.how === "started" ? ", as the task of a session started on it" : ", typed into its session"}${task.deliveredAt ? ` at ${task.deliveredAt}` : ""}: `
+      + "it is that agent's work now. Follow it with wait_for_agent and get_agent_output.";
+  }
   const head = `Task ${task.id} on agent ${task.agentId}: ${task.outcome}${task.stopReason ? ` (${task.stopReason})` : ""}.`;
   if (task.outcome === "running") return `${head} It is still working: ask task_status again later.`;
+  if (task.outcome === "delivered") return `Task ${task.id} on agent ${task.agentId}: delivered. ${task.error ?? ""}`.trim();
+  if (task.error && !task.result) return `${head} ${task.error}`;
   return task.result ? `${head}\n\n${task.result}` : `${head} It left no answer.`;
 }
 
@@ -242,25 +295,174 @@ async function waitForAgentStatus(id: string, timeoutSeconds: number): Promise<W
   }
 }
 
+/** A delegated task's answer, as run-task or the ledger gives it. */
+type RunAnswer = {
+  ok?: boolean;
+  started?: boolean;
+  /** Queued behind the agent's work in hand: `taskId` is the queued task's id. */
+  queued?: boolean;
+  queuedBehind?: string;
+  queuedAt?: string;
+  duplicate?: boolean;
+  taskId?: string;
+  outcome?: string;
+  stopReason?: string;
+  text?: string;
+  result?: string;
+  toolCalls?: string[];
+  backgroundStopped?: string[];
+  /** Background work the task's turn left running when it ended (2.0.4): never waited for. */
+  backgroundLeft?: string[];
+  usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number; costUSD?: number | null };
+  costUSD?: number;
+  error?: string;
+  /** A session started for this task undid a stop: who had stopped the agent, when, and why. */
+  restartedAfterStop?: DispatchResult["restartedAfterStop"];
+  /** A model asked for this task: taken (a session started for it) or not, and the agent's own. */
+  model?: { asked: string; taken: boolean; own?: string; ranOn?: string };
+};
+
+/** How long run-task may take to answer with the task's id: one segment, as every wait. */
+const RUN_START_WAIT_SECONDS = WAIT_SEGMENT_SECONDS;
+
+/** Tars answered (a status came back), as opposed to a request that never got an answer. */
+function answerOf(err: unknown): { status: number; body: Record<string, unknown> } | null {
+  const e = err as { status?: unknown; body?: unknown } | null;
+  return e && typeof e.status === "number" ? { status: e.status, body: (e.body ?? {}) as Record<string, unknown> } : null;
+}
+
+/** What became of a model asked for the task, when the agent did not take it: said as it happened. */
+function modelNoteOf(model: RunAnswer["model"]): string {
+  if (!model || model.taken) return "";
+  return `\nThis task is not on ${model.asked}: the agent's session was already open, and a model applies only to a session started for the task. It ran on ${model.own ? `its own model, ${model.own}` : "its session's model"}.`;
+}
+
+/** A task's end, said for the caller: its answer, then how it ended and what it cost. */
+function runText(run: RunAnswer, modelNote: string): ToolResult {
+  const tokens = run.usage?.totalTokens ?? ((run.usage?.inputTokens ?? 0) + (run.usage?.outputTokens ?? 0));
+  const cost = typeof run.costUSD === "number" ? run.costUSD : run.usage?.costUSD;
+  const meta = [
+    run.stopReason ? `ended: ${run.stopReason}` : "",
+    tokens ? `${tokens} tokens` : "",
+    typeof cost === "number" ? `$${cost.toFixed(4)}` : "",
+    run.taskId ? `task ${run.taskId}` : "",
+  ].filter(Boolean).join(" | ");
+  const ok = run.ok ?? run.outcome === "completed";
+  const why = !ok && run.error ? `\n${run.error}` : "";
+  const left = run.backgroundLeft?.length
+    ? `\nstill running in the background: ${run.backgroundLeft.join(", ")} (the task ended with its turn; that work goes on in the agent's session)`
+    : "";
+  return {
+    content: [{ type: "text", text: `${run.text || run.result || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}${modelNote}` }],
+    isError: !ok,
+  };
+}
+
+/** A task typed into a CLI whose turns Tars cannot see: it went in, and that is all Tars knows. */
+function deliveredResult(taskId: string, note: string | undefined): ToolResult {
+  return text(`Task ${taskId}: ${note ?? "it went into the agent's terminal."}`);
+}
+
 /**
- * Fetch the agent's captured clean output, retrying briefly: the Stop hook
- * posts output and status through separate HTTP calls, so the status event
- * that resolves /wait can beat the output write by a moment.
+ * The task, handed to the agent's own permanent terminal (POST run-task): the
+ * session its card shows, or the one Tars starts for it, resuming its
+ * conversation. Followed by its id to its end, read from that session.
+ *
+ * No request here waits more than a segment. run-task answers at once with
+ * the task's id (`answer: 'started'`), and the task is then waited on in the
+ * ledger, segment by segment, as waitForAgentStatus waits on a status. One
+ * request held for the whole task was cut by undici at 300 s.
+ *
+ * A request that got no answer (cut, reset, refused, or out of time) is asked
+ * again with the same clientRequestId and payload: the receipt answers with
+ * the first call's task, and hands it over only if the first did nothing.
+ * `waitSeconds` bounds this call's wait, never the task, which goes on in the
+ * agent's terminal.
  */
-async function fetchCleanOutput(
-  id: string,
-  attempts = 3,
-  delayMs = 700
-): Promise<{ output?: string; status: string; name?: string }> {
-  let last: { agent: { status: string; name?: string; lastCleanOutput?: string } } | undefined;
-  for (let i = 0; i < attempts; i++) {
-    last = (await apiRequest(`/api/agents/${id}`)) as typeof last;
-    if (last?.agent.lastCleanOutput) {
-      return { output: last.agent.lastCleanOutput, status: last.agent.status, name: last.agent.name };
+async function runTask(
+  id: string, prompt: string, model: string | undefined, waitSeconds: number, clientRequestId: string,
+  allowCrossProject: boolean | undefined, follow: boolean,
+): Promise<ToolResult> {
+  const deadline = Date.now() + waitSeconds * 1000;
+  const followIt = `follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again`;
+  // allowCrossProject as /dispatch carries it: run-task asks the same guard.
+  const body = {
+    task: prompt, clientRequestId, answer: "started",
+    ...(model ? { model } : {}), ...(allowCrossProject ? { allowCrossProject } : {}),
+  };
+
+  let started: RunAnswer | undefined;
+  let failingSince = 0;
+  let backoffMs = FAILURE_BACKOFF_START_MS;
+  while (!started) {
+    try {
+      started = (await apiRequest(`/api/agents/${id}/run-task`, "POST", body, (RUN_START_WAIT_SECONDS + 30) * 1000)) as RunAnswer;
+    } catch (err) {
+      // Tars answered: that is the answer (refused, never started, an id used for another request).
+      if (answerOf(err)) return problem(`Not delegated: ${(err as Error).message}`);
+      // No answer at all: the task may have been handed over. Ask again, for a while.
+      const now = Date.now();
+      if (!failingSince) failingSince = now;
+      if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        return problem(`Tars could not be reached about this delegation to agent ${id} (${(err as Error).message}). The task may still be working in its terminal: ${followIt}.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
+      backoffMs = Math.min(backoffMs * 2, FAILURE_BACKOFF_MAX_MS);
     }
-    if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
   }
-  return { output: undefined, status: last?.agent.status ?? "unknown", name: last?.agent.name };
+
+  const modelNote = modelNoteOf(started.model) + restartNote(started);
+  if (!started.taskId) return runText(started, modelNote);
+  let taskId = started.taskId;
+  // An answer that is already the end (a duplicate of a task that ended): said as it is.
+  if (started.outcome === "delivered") return deliveredResult(taskId, started.error);
+  if (started.outcome && !["queued", "starting", "running"].includes(started.outcome)) return runText(started, modelNote);
+  let waiting: TaskView | undefined = started.outcome === "queued" || started.outcome === "starting"
+    ? { id: taskId, agentId: id, outcome: started.outcome, queuedBehind: started.queuedBehind, queuedAt: started.queuedAt }
+    : undefined;
+  // start_agent: handed over, not waited on.
+  if (!follow) {
+    return text((waiting?.outcome === "queued"
+      ? queuedText(waiting)
+      : `Task ${taskId} is going into agent ${id}'s terminal. Follow it with task_status({ taskId: "${taskId}" }); delegate_task hands a task and waits for its answer.`) + modelNote);
+  }
+  failingSince = 0;
+  backoffMs = FAILURE_BACKOFF_START_MS;
+  for (;;) {
+    const remainingSec = Math.ceil((deadline - Date.now()) / 1000);
+    if (remainingSec <= 0) {
+      if (waiting) return text(`${queuedText(waiting)} delegate_task stopped waiting after ${waitSeconds} s; nothing else was started.`);
+      return problem(`Task ${taskId} on agent ${id} is still working after ${waitSeconds} s, in its terminal: ${followIt}. Nothing else was started, and the task goes on.`);
+    }
+    const segment = Math.min(WAIT_SEGMENT_SECONDS, remainingSec);
+    const askedAt = Date.now();
+    try {
+      const found = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}?wait=${segment}`, "GET", undefined, (segment + 30) * 1000)) as { task: RunAnswer & TaskView };
+      failingSince = 0;
+      backoffMs = FAILURE_BACKOFF_START_MS;
+      waiting = found.task.outcome === "queued" || found.task.outcome === "starting" ? found.task : undefined;
+      // Its turn begun: the ledger's task from here.
+      if (!waiting && found.task.id) taskId = found.task.id;
+      if (found.task.outcome === "delivered") return deliveredResult(taskId, found.task.error);
+      if (!waiting && found.task.outcome !== "running") {
+        return runText({ ...found.task, taskId }, modelNoteOf(found.task.model ?? started.model) + restartNote(found.task.restartedAfterStop ? found.task : started));
+      }
+      // Not held open (an older Tars, or a wait answered at once): no hot loop.
+      if (Date.now() - askedAt < segment * 500) await new Promise((r) => setTimeout(r, 1000));
+    } catch (err) {
+      // A task that had not started: lost with a restart, or no longer queued (notStartedText).
+      const lost = waiting ? notStartedText(waiting, err) : null;
+      if (lost) return problem(lost);
+      const now = Date.now();
+      if (!failingSince) failingSince = now;
+      if (now - failingSince >= FAILURE_GRACE_MS || now >= deadline) {
+        if (waiting) return problem(`${notStartedText(waiting, null)} (${(err as Error).message})`);
+        return problem(`Tars could not be reached while task ${taskId} ran on agent ${id} (${(err as Error).message}). The task may still be working in its terminal: ${followIt}.`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(backoffMs, deadline - now)));
+      backoffMs = Math.min(backoffMs * 2, FAILURE_BACKOFF_MAX_MS);
+    }
+  }
 }
 
 /**
@@ -425,7 +627,7 @@ const AGENT_TOOLS: Tool[] = [
         .string()
         .optional()
         .describe("The provider, by id (default claude). Its own CLI: claude, codex, gemini, grok, opencode, pi, amp. Claude Code run against another provider, with the key set in Tars's Settings (refused without it): openrouter, deepseek, mimo, moonshot, qwen, zhipu, minimax, nvidia, nous-portal, ollama, ollama-cloud, venice, custom-openai."),
-      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-5-codex' for codex). Omit for the provider's default."),
+      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-6-luna' for codex). Omit for the provider's default."),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort. Omit for the CLI's own."),
       permissionMode: z
         .enum(["plan", "normal", "auto", "bypass"])
@@ -459,34 +661,23 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "start_agent",
-    description: "Start an agent with a specific task/prompt. If agent is already running/waiting, sends the prompt as a message instead. The agent runs with its own configured permission mode.",
+    description: "Deprecated: use delegate_task, which hands the task the same way and waits for its answer. start_agent is kept as an alias for 2.0.4: it hands the task to the agent's own terminal (the session its card shows, or the one Tars starts for it on its conversation) exactly as delegate_task does, and answers at once with the task's id instead of waiting (task_status follows it). One task at a time: an agent at work gets it queued. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID"),
       prompt: z.string().describe("The task or instruction for the agent to work on"),
-      model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
+      model: z.string().optional().describe("Optional model for this task only, taken only when Tars starts the agent's session for it; an open session keeps its own, and the answer says so."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
-      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's outcome, and nothing is sent twice. Omitted: one is made for this call."),
+      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this request. Calling again with the same id is answered with the first call's task, and nothing is handed over twice. Omitted: one is made for this call."),
     },
     failure: "starting agent",
     async run({ id, prompt, model, allowCrossProject, clientRequestId }) {
-      const data = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
-      const agentName = data.agent.name || id;
-
-      if (data.held) {
-        return text(heldText(agentName, "The task", data.heldReason) + duplicateNote(data));
-      }
-
-      if (data.mode === "message") {
-        return text(`Agent "${agentName}" was already ${data.previousStatus ?? "running"}. Sent message: "${prompt}"${duplicateNote(data)}`);
-      }
-
-      return text(`Started agent "${agentName}". Status: ${data.agent.status}\nTask: ${prompt}${restartNote(data)}${duplicateNote(data)}`);
+      return runTask(id, prompt, model, RUN_START_WAIT_SECONDS, clientRequestId || randomUUID(), allowCrossProject, false);
     },
   }),
 
   tool({
     name: "stop_agent",
-    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; JeanBrasse reads it in the window.",
+    description: "Stop an agent: its CLI and everything it started are ended, and it reads 'stopped', with your name and your reason, until it is started again. Give the reason in one line; the user reads it in the window. Only Tars, the user and the project's orchestrator stop an agent, and an agent may stop itself: a worker calling this on another agent is refused, and asks its orchestrator instead (send_message to \"orchestrator\"), saying why.",
     schema: {
       id: z.string().describe("The agent ID"),
       reason: z.string().min(1).describe("Why you stop it, in one line (required), e.g. 'frozen for 40 minutes on a file read'"),
@@ -505,7 +696,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "send_message",
-    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent.",
+    description: "Send input/message to an agent. If the agent is idle/completed/error, this will START the agent with the message as the prompt. If the agent is 'waiting', this sends the message as input. WARNING: Sending to a 'running' agent may interfere with its current work. Prefer waiting until it reaches 'waiting' or 'completed' status. To answer whoever asked you for your current task, use the id \"requester\" (a chat's orchestrator, or the project's orchestrator); \"orchestrator\" or the orchestrator's name reach it too. An agent's id always reaches that agent. A worker never orders work from another agent: what a worker sends another worker arrives as a note for information, labelled so, typed in once that agent's turn has ended, never as a task, and never starting an agent that has no session open; steer and restart are refused to it, as a stop is. To get work done by another agent, or to have it stopped, a worker asks its orchestrator.",
     schema: {
       id: z.string().describe("The agent ID, or \"requester\" for whoever asked you for your current task"),
       message: z.string().optional().describe("The message to send to the agent"),
@@ -531,6 +722,10 @@ const AGENT_TOOLS: Tool[] = [
         return text(heldText(agentName, "Your message", data.heldReason) + again);
       }
 
+      if (data.note) {
+        return text(`Sent to agent "${agentName}" as a note for information, not a task: ${data.queued ? "it goes in once its current turn ends" : "it is in its terminal"}. A worker does not hand work to another agent: if this needs doing, ask your orchestrator.${again}`);
+      }
+
       if (data.queued) {
         return text(`Queued for agent "${agentName}": it goes in once its current turn ends.${data.interrupted === false ? " Its turn could not be interrupted in time, so it waits for the end of it." : ""}${again}`);
       }
@@ -553,7 +748,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "task_cancel",
-    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal. Its id is the t-xxxxxxxx Tars named in the line it typed before your message. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
+    description: "Cancel a task you asked another agent for, while it still waits to go into that agent's terminal, or waits its turn behind that agent's work in hand (delegate_task and start_agent name it). Its id is the t-xxxxxxxx Tars named in the line it typed before your message, or in the answer that said it was queued. Only the agent that asked may cancel it, or the project's orchestrator with a reason, which the chat that asked is told. A task already in the agent's terminal cannot be taken back: stop the agent to end it.",
     schema: {
       taskId: z.string().describe("The task's id: t- and 8 hex characters"),
       reason: z.string().optional().describe("Why. Required when the task was asked for by another chat: that chat is told it."),
@@ -561,7 +756,8 @@ const AGENT_TOOLS: Tool[] = [
     failure: "cancelling the task",
     async run({ taskId, reason }) {
       try {
-        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string } };
+        const data = (await apiRequest(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, "POST", { reason })) as { worker?: { name?: string }; queuedRun?: boolean };
+        if (data.queuedRun) return text(`Cancelled task ${taskId}: it was waiting its turn on ${data.worker?.name || "its agent"}, and never started.`);
         return text(`Cancelled task ${taskId}: it never went into ${data.worker?.name ? `${data.worker.name}'s` : "its agent's"} terminal.`);
       } catch (err) {
         const why = CANCEL_REFUSALS[(err as Error).message];
@@ -573,7 +769,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "remove_agent",
-    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system.",
+    description: "Permanently remove an agent. This will stop the agent if running and delete it from the system. Only Tars, the user and the project's orchestrator remove an agent, and an agent may remove itself: a worker calling this on another agent is refused, and asks its orchestrator instead.",
     schema: {
       id: z.string().describe("The agent ID"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow acting on an agent of ANOTHER project (normally rejected)"),
@@ -640,198 +836,24 @@ const AGENT_TOOLS: Tool[] = [
     },
   }),
 
-  // Composite: start, wait, then the output
   tool({
     name: "delegate_task",
-    description: "Delegate a task to an agent and wait for the result. This is the primary tool for task delegation: it starts the agent, waits for completion using long-polling, and returns the clean text result. Much more efficient than calling start_agent + wait_for_agent + get_agent_output separately.",
+    description: "Delegate a task to an agent and wait for its answer: the primary tool for handing work. The task goes into the agent's own permanent terminal, the session its card shows, which keeps its conversation, its memory and its background work; with no CLI running there, Tars starts that session on its conversation with the task. You get back the agent's full final answer for this task, why it ended (completed, error, stopped, interrupted), and its tokens and cost where its CLI lets Tars read them (claude: all of them; other CLIs: see the guide's delegation topic). An agent runs one task at a time: a task given to an agent already working waits its turn in that agent's queue, and this keeps waiting and returns its real result; if your wait ends first, the answer says which task it is queued behind, from whom, since when, and how to follow it (task_status) or take it back (task_cancel). The task is never stopped when your wait ends: it goes on in the agent's terminal. A task still waiting its turn is not kept across a restart of Tars: it never started, and this says so, to ask for it again. Only Tars, the user and the project's orchestrator hand an agent work: a worker calling this is refused, and asks its orchestrator instead (send_message to \"orchestrator\").",
     schema: {
       id: z.string().describe("The agent ID to delegate to"),
       prompt: z.string().describe("The task/instruction for the agent"),
-      model: z.string().optional().describe("Optional model to use. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Full IDs: 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'. Omit to use the agent's configured default."),
-      timeoutSeconds: z.number().optional().describe("Maximum time to wait in seconds (default: 300)"),
+      model: z.string().optional().describe("Optional model for this task only; the agent's saved model is not changed. Taken only when Tars starts the agent's session for the task: an open session keeps its own model, and the answer says so. Aliases: 'sonnet', 'opus', 'haiku', 'opusplan', 'sonnet[1m]' (1M context). Omit to use the agent's configured default."),
+      timeoutSeconds: z.number().optional().describe("How long this call waits for the answer, in seconds: 3600 (an hour) when omitted. The task itself is not stopped there: it goes on in the agent's terminal, and task_status reads its end."),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow delegating to an agent of ANOTHER project (normally rejected)"),
-      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this delegation. Calling again with the same id answers with the first call's task (task_status reads it), and nothing is run twice. Omitted: one is made for this call."),
+      clientRequestId: z.string().optional().describe("An id of 8 to 128 characters for this delegation. Calling again with the same id answers with the first call's task (task_status reads it), and nothing is handed over twice. Omitted: one is made for this call."),
     },
     failure: "delegating task",
-    async run({ id, prompt, model, timeoutSeconds = 300, allowCrossProject, clientRequestId: givenId }, extra) {
-      const clientRequestId = givenId || randomUUID();
+    async run({ id, prompt, model, timeoutSeconds = 3600, allowCrossProject, clientRequestId: givenId }, extra) {
       // Claude Code abandons an MCP call silent for 30 minutes; a delegation
       // can last an hour. Progress while it waits keeps the caller listening.
       const stopProgress = keepCallerListening(extra);
       try {
-        // Preferred path: run the task over the Agent Client Protocol, which
-        // returns the agent's actual answer, why the turn ended and what it
-        // cost. Falls back to the terminal dispatch below for CLIs that have
-        // no ACP mode, or when the run itself could not start.
-        try {
-          const acp = (await apiRequest(
-            `/api/agents/${id}/run-task`,
-            "POST",
-            { task: prompt, timeoutSeconds, clientRequestId },
-            (timeoutSeconds + 60) * 1000,
-          )) as {
-            ok?: boolean;
-            started?: boolean;
-            duplicate?: boolean;
-            taskId?: string;
-            outcome?: string;
-            stopReason?: string;
-            text?: string;
-            toolCalls?: string[];
-            backgroundStopped?: string[];
-            usage?: { totalTokens?: number };
-            costUSD?: number;
-            error?: string;
-            retryWithDispatch?: boolean;
-          };
-
-          // An earlier call with this id started the run: its task is the
-          // answer, read from the ledger once it has ended (4.4 item 3).
-          if (acp?.duplicate && acp.started) {
-            if (acp.outcome === "running" || !acp.taskId) {
-              return text(`This delegation already runs from an earlier call (clientRequestId ${clientRequestId}${acp.taskId ? `, task ${acp.taskId}` : ""}): nothing was started again. Follow it with task_status.`);
-            }
-            const found = (await apiRequest(`/api/tasks/${acp.taskId}`)) as { task: TaskView };
-            return { content: [{ type: "text", text: taskText(found.task) }], isError: found.task.outcome !== "completed" };
-          }
-
-          // A run that started is the answer, however it ended. Falling back
-          // to the terminal after one typed the same brief into a second
-          // session: the task ran twice (Parallel project, 2026-09-23).
-          if (acp && !acp.retryWithDispatch && (acp.ok || acp.text || acp.started)) {
-            const meta = [
-              acp.stopReason ? `ended: ${acp.stopReason}` : "",
-              acp.toolCalls?.length ? `tools: ${acp.toolCalls.slice(0, 8).join(", ")}` : "",
-              acp.usage?.totalTokens ? `${acp.usage.totalTokens} tokens` : "",
-              typeof acp.costUSD === "number" ? `$${acp.costUSD.toFixed(4)}` : "",
-              acp.taskId ? `task ${acp.taskId}` : "",
-            ].filter(Boolean).join(" | ");
-            // A run is one turn: what the agent left running when it answered
-            // was stopped with it, and nothing brings it back for that work.
-            const left = acp.backgroundStopped?.length
-              ? `\nstopped when the run ended: ${acp.backgroundStopped.join(", ")}. Re-delegate what still needs doing.`
-              : "";
-            const why = !acp.ok && acp.error ? `\n${acp.error}` : "";
-
-            return {
-              content: [{
-                type: "text",
-                text: `${acp.text || "(the agent produced no text)"}\n\n---\n${meta}${why}${left}`,
-              }],
-              isError: !acp.ok,
-            };
-          }
-        } catch (err) {
-          // This call's own wait ran out: the run it started may still be
-          // working, and typing the brief into the terminal as well would run
-          // the task twice.
-          if (err instanceof Error && err.name === "AbortError") {
-            return problem(`No answer from agent ${id} within ${timeoutSeconds + 60} s. The run may still be working: follow it with task_status({ clientRequestId: "${clientRequestId}" }) rather than delegating the task again.`);
-          }
-          // Held to a mode the agent does not offer (the ceiling for delegated
-          // runs): typing the task into its terminal would run it in the
-          // agent's own, broader mode.
-          if (err instanceof Error && /permission_escalation_denied/.test(err.message)) {
-            return problem(`Not delegated: ${err.message}`);
-          }
-          // No run started (this CLI has no ACP mode, or its launch failed).
-          // The terminal path still works.
-        }
-
-        // Atomic dispatch: the server decides message-vs-spawn under its own
-        // lock, so a stale status can never route the prompt to a dead PTY.
-        const dispatched = await dispatchToAgent(id, prompt, model, allowCrossProject, { clientRequestId });
-        const agentName = dispatched.agent.name || id;
-
-        // Not typed yet: waiting here would wait on a turn that has not
-        // started, for as long as the field stays in use, and then report the
-        // agent as still running. Say it now; wait_for_agent follows it.
-        if (dispatched.held) {
-          return text(heldText(agentName, "The task", dispatched.heldReason)
-            + " delegate_task is not waiting on it: use wait_for_agent to follow it.");
-        }
-
-        // Wait for completion via long-poll
-        let waitData = await waitForAgentStatus(id, timeoutSeconds);
-
-        if (waitData.status === "waiting") {
-          if (waitData.waitingReason === "permission") {
-            // A blocking permission dialog: typing text into it does nothing
-            // useful (it expects arrow keys/enter). Surface it instead.
-            return problem(`Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`);
-          }
-          // Agent asked for confirmation: auto-reply "continue" and wait
-          // again. A single retry only answers the FIRST question a task
-          // asks - a multi-step task that pauses to confirm several times
-          // used to fall back on the orchestrator to notice "still waiting"
-          // and manually nudge it again for every subsequent question. Loop
-          // instead, bounded so a truly stuck agent still surfaces rather
-          // than spinning forever.
-          const MAX_AUTO_CONTINUES = 8;
-          const deadline = Date.now() + timeoutSeconds * 1000;
-          let autoContinues = 0;
-
-          while (waitData.status === "waiting" && waitData.waitingReason !== "permission") {
-            if (autoContinues >= MAX_AUTO_CONTINUES) break;
-            const remainingMs = deadline - Date.now();
-            if (remainingMs <= 0) break;
-
-            autoContinues++;
-            let continued: DispatchResult;
-            try {
-              continued = await dispatchToAgent(
-                id,
-                "Yes, continue. Do not ask for confirmation. Complete the task and report your results.",
-                undefined,
-                allowCrossProject
-              );
-            } catch {
-              // Auto-continue itself failed (agent gone, network hiccup):
-              // stop looping and report the waiting state as-is below.
-              break;
-            }
-            // Held like the task itself can be: nothing was typed, and a wait
-            // now would run out on a turn that never began, then call the
-            // agent still running (the gate of #128).
-            if (continued.held) {
-              return text(heldText(agentName, "The answer to its question", continued.heldReason)
-                + " delegate_task is not waiting on it: use wait_for_agent to follow it.");
-            }
-            waitData = await waitForAgentStatus(id, Math.max(Math.floor(remainingMs / 1000), 30));
-          }
-
-          if (waitData.status === "waiting") {
-            if (waitData.waitingReason === "permission") {
-              return problem(`Agent "${agentName}" is blocked on a PERMISSION dialog and cannot proceed autonomously. Resolve it in the Tars UI, or stop_agent and re-delegate.`);
-            }
-            // Still waiting after every auto-continue: give up and let the
-            // orchestrator handle it.
-            const outputInfo = waitData.lastCleanOutput
-              ? `\n\nAgent output:\n${waitData.lastCleanOutput}`
-              : "";
-            return text(`Agent "${agentName}" is still waiting for input after ${autoContinues} auto-continue attempt(s).${outputInfo}\n\nUse send_message to respond.`);
-          }
-        }
-
-        if (waitData.timeout) {
-          return problem(`Agent "${agentName}" is still running after ${timeoutSeconds}s. Use wait_for_agent to continue waiting, or get_agent_output to check progress.`);
-        }
-
-        if (waitData.status === "error") {
-          return problem(`Agent "${agentName}" failed: ${waitData.error || "Unknown error"}`);
-        }
-
-        // Completed or idle: fetch the clean output, retrying briefly since
-        // the Stop hook's output post can arrive just after the status event
-        // that resolved the long-poll.
-        const { output: fetchedOutput } = await fetchCleanOutput(id);
-        const output = fetchedOutput || waitData.lastCleanOutput;
-
-        if (output) {
-          return text(`Agent "${agentName}" completed.\n\n${output}`);
-        }
-
-        return text(`Agent "${agentName}" finished (${waitData.status}) but no clean output was captured. Use get_agent_output to retry, or check the agent's terminal in the Tars UI.`);
+        return await runTask(id, prompt, model, Math.max(timeoutSeconds, 1), givenId || randomUUID(), allowCrossProject, true);
       } finally {
         stopProgress();
       }
@@ -840,7 +862,7 @@ const AGENT_TOOLS: Tool[] = [
 
   tool({
     name: "task_status",
-    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too: running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
+    description: "Read a task you delegated, as Tars's ledger keeps it, after a restart too (except a task that was still waiting its turn: a restart drops it before it starts, and it must be asked again): queued behind the agent's work in hand (which task, from whom, since when), running, or how it ended and what the agent answered. By its taskId (delegate_task names it) or by the clientRequestId it was sent with.",
     schema: {
       taskId: z.string().optional().describe("The task's id"),
       clientRequestId: z.string().optional().describe("The clientRequestId the delegation was sent with"),

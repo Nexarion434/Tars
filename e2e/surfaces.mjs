@@ -251,15 +251,15 @@ export const VOLATILE = {
   },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
-    // A CLI may name itself before its number: `codex --version` prints
-    // `codex-cli 0.120.0`, so its row reads `codex · codex-cli 0.120.0`, which
-    // the bare `name · 1.2` form let through into the Windows reference
-    // recorded on 2026-09-26 (Codex is installed on that machine). Not on
-    // Windows since: the app gets a PATH without the user's folders there
+    // Since one panel per CLI (#460), a version is printed after the command and
+    // nothing else: `claude 2.1.302` under each CLI of the list, `2.1.302` in the
+    // picked CLI's chip and at the head of its Command row, `codex codex-cli
+    // 0.163.0` where a CLI's --version names itself first.
+    // Not on Windows: the app gets a PATH without the user's folders there
     // (windowsSystemPath in e2e/fixture.mjs), finds no CLI and prints no version.
     platforms: ['darwin', 'linux'],
-    selector: 'text=/^[a-z][a-z-]* · (?:[a-z][a-z-]* )?\\d+\\.\\d+/',
-    why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly',
+    selector: 'text=/^(?:[a-z][a-z-]* ){0,2}\\d+\\.\\d+/',
+    why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly, codex and amp as often',
   },
   'log-chunk-counts': {
     surfaces: ['logs'],

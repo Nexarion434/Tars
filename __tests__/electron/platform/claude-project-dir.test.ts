@@ -24,8 +24,9 @@ import golden from './posix-golden.json';
  *
  * How it can fail, written before the code:
  * 1. the encoder is not Claude Code's: checked against folder names Claude Code
- *    wrote on this machine (C:\Users\owner\.claude\projects, read 2026-09-25,
- *    names only, for paths that exist);
+ *    wrote on a Windows machine (its ~\.claude\projects, read 2026-09-25,
+ *    names only, for paths that exist). The home folder in them is a neutral
+ *    name since 2026-10-16, letters for letters, which Claude keeps as they are;
  * 2. darwin/linux read a folder the old code did not, or stop reading one it
  *    did: the legacy `[/.]` spelling and the `/`-only one memory-hub tried stay
  *    readable, after Claude's own;
@@ -67,18 +68,21 @@ describe('1. the encoder is Claude Code\'s', () => {
   it('turns every other character into a dash, on any platform', () => {
     expect(encodeClaudeProjectDir('/Users/demo/docs.octav.fi')).toBe('-Users-demo-docs-octav-fi');
     expect(encodeClaudeProjectDir('/Users/demo/my_proj (2)@x+y')).toBe('-Users-demo-my-proj--2--x-y');
-    expect(encodeClaudeProjectDir('C:\\Users\\ownerás\\projet')).toBe('C--Users-owner-s-projet');
+    expect(encodeClaudeProjectDir('C:\\Users\\Andrés\\projet')).toBe('C--Users-Andr-s-projet');
   });
 
   // Claude Code 2.1.220 (claude.exe, read 2026-09-25): a name longer than 200
   // characters is cut to 200 and followed by `-` and a base-36 hash of the whole
   // path. The suffixes below were computed by running Claude Code's own encoder,
   // extracted from that binary, on these inputs; they are not this code's output.
+  // The first and third inputs held a person's home folder until 2026-10-16:
+  // their suffixes for a neutral one come from a Python copy of that hash,
+  // checked first against the three suffixes Claude Code gave on the old inputs.
   it('shortens a name over 200 characters exactly as Claude Code does', () => {
     const vectors: Array<[string, string]> = [
-      ['C:\\Users\\owner\\' + 'Documents\\Claude Project\\'.repeat(8) + 'Tars', '-475b7m'],
+      ['C:\\Users\\owner\\' + 'Documents\\Claude Project\\'.repeat(8) + 'Tars', '-cwp4hc'],
       ['/Users/demo/' + 'a'.repeat(188), ''],
-      ['/Users/demo/' + 'a'.repeat(189), '-fo84kw'],
+      ['/Users/demo/' + 'a'.repeat(189), '-w8qrzf'],
       ['/' + 'x/'.repeat(100) + 'R\u00e9union (2) \u00e9', '-u8lp63'],
     ];
     for (const [input, suffix] of vectors) {
@@ -210,7 +214,7 @@ describe('the decoder on win32 (an injected disk, so it runs on any host)', () =
   });
 
   it('7. matches without case, and keeps the disk\'s own spelling', () => {
-    expect(decode('c--users-owner-proj', ['C:\\Users\\owner\\Proj'])).toBe('c:\\Users\\owner\\Proj');
+    expect(decode('c--users-owner-proj', ['C:\\Users\\Owner\\Proj'])).toBe('c:\\Users\\Owner\\Proj');
   });
 
   it('8, 10. a project that is gone keeps its drive and its raw words, without throwing', () => {

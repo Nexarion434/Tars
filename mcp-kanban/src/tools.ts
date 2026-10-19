@@ -25,10 +25,13 @@ interface AgentTask {
   heldByCaller: boolean;
   comments?: string[];
   result?: string | null;
+  /** What Tars could not write on the board beside the move. */
+  note?: string;
 }
 
 const id = (taskId: string) => encodeURIComponent(taskId.trim());
 const where = (t: AgentTask) => `${t.column}, Hermes: ${t.status}${t.holder ? `, ${t.holder}` : ""}`;
+const noted = (t: AgentTask) => (t.note ? `\n${t.note}` : "");
 
 export async function listTasks(args: { column?: Column; assigned_to_me?: boolean }): Promise<ToolResult> {
   const q = new URLSearchParams();
@@ -54,7 +57,7 @@ Description: ${t.description}${t.result ? `\nResult: ${t.result}` : ""}${t.comme
 
 export async function createTask(args: { title: string; description: string; project_path?: string; priority?: "low" | "medium" | "high"; labels?: string[] }): Promise<ToolResult> {
   const { task: t } = await apiRequest("POST", "/api/kanban/tasks", { ...args }) as { task: AgentTask };
-  return text(`Task created, parked on the Hermes board: [${t.id}] ${t.title}\nHermes will not start it. Claim it with assign_task to work on it, or leave it for JeanBrasse.`);
+  return text(`Task created, parked on the Hermes board: [${t.id}] ${t.title}\nHermes will not start it. Claim it with assign_task to work on it, or leave it for the user.`);
 }
 
 export async function updateTaskProgress(args: { task_id: string; progress: number }): Promise<ToolResult> {
@@ -69,7 +72,7 @@ export async function markTaskDone(args: { task_id: string; summary: string }): 
 
 export async function moveTask(args: { task_id: string; column: Column }): Promise<ToolResult> {
   const { task: t } = await apiRequest("POST", `/api/kanban/tasks/${id(args.task_id)}/move`, { column: args.column }) as { task: AgentTask };
-  return text(`Task [${t.id}] ${t.title} is now in ${where(t)}.`);
+  return text(`Task [${t.id}] ${t.title} is now in ${where(t)}.${noted(t)}`);
 }
 
 export async function deleteTask(args: { task_id: string }): Promise<ToolResult> {
@@ -79,7 +82,7 @@ export async function deleteTask(args: { task_id: string }): Promise<ToolResult>
 
 export async function assignTask(args: { task_id: string; agent_id?: string }): Promise<ToolResult> {
   const { task: t } = await apiRequest("POST", `/api/kanban/tasks/${id(args.task_id)}/claim`, args.agent_id ? { agent_id: args.agent_id } : {}) as { task: AgentTask };
-  return text(t.heldByCaller
+  return text((t.heldByCaller
     ? `Task [${t.id}] ${t.title} is yours now. Report progress with update_task_progress and finish with mark_task_done.`
-    : `Task [${t.id}] ${t.title} is claimed for ${t.holder}. Tars types it into that agent.`);
+    : `Task [${t.id}] ${t.title} is claimed for ${t.holder}. Tars types it into that agent.`) + noted(t));
 }

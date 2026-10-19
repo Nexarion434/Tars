@@ -33,7 +33,11 @@ import { execFileSync } from 'node:child_process';
  * The oracle is a real POSIX shell (`sh`, from PATH): the command Tars built
  * runs in it against a stand-in for the CLI (a shell function, or a script
  * under the home for the builders that take a path to the CLI), which prints
- * each argument it was given followed by a NUL. What the CLI would have
+ * each argument it was given followed by a NUL. codex's line starts it through
+ * `env CODEX_HOME=<Tars's codex home>` on macOS and Linux (the Audit's L4 on
+ * #465), which runs no shell function: there the stand-in is a script on the
+ * PATH, which prints the CODEX_HOME it was handed first, a folder under the
+ * home too. What the CLI would have
  * received is compared with what it should have received: the same command
  * built for a home with a plain name, whose argv is right by construction,
  * with that plain home replaced by the hostile one in every argument.
@@ -56,7 +60,19 @@ const PRINT_ARGV = `tars_argv() { for a in "$@"; do printf '%s\\0' "$a"; done; }
  * it did (`sh: skill-name: No such file or directory`).
  */
 function run(script: string): string {
-  return execFileSync('sh', ['-c', PRINT_ARGV + script], { encoding: 'utf-8', cwd: root });
+  const env = { ...process.env, PATH: `${standInOnPath()}:${process.env.PATH ?? ''}` };
+  delete env.CODEX_HOME;
+  return execFileSync('sh', ['-c', PRINT_ARGV + script], { encoding: 'utf-8', cwd: root, env });
+}
+
+/** The stand-in as a program on the PATH, for a line that starts it through `env`: the CODEX_HOME it got, then its argv. */
+function standInOnPath(): string {
+  const bin = path.join(root, 'stand-in-bin');
+  if (!fs.existsSync(path.join(bin, 'tars_argv'))) {
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'tars_argv'), '#!/bin/sh\n[ -n "${CODEX_HOME+x}" ] && printf \'CODEX_HOME=%s\\0\' "$CODEX_HOME"\nfor a in "$@"; do printf \'%s\\0\' "$a"; done\n', { mode: 0o755 });
+  }
+  return bin;
 }
 
 /** What the shell said when it would not run a command. */
@@ -141,6 +157,11 @@ function scheduledParams(homeDir: string) {
 function scriptParams(homeDir: string) {
   const projectPath = path.join(homeDir, 'the project');
   fs.mkdirSync(projectPath, { recursive: true });
+  // A key provider's script starts its CLI only with its key, read as it runs (scheduledKeyExports): one of each.
+  fs.mkdirSync(path.join(homeDir, '.dorothy'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.dorothy', 'app-settings.json'), JSON.stringify(Object.fromEntries(
+    ['deepSeekApiKey', 'moonshotApiKey', 'zhipuApiKey', 'minimaxApiKey', 'openRouterApiKey', 'ollamaCloudApiKey'].map(k => [k, `sk-${k}`]),
+  )));
   const binaryPath = cliUnder(homeDir);
   return {
     binaryPath,

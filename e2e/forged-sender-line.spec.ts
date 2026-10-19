@@ -48,12 +48,14 @@ test('a message cannot show its receiver a forged second sender line', async () 
     "process.stdout.write('stand-in ready\\n');",
     '',
   ].join('\n'));
-  const agent = (id: string, name: string) => ({
-    id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
+  const agent = (id: string, name: string, role = 'worker') => ({
+    id, name, character: 'robot', provider: 'claude', status: 'idle', role,
     projectPath: project, skills: [], cliPath: cli,
     createdAt: '2026-10-04T08:00:00.000Z', lastActivity: '2026-10-04T08:00:00.000Z',
   });
-  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('r1', 'Receiver'), agent('s1', 'Sender')], null, 2));
+  // The sender is its project's orchestrator: since 2.0.4 what a worker sends another worker is a note for
+  // information, with no task id in its sender line (core/one-task.ts), and this is the line of one that hands work.
+  fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([agent('r1', 'Receiver'), agent('s1', 'Sender', 'orchestrator')], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9' }));

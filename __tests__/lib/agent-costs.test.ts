@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   agentViewFilter,
+  nextAgentSort,
   projectName,
+  sortAgentRows,
   totalsByAgent,
   usageViewOf,
   viewCounts,
 } from '../../src/lib/agent-costs';
+import type { AgentSortKey, AgentTotal } from '../../src/lib/agent-costs';
 import type { TaskEntry } from '../../src/types/electron';
 
 /**
@@ -37,6 +40,35 @@ import type { TaskEntry } from '../../src/types/electron';
  *    pickers; the agent view keeps the agent picked, and shows one row;
  * 9. the view remembered: a stored value that is not one of the two views
  *    (another version's, a typo, nothing) opens on no view rather than by task.
+ *
+ * Sorting by a column's header (JeanBrasse, 18/10, for 2.0.4: a click sorts
+ * highest first, a second lowest first, a third gives the default order back),
+ * written before its code. How it can fail:
+ * 10. the clicks: a first click on a column of figures sorts lowest first or
+ *     not at all, a first click on a column of words (Agent, Project,
+ *     Provider) sorts Z to A rather than A to Z (JeanBrasse, 18/10: words A
+ *     to Z first, figures highest first), a second does not turn the order
+ *     round, a third leaves a sort rather than the default order; a click on
+ *     another header goes on with the first one's turn rather than starting
+ *     at its own first order;
+ * 11. a column's order: the tasks compared as text (9 before 10), a time, a
+ *     count of tokens or a cost compared as it is written (`1 h 05` before
+ *     `29 min`, `$10.00` before `$9.00`, `$1.5` before `$1.25`) rather than by
+ *     its value; a project compared by its whole path rather than the
+ *     folder's name the row shows, or by case (`Zeta` before `alpha`, `Tars`
+ *     apart from `tars`); the figures in a name read as letters (`account 10`
+ *     before `account 2`); a provider by one the row does not show first;
+ * 12. a value the row does not have (no time, no tokens, nothing counted, no
+ *     project) sorts first one way, as 0 or as -1, rather than last both ways;
+ * 13. rows of equal value come in an order of their own, or reversed with the
+ *     direction, rather than in the default order;
+ * 14. the rows themselves: the sort reorders the array it is given, so the
+ *     third click has no default order to give back, or a row is lost or
+ *     listed twice;
+ * 15. the agent's own name: not sortable, compared by the agent's id rather
+ *     than the name its row shows, by case or with its figures read as
+ *     letters, or a deleted agent sorted among the names as "deleted agent"
+ *     rather than last both ways.
  */
 
 const DAY = 86_400_000;
@@ -218,6 +250,160 @@ describe('the view remembered (9)', () => {
     expect(usageViewOf('task')).toBe('task');
     for (const stored of [null, undefined, '', 'agents', 'AGENT', ' agent', 'by-agent', '{"view":"agent"}']) {
       expect(usageViewOf(stored)).toBe('task');
+    }
+  });
+});
+
+/** A row as totalsByAgent gives it, without tasks to add up. */
+function row(agentId: string, over: Partial<AgentTotal> = {}): AgentTotal {
+  return {
+    agentId, tasks: 1, counted: 1, running: 0, costUSD: 1, partial: false,
+    tokens: 1_000, durationMs: 60_000, projectPath: '/Users/me/projects/tars', providers: ['Claude'],
+    ...over,
+  };
+}
+const ids = (rows: AgentTotal[]) => rows.map(r => r.agentId);
+const FIGURES: AgentSortKey[] = ['tasks', 'time', 'tokens', 'cost'];
+const WORDS: AgentSortKey[] = ['agent', 'project', 'provider'];
+const KEYS: AgentSortKey[] = [...WORDS, ...FIGURES];
+
+describe('the clicks on a header (10)', () => {
+  it('sorts a column of figures highest first, then lowest first, then gives the default order back', () => {
+    for (const key of FIGURES) {
+      const first = nextAgentSort(null, key);
+      expect(first, key).toEqual({ key, direction: 'descending' });
+      const second = nextAgentSort(first, key);
+      expect(second, key).toEqual({ key, direction: 'ascending' });
+      expect(nextAgentSort(second, key), key).toBeNull();
+    }
+  });
+
+  it('sorts a column of words A to Z, then Z to A, then gives the default order back', () => {
+    for (const key of WORDS) {
+      const first = nextAgentSort(null, key);
+      expect(first, key).toEqual({ key, direction: 'ascending' });
+      const second = nextAgentSort(first, key);
+      expect(second, key).toEqual({ key, direction: 'descending' });
+      expect(nextAgentSort(second, key), key).toBeNull();
+    }
+  });
+
+  it('starts another header at its own first order, wherever the first one was', () => {
+    expect(nextAgentSort({ key: 'cost', direction: 'descending' }, 'tokens')).toEqual({ key: 'tokens', direction: 'descending' });
+    expect(nextAgentSort({ key: 'cost', direction: 'ascending' }, 'tokens')).toEqual({ key: 'tokens', direction: 'descending' });
+    expect(nextAgentSort({ key: 'cost', direction: 'descending' }, 'project')).toEqual({ key: 'project', direction: 'ascending' });
+    expect(nextAgentSort({ key: 'project', direction: 'descending' }, 'agent')).toEqual({ key: 'agent', direction: 'ascending' });
+  });
+});
+
+describe('a column\'s order (11)', () => {
+  it('compares the tasks, the time, the tokens and the cost by their values, not as they are written', () => {
+    const nine = row('nine', { tasks: 9, durationMs: 29 * 60_000, tokens: 9_000, costUSD: 9 });
+    const ten = row('ten', { tasks: 10, durationMs: 65 * 60_000, tokens: 10_000, costUSD: 10 });
+    for (const key of ['tasks', 'time', 'tokens', 'cost'] as const) {
+      expect(ids(sortAgentRows([nine, ten], { key, direction: 'descending' })), key).toEqual(['ten', 'nine']);
+      expect(ids(sortAgentRows([ten, nine], { key, direction: 'ascending' })), key).toEqual(['nine', 'ten']);
+    }
+  });
+
+  it('compares a project by the folder\'s name the row shows, whatever its case or the path before it', () => {
+    const rows = [
+      row('a', { projectPath: '/a/zulu' }),
+      row('b', { projectPath: '/z/alpha' }),
+      row('c', { projectPath: 'C:\\Users\\me\\Mike' }),
+    ];
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'descending' }))).toEqual(['a', 'c', 'b']);
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'ascending' }))).toEqual(['b', 'c', 'a']);
+  });
+
+  it('compares costs with cents by their values, where text and numbers disagree (the gate of #454, U8)', () => {
+    const rows = [row('quarter', { costUSD: 1.25 }), row('half', { costUSD: 1.5 })];
+    expect(ids(sortAgentRows(rows, { key: 'cost', direction: 'descending' }))).toEqual(['half', 'quarter']);
+    expect(ids(sortAgentRows(rows, { key: 'cost', direction: 'ascending' }))).toEqual(['quarter', 'half']);
+  });
+
+  it('reads the figures in a name as numbers, account 2 before account 10 (U5)', () => {
+    const rows = [row('ten', { providers: ['Claude · account 10'] }), row('two', { providers: ['Claude · account 2'] })];
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'ascending' }))).toEqual(['two', 'ten']);
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'descending' }))).toEqual(['ten', 'two']);
+  });
+
+  it('takes two names that differ only by their case as equal, in the default order both ways (U4)', () => {
+    const rows = [row('upper', { projectPath: '/p/Tars' }), row('lower', { projectPath: '/q/tars' })];
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'ascending' }))).toEqual(['upper', 'lower']);
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'descending' }))).toEqual(['upper', 'lower']);
+  });
+
+  it('compares a provider by the one the row shows first, its account included', () => {
+    const rows = [
+      row('main', { providers: ['Claude · Main', 'Codex'] }),
+      row('codex', { providers: ['Codex'] }),
+      row('second', { providers: ['Claude · Second'] }),
+      row('plain', { providers: ['Claude', 'Gemini'] }),
+    ];
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'descending' }))).toEqual(['codex', 'second', 'main', 'plain']);
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'ascending' }))).toEqual(['plain', 'main', 'second', 'codex']);
+  });
+});
+
+describe('a value the row does not have (12)', () => {
+  it('goes last highest first and last lowest first', () => {
+    const rows = [
+      row('none', { durationMs: null, tokens: null, costUSD: null, counted: 0, projectPath: null }),
+      row('low', { durationMs: 1, tokens: 1, costUSD: 0, projectPath: '/p/alpha' }),
+      row('high', { durationMs: 2, tokens: 2, costUSD: 2, projectPath: '/p/beta' }),
+    ];
+    for (const key of ['time', 'tokens', 'cost', 'project'] as const) {
+      expect(ids(sortAgentRows(rows, { key, direction: 'descending' })), key).toEqual(['high', 'low', 'none']);
+      expect(ids(sortAgentRows(rows, { key, direction: 'ascending' })), key).toEqual(['low', 'high', 'none']);
+    }
+  });
+});
+
+describe('rows of equal value (13)', () => {
+  it('keep the default order, whichever way the column is sorted', () => {
+    const rows = [
+      row('first', { tasks: 2, projectPath: '/p/tars', providers: ['Codex'] }),
+      row('lone', { tasks: 1, projectPath: '/p/site', providers: ['Claude'] }),
+      row('second', { tasks: 2, projectPath: '/p/tars', providers: ['Codex'] }),
+      row('third', { tasks: 2, projectPath: '/p/tars', providers: ['Codex'] }),
+    ];
+    expect(ids(sortAgentRows(rows, { key: 'tasks', direction: 'descending' }))).toEqual(['first', 'second', 'third', 'lone']);
+    expect(ids(sortAgentRows(rows, { key: 'tasks', direction: 'ascending' }))).toEqual(['lone', 'first', 'second', 'third']);
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'descending' }))).toEqual(['first', 'second', 'third', 'lone']);
+    expect(ids(sortAgentRows(rows, { key: 'project', direction: 'ascending' }))).toEqual(['lone', 'first', 'second', 'third']);
+    expect(ids(sortAgentRows(rows, { key: 'provider', direction: 'ascending' }))).toEqual(['lone', 'first', 'second', 'third']);
+  });
+});
+
+describe('the rows themselves (14)', () => {
+  it('sorts a copy, keeps every row once, and gives the rows as they came without a sort', () => {
+    const rows = [row('b', { costUSD: 1 }), row('a', { costUSD: 3 }), row('c', { costUSD: 2 })];
+    const before = ids(rows);
+    for (const key of KEYS) {
+      for (const direction of ['descending', 'ascending'] as const) {
+        const sorted = sortAgentRows(rows, { key, direction });
+        expect(sorted).not.toBe(rows);
+        expect([...ids(sorted)].sort()).toEqual(['a', 'b', 'c']);
+      }
+    }
+    expect(ids(rows)).toEqual(before);
+    expect(ids(sortAgentRows(rows, null))).toEqual(before);
+  });
+});
+
+describe('the agent\'s own name (15)', () => {
+  const names = { b: 'bo', a: 'Ada', ten: 'Agent 10', two: 'Agent 2' };
+  const rows = [row('b'), row('gone'), row('ten'), row('a'), row('two')];
+
+  it('sorts by the name the row shows, whatever its case, its figures as numbers', () => {
+    expect(ids(sortAgentRows(rows, { key: 'agent', direction: 'ascending' }, names))).toEqual(['a', 'two', 'ten', 'b', 'gone']);
+    expect(ids(sortAgentRows(rows, { key: 'agent', direction: 'descending' }, names))).toEqual(['b', 'ten', 'two', 'a', 'gone']);
+  });
+
+  it('puts an agent since deleted last both ways, as a row without the value', () => {
+    for (const direction of ['ascending', 'descending'] as const) {
+      expect(ids(sortAgentRows(rows, { key: 'agent', direction }, names)).at(-1), direction).toBe('gone');
     }
   });
 });

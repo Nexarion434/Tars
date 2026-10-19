@@ -6,7 +6,7 @@ import { ptyProcesses } from '../../core/pty-manager';
 import { cliRunningIn } from '../../core/agent-pty';
 import { configuredHermesConnection } from '../hermes-config';
 import {
-  addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, updateHermesTask,
+  addHermesTaskComment, createHermesTask, deleteHermesTask, fetchHermesBoard, getHermesTask, hermesVersion, updateHermesTask,
 } from '../hermes-client';
 import {
   claimTask, completeTask, createParkedTask, deleteTask, getTask, handOffNote, landingNote, listTasks, moveTask,
@@ -14,12 +14,14 @@ import {
   type AgentColumn, type AgentTask, type HermesUnusable, type KanbanCaller, type KanbanHermes, type KanbanResult,
 } from '../kanban-board';
 import { performDispatch } from './agent-routes';
+import { workerOrderRefusal } from '../../core/one-task';
 import { agentStatusEmitter } from '../agent-events';
 import type { MessageSender } from '../../core/pty-manager';
 import type { NoteDelivery } from '../error-triage';
 import type { AgentStatus } from '../../types';
 import { carriedSince, type CarriedKanban } from '../carry-over';
 import { envelopeValue } from '../../utils/envelope-value';
+import { hermesSessionWatch } from '../hermes-session-watch';
 
 /**
  * The Hermes board through hermes-client, null when nobody configured one, and
@@ -31,17 +33,37 @@ import { envelopeValue } from '../../utils/envelope-value';
  * kanban-tasks.json and no connection of its own, or a broken one, would have
  * moved its tasks onto that board at launch.
  */
+/** The connected Hermes's version, asked once a minute at most: a claim reads it, and a claim is a few calls already. */
+const versionAsked = new Map<string, { at: number; version: Promise<string | undefined> }>();
+const VERSION_FOR_MS = 60_000;
+
+function versionOf(conn: Parameters<typeof hermesVersion>[0]): Promise<string | undefined> {
+  const key = JSON.stringify([conn.mode, conn.url ?? '', conn.localPort ?? '']);
+  const known = versionAsked.get(key);
+  if (known && Date.now() - known.at < VERSION_FOR_MS) return known.version;
+  const version = hermesVersion(conn);
+  versionAsked.set(key, { at: Date.now(), version });
+  return version;
+}
+
 export function hermesKanban(): KanbanHermes | HermesUnusable | null {
   const configured = configuredHermesConnection();
   if (!configured || 'unusable' in configured) return configured;
   const { conn } = configured;
+  // A call refused for the session tells the window at once, not at the watch's next check.
+  const told = async <R extends { success: boolean; needsSignIn?: boolean }>(reply: Promise<R>): Promise<R> => {
+    const r = await reply;
+    if (!r.success && r.needsSignIn) hermesSessionWatch()?.refused();
+    return r;
+  };
   return {
-    board: tenant => fetchHermesBoard(conn, undefined, tenant),
-    get: id => getHermesTask(conn, id),
-    create: task => createHermesTask(conn, task),
-    update: (id, patch) => updateHermesTask(conn, id, patch),
-    remove: id => deleteHermesTask(conn, id),
-    comment: (id, body) => addHermesTaskComment(conn, id, body),
+    board: tenant => told(fetchHermesBoard(conn, undefined, tenant)),
+    get: id => told(getHermesTask(conn, id)),
+    create: task => told(createHermesTask(conn, task)),
+    update: (id, patch) => told(updateHermesTask(conn, id, patch)),
+    remove: id => told(deleteHermesTask(conn, id)),
+    comment: (id, body) => told(addHermesTaskComment(conn, id, body)),
+    version: () => versionOf(conn),
   };
 }
 
@@ -145,7 +167,8 @@ function typeInto(agent: AgentStatus, item: Owed, ctx: RouteContext): 'typed' | 
   const message = item.carried && item.since
     ? `(${carriedSince(item.since)}${item.carriedFrom ? `, from ${envelopeValue(item.carriedFrom)}` : ''}) ${item.message}`
     : item.message;
-  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender }, ctx, (data, code) => {
+  // A note is information, never a task in the agent's queue: it waits for a run of it to end (core/one-task.ts).
+  void performDispatch(agent, { message, from: item.sender.kind === 'agent' ? (item.sender.name || item.sender.id) : 'Tars', sender: item.sender, information: item.purpose === 'note', task: item.purpose === 'work' }, ctx, (data, code) => {
     status = code ?? 200;
     error = (data as { error?: string })?.error ?? '';
   }).then(() => {
@@ -211,7 +234,7 @@ export function tellOrchestratorAsTars(projectPath: string, message: string): Pr
     let held = false;
     let error = '';
     performDispatch(orchestrator, {
-      message, from: 'Tars', sender: { kind: 'tars' },
+      message, from: 'Tars', sender: { kind: 'tars' }, information: true,
       onWritten: () => settle('typed'),
       onDropped: () => settle('not-now'),
     }, ctx, (data, code) => {
@@ -304,6 +327,15 @@ export function registerKanbanRoutes(app: RouteApp, ctx: RouteContext): void {
       target = agents.get(wanted);
       if (!target) {
         sendJson({ error: `No agent ${wanted} in Tars.` }, 404);
+        return;
+      }
+      // Handing a task to another agent is handing it work: the drive routes'
+      // rule, from the same place (core/one-task.ts). A worker asks its
+      // orchestrator (the Audit's M2 on #449: it typed the task into that
+      // agent, or started it).
+      const refusal = workerOrderRefusal({ kind: 'agent', agent: caller.agent }, target);
+      if (refusal) {
+        sendJson({ error: refusal, code: 'worker_may_not_order' }, 403);
         return;
       }
     }

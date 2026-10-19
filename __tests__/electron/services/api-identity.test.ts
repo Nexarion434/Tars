@@ -93,7 +93,7 @@ const NO_IDENTITY_TO_DRIVE =
   'Driving an agent takes an identity of your own, and this call has none: it presents the '
   + `shared token, which every agent can read and which therefore names nobody. ${REMEDY}`;
 /** A line of JeanBrasse's conversation with the super chat, which is what the global room serves. */
-const SUPER_CHAT_LINE = 'jeanbrasse-private-line-7f3a';
+const SUPER_CHAT_LINE = 'user-private-line-7f3a';
 
 let alphaToken: string;
 let sharedToken: string;
@@ -167,7 +167,7 @@ beforeAll(async () => {
     threadId: busStore.GLOBAL_ROOM_ID,
     authorKind: 'human',
     authorId: 'human',
-    authorName: 'JeanBrasse',
+    authorName: 'User',
     text: SUPER_CHAT_LINE,
     mentions: [],
     createdAt: new Date().toISOString(),

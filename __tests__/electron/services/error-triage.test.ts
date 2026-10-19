@@ -65,7 +65,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
 
 const TOKEN = 'sntryu_read-only-token-for-the-tests-7f3a9c';
 const PROJECT = '/work/tars';
-const ISSUES_PATH = '/api/0/organizations/example-org/issues/';
+const ISSUES_PATH = '/api/0/organizations/4511321063620608/issues/';
 /** The project the reports go to: the last part of the DSN's path. */
 const SENTRY_PROJECT = new URL(ERROR_REPORTS_DSN).pathname.replace(/\//g, '');
 
@@ -370,9 +370,9 @@ describe('what it files', () => {
 
     const [nine, ten] = tasks().map(t => String(t.body));
     expect(nine).not.toContain('evil.example');
-    expect(nine).toContain('https://example-org.sentry.io/issues/4009/');
-    expect(ten).toContain('https://example-org.sentry.io/issues/4010/');
-    expect(ten).not.toContain('http://jeanbrasse');
+    expect(nine).toContain('https://sentry.io/organizations/4511321063620608/issues/4009/');
+    expect(ten).toContain('https://sentry.io/organizations/4511321063620608/issues/4010/');
+    expect(ten).not.toContain('http://example-org');
   });
 
   it('6. parks it on the named project, and never where Hermes would take it', async () => {

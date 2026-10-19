@@ -16,6 +16,8 @@ import { hasOrchestratorPowers } from '../../core/agent-role';
 import { accountEnvFor } from '../../core/account-env';
 import { isQuitting } from '../../core/quit-state';
 import { agentTmpEnvOrNone } from '../agent-tmp';
+import { guideForPrompt } from '../agent-guide';
+import { writeRunTokenFile } from './run-token-file';
 
 /**
  * Running a delegated task over ACP instead of typing it into a terminal.
@@ -24,6 +26,14 @@ import { agentTmpEnvOrNone } from '../agent-tmp';
  * answer, why the turn ended, which tools it used and what the turn cost,
  * for any CLI that speaks the protocol, not just for Claude.
  */
+
+/**
+ * A model asked for one run, and what came of it: `taken` when the agent took
+ * it; `own`, the agent's saved model when it has one; `ranOn`, the model the
+ * run is on, the asked one or else the agent's own. No `ranOn`: neither was
+ * taken, and the run is on its CLI's default.
+ */
+export interface RunModel { asked: string; taken: boolean; own?: string; ranOn?: string }
 
 export interface DelegationResult {
   ok: boolean;
@@ -47,6 +57,8 @@ export interface DelegationResult {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
   costUSD?: number;
   error?: string;
+  /** A model asked for this run only (delegate_task's `model`): what the run is on (RunModel). */
+  model?: RunModel;
   /** `permission_escalation_denied`: held to a mode the agent does not offer, it did not run. */
   code?: string;
 }
@@ -60,14 +72,18 @@ function apiUrl(): string {
 /** Tools an orchestrator must not use itself, whatever CLI it runs. */
 const ORCHESTRATOR_DENY = ['write', 'edit', 'create file', 'multiedit', 'notebook'];
 
-function mcpServersFor(agent: AgentStatus, apiToken: string): { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[] {
+function mcpServersFor(agent: AgentStatus, tokenFile: string): { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[] {
   // Handed over by name, since a CLI may start these servers with this list
   // and nothing else. The token is what the API takes the caller from; the id
-  // alone would make every call from this run nobody's.
+  // alone would make every call from this run nobody's. By the file that holds
+  // it, never itself: the claude adapter writes this list into the
+  // --mcp-config JSON of the claude it starts, and a token there was in that
+  // process's arguments, which any process on the machine reads (measured on
+  // 17/10 with claude-agent-acp 0.93.0). mcp-shared reads the file.
   const env = [
     { name: 'CLAUDE_AGENT_ID', value: agent.id },
     { name: 'CLAUDE_PROJECT_PATH', value: agent.projectPath },
-    { name: 'CLAUDE_MGR_API_TOKEN', value: apiToken },
+    { name: 'CLAUDE_MGR_API_TOKEN_FILE', value: tokenFile },
     // What the servers prove the port with before they send that token
     // (mcp-shared tokenToPresent). Codex hands a server this list and nothing
     // of its own environment (measured by QA on codex 0.148.0): without it,
@@ -164,8 +180,13 @@ export async function delegateOverAcp(opts: {
    * agent's own (core/permission-ceiling.ts). Absent: the agent's own.
    */
   permissionMode?: 'plan' | 'normal' | 'auto' | 'bypass';
+  /**
+   * A model for this run only, in place of the agent's own: the agent's saved
+   * model is not changed. Absent: the agent's own.
+   */
+  model?: string;
   /** Called once the run has started, before its turn: the moment it is a task (task-ledger.ts acpStarted). */
-  onStarted?: () => void;
+  onStarted?: (run: { model?: RunModel }) => void;
   onEvent?: (event: { type: string; payload: unknown }) => void;
 }): Promise<DelegationResult> {
   const { agent, task, appSettings, onEvent } = opts;
@@ -192,6 +213,7 @@ export async function delegateOverAcp(opts: {
   // bus, no delegation onward. Its own rather than the terminal's, so that
   // neither can cut the other off, and revoked when the run is over.
   const { token: apiToken, revoke } = mintRunToken(agent.id);
+  const tokenFile = writeRunTokenFile(apiToken);
   // The Claude account this run bills, the one its agent's terminal would
   // start on. Measured: the adapter's own claude (2.1.232) honours
   // CLAUDE_CONFIG_DIR, keychain naming included (the Audit's N9).
@@ -223,7 +245,7 @@ export async function delegateOverAcp(opts: {
       ...account?.set,
     },
     unsetEnv: account?.unset,
-    mcpServers: mcpServersFor(agent, apiToken),
+    mcpServers: mcpServersFor(agent, tokenFile.file),
     permissionMode: opts.permissionMode ?? (agent.permissionMode === 'bypass' ? 'bypass'
       : agent.permissionMode === 'auto' ? 'auto' : agent.permissionMode === 'plan' ? 'plan' : 'normal'),
     // An orchestrator delegates; it does not edit. Enforced here by the
@@ -261,6 +283,10 @@ export async function delegateOverAcp(opts: {
   const escaped = () => (breach ? { ok: false, code: 'permission_escalation_denied', stopReason: 'permission_escalation_denied' } : {});
 
   let started = false;
+  let runModel: RunModel | undefined;
+  // The model the session took, asked or the agent's own. None: the CLI's
+  // default, which Tars cannot name, and under which no turn is filed.
+  let ranOn: string | undefined;
   try {
     await session.start();
     // The agent's own model and effort. A launch in a terminal puts them on the
@@ -268,23 +294,37 @@ export async function delegateOverAcp(opts: {
     // through the options the agent offers, model first because the effort
     // levels on offer depend on the model. Without this every delegation ran
     // on the adapter's default model and effort, whatever the agent was set to.
-    const model = agent.model && agent.model !== 'default' ? agent.model : undefined;
-    if (model && !(await session.setConfigOption('model', model))) {
+    // A model asked for this run alone comes first. Refused, the agent's own
+    // is set instead: left there, the run went on the adapter's default while
+    // its caller was told the agent's own (the Audit's M2 on #447). Said back
+    // as it happened: asked, taken or not, and the model the run is on.
+    const asked = opts.model?.trim() && opts.model.trim() !== 'default' ? opts.model.trim() : undefined;
+    const own = agent.model && agent.model !== 'default' ? agent.model : undefined;
+    for (const model of asked && asked !== own ? [asked, own] : [asked ?? own]) {
+      if (!model) continue;
+      if (await session.setConfigOption('model', model)) { ranOn = model; break; }
       console.warn(`[acp] ${agent.name || agent.id}: this run is not on ${model}, the agent did not take it`);
     }
+    if (asked) runModel = { asked, taken: ranOn === asked, ...(own ? { own } : {}), ...(ranOn ? { ranOn } : {}) };
     const effort = safeEffort(agent.effort);
     if (effort && !(await session.setConfigOption('effort', effort))) {
       console.warn(`[acp] ${agent.name || agent.id}: this run is not at ${effort} effort, the agent did not take it`);
     }
     started = true;
     try {
-      opts.onStarted?.();
+      opts.onStarted?.({ ...(runModel ? { model: runModel } : {}) });
     } catch (err) {
       console.warn('[acp] the start of a run was not recorded:', (err as Error).message);
     }
     let turn: TurnResult;
     try {
-      turn = await session.prompt(task, opts.timeoutMs);
+      // How Tars works, for its role, and its project's folder (services/agent-guide.ts),
+      // once: a claude run has it from its bootstrap, since the adapter loads the
+      // user's settings and Tars's SessionStart hook runs (measured on the 0.70.0
+      // it pins: the hook fires at session/new); a run of another CLI has no
+      // such hook, and gets it here.
+      const guide = guideForPrompt(agent, provider.configDir);
+      turn = await session.prompt(guide ? `${guide}\n\n${task}` : task, opts.timeoutMs);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!/session\/prompt timed out/.test(message)) throw err;
@@ -297,6 +337,7 @@ export async function delegateOverAcp(opts: {
         ok: false,
         transport: 'acp',
         started: true,
+        ...(runModel ? { model: runModel } : {}),
         stopReason: 'turn_limit',
         text: partial.text,
         toolCalls: partial.toolCalls.map(t => t.title),
@@ -312,7 +353,7 @@ export async function delegateOverAcp(opts: {
       recordUsage({
         agentId: agent.id,
         provider: agent.provider ?? 'claude',
-        model: agent.model,
+        model: ranOn,
         inputTokens: turn.usage?.inputTokens ?? 0,
         outputTokens: turn.usage?.outputTokens ?? 0,
         cachedReadTokens: turn.usage?.cachedReadTokens,
@@ -326,6 +367,7 @@ export async function delegateOverAcp(opts: {
       ok: turn.stopReason === 'end_turn',
       transport: 'acp',
       started: true,
+      ...(runModel ? { model: runModel } : {}),
       stopReason: turn.stopReason,
       text: turn.text,
       toolCalls: turn.toolCalls.map(t => t.title),
@@ -354,6 +396,7 @@ export async function delegateOverAcp(opts: {
     settle();
     session.stop();
     revoke();
+    tokenFile.remove();
   }
 }
 
