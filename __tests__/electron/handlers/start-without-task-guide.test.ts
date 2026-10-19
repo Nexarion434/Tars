@@ -36,6 +36,11 @@ import { EventEmitter } from 'node:events';
  *    with launchIntoTerminal, the section in its own command: the next message
  *    typed in carries the section a second time, with the memory as it was at
  *    the first start.
+ * 10. (19/10, a gemini agent's first delegated task, written before the fix)
+ *    Tars's words typed ahead of the sender's line push that line out of the
+ *    prompt's start: a CLI whose hooks report the prompt (gemini's BeforeAgent,
+ *    its first 200 bytes) never shows whose task the turn is, nor its id, and
+ *    the task is filed as nobody's, its asker answered 404.
  *
  * And the guide route (the Audit's L-A on #448): GET /api/guide?topic=project-folder
  * says why a project's folder could not be made, and so does the section
@@ -301,13 +306,14 @@ describe('a CLI without Claude\'s hook started from the window with no task', ()
     expect(first).toContain('assign_task');
     // One message, one Enter: the section goes in with the task, not as a turn of its own.
     expect(count(first, '\r')).toBe(1);
-    // Tars's words under Tars's line, then the task under its sender's.
+    // The task under its sender's line, which opens the prompt (10), then Tars's words under Tars's line.
     const tars = first.indexOf('Message from Tars: ');
     const sender = first.indexOf('Message from agent "Lead" ("orch")');
-    expect(tars).toBeGreaterThanOrEqual(0);
-    expect(first.indexOf(SECTION)).toBeGreaterThan(tars);
-    expect(sender).toBeGreaterThan(first.indexOf(MEMORY));
+    expect(sender, first).toBe(0);
     expect(first.indexOf('FIRST>> rebase onto main')).toBeGreaterThan(sender);
+    expect(tars).toBeGreaterThan(first.indexOf('FIRST>> rebase onto main'));
+    expect(first.indexOf(SECTION)).toBeGreaterThan(tars);
+    expect(first.indexOf(MEMORY)).toBeGreaterThan(tars);
 
     terminal.write.mockClear();
     expect(await dispatch(agent.id, 'SECOND>> and push it')).toMatchObject({ success: true, mode: 'message' });

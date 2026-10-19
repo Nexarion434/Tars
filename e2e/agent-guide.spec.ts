@@ -231,8 +231,10 @@ for (const newInterface of [false, true]) {
       expect.soft(once(dashFirst), dashFirst).toBe(1);
       expect.soft(dashFirst).toContain(folder!);
       expect.soft(dashFirst).toContain('assign_task');
-      expect.soft(dashFirst.indexOf('Message from Tars: '), dashFirst).toBe(0);
-      expect.soft(dashFirst.indexOf('DASH>> first task')).toBeGreaterThan(dashFirst.indexOf(SECTION));
+      // The sender's line opens the prompt, so a CLI's hook reports whose task it is; Tars's words follow, under Tars's line.
+      expect.soft(dashFirst.indexOf('Message from agent '), dashFirst).toBe(0);
+      expect.soft(dashFirst.indexOf('Message from Tars: ')).toBeGreaterThan(dashFirst.indexOf('DASH>> first task'));
+      expect.soft(dashFirst.indexOf(SECTION)).toBeGreaterThan(dashFirst.indexOf('Message from Tars: '));
       expect.soft(dashSecond).toContain('DASH>> second task');
       expect.soft(once(dashSecond), dashSecond).toBe(0);
 

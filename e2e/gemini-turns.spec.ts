@@ -23,6 +23,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 1. the first task is answered with its turn's answer, not said delivered;
  * 2. the second, given while the first works, goes in after the first's turn ended, and is answered with its own;
  * 3. the ledger has both, from lead, completed, and gem is at rest at the end.
+ * gem is started from the window with no task, so Tars owes it how Tars works, typed with the first task (19/10: typed
+ * ahead of the task's sender line, it pushed the line out of the prompt's start and the hook's first 200 bytes, and the
+ * first task was nobody's).
  * Red on main (e2363ae0): the first is said delivered, and the second waits behind a turn that never ends.
  * The artefact: values.json (both answers, the stand-in's log, the ledger's tasks), the app's trace.
  */
@@ -59,15 +62,22 @@ log({ launched: process.argv.slice(2), hooks: Object.keys(settings.hooks ?? {}) 
 hook('SessionStart', { source: 'startup' });
 process.stdout.write('gemini stand-in ready\n');
 process.stdin.setRawMode(true);
-let buffer = '';
+// As gemini's input does: a bracketed paste is text, newlines and all, and only an Enter typed outside one submits.
+let field = '';
+let pasting = false;
 let queue = Promise.resolve();
 process.stdin.on('data', (data) => {
-  buffer += data.toString();
-  let end;
-  while ((end = buffer.search(/[\r\n]/)) !== -1) {
-    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
-    buffer = buffer.slice(end + 1);
-    if (line.trim()) queue = queue.then(() => turn(line));
+  let rest = data.toString();
+  while (rest) {
+    if (rest.startsWith('\x1b[200~')) { pasting = true; rest = rest.slice(6); continue; }
+    if (rest.startsWith('\x1b[201~')) { pasting = false; rest = rest.slice(6); continue; }
+    const ch = rest[0];
+    rest = rest.slice(1);
+    if (!pasting && (ch === '\r' || ch === '\n')) {
+      const prompt = field;
+      field = '';
+      if (prompt.trim()) queue = queue.then(() => turn(prompt));
+    } else field += ch;
   }
 });
 process.stdin.resume();
