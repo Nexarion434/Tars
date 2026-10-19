@@ -315,44 +315,101 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
 }
 
 /**
- * The lines of a scheduled script (`claude -p`, run later by launchd or cron)
- * that hand a key provider's key to the CLI: read at run time from
- * ~/.tars-private, where the keys live since 2.0.4 (services/settings-secrets.ts),
- * and never written into the script, which sits in ~/.dorothy, every agent's
- * --add-dir. `field` is a key of settings-secrets.json, or `api-token` for the
- * bridge providers, which present Tars's own token to Tars's bridge.
+ * What points the claude binary at a key provider's endpoint: its URL, and the
+ * key as ANTHROPIC_AUTH_TOKEN, which Claude Code sends as `Authorization:
+ * Bearer`. Never as ANTHROPIC_API_KEY: an interactive Claude Code asks before
+ * it uses an API key it finds in its environment ("Detected a custom API key
+ * in your environment. Do you want to use this API key?", No preselected), and
+ * nothing answers that in an agent's terminal, so no key-provider agent ever
+ * started by itself. The first Enter typed there, Tars's own included,
+ * answered No: the key was then refused for good in that folder's
+ * .claude.json, and a session with a subscription signed in went on with its
+ * OAuth token, sent to the vendor's URL. An auth token is never asked about,
+ * whichever Claude account folder the CLI reads, and is written nowhere
+ * (measured on claude 2.1.302). Every key provider's endpoint takes the
+ * Bearer: their own instructions for Claude Code say this variable.
  *
- * No jq: the private file is written one top-level field per line
- * (JSON.stringify(_, null, 2)), and sed reads that line; a value holding a
- * quote or a backslash, which no vendor's key does, reads as none. The value
- * is only ever expanded inside double quotes, so a `$(...)` in it is text.
- * Without a key the task does not run and its log says why: run keyless, the
- * CLI would fall back on the user's own Claude login and send it to the
- * vendor's URL. The key goes under the variable the script always used
- * (`variable`): ANTHROPIC_API_KEY, which `claude -p` uses unasked and Tars's
- * bridge reads as x-api-key, or ANTHROPIC_AUTH_TOKEN, the Bearer, for an
- * endpoint that wants one; the other one is blanked, so that a key the user's
- * shell exports does not go along.
+ * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
+ * would bring the question back, about itself, and go out as `x-api-key` to a
+ * vendor it has nothing to do with. Scheduled runs (`claude -p`) take the key
+ * the same way, from scheduledKeyExports.
+ */
+export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
+  return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
+}
+
+/**
+ * The lines of a scheduled script (`claude -p`, run later by launchd or cron)
+ * that hand a key to the CLI: read at run time from ~/.tars-private, where the
+ * keys live since 2.0.4 (services/settings-secrets.ts), and never written into
+ * the script, which sits in ~/.dorothy, every agent's --add-dir. `field` is a
+ * key of settings-secrets.json, or `api-token` for the bridge providers, which
+ * present Tars's own token to Tars's bridge.
+ *
+ * Read by bash itself, with no other program: launchd and cron run the task
+ * with a bare PATH (no /usr/bin, where sed and head live, in the scheduled
+ * scripts' own test), jq ships with macOS only from 15, and a program under
+ * ~/.dorothy/bin can be replaced by any agent, and every scheduled task would
+ * then run it with the private file's path at hand (the Audit's re-check of
+ * #458). The private file is written one top-level field per line
+ * (JSON.stringify(_, null, 2)), and its field's line is read; a value holding
+ * a quote or a backslash, which no vendor's key does, reads as none. The
+ * value is only ever expanded inside double quotes, so a `$(...)` in it is
+ * text. Without a key, or with a private file it cannot read, the task does
+ * not run and its log says why: run keyless, the CLI would fall back on the
+ * user's own Claude login and send it to the vendor's URL (measured on claude
+ * 2.1.302 against a stand-in of the vendor). The key goes under `variable`,
+ * the other one blanked so that a key the user's shell exports does not go
+ * along.
  */
 export function scheduledKeyLines(
   field: string,
   logPath: string,
   variable: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN' = 'ANTHROPIC_API_KEY',
+  sentTo?: string,
 ): string {
+  if (!/^[A-Za-z0-9-]+$/.test(field)) throw new Error(`not a settings field: ${field}`);
   const other = variable === 'ANTHROPIC_API_KEY' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
   const file = `"$HOME/${PRIVATE_DIR_NAME}/${field === 'api-token' ? 'api-token' : 'settings-secrets.json'}"`;
   const read = field === 'api-token'
-    ? `cat ${file} 2>/dev/null`
-    : `sed -n 's/^  "${field}": "\\([^"\\\\]*\\)",\\{0,1\\}$/\\1/p' ${file} 2>/dev/null | head -n 1`;
+    ? [`[ -r ${file} ] && IFS= read -r TARS_KEY < ${file}`]
+    : [
+      `TARS_P='  "${field}": "'`,
+      `if [ -r ${file} ]; then`,
+      '  while IFS= read -r TARS_LINE || [ -n "$TARS_LINE" ]; do',
+      '    case "$TARS_LINE" in "$TARS_P"*) TARS_KEY=${TARS_LINE#"$TARS_P"}; TARS_KEY=${TARS_KEY%,}; TARS_KEY=${TARS_KEY%\\"}; break ;; esac',
+      `  done < ${file}`,
+      'fi',
+      'case "$TARS_KEY" in *[\\"\\\\]*) TARS_KEY="" ;; esac',
+      'unset TARS_LINE TARS_P',
+    ];
+  const what = field === 'api-token' ? "Tars's local token" : field;
   return [
-    `TARS_KEY="$(${read})"`,
+    'TARS_KEY=""',
+    ...read,
     'if [ -z "$TARS_KEY" ]; then',
-    `  echo "=== No key in Tars's settings (${field === 'api-token' ? "Tars's local token" : field}): the task did not run ===" >> ${shellQuote(logPath)}`,
+    `  echo "=== Not run: no ${what} in Tars's settings, or they could not be read. claude was not started${sentTo ? `, and nothing was sent to ${sentTo}` : ''} ===" >> ${shellQuote(logPath)}`,
     '  exit 1',
     'fi',
     `export ${variable}="$TARS_KEY"`,
     `export ${other}=""`,
     'unset TARS_KEY',
+  ].join('\n');
+}
+
+/**
+ * The lines of a scheduled script that point `claude -p` at a key provider
+ * and hand it the key as keyProviderEnv does a terminal's: the auth token, the
+ * API key blanked (the Audit's M1 on #458). Measured on claude 2.1.302 against
+ * a stand-in of the vendor: `claude -p` with ANTHROPIC_API_KEY empty or unset,
+ * or ANTHROPIC_AUTH_TOKEN empty, and a subscription signed in, sends the
+ * subscription's OAuth token as a Bearer to the vendor's URL.
+ */
+export function scheduledKeyExports(baseUrl: string, setting: string, logPath: string): string {
+  return [
+    `export ANTHROPIC_BASE_URL=${shellQuote(baseUrl)}`,
+    scheduledKeyLines(setting, logPath, 'ANTHROPIC_AUTH_TOKEN', baseUrl),
+    '',
   ].join('\n');
 }
 

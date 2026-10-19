@@ -10,7 +10,7 @@ import type {
   ProviderModel,
   HookConfig,
 } from './cli-provider';
-import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, scheduledKeyLines } from './cli-provider';
+import { readAppSettingsFromDisk, orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote, keyProviderEnv, scheduledKeyExports } from './cli-provider';
 import { DATA_DIR } from '../constants';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 
@@ -98,11 +98,9 @@ export class ZhipuProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
     };
     if (appSettings?.zhipuApiKey) {
-      vars.ANTHROPIC_BASE_URL = ZHIPU_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.zhipuApiKey;
+      Object.assign(vars, keyProviderEnv(ZHIPU_BASE_URL, appSettings.zhipuApiKey));
     } else if (appSettings?.openRouterApiKey) {
-      vars.ANTHROPIC_BASE_URL = OPENROUTER_BASE_URL;
-      vars.ANTHROPIC_API_KEY = appSettings.openRouterApiKey;
+      Object.assign(vars, keyProviderEnv(OPENROUTER_BASE_URL, appSettings.openRouterApiKey));
     }
     return vars;
   }
@@ -152,8 +150,7 @@ export class ZhipuProvider implements CLIProvider {
     const settings = readAppSettingsFromDisk();
     const direct = !!settings.zhipuApiKey;
     const schedBase = direct ? ZHIPU_BASE_URL : OPENROUTER_BASE_URL;
-    const schedKeyField = direct ? 'zhipuApiKey' : 'openRouterApiKey';
-    const envExports = `export ANTHROPIC_BASE_URL="${schedBase}"\n${scheduledKeyLines(schedKeyField, params.logPath)}\n`;
+    const envExports = scheduledKeyExports(schedBase, direct ? 'zhipuApiKey' : 'openRouterApiKey', params.logPath);
 
     return `#!/bin/bash
 export HOME=${shellQuote(params.homeDir)}

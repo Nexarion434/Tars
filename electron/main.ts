@@ -147,6 +147,7 @@ import { SECRETS_FILE, migrateSecrets, readSecrets, saveSettingsSplit } from './
 import { agentStatusEmitter } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
+import { sweepRunTokenFolders } from './services/acp/run-token-file';
 import { describeSecretFileError, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
 import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
@@ -562,6 +563,8 @@ app.whenReady().then(async () => {
 
   // Load agents from disk
   loadAgents();
+  // And the run token folders a delegated run or a crash left behind (services/acp/run-token-file.ts).
+  sweepRunTokenFolders();
   // Whether the last run stopped abruptly, and who was working then, read
   // before this run's record replaces it (services/run-state.ts).
   previousRun = beginRun({ appVersion: app.getVersion() });

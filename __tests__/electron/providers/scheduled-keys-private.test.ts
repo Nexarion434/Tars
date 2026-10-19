@@ -19,10 +19,11 @@ import { spawnSync } from 'node:child_process';
  *      falls back on whatever login the user's own Claude Code has, sending it
  *      to the vendor's URL; or it fails without a word in the task's log.
  *  K4. The key reaches the CLI under another variable than the one its script
- *      used (ANTHROPIC_API_KEY, which `claude -p` uses unasked and Tars's
- *      bridge reads as x-api-key; ANTHROPIC_AUTH_TOKEN for Ollama Cloud, whose
- *      endpoint wants a Bearer), or a key of the user's shell under the other
- *      one goes along with it.
+ *      uses (ANTHROPIC_AUTH_TOKEN, the Bearer, for every vendor since #458,
+ *      which measured `claude -p` sending the user's own OAuth token with an
+ *      empty one; ANTHROPIC_API_KEY for the bridges, which Tars's bridge reads
+ *      as x-api-key), or a key of the user's shell under the other one goes
+ *      along with it.
  *  K5. A key with shell in it ($(...), a backtick) is run by the script.
  *  K6. A provider left out: every key provider's script is run here.
  */
@@ -38,9 +39,9 @@ const KEY = 'sk-test-0123456789';
 /** Each key provider, the settings field its scheduled key is, and the variable it goes in. The bridges present Tars's own token. */
 type Variable = 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN';
 const CASES: Array<[AgentProvider, keyof AppSettings | 'api-token', Variable]> = [
-  ['openrouter', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['deepseek', 'deepSeekApiKey', 'ANTHROPIC_API_KEY'], ['mimo', 'openRouterApiKey', 'ANTHROPIC_API_KEY'],
-  ['moonshot', 'moonshotApiKey', 'ANTHROPIC_API_KEY'], ['qwen', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['zhipu', 'zhipuApiKey', 'ANTHROPIC_API_KEY'],
-  ['minimax', 'minimaxApiKey', 'ANTHROPIC_API_KEY'], ['nvidia', 'openRouterApiKey', 'ANTHROPIC_API_KEY'], ['nous-portal', 'openRouterApiKey', 'ANTHROPIC_API_KEY'],
+  ['openrouter', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['deepseek', 'deepSeekApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['mimo', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'],
+  ['moonshot', 'moonshotApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['qwen', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['zhipu', 'zhipuApiKey', 'ANTHROPIC_AUTH_TOKEN'],
+  ['minimax', 'minimaxApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['nvidia', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['nous-portal', 'openRouterApiKey', 'ANTHROPIC_AUTH_TOKEN'],
   ['ollama-cloud', 'ollamaCloudApiKey', 'ANTHROPIC_AUTH_TOKEN'], ['venice', 'api-token', 'ANTHROPIC_API_KEY'], ['custom-openai', 'api-token', 'ANTHROPIC_API_KEY'],
 ];
 
@@ -98,14 +99,14 @@ describe.skipIf(!HAS_BASH)('a scheduled task of a key provider, and its key', ()
     seed(field, null);
     expect(runScript(script)).not.toBe(0);
     expect(fs.existsSync(seen())).toBe(false);
-    expect(fs.readFileSync(log(), 'utf-8')).toMatch(/no key/i);
+    expect(fs.readFileSync(log(), 'utf-8')).toMatch(/Not run: no /);
   });
 
   it('K5. a key with shell in it reaches the CLI as it is, and runs nothing', () => {
     const odd = 'k$(touch pwned)`touch pwned2`';
     seed('deepSeekApiKey', odd);
     expect(runScript(build('deepseek'))).toBe(0);
-    expect(fs.readFileSync(seen(), 'utf-8').split('\n')[1]).toBe(odd);
+    expect(fs.readFileSync(seen(), 'utf-8').split('\n')[0], 'the key, as the auth token').toBe(odd);
     expect(fs.existsSync(path.join(root, 'pwned'))).toBe(false);
     expect(fs.existsSync(path.join(root, 'pwned2'))).toBe(false);
   });

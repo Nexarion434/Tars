@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button, Input } from '@/components/ui';
 import { SettingsRow } from './SettingsRow';
 import type { AppSettings, CLIPaths } from './types';
+import { CLIS } from '@/lib/clis';
 
 interface CLIPathsSectionProps {
   appSettings: AppSettings;
@@ -17,16 +18,10 @@ type DetectedPaths = Record<BinaryKey, string>;
 // Row actions are words, not glyphs (R7): 26px lowercase mono.
 const ROW_ACTION = 'font-mono lowercase';
 
-// One row per binary, in the order the tools get reached for.
+// One row per binary: the command-line agents from the one list every page
+// reads (src/lib/clis.ts), then the tools they reach for.
 const BINARIES: { key: BinaryKey; label: string }[] = [
-  { key: 'claude', label: 'Claude Code' },
-  { key: 'codex', label: 'Codex' },
-  { key: 'gemini', label: 'Gemini' },
-  { key: 'grok', label: 'Grok' },
-  { key: 'qwencode', label: 'Qwen Code' },
-  { key: 'opencode', label: 'OpenCode' },
-  { key: 'amp', label: 'Amp' },
-  { key: 'pi', label: 'Pi Terminal' },
+  ...CLIS.filter((c) => c.pathKey).map((c) => ({ key: c.pathKey as BinaryKey, label: c.name })),
   { key: 'gws', label: 'Google Workspace (gws)' },
   { key: 'gcloud', label: 'Google Cloud SDK (gcloud)' },
   { key: 'gh', label: 'GitHub CLI (gh)' },

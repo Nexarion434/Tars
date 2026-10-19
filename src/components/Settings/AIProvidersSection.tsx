@@ -7,29 +7,19 @@ import { isValidOpenAIBaseUrl } from '@/lib/validateUrl';
 import type { AnyTone } from '@/components/ui';
 import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
+import CliPanels, { type CliVersions } from './CliPanels';
+import { CLIS } from '@/lib/clis';
+import { settingsSectionOffered } from '@/lib/claude-accounts-offered';
 import type { AppSettings } from './types';
 
 interface AIProvidersSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** Opens Settings, Claude accounts, from Claude Code's Sign-in row. */
+  onOpenClaudeAccounts?: () => void;
 }
 
-/**
- * The CLIs Tars can drive. Claude Code is first because its own options - key,
- * default model, verbose, Chrome sharing, status line - are that row's
- * expansion; they are Claude's flags, not the app's settings.
- */
-const CLI_BINARIES = [
-  { name: 'Claude Code', binary: 'claude' },
-  { name: 'Codex', binary: 'codex' },
-  { name: 'Gemini', binary: 'gemini' },
-  { name: 'Qwen Code', binary: 'qwen-code' },
-  { name: 'OpenCode', binary: 'opencode' },
-  { name: 'Amp', binary: 'amp' },
-  { name: 'Pi', binary: 'pi' },
-  { name: 'MiniMax', binary: 'minimax' },
-];
 
 /**
  * The version to print for a CLI, out of whatever its `--version` says.
@@ -52,12 +42,6 @@ function displayVersion(raw: string): string {
   return line.replace(/\s*\([^()]*\)$/, '').trim() || line;
 }
 
-interface CLIProviderStatus {
-  name: string;
-  binary: string;
-  version: string | null;
-  loading: boolean;
-}
 
 /** 12px mark: lit when the provider can actually run, flat when it cannot. */
 const Mark = ({ on }: { on: boolean }) => (
@@ -95,12 +79,15 @@ const ConfigureButton = ({ open, onClick }: { open: boolean; onClick: () => void
 
 const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
 
-export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: AIProvidersSectionProps) => {
+export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onOpenClaudeAccounts }: AIProvidersSectionProps) => {
+  // Not on a Windows build, which has no Claude accounts yet (lib/claude-accounts-offered.ts): read after hydration, as the bridge is.
+  const [accountsOffered, setAccountsOffered] = useState(true);
+  useEffect(() => setAccountsOffered(settingsSectionOffered('claude-accounts')), []);
   // One row at a time is open: the keys and model lists are reference material,
   // not a form you fill top to bottom.
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [cliProviders, setCliProviders] = useState<CLIProviderStatus[]>(
-    CLI_BINARIES.map((cli) => ({ ...cli, version: null, loading: true })),
+  const [cliVersions, setCliVersions] = useState<CliVersions>(() =>
+    Object.fromEntries(CLIS.filter((c) => !c.soon).map((c) => [c.id, { version: null, loading: true }])),
   );
 
   // The one field here that isn't a key: reject and explain rather than
@@ -125,22 +112,22 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
 
   useEffect(() => {
     const detect = async () => {
-      const results = await Promise.all(
-        CLI_BINARIES.map(async (cli) => {
+      const entries = await Promise.all(
+        CLIS.filter((c) => !c.soon).map(async (cli) => {
           try {
-            const result = await window.electronAPI?.shell?.version(cli.binary);
+            const result = await window.electronAPI?.shell?.version(cli.command);
             const version = result?.success && result.output && !result.output.includes('not found') && !result.output.includes('command not found')
               ? displayVersion(result.output)
               : null;
-            return { ...cli, version, loading: false };
+            return [cli.id, { version, loading: false }] as const;
           } catch {
-            return { ...cli, version: null, loading: false };
+            return [cli.id, { version: null, loading: false }] as const;
           }
-        })
+        }),
       );
-      setCliProviders(results);
+      setCliVersions(Object.fromEntries(entries));
     };
-    detect();
+    void detect();
   }, []);
 
   const toggleExpanded = (id: string) => setExpanded((cur) => (cur === id ? null : id));
@@ -329,47 +316,21 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
 
   return (
     <>
-      <div className="px-4 pt-4 pb-2">
-        <PanelCaption>INSTALLED CLIs</PanelCaption>
-      </div>
-
-      {cliProviders.map((cli) => {
-        const isClaude = cli.binary === 'claude';
-        const ready = !!cli.version;
-        const open = expanded === cli.binary;
-        return (
-          <div key={cli.binary}>
-            <SettingsRow
-              label={
-                <ProviderLabel
-                  name={cli.name}
-                  status={cli.loading ? 'checking' : ready ? 'ready' : 'not installed'}
-                  tone={cli.loading ? 'idle' : ready ? 'running' : 'idle'}
-                  on={ready}
-                />
-              }
-              description={
-                <span className="font-mono">
-                  {cli.version ? `${cli.binary} · ${cli.version}` : cli.binary}
-                </span>
-              }
-              control={isClaude ? <ConfigureButton open={open} onClick={() => toggleExpanded(cli.binary)} /> : undefined}
-            />
-
-            {isClaude && open && (
-              <ConfigureArea>
+      <CliPanels
+        versions={cliVersions}
+        claudeRows={
+          <>
+                {/* The frame's Sign-in row. It replaces an API key row that kept a key nothing in the main
+                    process ever read, and put it back into its field. */}
                 <SettingsRow
-                  label="API key"
-                  description="Most users rely on the system variable. Set this only to override it."
-                  control={
-                    <PasswordInput
-                      width="control"
-                      value={appSettings.anthropicApiKey || ''}
-                      onChange={(e) => onUpdateLocalSettings({ anthropicApiKey: e.target.value })}
-                      onBlur={() => onSaveAppSettings({ anthropicApiKey: appSettings.anthropicApiKey })}
-                      placeholder="Uses system env ANTHROPIC_API_KEY"
-                    />
-                  }
+                  wrap
+                  label="Sign-in"
+                  description={accountsOffered
+                    ? "Claude Code signs in with your Claude account; several accounts are in Settings, Claude accounts. An API provider's key goes on its own row, under API providers."
+                    : "Claude Code signs in with your Claude account. An API provider's key goes on its own row, under API providers."}
+                  control={accountsOffered && onOpenClaudeAccounts ? (
+                    <Button size="sm" className="font-mono" onClick={onOpenClaudeAccounts}>Claude accounts</Button>
+                  ) : undefined}
                 />
                 <SettingsRow
                   label="Default model"
@@ -431,11 +392,9 @@ export const AIProvidersSection = ({ appSettings, onSaveAppSettings, onUpdateLoc
                     />
                   }
                 />
-              </ConfigureArea>
-            )}
-          </div>
-        );
-      })}
+          </>
+        }
+      />
 
       <div className="px-4 pt-4 pb-2">
         <PanelCaption>LOCAL</PanelCaption>

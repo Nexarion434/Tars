@@ -8,6 +8,7 @@
  * repository's root, not from the server's own locked node_modules.
  */
 
+import * as fs from "fs";
 import * as http from "http";
 import { createHash, randomBytes } from "crypto";
 import { noAnswerWithin, send, TARS_WAIT_MS } from "./http.js";
@@ -29,8 +30,19 @@ export function getCallerIdentity(): { agentId: string; projectPath: string } {
 // handed down through the environment. It says which agent is calling. The
 // only token a server presents: the shared ~/.dorothy/api-token, which said
 // only that the caller was on the machine, went to ~/.tars-private in 2.0.4,
-// and nothing an agent runs reads that folder.
-export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || "";
+// and nothing an agent runs reads that folder. A delegated run hands its
+// servers the path of a file that holds it instead (CLAUDE_MGR_API_TOKEN_FILE,
+// services/acp/delegate.ts): the list of servers a run hands its CLI is
+// written into the claude adapter's command line.
+function tokenFromFile(file: string | undefined): string {
+  if (!file) return "";
+  try {
+    return fs.readFileSync(file, "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
+export const AGENT_API_TOKEN = process.env.CLAUDE_MGR_API_TOKEN || tokenFromFile(process.env.CLAUDE_MGR_API_TOKEN_FILE);
 
 /** What the Tars that started this CLI proves it is with (tars-hook.sh): never sent. */
 const INSTANCE_ID = process.env.TARS_INSTANCE_ID || "";
