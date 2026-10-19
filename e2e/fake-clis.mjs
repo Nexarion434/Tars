@@ -452,33 +452,51 @@ export async function run() {
   else if (opts.prompt) log({ lost: 'the first prompt went to the question', question });
 
   let typed = '';
+  // As the TUIs read their input (pi-tui 1.3.0, Claude Code): a bracketed paste goes in whole, its newlines kept, and
+  // only an Enter typed outside it submits. Cut at every Enter, a pasted task of two lines was two turns (#483's
+  // finding of 19/10, in its own stand-in and in this one).
+  let pasting = false;
+  const submit = () => {
+    const text = typed.trim();
+    typed = '';
+    if (!text) return;
+    log({ typed: text.slice(-1500) });
+    if (question === 'trust') { question = null; log({ answered: 'trust', with: text }); return; }
+    if (question === 'api-key') {
+      // A prompt typed into the question answers it, No being preselected: the key refused for good (#458).
+      const cfg = readJson(claudeJson) ?? {};
+      const key = process.env.ANTHROPIC_API_KEY ?? '';
+      cfg.customApiKeyResponses = { approved: cfg.customApiKeyResponses?.approved ?? [], rejected: [...new Set([...(cfg.customApiKeyResponses?.rejected ?? []), key.slice(-20)])] };
+      writeJson(claudeJson, cfg);
+      question = null;
+      loggedIn = !!process.env.ANTHROPIC_AUTH_TOKEN;
+      log({ answered: 'api-key', with: 'No', lost: text.slice(-200) });
+      return;
+    }
+    queue(text);
+  };
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
   process.stdin.on('data', (chunk) => {
-    const data = chunk.toString('utf8');
+    let data = chunk.toString('utf8');
     if (dialog) {
       if (/[1y\r]/.test(data)) { const d = dialog; dialog = null; d(true); }
       else if (/[2n\x1b]/.test(data)) { const d = dialog; dialog = null; d(false); }
       return;
     }
-    typed += data.replace(/\x1b\[20[01]~/g, '');
-    for (let enter = typed.indexOf('\r'); enter >= 0; enter = typed.indexOf('\r')) {
-      const text = typed.slice(0, enter).trim();
-      typed = typed.slice(enter + 1);
-      if (!text) continue;
-      log({ typed: text.slice(-1500) });
-      if (question === 'trust') { question = null; log({ answered: 'trust', with: text }); continue; }
-      if (question === 'api-key') {
-        // A prompt typed into the question answers it, No being preselected: the key refused for good (#458).
-        const cfg = readJson(claudeJson) ?? {};
-        const key = process.env.ANTHROPIC_API_KEY ?? '';
-        cfg.customApiKeyResponses = { approved: cfg.customApiKeyResponses?.approved ?? [], rejected: [...new Set([...(cfg.customApiKeyResponses?.rejected ?? []), key.slice(-20)])] };
-        writeJson(claudeJson, cfg);
-        question = null;
-        loggedIn = !!process.env.ANTHROPIC_AUTH_TOKEN;
-        log({ answered: 'api-key', with: 'No', lost: text.slice(-200) });
+    while (data.length) {
+      if (pasting) {
+        const end = data.indexOf('\x1b[201~');
+        if (end === -1) { typed += data; data = ''; } else { typed += data.slice(0, end); data = data.slice(end + 6); pasting = false; }
         continue;
       }
-      queue(text);
+      const start = data.indexOf('\x1b[200~');
+      const keys = start === -1 ? data : data.slice(0, start);
+      data = start === -1 ? '' : data.slice(start + 6);
+      if (start !== -1) pasting = true;
+      for (const ch of keys) {
+        if (ch === '\r') submit();
+        else typed += ch;
+      }
     }
   });
   process.stdin.on('end', () => process.exit(0));
