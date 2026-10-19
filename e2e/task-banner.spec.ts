@@ -228,7 +228,8 @@ for (const newInterface of [false, true]) {
       // The second task's own banner, not the first's: its first line, who gave it and since when.
       const nextLine = page.locator('[data-task-banner] p[title="SLOW run the tests"]');
       await expect(nextLine, 'the second task is in hand, in a banner of its own').toBeVisible({ timeout: 30_000 });
-      const next = page.locator('[data-task-banner]').filter({ has: nextLine });
+      // `has` reads its locator inside each banner: the first line's own selector, not the page-wide one.
+      const next = page.locator('[data-task-banner]').filter({ has: page.locator('p[title="SLOW run the tests"]') });
       await expect.soft(page.locator('[data-task-banner] p[title="SLOW review the release notes"]'), 'no banner shows the first task').toHaveCount(0);
       const inHand = (await get('dev'))?.taskBanner?.task ?? null;
       const clock = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
