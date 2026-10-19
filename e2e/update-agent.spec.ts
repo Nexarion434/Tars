@@ -280,10 +280,7 @@ setInterval(() => {}, 1 << 30);
       expect(otherProject.text).toContain('other_project');
       expect(itself.isError).toBe(true);
       expect(itself.text).toContain('orchestrator_settings');
-      const strip = (r: Record<string, unknown> | undefined) => {
-        const { lastActivity: _l, status: _s, ...rest } = r ?? {};
-        return { model: rest.model, effort: rest.effort, provider: rest.provider, role: rest.role, cliPath: rest.cliPath };
-      };
+      const strip = (r: Record<string, unknown> | undefined) => ({ model: r?.model, effort: r?.effort, provider: r?.provider, role: r?.role, cliPath: r?.cliPath });
       expect(strip(recordOf('o1'))).toEqual(strip(before.o1));
       expect(strip(recordOf('far'))).toEqual(strip(before.far));
       expect(strip(recordOf(id))).toEqual(strip(before.mover));

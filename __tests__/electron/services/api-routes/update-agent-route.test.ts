@@ -184,10 +184,7 @@ async function update(id: string, body: Record<string, unknown>, caller: Caller 
 }
 
 /** Every field of the record but what a clock or a counter moves: what "nothing written" compares. */
-const recordOf = (id: string) => {
-  const { lastActivity: _l, ...rest } = agents.get(id)!;
-  return JSON.parse(JSON.stringify(rest));
-};
+const recordOf = (id: string) => JSON.parse(JSON.stringify({ ...agents.get(id)!, lastActivity: undefined }));
 
 beforeEach(() => {
   resetLaunches();
