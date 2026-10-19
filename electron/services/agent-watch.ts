@@ -403,6 +403,11 @@ export function stopWatchingInterruptedTurns(): void {
   if (interruptWatch) { clearInterval(interruptWatch); interruptWatch = undefined; }
 }
 
+/** One pass of the interrupt watch, now: what its interval runs, for the tests that must order it against a run. */
+export function endInterruptedTurnsNow(): void {
+  endInterruptedTurns();
+}
+
 function endInterruptedTurns(): void {
   for (const agent of agents.values()) {
     if (agent.status !== 'running') continue;
