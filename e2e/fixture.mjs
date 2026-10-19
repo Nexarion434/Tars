@@ -498,6 +498,7 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, profile
     await app.close();
     throw new Error(`the app inherited the caller's ${leaked.join(', ')}; launchSandboxed hands it nothing of that family`);
   }
+  watchSlowClose(app);
   if (process.env.E2E_TRACE === 'on') await traceApp(app);
   const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries(
     names.map(name => {
@@ -780,6 +781,59 @@ export function recordValues(values) {
 
 export async function stepShot(page, name) {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`) });
+}
+
+/**
+ * An app whose close takes more than 5 s leaves close-hang.json in its test's output folder: the tree under its main
+ * process every second until the close ends (pid, ppid, state, command), what the main process's threads were doing
+ * once (`sample`, macOS), when the main process exited and how long the close took, and the run's log says so. The
+ * night of 18 to 19/10, most runs met closes of up to 60 s under load and nothing said what held them (item 9 of the
+ * QA's list of 19/10). Wrapped before the trace's own close, so the time is the app's, not the trace's saving.
+ */
+function watchSlowClose(app) {
+  if (process.platform === 'win32' || !inTest()) return;
+  const pid = app.process().pid;
+  const close = app.close.bind(app);
+  app.close = async () => {
+    const started = Date.now();
+    const record = { pid, startedAt: new Date(started).toISOString(), trees: [], stacks: null, exit: null, tookMs: null };
+    app.process().once('exit', (code, signal) => { record.exit = { code, signal, atMs: Date.now() - started }; });
+    let next = null;
+    const look = () => {
+      try {
+        const all = execFileSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,stat=,command='], { encoding: 'utf8', timeout: 5000 })
+          .split('\n').map(line => /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)).filter(Boolean)
+          .map(m => ({ pid: Number(m[1]), ppid: Number(m[2]), stat: m[3], command: m[4].slice(0, 240) }));
+        const ids = new Set([pid]);
+        const tree = all.filter(p => p.pid === pid);
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const p of all) if (!ids.has(p.pid) && ids.has(p.ppid)) { ids.add(p.pid); tree.push(p); grew = true; }
+        }
+        record.trees.push({ atMs: Date.now() - started, tree });
+        if (record.stacks === null && process.platform === 'darwin' && tree.some(p => p.pid === pid)) {
+          record.stacks = execFileSync('sample', [String(pid), '1', '-mayDie'], { encoding: 'utf8', timeout: 20_000, maxBuffer: 16 * 1024 * 1024 }).slice(0, 200_000);
+        }
+      } catch (error) {
+        record.trees.push({ atMs: Date.now() - started, error: String(error).slice(0, 300) });
+      }
+      next = setTimeout(look, 1000);
+    };
+    const slow = setTimeout(look, 5000);
+    try {
+      return await close();
+    } finally {
+      clearTimeout(slow);
+      if (next) clearTimeout(next);
+      record.tookMs = Date.now() - started;
+      if (record.trees.length > 0) {
+        try {
+          fs.writeFileSync(test.info().outputPath('close-hang.json'), JSON.stringify(record, null, 2));
+        } catch { /* outside a test's body (an afterAll), there is no output folder */ }
+        console.warn(`[e2e] the app took ${record.tookMs} ms to close: close-hang.json in the test's output folder`);
+      }
+    }
+  };
 }
 
 /**
