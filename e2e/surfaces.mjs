@@ -260,6 +260,14 @@ export const VOLATILE = {
     selector: '[data-cli-path]',
     why: 'where the CLIs are installed on the machine recording, which moves with each install and each Node version',
   },
+  'local-api-port': {
+    surfaces: ['settings-hermes-gateways'],
+    // A gateway's address on this machine carries the local API's port, which
+    // each run's E2E_PORT_OFFSET moves (e2e/ports.mjs). The field alone is
+    // masked: its row's words stay compared.
+    selector: '[data-settings-row]:has([data-settings-label]:text-is("On this machine")) input',
+    why: "the local API's port, which moves with the run's E2E_PORT_OFFSET",
+  },
   'log-chunk-counts': {
     surfaces: ['logs'],
     selector: 'text=/· \\d+ chunks$/',
