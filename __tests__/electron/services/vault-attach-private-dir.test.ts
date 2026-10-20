@@ -11,7 +11,7 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  * The vault does not copy the private directory back into the agents' one.
  *
  * `POST /api/vault/documents/:id/attach` copies whatever path its caller names
- * into `~/.dorothy/vault/attachments`, and `/api/local-file` serves that copy
+ * into `~/.tars/vault/attachments`, and `/api/local-file` serves that copy
  * with no token at all. Measured on this branch before the guard, with the
  * shared token: a file in the private directory was copied in, 200, and served
  * back, 200. That is one `vault_attach_file` call from an agent to put JeanBrasse's

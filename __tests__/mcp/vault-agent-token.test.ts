@@ -52,7 +52,7 @@ beforeEach(() => {
   process.env.TARS_INSTANCE_ID = INSTANCE;
   // The shared file an agent without a token of its own fell back to until
   // 2.0.4, where it was and where it is since.
-  for (const dir of ['.dorothy', '.tars-private']) {
+  for (const dir of ['.tars', '.tars-private']) {
     fs.mkdirSync(path.join(home, dir), { recursive: true });
     fs.writeFileSync(path.join(home, dir, 'api-token'), 'the-shared-token-from-the-file');
   }

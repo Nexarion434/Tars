@@ -100,9 +100,22 @@ export function home() {
   return os.homedir();
 }
 
+/** Tars's data folder, by pickDataDir's rule (electron/core/data-dir-move.ts): ~/.tars when it is a folder, else ~/.dorothy; of two different folders, ~/.dorothy only when it alone holds Tars's records. */
+export function dataDir() {
+  const tars = path.join(home(), '.tars');
+  const old = path.join(home(), '.dorothy');
+  const folder = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const present = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const records = (d) => ['agents.json', 'app-settings.json'].some((f) => { try { return fs.statSync(path.join(d, f)).isFile(); } catch { return false; } });
+  if (!folder(tars)) return present(tars) || folder(old) ? old : tars;
+  if (!folder(old) || real(tars) === real(old)) return tars;
+  return records(old) && !records(tars) ? old : tars;
+}
+
 /** tars-hook.sh: where every hook logs, readable by its user only (umask 077). */
 export function logPaths() {
-  const dir = path.join(home(), '.dorothy', 'logs');
+  const dir = path.join(dataDir(), 'logs');
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   } catch {

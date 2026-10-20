@@ -24,7 +24,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
 
 // DATA_DIR is redirected before the client is imported. It writes its jar at
 // import time and on every stored cookie, and the real one is a live 0600
-// credential in ~/.dorothy that these tests must never read or overwrite.
+// credential in ~/.tars that these tests must never read or overwrite.
 // vi.hoisted runs before this file's imports exist, so the path is built from
 // globals here and the directory is created in beforeAll.
 const { TMP_DATA_DIR } = vi.hoisted(() => {

@@ -27,7 +27,7 @@ export function ProjectFolders({ folders, place, onPick }: {
       <PanelCaption className="px-3 pt-3 pb-2">{`Projects · ${folders.length}`}</PanelCaption>
       {folders.length === 0 && (
         <p className="px-3 text-[11.5px] leading-[1.45] text-muted-foreground">
-          No project folder yet. Each project gets one the first time an agent starts in it, with reports and tools: ~/.dorothy/project-files/&lt;project&gt;.
+          No project folder yet. Each project gets one the first time an agent starts in it, with reports and tools: ~/.tars/project-files/&lt;project&gt;.
         </p>
       )}
       {folders.map((folder) => {

@@ -23,7 +23,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. no argv carries a key; codex's carries the provider that names CODEX_API_KEY (its TUI reads no key otherwise,
  *    measured on 0.163);
  * 5. no file under the sandbox HOME but ~/.tars-private/settings-secrets.json holds a key (the CLIs' own folders,
- *    the window's profile; since 2.0.4 the keys are out of ~/.dorothy, secrets-private.spec.ts);
+ *    the window's profile; since 2.0.4 the keys are out of ~/.tars, secrets-private.spec.ts);
  * 6. codex's key cleared, and its CLI ended by itself (its shell stays, as when a CLI exits on its own): started
  *    again in that shell's place, it gets no CODEX_API_KEY and no provider of Tars's, its own login (the Audit's L1
  *    on #459: the reused shell kept the key it was spawned with).
@@ -84,7 +84,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(240_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-cli-keys-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
     const cliPaths: Record<string, string> = {};

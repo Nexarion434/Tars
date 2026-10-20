@@ -71,14 +71,14 @@ describe("the transcript's end", () => {
 
 describe('the note', () => {
   it('8. says what happened and what to do, replays nothing, and is from Tars', () => {
-    const note = resumeNote({ stoppedAt: STOPPED, cut: { kind: 'tool', tool: 'Bash' }, tmpDir: '/Users/x/.dorothy/tmp/abc/t', delegations: [] });
+    const note = resumeNote({ stoppedAt: STOPPED, cut: { kind: 'tool', tool: 'Bash' }, tmpDir: '/Users/x/.tars/tmp/abc/t', delegations: [] });
 
     expect(note).toMatch(/^\[Tars\]/);
     expect(note).toMatch(/stopped abruptly at 01:47/);
     expect(note).toMatch(/Bash/);
     expect(note).toMatch(/outcome is unknown/);
     expect(note).toMatch(/background tasks/i);
-    expect(note).toContain('/Users/x/.dorothy/tmp/abc/t');
+    expect(note).toContain('/Users/x/.tars/tmp/abc/t');
     expect(note).toMatch(/check/i);
     expect(note).toMatch(/do not (redo|repeat)/i);
     expect(note).not.toMatch(/\n/);

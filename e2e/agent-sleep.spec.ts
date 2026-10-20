@@ -116,11 +116,13 @@ const alive = (pid: number) => {
   try { return !String(execFileSync('ps', ['-o', 'stat=', '-p', String(pid)])).trim().startsWith('Z'); } catch { return false; }
 };
 
+test.skip(process.platform === 'win32', 'the sleep pass reads the process table through ps (a job under a CLI keeps it awake, the busy worker here), which Windows has none of: there no agent is put to sleep (agent-sleep.ts). On Windows agent-asleep-ui.spec.ts runs an asleep agent\'s window and wakes, and agent-sleep-in-process.spec.ts the in-process half of the rule; this runs on macOS and Linux');
+
 test('an agent with no turn for 30 minutes is put to sleep, keeps its screen, and wakes on its own conversation', async () => {
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-sleep-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

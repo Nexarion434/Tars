@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
 }));
 
 /**
- * ~/.dorothy is readable by its owner alone, and so is every file in it.
+ * ~/.tars is readable by its owner alone, and so is every file in it.
  *
  * The directory holds the fleet (agents.json, with every agent's last output),
  * the kanban board, the usage ledger, the vault database, the model catalogue
@@ -49,7 +49,7 @@ const made: string[] = [];
 function dataDir(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-data-modes-'));
   made.push(root);
-  const dir = path.join(root, '.dorothy');
+  const dir = path.join(root, '.tars');
   fs.mkdirSync(dir);
   fs.chmodSync(dir, 0o755);
   return dir;
@@ -140,7 +140,7 @@ describe('narrowDataDir', () => {
 });
 
 describe('the app', () => {
-  it('8. creates ~/.dorothy readable by its owner only', async () => {
+  it('8. creates ~/.tars readable by its owner only', async () => {
     const probe = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-data-modes-')), 'ordinary');
     made.push(path.dirname(probe));
     fs.mkdirSync(probe);
@@ -156,7 +156,7 @@ describe('the app', () => {
     if (hasPosixModes()) expect(mode(DATA_DIR)).toBe(0o700);
   });
 
-  it('9. narrows ~/.dorothy when it starts', () => {
+  it('9. narrows ~/.tars when it starts', () => {
     const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
     const ready = main.slice(main.indexOf('app.whenReady()'));
     const body = ready.slice(0, ready.indexOf('\n});') + 4);

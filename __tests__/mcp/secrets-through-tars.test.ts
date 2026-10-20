@@ -76,10 +76,10 @@ beforeAll(async () => {
   process.env.CLAUDE_MGR_API_TOKEN = TOKEN;
   process.env.TARS_INSTANCE_ID = INSTANCE;
 
-  // The settings as 2.0.4 leaves them: the plain ones in ~/.dorothy, the keys in ~/.tars-private.
+  // The settings as 2.0.4 leaves them: the plain ones in ~/.tars, the keys in ~/.tars-private.
   const home = os.homedir();
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ telegramChatId: '111', telegramAuthorizedChatIds: ['222'], xPostingEnabled: true }));
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ telegramChatId: '111', telegramAuthorizedChatIds: ['222'], xPostingEnabled: true }));
   fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true });
   fs.writeFileSync(path.join(home, '.tars-private', 'settings-secrets.json'), JSON.stringify({ telegramBotToken: '123:tg', xApiKey: 'k', xApiSecret: 's', xAccessToken: 't', xAccessTokenSecret: 'ts', socialDataApiKey: 'sd' }));
   fs.mkdirSync(path.join(home, 'work'), { recursive: true });

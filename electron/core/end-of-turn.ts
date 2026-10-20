@@ -14,6 +14,22 @@ import type { AgentStatus } from '../types';
  * Here in core, beside the one-task rule that reads it too (core/one-task.ts);
  * the room's bus reads it through services/bus-store.ts.
  */
+/**
+ * Whether this CLI tells Tars its turns as Claude Code does: SessionStart,
+ * UserPromptSubmit with the prompt it runs, Stop, StopFailure, the permission
+ * dialog, and a transcript Tars reads its answer, tokens and resume from.
+ * claude and the providers that run it; Qwen Code, which fires the same hooks
+ * with the same fields (measured on 0.25.2, services/qwen-code.ts).
+ */
+export function hasClaudeHooks(agent: Pick<AgentStatus, 'provider'>): boolean {
+  try {
+    const provider = getProvider(agent.provider);
+    return provider.binaryName === 'claude' || provider.id === 'qwen-code';
+  } catch {
+    return false;
+  }
+}
+
 export function hasEndOfTurn(agent: Pick<AgentStatus, 'provider'>): boolean {
   try {
     const hooks = getProvider(agent.provider).getHookConfig();

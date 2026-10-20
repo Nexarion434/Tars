@@ -41,7 +41,7 @@ const handlers = vi.hoisted(() => new Map<string, (event: unknown, ...args: unkn
 
 import { registerTemplateHandlers } from '../../../electron/handlers/template-handlers';
 
-const store = () => path.join(os.homedir(), '.dorothy', 'templates.json');
+const store = () => path.join(os.homedir(), '.tars', 'templates.json');
 const stored = () => (fs.existsSync(store()) ? fs.readFileSync(store(), 'utf-8') : '');
 const call = (channel: string, arg: unknown) => handlers.get(channel)!({}, arg);
 
@@ -63,7 +63,7 @@ const BAD: Array<[string, Record<string, unknown>]> = [
 const file = (...templates: unknown[]) => ({ version: 1, kind: 'tars.agent-template', exportedAt: '2026-09-24T00:00:00Z', templates });
 
 beforeEach(() => {
-  fs.rmSync(path.join(os.homedir(), '.dorothy'), { recursive: true, force: true });
+  fs.rmSync(path.join(os.homedir(), '.tars'), { recursive: true, force: true });
   handlers.clear();
   registerTemplateHandlers();
 });

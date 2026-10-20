@@ -37,7 +37,7 @@ vi.mock('../../../electron/constants', async (importOriginal) => {
  *
  * How it can fail, written before the code:
  *  1. The temp of a secret save is made beside the target, under
- *     ~\.dorothy's list (which grants CodexSandboxUsers on this machine), and
+ *     ~\.tars's list (which grants CodexSandboxUsers on this machine), and
  *     only closed afterwards: a process of those accounts watching the folder
  *     opens it in that window and keeps the handle.
  *  2. The temp is made in the staging directory before that directory is
@@ -78,7 +78,7 @@ const realOpen = vi.mocked(fs.openSync).getMockImplementation()!;
 
 const dacls = readDacls;
 const made: string[] = [];
-/** A folder that, like ~\.dorothy here, hands a group of other accounts read. */
+/** A folder that, like ~\.tars here, hands a group of other accounts read. */
 function openHome(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-staging-'));
   made.push(dir);

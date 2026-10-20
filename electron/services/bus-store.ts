@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BUS_FILE } from '../constants';
 import { writeAtomicSync } from '../utils/secret-file';
 import { isSuperAgent } from '../utils';
+import { projectName } from '../platform';
 import { chatNameOf, namedChatOf } from '../core/chat-inbox';
 import { agents } from '../core/agent-manager';
 import { getProvider } from '../providers';
@@ -27,7 +28,7 @@ import type {
 /**
  * The bus journal: rooms, threads, messages and deliveries.
  *
- * One JSON file under ~/.dorothy, written the way agents.json is (temp file
+ * One JSON file under ~/.tars, written the way agents.json is (temp file
  * then rename, through the shared writeAtomicSync). No new service, no
  * database, no network: a room is a view over the fleet Tars already has, and
  * only the journal and the membership overrides are persisted.
@@ -147,7 +148,7 @@ export function loadBus(): void {
  */
 function realAccountJournal(): string | undefined {
   try {
-    return path.join(os.userInfo().homedir, '.dorothy', 'bus.json');
+    return path.join(os.userInfo().homedir, '.tars', 'bus.json');
   } catch {
     return undefined;
   }
@@ -265,7 +266,9 @@ export function listRooms(): BusRoom[] {
       id,
       kind: 'project',
       projectPath,
-      title: projectPath.split('/').filter(Boolean).pop() || projectPath,
+      // The folder's name: the last segment once trailing `/` are gone, as it
+      // always was on darwin and linux, and on Windows `\` separates too.
+      title: projectName(projectPath.replace(/\/+$/, '')) || projectPath,
       memberIds: memberIdsFor(id, 'project', projectPath),
       createdAt,
       lastMessageAt: last?.createdAt,

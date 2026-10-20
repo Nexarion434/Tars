@@ -8,7 +8,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * What Tars owes its agents, carried across a restart (RD-REDEMARRAGE.md, 2.3; JeanBrasse's yes of 2026-10-05). The note
  * that an agent finished, held for its orchestrator while that one works, and the kanban notes held for an agent's
  * rest, lived in memory only: a crash, a reboot or even a quit lost them. They are written to
- * ~/.dorothy/carry-over.json as they change, and at the next run each goes, once, to the first session of its
+ * ~/.tars/carry-over.json as they change, and at the next run each goes, once, to the first session of its
  * recipient, at its first rest, said to be owed from before the restart.
  *
  * How it can fail, written before the code:

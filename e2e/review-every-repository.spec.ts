@@ -48,7 +48,7 @@ for (const newInterface of [false, true]) {
   test(`review finds every repository of a project, and searches them all${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(240_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-review-repos-'));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const meridian = path.join(home, 'projects', 'meridian');
     const fieldNotes = path.join(home, 'projects', 'field-notes');
     const oldShop = path.join(home, 'projects', 'old-shop');

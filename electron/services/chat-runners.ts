@@ -99,7 +99,7 @@ export function isLive(agent: AgentStatus): boolean {
 
 /**
  * The agent a chat runs on, when the fleet confirms its record: chats.json is
- * in ~/.dorothy, which every agent may write (core/chat-slots.ts, recordedRunner).
+ * in ~/.tars, which every agent may write (core/chat-slots.ts, recordedRunner).
  * Nothing is typed, launched, counted, put to sleep or renamed for any other.
  */
 export function runnerOf(chat: Chat): AgentStatus | undefined {

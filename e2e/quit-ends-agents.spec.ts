@@ -40,6 +40,8 @@ const alive = (pid: number) => {
   try { process.kill(pid, 0); return true; } catch { return false; }
 };
 
+test.skip(process.platform === 'win32', 'a stop or quit ends the whole tree of a CLI deaf to the hangup through ps and process groups, which Windows has neither of: there the ConPTY console is ended through killPty (pty-kill.spec.ts, quit-time.win32.spec.ts) and the rest of the tree is not ended there yet; this runs on macOS and Linux');
+
 test('quitting ends a CLI deaf to the hangup, refuses a /start mid-quit, and exits', async () => {
   // The first page compiles under next dev: 43 s cold at a load of 195 (playwright.config.ts).
   test.setTimeout(240_000);
@@ -47,7 +49,7 @@ test('quitting ends a CLI deaf to the hangup, refuses a /start mid-quit, and exi
   const step = (what: string) => console.log(`[quit-e2e] +${Date.now() - t0} ms ${what}`);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-quit-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const pidsFile = path.join(home, 'cli-pids');

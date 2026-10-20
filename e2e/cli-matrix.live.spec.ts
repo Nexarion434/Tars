@@ -57,7 +57,7 @@ for (const newInterface of [false, true]) {
 
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-cli-matrix-live-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     for (const d of [project, dir, path.join(home, '.claude'), path.join(home, '.codex'), path.join(home, '.qwen')]) fs.mkdirSync(d, { recursive: true });
     const real = os.homedir();
     const trusted = { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true };

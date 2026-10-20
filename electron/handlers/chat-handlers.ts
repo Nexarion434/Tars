@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../core/end-of-turn';
 import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
@@ -7,7 +8,6 @@ import { chatSeq, followChats, historyOf, noteChatSnapshot, publishChatEvent, qu
 import { broadcastToAllWindows } from '../utils/broadcast';
 import { chatLimitOf, createChatStore, workOutOf, type Chat, type ChatError, type ChatLimit, type ChatStore, type OrchestratorFacts } from '../services/chats';
 import { chatsWorking, isLive, removeRunnerOf, renameRunner, runnerOf, sendToChat, settleRunner, startChatRunners, stopRunnerOf } from '../services/chat-runners';
-import { getProvider } from '../providers';
 import { setOrchestratorFollower } from '../core/chat-identity';
 import type { AgentStatus } from '../types';
 import { isSuperAgent } from '../utils';
@@ -71,7 +71,7 @@ export function registerChatHandlers(deps: {
   const orchestrators = (): OrchestratorFacts[] => [...agents.values()].filter((a) => isSuperAgent(a) && a.kind !== 'chat').map((a) => ({
     id: a.id, projectPath: a.projectPath, createdAt: a.createdAt, lastActivity: a.lastActivity, resumableSessionId: a.resumableSessionId,
     // A chat other than Main resumes its conversation at each launch: claude only, for now.
-    resumable: getProvider(a.provider).binaryName === 'claude',
+    resumable: hasClaudeHooks(a),
   }));
   const view = (chat: Chat): ChatView => {
     // Only an agent the fleet confirms as the chat's runner (runnerOf): chats.json is agents' to write.

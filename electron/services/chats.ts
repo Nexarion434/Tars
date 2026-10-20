@@ -6,7 +6,7 @@ import type { TaskRequest } from '../core/task-requests';
 
 /**
  * The chats of each project (ORCHESTRATOR-PER-CHAT.md v2.2, 4.1 and 4.6; PR C
- * of 2.0.0): one record per chat, in `~/.dorothy/chats.json`.
+ * of 2.0.0): one record per chat, in `~/.tars/chats.json`.
  *
  * A chat is a conversation with the project's orchestrator on one topic. Its
  * record says which project it belongs to (the path as Tars saved it, the

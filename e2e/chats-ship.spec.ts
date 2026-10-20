@@ -100,7 +100,7 @@ function seedProject(home: string) {
 }
 
 async function boot(home: string, project: string, port: number, extraEnv: Record<string, string> = {}, settings: Record<string, unknown> = {}) {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

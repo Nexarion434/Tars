@@ -69,7 +69,7 @@ const STAND_IN_STAT = `#!/bin/bash
 #   Only then is the age read before A came handed back.
 # - KILL_AT: at that read, this render and its stand-ins are killed with
 #   SIGKILL.
-lock="$HOME/.dorothy/token-stats.lock"
+lock="$HOME/.tars/token-stats.lock"
 for last; do :; done
 if [ "$last" = "$lock" ] && before=$(/usr/bin/stat "$@" 2>/dev/null); then
   count=$(( $(cat "$HOME/lock-stats" 2>/dev/null || echo 0) + 1 ))
@@ -102,7 +102,7 @@ beforeAll(() => {
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 afterEach(async () => {
@@ -132,7 +132,7 @@ async function until(condition: () => boolean, what: string, ms = 20_000): Promi
 function bench() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-stats-takeover-'));
   homes.push(home);
-  const dorothy = path.join(home, '.dorothy');
+  const dorothy = path.join(home, '.tars');
   fs.mkdirSync(dorothy);
   const bin = path.join(home, 'bin');
   fs.mkdirSync(bin);

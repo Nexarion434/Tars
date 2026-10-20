@@ -19,11 +19,11 @@ import { ANSWER_MAX } from './terminal-answer';
  * cost is not written here: it is read from the transcripts when asked
  * (task-cost.ts), so a price that changes later is the price shown.
  *
- * Kept in ~/.dorothy/task-ledger.jsonl, which every agent can read, without
+ * Kept in ~/.tars/task-ledger.jsonl, which every agent can read, without
  * what each task said: that is its first line of JeanBrasse's typed prompts and of
  * the chat messages handed to orchestrators, kept in ~/.tars-private, which no
  * agent is handed (`textFile`, 0600; JeanBrasse's answer of 2026-10-05), and cut to
- * 200 characters. Durations, turns, sessions and costs stay in ~/.dorothy.
+ * 200 characters. Durations, turns, sessions and costs stay in ~/.tars.
  */
 
 export type TaskSource = 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
@@ -201,7 +201,7 @@ const isOptionalString = (v: unknown): v is string | null => v === null || (type
 
 /**
  * A task as the file holds it, checked field by field, or null. The file is in
- * ~/.dorothy, which every agent can write: a line that parses is not therefore
+ * ~/.tars, which every agent can write: a line that parses is not therefore
  * a task (the Audit's Low 2 on #305). A line with a field of the wrong type is
  * dropped whole; the text, the one free field, is cut to 200 characters here
  * as well as when it is written.
@@ -409,6 +409,13 @@ export interface TaskLedger {
    * a restart ends at the next launch anyway.
    */
   delegatedTask(taskId: string): void;
+  /**
+   * Whether the agent's open task is a delegated one a run follows to its end
+   * (runInTerminal), which reads its own interrupt: the interrupt watch leaves
+   * it, or it set the agent at rest first and the cut task read completed
+   * (#461's E2E, 19/10).
+   */
+  delegatedOpen(agentId: string): boolean;
   /** One task by its id, with its run's answer when it has one. */
   task(id: string): TaskWithResult | undefined;
   /** The delegations a quit cut, found open at this start: given once, for their askers to be told. */
@@ -798,6 +805,11 @@ export function createTaskLedger(opts: {
     delegatedTask(taskId) {
       const task = byId.get(taskId);
       if (task && task.endedAt === null) delegated.add(taskId);
+    },
+
+    delegatedOpen(agentId) {
+      const id = open.get(agentId);
+      return !!id && delegated.has(id);
     },
 
     terminalEnded(taskId, end) {

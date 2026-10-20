@@ -32,7 +32,7 @@ for (const newInterface of [false, true]) {
   test(`providers: one panel per CLI from one list, a key set and cleared and never shown back${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(180_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-providers-'));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface, anthropicApiKey: CLAUDE_KEY }));
     const values: Record<string, unknown> = { newInterface };

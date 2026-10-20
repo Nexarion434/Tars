@@ -179,7 +179,7 @@ CTX_PCT=$(awk -v used="$CTX_USED" -v usable="$CTX_USABLE" 'BEGIN {printf "%d", (
 # This cache used to live at /tmp/claude-statusline-git<escaped-pwd>. /tmp is
 # world-writable and the name is fully derived from the project path, so any
 # other local user could pre-create it as a symlink to, say,
-# ~/.dorothy/app-settings.json or ~/.zshrc; the redirect below follows symlinks
+# ~/.tars/app-settings.json or ~/.zshrc; the redirect below follows symlinks
 # and this script runs on every agent turn, so the victim's file was truncated
 # and overwritten with a branch name within seconds (CWE-59 / CWE-377).
 # The cache now lives in the app's own private 0700 directory next to
@@ -294,7 +294,7 @@ const SCRIPT_PATH = dataPath('statusline.sh');
 const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
 /**
- * Install the statusline script to ~/.dorothy/statusline.sh
+ * Install the statusline script to ~/.tars/statusline.sh
  */
 function installScript(): void {
   const dir = path.dirname(SCRIPT_PATH);
@@ -305,7 +305,7 @@ function installScript(): void {
 }
 
 /**
- * Remove the statusline script from ~/.dorothy/statusline.sh
+ * Remove the statusline script from ~/.tars/statusline.sh
  */
 function removeScript(): void {
   if (fs.existsSync(SCRIPT_PATH)) {
@@ -360,7 +360,7 @@ type StatusLineOptions = { platform?: NodeJS.Platform; hooksDir?: string };
 /**
  * On win32 the status line is hooks/statusline.mjs run by Node, not a bash
  * script, which would find no bash, jq or awk to run on there: nothing is
- * installed in ~/.dorothy, the command names the bundled file, quoted for Git
+ * installed in ~/.tars, the command names the bundled file, quoted for Git
  * Bash and PowerShell alike.
  */
 function nodeStatusLineCommand(hooksDir: string): string {

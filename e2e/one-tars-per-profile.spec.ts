@@ -28,7 +28,7 @@ const electronBinary = (): string => {
 test('a second launch on the same profile hands over to the first and exits, writing nothing', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-one-tars-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'demo');
   for (const d of [dataDir, project]) fs.mkdirSync(d, { recursive: true });
   const agentsFile = path.join(dataDir, 'agents.json');
@@ -94,7 +94,7 @@ test('macOS, the window closed: a second launch makes the first one\'s window ag
   test.skip(process.platform !== 'darwin', 'Tars quits with its last window everywhere else');
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-one-tars-closed-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dataDir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));

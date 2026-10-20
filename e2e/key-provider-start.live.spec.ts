@@ -69,7 +69,7 @@ for (const newInterface of [false, true]) {
     // /tmp, not os.tmpdir(): the CLI's cwd is its physical path, and /var is /private/var on macOS.
     const home = fs.mkdtempSync('/tmp/dorothy-e2e-key-provider-');
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     for (const d of [project, dir, path.join(home, '.claude')]) fs.mkdirSync(d, { recursive: true });
     execFileSync('git', ['init', '-q', project]);
 
@@ -205,7 +205,7 @@ for (const newInterface of [false, true]) {
       for (const r of requests()) {
         expect(r.auth, `a request went out with ${JSON.stringify(r.auth)}`).toEqual({ bearer: 'the key', xApiKey: null });
       }
-      expect(holding(home, KEY), 'the key was written somewhere it was not').toEqual({ full: [path.join('.dorothy', 'app-settings.json')], end: [] });
+      expect(holding(home, KEY), 'the key was written somewhere it was not').toEqual({ full: [path.join('.tars', 'app-settings.json')], end: [] });
     } finally {
       for (const server of servers) server.kill();
       stub.kill();

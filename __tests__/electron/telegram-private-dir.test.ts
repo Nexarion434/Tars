@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
  * either, by either of the two ways an agent has of sending a file.
  *
  * Found by the audit of lot 4: JeanBrasse's conversation with the super chat moved
- * from `~/.dorothy` to `~/.tars-private`, and both Telegram guards refuse
- * `~/.dorothy` by name, so the move took the file out of the only list that
+ * from `~/.tars` to `~/.tars-private`, and both Telegram guards refuse
+ * `~/.tars` by name, so the move took the file out of the only list that
  * kept it from being sent. One call to `send_telegram_document` with the new
  * path, and the conversation was in a chat. The webhook secret moved there in
  * the same lot.
@@ -90,8 +90,8 @@ const PRIVATE_FILES = [
   path.join(home, '.tars-private', 'hermes-webhook-secret'),
 ];
 const DATA_FILES = [
-  path.join(home, '.dorothy', 'overseer.json'),
-  path.join(home, '.dorothy', 'app-settings.json'),
+  path.join(home, '.tars', 'overseer.json'),
+  path.join(home, '.tars', 'app-settings.json'),
 ];
 const ORDINARY = path.join(home, 'Documents', 'not-there-report.pdf');
 
@@ -321,8 +321,8 @@ describe('the Telegram MCP server, which every agent is given', () => {
   beforeAll(async () => {
     // The server reads its settings from the home it starts in.
     restoreHome = moveTestHome(tmpHome);
-    fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'app-settings.json'), JSON.stringify({
+    fs.mkdirSync(path.join(tmpHome, '.tars'), { recursive: true });
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'app-settings.json'), JSON.stringify({
       telegramBotToken: 'not-a-real-bot', telegramChatId: '1',
     }));
     for (const [specifier, fake] of Object.entries(FAKE_SDK)) vi.doMock(whereTheServerFinds(specifier), fake);
@@ -389,7 +389,7 @@ describe('the Telegram MCP server, which every agent is given', () => {
       const send = tools.get(tool);
       expect(send, `${tool} was never registered`).toBeDefined();
 
-      for (const dir of ['.tars-private', '.dorothy']) {
+      for (const dir of ['.tars-private', '.tars']) {
         const result = await send!({ [arg]: path.join(tmpHome, dir, 'overseer.json') });
         expect(result.isError).toBe(true);
         expect(result.content[0].text, `${tool} would send ~/${dir}`).toContain(`Refused: ${dir} holds credentials`);

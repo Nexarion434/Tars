@@ -34,7 +34,7 @@ const AGENT_ENV = {
  * presented it until then, and presents none since (no server reads ~/.tars-private).
  */
 function sharedTokenFile(home) {
-  for (const dir of [".dorothy", ".tars-private"]) {
+  for (const dir of [".tars", ".tars-private"]) {
     fs.mkdirSync(path.join(home, dir), { recursive: true });
     fs.writeFileSync(path.join(home, dir, "api-token"), "shared-token-file\n");
   }
@@ -486,10 +486,10 @@ function telegramFiles(home) {
   put("work/project/.env.local", "SECRET=2");
   put("work/project/nested/.ssh/key", "KEY");
   put(".ssh/id_rsa", "KEY");
-  put(".dorothy/app-settings.json.bak", "{}");
+  put(".tars/app-settings.json.bak", "{}");
   put(".tars-private/hermes-webhook-secret", "SECRET");
   // A junction: Windows lets any account make one, where a symlink needs a privilege; the type is ignored off Windows.
-  fs.symlinkSync(path.join(home, ".dorothy"), path.join(home, "work", "innocent"), "junction");
+  fs.symlinkSync(path.join(home, ".tars"), path.join(home, "work", "innocent"), "junction");
   fs.linkSync(path.join(home, ".tars-private", "hermes-webhook-secret"), path.join(home, "work", "notes.txt"));
 }
 
@@ -513,9 +513,9 @@ const telegram = [
   { name: "send_telegram_photo, a relative path", tool: "send_telegram_photo", args: { photo_path: "../home/work/shot.png" }, tars: [tgOk] },
   { name: "send_telegram_photo, outside the home", tool: "send_telegram_photo", args: { photo_path: "/etc/hosts" } },
   { name: "send_telegram_photo, in .ssh", tool: "send_telegram_photo", args: { photo_path: "<home>/.ssh/id_rsa" } },
-  { name: "send_telegram_photo, in .dorothy", tool: "send_telegram_photo", args: { photo_path: "<home>/.dorothy/app-settings.json.bak" } },
+  { name: "send_telegram_photo, in .tars", tool: "send_telegram_photo", args: { photo_path: "<home>/.tars/app-settings.json.bak" } },
   { name: "send_telegram_photo, a .ssh deep in a project", tool: "send_telegram_photo", args: { photo_path: "<home>/work/project/nested/.ssh/key" } },
-  { name: "send_telegram_photo, through a symlink to .dorothy", tool: "send_telegram_photo", args: { photo_path: "<home>/work/innocent/app-settings.json.bak" } },
+  { name: "send_telegram_photo, through a symlink to .tars", tool: "send_telegram_photo", args: { photo_path: "<home>/work/innocent/app-settings.json.bak" } },
   { name: "send_telegram_photo, not there", tool: "send_telegram_photo", args: { photo_path: "<home>/work/missing.png" } },
   { name: "send_telegram_photo, an unauthorized chat", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png", chat_id: "999" } },
   { name: "send_telegram_photo, Telegram refuses", tool: "send_telegram_photo", args: { photo_path: "<home>/work/shot.png" }, tars: [fail(500, { error: "Failed to send photo: Error: ETELEGRAM: 400 Bad Request: PHOTO_INVALID_DIMENSIONS" })] },

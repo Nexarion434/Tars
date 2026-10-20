@@ -47,7 +47,7 @@ const PAGE = `<!doctype html><html><body><script>window.initialSkills = ${
 test('the Extensions page writes every install count with one decimal, in K or M, as the frame does', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-install-counts-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dir, 'projects.json'), '[]');

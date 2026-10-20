@@ -114,7 +114,7 @@ function mcpAs(home: string, project: string, port: string, agentId: string, tok
 
 function seed(home: string, reportsOn: boolean, newInterface: boolean) {
   const project = path.join(home, 'projects', SECRET);
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   // An agent's CLI that cannot start: it exits with code 2 at once, as codex 0.163 did on --full-auto.

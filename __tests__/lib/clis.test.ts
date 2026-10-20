@@ -26,7 +26,7 @@ describe('one list of CLIs (1, 2, 3)', () => {
     ]);
   });
   it('holds every CLI the provider registry drives, and names no provider the registry lacks', () => {
-    const driven = PROVIDER_REGISTRY.filter((p) => p.requiresCli && ['claude', 'codex', 'gemini', 'grok', 'opencode', 'pi', 'amp'].includes(p.id)).map((p) => p.id).sort();
+    const driven = PROVIDER_REGISTRY.filter((p) => p.requiresCli && ['claude', 'codex', 'qwen-code', 'gemini', 'grok', 'opencode', 'pi', 'amp'].includes(p.id)).map((p) => p.id).sort();
     expect(CLIS.filter((c) => c.provider).map((c) => c.provider).sort()).toEqual(driven);
     for (const c of CLIS) if (c.provider) expect(PROVIDER_REGISTRY.some((p) => p.id === c.provider)).toBe(true);
   });

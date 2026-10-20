@@ -4,7 +4,7 @@ import { writeSecretFileSync } from '../utils/secret-file';
 
 /**
  * The Sentry token, apart from the rest of the settings: in ~/.tars-private,
- * which no agent is handed, where app-settings.json is in ~/.dorothy, in every
+ * which no agent is handed, where app-settings.json is in ~/.tars, in every
  * agent's --add-dir (the Audit's gates of #242 and #292). Read-only, it still
  * reads JeanBrasse's Sentry organisation, user reports included. The settings the app
  * holds in memory carry it as before, so the triage and the Settings page read

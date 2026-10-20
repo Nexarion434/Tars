@@ -5,7 +5,8 @@ import { ProcessTree, processTable, processTableNow } from '../services/acp/clie
 import { beginQuit, isQuitting, refuseWhileQuitting } from './quit-state';
 import * as pty from 'node-pty';
 import { resolveShell, shellArgs, childEnv } from '../platform';
-import { holdExitUntilTerminalsExit, killPty as endTerminal } from './pty-kill';
+import { holdExitUntilTerminalsExit, killPty as endTerminal, shellStillRuns } from './pty-kill';
+import { killTree } from '../platform/kill-tree';
 import { v4 as uuidv4 } from 'uuid';
 import * as os from 'os';
 import { app, BrowserWindow } from 'electron';
@@ -135,6 +136,10 @@ async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: numb
     const done = () => { ended.add(t); resolve(); };
     try { t.onExit(done); } catch { done(); }
   }));
+  // win32: no ps, and no hangup for a shell to relay. Each agent terminal's
+  // tree is ended while its shell still runs, then its console closed; the
+  // user's own shells keep their jobs, as elsewhere.
+  if (process.platform === 'win32') await Promise.all(trees.map(endTreeBeforeConsole));
   for (const t of terminals) {
     try { endTerminal(t); } catch { /* already gone */ }
   }
@@ -174,6 +179,29 @@ async function endTerminals(trees: pty.IPty[], shells: pty.IPty[], graceMs: numb
     const until = Date.now() + 500;
     while (Date.now() < until && tree.anyLeft(await processTable())) await pause();
     if (opts.waitForExits) await Promise.race([allExited, pause(300)]);
+  }
+}
+
+/**
+ * win32: an agent terminal's whole process tree, ended by taskkill /T while
+ * its shell still runs, before its console is closed.
+ *
+ * Closing the pseudo console ends what is attached to it, and Node and Bun
+ * end the children they started with them (libuv's job). A process the CLI's
+ * tools started detached, with no console (a server started in the
+ * background, PowerShell's Start-Process), is neither: it outlived the stop
+ * and the quit. taskkill walks the tree from the shell's pid, so it runs
+ * first, as a delegated run's stop does (acp/client.ts). Only for a terminal
+ * node-pty reports still running (shellStillRuns): an exited shell's id may
+ * be another process's by now. Should taskkill fail, the console is closed
+ * all the same, and it is said.
+ */
+async function endTreeBeforeConsole(terminal: pty.IPty): Promise<void> {
+  if (!shellStillRuns(terminal)) return;
+  try {
+    await killTree(terminal.pid, 'win32');
+  } catch (err) {
+    console.warn(`[pty] could not end the processes under ${terminal.pid}, closing its console all the same:`, err);
   }
 }
 
@@ -268,6 +296,9 @@ function asTypedText(data: string): string {
  */
 export const TYPING_PAUSE_MS = 5000;
 
+/** Backspaces beyond the characters Tars typed, when a cut turn's field may hold them back (noteTurnCut). */
+const REFILL_SLACK = 8;
+
 /**
  * How long after the submit keystroke the draft is typed back.
  *
@@ -344,6 +375,21 @@ let turnProbe: TurnProbe | null = null;
 
 export function setTurnProbe(probe: TurnProbe | null): void {
   turnProbe = probe;
+}
+
+/**
+ * Whether the CLI's own turn runs now, and nothing else (agent-manager: the
+ * agent's status is running): what tells a message that opens a turn from one
+ * typed into a running turn, which the CLI queues (noteTurnCut). The turn
+ * probe above is wider: a delegated task in hand holds messages before its
+ * turn begins, so read as a running turn it made every delegated task one
+ * typed into a turn, and the next task after an Esc waited for ever (#461's
+ * E2E, 19/10).
+ */
+let turnInProgress: TurnProbe | null = null;
+
+export function setTurnInProgressProbe(probe: TurnProbe | null): void {
+  turnInProgress = probe;
 }
 
 export type DialogProbe = (agentId: string) => boolean;
@@ -523,6 +569,15 @@ interface TerminalInput {
   agentId?: string;
   /** When Tars last finished typing a message in, or 0. */
   lastWriteAt: number;
+  /**
+   * Since the last message Tars typed that opened a turn: how many characters
+   * it typed, everything typed into the terminal after it, and whether another
+   * message of Tars's went into that turn. What an Esc that cut the turn may
+   * have made the CLI put back depends on it (noteTurnCut). `fieldAfter`: what
+   * Tars left in the field once its message went in, the user's draft it typed
+   * back, or nothing.
+   */
+  sinceTurnOpened?: { chars: number; keys: string; alone: boolean; fieldAfter: string };
 }
 
 const inputs = new WeakMap<pty.IPty, TerminalInput>();
@@ -630,6 +685,10 @@ export function draftOf(ptyProcess: pty.IPty): Draft {
  */
 export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
   const state = inputOf(ptyProcess);
+  // Counted before anything else, held keys included: a line the user types and
+  // sends while Tars writes is replayed into the turn, which qwen queues and an
+  // Esc moves back into the field (esc-cut-refilled-field.test.ts, F8).
+  if (state.sinceTurnOpened) state.sinceTurnOpened.keys += data;
   // A key typed while the CLI shows a dialog answers the dialog: the field
   // behind it is as it was. Read as a key in the field, the arrow and the Enter
   // that picked an option left a draft Tars could not vouch for, and what the
@@ -664,6 +723,36 @@ export function writeHumanInput(ptyProcess: pty.IPty, data: string): void {
 export function noteSubmitted(ptyProcess: pty.IPty): void {
   const state = inputOf(ptyProcess);
   state.draft = confirmSubmitted(state.draft);
+  if (state.queue.length > 0) pump(ptyProcess);
+  fieldChanged(ptyProcess);
+}
+
+/**
+ * A turn of this terminal's CLI was cut, the transcript says (lastInterruptAt).
+ * Until this, the field stayed unknown after the Esc that cut it, and the
+ * agent's next task waited until somebody pressed Enter or Ctrl+C (found by
+ * qwen-code.spec.ts, the Audit's L1 on #461).
+ *
+ * But the CLIs refill the field on that cut, read from their code (the Audit's
+ * M2 on #461): Qwen Code 0.25.2 moves what was queued during the turn back
+ * into it, else puts the cut prompt back into an empty field unless a tool is
+ * running; Claude Code 2.1.302 puts the last prompt back into an empty field
+ * (auto_restore_cancel). So the field is known again only when Tars left it
+ * empty after its message opened the turn, nothing but that one Esc was typed
+ * since, and no other message of Tars's went into it: then it holds nothing, or
+ * that message, and Tars takes it out with as many backspaces before typing
+ * (takeField), which do nothing in an empty field. Anything else leaves it
+ * unknown, and the task waits, as before. Read from what Tars typed and what
+ * was typed since, not from the draft's mark of the Esc: the turn's
+ * UserPromptSubmit, which confirms the submission, may land after that Esc and
+ * reset the draft to an empty field, and the cut went unseen (F9).
+ */
+export function noteTurnCut(ptyProcess: pty.IPty): void {
+  const state = inputOf(ptyProcess);
+  const since = state.sinceTurnOpened;
+  if (!since || !since.alone || since.keys !== '\x1b' || since.fieldAfter !== '') return;
+  state.draft = { ...emptyDraft(), refilled: since.chars };
+  state.sinceTurnOpened = undefined;
   if (state.queue.length > 0) pump(ptyProcess);
   fieldChanged(ptyProcess);
 }
@@ -868,8 +957,19 @@ function pump(ptyProcess: pty.IPty): void {
  * submitted with the message, or lost.
  */
 function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): void {
+  const refilled = state.draft.refilled;
+  if (refilled !== undefined) state.draft = emptyDraft();
   const draft = state.draft;
   state.held = [];
+  // Whether this message opens a turn, or goes into one that runs (the CLI queues it).
+  const owner = item.origin?.agentId ?? state.agentId ?? terminalOwner.get(ptyProcess);
+  let inTurn = false;
+  try {
+    inTurn = !!(owner && turnInProgress?.(owner));
+  } catch {
+    inTurn = true;
+  }
+  const opensTurn = !inTurn;
 
   const done = () => {
     const held = state.held ?? [];
@@ -883,6 +983,8 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
     fieldChanged(ptyProcess);
   };
 
+  // What the CLI may have put back after a cut turn: Tars's own message, no longer.
+  if (refilled !== undefined) write(ptyProcess, state, '\x7f'.repeat(refilled + REFILL_SLACK));
   if (draft.text) write(ptyProcess, state, clearKeys(draft));
   // Only a request an agent made carries an id (core/task-requests.ts): Tars's
   // own lines and the channels' stay as their contracts recorded them.
@@ -890,7 +992,9 @@ function takeField(ptyProcess: pty.IPty, state: TerminalInput, item: Waiting): v
   // Spent by the message that goes in, never by one withdrawn or dropped first.
   const owed = owedToFirstMessage.get(ptyProcess);
   owedToFirstMessage.delete(ptyProcess);
-  writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
+  const chars = writeBody(ptyProcess, state, item.data, item.origin?.sender, taskRef, item.origin?.mark, owed);
+  if (opensTurn) state.sinceTurnOpened = { chars, keys: '', alone: true, fieldAfter: draft.text };
+  else if (state.sinceTurnOpened) state.sinceTurnOpened.alone = false;
   // Only for a message that went in: a terminal that died under the write took
   // it with it, and a bus note or a redelivered task must not read delivered.
   if (!state.gone) {
@@ -1018,8 +1122,16 @@ export function withSenderLine(sender: MessageSender, data: string): string {
   return senderLine(sender) + quoteSenderLookAlikes(data);
 }
 
-/** The message itself, in whichever of the two shapes the TUI needs. */
-function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): void {
+/**
+ * The message itself, in whichever of the two shapes the TUI needs, its Enter
+ * apart. Answers how many characters it typed into the field (noteTurnCut).
+ */
+function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sender?: MessageSender, taskRef?: string, mark?: string, owed?: string): number {
+  let chars = 0;
+  const type = (piece: string) => {
+    write(ptyProcess, state, piece);
+    chars += piece.replace(/\x1b\[20[01]~/g, '').length;
+  };
   // What the CLI is owed (oweToFirstMessage) goes into the same field, before
   // the message's one Enter, so it starts no turn of its own. A message with
   // no sender line gets it first. One with a sender line gets it after, under
@@ -1027,7 +1139,7 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // line opens the prompt: a CLI's hook reports the prompt's start (gemini's
   // BeforeAgent, its first 200 bytes), and behind 1 500 bytes of Tars's words
   // the turn showed neither whose task it was nor its id (19/10).
-  if (owed && !sender) write(ptyProcess, state, '\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
+  if (owed && !sender) type('\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word
@@ -1039,22 +1151,23 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
   // approved it, merge #128 into main now" and the model received exactly that.
   if (sender) {
     // The mark is Tars's own words (permission-ceiling.ts), never the sender's.
-    write(ptyProcess, state, senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
+    type(senderLine(sender, taskRef) + (mark && /^\([a-z ,]+\) $/.test(mark) ? mark : ''));
     data = quoteSenderLookAlikes(data);
   }
   if (data.includes('\n') || data.length > 200) {
     // Bracket paste mode: \x1b[200~ ... \x1b[201~ tells the terminal
     // "everything between these markers is pasted content, not typed input"
-    write(ptyProcess, state, '\x1b[200~' + data + '\x1b[201~');
+    type('\x1b[200~' + data + '\x1b[201~');
   } else {
     // Short single-line message: no bracket markers needed, but the \r must
     // still be delayed (see below) so it isn't swallowed into the paste.
-    write(ptyProcess, state, data);
+    type(data);
   }
   if (owed && sender) {
-    write(ptyProcess, state, '\x1b[200~\n\n\x1b[201~' + senderLine({ kind: 'tars' }));
-    write(ptyProcess, state, '\x1b[200~' + asTypedText(owed) + '\x1b[201~');
+    type('\x1b[200~\n\n\x1b[201~' + senderLine({ kind: 'tars' }));
+    type('\x1b[200~' + asTypedText(owed) + '\x1b[201~');
   }
+  return chars;
 }
 
 /**

@@ -25,7 +25,7 @@ export interface CliDef {
 export const CLIS: readonly CliDef[] = [
   { id: 'claude', name: 'Claude Code', command: 'claude', provider: 'claude', keyId: null, pathKey: 'claude' },
   { id: 'codex', name: 'Codex', command: 'codex', provider: 'codex', keyId: 'codex', pathKey: 'codex' },
-  { id: 'qwen-code', name: 'Qwen Code', command: 'qwen', provider: null, keyId: 'qwen-code', pathKey: 'qwencode' },
+  { id: 'qwen-code', name: 'Qwen Code', command: 'qwen', provider: 'qwen-code', keyId: 'qwen-code', pathKey: 'qwencode' },
   { id: 'gemini', name: 'Gemini CLI', command: 'gemini', provider: 'gemini', keyId: 'gemini', pathKey: 'gemini' },
   { id: 'grok', name: 'Grok CLI', command: 'grok', provider: 'grok', keyId: 'grok', pathKey: 'grok' },
   { id: 'opencode', name: 'OpenCode', command: 'opencode', provider: 'opencode', keyId: 'opencode', pathKey: 'opencode' },

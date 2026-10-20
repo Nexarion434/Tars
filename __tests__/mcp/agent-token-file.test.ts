@@ -70,8 +70,8 @@ beforeEach(() => {
     sent.push({ headers: init.headers });
     return { ok: true, status: 200, json: async () => ({}) };
   }));
-  fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'the-shared-token-from-the-file');
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'the-shared-token-from-the-file');
   fs.mkdirSync(path.dirname(tokenFile), { recursive: true, mode: 0o700 });
   fs.writeFileSync(tokenFile, 'the-token-minted-for-this-run\n', { mode: 0o600 });
   restoreHome = moveTestHome(home);

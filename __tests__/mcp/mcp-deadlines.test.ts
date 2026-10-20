@@ -52,7 +52,7 @@ async function transport(actual: Record<string, unknown>) {
 vi.mock('http', async importOriginal => transport(await importOriginal()));
 vi.mock('https', async importOriginal => transport(await importOriginal()));
 
-const SETTINGS = path.join(os.homedir(), '.dorothy', 'app-settings.json');
+const SETTINGS = path.join(os.homedir(), '.tars', 'app-settings.json');
 
 const NAMES = ['mcp-vault (Tars)', 'mcp-socialdata (SocialData, through Tars)', 'mcp-x (X, through Tars)'];
 /** Each client, as its tools call it, and the words it has for a host it could not reach. */

@@ -40,7 +40,7 @@ for (const newInterface of [false, true]) {
   test(`the vault reads and edits each project's reports and tools, and nothing else${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(180_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-vault-files-'));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const project = path.join(home, 'projects', 'atlas');
     fs.mkdirSync(project, { recursive: true });
     fs.mkdirSync(dir, { recursive: true });

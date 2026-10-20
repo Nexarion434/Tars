@@ -117,7 +117,7 @@ test("a chat's page sends: Main and a new chat start with the words written ther
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chat-send-'));
   const project = path.join(home, 'projects', 'demo');
   const origin = path.join(home, 'origin.git');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
 

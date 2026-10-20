@@ -32,7 +32,7 @@ vi.mock('electron', () => ({ app: electronApp }));
  *  6. Anything else ("peut-être", "oui non", "ok", "non merci") decides something, or the user is not asked again.
  *  7. A second answer to a request already decided changes the decision (a "non" after "oui" archives a task the
  *     orchestrator may have handed on), or goes unanswered.
- *  8. The go-aheads are kept where an agent can write them (~/.dorothy), so that an agent could hand a task on in the
+ *  8. The go-aheads are kept where an agent can write them (~/.tars), so that an agent could hand a task on in the
  *     user's name; or where others can read them.
  *  9. A request waiting for Hermes is asked again while it waits, or never again once it expired unsent; a request
  *     that could not go leaves the task parked with nobody asked.
@@ -402,13 +402,13 @@ describe('anything else', () => {
 });
 
 describe('what is kept', () => {
-  it('8. the go-aheads are in ~/.tars-private, readable by their owner alone, and not in ~/.dorothy', async () => {
+  it('8. the go-aheads are in ~/.tars-private, readable by their owner alone, and not in ~/.tars', async () => {
     await triage.triageOnce(deps());
 
     const file = path.join(os.homedir(), '.tars-private', 'sentry-go-aheads.json');
     if (hasPosixModes()) expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(JSON.parse(fs.readFileSync(file, 'utf-8')).issues['4001']).toMatchObject({ task: taskOf().id, name: 'TARS-1', state: 'asking' });
-    expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'sentry-go-aheads.json'))).toBe(false);
+    expect(fs.existsSync(path.join(os.homedir(), '.tars', 'sentry-go-aheads.json'))).toBe(false);
   });
 
   it('9. a request waiting for Hermes is not asked again while it waits, and goes once Hermes is back', async () => {

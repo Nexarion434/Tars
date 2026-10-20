@@ -29,7 +29,7 @@ test('the new interface switch reads off from an older file, which still loads, 
 
   // A 1.9.x settings file: no `newInterface`, and values that differ from the
   // defaults, so a load that drops them shows.
-  const file = path.join(home, '.dorothy', 'app-settings.json');
+  const file = path.join(home, '.tars', 'app-settings.json');
   const older = {
     notificationsEnabled: false,
     autoStartAgentsOnLaunch: false,
@@ -85,7 +85,7 @@ test('the new interface switch reads off from an older file, which still loads, 
 
 /**
  * And from the Audit's L1 on #360 (2026-10-12): the loader spreads the file
- * over the defaults with no type check, and the file is in ~/.dorothy, which
+ * over the defaults with no type check, and the file is in ~/.tars, which
  * every agent can write. A value that is not the boolean true ("false", 1,
  * "yes") came back as it was: the string "false" is truthy, so a page reading
  * `if (settings.newInterface)` would turn the new interface on.
@@ -93,7 +93,7 @@ test('the new interface switch reads off from an older file, which still loads, 
 test('a newInterface that is not the boolean true reads false', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-new-interface-'));
   seedSandbox(home);
-  const file = path.join(home, '.dorothy', 'app-settings.json');
+  const file = path.join(home, '.tars', 'app-settings.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ newInterface: 'false', terminalFontSize: 17 }, null, 2));
 

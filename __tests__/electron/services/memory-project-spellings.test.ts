@@ -137,7 +137,7 @@ describe('the same project, as the other readers key it', () => {
 
   it('6. the memory hub, handed the saved path, reads the observations filed under either spelling', async () => {
     const { real, link } = project('theta', false);
-    const ledgers = path.join(tmpHome, '.dorothy', 'observations');
+    const ledgers = path.join(tmpHome, '.tars', 'observations');
     fs.mkdirSync(ledgers, { recursive: true });
     const line = (content: string, ts: string) => JSON.stringify({ ts, agentId: 'a1', type: 'observation', content }) + '\n';
     fs.writeFileSync(path.join(ledgers, `${link.replace(/[^a-zA-Z0-9]/g, '-')}.jsonl`), line('by the saved path', '2026-10-07T10:00:00.000Z'));

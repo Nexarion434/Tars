@@ -12,7 +12,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * the last report`, with its light copy.
  *
  * The real app on a sandbox HOME, error reports off, so nothing loads Sentry or leaves; main reads the last report
- * from ~/.dorothy/error-reports.json each time the window asks (errorReports:last), and the spec writes that file as
+ * from ~/.tars/error-reports.json each time the window asks (errorReports:last), and the spec writes that file as
  * a report would have left it. Asserted, once with the classic shell and once with the new interface:
  * 1. No file: the row says "No report sent yet", and its description what a report carries since #474.
  * 2. A handled error that Sentry took 3 minutes ago: "Last report: 3 min ago (handled), Sentry answered 200",
@@ -29,7 +29,7 @@ const INSTALL_ID = '4b0e7c2a-91d3-4f6e-8a5b-2c7d9e1f3a6b';
 
 function seed(newInterface: boolean, tag: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-error-line-${tag}-`));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');

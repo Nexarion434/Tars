@@ -12,12 +12,12 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
 /**
  * A durable temporary folder per agent (RD-REDEMARRAGE.md, 2.1; JeanBrasse's yes of 2026-10-05): macOS empties /private/tmp
  * and the app's /var/folders/.../T at every boot, and with them every agent's scratchpad and the output of its
- * background tasks (about 45 GB on the night of 2026-10-01). Each agent gets ~/.dorothy/tmp/<short id>/: `t/` as the
+ * background tasks (about 45 GB on the night of 2026-10-01). Each agent gets ~/.tars/tmp/<short id>/: `t/` as the
  * TMPDIR of its commands, `c/` as Claude Code's CLAUDE_CODE_TMPDIR. Kept 7 days and 20 GB in all, or the disk fills up
  * again as it did that night.
  *
  * How it can fail, written before the code:
- *  1. A CLI gets a folder the boot wipes: no TMPDIR or no CLAUDE_CODE_TMPDIR, or one outside ~/.dorothy/tmp.
+ *  1. A CLI gets a folder the boot wipes: no TMPDIR or no CLAUDE_CODE_TMPDIR, or one outside ~/.tars/tmp.
  *  2. Two agents share a folder, or one agent gets another folder at its next launch (its scratchpad lost to it); the
  *     path is long enough to break a Unix socket under it.
  *  3. The folder is not there when the CLI starts, is readable by other accounts, or is a link someone planted to send
@@ -27,13 +27,13 @@ import { cannotSymlink } from '../../setup/symlink-privilege';
  *  5. It keeps more than the cap while older things could go, or deletes the newest first.
  *  6. With under 30 GB free on the disk, the cap stays at 20 GB instead of 10 GB.
  *  7. A deleted agent's folder stays for ever.
- *  8. It follows a link out of ~/.dorothy/tmp, and measures or deletes what the link points at; or it deletes anything
+ *  8. It follows a link out of ~/.tars/tmp, and measures or deletes what the link points at; or it deletes anything
  *     outside the root, or the root itself when it is a link.
  *  9. A deletion is not logged.
  * 10. Something it cannot read or delete stops the pass.
  * 11. (the Audit's gate of #306) The root is checked once, then a long pass deletes by path: an agent that swaps
- *     ~/.dorothy/tmp for a link while the pass runs makes Tars delete an entry of the same name elsewhere.
- * Measured on 2026-10-13 (~/.dorothy/tmp: 22 GB, 1.24 million files, 21 agents), and written before the code:
+ *     ~/.tars/tmp for a link while the pass runs makes Tars delete an entry of the same name elsewhere.
+ * Measured on 2026-10-13 (~/.tars/tmp: 22 GB, 1.24 million files, 21 agents), and written before the code:
  * 12. An agent whose CLI runs keeps everything for as long as it runs: one agent's folder held 18.5 GB, its project's
  *     test sandboxes and build folders in `t/` (5,638 `staging-job-machines-*`, 3,793 build folders, 945 `e2e-step-*`),
  *     and the pass deleted nothing, "what is left belongs to agents whose CLI runs". Its `t/` entries and the folders
@@ -102,7 +102,7 @@ afterEach(() => {
 });
 
 describe("an agent's folder", () => {
-  it('1, 2. TMPDIR and CLAUDE_CODE_TMPDIR under ~/.dorothy/tmp, one folder per agent, the same at every launch, short', () => {
+  it('1, 2. TMPDIR and CLAUDE_CODE_TMPDIR under ~/.tars/tmp, one folder per agent, the same at every launch, short', () => {
     expect(TMP_ROOT).toBe(path.join(DATA_DIR, 'tmp'));
     const a = agentTmpEnv('0941a7e6-7262-4068-ba83-68b7e0de1773', root);
     const again = agentTmpEnv('0941a7e6-7262-4068-ba83-68b7e0de1773', root);

@@ -6,7 +6,7 @@ import * as path from 'node:path';
 /**
  * The Vault reads and edits each project's folder (2.0.4, the maintainer's
  * decisions of 18/10, the frames "Vault · project folders" of #457): reports/
- * and tools/ of ~/.dorothy/project-files/<key>, what the agents produce. The
+ * and tools/ of ~/.tars/project-files/<key>, what the agents produce. The
  * window is the renderer: a page with an XSS, or a dependency gone bad, holds
  * every channel the preload hands it (the Audit's requirements, section 1).
  *

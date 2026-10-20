@@ -35,7 +35,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(240_000);
     const h = hostileRepo();
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-review-hostile-'));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([]));
     fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([h.repo]));

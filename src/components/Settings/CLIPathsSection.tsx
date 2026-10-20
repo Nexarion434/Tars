@@ -39,9 +39,9 @@ const EMPTY_CLI_PATHS: CLIPaths = {
 };
 
 export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSectionProps) => {
-  // The detection Providers and New agent read too (useCliDetection), shown as
-  // the page opens: it used to wait for detect now, and said "not detected"
-  // of CLIs Providers listed as ready.
+  // The detection Providers reads too (useCliDetection), shown as the page
+  // opens: it used to wait for detect now, and said "not detected" of CLIs
+  // Providers listed as ready.
   const { paths: detectedPaths, detecting, detectAgain } = useCliDetection();
   const [localPaths, setLocalPaths] = useState<CLIPaths>(appSettings.cliPaths || EMPTY_CLI_PATHS);
   // The extra directories are one PATH string in the row, so the text has to

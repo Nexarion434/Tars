@@ -40,7 +40,7 @@ vi.stubGlobal('fetch', async (_url: string, init: { body?: string }) => {
 
 type Result = { content: Array<{ text: string }>; isError?: boolean };
 const tools = new Map<string, (args: Record<string, unknown>) => Promise<Result>>();
-const SETTINGS = path.join(os.homedir(), '.dorothy', 'app-settings.json');
+const SETTINGS = path.join(os.homedir(), '.tars', 'app-settings.json');
 const CREDENTIALS = { xApiKey: 'k', xApiSecret: 's', xAccessToken: 't', xAccessTokenSecret: 'ts' };
 
 function settings(value: Record<string, unknown> | string): void {

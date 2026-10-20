@@ -20,6 +20,8 @@ export type AgentProvider =
   | 'mimo'
   | 'moonshot'
   | 'qwen'
+  /** Qwen Code, the CLI `qwen` (2.0.4); `qwen` is the Qwen API through the claude binary. */
+  | 'qwen-code'
   | 'zhipu'
   | 'minimax'
   | 'nvidia'
@@ -178,7 +180,7 @@ export interface AgentStatus {
    * it has the orchestrator's powers through hasOrchestratorPowers().
    */
   kind?: 'chat';
-  /** The chat a runner runs (~/.dorothy/chats.json). */
+  /** The chat a runner runs (~/.tars/chats.json). */
   chatId?: string;
   /** The project's orchestrator whose configuration a runner is launched with. */
   teamOrchestratorId?: string;
@@ -656,7 +658,7 @@ export interface BusMembersChanged {
   dropped: number;
 }
 
-/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+/** A file staged for a room (`bus:stageFiles`): written under ~/.tars,
  *  which is in every agent's `--add-dir`, and named by its absolute path in
  *  what each target receives. */
 export interface BusAttachment {

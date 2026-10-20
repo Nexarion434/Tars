@@ -18,7 +18,7 @@ import * as path from 'node:path';
  *  B4. The bridge's token is not kept: a new one at each start leaves every
  *      running agent with one the bridge refuses. Or
  *      it is the shared token under another name, or a short one, or kept
- *      where an agent reads it (~/.dorothy), or not 0600.
+ *      where an agent reads it (~/.tars), or not 0600.
  *  B5. Tars's API takes the bridge's token for its own.
  */
 

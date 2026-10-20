@@ -30,7 +30,7 @@ beforeAll(() => {
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it');
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 afterEach(() => {
@@ -40,7 +40,7 @@ afterEach(() => {
 function bench(flavour: 'gnu' | 'bsd') {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `tars-stat-${flavour}-`));
   dirs.push(home);
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
   const bin = path.join(home, 'bin');
   fs.mkdirSync(bin);
   const calls = path.join(home, 'git-calls');

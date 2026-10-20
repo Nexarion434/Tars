@@ -1,5 +1,6 @@
 import { execFile, execFileSync, type ExecFileOptions, type StdioOptions } from 'child_process';
 import * as os from 'os';
+import { gitCommand } from '../platform/git-command';
 
 /**
  * Every git call Tars's main process makes on a project folder (2.0.4, the
@@ -142,7 +143,7 @@ export interface SafeGitOptions {
 export async function safeGit(cwd: string, args: string[], opts: SafeGitOptions = {}): Promise<{ stdout: string; stderr: string }> {
   const env = safeGitEnv(process.env, opts.env);
   const call = (argv: string[], o: ExecFileOptions = {}) => new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    execFile('git', argv, { cwd, env, encoding: 'utf8', maxBuffer: opts.maxBuffer ?? 8 * 1024 * 1024, timeout: opts.timeout ?? 30_000, windowsHide: true, ...o }, (err, stdout, stderr) => {
+    execFile(gitCommand(), argv, { cwd, env, encoding: 'utf8', maxBuffer: opts.maxBuffer ?? 8 * 1024 * 1024, timeout: opts.timeout ?? 30_000, windowsHide: true, ...o }, (err, stdout, stderr) => {
       if (err) reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }));
       else resolve({ stdout: String(stdout), stderr: String(stderr) });
     });
@@ -162,10 +163,10 @@ export function safeGitSync(cwd: string, args: string[], opts: SafeGitOptions & 
   let filters: string[] = [];
   if (needsFilters(args)) {
     try {
-      filters = filterOverrides(execFileSync('git', ['--no-optional-locks', ...globals(), ...LOOKUP], { ...base, stdio: 'pipe', encoding: 'utf8' }));
+      filters = filterOverrides(execFileSync(gitCommand(), ['--no-optional-locks', ...globals(), ...LOOKUP], { ...base, stdio: 'pipe', encoding: 'utf8' }));
     } catch {
       filters = [];
     }
   }
-  return execFileSync('git', argvOf(args, filters), { ...base, stdio: opts.stdio ?? 'pipe', encoding: opts.encoding ?? 'utf8' }) as unknown as string;
+  return execFileSync(gitCommand(), argvOf(args, filters), { ...base, stdio: opts.stdio ?? 'pipe', encoding: opts.encoding ?? 'utf8' }) as unknown as string;
 }

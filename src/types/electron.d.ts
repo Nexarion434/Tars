@@ -401,6 +401,8 @@ export type AgentProvider =
   | 'mimo'
   | 'moonshot'
   | 'qwen'
+  /** Qwen Code, the CLI `qwen` (2.0.4); `qwen` is the Qwen API through the claude binary. */
+  | 'qwen-code'
   | 'zhipu'
   | 'minimax'
   | 'nvidia'
@@ -904,7 +906,7 @@ export interface BusMembersChanged {
   dropped: number;
 }
 
-/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+/** A file staged for a room (`bus:stageFiles`): written under ~/.tars,
  *  which is in every agent's `--add-dir`, and named by its absolute path in
  *  what each target receives. */
 export interface BusAttachment {
@@ -1119,7 +1121,7 @@ export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { succe
 
 /* ── The chats of each project (electron/services/chats.ts, handlers/chat-handlers.ts) ── */
 
-/** A chat's record, as ~/.dorothy/chats.json keeps it. */
+/** A chat's record, as ~/.tars/chats.json keeps it. */
 export interface Chat {
   id: string;
   /** The project's path as Tars saved it (its orchestrator's). */
@@ -1293,6 +1295,16 @@ export interface CliKeyState {
   provider: string | null;
   measured: string;
   withoutKey: string;
+}
+
+/** A Hermes gateway as Settings, Hermes shows it (hermes:gateways:*): never its secret. */
+export interface HermesGatewayView {
+  id: string;
+  label: string;
+  /** The projects its messages may reach, by their paths. */
+  projects: string[];
+  /** Its webhook route on the local API, /api/webhooks/hermes or /api/webhooks/hermes/<id>. */
+  path: string;
 }
 
 export interface ElectronAPI {
@@ -1543,10 +1555,12 @@ export interface ElectronAPI {
   // App settings (notifications, etc.)
   app?: {
     getVersion: () => Promise<{ version: string }>;
+    /** The data folder this run uses; `notice` when two folders stood at ~/.tars and ~/.dorothy, for the window to say. */
+    dataDir: () => Promise<{ dir: string; did: 'moved' | 'already' | 'kept-old' | 'both' | 'none'; notice?: string }>;
   };
 
   /**
-   * Spend from Tars's own ledger, ~/.dorothy/usage-ledger.jsonl, and nothing
+   * Spend from Tars's own ledger, ~/.tars/usage-ledger.jsonl, and nothing
    * else: one record per ACP turn, any provider. The Claude transcripts are not
    * in it; they come through `claude.getData`. A `claude` row here is a turn
    * the transcripts count as well, since the Claude ACP adapter runs the claude
@@ -1672,6 +1686,8 @@ export interface ElectronAPI {
   /** Live model + price catalogue, refreshed from models.dev. */
   models?: {
     list: (provider: string) => Promise<{ models: CatalogModel[] }>;
+    /** The models a CLI offers itself, read from its own settings (Qwen Code: ~/.qwen/settings.json modelProviders); none when it keeps none. */
+    ofCli: (provider: string) => Promise<{ models: Array<{ id: string; name: string; description: string }> }>;
     price: (modelId: string, provider?: string) => Promise<{ price: ModelCost | null }>;
     catalogStatus: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
     refresh: () => Promise<{ loaded: boolean; fetchedAt: number | null; providers: number; models: number }>;
@@ -2137,7 +2153,7 @@ export interface ElectronAPI {
   // Vault
   vault?: {
     /**
-     * Each project's folder, ~/.dorothy/project-files/<key>: what its agents
+     * Each project's folder, ~/.tars/project-files/<key>: what its agents
      * produce, in reports/ and tools/ (electron/services/vault-project-files.ts).
      * A file is named by its folder's key, a subfolder and a name, never a
      * path; every failure is `{ error, code }`.
@@ -2316,6 +2332,24 @@ export interface ElectronAPI {
       serveCommand: string;
     }>;
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) => Promise<{ success: boolean; status?: number; response?: unknown; error?: string }>;
+    /**
+     * The Hermes gateways Tars takes work from (services/hermes-gateways.ts):
+     * each posts to its own route (`path`) with its own secret, and reaches the
+     * projects listed, none until the user allows some. `default` is the one
+     * Hermes had before 2.0.4, on /api/webhooks/hermes. A secret is only ever
+     * handed out by `add`, `secret` and `rotate`.
+     */
+    gateways: {
+      list: () => Promise<{ success: true; gateways: HermesGatewayView[] }>;
+      /** Its secret is shown once by the main process, in a dialog of its own; the page never holds it. */
+      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; set: true } | { success: false; error: string }>;
+      remove: (params: { id: string }) => Promise<{ success: boolean }>;
+      /** Copies the gateway's secret to the clipboard, from the main process. */
+      copySecret: (params: { id: string }) => Promise<{ success: true; copied: boolean } | { success: false; error: string }>;
+      /** The new secret is shown once by the main process, as at add. */
+      rotate: (params: { id: string }) => Promise<{ success: true; set: true } | { success: false; error: string }>;
+      setProjects: (params: { id: string; projects: string[] }) => Promise<{ success: true; gateway: HermesGatewayView } | { success: false; error: string }>;
+    };
     /**
      * Three states, not two: unreachable, reachable but not signed in, and
      * signed in. `success` keeps its old meaning of "nothing more to do",

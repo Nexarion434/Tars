@@ -30,7 +30,7 @@ const REAL_HOME = process.env.HEAP_REPLICA_FROM ?? os.homedir();
 test('the main process heap with the machine\'s own transcripts and fleet', async () => {
   test.skip(process.env.TARS_HEAP_BENCH !== '1', 'a bench: TARS_HEAP_BENCH=1 and --project=bench');
   test.skip(process.platform !== 'darwin', 'the clone is an APFS clone (cp -c)');
-  test.skip(!fs.existsSync(path.join(REAL_HOME, '.dorothy', 'agents.json')) || !fs.existsSync(path.join(REAL_HOME, '.claude', 'projects')), 'no fleet or no transcripts to replicate');
+  test.skip(!fs.existsSync(path.join(REAL_HOME, '.tars', 'agents.json')) || !fs.existsSync(path.join(REAL_HOME, '.claude', 'projects')), 'no fleet or no transcripts to replicate');
   test.setTimeout((MINUTES + 8) * 60_000);
   const OUT = outDir();
   fs.mkdirSync(OUT, { recursive: true });
@@ -38,9 +38,9 @@ test('the main process heap with the machine\'s own transcripts and fleet', asyn
   try {
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     execFileSync('/bin/cp', ['-c', '-R', path.join(REAL_HOME, '.claude', 'projects'), path.join(home, '.claude', 'projects')]);
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     fs.mkdirSync(dir, { recursive: true });
-    const real = JSON.parse(fs.readFileSync(path.join(REAL_HOME, '.dorothy', 'agents.json'), 'utf8'));
+    const real = JSON.parse(fs.readFileSync(path.join(REAL_HOME, '.tars', 'agents.json'), 'utf8'));
     const list = (Array.isArray(real) ? real : real.agents) as Array<Record<string, unknown>>;
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(list.map((a) => ({ ...a, status: 'idle', cliPath: '/usr/bin/false' })), null, 2));
     fs.writeFileSync(path.join(dir, 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }));

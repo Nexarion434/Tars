@@ -25,7 +25,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *   reads that list without the patches too.
  * Every git the app runs goes through a wrapper first on its PATH, which
  * writes down the folder and the arguments: a whole patch is a `diff` that is
- * neither a list (`--numstat`, `--name-status`) nor one file's (`--`).
+ * neither a list (`--numstat`, `--name-status`) nor one file's (`--`). On
+ * Windows, git writes them down itself (gitLines).
  * A late answer for a tree or a file no longer picked is the page test's
  * (__tests__/components/review-page.test.tsx): its timing is not reproducible
  * here.
@@ -36,11 +37,47 @@ let page: Page;
 let home: string;
 let gitLog: string;
 const errors: string[] = [];
+const onWindows = process.platform === 'win32';
+
+/**
+ * The log as `folder|arguments` lines. macOS and Linux: as the wrapper wrote
+ * them. Windows: the app runs git.exe off its PATH and starts no shell script
+ * in its place, so git writes the log itself, as trace2 events (one JSON line
+ * each, GIT_TRACE2_EVENT): each run's arguments and the worktree it found,
+ * put together here in the wrapper's shape. A line still being written when
+ * read is skipped.
+ */
+function gitLines(): string[] {
+  const text = fs.readFileSync(gitLog, 'utf8');
+  if (!onWindows) return text.split('\n').filter(Boolean);
+  const runs = new Map<string, { argv?: string[]; worktree?: string }>();
+  for (const line of text.split('\n')) {
+    let event: { sid?: string; event?: string; argv?: string[]; worktree?: string };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!event.sid) continue;
+    const run = runs.get(event.sid) ?? {};
+    if (event.event === 'start') run.argv = event.argv;
+    if (event.event === 'def_repo' && event.worktree) run.worktree = event.worktree;
+    runs.set(event.sid, run);
+  }
+  const real = (dir: string) => {
+    try {
+      return fs.realpathSync(dir);
+    } catch {
+      return path.resolve(dir);
+    }
+  };
+  return [...runs.values()].filter(r => r.argv && r.worktree).map(r => `${real(r.worktree!)}|${r.argv!.slice(1).join(' ')}`);
+}
 
 /** The git commands the app ran in `dir` since the log was last cleared, as argument lines. */
 function ranIn(dir: string): string[] {
   const real = fs.realpathSync(dir);
-  return fs.readFileSync(gitLog, 'utf8').split('\n').filter(Boolean)
+  return gitLines()
     .filter(line => line.startsWith(`${real}|`))
     // Through utils/safe-git.ts: --no-optional-locks and its -c overrides first, and a look at the filters before a content read.
     .map(line => line.slice(real.length + 1).replace(/^--no-optional-locks /, '').replace(/^(-c \S+ )+/, ''))
@@ -62,7 +99,7 @@ function repo(dir: string, files: Record<string, string>, changes: Record<string
 
 /** Adds a project as Settings or the Projects page would: a path in projects.json. */
 function addProject(dir: string): void {
-  const file = path.join(home, '.dorothy', 'projects.json');
+  const file = path.join(home, '.tars', 'projects.json');
   const list = JSON.parse(fs.readFileSync(file, 'utf8')) as string[];
   fs.writeFileSync(file, JSON.stringify([...list, dir], null, 2));
 }
@@ -78,7 +115,7 @@ test.beforeAll(async () => {
   // An agent at work in a repository of its own, for its window's Code panel.
   const code = path.join(home, 'projects', 'code');
   repo(code, { 'main.ts': lines(3000, 'old') }, { 'main.ts': lines(3000, 'new') });
-  const agentsFile = path.join(home, '.dorothy', 'agents.json');
+  const agentsFile = path.join(home, '.tars', 'agents.json');
   const agents = JSON.parse(fs.readFileSync(agentsFile, 'utf8')) as Array<Record<string, unknown>>;
   agents.push({
     id: 'coder', name: 'Code Reader', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
@@ -86,17 +123,24 @@ test.beforeAll(async () => {
     createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',
   });
   fs.writeFileSync(agentsFile, JSON.stringify(agents, null, 2));
-  // Every git the app runs, written down with the folder it ran in.
-  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
-  const wrapper = path.join(home, 'git-wrapper');
-  fs.mkdirSync(wrapper, { recursive: true });
+  // Every git the app runs, written down with the folder it ran in. Windows:
+  // by git itself (gitLines), and the app keeps the sandbox's PATH.
   gitLog = path.join(home, 'git.log');
   fs.writeFileSync(gitLog, '');
-  fs.writeFileSync(path.join(wrapper, 'git'), `#!/bin/sh\necho "$(pwd -P)|$*" >> "${gitLog}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+  let gitEnv: Record<string, string>;
+  if (onWindows) {
+    gitEnv = { GIT_TRACE2_EVENT: gitLog };
+  } else {
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const wrapper = path.join(home, 'git-wrapper');
+    fs.mkdirSync(wrapper, { recursive: true });
+    fs.writeFileSync(path.join(wrapper, 'git'), `#!/bin/sh\necho "$(pwd -P)|$*" >> "${gitLog}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+    gitEnv = { PATH: `${wrapper}:${process.env.PATH}` };
+  }
   app = await launchSandboxed(electron, home, {
     env: {
       NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31482), DOROTHY_E2E: '1',
-      PATH: `${wrapper}:${process.env.PATH}`,
+      ...gitEnv,
     },
   });
   page = await app.firstWindow();
@@ -162,7 +206,11 @@ test('review: a project with no agent, the files without their patches, a patch 
   await expect(page.getByRole('button').filter({ hasText: 'big.txt' })).toBeVisible();
   await stepShot(page, '03-refresh-reads-the-list');
 
-  // A file whose patch main can no longer read says why.
+  // A file whose patch main can no longer read says why. Refresh read the
+  // picked tree again too: its .git goes once that read is over (Refresh is
+  // enabled again), or the read itself fails and empties the list (git on
+  // Windows is slower than the rename).
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled({ timeout: 30_000 });
   fs.renameSync(path.join(home, 'projects', 'docs', '.git'), path.join(home, 'projects', 'docs', '.git-gone'));
   await page.getByRole('button').filter({ hasText: 'big.txt' }).click();
   const failed = page.getByText(/^Could not read this file's patch: /);

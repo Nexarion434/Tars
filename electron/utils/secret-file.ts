@@ -131,7 +131,7 @@ function stageAtSync(tmp: string, contents: string | Buffer): string {
  * anything to migrate there: made with the default mode, it was 0755, open to
  * a listing by every account on the machine, while the migration, the only
  * other place that made it, made it 0700. A directory that already exists is
- * left as it is: `~/.dorothy` is the agents' directory, and not this
+ * left as it is: `~/.tars` is the agents' directory, and not this
  * function's to narrow.
  *
  * On Windows the modes do nothing, and an access list only binds the handles
@@ -267,7 +267,7 @@ export function writeAtomicSync(filePath: string, contents: string, mode?: numbe
  * At startup, on Windows: close the secret files that already exist, and the
  * private directory with everything in it, to every account but the user and
  * SYSTEM. An install made before this, a file an older build or another tool
- * left open, a conversation file renamed out of ~/.dorothy with that folder's
+ * left open, a conversation file renamed out of ~/.tars with that folder's
  * list: all of them end as a fresh write would leave them. The files' own
  * explicit entries go too. A file or directory that does not exist is
  * skipped quietly, except the private directory, which is made so that what
@@ -385,7 +385,7 @@ export function ensureSecretFileMode(filePath: string): void {
 }
 
 /**
- * Close ~/.dorothy to the other accounts on the machine: the directory and its
+ * Close ~/.tars to the other accounts on the machine: the directory and its
  * subdirectories to 0700, its files to what their owner already had and no
  * more, so data files land at 0600 and statusline.sh, which Claude Code runs,
  * stays executable by its owner.

@@ -38,9 +38,9 @@ test('the Usage page with the machine\'s own transcripts and fleet, Agents and P
   try {
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     execFileSync('/bin/cp', ['-c', '-R', path.join(REAL_HOME, '.claude', 'projects'), path.join(home, '.claude', 'projects')]);
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     fs.mkdirSync(dir, { recursive: true });
-    const real = JSON.parse(fs.readFileSync(path.join(REAL_HOME, '.dorothy', 'agents.json'), 'utf8'));
+    const real = JSON.parse(fs.readFileSync(path.join(REAL_HOME, '.tars', 'agents.json'), 'utf8'));
     const list = (Array.isArray(real) ? real : real.agents) as Array<Record<string, unknown>>;
     fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(list.map((a) => ({ ...a, status: 'idle', cliPath: '/usr/bin/false' })), null, 2));
     const projects = [...new Set(list.map((a) => a.projectPath as string).filter(Boolean))];
@@ -48,7 +48,7 @@ test('the Usage page with the machine\'s own transcripts and fleet, Agents and P
     // What the page reads beside the transcripts: the usage ledger, the status line's stats, and the task ledger
     // (the cost of each task, #311) with its texts.
     for (const f of ['usage-ledger.json', 'token-stats.json', 'task-ledger.jsonl']) {
-      const from = path.join(REAL_HOME, '.dorothy', f);
+      const from = path.join(REAL_HOME, '.tars', f);
       if (fs.existsSync(from)) fs.copyFileSync(from, path.join(dir, f));
     }
     const texts = path.join(REAL_HOME, '.tars-private', 'task-texts.jsonl');

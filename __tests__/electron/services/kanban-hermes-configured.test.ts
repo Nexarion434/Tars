@@ -6,7 +6,7 @@ import * as path from 'node:path';
 /**
  * The agents' kanban writes to a Hermes someone configured, never to a guess.
  *
- * Without ~/.dorothy/hermes-connection.json, readHermesConnection() answers the
+ * Without ~/.tars-private/hermes-connection.json, readHermesConnection() answers the
  * default, 127.0.0.1:9119, and on this machine that port is an SSH tunnel to a
  * real Hermes. A sandbox, a test home or a second Tars that has a
  * kanban-tasks.json and no connection file of its own would have moved its
@@ -43,7 +43,7 @@ vi.mock('http', async (importOriginal) => {
 });
 
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
-// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.dorothy moves there at the first read.
+// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.tars moves there at the first read.
 const file = path.join(home, '.tars-private', 'hermes-connection.json');
 
 let hermesKanban: () => unknown;

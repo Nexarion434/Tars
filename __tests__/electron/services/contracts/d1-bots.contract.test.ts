@@ -245,7 +245,7 @@ function normalize(value: unknown): unknown {
 /**
  * A path under `root` spelled with `/`, as the snapshot was recorded on macOS.
  * The fixture's paths are joined that way already (see P1), but what the
- * product joins itself, ~/.dorothy for one, comes out of Node's own path
+ * product joins itself, ~/.tars for one, comes out of Node's own path
  * module, which on a Windows host writes `\` whatever platform the file pins.
  * Only the run of path characters right after the root, so a shell quote's
  * own `\` stays as it is.

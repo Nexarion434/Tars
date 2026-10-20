@@ -38,7 +38,7 @@ const errors: string[] = [];
 function sandbox() {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-stop-read-whole-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const agent = (id: string, name: string, role: string) => ({

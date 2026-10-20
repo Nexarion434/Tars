@@ -234,7 +234,7 @@ export default function VaultView({ embedded, subtitle }: { embedded?: boolean; 
   // Attach pending files to a document. The editor inserts markdown that
   // points at the file's original path on disk (the only path it knows about
   // before the file is copied into the vault); attachFile then copies that
-  // file to ~/.dorothy/vault/attachments/<id>-<name>, a path the vault-owned
+  // file to ~/.tars/vault/attachments/<id>-<name>, a path the vault-owned
   // /api/local-file route will actually serve. Without rewriting the content
   // to the new path, every inserted image or link 403s forever, because the
   // source file lives outside the allowed attachments directory. Returns the

@@ -1,30 +1,32 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { createDetectionStore, type DetectedCliPaths } from '@/lib/cli-detection';
 
-/** Where Tars found each CLI, by its CLI Paths key (`codex`, `qwencode`): a path, or '' where it found none. */
-export type DetectedCliPaths = Record<string, string>;
+export type { DetectedCliPaths } from '@/lib/cli-detection';
+
+/** The window's one copy of the detection, shared by every page that reads it (lib/cli-detection.ts). */
+const detection = createDetectionStore(async (refresh) =>
+  (await window.electronAPI?.cliPaths?.detect(refresh ? { refresh: true } : undefined)) ?? {});
 
 /**
  * The one detection of the CLIs (2.0.4, the Audit's Info on #460): main's cliPaths:detect, which takes the path set
- * in CLI Paths when it exists and else looks where Tars looks (the PATH, the usual install folders). CLI Paths,
- * Providers and New agent all read it, so none says a CLI is ready where another finds none: CLI Paths used to show
- * nothing until detect now, while Providers asked the PATH for a version on its own. Asked once as a page opens
- * (main keeps the answer for the app run); `detectAgain` looks again, for a CLI installed since.
+ * in CLI Paths when it exists and else looks where Tars looks (the PATH, the usual install folders). CLI Paths and
+ * Providers both read it, so neither says a CLI is ready where the other finds none: CLI Paths used to show nothing
+ * until detect now, while Providers asked the PATH for a version on its own. A page opens on the window's last answer,
+ * so a page opened after another shows what that one read at once instead of "looking", and asks main again, which
+ * keeps the answer for the app run; `detectAgain` looks again, for a CLI installed since.
  */
 export function useCliDetection() {
-  const [paths, setPaths] = useState<DetectedCliPaths | null>(null);
+  const [paths, setPaths] = useState<DetectedCliPaths | null>(() => detection.known());
   const [detecting, setDetecting] = useState(false);
 
   const read = useCallback(async (refresh: boolean): Promise<DetectedCliPaths> => {
     setDetecting(true);
     try {
-      const found: DetectedCliPaths = (await window.electronAPI?.cliPaths?.detect(refresh ? { refresh: true } : undefined)) ?? {};
+      const found = await detection.read(refresh);
       setPaths(found);
       return found;
-    } catch {
-      setPaths({});
-      return {};
     } finally {
       setDetecting(false);
     }

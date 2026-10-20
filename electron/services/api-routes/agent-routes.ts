@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../../core/end-of-turn';
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
 import { dropPermissionAsks } from '../permission-asks';
@@ -6,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
+import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
 import { hasEndOfTurn } from '../../core/end-of-turn';
@@ -45,7 +46,7 @@ import { accountDir } from '../claude-accounts/registry';
 import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
-import { levelOf, modeGapMark } from '../../core/permission-ceiling';
+import { isPermissionLevel, levelOf, modeGapMark, raises, type PermissionLevel } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
 import { interruptTurn } from '../bus-delivery';
 import { broadcastToAllWindows } from '../../utils/broadcast';
@@ -76,7 +77,8 @@ function orchestratorInstructionsFile(isOrchestrator: boolean | undefined): stri
 
 type SpawnOpts = {
   model?: string;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  /** The session's mode: the agent's own, or narrower (modeRefusal). */
+  permissionMode?: PermissionLevel;
   printMode?: boolean;
   /** Who starts it: noted when the start undoes a stop (core/agent-stop.ts). */
   by?: string;
@@ -144,6 +146,24 @@ function announceAgent(agent: AgentStatus): void {
   scheduleTick();
 }
 
+/**
+ * A mode asked for an agent's session that it may not have: none of Tars's (400), or wider than the agent's own
+ * (403). A session runs at its agent's mode or narrower: whoever starts it, a /start, a /dispatch or a Hermes
+ * gateway's message, may lower it for that session, never raise it (core/permission-ceiling.ts, the Audit's NOW-3
+ * and R4.1, 2.0.4: the webhook started any agent of any project in bypass). Undefined when none was asked, or the
+ * one asked is fine.
+ */
+export function modeRefusal(agent: AgentStatus, asked: unknown): { status: number; error: string } | undefined {
+  if (asked === undefined || asked === null) return undefined;
+  if (!isPermissionLevel(asked)) return { status: 400, error: 'permissionMode is one of plan, normal, auto, bypass.' };
+  const own = levelOf(agent);
+  if (!raises(asked, own)) return undefined;
+  return {
+    status: 403,
+    error: `${agent.name || agent.id} runs in ${own} mode: a session started for it may run narrower, never wider, and ${asked} is wider. Change its mode in Tars to widen it.`,
+  };
+}
+
 async function spawnAgentSession(
   agent: AgentStatus,
   prompt: string,
@@ -151,6 +171,13 @@ async function spawnAgentSession(
   ctx: RouteContext,
   sendJson: SendJson
 ): Promise<boolean> {
+  // Never wider than the agent's own mode, whoever asked (modeRefusal): the one
+  // place a session starts says it last, before anything is ended or spawned.
+  const wider = modeRefusal(agent, opts.permissionMode);
+  if (wider) {
+    sendJson({ error: wider.error }, wider.status);
+    return false;
+  }
   // A session started while the quit ends the others would be in no map the
   // quit ends: refused before anything here ends the old terminal (the Audit's
   // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
@@ -206,7 +233,7 @@ async function spawnAgentSessionInSlot(
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
-  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings);
+  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings, { model: opts.model ?? agent.model, effort: agent.effort });
 
   const keyRefusal = missingKeyRefusal(agent.provider, providerEnvVars);
   if (keyRefusal) {
@@ -268,7 +295,7 @@ async function spawnAgentSessionInSlot(
   // the Agents page back on the old one. A `/model` typed into a terminal
   // lasts for that session; the Agents page is where a model is kept.
   const resolvedModel = opts.model || agent.model;
-  const effectiveMode = opts.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal');
+  const effectiveMode = opts.permissionMode ?? levelOf(agent);
 
 
   // CLIs without Claude's SessionStart hook get the project's memory in the
@@ -313,6 +340,7 @@ async function spawnAgentSessionInSlot(
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId,
       forkSession,
       binaryPath,
@@ -361,7 +389,7 @@ async function spawnAgentSessionInSlot(
     CLAUDE_SKILLS: agent.skills?.join(',') || '',
     CLAUDE_AGENT_ID: agent.id,
     CLAUDE_PROJECT_PATH: agent.projectPath,
-    // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
+    // Load CLAUDE.md from --add-dir directories (e.g. ~/.tars)
     CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
   };
   for (const key of cliProvider.getEnvVarsToDelete()) {
@@ -762,7 +790,7 @@ function givenUp(agent: AgentStatus, ref: string | undefined): void {
  * writes about itself: an agent that read the shared file and left that header
  * out had the whole fleet. Honouring it was the theatre; it is gone.
  *
- * Every agent can read that file (`--add-dir ~/.dorothy`, and on this machine
+ * Every agent can read that file (`--add-dir ~/.tars`, and on this machine
  * 37 of 42 agents run with `--dangerously-skip-permissions`, so its Bash reads
  * it whatever the flag says), so a call that presents it names nobody. This is
  * the same door the bus has had since the shared token stopped opening rooms.
@@ -1041,7 +1069,7 @@ function followTask(workerId: string, askerId: string): () => void {
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
  * UserPromptSubmit post, which opens the ledger's task) and end: every CLI
  * whose hooks say both, or whose turns Tars reads and posts as those hooks
- * would (core/end-of-turn.ts): claude, the providers that run it, gemini
+ * would (core/end-of-turn.ts): claude, the providers that run it, Qwen Code (Claude Code's hooks), gemini
  * (BeforeAgent and AfterAgent, hooks/gemini/, since 2.0.4), and codex, from
  * its session log (services/codex-sessions.ts). opencode, amp, pi and grok
  * have no such hook.
@@ -1050,9 +1078,9 @@ function turnsHeard(agent: AgentStatus): boolean {
   return hasEndOfTurn(agent);
 }
 
-/** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
+/** Whether its final answer can be read from a transcript Tars knows: Claude Code's, Qwen Code's. */
 function transcriptRead(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasClaudeHooks(agent);
 }
 
 /** What the asker is told of a task typed into a CLI whose turns Tars cannot see. */
@@ -1210,6 +1238,9 @@ async function runInTerminal(
         const cut = lastInterruptAt(agent);
         if (cut !== undefined && cut >= now.startedAt && ledger?.openTaskOf(agent.id)?.id === taskId) {
           interrupted = true;
+          // The Esc that cut it left the field as it was: what waits for the agent goes in.
+          const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+          if (terminal) noteTurnCut(terminal);
           ledger.stateChanged({ id: agent.id, status: 'stopped' });
           if (agent.status === 'running') {
             agent.status = 'idle';
@@ -1366,7 +1397,8 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
 export interface DispatchOpts {
   message: string;
   model?: string;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  /** For a session it starts: the agent's own mode, or narrower (modeRefusal). */
+  permissionMode?: PermissionLevel;
   from?: string;
   sender?: MessageSender;
   /**
@@ -2084,7 +2116,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         `## Working rules`,
         `- You may receive tasks from your project's orchestrator. Work autonomously, never ask for confirmation, and end with a clear report: the orchestrator reads your final message.`,
         `- To write to whoever asked you for your current task, send_message to "requester": one of the project's chats may have asked, not only the orchestrator. An agent's id always reaches that agent.`,
-        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.dorothy/CLAUDE.md, "Waiting on work you started").`
+        `- Your turn ending is that report. Wait for the builds and tests you started before you answer: a delegated task ends with your turn, and whoever gave it to you is told it is done, with what you left running in the background, which goes on in your session (~/.tars/CLAUDE.md, "Waiting on work you started").`
       );
     }
 
@@ -2340,10 +2372,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     const since = new Date().toISOString();
     const { prompt, model, permissionMode: bodyPermissionMode, printMode } = req.body as {
-      prompt: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; printMode?: boolean;
+      prompt: string; model?: string; permissionMode?: PermissionLevel; printMode?: boolean;
     };
     if (!prompt) {
       sendJson({ error: 'prompt is required' }, 400);
+      return;
+    }
+    // Never wider than the agent's own, refused before anything is recorded.
+    const wider = modeRefusal(agent, bodyPermissionMode);
+    if (wider) {
+      sendJson({ error: wider.error }, wider.status);
       return;
     }
     const taskRef = requestFor(agent, req);
@@ -2389,7 +2427,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message: asSent, model, permissionMode, mode: asked, reason, intent } = req.body as {
-      message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; mode?: unknown; reason?: unknown; intent?: unknown;
+      message: string; model?: string; permissionMode?: PermissionLevel; mode?: unknown; reason?: unknown; intent?: unknown;
     };
     if (!asSent) {
       sendJson({ error: 'message is required' }, 400);
@@ -2398,6 +2436,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const askedMode = (asked ?? 'auto') as SendMode;
     if (!SEND_MODES.includes(askedMode)) {
       sendJson({ error: `mode is one of ${SEND_MODES.join(', ')}.`, code: 'invalid_mode' }, 400);
+      return;
+    }
+    // Never wider than the agent's own, refused before a receipt, a stop or anything typed.
+    const wider = modeRefusal(agent, permissionMode);
+    if (wider) {
+      sendJson({ error: wider.error }, wider.status);
       return;
     }
     // A worker never orders work (core/one-task.ts): a task (start_agent,

@@ -65,7 +65,7 @@ const KEPT: Record<string, string> = {
   PATH: 'the suite spawns real hooks and real CLIs; without it nothing resolves',
   // home-isolation.ts points it at a throwaway directory for every file;
   // removing it outright leaves os.homedir() with nothing sane to answer.
-  HOME: 'os.homedir() backs ~/.claude.json and ~/.dorothy paths under test',
+  HOME: 'os.homedir() backs ~/.claude.json and ~/.tars paths under test',
   // The same on Windows, where os.homedir() reads USERPROFILE and Electron's
   // folders sit under APPDATA / LOCALAPPDATA: home-isolation.ts moves all of
   // them with HOME, and a sweep that removed one would send the product back

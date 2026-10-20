@@ -41,7 +41,7 @@ export const LEGACY_HOOK_LOGS = ['/tmp/dorothy-hooks.log', '/tmp/dorothy-hooks-d
 
 /**
  * Remove the logs the hooks wrote in /tmp before 1.8.0, which moved them to
- * ~/.dorothy/logs at 0600. They stayed behind after the update: about 4 MB of
+ * ~/.tars/logs at 0600. They stayed behind after the update: about 4 MB of
  * every agent's session ids and prompts' first words, readable by any user of
  * the machine (the Audit, gate of #135).
  *

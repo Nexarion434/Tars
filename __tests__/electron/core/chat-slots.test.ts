@@ -29,7 +29,7 @@
  * 9. The sentence of a full limit does not say how many, the RAM and the rule,
  *    and who works: the user cannot act on it.
  * The record's runner (the Audit's Info on #361, written before the code, 2026-10-13)
- * chats.json sits in ~/.dorothy, which every agent may write: a record's
+ * chats.json sits in ~/.tars, which every agent may write: a record's
  * runnerId is a claim, which the fleet confirms or not.
  * 10. A chat other than Main names an agent that is not its runner (a worker,
  *     the orchestrator, another chat's runner), and Tars types into it,
@@ -40,7 +40,7 @@
  * 13. A chat with no runner yet, or whose agent was deleted, reads as a forged
  *     one: the first must make its runner, the second say it is gone.
  * A runner's kind (the Audit's L1 on #379, written before the code, 2026-10-13)
- * agents.json is in ~/.dorothy too, and `kind: 'chat'` gives the orchestrator's
+ * agents.json is in ~/.tars too, and `kind: 'chat'` gives the orchestrator's
  * powers: at launch, a runner keeps it only while a chat names it.
  * 14. An agent marked kind chat that no chat names (no chatId, a chat that is
  *     gone, a chat naming another agent, a chat of another project) keeps the

@@ -52,7 +52,7 @@ type Api = { electronAPI: { usage: { tasks(q?: { sinceDays?: number }): Promise<
 test('the usage page shows its tasks by agent, each agent the sum of its own tasks, and opens again on the view picked', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-usage-by-agent-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const tars = path.join(home, 'projects', 'tars');
   const site = path.join(home, 'projects', 'site');
   for (const folder of [dir, tars, site]) fs.mkdirSync(folder, { recursive: true });

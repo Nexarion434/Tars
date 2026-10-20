@@ -40,7 +40,7 @@ function resolveClaude(): string {
 function seed(claude: string): { home: string; project: string } {
   const home = fs.mkdtempSync('/tmp/tars-usage-');
   const project = path.join(home, 'projects', 'usage');
-  for (const dir of [path.join(home, '.claude'), path.join(home, '.dorothy'), project]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [path.join(home, '.claude'), path.join(home, '.tars'), project]) fs.mkdirSync(dir, { recursive: true });
   execFileSync('git', ['init', '-q', project]);
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ theme: 'dark', skipDangerousModePermissionPrompt: true }, null, 2));
   const version = path.basename(claude);
@@ -52,13 +52,13 @@ function seed(claude: string): { home: string; project: string } {
     customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] },
     projects: { [project]: trusted, [fs.realpathSync(project)]: trusted },
   }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([{
     id: 'worker', name: 'Usage Worker', character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], output: [], permissionMode: 'bypass', cliPath: claude, lastActivity: new Date().toISOString(),
   }], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude },
   }, null, 2));
   return { home, project };

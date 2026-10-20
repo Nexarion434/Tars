@@ -27,7 +27,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 7. A delegation over ACP is not a task, or loses its usage and cost.
  * 8. What is kept goes wrong: the tasks do not survive a restart; a task open when Tars stopped stays open for ever;
  *    a damaged line stops the reading; the file grows without bound; more than 200 characters of a task's text are
- *    kept (the file is in ~/.dorothy, which every agent reads).
+ *    kept (the file is in ~/.tars, which every agent reads).
  * 9. (the Audit's Low 2 on #305) A line forged in the file, which every agent can write, reaches the report with fields
  *    of the wrong type: a text that is an object or a megabyte, turns that are not a number, an agent that is null, a
  *    time that is not one (then written back as the end of a task), a session id that is a path; or a good line is
@@ -37,10 +37,10 @@ import { hasPosixModes } from '../../setup/platform-limits';
  *     showed a total of 21). A worker writing to the agent that handed it its task, or to its project's orchestrator,
  *     reports; as #302 has it for the delegation link.
  * 12. (JeanBrasse's answer of 2026-10-05) A task's text, the first line of what was handed over (JeanBrasse's own prompts, the
- *     chat messages handed to orchestrators), is written to ~/.dorothy, which every agent is handed; or to a file
+ *     chat messages handed to orchestrators), is written to ~/.tars, which every agent is handed; or to a file
  *     another account can read. Only the text moves: what a task cost and how long it took stays where it was.
  * 13. Read back, a task loses its text, or a missing or damaged text file loses the tasks.
- * 14. A ledger written before, its texts inline in ~/.dorothy, keeps them there after the first start.
+ * 14. A ledger written before, its texts inline in ~/.tars, keeps them there after the first start.
  * 15. Rewritten past its bound, the ledger keeps the texts of the tasks it dropped, or loses those of the tasks it kept.
  * 16. A text line that is not one (no id, a text that is not text, a megabyte) is taken as it is.
  * 17. (mods step 4, JeanBrasse's go) A turn's usage, which the state mod reports from Claude Code's turn.complete, is not
@@ -68,7 +68,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * the code (2026-10-12). A run over ACP was written once, when it ended: a quit mid-run left nothing.
  * 32. A delegated run is not a task until it ends: a quit while it works leaves no task, nothing to read, and nobody
  *     told.
- * 33. Its result (why it stopped, and what it answered) is not kept, or the answer is written to ~/.dorothy, which
+ * 33. Its result (why it stopped, and what it answered) is not kept, or the answer is written to ~/.tars, which
  *     every agent is handed, or kept whole however long it is.
  * 34. A run open when Tars stopped is not marked as cut at the next start, or is not listed for its asker to be told,
  *     or is listed again at every start after.
@@ -76,7 +76,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 36. Rewritten past its bound, the ledger keeps the results of the tasks it dropped, or loses those it kept.
  * 37. (2.0.4, a delegation into the agent's own terminal) The turn a delegation opens cannot be told: turnStarted
  *     names no task, or names another than the one it opened or counted the turn in.
- * 38. A terminal task's answer and why it ended are not kept: lost at a restart, written to ~/.dorothy, cut at the
+ * 38. A terminal task's answer and why it ended are not kept: lost at a restart, written to ~/.tars, cut at the
  *     8000 characters a run over ACP kept, or accepted for a task still running, an ACP run, or a task that is not
  *     there; a stop reason that is not one is kept as it came.
  */
@@ -453,7 +453,7 @@ describe('where a task\'s text is kept (JeanBrasse, 05/10)', () => {
     expect(open().tasks()).toHaveLength(1);
   });
 
-  it('14. written inline by an earlier build, it moves out of ~/.dorothy at the first start', () => {
+  it('14. written inline by an earlier build, it moves out of ~/.tars at the first start', () => {
     const task = {
       id: 't-old', agentId: 'worker-1', projectPath: '/work/tars', worktreePath: null, provider: 'claude', model: null, accountId: null,
       source: 'telegram', requesterAgentId: null, parentTaskId: null, text: 'the old prompt', startedAt: T0, endedAt: T0 + 1, lastAt: T0 + 1,

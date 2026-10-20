@@ -23,7 +23,7 @@ import { runCliUpdatePass, type CliUpdateContext } from '../../../electron/servi
  *     own reason, npm's;
  *  4. the folder left behind goes unsaid, or is said more than once, or is said
  *     where nobody reads it: exactly one line of the update log
- *     (~/.dorothy/cli-updates.log, the context's logFile) names it. The main
+ *     (~/.tars/cli-updates.log, the context's logFile) names it. The main
  *     process's console, where it went first, is not that log (the gates of
  *     #218);
  *  5. the removal did not fail at all, and the test proves nothing: the folder

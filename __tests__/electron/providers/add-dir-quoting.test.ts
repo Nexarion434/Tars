@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
  *
  * Every provider wrote `--add-dir '${DATA_DIR}'` without escaping the quote,
  * and the scheduled builders `--add-dir "${DATA_DIR}"`, where `$` and a
- * backtick still expand. DATA_DIR is `~/.dorothy`, so the home folder's own
+ * backtick still expand. DATA_DIR is `~/.tars`, so the home folder's own
  * name went into the command line raw. What can go wrong, each checked below:
  *
  * 1. An apostrophe in the home (`/Users/o'neil`) closes the quote early: the
@@ -169,7 +169,7 @@ describe('a home folder whose name the shell would read', () => {
   it('reaches every provider\'s interactive CLI as the folder it is', async () => {
     const plain = await providersUnder(plainHome);
     const plainArgv = new Map(plain.getAllProviders().map(p => [p.id, argvOf(p.buildInteractiveCommand(interactiveParams(plainHome)))]));
-    const plainDataDir = path.join(plainHome, '.dorothy');
+    const plainDataDir = path.join(plainHome, '.tars');
 
     const hostile = await providersUnder(hostileHome);
     const wrong: string[] = [];

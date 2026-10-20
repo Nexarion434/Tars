@@ -50,7 +50,7 @@ test("a chat's conversation is read across its sessions, then followed live, and
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-chat-history-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
   const cliFor = (id: string) => {
     const cli = path.join(home, `${id}-cli.cjs`);
@@ -221,7 +221,7 @@ test("Main reads a former orchestrator's session where it ran, after the role mo
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-chat-folder-'));
   const project = path.join(home, 'projects', 'demo');
   const worktree = path.join(project, '.worktrees', 'old-lead');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [worktree, dir]) fs.mkdirSync(d, { recursive: true });
   const SOLD = 'e2e00000-0000-4000-8000-00000000f001';
   const agent = (id: string, name: string, extra: Record<string, unknown> = {}) => ({

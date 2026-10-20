@@ -135,7 +135,7 @@ describe('check:names', () => {
       'seedZeldasConversation();',
       'def zeldas_turn(): pass',
       "const dir = '-Users-zelda-tars';",
-      "const url = 'app://-/%5cUsers%5czelda%5c.dorothy';",
+      "const url = 'app://-/%5cUsers%5czelda%5c.tars';",
       "const text = 'fatal\\nzelda';",
       'const home = "/Users/Zelda/projects";',
     ];

@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type Page } from '@playwright/test
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, seedSandbox, stepShot, removeHome } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome, seedSandbox, stepShot, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -53,9 +53,8 @@ function standIn(home: string): string {
     { tool_use_id: 'toolu_2', tool: 'Read', input: { file_path: read }, reason: whyReadOf(read) },
     { tool_use_id: 'toolu_3', tool: 'WebSearch', input: { query: SEARCH } },
   ];
-  const bin = path.join(home, 'stand-in.cjs');
-  fs.writeFileSync(bin, [
-    `#!${process.execPath}`,
+  // writeNodeCli: the script itself on macOS and Linux, npm's shim beside it on Windows.
+  return writeNodeCli(path.join(home, 'stand-in.cjs'), [
     "const fs = require('fs'); const path = require('path'); const crypto = require('crypto');",
     "if (process.argv.includes('--version')) { console.log('2.1.289 (Claude Code)'); process.exit(0); }",
     "const session = crypto.randomUUID();",
@@ -87,8 +86,7 @@ function standIn(home: string): string {
     "})();",
     "process.stdin.resume();",
     '',
-  ].join('\n'), { mode: 0o755 });
-  return bin;
+  ].join('\n'));
 }
 
 const answersOf = (home: string) => {
@@ -107,7 +105,7 @@ test('a permission question Tars holds is answered from the panel and the window
   const read = elsewhere(home);
   // The asker alone, idle and without a terminal: the board's auto start runs
   // it through its own CLI path.
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([{
     id: AGENT.id, name: AGENT.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cli,
     createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',

@@ -13,7 +13,7 @@ import * as path from 'path';
  * 1. (L1) A chat's runner posts into another project's room: the store takes
  *    it, its own-project check gone, and that project's team is typed to.
  * 2. An agent whose record says it runs a chat, which the fleet does not
- *    confirm (chats.json and agents.json are in ~/.dorothy, agent-writable),
+ *    confirm (chats.json and agents.json are in ~/.tars, agent-writable),
  *    posts as a chat, or is sent to with bus:sendNow as one (the Info: sendNow
  *    admitted by the record's kind where the post asks the fleet).
  * 3. The chat's post goes under its runner's name rather than the chat's.

@@ -5,7 +5,7 @@ import { DATA_DIR } from '../constants';
 import { pathKey } from '../platform/path-compare';
 
 /**
- * The folder Tars keeps for each project: ~/.dorothy/project-files/<key>, with
+ * The folder Tars keeps for each project: ~/.tars/project-files/<key>, with
  * tools/ and reports/, where the project's agents keep the scripts and the
  * reports worth keeping (notes/ went in 2.0.4: moveNotesOut). The Vault shows
  * and edits them (services/vault-project-files.ts). They kept them in temporary folders, which

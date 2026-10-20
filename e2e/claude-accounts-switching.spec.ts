@@ -86,7 +86,7 @@ function writeStandIn(home: string): string {
     "  await pause(500);",
     "  await post({ status: 'running', event: 'UserPromptSubmit' });",
     "  const now = Math.floor(Date.now() / 1000);",
-    "  fs.writeFileSync(path.join(home, '.dorothy', 'rate-limits.d', 'default.json'), JSON.stringify({ updatedAt: now, rate_limits: { five_hour: { used_percentage: 100, resets_at: now + 3600 }, seven_day: { used_percentage: 12, resets_at: now + 86400 } } }));",
+    "  fs.writeFileSync(path.join(home, '.tars', 'rate-limits.d', 'default.json'), JSON.stringify({ updatedAt: now, rate_limits: { five_hour: { used_percentage: 100, resets_at: now + 3600 }, seven_day: { used_percentage: 12, resets_at: now + 86400 } } }));",
     `  await post({ status: 'error', event: 'StopFailure', error_kind: 'rate_limit', error_message: ${JSON.stringify(LIMIT)} });`,
     "})();",
     "process.stdin.resume();",
@@ -101,11 +101,13 @@ function lines(file: string): Record<string, unknown>[] {
 
 const ev = (page: Page) => page.evaluate.bind(page);
 
+test.skip(process.platform === 'win32', 'several Claude accounts are off on a Windows build until they are ported; this runs on macOS and Linux');
+
 test('an agent cut by its account\'s limit goes on, on another account', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-switch-'));
   const resolvedHome = fs.realpathSync(home);
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(resolvedHome, 'projects', 'demo');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(path.join(dataDir, 'rate-limits.d'), { recursive: true });

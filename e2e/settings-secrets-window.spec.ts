@@ -7,7 +7,7 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepS
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * The window's side of #466 (2.0.4): since the secrets left ~/.dorothy, Settings is handed none, and holds none.
+ * The window's side of #466 (2.0.4): since the secrets left ~/.tars, Settings is handed none, and holds none.
  * Frames: `Secrets · Settings, Telegram`, `· Settings, Providers, an API key`, `· Settings, Hermes connection`,
  * `· states`, `· CLIs, one detection` (each with its light copy).
  *
@@ -22,14 +22,18 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    show the new token in its own dialog, never in the page; copy token has Tars copy it. OpenRouter's key: set and
  *    cleared through its row, its label says so. A save of a switch leaves every secret as it was.
  * 2. Hermes: the form's token reads set and is in no field, and its row says switching to OAuth keeps it, unused
- *    (nothing in the form clears it); replace then save puts a new one in its connection; copy secret has Tars copy the
- *    webhook's secret, which the page never holds.
+ *    (nothing in the form clears it); replace then save puts a new one in its connection; copy secret, on Hermes's
+ *    block in Gateways since #469's window, has Tars copy the webhook's secret, which the page never holds.
  * 3. One detection: CLI Paths shows, as it opens, the codex set in the settings (a stand-in that answers
  *    `codex-cli 9.9.9`), and Providers lists it as `codex 9.9.9`, its Command row naming that path, set in CLI Paths;
- *    for every CLI, CLI Paths shows a path exactly when Providers says ready.
+ *    for every CLI, CLI Paths shows a path exactly when Providers says ready. The login shell the detection asks is
+ *    slow here (3 s, as under load), so CLI Paths is read once its detection has answered; opened again after
+ *    Providers, it shows at once what Providers read and never says "looking" again.
  * Red on 2a2a019f (#466's head, the page before this): Telegram's bot token field holds the mask (1); Hermes's
  * token field holds it and copy secret copies through the page (2); CLI Paths shows nothing as it opens and Providers
- * reads `codex codex-cli 9.9.9` (3).
+ * reads `codex codex-cli 9.9.9` (3). Red on main 30a1c6b1 (3): CLI Paths opened again after Providers renders
+ * "looking" until its own ask of main answers, each page holding a detection of its own; read then, Claude Code
+ * showed no path where Providers said ready (the QA's train 3 of 2.0.4).
  * The artefact: values.json (the rows read, the private files before and after, what Tars showed and copied), the
  * screenshots, and with E2E_TRACE=on the app's trace.
  */
@@ -53,7 +57,7 @@ type Handoffs = { copied: string[]; dialogs: { message: string; detail: string }
 
 function seed(newInterface: boolean, tag: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-secrets-window-${tag}-`));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   const bin = path.join(home, 'bin');
   fs.mkdirSync(dir, { recursive: true });
@@ -61,6 +65,9 @@ function seed(newInterface: boolean, tag: string) {
   fs.mkdirSync(bin, { recursive: true });
   const codex = path.join(bin, 'codex');
   fs.writeFileSync(codex, '#!/bin/sh\n[ "$1" = "--version" ] && echo "codex-cli 9.9.9"\nexit 0\n', { mode: 0o755 });
+  // A login shell as slow as a loaded machine's: the detection asks it for the PATH (cliPaths:detect, `-ilc`).
+  const slowShell = path.join(bin, 'slow-login-shell');
+  fs.writeFileSync(slowShell, '#!/bin/sh\nsleep 3\nprintf \'%s\\n\' "$PATH"\n', { mode: 0o755 });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface,
@@ -76,7 +83,7 @@ function seed(newInterface: boolean, tag: string) {
   /** The gateway's token, which Tars keeps apart from the rest of the connection (hermes-config.ts, since 1.9.2). */
   const hermesToken = () => fs.readFileSync(path.join(priv, 'hermes-token'), 'utf8').trim();
   const webhookSecret = () => fs.readFileSync(path.join(priv, 'hermes-webhook-secret'), 'utf8').trim();
-  return { home, codex, secrets, settings, hermesToken, webhookSecret };
+  return { home, codex, slowShell, secrets, settings, hermesToken, webhookSecret };
 }
 
 /**
@@ -125,10 +132,10 @@ const rowsOf = (page: Page) => page.locator('[data-settings-row]');
 const rowOf = (page: Page, label: string) =>
   rowsOf(page).filter({ has: page.locator('[data-settings-label]', { hasText: new RegExp(`^${label.replace(/[+()]/g, '\\$&')}$`) }) });
 
-async function launch(newInterface: boolean, tag: string, base: number) {
+async function launch(newInterface: boolean, tag: string, base: number, env: (sandbox: ReturnType<typeof seed>) => Record<string, string> = () => ({})) {
   const sandbox = seed(newInterface, tag);
   const app = await launchSandboxed(electron, sandbox.home, {
-    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(base), DOROTHY_E2E: '1' },
+    env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(base), DOROTHY_E2E: '1', ...env(sandbox) },
   });
   const page = await app.firstWindow();
   const errors: string[] = [];
@@ -266,15 +273,20 @@ for (const newInterface of [false, true]) {
       expect(await held(page, [HERMES_TOKEN, MASK]), 'Hermes holds no token').toEqual([]);
       await stepShot(page, '01-hermes-token-set');
 
-      await rowOf(page, 'Incoming webhook').getByRole('button', { name: 'copy secret', exact: true }).click();
-      await expect(rowOf(page, 'Incoming webhook').getByRole('button', { name: 'copied', exact: true })).toBeVisible();
+      // The webhook's secret is the default gateway's: Gateways shows it on Hermes's block since #469's window.
+      await section(page, 'Hermes', 'Gateways');
+      const webhookRow = page.getByRole('region', { name: 'Hermes', exact: true }).locator('[data-settings-row]')
+        .filter({ has: page.locator('[data-settings-label]', { hasText: /^Secret$/ }) });
+      await webhookRow.getByRole('button', { name: 'copy secret', exact: true }).click({ timeout: 30_000 });
+      await expect(webhookRow.getByRole('button', { name: 'copied', exact: true })).toBeVisible();
       const secret = s.webhookSecret();
       expect(secret.length).toBeGreaterThan(20);
       expect((await handoffs(s.app)).copied).toEqual([secret]);
       expect(await held(page, [secret]), 'the webhook secret is held nowhere').toEqual([]);
       await stepShot(page, '02-hermes-secret-copied');
 
-      await auth.getByRole('button', { name: 'replace', exact: true }).click();
+      await section(page, 'Hermes', 'Connection');
+      await auth.getByRole('button', { name: 'replace', exact: true }).click({ timeout: 30_000 });
       await expect(auth.locator('input')).toHaveValue('');
       await auth.locator('input').fill(NEW_HERMES);
       await rowOf(page, 'Status').getByRole('button', { name: 'save', exact: true }).click();
@@ -294,14 +306,18 @@ for (const newInterface of [false, true]) {
 
   test(`cli paths and providers read one detection, and a cli's version is its number alone${shell}`, async () => {
     test.setTimeout(240_000);
-    const s = await launch(newInterface, 'clis', newInterface ? 31556 : 31555);
+    const s = await launch(newInterface, 'clis', newInterface ? 31556 : 31555, (sandbox) => ({ SHELL: sandbox.slowShell }));
     const values: Record<string, unknown> = { newInterface };
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
     const { page } = s;
     try {
-      // CLI Paths, as it opens: the codex set in the settings, and what Tars found for the others.
+      // CLI Paths, as it opens: the codex set in the settings, then what Tars found for the others, once the detection
+      // has answered. Codex's path is the settings' and shows before it: read then, the others raced the detection
+      // (red once in each full run of trains 2b and 3 of 2.0.4).
       await section(page, 'AI & Providers', 'CLI Paths');
       await expect(rowOf(page, 'Codex').locator('[data-cli-path]')).toHaveText(s.codex, { timeout: 30_000 });
+      const looking = page.locator('[data-settings-hint]', { hasText: /^looking$/ });
+      await expect(looking).toHaveCount(0, { timeout: 30_000 });
       const found: Record<string, boolean> = {};
       for (const name of DRIVEN) found[name] = (await rowOf(page, name).locator('[data-cli-path]').count()) > 0;
       await stepShot(page, '01-cli-paths');
@@ -321,11 +337,32 @@ for (const newInterface of [false, true]) {
       }
       keep({ found, ready });
       expect(ready, 'Providers says ready exactly where CLI Paths shows a path').toEqual(found);
+
+      // CLI Paths again: the window holds the detection already, so it shows it as it opens, read at once, and never
+      // says "looking" (watched from before the click). It asked main again on every opening, and said "looking" until
+      // main answered: read then, Claude Code had no path where Providers said ready.
+      await page.evaluate(() => {
+        const w = window as unknown as { __lookingSeen: number };
+        w.__lookingSeen = 0;
+        const seen = () => { if (Array.from(document.querySelectorAll('[data-settings-hint]')).some((e) => e.textContent === 'looking')) w.__lookingSeen += 1; };
+        new MutationObserver(seen).observe(document.body, { childList: true, subtree: true, characterData: true });
+      });
+      await section(page, 'AI & Providers', 'CLI Paths');
+      await expect(rowOf(page, 'Codex').locator('[data-cli-path]')).toHaveText(s.codex);
+      const again: Record<string, boolean> = {};
+      for (const name of DRIVEN) again[name] = (await rowOf(page, name).locator('[data-cli-path]').count()) > 0;
+      const lookingSeen = await page.evaluate(() => (window as unknown as { __lookingSeen: number }).__lookingSeen);
+      keep({ again, lookingSeen });
+      expect(lookingSeen, 'CLI Paths opened again never says looking').toBe(0);
+      expect(again, 'CLI Paths opened again shows at once what Providers read').toEqual(ready);
+      await stepShot(page, '02-cli-paths-again');
+
+      await section(page, 'AI & Providers', 'Providers');
       await codex.click();
       const command = page.getByRole('region', { name: 'Codex settings' }).locator('[data-settings-row]').filter({ has: page.locator('[data-settings-label]', { hasText: /^Command$/ }) });
       await expect(command.locator('[data-cli-path]')).toHaveText(s.codex);
       await expect(command).toContainText('set in CLI Paths');
-      await stepShot(page, '02-providers-codex');
+      await stepShot(page, '03-providers-codex');
 
       keep({ pageErrors: s.errors });
       expect(s.errors, s.errors.join('\n')).toEqual([]);

@@ -10,7 +10,7 @@ import * as path from 'path';
  * the user added, the agents' folders and the folders Claude has seen as
  * roots. A root that is the home or above it (`/Users`, `/home`, `/`) opens
  * every file of the home: a shell profile, an SSH key, ~/.tars-private.
- * ~/.dorothy/projects.json, which lists the added projects, is under the
+ * ~/.tars/projects.json, which lists the added projects, is under the
  * directory every agent is handed.
  *
  * Such a root is refused by its spelling, and by identity: a folder whose

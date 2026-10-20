@@ -42,7 +42,7 @@ function resolveClaude() {
 function seed(claude) {
   const home = fs.mkdtempSync('/tmp/tars-perm-');
   const project = path.join(home, 'projects', 'perm');
-  for (const dir of [path.join(home, '.claude'), path.join(home, '.dorothy'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [path.join(home, '.claude'), path.join(home, '.tars'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
   execFileSync('git', ['init', '-q', project]);
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ theme: 'dark' }, null, 2));
   const version = path.basename(claude);
@@ -60,12 +60,12 @@ function seed(claude) {
     projectPath: project, skills: [], output: [], permissionMode: 'normal', cliPath,
     lastActivity: new Date().toISOString(),
   });
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([
     agent('allow', 'Allow agent', claude), agent('deny', 'Deny agent', claude), agent('dialog', 'Dialog agent', plain),
   ], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude },
   }, null, 2));
   return { home, project };
@@ -161,7 +161,7 @@ test('a permission claude would ask in its dialog is asked of Tars, and the wind
     const dialog = await waitFor(async () => { const s = await state('dialog'); return s?.status === 'waiting' && s.waitingReason === 'permission' ? s : null; }, 150_000, 'dialog agent waits on its dialog');
     fact('dialog', dialog);
 
-    const hookLog = fs.readFileSync(path.join(HOME, '.dorothy', 'logs', 'hooks.log'), 'utf8');
+    const hookLog = fs.readFileSync(path.join(HOME, '.tars', 'logs', 'hooks.log'), 'utf8');
     const dialogsOpened = ['allow', 'deny', 'dialog'].filter(id => hookLog.split('\n').some(l => l.includes('PERMISSION_REQUEST') && l.includes(`AGENT_ID=${id} `)));
     fact('dialogs opened', { dialogsOpened });
     const results = toolResults();

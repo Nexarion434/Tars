@@ -9,7 +9,7 @@ import { writeAtomicSync } from '../utils/secret-file';
  * before the page could show its list (the Audit, 2026-09-23), and nothing at
  * all when skills.sh was slow or down. The listing changes by the day, not by
  * the visit, so the last one is served at once, from memory or from
- * ~/.dorothy/skills-marketplace.json after a restart, and fetched again behind
+ * ~/.tars/skills-marketplace.json after a restart, and fetched again behind
  * it once it is older than an hour. Only the very first visit, with nothing
  * kept yet, waits on the network. A failed fetch keeps what was there.
  */
@@ -48,7 +48,7 @@ function repoSegment(segment: string): boolean {
  * Whether an entry is one the Extensions page can show and install from.
  *
  * The listing comes from someone else's server, and is kept in
- * ~/.dorothy/skills-marketplace.json, a folder every agent can write. `repo`
+ * ~/.tars/skills-marketplace.json, a folder every agent can write. `repo`
  * is what `npx skills add https://github.com/<repo>` installs when the user
  * clicks Install, so a planted entry could show a well-known name beside
  * somebody else's repository (the Audit, gate of #144); the other fields are

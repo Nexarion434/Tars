@@ -5,8 +5,8 @@ engineers. Every agent gets a real terminal, its own git worktree and its own
 model; you watch all of them at once, delegate between them, and see what each
 one actually changed.
 
-macOS. Free and open source. No account, no cloud in the middle: the CLIs run
-on your machine and Tars is the room they work in.
+macOS and Windows. Free and open source. No account, no cloud in the middle: the
+CLIs run on your machine and Tars is the room they work in.
 
 ![The dashboard: every running agent in one grid, each pane a live terminal](screenshots/dashboard.png)
 
@@ -182,9 +182,16 @@ time and tokens, and the sum of its tasks' own costs.
 
 ## Install
 
-Download the latest release for macOS 13 (Ventura) or later:
+Download the latest release for macOS 13 (Ventura) or later, or for Windows 10 or 11
+(64-bit):
 
 **[github.com/cooper-labs-tech/Tars/releases/latest](https://github.com/cooper-labs-tech/Tars/releases/latest)**
+
+On Windows, run `Tars-Setup-<version>.exe`. It installs for your account only, with
+no administrator rights, and adds Tars to the Start menu and the desktop. The
+installer is not signed, so SmartScreen warns on its first run: More info, then Run
+anyway. Tars updates itself from the same releases as on macOS. Closing the window
+keeps your agents working, with Tars in the tray; Quit Tars in the tray's menu ends it.
 
 Then point Tars at a folder. It finds the CLIs already installed on your machine:
 you do not configure paths unless something lives somewhere unusual.
@@ -193,7 +200,7 @@ It also keeps claude and Amp up to date, when an agent runs them, at launch and 
 hour, under the same "Check for updates" switch as Tars itself, so a model
 a new CLI release brings is there for every agent without a `claude update` by
 hand. Sessions already running are left alone and restarts pick up the new version;
-what was updated, or why not, is in `~/.dorothy/cli-updates.log`. The other CLIs
+what was updated, or why not, is in `~/.tars/cli-updates.log`. The other CLIs
 are yours to update: [OPERATIONS.md](OPERATIONS.md#the-agents-clis-kept-up-to-date-by-tars)
 says which and why.
 
@@ -231,9 +238,9 @@ so rather than inventing an answer.
 
 ## Providers
 
-Six CLIs (Claude Code, Codex, Gemini, Grok, opencode and Pi), twelve reached
-by API key: DeepSeek, Kimi (Moonshot), MiniMax, Mimo, NVIDIA, Nous Portal,
-Ollama Cloud, OpenRouter, Qwen, Venice AI, Zhipu and any OpenAI-compatible
+Eight CLIs (Claude Code, Codex, Gemini, Grok, opencode, Pi, Amp and Qwen Code),
+twelve reached by API key through Claude Code: DeepSeek, Kimi (Moonshot), MiniMax,
+Mimo, NVIDIA, Nous Portal, Ollama Cloud, OpenRouter, Qwen, Venice AI, Zhipu and any OpenAI-compatible
 endpoint you point Tars at yourself, plus Ollama for whatever you run
 locally. Local models also run through Tasmania.
 
@@ -334,7 +341,9 @@ conversation with the project's orchestrator on one topic.
 
 ## Where your data lives
 
-Everything is a file in your home directory. Nothing is uploaded.
+Everything is a file in your home directory. Nothing is uploaded. On Windows that
+is `%USERPROFILE%`, and a file marked `0600` below is closed to every account but
+yours by its access list, Windows having no mode bits.
 
 | File | What it holds |
 |---|---|

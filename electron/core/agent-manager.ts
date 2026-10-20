@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from './end-of-turn';
 import { keyPrintOf } from '../services/cli-keys';
 import { readAppSettingsFromDisk } from '../providers/cli-provider';
 import { agentRecovered, reportEvent } from '../services/event-reports';
@@ -15,7 +16,7 @@ import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
 import { holdsMessages } from './one-task';
-import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
+import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, setTurnInProgressProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
 import { cliStoppedIn, spawnAgentPty, agentShell, codexLaunching } from './agent-pty';
@@ -103,6 +104,8 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && holdsMessages(agent);
   });
+  // The CLI's own turn, and nothing wider: what tells a message that opens a turn (pty-manager.ts, noteTurnCut).
+  setTurnInProgressProbe(agentId => agents.get(agentId)?.status === 'running');
 }
 
 /**
@@ -839,7 +842,7 @@ const TASK_START_GRACE_MS = 600_000;
  */
 export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined, task?: string): void {
   if (!ptyId) return;
-  if (getProvider(agent.provider).binaryName !== 'claude') return;
+  if (!hasClaudeHooks(agent)) return;
 
   // Only a real task is worth confirming: a start with none has nothing to lose.
   agent.pendingDelivery = task && task.trim()
@@ -1286,6 +1289,7 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
     agent.projectPath,
     agent.skills,
     savedSettings as unknown as AppSettings,
+    { model: agent.model, effort: agent.effort },
   );
 
   const ptyProcess = spawnAgentPty({
@@ -1300,7 +1304,7 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
       ...providerEnvVars,
       // CLAUDE_MGR_API_URL is imposed by spawnAgentPty, on the one line that
       // starts a process, so the API-driven spawn cannot miss it as it did.
-      // Load CLAUDE.md from --add-dir directories (e.g. ~/.dorothy)
+      // Load CLAUDE.md from --add-dir directories (e.g. ~/.tars)
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
       ...tasmaniaEnv,
     },

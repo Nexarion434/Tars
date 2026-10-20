@@ -13,7 +13,7 @@ import { inCredentialPlace, landsUnderSafeRoot, realTarget } from './real-target
  * these three took paths.
  *
  * Writes: the instruction files the Brain edits, by name, and nothing else:
- * ~/.claude/CLAUDE.md, ~/.dorothy/CLAUDE.md, and a project's CLAUDE.md or
+ * ~/.claude/CLAUDE.md, ~/.tars/CLAUDE.md, and a project's CLAUDE.md or
  * .claude/CLAUDE.md. fs:write-text-file wrote any text under ~/.dorothy,
  * ~/.claude, ~/.codex, ~/.gemini, ~/.grok and every project: statusline.sh
  * (which Claude Code runs), bin/tars-mcp-node (which every Tars MCP server
@@ -21,7 +21,7 @@ import { inCredentialPlace, landsUnderSafeRoot, realTarget } from './real-target
  * compromised page ran code in every agent.
  *
  * Reads (fs:read-text-file): what the Brain and the code panel show, under the
- * CLIs' folders and the projects, and of ~/.dorothy only its CLAUDE.md. Never a
+ * CLIs' folders and the projects, and of ~/.tars only its CLAUDE.md. Never a
  * secret: nothing under ~/.tars-private, the settings or a copy of them, the
  * shared token, the Hermes files, a CLI's own credentials, by name, by real
  * path, or through a hard link into the private folder.
@@ -72,7 +72,7 @@ export function isSecretFile(target: string): boolean {
 
 const home = () => os.homedir();
 const inside = (root: string, p: string) => samePath(root, p) || isUnder(p, root);
-/** A project folder the window may reach: none that is ~/.dorothy, ~/.tars-private or in them. */
+/** A project folder the window may reach: none that is ~/.tars, ~/.tars-private or in them. */
 const projectRoots = (projects: string[]) => projects.filter((p) => typeof p === 'string' && p
   && !inside(DATA_DIR, path.resolve(p)) && !inside(PRIVATE_DIR, path.resolve(p)));
 
@@ -80,7 +80,7 @@ const projectRoots = (projects: string[]) => projects.filter((p) => typeof p ===
  * A folder a page may add as a project: one that exists, none of Tars's own
  * folders, and no folder of credentials or one inside it, as spelled or where
  * it really lies. A page added any folder as a project and then read it (the
- * Audit's L1 on #466). The projects' list lives in ~/.dorothy, which every
+ * Audit's L1 on #466). The projects' list lives in ~/.tars, which every
  * agent can write, so a read judges its own target too (windowMayRead).
  */
 export function mayBeProject(p: unknown): boolean {

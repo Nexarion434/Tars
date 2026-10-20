@@ -190,3 +190,26 @@ describe('the keys that empty a field and put it back', () => {
     expect(replayed).toEqual(draft);
   });
 });
+
+/**
+ * An Esc that cut a turn (2.0.4, the Audit's L1 on #461, found by
+ * qwen-code.spec.ts). A lone Esc gives the field up: on an idle field it arms
+ * "Esc again to clear" or opens the rewind dialog. In the middle of a turn it
+ * cuts the turn instead (Claude Code, Qwen Code 0.25.2 measured on 2026-10-18)
+ * and leaves the field as it was; the transcript then says so. Until now the
+ * field stayed unknown, and the next task Tars had for the agent waited behind
+ * it until somebody pressed Enter or Ctrl+C.
+ *
+ * The cut is read by the terminal's writer since F9 (pty-manager.ts,
+ * noteTurnCut, from what Tars left in the field and what was typed since), not
+ * from the draft: escCutTheTurn and the field it kept before the Esc, with E2
+ * to E4, went with the Audit's L7 on #461. What stays is the draft's own part.
+ *
+ * Every way it can fail, written before the code (2026-10-19):
+ *  E1. A lone Esc is taken as known: on an idle field it may have armed a clear.
+ */
+describe('an Esc that cut a turn', () => {
+  it('E1. a lone Esc gives the field up', () => {
+    expect(feedDraft(type('salut'), '\x1b').state).toBe('unknown');
+  });
+});

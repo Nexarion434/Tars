@@ -104,7 +104,7 @@ export class ClaudeProvider implements CLIProvider {
       }
     }
 
-    // Tars's CLAUDE.md via ~/.dorothy
+    // Tars's CLAUDE.md via ~/.tars
     command += ` --add-dir ${shellQuote(DATA_DIR)}`;
 
     // Prompt with skills directive, and no operand at all without a task.

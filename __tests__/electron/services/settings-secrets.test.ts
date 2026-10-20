@@ -3,8 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * The secrets leave ~/.dorothy (2.0.4, the maintainer's decision of 18/10):
- * ~/.dorothy is every agent's --add-dir, so every key in app-settings.json
+ * The secrets leave ~/.tars (2.0.4, the maintainer's decision of 18/10):
+ * ~/.tars is every agent's --add-dir, so every key in app-settings.json
  * was every agent's to read. They go to ~/.tars-private/settings-secrets.json,
  * which no agent is handed; app-settings.json keeps the rest.
  *
@@ -25,7 +25,7 @@ import * as path from 'node:path';
  *  P6. A private file that cannot be read (broken JSON) is written over, and its
  *      keys are lost.
  *  P7. api-token, hermes-connection.json and hermes-session.json stay in
- *      ~/.dorothy, or are lost on the way.
+ *      ~/.tars, or are lost on the way.
  *  P8. The window gets a secret back (withoutSecrets), or a save from the window,
  *      which holds none, erases one; an empty field from an old page clears a key.
  *  P9. The inventory misses a credential of AppSettings: a field named like a

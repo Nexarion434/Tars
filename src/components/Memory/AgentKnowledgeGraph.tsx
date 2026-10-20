@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, useLayoutEffect } fr
 import { isAbsolutePath, pathName, rendererPlatform, tildePath, toSlashes } from '@/lib/display-path';
 import { BOX_H, BOX_W, fitZoom, keepAnchor, layoutRings, ringOrder, stageBox, zoomBounds } from '@/lib/graph-layout';
 import type { Point, StageBox } from '@/lib/graph-layout';
+import { providerWord } from '@/lib/providers';
 import type { AgentStatus, ProjectMemory } from '@/types/electron';
 import { SimpleMarkdown } from '@/components/VaultView/components/MarkdownRenderer';
 import { BrandSpinner, Button, Panel, PanelCaption, StatusSquare } from '@/components/ui';
@@ -180,7 +181,7 @@ function buildGraph(
       id: agent.id,
       label: agent.name || `Agent ${agent.id.slice(0, 6)}`,
       kind: 'agent',
-      sub: agent.model || agent.localModel || agent.provider || 'claude',
+      sub: agent.model || agent.localModel || providerWord(agent.provider),
       tone: agentTone(agent.status),
     });
 
@@ -351,7 +352,7 @@ export default function AgentKnowledgeGraph() {
 
       // Only include the CLAUDE.md files that are actually loaded per agent:
       // - ~/.claude/CLAUDE.md  (global Claude config)
-      // - ~/.dorothy/CLAUDE.md (global Tars config)
+      // - ~/.tars/CLAUDE.md    (global Tars config)
       // - {projectPath}/CLAUDE.md and {projectPath}/.claude/CLAUDE.md per agent
       const homeFiles = await window.electronAPI?.fs?.readProjectFiles({
         paths: uniqueProjectPaths,
@@ -369,9 +370,10 @@ export default function AgentKnowledgeGraph() {
       for (const fp of foundPaths) {
         // A Windows path is read with / as its separator, as a posix one is.
         const slashed = toSlashes(fp);
-        // Global: ~/.claude/ or ~/.dorothy/ files
+        // Global: ~/.claude/ or Tars's data folder, ~/.tars/. ~/.dorothy/ too, its name until 2.0.4: the link
+        // 2.0.4 leaves there still reaches the folder, so a path read from an older setting can name it.
         const isGlobal = (slashed.includes('/.claude/') && !slashed.includes('/.claude/projects/'))
-          || slashed.includes('/.dorothy/');
+          || slashed.includes('/.tars/') || slashed.includes('/.dorothy/');
         if (isGlobal) {
           instrFiles[fp] = 'global';
         } else {

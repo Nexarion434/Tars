@@ -276,7 +276,7 @@ export function setupProtocolHandler() {
       // project-files folders, Claude Code's memory folders, never a secret
       // (utils/window-file-access.ts). Unrestricted, this served ~/.ssh/id_rsa
       // to anything that could put a URL in the renderer; until 2.0.4, all of
-      // ~/.dorothy and ~/.claude, every key app-settings.json held included.
+      // ~/.tars and ~/.claude, every key app-settings.json held included.
       if (!localFileServes(filePath)) {
         console.error('local-file:// refused, outside the allowed roots:', filePath);
         return new Response('Forbidden', { status: 403 });
@@ -337,7 +337,7 @@ export function setupProtocolHandler() {
       // came back out as a real traversal that path.join walked straight
       // through. The `app` scheme is registered secure and CORS-enabled, so it
       // is same-origin with the app's own page: a vault note holding
-      // `![](app://-/a/..%2f..%2f.dorothy%2fapp-settings.json)` fetched it the
+      // `![](app://-/a/..%2f..%2f.tars%2fapp-settings.json)` fetched it the
       // moment the note was opened, with no click, and handed every provider
       // API key to the renderer. Markdown images are never run through
       // isSafeUrl, and a vault document can be written by any agent.

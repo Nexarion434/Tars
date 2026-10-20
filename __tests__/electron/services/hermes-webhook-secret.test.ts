@@ -8,7 +8,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * The Hermes webhook secret lives where the agents are not pointed.
  *
  * It opens the one route that dispatches to any agent of any project, which is
- * the reach of JeanBrasse's own chat. Until lot 4 it sat in `~/.dorothy`, the
+ * the reach of JeanBrasse's own chat. Until lot 4 it sat in `~/.tars`, the
  * directory every agent is started with, next to the shared token that the
  * webhook also accepted: closing the second and leaving the first there would
  * only have changed which file an agent reads to drive the fleet.
@@ -109,7 +109,7 @@ describe('a new install', () => {
   });
 });
 
-describe('an install that has it in ~/.dorothy', () => {
+describe('an install that has it in ~/.tars', () => {
   const HELD_BY_HERMES = 'c'.repeat(64);
 
   it('moves it out when it starts, with the value Hermes holds', async () => {
@@ -166,7 +166,7 @@ describe('an install that has it in ~/.dorothy', () => {
   it('is moved from main.ts when the app starts, not when something first asks for it', () => {
     // A run in which nobody opens Settings > Hermes and no webhook arrives
     // reads no secret, so a move made only on the first read would leave it in
-    // ~/.dorothy for that whole run.
+    // ~/.tars for that whole run.
     const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
     const ready = main.slice(main.indexOf('app.whenReady()'));
     const body = ready.slice(0, ready.indexOf('\n});') + 4);

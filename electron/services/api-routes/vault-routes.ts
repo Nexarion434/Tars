@@ -241,7 +241,7 @@ export function registerVaultRoutes(app: RouteApp, ctx: RouteContext): void {
         return;
       }
       // Nothing from the private directory. The copy lands in the vault, under
-      // ~/.dorothy, the directory every agent is handed, and /api/local-file
+      // ~/.tars, the directory every agent is handed, and /api/local-file
       // serves it without a token: one vault_attach_file call put JeanBrasse's
       // conversation, or the webhook secret, back where the move had taken it
       // from. Measured while closing the Telegram side of the same gap.

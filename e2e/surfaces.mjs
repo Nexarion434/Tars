@@ -66,7 +66,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 18 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 19 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -76,6 +76,7 @@ const SETTINGS_TREE = [
   ['cli-paths', 'AI & Providers', 'CLI Paths'],
   ['permissions', 'AI & Providers', 'Permissions'],
   ['hermes', 'Hermes', 'Connection'],
+  ['hermes-gateways', 'Hermes', 'Gateways'],
   ['notifications', 'General', 'Notifications'],
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
@@ -90,7 +91,13 @@ const SETTINGS_TREE = [
   ['memory-backends', 'Workspace', 'Memory Backends'],
 ];
 
-export const SETTINGS_SECTIONS = SETTINGS_TREE.map(([name, group, child]) => ({
+// Claude accounts is not offered on a Windows build until it is ported
+// (src/lib/claude-accounts-offered.ts): no surface to photograph there.
+const SETTINGS_SHOWN = process.platform === 'win32'
+  ? SETTINGS_TREE.filter(([name]) => name !== 'claude-accounts')
+  : SETTINGS_TREE;
+
+export const SETTINGS_SECTIONS = SETTINGS_SHOWN.map(([name, group, child]) => ({
   name: 'settings-' + name,
   route: '/settings',
   clickText: group,
@@ -221,7 +228,12 @@ export const VOLATILE = {
   },
   'sandbox-paths': {
     surfaces: 'all',
-    selector: 'text=/dorothy-e2e/',
+    // The smallest element whose text names the sandbox's home, but not a CLI's
+    // path (data-cli-path): cli-paths masks that one with its row's whole left
+    // column, a fixed box, where this mask drew the path's own span at the
+    // path's width, past its column once the path is long (#498's witness: a
+    // home 40 characters longer turned settings-cli-paths red by 13,614 px).
+    selector: ':not([data-cli-path]):text-matches("dorothy-e2e")',
     why: 'the sandbox HOME is a mkdtemp directory, so its name is different in every run',
   },
   'tars-version': {
@@ -249,15 +261,33 @@ export const VOLATILE = {
     // L5 on #460): under each CLI of the list, after its command (`claude
     // 2.1.302`), and in the picked CLI's chip. The mask covers the number and
     // nothing around it, so a reworded line is still compared.
+    // Not on Windows: the app gets a PATH without the user's folders there
+    // (windowsSystemPath in e2e/fixture.mjs), finds no CLI and prints no version.
+    platforms: ['darwin', 'linux'],
     selector: '[data-cli-version]',
     why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly, codex and amp as often',
   },
   'cli-paths': {
     surfaces: ['settings-ai-providers', 'settings-cli-paths'],
     // Where the one detection found each CLI (2.0.4): CLI Paths shows it as it
-    // opens, and Providers' Command row names it. The path alone is masked.
-    selector: '[data-cli-path]',
+    // opens, and Providers' Command row names it. Masked with the row's left
+    // column (its name and the line that holds the path), a box as wide as the
+    // column whatever the path: the sandbox's stand-in CLIs (main's b422b1cd)
+    // sit under its mkdtemp home, whose length moves with the run's TMPDIR, and
+    // a mask the path's own width moved with it (6,091 and 23,655 pixels on
+    // 0b171098). Not the line alone: sandbox-paths masks the path's span too,
+    // and the span's box stands about 1 px above its line, so a 1-px row at the
+    // path's width was left above the line's box (the Audit on #498).
+    selector: '[data-settings-row]:has([data-cli-path]) > div:first-child',
     why: 'where the CLIs are installed on the machine recording, which moves with each install and each Node version',
+  },
+  'local-api-port': {
+    surfaces: ['settings-hermes-gateways'],
+    // A gateway's address on this machine carries the local API's port, which
+    // each run's E2E_PORT_OFFSET moves (e2e/ports.mjs). The field alone is
+    // masked: its row's words stay compared.
+    selector: '[data-settings-row]:has([data-settings-label]:text-is("On this machine")) input',
+    why: "the local API's port, which moves with the run's E2E_PORT_OFFSET",
   },
   'log-chunk-counts': {
     surfaces: ['logs'],
@@ -268,6 +298,25 @@ export const VOLATILE = {
     surfaces: ['whats-new'],
     selector: 'div.space-y-2:has(ul li)',
     why: 'every changelog entry, which is new text on this page at every release; the page frame stays compared',
+  },
+  // Windows only (`platforms`), so the darwin pictures, recorded without them,
+  // compare as they always have. The Hermes webhook row reads the recording
+  // machine's own Tailscale: its state and its tailnet name on one line, the
+  // tailnet URL in the field. Measured on 2026-09-26: `tailscale serve active ·
+  // <host>.<tailnet>.ts.net` on the Windows machine recording, where a clean
+  // runner reads `no tailscale · a VPS cannot reach this machine`. The line is
+  // masked in every state, so it is the same picture on any machine.
+  'tailscale-state': {
+    surfaces: ['settings-hermes'],
+    platforms: ['win32'],
+    selector: 'text=/tailscale/',
+    why: "the recording machine's Tailscale state and tailnet host name",
+  },
+  'webhook-url': {
+    surfaces: ['settings-hermes'],
+    platforms: ['win32'],
+    selector: 'input[value*="/api/webhooks/hermes"]',
+    why: "the webhook URL, on the recording machine's tailnet when it has one",
   },
   'marketplace-plugin-count': {
     surfaces: ['extensions-plugins'],
@@ -285,12 +334,18 @@ export const VOLATILE = {
  */
 export const USAGE_DAY = new Date(2026, 8, 16, 12).getTime();
 
+/** Whether a VOLATILE entry masks on this platform: every platform unless it lists some. */
+export function maskApplies(entry, platform = process.platform) {
+  return !entry.platforms || entry.platforms.includes(platform);
+}
+
 /** The masks for one surface, and the keys that actually matched something. */
 export async function volatileMasks(page, surface) {
   const masks = [];
   const used = [];
   for (const [key, entry] of Object.entries(VOLATILE)) {
     if (entry.surfaces !== 'all' && !entry.surfaces.includes(surface)) continue;
+    if (!maskApplies(entry)) continue;
     const locator = page.locator(entry.selector);
     masks.push(locator);
     if (await locator.count() > 0) used.push(key);

@@ -491,7 +491,7 @@ describe('the schedule main.ts starts', () => {
     }
   });
 
-  it.skipIf(cannotPlantPosixInstall())('updates the claude a launch would find, 5 s after it starts, into ~/.dorothy/cli-updates.log', async () => {
+  it.skipIf(cannotPlantPosixInstall())('updates the claude a launch would find, 5 s after it starts, into ~/.tars/cli-updates.log', async () => {
     // The suite's own throwaway HOME, which is where the app's paths point
     // here: ~/.local/bin is on the PATH buildFullPath composes, and any real
     // CLI further down that PATH lives outside this home and is left alone.
@@ -503,7 +503,7 @@ describe('the schedule main.ts starts', () => {
       await vi.waitFor(() => {
         expect(fs.existsSync(CLI_UPDATES_LOG) && fs.readFileSync(CLI_UPDATES_LOG, 'utf8')).toContain('claude updated 1.0.0 to 1.0.1');
       }, { timeout: 30_000, interval: 250 });
-      expect(CLI_UPDATES_LOG).toBe(path.join(home, '.dorothy', 'cli-updates.log'));
+      expect(CLI_UPDATES_LOG).toBe(path.join(home, '.tars', 'cli-updates.log'));
       expect(recorded()).toEqual([['claude', 'update']]);
       // Whatever else that first pass found on this machine's PATH, a real Amp
       // under ~/.nvm for one, it only named.

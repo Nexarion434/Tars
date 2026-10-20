@@ -141,7 +141,7 @@ let installed: string | null | undefined;
 /**
  * The folder handed to claude: a read-only copy of the shipped mod in Tars's
  * own userData, made once per run. Not the bundle, which claude would write
- * into, and not ~/.dorothy, which every agent is handed and could change the
+ * into, and not ~/.tars, which every agent is handed and could change the
  * code that runs inside every other agent's claude. Empty when it could not
  * be made, and stateModEnv then hands nothing.
  */

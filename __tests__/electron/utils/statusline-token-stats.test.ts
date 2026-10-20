@@ -7,7 +7,7 @@ import { enableStatusLine } from '../../../electron/utils/statusline';
 import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
- * ~/.dorothy/token-stats.json is written by the status line script and by
+ * ~/.tars/token-stats.json is written by the status line script and by
  * nothing else, on every render of every Claude session.
  *
  * Found on JeanBrasse's machine on 2026-09-22: 0 bytes, rewritten at every tick,
@@ -32,19 +32,19 @@ beforeAll(() => {
 
   // Installed into the suite's throwaway HOME, exactly as the app installs it.
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-token-stats-'));
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
 });
 
 afterEach(() => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-const statsFile = () => path.join(home, '.dorothy', 'token-stats.json');
+const statsFile = () => path.join(home, '.tars', 'token-stats.json');
 
 /** One render, with the JSON Claude Code pipes into its status line. */
 function render(sessionId: string) {

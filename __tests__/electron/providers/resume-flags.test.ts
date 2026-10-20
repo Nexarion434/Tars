@@ -58,6 +58,10 @@ describe('the resume a restart asks for', () => {
     expect(await commandFor('openrouter', {})).not.toContain('--resume');
   });
 
+  it('reaches Qwen Code by its own --resume and --fork-session (qwen 0.25.2, measured)', async () => {
+    expect(await commandFor('qwen-code', { resumeSessionId: SESSION, forkSession: true })).toContain(` --resume '${SESSION}' --fork-session`);
+  });
+
   it('reaches codex as codex takes it: codex fork for a restart, codex resume otherwise', async () => {
     // After the home Tars hands codex, on macOS and Linux (`env CODEX_HOME=<home>`, the Audit's L4 on #465).
     const home = process.platform === 'win32' ? '' : "env CODEX_HOME='[^']*' ";
@@ -67,7 +71,7 @@ describe('the resume a restart asks for', () => {
 
   it('reaches no other CLI, whose resume flag nobody has verified', async () => {
     const { getAllProviders } = await import('../../../electron/providers');
-    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude' && p.binaryName !== 'codex')) {
+    for (const provider of getAllProviders().filter(p => p.binaryName !== 'claude' && p.binaryName !== 'codex' && p.id !== 'qwen-code')) {
       const command = await commandFor(provider.id, { resumeSessionId: SESSION, forkSession: true });
       expect(command, provider.id).not.toContain(SESSION);
     }

@@ -14,7 +14,7 @@ import { claudeAccountsAvailable } from '../../platform/claude-accounts';
  * whatever the renderer sends over what is saved, so a Settings page holding
  * an older copy of the list would have put back an account removed since, or
  * dropped one added since. Only the claude-accounts channels write this one.
- * And in ~/.tars-private, not ~/.dorothy: every agent is handed ~/.dorothy with
+ * And in ~/.tars-private, not ~/.tars: every agent is handed ~/.tars with
  * --add-dir and can write there (the Audit's B2).
  *
  * The file names accounts, not folders. An account's folder is derived from
@@ -44,7 +44,7 @@ export function accountsFile(): string {
 
 /**
  * Where the accounts' directories live: ~/.claude-accounts, the home resolved
- * once. Outside ~/.dorothy on purpose, since every agent is given that one
+ * once. Outside ~/.tars on purpose, since every agent is given that one
  * with --add-dir and, on Linux, a credential is a file in its account's
  * directory.
  */

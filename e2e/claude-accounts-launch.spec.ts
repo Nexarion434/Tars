@@ -73,11 +73,13 @@ function launches(home: string): Record<string, string | null>[] {
 
 const win = (page: Page) => page.evaluate.bind(page);
 
+test.skip(process.platform === 'win32', 'several Claude accounts are off on a Windows build until they are ported; this runs on macOS and Linux');
+
 test('an agent starts on the account with room, and a pin moves it', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-launch-'));
   const resolvedHome = fs.realpathSync(home);
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(resolvedHome, 'projects', 'demo');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });

@@ -7,6 +7,7 @@ import { AgentMark } from '@/components/ui';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { asleepLine, wakingLine } from '@/lib/asleep-line';
+import { providerWord } from '@/lib/providers';
 import AgentStatusWord from '@/components/AgentStatusWord';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
@@ -181,7 +182,7 @@ export default function TerminalPanelHeader({
           in a narrow panel: the mark and the status word took the room. */}
       {(agent.provider || model) && (
         <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[160px] shrink-[6]">
-          {[agent.provider, model].filter(Boolean).join(' · ')}
+          {[agent.provider && providerWord(agent.provider), model].filter(Boolean).join(' · ')}
         </span>
       )}
       {/* The Claude account it runs on, after provider and model, when several

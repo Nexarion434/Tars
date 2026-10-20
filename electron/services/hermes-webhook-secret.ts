@@ -12,7 +12,7 @@ import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-fi
  * reach of JeanBrasse's own chat, so the secret is kept where his conversation is
  * kept, in the directory no agent is handed.
  *
- * It was minted into `~/.dorothy`, which every agent is started with, one
+ * It was minted into `~/.tars`, which every agent is started with, one
  * `cat` away. The lot that stopped the shared token from driving agents left
  * this one there, and the audit of that lot found the webhook still taking the
  * shared token as well: refusing the one and leaving the other in the agents'
@@ -35,7 +35,7 @@ function readTrimmed(file: string): string {
 }
 
 /**
- * Take the secret out of `~/.dorothy`.
+ * Take the secret out of `~/.tars`.
  *
  * Copied, read back, and only then deleted, as the conversation is. When both
  * files exist the private one is the secret and the old one opens nothing, so

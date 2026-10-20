@@ -67,7 +67,7 @@ test("chats: Main made once from the project's orchestrator, and every change ke
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-chats-'));
   const project = path.join(home, 'projects', 'demo');
   const other = path.join(home, 'projects', 'other');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, other, dir]) fs.mkdirSync(d, { recursive: true });
   const cliFor = (id: string) => {
     const file = path.join(home, `${id}.received`);

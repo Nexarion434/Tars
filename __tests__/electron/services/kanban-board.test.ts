@@ -440,7 +440,7 @@ describe('13. a rerun of the migration leaves alone what moved on', () => {
     await claimTask(h, dune, moved.L4); await completeTask(h, dune, moved.L4, 'done');
     const before = Object.fromEntries(Object.entries(moved as Record<string, string>).map(([k, id]) => [k, { ...h.tasks.get(id)! }]));
 
-    fs.rmSync(record); // lost: a reset ~/.dorothy, a failed write, a quit before the write
+    fs.rmSync(record); // lost: a reset ~/.tars, a failed write, a quit before the write
     const again = await migrateLocalTasks(h, file, record);
 
     for (const k of ['L1', 'L2', 'L3', 'L4']) {

@@ -14,7 +14,7 @@ import * as path from 'node:path';
  * hooks or settings, a project's git hooks. One call ran code in every agent.
  * The one page that writes (the Brain) writes instruction files.
  *
- * Hole 2: local-file:// and fs:read-text-file served anything under ~/.dorothy
+ * Hole 2: local-file:// and fs:read-text-file served anything under ~/.tars
  * and ~/.claude, every key app-settings.json held and Claude Code's credentials
  * included.
  *
@@ -26,13 +26,13 @@ import * as path from 'node:path';
  *  W2. A secret reached another way: a symbolic link in a project, or a hard
  *      link to the private file, which has no path back to it.
  *  W3. Over-correction: the Brain cannot read what it shows (~/.claude/CLAUDE.md,
- *      ~/.claude/mcp.json, ~/.dorothy/CLAUDE.md, a project's CLAUDE.md), or the
+ *      ~/.claude/mcp.json, ~/.tars/CLAUDE.md, a project's CLAUDE.md), or the
  *      code panel a project's file.
  *  W4. A write lands on something that runs: statusline.sh, bin/tars-mcp-node,
  *      a hook of Tars's or of a CLI, a CLI's settings or config, a project's
  *      package.json or git hook, or any file that is not an instruction file.
  *  W5. Over-correction: the Brain cannot save an instruction file it edits
- *      (~/.claude/CLAUDE.md, ~/.dorothy/CLAUDE.md, a project's CLAUDE.md or
+ *      (~/.claude/CLAUDE.md, ~/.tars/CLAUDE.md, a project's CLAUDE.md or
  *      .claude/CLAUDE.md).
  *  W6. local-file:// serves outside what a page may show (vault attachments,
  *      the project-files folders, Claude Code's memory folders), or serves a
@@ -43,7 +43,7 @@ import * as path from 'node:path';
  *      folder of files, to an SSH key or a CLI's credentials.
  * Added before their code after the Audit's L1 on #466 (2026-10-19):
  *  W8. A folder of credentials taken for a project, added from a page or
- *      written into the projects' list, which lives in ~/.dorothy, every
+ *      written into the projects' list, which lives in ~/.tars, every
  *      agent's: ~/.ssh, ~/.gnupg, ~/.aws, ~/.config (GitHub's hosts.yml),
  *      ~/.kube, ~/.docker, or a folder under one, or a link to one, and the
  *      window reads what it holds. Or, over-correcting, a real project refused.
@@ -62,7 +62,7 @@ const put = (file: string, text = 'x') => { fs.mkdirSync(path.dirname(file), { r
 let project: string;
 
 beforeEach(() => {
-  for (const d of ['.dorothy', '.tars-private', '.claude', '.codex', '.gemini', '.grok', '.ssh', '.gnupg', '.aws', '.config', '.kube', '.docker', 'proj', 'kube-link']) fs.rmSync(at(d), { recursive: true, force: true });
+  for (const d of ['.tars', '.tars-private', '.claude', '.codex', '.gemini', '.grok', '.ssh', '.gnupg', '.aws', '.config', '.kube', '.docker', 'proj', 'kube-link']) fs.rmSync(at(d), { recursive: true, force: true });
   project = at('proj');
   fs.mkdirSync(project, { recursive: true });
 });
@@ -82,7 +82,7 @@ describe('what the window reads', () => {
       put(at('.gemini', 'oauth_creds.json')),
     ];
     for (const s of secrets) expect(windowMayRead(s, [project]), s).toBe(false);
-    // Nor the rest of ~/.dorothy: it is not one of the window's roots any more.
+    // Nor the rest of ~/.tars: it is not one of the window's roots any more.
     expect(windowMayRead(put(path.join(DATA_DIR, 'agents.json')), [project])).toBe(false);
   });
 

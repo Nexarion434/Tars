@@ -5,7 +5,7 @@ import { DATA_DIR } from '../constants';
 import { PROJECT_FILES_DIR_NAME, moveNotesOut, projectFilesKey } from '../utils/project-files';
 
 /**
- * The Vault's side of each project's folder, ~/.dorothy/project-files/<key>
+ * The Vault's side of each project's folder, ~/.tars/project-files/<key>
  * (2.0.4, the frames "Vault · project folders" of #457): what the project's
  * agents produce, in reports/ and tools/, listed, read and edited from the
  * window. The window is the renderer, which a page with an XSS holds whole

@@ -36,7 +36,7 @@ const names = (from: number, to: number) => AGENTS.filter((a) => (from <= to ? a
 
 /** A home holding the twelve agents, their tasks, and the transcript each task wrote. */
 function seed(home: string, newInterface: boolean): void {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const project = (name: string) => path.join(home, 'projects', name);
   for (const folder of [dir, project('tars'), project('site')]) fs.mkdirSync(folder, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify(AGENTS.map((a) => ({

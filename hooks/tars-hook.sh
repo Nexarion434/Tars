@@ -5,7 +5,24 @@
 # readable by every user of the machine and shared by every Tars on it, a
 # sandbox's included. They carry session ids and task text. They live in the
 # data folder of the Tars that owns the CLI now, readable by its user only.
-TARS_LOG_DIR="$HOME/.dorothy/logs"
+# Tars's data folder, by pickDataDir's rule (electron/core/data-dir-move.ts):
+# ~/.tars when it is a folder, else ~/.dorothy; of two different folders,
+# ~/.dorothy only when it alone holds Tars's records.
+tars_data_dir() {
+  local t="$HOME/.tars" o="$HOME/.dorothy"
+  if [ ! -d "$t" ]; then
+    if [ -e "$t" ] || [ -L "$t" ] || [ -d "$o" ]; then printf %s "$o"; else printf %s "$t"; fi
+    return
+  fi
+  if [ ! -d "$o" ] || [ "$(cd -P "$t" 2>/dev/null && pwd)" = "$(cd -P "$o" 2>/dev/null && pwd)" ]; then printf %s "$t"; return; fi
+  if { [ -f "$o/agents.json" ] || [ -f "$o/app-settings.json" ]; } && [ ! -f "$t/agents.json" ] && [ ! -f "$t/app-settings.json" ]; then
+    printf %s "$o"
+  else
+    printf %s "$t"
+  fi
+}
+TARS_DATA_DIR=$(tars_data_dir)
+TARS_LOG_DIR="$TARS_DATA_DIR/logs"
 umask 077
 mkdir -p "$TARS_LOG_DIR" 2>/dev/null
 HOOK_LOG="$TARS_LOG_DIR/hooks.log"

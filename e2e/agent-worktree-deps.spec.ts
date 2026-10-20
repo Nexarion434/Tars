@@ -42,11 +42,13 @@ function pkg(dir: string, deps: Record<string, string>, installed: Record<string
   }
 }
 
+test.skip(process.platform === 'win32', 'the dependencies are cloned with APFS clonefile or a reflink cp (worktree-deps.ts), which Windows has neither of: there an agent on a worktree installs as before; this runs on macOS, and on a Linux disk that can reflink');
+
 test('an agent created on a worktree gets its project\'s dependencies, cloned', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-deps-'));
   const project = path.join(home, 'projects', 'shop');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   pkg(project, { left: '1.0.0' }, { left: '1.0.0' });
   pkg(path.join(project, 'mcp-x'), { right: '2.0.0' }, { right: '2.0.0' });
