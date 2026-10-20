@@ -5,6 +5,7 @@ import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { keyEnvFor } from '../services/cli-keys';
 import { DATA_DIR } from '../constants';
+import { handedSecondaryFolder } from '../utils/handed-folder';
 import { legacyShCommand, usesNodeHooks } from '../utils/hook-command';
 import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-hooks';
 import type {
@@ -53,9 +54,10 @@ export class GeminiProvider implements CLIProvider {
 
     // Gemini has no documented skip-permissions flag
 
-    // Secondary project (Gemini uses --include-directories)
-    if (params.secondaryProjectPath) {
-      command += ` --include-directories ${shellQuote(params.secondaryProjectPath)}`;
+    // Secondary project (Gemini uses --include-directories), never ~/.tars-private (utils/handed-folder.ts)
+    const secondary = handedSecondaryFolder(params.secondaryProjectPath);
+    if (secondary) {
+      command += ` --include-directories ${shellQuote(secondary)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever

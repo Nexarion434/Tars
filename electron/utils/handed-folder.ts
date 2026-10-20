@@ -37,3 +37,19 @@ export function handedFolderProblem(folder: string, where: { privateDir: string 
   }
   return null;
 }
+
+/**
+ * The secondary folder a launch hands the CLI, or undefined when it may not
+ * be: one saved before create_agent and update_agent checked it, through a
+ * window path that did not, or by hand in agents.json (the Audit's L4 on
+ * #480). The four providers that hand one ask it as they write the flag, so
+ * every launch path does. The folder is left out with a line in the log; the
+ * launch itself goes on.
+ */
+export function handedSecondaryFolder(folder: string | undefined): string | undefined {
+  if (!folder) return undefined;
+  const problem = handedFolderProblem(folder);
+  if (!problem) return folder;
+  console.warn(`[launch] secondary folder not handed: ${problem}`);
+  return undefined;
+}

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
 import type { AppSettings } from '../types';
 import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
+import { handedSecondaryFolder } from '../utils/handed-folder';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -100,9 +101,10 @@ export class CodexProvider implements CLIProvider {
     const permission = codexPermissionArgs(params.permissionMode, codexAccepts(params.binaryPath));
     if (permission.length) command += ` ${permission.join(' ')}`;
 
-    // Secondary project
-    if (params.secondaryProjectPath) {
-      command += ` --add-dir ${shellQuote(params.secondaryProjectPath)}`;
+    // Secondary project, never ~/.tars-private (utils/handed-folder.ts)
+    const secondary = handedSecondaryFolder(params.secondaryProjectPath);
+    if (secondary) {
+      command += ` --add-dir ${shellQuote(secondary)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever

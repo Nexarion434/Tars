@@ -12,6 +12,7 @@ import type {
 } from './cli-provider';
 import { orchestratorToolFlags, promptOperand, effortFlag, resumeFlags, shellQuote } from './cli-provider';
 import { DATA_DIR } from '../constants';
+import { handedSecondaryFolder } from '../utils/handed-folder';
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { addMcpServerToJson, removeMcpServerFromJson } from '../utils/mcp-json';
 import { usesNodeHooks, mergeNodeHooks, legacyShCommand } from '../utils/hook-command';
@@ -89,9 +90,10 @@ export class ClaudeProvider implements CLIProvider {
       command += ' --chrome';
     }
 
-    // Secondary project
-    if (params.secondaryProjectPath) {
-      command += ` --add-dir ${shellQuote(params.secondaryProjectPath)}`;
+    // Secondary project, never ~/.tars-private (utils/handed-folder.ts)
+    const secondary = handedSecondaryFolder(params.secondaryProjectPath);
+    if (secondary) {
+      command += ` --add-dir ${shellQuote(secondary)}`;
     }
 
     // The template's folders: added to what the CLI may reach, with whatever

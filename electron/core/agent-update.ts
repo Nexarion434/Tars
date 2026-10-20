@@ -9,6 +9,7 @@ import { launchSettings, changedLaunchSettings, restartForSettings, type Restart
 import { assignRole, requestedRole } from './agent-role';
 import { planModeRefusal } from '../providers/plan-mode';
 import { skillsProblem } from '../utils/skill-name';
+import { handedFolderProblem } from '../utils/handed-folder';
 import type { AgentStatus, WorktreeConfig, AgentCharacter, AgentProvider, AgentPermissionMode, AgentEffort, AgentRole } from '../types';
 
 /**
@@ -124,6 +125,9 @@ export async function updateAgent(params: AgentUpdate, opts: AgentUpdateOptions 
   if (moving && !fs.existsSync(params.projectPath!)) {
     return { success: false, error: 'Project path does not exist' };
   }
+  // Never ~/.tars-private, from the window as from update_agent (the Audit's L4 on #480).
+  const handed = params.secondaryProjectPath ? handedFolderProblem(params.secondaryProjectPath) : null;
+  if (handed) return { success: false, error: `Not saved: ${handed}.` };
   if (params.secondaryProjectPath && !fs.existsSync(params.secondaryProjectPath)) {
     return { success: false, error: 'Secondary project path does not exist' };
   }
