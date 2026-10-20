@@ -675,6 +675,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('hermes:kanban:addComment', params),
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) =>
       ipcRenderer.invoke('hermes:testWebhook', params),
+    /** The gateways Tars takes work from: each its own route and secret, and the projects it may reach. */
+    gateways: {
+      list: () => ipcRenderer.invoke('hermes:gateways:list'),
+      add: (params: { label: string }) => ipcRenderer.invoke('hermes:gateways:add', params),
+      remove: (params: { id: string }) => ipcRenderer.invoke('hermes:gateways:remove', params),
+      /** Copies the gateway's secret to the clipboard: the page never holds it (the Audit's L3 on #469). */
+      copySecret: (params: { id: string }) => ipcRenderer.invoke('hermes:gateways:copySecret', params),
+      rotate: (params: { id: string }) => ipcRenderer.invoke('hermes:gateways:rotate', params),
+      setProjects: (params: { id: string; projects: string[] }) => ipcRenderer.invoke('hermes:gateways:setProjects', params),
+    },
     testGateway: (url: string) =>
       ipcRenderer.invoke('hermes:testGateway', url),
     mcpServers: () =>

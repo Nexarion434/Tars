@@ -16,8 +16,31 @@ import { describeSecretFileError } from '../utils/secret-file';
 // The webhook's own secret, not the master token, which over the tailnet would
 // hand out every route. Kept in the private directory: see that module.
 import { provisionWebhookSecret } from '../services/hermes-webhook-secret';
-import { copySecret } from '../services/secret-handoff';
+import { copySecret, showSecretOnce } from '../services/secret-handoff';
 import { SECRET_MASK } from '../services/settings-secrets';
+import {
+  addGateway, gatewaySecret, listGateways, removeGateway, rotateGatewaySecret, setGatewayProjects, webhookPathOf, type HermesGateway, gatewayById,
+} from '../services/hermes-gateways';
+
+/** A gateway as Settings, Hermes shows it: never its secret, which the window asks for apart. */
+function gatewayView(gateway: HermesGateway) {
+  return { id: gateway.id, label: gateway.label, projects: gateway.projects, path: webhookPathOf(gateway.id) };
+}
+
+/** A gateway call that may refuse (an id that is not one, a list that is not paths): its reason, never a throw. */
+/** A gateway's new secret, shown once by the main process: never answered to the page (the Audit's L3 on #469). */
+function showGatewaySecret(label: string, secret: string): void {
+  void showSecretOnce(`Secret of the Hermes gateway "${label}"`, secret,
+    'Set it as the webhook secret of this gateway\'s Hermes, in its .env and never in a command line. Tars shows it only here: Copy puts it on the clipboard, and Copy secret in Settings, Hermes does again.');
+}
+
+function refusing<T extends object>(call: () => T): ({ success: true } & T) | { success: false; error: string } {
+  try {
+    return { success: true, ...call() };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 import {
   fetchHermesCrons,
   hermesCronAction,
@@ -331,6 +354,29 @@ export function registerHermesHandlers(): void {
     };
   });
 
+  // The Hermes gateways Tars takes work from (services/hermes-gateways.ts): each
+  // has its own webhook route and secret, and reaches the projects the user
+  // allows it, none until then (the Audit's NOW-3, R4.2 and R4.3, 2.0.4).
+  // Settings, Hermes lists them. A gateway's secret never goes to the page (the
+  // Audit's L3 on #469, as #466 hands every other secret): the main process
+  // shows a new one once, in a dialog of its own, and copies it on request.
+  ipcMain.handle('hermes:gateways:list', async () => ({ success: true, gateways: listGateways().map(gatewayView) }));
+  ipcMain.handle('hermes:gateways:add', async (_event, params: { label: string }) =>
+    refusing(() => {
+      const gateway = addGateway(params?.label);
+      showGatewaySecret(gateway.label, gatewaySecret(gateway.id));
+      return { gateway: gatewayView(gateway), set: true as const };
+    }));
+  ipcMain.handle('hermes:gateways:remove', async (_event, params: { id: string }) => ({ success: removeGateway(params?.id) }));
+  ipcMain.handle('hermes:gateways:copySecret', async (_event, params: { id: string }) => refusing(() => ({ copied: copySecret(gatewaySecret(params?.id)) })));
+  ipcMain.handle('hermes:gateways:rotate', async (_event, params: { id: string }) =>
+    refusing(() => {
+      const secret = rotateGatewaySecret(params?.id);
+      showGatewaySecret(gatewayById(params.id)?.label ?? params.id, secret);
+      return { set: true as const };
+    }));
+  ipcMain.handle('hermes:gateways:setProjects', async (_event, params: { id: string; projects: string[] }) =>
+    refusing(() => ({ gateway: gatewayView(setGatewayProjects(params?.id, params?.projects)) })));
   ipcMain.handle('hermes:webhookSecret:copy', async () => ({ copied: copySecret(provisionWebhookSecret()) }));
 
   // The relay to the user's Telegram through their Hermes, as Settings, Hermes

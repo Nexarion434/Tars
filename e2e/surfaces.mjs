@@ -66,7 +66,7 @@ export const PAGES = [
   { name: 'tray-panel', route: '/tray-panel', settle: 2000 },
 ];
 
-// Les 18 sections de Settings. Depuis le regroupement, chaque section est un
+// Les 19 sections de Settings. Depuis le regroupement, chaque section est un
 // groupe cliqué puis son enfant : le nom de surface reste celui d'avant pour
 // que les baselines et l'inventaire ne bougent pas.
 const SETTINGS_TREE = [
@@ -76,6 +76,7 @@ const SETTINGS_TREE = [
   ['cli-paths', 'AI & Providers', 'CLI Paths'],
   ['permissions', 'AI & Providers', 'Permissions'],
   ['hermes', 'Hermes', 'Connection'],
+  ['hermes-gateways', 'Hermes', 'Gateways'],
   ['notifications', 'General', 'Notifications'],
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],
@@ -258,6 +259,14 @@ export const VOLATILE = {
     // opens, and Providers' Command row names it. The path alone is masked.
     selector: '[data-cli-path]',
     why: 'where the CLIs are installed on the machine recording, which moves with each install and each Node version',
+  },
+  'local-api-port': {
+    surfaces: ['settings-hermes-gateways'],
+    // A gateway's address on this machine carries the local API's port, which
+    // each run's E2E_PORT_OFFSET moves (e2e/ports.mjs). The field alone is
+    // masked: its row's words stay compared.
+    selector: '[data-settings-row]:has([data-settings-label]:text-is("On this machine")) input',
+    why: "the local API's port, which moves with the run's E2E_PORT_OFFSET",
   },
   'log-chunk-counts': {
     surfaces: ['logs'],

@@ -33,5 +33,6 @@ export { SkillsSection } from './SkillsSection';
 export { McpSection } from './McpSection';
 export { MemorySection } from './MemorySection';
 export { HermesSection } from './HermesSection';
+export { HermesGatewaysSection } from './HermesGatewaysSection';
 export { CLIPathsSection } from './CLIPathsSection';
 export { SystemSection } from './SystemSection';

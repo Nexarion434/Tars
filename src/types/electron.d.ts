@@ -1295,6 +1295,16 @@ export interface CliKeyState {
   withoutKey: string;
 }
 
+/** A Hermes gateway as Settings, Hermes shows it (hermes:gateways:*): never its secret. */
+export interface HermesGatewayView {
+  id: string;
+  label: string;
+  /** The projects its messages may reach, by their paths. */
+  projects: string[];
+  /** Its webhook route on the local API, /api/webhooks/hermes or /api/webhooks/hermes/<id>. */
+  path: string;
+}
+
 export interface ElectronAPI {
   // PTY terminal management
   pty: {
@@ -2316,6 +2326,24 @@ export interface ElectronAPI {
       serveCommand: string;
     }>;
     testWebhook: (params: { agentName?: string; agentId?: string; projectPath?: string }) => Promise<{ success: boolean; status?: number; response?: unknown; error?: string }>;
+    /**
+     * The Hermes gateways Tars takes work from (services/hermes-gateways.ts):
+     * each posts to its own route (`path`) with its own secret, and reaches the
+     * projects listed, none until the user allows some. `default` is the one
+     * Hermes had before 2.0.4, on /api/webhooks/hermes. A secret is only ever
+     * handed out by `add`, `secret` and `rotate`.
+     */
+    gateways: {
+      list: () => Promise<{ success: true; gateways: HermesGatewayView[] }>;
+      /** Its secret is shown once by the main process, in a dialog of its own; the page never holds it. */
+      add: (params: { label: string }) => Promise<{ success: true; gateway: HermesGatewayView; set: true } | { success: false; error: string }>;
+      remove: (params: { id: string }) => Promise<{ success: boolean }>;
+      /** Copies the gateway's secret to the clipboard, from the main process. */
+      copySecret: (params: { id: string }) => Promise<{ success: true; copied: boolean } | { success: false; error: string }>;
+      /** The new secret is shown once by the main process, as at add. */
+      rotate: (params: { id: string }) => Promise<{ success: true; set: true } | { success: false; error: string }>;
+      setProjects: (params: { id: string; projects: string[] }) => Promise<{ success: true; gateway: HermesGatewayView } | { success: false; error: string }>;
+    };
     /**
      * Three states, not two: unreachable, reachable but not signed in, and
      * signed in. `success` keeps its old meaning of "nothing more to do",

@@ -26,6 +26,7 @@ import {
   McpSection,
   MemorySection,
   HermesSection,
+  HermesGatewaysSection,
   CLIPathsSection,
   SystemSection,
   SECTIONS,
@@ -47,7 +48,7 @@ import 'xterm/css/xterm.css';
  * body until that section is converted, so they render disabled with a note
  * rather than claiming to do something they do not.
  */
-type HeaderActionKind = 'save' | 'refresh' | 'unwired' | 'none';
+type HeaderActionKind = 'save' | 'refresh' | 'unwired' | 'add-gateway' | 'none';
 
 const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActionKind }> = {
   general: { label: 'Save', kind: 'save' },
@@ -63,6 +64,8 @@ const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActio
   'claude-accounts': { label: '', kind: 'none' },
   cli: { label: 'Detect', kind: 'unwired' },
   hermes: { label: 'Test connection', kind: 'unwired' },
+  // Opens the name row at the top of the list, as drawn: Gateways · states, adding a gateway.
+  'hermes-gateways': { label: 'add gateway', kind: 'add-gateway' },
   telegram: { label: 'Test', kind: 'unwired' },
   slack: { label: 'Test', kind: 'unwired' },
   discord: { label: 'Test', kind: 'unwired' },
@@ -99,6 +102,8 @@ function SettingsPageInner() {
     }
   }, [sectionParam]);
   const [showInstallTerminal, setShowInstallTerminal] = useState(false);
+  // The name row Gateways' header action opens; closed whenever the sidebar leaves the sub-page.
+  const [addingGateway, setAddingGateway] = useState(false);
   const [installCommand, setInstallCommand] = useState('');
 
   const {
@@ -209,8 +214,11 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onOpenGateways={() => setActiveSection('hermes-gateways')}
           />
         );
+      case 'hermes-gateways':
+        return <HermesGatewaysSection adding={addingGateway} onAddingChange={setAddingGateway} />;
       case 'memory':
         return (
           <MemorySection
@@ -286,6 +294,10 @@ function SettingsPageInner() {
             >
               {saving ? 'Saving' : saved ? 'Saved' : action.label}
             </Button>
+          ) : action.kind === 'add-gateway' ? (
+            <Button variant="primary" size="md" onClick={() => setAddingGateway(true)} disabled={addingGateway}>
+              {action.label}
+            </Button>
           ) : action.kind === 'refresh' ? (
             <Button variant="primary" size="md" onClick={fetchSettings}>
               {action.label}
@@ -314,7 +326,7 @@ function SettingsPageInner() {
       <div className="flex-1 flex gap-2.5 overflow-hidden min-h-0">
         <SettingsSidebar
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
+          onSectionChange={(section) => { setAddingGateway(false); setActiveSection(section); }}
         />
 
         {/* Content Area: one bordered card per sub-page, filling the height */}
