@@ -1,4 +1,13 @@
 /** What "Send a diagnostic" answers: how many samples left and their first and last time (ISO), or why nothing did. */
+/** The last error report's answer (errorReports:last). */
+export interface ErrorReportsLast {
+  /** When Sentry answered, ISO. */
+  at: string;
+  kind: 'error' | 'handled' | 'agent-tool' | 'abrupt-end' | 'diagnostic';
+  /** Sentry's HTTP status; 0 when none came. */
+  status: number;
+}
+
 export type DiagnosticAnswer =
   | { sent: true; samples: number; from: string; to: string }
   | { sent: false; reason: string };
@@ -243,6 +252,52 @@ export interface AgentEvent {
   timestamp: string;
   exitCode?: number;
 }
+
+type VaultSubfolder = 'reports' | 'tools';
+type VaultFailure = { error: string; code: string };
+interface VaultProjectFolder {
+  key: string;
+  /** The project's folder name when Tars knows the project, else the key without its hash. */
+  name: string;
+  projectPath: string | null;
+  reports: number | VaultFailure;
+  tools: number | VaultFailure;
+  notesMoved?: string;
+}
+interface VaultProjectFileEntry { name: string; size: number; mtimeMs: number; kind: 'markdown' | 'text' | 'code' | 'other'; runnable: boolean }
+interface VaultProjectFileRead {
+  name: string;
+  /** Where it is, as the system writes it. */
+  path: string;
+  kind: 'markdown' | 'text' | 'code' | 'other';
+  size: number;
+  mtimeMs: number;
+  runnable: boolean;
+  text?: string;
+  truncated: boolean;
+  editable: boolean;
+}
+type ReviewProjectState = 'gone' | 'unreachable' | 'no-git' | 'repository' | 'repositories';
+interface ReviewRepositoryState {
+  path: string;
+  branch: string;
+  changed: Array<{ file: string; status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflict'; additions: number | null; deletions: number | null }>;
+  base: string | null;
+  ahead: number | null;
+  agents: Array<{ id: string; name: string }>;
+  error?: string;
+}
+interface ReviewProjectSnapshot { state: ReviewProjectState; skipped: Array<{ path: string; why: string }>; repositories: ReviewRepositoryState[] }
+type ReviewRepositoriesEvent = { scanId: string; projectPath: string } & (
+  | { kind: 'progress'; foldersRead: number; repos: number }
+  | { kind: 'found'; repo: string }
+  | { kind: 'repository'; repository: ReviewRepositoryState }
+  | { kind: 'done'; state?: ReviewProjectState; skipped?: Array<{ path: string; why: string }>; foldersRead?: number; repos?: number; error?: string }
+);
+type ReviewSearchEvent = { searchId: string } & (
+  | { kind: 'batch'; groups: Array<{ project: string; repo: string; branch: string; nameMatch: boolean; files: string[] }> }
+  | { kind: 'done'; total?: number; cancelled?: boolean; error?: string }
+);
 
 export interface VaultDocumentElectron {
   id: string;
@@ -1591,6 +1646,20 @@ export interface ElectronAPI {
     file: (repoPath: string, file: string, baseBranch?: string) =>
       Promise<{ success: boolean; patch?: string; error?: string }>;
     repo: (repoPath: string) => Promise<{ success: boolean; summary?: RepoSummary; error?: string }>;
+    /**
+     * A project's repositories (electron/services/review-repositories.ts): its
+     * last scan at once (`cached`), and with `refresh`, or never scanned, a
+     * scan whose findings come through onRepositoriesEvent under `scanId`.
+     * `diff`, `file` and `repo` refuse a path Tars did not find in a project or
+     * an agent's folder.
+     */
+    repositories: (projectPath: string, opts?: { refresh?: boolean }) =>
+      Promise<{ scanId?: string; cached?: ReviewProjectSnapshot } | { error: string; code: string }>;
+    /** Every repository's name and path and every changed file, every project, no limit: batches through onSearchEvent. */
+    search: (query: string) => Promise<{ searchId: string } | { error: string; code: string }>;
+    cancel: (id: string) => Promise<{ cancelled: boolean }>;
+    onRepositoriesEvent: (callback: (event: ReviewRepositoriesEvent) => void) => () => void;
+    onSearchEvent: (callback: (event: ReviewSearchEvent) => void) => () => void;
   };
 
   /** Federated memory: every source probed for real, searchable from one place. */
@@ -1623,8 +1692,24 @@ export interface ElectronAPI {
     set: (id: CliKeyId, patch: { key?: string | null; envVar?: string | null }) => Promise<{ success: boolean; error?: string; state?: CliKeyState }>;
   };
 
+  /**
+   * A secret of the settings (2.0.4): a bot token, a provider's key, Hermes's
+   * gateway token, a memory backend's key, kept by Tars in ~/.tars-private.
+   * `value` a new one, null to clear it. Never answers the value: whether it
+   * is set. The CLIs' own keys go through cliKeys.
+   */
+  secrets?: {
+    set: (field: string, value: string | null) => Promise<{ success: boolean; error?: string; set?: boolean }>;
+  };
+
   appSettings?: {
+    /**
+     * Since 2.0.4 no secret comes back: a secret field is a mask of bullets when
+     * it is set and '' when not, and `secretsSet` says which are set. Saving
+     * the mask back keeps the key; secrets.set clears one.
+     */
     get: () => Promise<{
+      secretsSet?: Record<string, boolean>;
       notificationsEnabled: boolean;
       notifyOnWaiting: boolean;
       notifyOnComplete: boolean;
@@ -1839,7 +1924,13 @@ export interface ElectronAPI {
   telegram?: {
     test: () => Promise<{ success: boolean; botName?: string; error?: string }>;
     sendTest: () => Promise<{ success: boolean; error?: string }>;
-    generateAuthToken: () => Promise<{ success: boolean; token?: string; error?: string }>;
+    /**
+     * A new token, shown to the user once by the main process (a dialog the
+     * page cannot read) and never answered: `token` is gone since 2.0.4 (the
+     * Audit's L2 on PR 466). copyAuthToken copies the current one again.
+     */
+    generateAuthToken: () => Promise<{ success: boolean; set?: boolean; token?: never; error?: string }>;
+    copyAuthToken: () => Promise<{ copied: boolean }>;
     removeAuthorizedChatId: (chatId: string) => Promise<{ success: boolean; error?: string }>;
   };
 
@@ -2049,6 +2140,22 @@ export interface ElectronAPI {
 
   // Vault
   vault?: {
+    /**
+     * Each project's folder, ~/.dorothy/project-files/<key>: what its agents
+     * produce, in reports/ and tools/ (electron/services/vault-project-files.ts).
+     * A file is named by its folder's key, a subfolder and a name, never a
+     * path; every failure is `{ error, code }`.
+     */
+    projectFolders: () => Promise<{ folders: VaultProjectFolder[] }>;
+    projectFiles: (params: { key: string; sub: VaultSubfolder }) => Promise<{ files: VaultProjectFileEntry[]; more?: number } | VaultFailure>;
+    /** The text whole up to 1 MB (editable), its first 200 KB past that (truncated, read only), none for a file that is not text. */
+    readProjectFile: (params: { key: string; sub: VaultSubfolder; name: string }) => Promise<VaultProjectFileRead | VaultFailure>;
+    /** Written unless it changed on disk since `mtimeSeen` (null for a new file): then `changed`, with its time, and nothing written. */
+    writeProjectFile: (params: { key: string; sub: VaultSubfolder; name: string; text: string; mtimeSeen: number | null }) =>
+      Promise<{ ok: true; mtimeMs: number } | { changed: true; mtimeMs: number | null } | VaultFailure>;
+    /** With a name, shows the file in its folder; without, opens the subfolder. */
+    showProjectFile: (params: { key: string; sub: VaultSubfolder; name?: string }) => Promise<{ success: true } | VaultFailure>;
+    onProjectFilesChanged: (callback: (event: { key: string; sub: VaultSubfolder }) => void) => () => void;
     listDocuments: (params?: { folder_id?: string; tags?: string[] }) => Promise<{ documents: VaultDocumentElectron[]; error?: string }>;
     getDocument: (id: string) => Promise<{ document?: VaultDocumentElectron; attachments?: VaultAttachmentElectron[]; error?: string }>;
     createDocument: (params: {
@@ -2198,12 +2305,17 @@ export interface ElectronAPI {
     kanbanUpdateTask: (params: { taskId: string; patch: Record<string, unknown> }) => Promise<{ success: boolean; task?: unknown; error?: string; needsSignIn?: boolean }>;
     kanbanDeleteTask: (params: { taskId: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
     kanbanAddComment: (params: { taskId: string; body: string }) => Promise<{ success: boolean; error?: string; needsSignIn?: boolean }>;
+    /** The webhook secret, put on the clipboard by the main process (the Audit's L2 on PR 466). */
+    copyWebhookSecret: () => Promise<{ copied: boolean }>;
     getConnectionInfo: () => Promise<{
       apiPort: number;
       webhookPath: string;
       webhookLocalUrl: string;
       webhookTailnetUrl?: string;
-      apiToken: string;
+      /** Whether the webhook secret exists; its value is never answered (copyWebhookSecret), since 2.0.4. */
+      apiTokenSet: boolean;
+      /** Always empty since 2.0.4: kept for the page that still reads it, until it copies through copyWebhookSecret. */
+      apiToken: '';
       tailscale: { installed: boolean; running: boolean; dnsName?: string; ip?: string; serveConfigured: boolean };
       serveCommand: string;
     }>;
@@ -2408,6 +2520,14 @@ export interface ElectronAPI {
   diagnostic: {
     /** Sends the last 24 hours of health samples (numbers, with the names of Tars's own calls and pages) once; refused with the reason, a sentence shown as is. */
     send: () => Promise<DiagnosticAnswer>;
+  };
+
+  errorReports: {
+    /**
+     * The last error report sent and Sentry's answer (2.0.4), kept across restarts, or null when none was. `kind` is
+     * error, handled, agent-tool, abrupt-end or diagnostic; `status` is Sentry's HTTP status, 0 when none came.
+     */
+    last: () => Promise<ErrorReportsLast | null>;
   };
 
   // Platform info

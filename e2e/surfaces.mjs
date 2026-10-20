@@ -245,12 +245,19 @@ export const VOLATILE = {
   },
   'cli-versions': {
     surfaces: ['settings-ai-providers'],
-    // Since one panel per CLI (#460), a version is printed after the command and
-    // nothing else: `claude 2.1.302` under each CLI of the list, `2.1.302` in the
-    // picked CLI's chip and at the head of its Command row, `codex codex-cli
-    // 0.163.0` where a CLI's --version names itself first.
-    selector: 'text=/^(?:[a-z][a-z-]* ){0,2}\\d+\\.\\d+/',
+    // A version is its number alone in an element of its own (2.0.4, the Audit's
+    // L5 on #460): under each CLI of the list, after its command (`claude
+    // 2.1.302`), and in the picked CLI's chip. The mask covers the number and
+    // nothing around it, so a reworded line is still compared.
+    selector: '[data-cli-version]',
     why: 'the version of each CLI installed on the machine recording; Claude Code updates itself weekly, codex and amp as often',
+  },
+  'cli-paths': {
+    surfaces: ['settings-ai-providers', 'settings-cli-paths'],
+    // Where the one detection found each CLI (2.0.4): CLI Paths shows it as it
+    // opens, and Providers' Command row names it. The path alone is masked.
+    selector: '[data-cli-path]',
+    why: 'where the CLIs are installed on the machine recording, which moves with each install and each Node version',
   },
   'log-chunk-counts': {
     surfaces: ['logs'],

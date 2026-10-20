@@ -13,6 +13,9 @@
 import { SANDBOX_BUILD } from './core/sandbox-guard';
 // Then: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
+// Then the guard that keeps an uncaught exception from freezing main behind
+// Electron's error box, before any other module loads (core/uncaught-guard.ts).
+import { uncaught } from './uncaught';
 
 import { startGithubWatch } from './services/github-watch';
 import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
@@ -124,6 +127,8 @@ import { registerBusHandlers } from './handlers/bus-handlers';
 import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
+import { registerVaultProjectFilesHandlers } from './handlers/vault-project-files-handlers';
+import { registerReviewHandlers } from './handlers/review-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
@@ -138,7 +143,8 @@ import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
 import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
 import { filesOpenBy, openFilesReadable } from './platform/open-files';
-import { startCodexSessionWatch } from './services/codex-sessions';
+import { startCodexSessionWatch, type HookPost } from './services/codex-sessions';
+import { startPiSessionWatch, piSessionDir } from './services/pi-sessions';
 import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
 import { codexKeyConfig } from './services/cli-keys';
 import { getProvider } from './providers';
@@ -155,11 +161,12 @@ import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-bo
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
+import { SECRETS_FILE, migrateSecrets, readSecrets, saveSettingsSplit } from './services/settings-secrets';
 import { agentStatusEmitter, emitAgentStatus } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { sweepRunTokenFolders } from './services/acp/run-token-file';
-import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
+import { describeSecretFileError, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
 import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
 import { probeHermes } from './services/hermes-client';
@@ -177,6 +184,8 @@ import {
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
 import { endAuthCommands } from './services/claude-accounts/auth';
+import { TOOL_TOPIC } from './services/agent-guide';
+import { getAllProviders } from './providers';
 
 // ============== App Settings Management ==============
 
@@ -197,7 +206,12 @@ let recovery: { flush: () => void } | null = null;
 // (services/health/monitor.ts): before any of them is registered.
 timeIpcHandlers(ipcMain as unknown as Parameters<typeof timeIpcHandlers>[0]);
 
-const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
+const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true, process.platform, {
+  onFatalError: uncaught.onFatalError,
+  // What an agent tool error may name (2.0.4): Tars's own tools and the CLIs it runs.
+  vocabulary: { tools: new Set(Object.keys(TOOL_TOPIC)), clis: new Set(getAllProviders().map(provider => provider.id)) },
+  channels: ipcChannels.known(),
+});
 
 /** The health samples, ~/.dorothy, on this machine only (services/health/samples.ts). */
 const HEALTH_FILE = dataPath('health-samples.jsonl');
@@ -284,28 +298,30 @@ function loadAppSettings(): AppSettings {
       additionalPaths: [],
     },
   };
+  // Every key out of ~/.dorothy before anything reads one (services/settings-secrets.ts).
+  migrateSecrets();
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
-      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
+      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts),
+      // and so are the other secrets (settings-secrets.json).
       // The switch is on only for the boolean true: the file is in ~/.dorothy,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
-      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
+      return { ...defaults, ...sentryTokenOutOf(saved), ...readSecrets(), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
-    console.error('Failed to load app settings:', err);
+    console.error(`Failed to load app settings: ${describeSecretFileError(err)}`);
   }
-  return { ...defaults, ...sentryTokenOutOf({}) };
+  return { ...defaults, ...sentryTokenOutOf({}), ...readSecrets() };
 }
 
 function saveAppSettingsToFile(settings: AppSettings) {
   try {
     ensureDataDir();
-    // 0600 and atomic: this file carries every provider API key, the Hermes
-    // gateway token and the memory-backend credentials.
-    // Everything but the Sentry token, which goes to ~/.tars-private.
-    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settingsToSave(settings), null, 2));
+    // 0600 and atomic. The secrets go to ~/.tars-private (settings-secrets.json,
+    // and the Sentry token's own file), the rest to app-settings.json.
+    saveSettingsSplit(settingsToSave(settings) as AppSettings);
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
@@ -525,7 +541,7 @@ app.whenReady().then(async () => {
   // Narrow the credential files on installs that predate the 0600 write.
   // A `mode` passed to writeFileSync only applies at creation, so an
   // app-settings.json already sitting at 0644 would keep it forever.
-  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
+  for (const secret of [APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
     ensureSecretFileMode(secret);
   }
   // And the directory itself with everything in it: the fleet, the board, the
@@ -544,7 +560,7 @@ app.whenReady().then(async () => {
   // set in the background (it never rejects, each failure is logged).
   // The health samples too: the privacy page says they are readable by the
   // user's account only.
-  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -599,6 +615,7 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,
@@ -677,6 +694,10 @@ app.whenReady().then(async () => {
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });
+  // Each project's reports/ and tools/, what its agents produce.
+  registerVaultProjectFilesHandlers();
+  // Review: every repository of every project, scanned and searched (services/review-repositories.ts).
+  registerReviewHandlers();
 
 
   // The relay to the user's Telegram through their Hermes, following its switch
@@ -745,20 +766,29 @@ app.whenReady().then(async () => {
   startSleepWatch();
   // codex's turns, read from its session log and posted as its terminal's hooks
   // would post them, with that terminal's own token (services/codex-sessions.ts).
+  // What a CLI without Tars's hooks would have posted, posted as its terminal,
+  // with that terminal's own token, on the routes its hooks use.
+  const postAsTerminal = (watch: string) => async (agentId: string, { path: route, body }: HookPost) => {
+    const token = terminalTokenOf(agentId);
+    if (!token) return;
+    try {
+      await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      console.warn(`[${watch}] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+    }
+  };
+  // pi's turns, read from its session file (services/pi-sessions.ts).
+  startPiSessionWatch({
+    dirOf: (agentId) => piSessionDir(DATA_DIR, agentId),
+    post: postAsTerminal('pi-sessions'),
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+  });
   startCodexSessionWatch({
-    post: async (agentId, { path: route, body }) => {
-      const token = terminalTokenOf(agentId);
-      if (!token) return;
-      try {
-        await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(body),
-        });
-      } catch (err) {
-        console.warn(`[codex-sessions] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
-      }
-    },
+    post: postAsTerminal('codex-sessions'),
     dialogTitle: (agentId) => {
       const agent = agents.get(agentId);
       return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);

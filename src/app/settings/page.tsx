@@ -116,6 +116,7 @@ function SettingsPageInner() {
     handleSaveAppSettings,
     updateSettings,
     updateLocalAppSettings,
+    setSecretState,
   } = useSettings();
 
   const renderContent = () => {
@@ -139,6 +140,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
             onOpenHermes={() => setActiveSection('hermes')}
           />
         );
@@ -148,6 +150,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
           />
         );
       case 'discord':
@@ -156,6 +159,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
           />
         );
       case 'socialdata':
@@ -164,6 +168,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
           />
         );
       case 'tasmania':
@@ -188,6 +193,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
             onOpenClaudeAccounts={() => setActiveSection('claude-accounts')}
           />
         );
@@ -211,6 +217,7 @@ function SettingsPageInner() {
             appSettings={appSettings}
             onSaveAppSettings={handleSaveAppSettings}
             onUpdateLocalSettings={updateLocalAppSettings}
+            onSecretChanged={setSecretState}
           />
         );
       case 'mcp':

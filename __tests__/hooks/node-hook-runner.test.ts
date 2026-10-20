@@ -26,8 +26,10 @@ import * as path from 'node:path';
  *     makes SessionStart a status change instead of a registration; a
  *     `current_task` without the .sh trailing newline; `opened_at` absent).
  *  3. Ignores CLAUDE_MGR_API_URL and posts to 31415, i.e. into the live Tars.
- *  4. Uses the shared ~/.dorothy/api-token where the .sh uses the CLI token,
- *     or the reverse (memory calls fall back to the file, hook posts never).
+ *  4. Uses a shared token where the .sh uses the CLI token, or the reverse.
+ *     Since 2.0.4 no hook presents the shared token at all, from wherever it
+ *     is (the secrets moved to ~/.tars-private): a CLI with no token of its
+ *     own reads without one, and Tars answers 401.
  *  5. stdout that is not what Claude Code parses: SessionStart context lost,
  *     `continue` missing, a stack trace printed, or output where the .sh
  *     prints none (StopFailure).
@@ -239,6 +241,13 @@ type Case = {
 const AGENT = { CLAUDE_AGENT_ID: 'agent-1', CLAUDE_MGR_API_TOKEN: 'tok-1', TARS_INSTANCE_ID: INSTANCE };
 const GEMINI_AGENT = { DOROTHY_AGENT_ID: 'gem-1', CLAUDE_AGENT_ID: 'gem-1', CLAUDE_MGR_API_TOKEN: 'tok-g', TARS_INSTANCE_ID: INSTANCE };
 const BEARER = 'Bearer tok-1';
+/** The shared token where it was until 2.0.4 and where it is since: no hook presents it from either. */
+function sharedTokenEverywhere(home: string): void {
+  for (const dir of ['.dorothy', '.tars-private']) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, 'api-token'), 'shared-tok\n');
+  }
+}
 
 const TRANSCRIPT_LINES = [
   JSON.stringify({ type: 'user', message: { content: 'go' } }),
@@ -317,18 +326,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'SessionStart with no CLI token reads the shared token for bootstrap and memory only',
+    name: 'SessionStart with no CLI token reads nothing, with the shared token neither, wherever it is',
     event: 'session-start',
     payload: { session_id: S, cwd: PROJECT },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
-    setup: home => {
-      fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok\n');
-    },
+    setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
-      { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: 'Bearer shared-tok' },
-      { method: 'GET', path: '/api/memory/context', auth: 'Bearer shared-tok', query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
     stdout: CONTINUE,
   },
@@ -405,17 +409,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'PostToolUse Bash with a description, token from the shared file for memory only',
+    name: 'PostToolUse Bash with a description and no CLI token: no memory post, with the shared token neither',
     event: 'post-tool-use',
     payload: { session_id: S, cwd: PROJECT, tool_name: 'Bash', tool_input: { command: 'npm test', description: 'Run tests' } },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
-    setup: home => {
-      fs.mkdirSync(path.join(home, '.dorothy'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.dorothy', 'api-token'), 'shared-tok');
-    },
+    setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
-      { method: 'POST', path: '/api/memory/remember', auth: 'Bearer shared-tok', body: { agent_id: 'agent-1', project_path: PROJECT, content: 'Ran command: Run tests (npm test)', type: 'command' } },
     ],
     stdout: CONTINUE,
   },

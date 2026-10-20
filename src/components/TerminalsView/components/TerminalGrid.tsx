@@ -5,8 +5,10 @@ import ReactGridLayout, { verticalCompactor } from 'react-grid-layout';
 import type { Layout, GridLayoutProps } from 'react-grid-layout';
 import { LoadingPanel } from '@/components/ui';
 import type { AgentStatus } from '@/types/electron';
+import { GRID_GAP, GRID_MIN_ROW } from '@/lib/orchestrator-board';
 import type { TerminalPanelState } from '../types';
 import TerminalPanel from './TerminalPanel';
+import OrchestratorBoard from './OrchestratorBoard';
 
 interface TerminalGridProps {
   agents: AgentStatus[];
@@ -14,6 +16,10 @@ interface TerminalGridProps {
   rglLayout: Layout;
   cols: number;
   rows: number;
+  /** The orchestrator layout's orchestrator, or null for the grid (`Dashboard · orchestrator layout`). */
+  orchestratorId: string | null;
+  /** Every other agent of the board, in its order, for the orchestrator layout's column. */
+  columnIds: readonly string[];
   onDragStop: GridLayoutProps['onDragStop'];
   broadcastMode: boolean;
   focusedPanelId: string | null;
@@ -46,6 +52,8 @@ function TerminalGrid({
   rglLayout,
   cols,
   rows,
+  orchestratorId,
+  columnIds,
   onDragStop,
   broadcastMode,
   focusedPanelId,
@@ -94,9 +102,9 @@ function TerminalGrid({
 
   // Compute row height - use the preset's defined rows, not item count
   const expectedRows = Math.max(1, rows);
-  const MARGIN: readonly [number, number] = [8, 8];
+  const MARGIN: readonly [number, number] = [GRID_GAP, GRID_GAP];
   const CONTAINER_PADDING: readonly [number, number] = [0, 0];
-  const rowHeight = Math.max(80, (containerHeight - MARGIN[1] * (expectedRows + 1)) / expectedRows);
+  const rowHeight = Math.max(GRID_MIN_ROW, (containerHeight - MARGIN[1] * (expectedRows + 1)) / expectedRows);
 
   const gridConfig = useMemo(() => ({
     cols,
@@ -144,6 +152,33 @@ function TerminalGrid({
       if (fitTimerRef.current) clearTimeout(fitTimerRef.current);
     };
   }, []);
+
+  // A card of the board as today, in the orchestrator layout's boxes.
+  const boardPanel = useCallback((agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return null;
+    return (
+      <TerminalPanel
+        key={agent.id}
+        agent={agent}
+        isFullscreen={false}
+        isBroadcasting={broadcastMode}
+        isFocused={focusedPanelId === agent.id}
+        tabType={tabType}
+        onRegisterContainer={onRegisterContainer}
+        onStart={onStartAgent}
+        onStop={onStopAgent}
+        onRestart={onRestartAgent}
+        onWake={onWakeAgent}
+        onRemove={onRemoveAgent}
+        onClear={onClearTerminal}
+        onFullscreen={onFullscreenPanel}
+        onExitFullscreen={onExitFullscreen}
+        onFocus={onFocusPanel}
+        onContextMenu={onContextMenu}
+      />
+    );
+  }, [agents, broadcastMode, focusedPanelId, tabType, onRegisterContainer, onStartAgent, onStopAgent, onRestartAgent, onWakeAgent, onRemoveAgent, onClearTerminal, onFullscreenPanel, onExitFullscreen, onFocusPanel, onContextMenu]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -201,6 +236,18 @@ function TerminalGrid({
 
     if (containerWidth <= 0) return null;
 
+    if (orchestratorId) {
+      return (
+        <OrchestratorBoard
+          width={containerWidth}
+          height={containerHeight}
+          orchestratorId={orchestratorId}
+          columnIds={columnIds}
+          panel={boardPanel}
+        />
+      );
+    }
+
     return (
       <ReactGridLayout
         layout={rglLayout}
@@ -246,7 +293,7 @@ function TerminalGrid({
   };
 
   return (
-    <div ref={containerRef} className="h-full w-full overflow-hidden">
+    <div ref={containerRef} data-board-layout={orchestratorId ? 'orchestrator' : 'grid'} className="h-full w-full overflow-hidden">
       {renderContent()}
     </div>
   );

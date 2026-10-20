@@ -39,8 +39,12 @@ const NO_PROGRAMS = [
   `gpg.x509.program=${os.devNull}`,
   `gpg.ssh.allowedSignersFile=${os.devNull}`,
   'credential.helper=',
-  'protocol.allow=never',
+  // What ssh and http would run: the repository's ssh command, and an askpass
+  // for a password (credential.helper= above already empties the helpers).
+  'core.sshCommand=ssh',
+  'core.askPass=',
   'submodule.recurse=false',
+  'fetch.recurseSubmodules=false',
   'diff.ignoreSubmodules=all',
   'status.submoduleSummary=false',
   'core.quotePath=false',
@@ -66,6 +70,17 @@ export function safeGitEnv(base: GitEnv = process.env, extra: GitEnv = {}): Node
     env[k] = v;
   }
   env.GIT_CONFIG_NOSYSTEM = '1';
+  // A fetch goes out by https, http or ssh, and by nothing else, whatever any
+  // configuration allows: git reads this before every protocol.allow and
+  // protocol.<name>.allow, the repository's included, which a -c could not
+  // beat (a repository's own protocol.ext.allow=always outranks a command
+  // line protocol.allow=never). Refused so: ext:: (runs a command), fd::,
+  // file:// and local paths (git-upload-pack runs here, and
+  // remote.<name>.uploadpack names it), git:// (its core.gitProxy keeps its
+  // first value), and every remote helper on the PATH (git-remote-<x>, by an
+  // <x>:: remote or remote.<name>.vcs: ftp, ftps, keybase), the Audit's M1 on
+  // #495. `protocol.allow=never` alone, before, refused https and ssh too.
+  env.GIT_ALLOW_PROTOCOL = 'https:http:ssh';
   env.GIT_TERMINAL_PROMPT = '0';
   env.GIT_OPTIONAL_LOCKS = '0';
   return env as NodeJS.ProcessEnv;

@@ -395,6 +395,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('review:file', { repoPath, file, baseBranch }),
     repo: (repoPath: string) =>
       ipcRenderer.invoke('review:repo', { repoPath }),
+    // Every repository of a project (services/review-repositories.ts): what was kept at once, a scan's findings as events.
+    repositories: (projectPath: string, opts?: { refresh?: boolean }) =>
+      ipcRenderer.invoke('review:repositories', { projectPath, refresh: opts?.refresh === true }),
+    search: (query: string) =>
+      ipcRenderer.invoke('review:search', { query }),
+    cancel: (id: string) =>
+      ipcRenderer.invoke('review:cancel', { id }),
+    onRepositoriesEvent: (callback: (event: Record<string, unknown>) => void) => {
+      const listener = (_: unknown, data: Record<string, unknown>) => callback(data);
+      ipcRenderer.on('review:repositories:event', listener);
+      return () => ipcRenderer.removeListener('review:repositories:event', listener);
+    },
+    onSearchEvent: (callback: (event: Record<string, unknown>) => void) => {
+      const listener = (_: unknown, data: Record<string, unknown>) => callback(data);
+      ipcRenderer.on('review:search:event', listener);
+      return () => ipcRenderer.removeListener('review:search:event', listener);
+    },
   },
 
   memoryHub: {
@@ -426,6 +443,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('cliKeys:set', id, patch),
   },
 
+  // A secret of the settings (2.0.4, services/settings-secrets.ts): set or
+  // cleared here, kept in ~/.tars-private, never sent back.
+  secrets: {
+    set: (field: string, value: string | null) =>
+      ipcRenderer.invoke('secrets:set', field, value),
+  },
+
   appSettings: {
     get: () =>
       ipcRenderer.invoke('app:getSettings'),
@@ -444,8 +468,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('telegram:test'),
     sendTest: () =>
       ipcRenderer.invoke('telegram:sendTest'),
+    // Mints a token the main process shows the user once; the page is told it is set (secret-handoff.ts).
     generateAuthToken: () =>
       ipcRenderer.invoke('telegram:generateAuthToken'),
+    copyAuthToken: () =>
+      ipcRenderer.invoke('telegram:authToken:copy'),
     removeAuthorizedChatId: (chatId: string) =>
       ipcRenderer.invoke('telegram:removeAuthorizedChatId', chatId),
   },
@@ -599,6 +626,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hermes: {
     getConnectionInfo: () =>
       ipcRenderer.invoke('hermes:getConnectionInfo'),
+    // The webhook secret, put on the clipboard by the main process; never answered to the page.
+    copyWebhookSecret: () =>
+      ipcRenderer.invoke('hermes:webhookSecret:copy'),
     getConnection: () =>
       ipcRenderer.invoke('hermes:connection:get'),
     saveConnection: (connection: Record<string, unknown>) =>
@@ -711,6 +741,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Vault
   vault: {
+    // Each project's folder, reports/ and tools/ (services/vault-project-files.ts): by key, subfolder and name, never a path.
+    projectFolders: () =>
+      ipcRenderer.invoke('vault:project-folders'),
+    projectFiles: (params: { key: string; sub: 'reports' | 'tools' }) =>
+      ipcRenderer.invoke('vault:project-files', params),
+    readProjectFile: (params: { key: string; sub: 'reports' | 'tools'; name: string }) =>
+      ipcRenderer.invoke('vault:project-file:read', params),
+    writeProjectFile: (params: { key: string; sub: 'reports' | 'tools'; name: string; text: string; mtimeSeen: number | null }) =>
+      ipcRenderer.invoke('vault:project-file:write', params),
+    showProjectFile: (params: { key: string; sub: 'reports' | 'tools'; name?: string }) =>
+      ipcRenderer.invoke('vault:project-file:show', params),
+    onProjectFilesChanged: (callback: (event: { key: string; sub: 'reports' | 'tools' }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { key: string; sub: 'reports' | 'tools' }) => callback(data);
+      ipcRenderer.on('vault:project-files:changed', listener);
+      return () => ipcRenderer.removeListener('vault:project-files:changed', listener);
+    },
     listDocuments: (params?: { folder_id?: string; tags?: string[] }) =>
       ipcRenderer.invoke('vault:listDocuments', params),
     getDocument: (id: string) =>
@@ -945,6 +991,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // "Send a diagnostic": the last 24 hours of health samples, once (handlers/diagnostic-handlers.ts).
   diagnostic: {
     send: () => ipcRenderer.invoke('diagnostic:send'),
+  },
+
+  // The last error report's answer (2.0.4): for Settings' line beside the switch.
+  errorReports: {
+    last: () => ipcRenderer.invoke('errorReports:last'),
   },
 
   // Platform info

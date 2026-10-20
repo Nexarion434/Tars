@@ -279,7 +279,7 @@ without leaving Tars. Without a gateway the rest of Tars works fine.
 
 | Screen | What it is for |
 |---|---|
-| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press. An asleep agent's panel keeps its last screen, and a key typed there wakes it |
+| **Dashboard** | The terminal grid. Every agent, live, grouped by project; each panel shows its session and opens fullscreen in one press. A project with an orchestrator opens with it on two thirds of the board and its team in a column beside it, the keys going to the orchestrator; Equal grid in the header gives the grid back. An asleep agent's panel keeps its last screen, and a key typed there wakes it |
 | **Chat** | Hermes and a room per project, in one list. Hermes watches every project and asks before it acts; in a room, that project's agents talk to each other and to you, the thread first, the team listed under the rooms, and what needs you above the thread |
 | **Agents** | Create, configure, start and stop, grouped by project or one project at a time. A stopped agent says who stopped it and when, and why when an orchestrator did; an asleep one says since when, under its own filter, and wakes from its card. Templates and whole teams |
 | **Kanban** | The Hermes task board |

@@ -72,11 +72,13 @@ function whereTheServerFinds(specifier: string): string {
   }
 }
 
-// Nothing here may reach Telegram, whatever a guard lets through.
+// Nothing here may reach Telegram, whatever a guard lets through, nor Tars,
+// which sends the server's files since 2.0.4: the live one is on 31415.
 vi.mock('https', () => {
   const refuse = () => { throw new Error('a test reached the network'); };
   return { default: { get: refuse, request: refuse }, get: refuse, request: refuse };
 });
+vi.stubGlobal('fetch', async () => { throw new Error('a test reached the network'); });
 
 import { isSafeTelegramPath } from '../../electron/services/api-routes/utils';
 import * as constants from '../../electron/constants';

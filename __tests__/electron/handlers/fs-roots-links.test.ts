@@ -203,13 +203,19 @@ describe('4. fs:read-project-files', () => {
 });
 
 describe('6. a link that stays inside the project, and a new file', () => {
-  it('fs:read-text-file and fs:write-text-file still read, write and create', async () => {
+  it('fs:read-text-file still reads through it; fs:write-text-file writes an instruction file and nothing else', async () => {
     expect((await readText(path.join(project, 'docs-link', 'a.md'))).content).toBe('a doc');
-    expect((await writeText(path.join(project, 'docs-link', 'a.md'), 'edited')).success).toBe(true);
-    expect(fs.readFileSync(path.join(docs, 'a.md'), 'utf8')).toBe('edited');
-    expect((await writeText(path.join(project, 'docs-link', 'b.md'), 'new')).success).toBe(true);
-    expect(fs.readFileSync(path.join(docs, 'b.md'), 'utf8')).toBe('new');
-    expect((await writeText(path.join(project, 'CLAUDE.local.md'), 'new')).success).toBe(true);
+    // Since 2.0.4 the window writes the instruction files the Brain edits and
+    // nothing else (the Audit's Hole 1, window-file-access.test.ts W4 and W5).
+    expect((await writeText(path.join(project, 'docs-link', 'a.md'), 'edited')).success).toBe(false);
+    expect(fs.readFileSync(path.join(docs, 'a.md'), 'utf8')).toBe('a doc');
+    expect((await writeText(path.join(project, 'docs-link', 'b.md'), 'new')).success).toBe(false);
+    expect(fs.existsSync(path.join(docs, 'b.md'))).toBe(false);
+    expect((await writeText(path.join(project, 'CLAUDE.local.md'), 'new')).success).toBe(false);
+    // The project's CLAUDE.md is a link out of it by now (the case above): its .claude/CLAUDE.md.
+    fs.mkdirSync(path.join(project, '.claude'), { recursive: true });
+    expect(await writeText(path.join(project, '.claude', 'CLAUDE.md'), 'new')).toEqual({ success: true });
+    expect(fs.readFileSync(path.join(project, '.claude', 'CLAUDE.md'), 'utf8')).toBe('new');
   });
 
   it('fs:read-project-files still reads through it', async () => {
@@ -231,11 +237,12 @@ describe.skipIf(onWindows)('5, 9. local-file://', () => {
     return (await protocols.get('local-file')!({ url: url.href })).status;
   };
 
-  it('5. refuses a file outside through a link, serves one inside', async () => {
+  it('5. refuses a file outside through a link, and since 2.0.4 a project\'s file too', async () => {
     expect(await serve(path.join(DATA_DIR, 'h', '.ssh', 'id_rsa'))).toBe(403);
     expect(await serve(path.join(DATA_DIR, 'p', 'hermes-webhook-secret'))).toBe(403);
     expect(await serve(path.join(project, 'escape', 'id_rsa'))).toBe(403);
-    expect(await serve(path.join(project, 'docs-link', 'a.md'))).toBe(200);
+    // What it serves since 2.0.4 is window-file-access.test.ts's W6.
+    expect(await serve(path.join(project, 'docs-link', 'a.md'))).toBe(403);
   });
 
   it.skipIf(NO_FILE_LINKS)('9. refuses a file link to a markdown file outside: no dotfiles exception here', async () => {

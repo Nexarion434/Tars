@@ -8,7 +8,10 @@ import type { EventEmitter } from 'node:events';
  * The MCP servers that had no deadline at all: a host that stops answering
  * left the tool waiting until Claude Code gave up on the call, about half an
  * hour later, with nothing said to the agent (QA's gate of #207). mcp-vault
- * calls Tars; mcp-socialdata and mcp-x call their APIs. mcp-telegram's two
+ * calls Tars; mcp-socialdata and mcp-x called their APIs, and since 2.0.4 Tars
+ * calls them for the two (services/api-routes/integration-routes.ts, with the
+ * keys it keeps in ~/.tars-private): the deadline read here is the one Tars's
+ * route sets, and its words are what the tool says. mcp-telegram's two
  * requests are proven elsewhere, since its tools live in its index.ts, which
  * starts the server as it loads: by the contract (__tests__/mcp/contracts),
  * and by telegram-upload-deadline.test.ts, which loads it with a fake SDK.
@@ -51,7 +54,7 @@ vi.mock('https', async importOriginal => transport(await importOriginal()));
 
 const SETTINGS = path.join(os.homedir(), '.dorothy', 'app-settings.json');
 
-const NAMES = ['mcp-vault (Tars)', 'mcp-socialdata (SocialData)', 'mcp-x (X)'];
+const NAMES = ['mcp-vault (Tars)', 'mcp-socialdata (SocialData, through Tars)', 'mcp-x (X, through Tars)'];
 /** Each client, as its tools call it, and the words it has for a host it could not reach. */
 const CLIENTS = new Map<string, [RegExp, () => Promise<unknown>]>();
 
@@ -62,15 +65,19 @@ beforeAll(async () => {
   delete process.env.CLAUDE_MGR_API_TOKEN;
   delete process.env.TARS_INSTANCE_ID;
   fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
-  fs.writeFileSync(SETTINGS, JSON.stringify({
-    socialDataApiKey: 'key', xApiKey: 'k', xApiSecret: 's', xAccessToken: 't', xAccessTokenSecret: 'ts', xPostingEnabled: true,
-  }));
   const vault = await import('../../mcp-vault/src/utils/api');
-  const socialData = await import('../../mcp-socialdata/src/utils/api');
-  const x = await import('../../mcp-x/src/utils/api');
+  // The calls Tars makes for mcp-socialdata and mcp-x, with the keys it holds.
+  const { registerIntegrationRoutes } = await import('../../electron/services/api-routes/integration-routes');
+  const routes = new Map<string, (req: { body: Record<string, unknown> }, send: (data: unknown, status?: number) => void) => Promise<void>>();
+  const keys = { socialDataApiKey: 'key', xApiKey: 'k', xApiSecret: 's', xAccessToken: 't', xAccessTokenSecret: 'ts', xPostingEnabled: true };
+  registerIntegrationRoutes({ post: (route: string, h: never) => routes.set(route, h), get: () => {} } as never, { getAppSettings: () => keys } as never);
+  /** A route, as the tool meets it: a refusal or a failure is the tool's error. */
+  const route = (name: string, body: Record<string, unknown>) => new Promise<unknown>((resolve, reject) => {
+    void routes.get(name)!({ body }, (data, status = 200) => (status >= 400 ? reject(new Error(String((data as { error?: unknown }).error))) : resolve(data)));
+  });
   CLIENTS.set(NAMES[0], [/^API request failed: /, () => vault.apiRequest('GET', '/api/vault/documents/d1')]);
-  CLIENTS.set(NAMES[1], [/^SocialData API request failed: /, () => socialData.socialDataRequest('GET', '/twitter/search', { query: 'tars' })]);
-  CLIENTS.set(NAMES[2], [/^X API request failed: /, () => x.xApiRequest('POST', '/2/tweets', { text: 'Hi' })]);
+  CLIENTS.set(NAMES[1], [/^SocialData API request failed: /, () => route('/api/socialdata/request', { endpoint: '/twitter/search', query: { query: 'tars' } })]);
+  CLIENTS.set(NAMES[2], [/^X API request failed: /, () => route('/api/x/request', { method: 'POST', endpoint: '/2/tweets', body: { text: 'Hi' } })]);
 });
 
 beforeEach(() => { sent.length = 0; });

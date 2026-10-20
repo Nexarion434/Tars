@@ -25,7 +25,6 @@ import { CustomOpenAIProvider } from './custom-openai-provider';
 export type { CLIProvider } from './cli-provider';
 export type {
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,

@@ -87,7 +87,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       'Claim a task with `assign_task` before you work on it (one at a time); report with `update_task_progress`; finish it with `mark_task_done` and a one to three sentence summary. `move_task` moves a task you hold between backlog, ongoing and done; planned is the user\'s: it hands a task to Hermes, and only the user does that. `list_tasks` and `get_task` read the board; `delete_task` removes a task you filed by mistake.',
       'On a Hermes whose version Tars has not measured, a task you claim stays `scheduled` on Hermes (`list_tasks` shows it ongoing, Hermes: scheduled): it is yours all the same, and `mark_task_done` finishes it.',
       'An orchestrator files the work it splits, so the user sees it on the board, and its workers claim and finish their own.',
-      'When Hermes is not configured, refuses or cannot be reached, or Tars is signed out of it ("Tars is signed out of Hermes: sign in again in Settings, Hermes."), the tool says so and what was written: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s notes/, and go on with the work; do not call the tool again in a loop.',
+      'When Hermes is not configured, refuses or cannot be reached, or Tars is signed out of it ("Tars is signed out of Hermes: sign in again in Settings, Hermes."), the tool says so and what was written: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s reports/, and go on with the work; do not call the tool again in a loop.',
       'A claim or a release whose answer says its note could not be written on the board still stood: the task moved, so do not do it again.',
       'When the error names a task that was created, or says Hermes may have done what you asked before its answer was lost, read the board (`get_task`, `list_tasks`) before writing again: never create a task twice.',
     ].join('\n'),
@@ -98,7 +98,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'Tars keeps a folder for your project, outside the repository: {folder}',
-      'tools/ for scripts and benches worth running again, notes/ for what the next session should know, reports/ for what you hand over. Every agent of the project shares it, and Tars never deletes it.',
+      'tools/ for scripts and benches worth running again, reports/ for what you hand over and what the next session should know. The user reads and edits both in Tars\'s Vault. Every agent of the project shares it, and Tars never deletes it.',
       'Durable files go there: never create folders at the top of your home folder. Keep nothing there that belongs in the repository, and nothing secret.',
       'Your temporary folder ($TMPDIR) is scratch: a session or a cleanup can empty it. Do not keep work under ~/Documents either: it can be evicted to the cloud and a read then blocks.',
     ].join('\n'),
@@ -243,7 +243,7 @@ export function guideTopic(id: string, version: string, folder: string | null, w
  */
 export function identitySection(role: GuideRole, folder: string | null, why?: string): string[] {
   const where = folder
-    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, notes/, reports/). Keep scripts, notes and reports worth keeping there, never in a temporary folder, under ~/Documents or in a folder you create at the top of your home folder.`
+    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, reports/). Keep scripts and reports worth keeping there, never in a temporary folder, under ~/Documents or in a folder you create at the top of your home folder.`
     : `- Your project has no folder kept by Tars (${why ?? NOT_ABSOLUTE}): keep what must last in the repository or ask your requester.`;
   const lines = [`## How Tars works`];
   if (role === 'orchestrator') {
