@@ -29,7 +29,8 @@ import { hostileRepo, type HostileRepo } from '../../fixtures/hostile-repo';
  *      point it elsewhere, GIT_CONFIG_PARAMETERS turns a program back on, or
  *      the system configuration names one.
  *  G7. Any git call of the main process skips all this: one written
- *      elsewhere, with execFile('git', ...) of its own.
+ *      elsewhere, with execFile('git', ...) of its own, or with git's resolved
+ *      path, execFile(gitCommand(), ...), since #358 (the Audit's L1 on #358).
  *  G8. (The Audit's M1 on #463, written before its code.) `log`, `show` or
  *      `whatchanged` verify a signed commit, log.showSignature on, and run the
  *      verifier the repository names: gpg.program and gpg.openpgp.program,
@@ -137,7 +138,7 @@ describe('a repository\'s own programs never run', () => {
         if (e.isDirectory()) { if (e.name !== 'dist' && e.name !== 'node_modules') walk(p); continue; }
         if (!/\.ts$/.test(e.name) || p.endsWith(path.join('utils', 'safe-git.ts'))) continue;
         const text = fs.readFileSync(p, 'utf8');
-        if (/(execFile|execFileSync|spawn|spawnSync|run)\(\s*['"]git['"]/.test(text)) offenders.push(path.relative(root, p));
+        if (/(execFile|execFileSync|spawn|spawnSync|run)\(\s*(['"]git(\.exe)?['"]|gitCommand\(\))/.test(text)) offenders.push(path.relative(root, p));
       }
     };
     walk(root);
