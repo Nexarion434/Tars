@@ -221,7 +221,12 @@ export const VOLATILE = {
   },
   'sandbox-paths': {
     surfaces: 'all',
-    selector: 'text=/dorothy-e2e/',
+    // The smallest element whose text names the sandbox's home, but not a CLI's
+    // path (data-cli-path): cli-paths masks that one with its row's whole left
+    // column, a fixed box, where this mask drew the path's own span at the
+    // path's width, past its column once the path is long (#498's witness: a
+    // home 40 characters longer turned settings-cli-paths red by 13,614 px).
+    selector: ':not([data-cli-path]):text-matches("dorothy-e2e")',
     why: 'the sandbox HOME is a mkdtemp directory, so its name is different in every run',
   },
   'tars-version': {
