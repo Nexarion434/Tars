@@ -1104,14 +1104,14 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
     write(ptyProcess, state, piece);
     chars += piece.replace(/\x1b\[20[01]~/g, '').length;
   };
-  // What the CLI is owed (oweToFirstMessage) goes first, into the same field
-  // and before the message's one Enter, so it starts no turn of its own:
-  // Tars's words, under Tars's own line when the message has a sender, so the
-  // sender is never made to say them.
-  if (owed) {
-    if (sender) type(senderLine({ kind: 'tars' }));
-    type('\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
-  }
+  // What the CLI is owed (oweToFirstMessage) goes into the same field, before
+  // the message's one Enter, so it starts no turn of its own. A message with
+  // no sender line gets it first. One with a sender line gets it after, under
+  // Tars's own line, so the sender is never made to say Tars's words and its
+  // line opens the prompt: a CLI's hook reports the prompt's start (gemini's
+  // BeforeAgent, its first 200 bytes), and behind 1 500 bytes of Tars's words
+  // the turn showed neither whose task it was nor its id (19/10).
+  if (owed && !sender) type('\x1b[200~' + asTypedText(owed) + '\n\n\x1b[201~');
   // Who it is from, typed before every message that has a sender, whatever
   // its length. Claude Code 2.1.280 hands a paste it folds to the model as
   // <pasted_content>, and a dispatch arrived with nothing outside it: no word
@@ -1134,6 +1134,10 @@ function writeBody(ptyProcess: pty.IPty, state: TerminalInput, data: string, sen
     // Short single-line message: no bracket markers needed, but the \r must
     // still be delayed (see below) so it isn't swallowed into the paste.
     type(data);
+  }
+  if (owed && sender) {
+    type('\x1b[200~\n\n\x1b[201~' + senderLine({ kind: 'tars' }));
+    type('\x1b[200~' + asTypedText(owed) + '\x1b[201~');
   }
   return chars;
 }

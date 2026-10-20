@@ -136,6 +136,18 @@ export function consumeResumeSessionId(
 }
 
 /**
+ * Whether the next start of this agent continues its last conversation, as
+ * consumeResumeSessionId would answer it, without counting as that start:
+ * update_agent says so before the start happens.
+ */
+export function nextStartResumes(
+  agent: { id: string; resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
+  homeDir?: string,
+): boolean {
+  return !startedThisRun.has(agent.id) && resolveResumeSessionId(agent, homeDir) !== null;
+}
+
+/**
  * The next start of this agent resumes its conversation again, as the first of
  * a run does: it was put to sleep (core/agent-asleep.ts), and woken, it must
  * pick up where it was, whichever sender wakes it and however often this run
@@ -155,6 +167,16 @@ export function spendResume(agentId: string): void {
 
 export function resumeOnNextStart(agentId: string): void {
   startedThisRun.delete(agentId);
+}
+
+/**
+ * The next start of this agent begins a new conversation, even the first of a
+ * run: update_agent moved it to another CLI, and no CLI continues another
+ * one's. Its last session is another CLI's, or one the new CLI had before the
+ * move, which is not the conversation the agent was having.
+ */
+export function newConversationOnNextStart(agentId: string): void {
+  startedThisRun.add(agentId);
 }
 
 /** Test seam: forget which agents have started. */

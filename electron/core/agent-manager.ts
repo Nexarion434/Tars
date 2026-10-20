@@ -139,21 +139,32 @@ export function ensureProjectTrusted(projectPath: string): void {
     [key: string]: unknown;
   };
 
+  // Claude Code reads the flag under the folder it starts in, as the system
+  // names it: the real path. A project reached through a link (anything under
+  // macOS's /var or /tmp, a checkout linked elsewhere) trusted under the
+  // spelling Tars saved alone still showed the dialog, and the agent's first
+  // task answered it. Both are written; trustsTooMuch has judged both.
+  const keys = [projectPath];
+  try {
+    const real = fs.realpathSync.native(projectPath);
+    if (real !== projectPath) keys.push(real);
+  } catch {
+    // Not there yet: the saved spelling is all there is.
+  }
+
   try {
     const outcome = updateSharedJsonSync<ClaudeConfig>(claudeJsonPath, config => {
-      const existing = config?.projects?.[projectPath] ?? {};
-      if (existing.hasTrustDialogAccepted === true) return undefined;
-      return {
-        ...config,
-        projects: {
-          ...config?.projects,
-          [projectPath]: {
-            ...existing,
-            hasTrustDialogAccepted: true,
-            projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
-          },
-        },
-      };
+      if (keys.every(key => config?.projects?.[key]?.hasTrustDialogAccepted === true)) return undefined;
+      const projects = { ...config?.projects };
+      for (const key of keys) {
+        const existing = projects[key] ?? {};
+        projects[key] = {
+          ...existing,
+          hasTrustDialogAccepted: true,
+          projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
+        };
+      }
+      return { ...config, projects };
     });
     if (outcome === 'written') {
       console.log(`ensureProjectTrusted: marked ${projectPath} trusted in ~/.claude.json`);

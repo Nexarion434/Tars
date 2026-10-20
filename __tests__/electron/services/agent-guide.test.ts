@@ -43,6 +43,11 @@ import {
  *     project's whole digest) (L2);
  * 14. the guide lets an agent make folders at the top of the home folder, or keep
  *     durable files anywhere but the project folder (the maintainer, 2026-10-18).
+ *
+ * Added with update_agent (2.0.4, 2026-10-19), before it:
+ * 15. an orchestrator is never told it can change an agent after creating it, or
+ *     is told it can change the role, or that a change of CLI applies to a CLI
+ *     at work: update_agent waits for the agent to be stopped (cli_running).
  */
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -198,5 +203,14 @@ describe('what the guide says is what the code does (the Audit of #448)', () => 
     for (const text of [topic('project-folder'), identitySection('worker', '/f').join('\n')]) {
       expect(text).toMatch(/top of (the|your) home folder/);
     }
+  });
+
+  it('tells an orchestrator it changes its agents with update_agent, and what stays the user\'s (15)', () => {
+    const delegation = topic('delegation');
+    expect(TOOL_TOPIC.update_agent).toBe('delegation');
+    expect(delegation).toContain('`update_agent`');
+    expect(delegation).toMatch(/update_agent`[^\n]*role[^\n]*Agents page/);
+    expect(delegation).toMatch(/update_agent`[^\n]*stop_agent/);
+    expect(delegation).toMatch(/update_agent`[^\n]*new conversation/);
   });
 });

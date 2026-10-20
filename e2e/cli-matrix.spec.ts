@@ -32,12 +32,10 @@ import { writeFakeClis } from './fake-clis.mjs';
  * A cell is green or red, with what was seen. KNOWN_RED says which cells are red on main today and why; the spec
  * fails when a cell outside it is red (a regression) and when a cell in it turns green or goes red for another
  * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
- *   - gemini, opencode and pi cannot call Tars: gemini's MCP servers get no TOKEN variable, and Tars writes its server
- *     where opencode and pi do not read theirs (documented by them, not measured on a real install);
- *   - gemini's first task is never closed, and holds every later one;
- *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok) nor from gemini;
- * OpenRouter starts since #458, and codex since fix/codex-works, which made their rules go; their own tasks to gemini
- * now wait behind gemini's first.
+ *   - gemini cannot call Tars: its MCP servers get no TOKEN variable (documented by gemini, not measured on a real install);
+ *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok);
+ * OpenRouter starts since #458 and codex since #465; gemini's tasks close since #478, and opencode and pi reach Tars's
+ * tools since #476: their rules went with them.
  * KNOWN_RED has the rules, each with what its cells must say. A project of its own since 19/10 (playwright.config.ts):
  * `npm run e2e:matrix`, run at every release gate and by `npm run e2e:auto` (OPERATIONS.md).
  * The artefact, in the run directory: matrix.json (pair, step, result, detail), matrix.md, the fakes' logs,
@@ -69,14 +67,9 @@ const ALL: Step[] = ['delegate.reaches', 'delegate.answer', 'turn', 'message', '
 // First match wins: the CLIs that do not start, then what A cannot do, then what B cannot do.
 const KNOWN_RED: Rule[] = [
   { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
-  { from: ['opencode', 'pi'], steps: ALL, why: 'Tars writes its MCP server into ~/.opencode/config.json and ~/.pi/config.json, where opencode (~/.config/opencode/opencode.json, `mcp`) and pi (~/.pi/agent/mcp.json) do not read (documented by them, not measured on a real install: neither is installed here)', seen: /no Tars server|B never got the message|no task reached B/ },
-  { to: ['gemini'], from: ['amp', 'grok', 'openrouter', 'codex', 'qwen-code'], steps: ['delegate.reaches', 'delegate.answer', 'turn'], why: 'gemini\'s first task is never closed: Tars waits for its turn to end (its queue counts its hooks) while run-task treats it as a CLI without hooks, so every later task waits behind it', seen: /no answer|nothing typed|still|queued|never called|never got|no task reached B/ },
-  { to: ['gemini'], steps: ['delegate.answer'], why: 'run-task treats gemini as a CLI without hooks: no answer read from it', seen: /gives Tars no hook/ },
-  { to: ['gemini'], steps: ['turn'], why: 'its BeforeAgent and AfterAgent reach /api/hooks/status, but the window never shows the turn', seen: /before/ },
   { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /identity of your own/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
   { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
-  { to: ['opencode', 'pi'], steps: ['reply'], why: 'no Tars tools where opencode and pi read their MCP servers (above; documented, not measured)', seen: /no Tars server/ },
 ];
 
 const expectedRed = (cell: Cell): Rule | undefined => KNOWN_RED.find((r) =>
@@ -121,7 +114,12 @@ for (const newInterface of [false, true]) {
     const lines = (file: string): Rec[] => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) as Rec; } catch { return {}; } }) : []);
     /** Every record of one agent's CLI: its own lines in fake-cli.jsonl, or codex's file. */
     const recs = (a: Agent): Rec[] => (a.fake === 'codex' ? lines(path.join(home, 'fake-codex.jsonl')) : lines(path.join(home, 'fake-cli.jsonl')).filter((r) => r.agent === a.id));
-    const typedInto = (a: Agent, since: number) => recs(a).slice(since).map((r) => String(r.typed ?? (a.fake === 'codex' && r.turn ? r.text : '') ?? '')).filter(Boolean);
+    // A turn's head and its end: since #478 the words Tars owes a CLI come after the sender line, so a long first turn
+    // has its sender line at its head and its task at its end.
+    const typedInto = (a: Agent, since: number) => recs(a).slice(since).map((r) => {
+      const text = String(r.typed ?? (a.fake === 'codex' && r.turn ? r.text : '') ?? '');
+      return text && typeof r.head === 'string' && !text.startsWith(r.head) ? `${r.head} ${text}` : text;
+    }).filter(Boolean);
     const toolResult = (a: Agent, tool: string, since: number, to?: string) => recs(a).slice(since).find((r) => r.mcp && r.tool === tool && typeof r.text === 'string' && (!to || r.to === to));
     // codex's stand-in logs no call before it is made: a call it made shows only with its result.
     const called = (a: Agent, tool: string, since: number, to: string) => recs(a).slice(since).some((r) => r.mcp && r.tool === tool && r.to === to);

@@ -63,8 +63,9 @@ import { oneReadingAtATime } from '../core/one-reading-at-a-time';
 import { consumeResumeSessionId, resolveResumeSessionId, spendResume } from '../utils/resume-session';
 import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { orchestratorMoved } from '../core/chat-identity';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
+import { launchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../core/agent-role';
+import { updateAgent, type AgentUpdate } from '../core/agent-update';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
@@ -1058,189 +1059,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return stopTask(agentId, ref);
   });
 
-  // Update an agent (supports all editable fields)
-  ipcMain.handle('agent:update', async (_event, params: {
-    id: string;
-    projectPath?: string;
-    skills?: string[];
-    secondaryProjectPath?: string | null;
-    permissionMode?: AgentPermissionMode;
-    effort?: AgentEffort | null;
-    name?: string;
-    character?: AgentCharacter;
-    model?: string | null;
-    provider?: AgentProvider;
-    localModel?: string | null;
-    savedPrompt?: string | null;
-    obsidianVaultPaths?: string[];
-    worktree?: WorktreeConfig;
-    /** The Orchestrator toggle. See core/agent-role.ts. */
-    role?: AgentRole;
-    /** The toggle's old name, read when `role` is absent. */
-    orchestratorMode?: boolean;
-    cliPath?: string | null;
-  }) => {
-    const agent = agents.get(params.id);
-    if (!agent) {
-      return { success: false, error: 'Agent not found' };
-    }
-    // A chat's runner takes its settings from the project's orchestrator at
-    // each launch (services/chat-runners.ts): changed here, its role would take
-    // the orchestrator's place, its project would lose its worktree, and the
-    // rest would be undone at its next send (the Audit's M2 on #379).
-    if (agent.kind === 'chat') {
-      return { success: false, error: `${agent.name || agent.id} runs a chat: its settings are the project's orchestrator's. Change them there.` };
-    }
-    // Plan on a provider that has none, set here or kept across a move to it, would run as normal (the Audit's Low 2 on #407).
-    if (params.provider !== undefined || params.permissionMode !== undefined) {
-      const noPlan = planModeRefusal(params.provider ?? agent.provider, params.permissionMode ?? agent.permissionMode);
-      if (noPlan) return { success: false, error: noPlan };
-    }
-    let role: AgentRole | undefined;
-    try {
-      role = requestedRole(params);
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-    // Every check first, git's included: a save refused changes nothing on the record and kills no terminal, as
-    // the Agents page tells the user ("Not saved: <reason>. Your changes are still here."). The name, the CLI and
-    // the rest used to be written, and a terminal killed for a new provider or CLI, before git ran, and a refusal
-    // undid none of it (the Audit's MEDIUM on #403).
-    if (params.skills !== undefined) {
-      const skillsWrong = skillsProblem(params.skills);
-      if (skillsWrong) return { success: false, error: `Not saved: ${skillsWrong}.` };
-    }
-    const moving = params.projectPath !== undefined && params.projectPath !== agent.projectPath;
-    if (moving && !fs.existsSync(params.projectPath!)) {
-      return { success: false, error: 'Project path does not exist' };
-    }
-    if (params.secondaryProjectPath && !fs.existsSync(params.secondaryProjectPath)) {
-      return { success: false, error: 'Secondary project path does not exist' };
-    }
-    // The worktree, the one check that writes: made before the record changes, in the project the agent will be in.
-    // Only for an agent with none (a move detaches the old one): changing it under a running agent could be
-    // destructive.
-    let worktree: { worktreePath: string; branchName: string } | undefined;
-    if (params.worktree?.enabled && params.worktree.branchName && (moving || !agent.worktreePath)) {
-      const made = await makeAgentWorktree(moving ? params.projectPath! : agent.projectPath, params.worktree.branchName);
-      if ('error' in made) return { success: false, error: made.error };
-      worktree = made;
-    }
-    // What the running CLI was started with, as far as this edit can change it.
-    const launchBefore = launchSettings(agent);
-
-    // Then the save, which nothing refuses any more.
-    if (moving) {
-      agent.projectPath = params.projectPath!;
-      agent.pathMissing = false;
-      // The old worktree belongs to the previous repository. Detach it so the
-      // agent works directly in the new project (a new worktree can be set up
-      // via the worktree param).
-      agent.worktreePath = undefined;
-      agent.branchName = undefined;
-      // BUG 4: any live PTY still has the old repo as cwd.
-      killStalePty(agent);
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-    }
-    if (params.skills !== undefined) {
-      agent.skills = params.skills;
-    }
-    if (params.secondaryProjectPath !== undefined) {
-      agent.secondaryProjectPath = params.secondaryProjectPath === null ? undefined : params.secondaryProjectPath;
-    }
-    if (params.permissionMode !== undefined) {
-      agent.permissionMode = params.permissionMode;
-    }
-    if (params.effort !== undefined) {
-      agent.effort = params.effort === null ? undefined : params.effort;
-    }
-    if (params.name !== undefined) {
-      // Only the name: the role is the toggle's (core/agent-role.ts).
-      agent.name = params.name;
-    }
-    if (params.character !== undefined) {
-      agent.character = params.character;
-    }
-    if (params.model !== undefined) {
-      agent.model = params.model === null ? undefined : params.model;
-    }
-    if (params.provider !== undefined) {
-      if (params.provider !== agent.provider && agent.ptyId) {
-        // The live PTY still carries the OLD provider's ANTHROPIC_* env.
-        // Messages would silently route to the previous vendor. Kill it so
-        // the next start/dispatch respawns with the new provider's env.
-        const staleProviderPty = ptyProcesses.get(agent.ptyId);
-        if (staleProviderPty) {
-          killPty(staleProviderPty);
-          ptyProcesses.delete(agent.ptyId);
-        }
-        agent.ptyId = undefined;
-        agent.ptyCwd = undefined;
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-      }
-      agent.provider = params.provider;
-    }
-    if (params.localModel !== undefined) {
-      agent.localModel = params.localModel === null ? undefined : params.localModel;
-    }
-    if (params.savedPrompt !== undefined) {
-      agent.savedPrompt = params.savedPrompt === null ? undefined : params.savedPrompt;
-    }
-    if (params.obsidianVaultPaths !== undefined) {
-      agent.obsidianVaultPaths = params.obsidianVaultPaths;
-    }
-    if (params.cliPath !== undefined) {
-      const newCliPath = params.cliPath === null ? undefined : params.cliPath;
-      if (newCliPath !== agent.cliPath && agent.ptyId) {
-        // Same reasoning as a provider change: the running PTY was spawned
-        // with the old binary.
-        const staleCliPty = ptyProcesses.get(agent.ptyId);
-        if (staleCliPty) {
-          killPty(staleCliPty);
-          ptyProcesses.delete(agent.ptyId);
-        }
-        agent.ptyId = undefined;
-        agent.ptyCwd = undefined;
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-      }
-      agent.cliPath = newCliPath;
-    }
-    if (worktree) {
-      agent.worktreePath = worktree.worktreePath;
-      agent.branchName = worktree.branchName;
-      // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
-      // It must be killed so the next agent:start respawns in the new
-      // worktree directory. Otherwise writes leak into the main workspace.
-      killStalePty(agent);
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-    }
-
-    // Last, once the project is settled: an orchestrator, whether the toggle
-    // was just switched on or it has just moved in, is its project's only one.
-    const demoted = assignRole(agent, role ?? (agent.role === 'orchestrator' ? 'orchestrator' : 'worker'), agents.values());
-
-    agent.lastActivity = new Date().toISOString();
-    saveAgents();
-    // The role moved: its project's Main follows the orchestrator (core/chat-identity.ts).
-    orchestratorMoved();
-
-    // A model, an effort or another flag the CLI only reads when it starts is
-    // applied by restarting it, at a moment that cuts nothing: see
-    // core/agent-restart.ts. Saving it used to change the record and leave the
-    // CLI running on the old value until somebody relaunched it by hand. The
-    // orchestrator this one replaced goes back to work as a worker the same way.
-    const changedAtLaunch = changedLaunchSettings(launchBefore, launchSettings(agent));
-    if (changedAtLaunch.length > 0) restartForSettings(agent.id, changedAtLaunch);
-    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
+  // Update an agent (supports all editable fields), through core/agent-update.ts, which update_agent's route
+  // shares. The window ends the terminal a new provider, CLI path, project or worktree needs, whatever runs in
+  // it: the user who saves sees what that cuts.
+  ipcMain.handle('agent:update', async (_event, params: AgentUpdate) => {
+    const result = await updateAgent(params, { makeWorktree: makeAgentWorktree });
+    if (!result.success) return { success: false, error: result.error };
     // An orchestrator's chats run on its configuration: each runner takes it,
     // and a live one restarts on what changed (services/chat-runners.ts).
-    restartRunnersOf(agent.id, changedAtLaunch);
-
-    return { success: true, agent };
+    restartRunnersOf(result.agent.id, result.changedAtLaunch);
+    return { success: true, agent: result.agent };
   });
 
   // Stop an agent, from the window: filed under "you" (core/agent-stop.ts).

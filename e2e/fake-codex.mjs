@@ -239,7 +239,7 @@ async function turn(text) {
   write('event_msg', { type: 'task_started', turn_id: turnId });
   write('turn_context', { model: opts.model, approval_policy: opts.approval ?? 'on-request', collaboration_mode: { mode: 'default', settings: { model: opts.model, reasoning_effort: effort } } });
   write('event_msg', { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text }] } });
-  log({ turn: true, text: text.slice(-300), effort, model: opts.model, session: sessionId });
+  log({ turn: true, text: text.slice(-300), head: text.slice(0, 300), effort, model: opts.model, session: sessionId });
   if (opts.model === 'gpt-5-codex-mini') {
     const error = JSON.stringify({ type: 'error', status: 400, error: { type: 'invalid_request_error', message: "The 'gpt-5-codex-mini' model is not supported when using Codex with a ChatGPT account." } });
     out(`\n■ ${error}\n\n› `);
