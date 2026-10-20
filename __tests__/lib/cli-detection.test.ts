@@ -10,7 +10,8 @@ import { createDetectionStore, type DetectedCliPaths } from '@/lib/cli-detection
  * 2. Pages opened together each ask main: two asks where one answer serves both.
  * 3. A page opened later trusts the copy and never asks main again, so a path saved since in CLI Paths, which main
  *    detects anew, never reaches it.
- * 4. A refresh (detect now) loses to an older ask that answers after it, and the page shows the older answer.
+ * 4. A refresh (detect now) loses to an older ask that answers after it, and the page shows the older answer, or the
+ *    page that made the older ask is handed that older answer, which it shows last.
  * 5. A failed ask blanks a known answer, every CLI then "not found"; or, with no answer yet, never settles.
  */
 
@@ -68,7 +69,8 @@ describe('createDetectionStore', () => {
     pending[1].resolve(answer('/installed/since/claude'));
     pending[0].resolve(answer(''));
     expect(await refreshed).toEqual(answer('/installed/since/claude'));
-    await older;
+    // The older ask's page is handed the refresh's answer too: what it gets is what it shows (setPaths).
+    expect(await older).toEqual(answer('/installed/since/claude'));
     expect(store.known()).toEqual(answer('/installed/since/claude'));
   });
 
