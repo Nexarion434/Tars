@@ -6,7 +6,7 @@ import * as path from 'node:path';
 /**
  * The agents' kanban writes to a Hermes someone configured, never to a guess.
  *
- * Without ~/.tars/hermes-connection.json, readHermesConnection() answers the
+ * Without ~/.tars-private/hermes-connection.json, readHermesConnection() answers the
  * default, 127.0.0.1:9119, and on this machine that port is an SSH tunnel to a
  * real Hermes. A sandbox, a test home or a second Tars that has a
  * kanban-tasks.json and no connection file of its own would have moved its

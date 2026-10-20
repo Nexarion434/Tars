@@ -12,7 +12,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * an agent.
  *
  * Measured on b17db0f, before this file existed: a call presenting
- * `~/.tars/api-token` and no `x-tars-client` header stopped, started,
+ * `~/.dorothy/api-token` and no `x-tars-client` header stopped, started,
  * dispatched to and DELETEd an agent of any project, and got a 200. The guard
  * refused only a caller that volunteered `x-tars-client: mcp`, a header the
  * caller writes about itself, and every agent can read that token file, so the

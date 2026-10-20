@@ -11,7 +11,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * replies. Nothing under ~/.tars-private is passed to a CLI.
  *
  * How this can fail, written before the code:
- * 1. Saving a connection writes the token into ~/.tars/hermes-connection.json.
+ * 1. Saving a connection writes the token into ~/.dorothy/hermes-connection.json.
  * 2. The token in ~/.tars-private can be read by others: not 0600, in a folder not 0700.
  * 3. A connection saved before this version keeps its token in ~/.tars: it is not moved at the first read; or it is
  *    moved and lost, so the gateway calls go out unauthenticated; or the old file keeps a copy.

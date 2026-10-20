@@ -50,7 +50,7 @@ export function resolveTarget(agentId: string): { ok: true; target: ResolvedTarg
  * backend spawn rule. Going through it here means sendToAgent gets that
  * behavior for free instead of a second copy of it.
  *
- * It presents Tars's own pass, not `~/.tars/api-token`. The shared file is
+ * It presents Tars's own pass, not `~/.tars-private/api-token`. The shared file is
  * readable by every agent, so while the super chat authenticated with it the
  * routes that drive an agent could not refuse it: refusing the file would have
  * taken JeanBrasse's chat down with whoever else had read it. The pass is minted in

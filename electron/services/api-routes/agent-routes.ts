@@ -783,7 +783,7 @@ function givenUp(agent: AgentStatus, ref: string | undefined): void {
 /**
  * Refused to a caller that is nobody, on every route that drives an agent.
  *
- * What it replaces, measured on b17db0f: a call on `~/.tars/api-token` with
+ * What it replaces, measured on b17db0f: a call on `~/.dorothy/api-token` with
  * no `x-tars-client` header stopped, started, messaged, dispatched to and
  * DELETEd an agent of any project, and got a 200. The guard only ever refused
  * a caller that volunteered `x-tars-client: mcp`, which is a header the caller

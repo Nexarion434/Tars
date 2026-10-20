@@ -1242,7 +1242,7 @@ The identity comes from the token the MCP client presents, and from nothing else
 headers (`X-Tars-Caller-Id`, `X-Tars-Caller-Project`) scope nothing, on any token.
 
 An MCP client whose process has no token of its own presents none since 2.0.4 (it fell back to the
-shared token, then in `~/.tars/api-token`), and is refused on these routes, as the shared token is:
+shared token, then in `~/.dorothy/api-token`), and is refused on these routes, as the shared token is:
 
 ```
 403 This agent has no identity, so its calls cannot be scoped to a project.
@@ -1679,7 +1679,7 @@ orchestrator a whole turn to read what it has been handed. Every other way it is
 Hooks present their CLI's own token (`CLAUDE_MGR_API_TOKEN`) via
 `-H @<(printf "Authorization: Bearer %s" …)`, process substitution, so the token never appears
 in `ps`. A CLI Tars did not start has none, and its hooks read nothing from Tars: they read with
-`~/.tars/api-token` until 2.0.4, when that file went to `~/.tars-private`.
+`~/.dorothy/api-token` until 2.0.4, when that file went to `~/.tars-private`.
 
 ### Debugging hooks
 
@@ -2012,7 +2012,7 @@ Hermes connection. On:
   polling, reports nothing.
 
 What it keeps, all in `~/.tars-private` (`0600`): `hermes-token` (the dashboard token, moved out of
-`~/.tars/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
+`~/.dorothy/hermes-connection.json` at the first read), `relay-sent.json` (what it sent: the list a reply is checked
 against), `relay-outbox.json` (what waits for Hermes), `relay-state.json` (the last reply taken, and the id of the plugin's store it came from),
 `user-questions.json`, `event-reports.json`, `github-watch.json`.
 

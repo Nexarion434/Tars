@@ -14,8 +14,8 @@ import * as path from 'node:path';
  * Every way it can fail, written before the code (2026-10-19):
  *  R1. A reader picks ~/.tars because something is there, a file, a link to a
  *      file or a link that leads nowhere, while Tars stays on ~/.dorothy: it
- *      reads ~/.tars/api-token and app-settings.json under a file (ENOTDIR),
- *      and its posts go unauthenticated, its settings unread.
+ *      reads app-settings.json under a file (ENOTDIR), and its settings go
+ *      unread.
  *  R2. A reader picks ~/.tars where Tars, finding two different folders, uses
  *      the one that holds its records (~/.dorothy): the hooks log, the status
  *      line counts and the MCP servers' keys go to a folder Tars never reads.

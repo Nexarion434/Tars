@@ -19,7 +19,7 @@ import { moveTestHome } from '../setup/test-home';
  * 2. The file read with its line end: a token that names nobody.
  * 3. A terminal's token, in the environment, overridden by a file.
  * 4. A path to nothing taken for a token, or a crash of the server: it presents what a session started before
- *    tokens existed presents. Since 2.0.4 (#466) that is no token at all: the shared ~/.tars/api-token, left
+ *    tokens existed presents. Since 2.0.4 (#466) that is no token at all: the shared ~/.dorothy/api-token, left
  *    here as an older Tars wrote it, is in ~/.tars-private now, and no server reads it.
  *
  * The transports are replaced and nothing else: the port's proof (http.request) is answered as the Tars that started

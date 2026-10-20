@@ -7,7 +7,7 @@ import * as path from 'node:path';
  * Codex hands its MCP servers none of its own environment: TERM, SHELL,
  * TMPDIR, USER, PATH, HOME, LOGNAME and what the config names (measured on
  * codex 0.148, 2026-10-13). Tars's servers found no agent token there and
- * presented the shared ~/.tars/api-token instead; since 2.0.4 that file is
+ * presented the shared ~/.dorothy/api-token instead; since 2.0.4 that file is
  * out of the agents' reach and no server reads it, so a codex agent's Tars
  * tools would answer 401. The registration names the variables codex is to
  * pass along (`env_vars`, which codex 0.163 reads: `codex mcp get` lists them).

@@ -48,7 +48,7 @@ alone:
 | An agent's token (`CLAUDE_MGR_API_TOKEN`, minted in memory per terminal and per ACP run) | that agent | its own project's agents, and a new agent in its own project, never an orchestrator (`POST /api/agents` refuses the role to every caller: only the Agents page makes one); another project's only with `allowCrossProject`. It changes another agent's settings (`POST /api/agents/:id/update`, 2.0.4) only with the orchestrator's powers, in its own project whatever `allowCrossProject` says, never the role, and never an orchestrator's or a chat's runner's. Not the webhook |
 | Tars's own pass (minted in memory, written nowhere) | the main process | every agent of every project: it is JeanBrasse's super chat, which drives every project by design. Not the webhook |
 | A Hermes gateway's secret: `~/.tars-private/hermes-webhook-secret` for the default gateway, `hermes-webhook-<id>.secret` for another (2.0.4) | that gateway | its own webhook route and nothing else, and through it the agents of the projects the user allowed that gateway, none until they do, in their own mode or a narrower one |
-| `~/.tars/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
+| `~/.tars-private/api-token`, the shared token | nobody | reads, and the exempt routes. It drives no agent, and does not open the webhook |
 
 The new agent an agent makes runs on any provider of the registry and on any CLI binary it names (`cliPath`, refused unless it is an absolute path to an executable file). This is not a boundary Tars gives away: `POST /api/agents` took a `cliPath` and any permission mode from every agent before 2.0.2, and a permission mode does not confine the agent that asks (see the ceiling below). What the API refuses is what could not start, or would not run as asked: an unknown provider, an API-key provider without its key, a `cliPath` that is not an executable file, and plan on a provider that has none, which would run as normal (2.0.2, JeanBrasse: "ça doit supporter n'importe quel provider/cli"; the Audit's gate of #407). An agent its orchestrator changes afterwards (`update_agent`, 2.0.4) is held to the same checks, and the change never ends a CLI at work.
 
@@ -234,7 +234,7 @@ Four parades were considered, and **none was written**:
 
 | Parade | What it would do | Measured verdict |
 |---|---|---|
-| A `0600` file instead of the environment | | Moves it. Every agent runs as the same user, so `cat` reads it. `~/.tars/api-token` is already `0600` and is exactly the secret this replaced |
+| A `0600` file instead of the environment | | Moves it. Every agent runs as the same user, so `cat` reads it. `~/.tars-private/api-token` is already `0600` and is exactly the secret this replaced |
 | An inherited file descriptor | Pass the token on an fd rather than in the environment | Not implementable. Tars starts the CLI through `node-pty`, whose `spawn` inherits the tty and nothing else, and the token has to reach the MCP servers, which the **CLI** starts, from its own environment. There is no fd route that does not go through Claude Code |
 | A one-shot token exchanged at startup | Redeem the environment token once for a session token held in memory | Breaks the fleet. The same variable is what a respawned MCP server and the shell hooks present later; spending it on first use logs them out. And a sibling can read it before it is spent: a race, not a boundary |
 | A unix socket per agent | Address the API through a per-agent socket | Moves it. The socket path is in the same environment, and filesystem permissions are per user, so any agent of that user connects. macOS has no abstract socket namespace |
@@ -324,7 +324,7 @@ full:
 ```
 
 So: it did its work, and it could not read JeanBrasse's home. Separately measured
-under the same profile: `~/.tars/api-token` denied, `/Users/you/tars`
+under the same profile: `~/.dorothy/api-token` denied, `/Users/you/tars`
 denied, the loopback API reachable, `api.anthropic.com` reachable, `git`,
 `node` and `npm` working.
 

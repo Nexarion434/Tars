@@ -29,7 +29,7 @@ export function getCallerIdentity(): { agentId: string; projectPath: string } {
 
 // This agent's own token, minted by Tars when it spawned the process and
 // handed down through the environment. It says which agent is calling. The
-// only token a server presents: the shared ~/.tars/api-token, which said
+// only token a server presents: the shared ~/.dorothy/api-token, which said
 // only that the caller was on the machine, went to ~/.tars-private in 2.0.4,
 // and nothing an agent runs reads that folder. A delegated run hands its
 // servers the path of a file that holds it instead (CLAUDE_MGR_API_TOKEN_FILE,

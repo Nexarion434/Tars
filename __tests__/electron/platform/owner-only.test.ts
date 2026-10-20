@@ -253,8 +253,8 @@ describe('restrictToOwnerSync with an injected runner', () => {
   it('9: darwin and linux run nothing and report it', async () => {
     for (const platform of ['darwin', 'linux'] as const) {
       const { calls, deps } = runner({});
-      expect(restrictToOwnerSync('/home/u/.tars/api-token', {}, { ...deps, platform })).toBe('skipped');
-      expect(await restrictToOwner('/home/u/.tars/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(restrictToOwnerSync('/home/u/.tars-private/api-token', {}, { ...deps, platform })).toBe('skipped');
+      expect(await restrictToOwner('/home/u/.tars-private/api-token', {}, { ...deps, platform })).toBe('skipped');
       expect(await restrictDirToOwner('/home/u/.tars-private', { ...deps, platform })).toBe('skipped');
       expect(calls).toEqual([]);
     }
