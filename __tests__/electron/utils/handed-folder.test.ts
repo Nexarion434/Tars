@@ -16,6 +16,8 @@ import { handedFolderProblem } from '../../../electron/utils/handed-folder';
  * 4. Another spelling of one of those is taken: a trailing separator, a `..`, a `.`.
  * 5. A link that leads to one of those is taken: a link in a project to ~/.tars-private, to a folder inside it, to the
  *    home folder.
+ * 5c. A `..` after a link is taken: the system follows the link and then goes up, while path.resolve drops the `..` on
+ *    the text first (the Audit's M1 on #503: proj/lnk -> ~/.tars-private/accounts, then proj/lnk/../secrets).
  * 5b. A folder not made yet behind such a link is taken: no realpath answers for it, so its spelling alone was
  *    compared (found with the Windows suite, handed-folder-win32.test.ts, 2026-10-20).
  * 6. A folder that only looks like one of those is refused: a sibling named .tars-private-notes, a project under the
@@ -68,6 +70,13 @@ describe('a folder handed to an agent besides its project', () => {
     for (const link of ['secrets', 'accounts', 'home']) {
       expect(problem(path.join(project, link)), link).not.toBeNull();
     }
+  });
+
+  it('5c. refuses a path with a .. after a link, made or not yet made', () => {
+    fs.mkdirSync(path.join(privateDir, 'secrets'));
+    fs.symlinkSync(path.join(privateDir, 'accounts'), path.join(project, 'lnk'));
+    expect(problem(`${project}/lnk/../secrets`)).not.toBeNull();
+    expect(problem(`${project}/lnk/../brandnew`)).not.toBeNull();
   });
 
   it('5b. refuses a folder not made yet behind such a link', () => {

@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
  * 2. A folder inside it is taken, in any of those spellings, made or not yet made.
  * 3. A folder that holds it is taken: the home folder, C:\Users, the drive's root, in any case or separator, or the
  *    home folder by its 8.3 short name.
- * 4. A junction to it, or a folder inside one, is taken; or a folder not made yet under the home folder's 8.3
+ * 4. A junction to it, or a folder inside one, is taken, or a `..` after a junction to a folder inside it (the Audit's
+ *    M1 on #503: Windows goes up from the target, path.resolve drops the `..` on the text); or a folder not made yet under the home folder's 8.3
  *    short name (no realpath answers for a path that does not exist, so its spelling alone was compared).
  * 5. The comparison follows process.platform while the paths follow the host's `path`: on a Windows host whose
  *    process.platform says linux (update-agent-route.test.ts runs so, for its POSIX CLI disk), POSIX rules read a
@@ -66,6 +67,8 @@ function lay() {
   for (const r of real) disk.entries.set(r.toUpperCase(), r);
   disk.entries.set('C:\\USERS\\NEXARI~1', HOME);
   disk.entries.set(`${HOME}\\projects\\demo\\secrets`.toUpperCase(), PRIVATE);
+  // The Audit's M1 on #503: a junction to a folder inside it, then `..` (Windows goes up from the target).
+  disk.entries.set(`${HOME}\\projects\\demo\\acc`.toUpperCase(), `${PRIVATE}\\accounts`);
 }
 
 const HOST = Object.getOwnPropertyDescriptor(process, 'platform')!;
@@ -99,6 +102,8 @@ const THROUGH_ALIASES = [
   `${HOME}\\projects\\demo\\secrets`,
   `${HOME}\\projects\\demo\\SECRETS\\accounts`,
   `${HOME}\\projects\\demo\\secrets\\not-made-yet`,
+  `${HOME}\\projects\\demo\\acc\\..\\brandnew`,
+  `${HOME}\\projects\\demo\\acc\\..\\accounts`,
   'C:\\Users\\NEXARI~1\\.tars-private',
   'C:\\Users\\NEXARI~1\\.tars-private\\not-made-yet',
 ];

@@ -22,6 +22,11 @@ import { isUnder, samePath } from '../platform/path-compare';
  * it (update-agent-route.test.ts 12b on a Windows PC, 2026-10-20).
  */
 export function handedFolderProblem(folder: string, where: { privateDir: string } = { privateDir: PRIVATE_DIR }): string | null {
+  // A `.` or `..` is refused as written: the system follows a link before it goes up, path.resolve goes up on the
+  // text first, so proj/lnk/../x was read as proj/x (the Audit's M1 on #503).
+  if (folder.split(/[\\/]/).some(seg => seg === '.' || seg === '..')) {
+    return `${folder} has a "." or ".." in it: name the folder by its plain path`;
+  }
   const rules: NodeJS.Platform = path.sep === '\\' ? 'win32' : 'linux';
   const same = (a: string, b: string) => samePath(a, b, rules);
   const under = (a: string, b: string) => isUnder(a, b, rules);
