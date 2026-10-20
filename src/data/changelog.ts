@@ -69,6 +69,12 @@ export const CHANGELOG: Release[] = [
       'A test copy of Tars, built to try a change before it ships, is now called Tars Sandbox and has an icon of its own, the grid in grey with a SANDBOX band, so it can never be taken for your Tars in the Dock, the app switcher or an error box.',
       'An opencode or a pi agent now finds Tars\'s tools (delegate, message, report, the kanban and the rest): Tars wrote them where neither CLI reads. They now go where each reads them, in opencode\'s ~/.config/opencode/opencode.json and pi\'s ~/.pi/agent/mcp.json, so these agents can delegate and answer as themselves. Your own settings in those files are kept, and a file Tars cannot read is left as it is.',
       'A task delegated to a Gemini agent now comes back with Gemini\'s answer when its turn ends, and the next task goes in at that end. Tars took Gemini for a CLI it cannot follow: the first task was only said delivered, and every task after it waited behind a turn Tars never saw end.',
+      'Tars runs on Windows 11 (64-bit), from an installer for your account alone. It is not signed yet. Fixed by Nexarion434.',
+      'Tars\'s hooks and its own tools run on Node.js there, which a native claude.exe does not bring: install Node.js 22 or later. Without it, Tars says so at launch, and until then the agents\' status does not move and their Tars tools do not start. Fixed by Nexarion434.',
+      'Each agent\'s CLI runs in a real Windows terminal, started as itself, with no shell in between. Stopping an agent, or quitting Tars, ends everything its terminal started. Fixed by Nexarion434.',
+      'Tars draws its own title bar under the Windows buttons, in the theme\'s colours. Closing the window keeps your agents working, with Tars in the tray; Quit Tars in the tray\'s menu ends it. Fixed by Nexarion434.',
+      'Settings, Terminal picks the shell a terminal opens: PowerShell 7, Windows PowerShell, the Command Prompt or Git Bash. Fixed by Nexarion434.',
+      'Not on Windows yet: several Claude accounts, putting an idle agent to sleep, marking a frozen agent stalled, and removing the folders Settings, System lists.',
     ],
   },
   {
