@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Input, PasswordInput, StatusBadge, StatusSquare } from '@/components/ui';
+import { Button, Input, StatusBadge, StatusSquare } from '@/components/ui';
+import { secretIsSet } from '@/lib/secret-settings';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import { Toggle } from './Toggle';
 import type { AppSettings } from './types';
 
@@ -10,6 +12,8 @@ interface TelegramSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set or the token's minting answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
   /** Opens Settings, Hermes, where Telegram through Hermes is switched off. */
   onOpenHermes?: () => void;
 }
@@ -17,12 +21,15 @@ interface TelegramSectionProps {
 /** Row actions are words, never glyphs: 26px bordered lowercase mono. */
 const ACTION = 'font-mono lowercase';
 
-export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onOpenHermes }: TelegramSectionProps) => {
+export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings, onSecretChanged, onOpenHermes }: TelegramSectionProps) => {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [generatingToken, setGeneratingToken] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [tokenGenerated, setTokenGenerated] = useState(false);
+  // Whether each token is set is all the page knows of it (2.0.4, #466).
+  const botSet = secretIsSet(appSettings, 'telegramBotToken');
+  const authSet = secretIsSet(appSettings, 'telegramAuthToken');
 
   const handleTestToken = async () => {
     if (!window.electronAPI?.telegram?.test) return;
@@ -64,9 +71,11 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
     if (!window.electronAPI?.telegram?.generateAuthToken) return;
     setGeneratingToken(true);
     try {
+      // Tars shows the new token in a dialog of its own, which the page cannot
+      // read (secret-handoff.ts): the page is told it is set, never the token.
       const result = await window.electronAPI.telegram.generateAuthToken();
       if (result.success) {
-        onUpdateLocalSettings({ telegramAuthToken: result.token });
+        onSecretChanged('telegramAuthToken', result.set ?? true);
         setTokenGenerated(true);
       }
     } catch (err) {
@@ -76,10 +85,12 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
     }
   };
 
+  // Tars puts the token on the clipboard itself: the page never holds it.
   const handleCopyAuthToken = async () => {
-    if (!appSettings.telegramAuthToken) return;
+    if (!authSet || !window.electronAPI?.telegram?.copyAuthToken) return;
     try {
-      await navigator.clipboard.writeText(appSettings.telegramAuthToken);
+      const result = await window.electronAPI.telegram.copyAuthToken();
+      if (!result.copied) return;
       setCopiedToken(true);
       setTimeout(() => setCopiedToken(false), 2000);
     } catch (err) {
@@ -100,7 +111,7 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
 
   // The auth token row carries the whole story of the token in one line: what is
   // missing, what to do with it, and whether a restart is owed.
-  const authTokenDescription = !appSettings.telegramAuthToken
+  const authTokenDescription = !authSet
     ? 'Required before the bot can run. Generate one to get started.'
     : tokenGenerated
       ? <span className="text-warning">Restart the app to apply the new token.</span>
@@ -141,7 +152,7 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
       <SettingsRow
         label="Enable Telegram bot"
         description={
-          !appSettings.telegramAuthToken
+          !authSet
             ? 'Generate an auth token first, it is what keeps the bot yours.'
             : 'Receive notifications and send commands from Telegram.'
         }
@@ -149,13 +160,16 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
           <Toggle
             enabled={appSettings.telegramEnabled}
             onChange={() => onSaveAppSettings({ telegramEnabled: !appSettings.telegramEnabled })}
-            disabled={!appSettings.telegramAuthToken || !appSettings.telegramBotToken}
+            disabled={!authSet || !botSet}
           />
         }
       />
 
-      <SettingsRow
+      <SecretRow
+        field="telegramBotToken"
         label="Bot token"
+        noun="token"
+        set={botSet}
         description={
           <>
             Create the bot with{' '}
@@ -170,19 +184,8 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
             and paste what it gives you.
           </>
         }
-        control={
-          <PasswordInput
-            width="control"
-            value={appSettings.telegramBotToken}
-            onChange={e => onUpdateLocalSettings({ telegramBotToken: e.target.value })}
-            onBlur={() => {
-              if (appSettings.telegramBotToken) {
-                onSaveAppSettings({ telegramBotToken: appSettings.telegramBotToken });
-              }
-            }}
-            placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz…"
-          />
-        }
+        clearWarning="Clear the bot token? The bot stops now, and starts again once a token is set."
+        onChanged={onSecretChanged}
       />
 
       <SettingsRow
@@ -190,27 +193,21 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
         description={authTokenDescription}
         control={
           <div className="flex w-full items-center justify-end gap-2">
-            <PasswordInput
-              className="min-w-0 flex-1"
-              value={appSettings.telegramAuthToken || ''}
-              readOnly
-              placeholder="No token generated"
-            />
-            <Button
-              size="sm"
-              className={ACTION}
-              onClick={handleCopyAuthToken}
-              disabled={!appSettings.telegramAuthToken}
-            >
-              {copiedToken ? 'copied' : 'copy'}
-            </Button>
+            {authSet && (
+              <span className="flex items-center gap-1.5 text-[11.5px] text-success"><StatusSquare tone="running" />a token is set</span>
+            )}
+            {authSet && (
+              <Button size="sm" className={ACTION} onClick={handleCopyAuthToken}>
+                {copiedToken ? 'copied' : 'copy token'}
+              </Button>
+            )}
             <Button
               size="sm"
               className={ACTION}
               onClick={handleGenerateAuthToken}
               disabled={generatingToken}
             >
-              {generatingToken ? 'working' : appSettings.telegramAuthToken ? 'regenerate' : 'generate'}
+              {generatingToken ? 'working' : authSet ? 'regenerate' : 'generate'}
             </Button>
           </div>
         }
@@ -294,7 +291,7 @@ export const TelegramSection = ({ appSettings, onSaveAppSettings, onUpdateLocalS
               size="sm"
               className={ACTION}
               onClick={handleTestToken}
-              disabled={!appSettings.telegramBotToken || testingTelegram}
+              disabled={!botSet || testingTelegram}
             >
               {testingTelegram ? 'working' : 'test token'}
             </Button>

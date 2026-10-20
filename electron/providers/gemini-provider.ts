@@ -10,7 +10,6 @@ import { allowAgentToken, configureGeminiNodeHooks } from '../utils/gemini-node-
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
@@ -86,27 +85,6 @@ export class GeminiProvider implements CLIProvider {
       // --help). A bare query ran one-shot and exited on releases before 0.64.
       command += ` -i '${escaped}'`;
     }
-
-    return command;
-  }
-
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = shellQuote(params.binaryPath);
-
-    // Gemini has no skip-permissions flag
-
-    if (params.outputFormat) {
-      command += ` --output-format ${params.outputFormat}`;
-    }
-
-    if (params.verbose) {
-      command += ' --debug';
-    }
-
-    command += ` --include-directories ${shellQuote(DATA_DIR)}`;
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` -p '${escaped}'`;
 
     return command;
   }
@@ -387,45 +365,5 @@ export class GeminiProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--include-directories';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME=${shellQuote(params.homeDir)}
-
-if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then
-  source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true
-fi
-
-if [ -f ${shellQuote(params.homeDir)}/.bashrc ]; then
-  source ${shellQuote(params.homeDir)}/.bashrc 2>/dev/null || true
-elif [ -f ${shellQuote(params.homeDir)}/.bash_profile ]; then
-  source ${shellQuote(params.homeDir)}/.bash_profile 2>/dev/null || true
-elif [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then
-  source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true
-fi
-
-export PATH=${shellQuote(params.binaryDir)}:"$PATH"
-cd ${shellQuote(params.projectPath)}
-echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-${shellQuote(params.binaryPath)} --output-format stream-json --debug --include-directories ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
-echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
-`;
   }
 }

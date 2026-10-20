@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { LoadingPanel } from '@/components/ui';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { DASHBOARD_HEADER_ACTIONS_SLOT_ID } from './header-slot';
 
 // Dynamically import TerminalsView to avoid SSR issues with xterm
 const TerminalsView = dynamic(() => import('@/components/TerminalsView'), {
@@ -13,17 +14,6 @@ const TerminalsView = dynamic(() => import('@/components/TerminalsView'), {
     </div>
   ),
 });
-
-/**
- * Where the page header's action buttons land.
- *
- * The two actions the frame shows - `Layout` and `+ Terminal` - are driven by
- * state that lives inside `TerminalsView` (the active tab's preset, the agent
- * list, the new-agent handler). Dashboard renders `<TerminalsView />` with no
- * props and cannot reach any of it, so the header keeps an empty element here
- * and TerminalsView portals its two controls into it.
- */
-export const DASHBOARD_HEADER_ACTIONS_SLOT_ID = 'dashboard-header-actions';
 
 export default function Dashboard() {
   return (

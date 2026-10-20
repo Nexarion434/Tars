@@ -34,7 +34,7 @@ import { writeFakeClis } from './fake-clis.mjs';
  * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
  *   - Qwen Code has no provider (feat/qwen-code);
  *   - gemini cannot call Tars: its MCP servers get no TOKEN variable (documented by gemini, not measured on a real install);
- *   - Tars reads no answer and no turn from a CLI without hooks (opencode, pi, amp, grok);
+ *   - Tars reads no answer and no turn from a CLI without hooks (opencode, amp, grok); pi's are read from its session file (#483);
  * OpenRouter starts since #458 and codex since #465; gemini's tasks close since #478, and opencode and pi reach Tars's
  * tools since #476: their rules went with them.
  * KNOWN_RED has the rules, each with what its cells must say. A project of its own since 19/10 (playwright.config.ts):
@@ -70,10 +70,10 @@ const KNOWN_RED: Rule[] = [
   { from: ['qwen-code'], to: ['qwen-code'], steps: ['starts'], why: 'no Qwen Code provider on main (feat/qwen-code): its agent runs as claude, with flags qwen 0.25.2 refuses', seen: /refused .*dangerously-skip-permissions/ },
   { from: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
   { to: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
-  { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server presents the shared token, which drives no agent', seen: /identity of your own|B never got the message|no task reached B/ },
-  { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /identity of your own/ },
-  { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
-  { to: ['opencode', 'pi', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
+  { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server has no token to present then, since #466 put the shared one out of its reach, and Tars answers Unauthorized', seen: /Unauthorized|B never got the message|no task reached B/ },
+  { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /Unauthorized/ },
+  { to: ['opencode', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },
+  { to: ['opencode', 'amp', 'grok'], steps: ['turn'], why: 'a CLI without hooks: running once the task goes in, never at rest again', seen: /after running/ },
 ];
 
 const expectedRed = (cell: Cell): Rule | undefined => KNOWN_RED.find((r) =>

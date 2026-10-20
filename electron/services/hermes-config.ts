@@ -3,6 +3,7 @@ import * as path from 'path';
 import { DATA_DIR, privatePath } from '../constants';
 import { defaultHermesConnection, type HermesConnection } from '../types/hermes';
 import { describeSecretFileError, ensureSecretFileMode, writeSecretFileSync } from '../utils/secret-file';
+import { moveOutOfAgentReach } from './settings-secrets';
 
 /**
  * The gateway connection, read from one place. The IPC handlers and the local
@@ -10,7 +11,10 @@ import { describeSecretFileError, ensureSecretFileMode, writeSecretFileSync } fr
  * the renderer.
  */
 
-export const HERMES_CONNECTION_FILE = path.join(DATA_DIR, 'hermes-connection.json');
+export const HERMES_CONNECTION_FILE = privatePath('hermes-connection.json');
+/** Where it was until 2.0.4: in ~/.dorothy, which every agent is handed. Moved at the first read. */
+const HERMES_CONNECTION_LEGACY_FILE = path.join(DATA_DIR, 'hermes-connection.json');
+const moved = () => { moveOutOfAgentReach(HERMES_CONNECTION_LEGACY_FILE, HERMES_CONNECTION_FILE); };
 
 /**
  * The dashboard's session token, apart from the rest of the connection: in
@@ -49,6 +53,7 @@ function withoutToken(file: Partial<HermesConnection>): Partial<HermesConnection
 }
 
 export function readHermesConnection(): HermesConnection {
+  moved();
   try {
     if (fs.existsSync(HERMES_CONNECTION_FILE)) {
       // This file holds `token`, the static X-Hermes-Session-Token sent on
@@ -72,7 +77,7 @@ export function readHermesConnection(): HermesConnection {
 }
 
 export function writeHermesConnection(conn: HermesConnection): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  moved();
   const { token, ...rest } = conn;
   writeToken(token);
   writeSecretFileSync(HERMES_CONNECTION_FILE, JSON.stringify(rest, null, 2));
@@ -88,6 +93,7 @@ export function writeHermesConnection(conn: HermesConnection): void {
  * the file: it holds the gateway's token.
  */
 export function configuredHermesConnection(): { conn: HermesConnection } | { unusable: string } | null {
+  moved();
   if (!fs.existsSync(HERMES_CONNECTION_FILE)) return null;
   const unusable = (why: string) => ({ unusable: `${HERMES_CONNECTION_FILE} ${why}: save the connection again in Settings, Hermes.` });
   let parsed: unknown;

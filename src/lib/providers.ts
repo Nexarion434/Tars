@@ -6,6 +6,7 @@
  */
 
 import type { AgentProvider } from '@/types/electron';
+import { secretIsSet, type SecretsSet } from '@/lib/secret-settings';
 
 export type ProviderIconDef =
   | { type: 'image'; src: string }
@@ -341,25 +342,22 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
 ];
 
 
-/** Minimal shape of the app settings needed to compute provider availability. */
+/**
+ * Minimal shape of the app settings needed to compute provider availability. Whether a key is set is what
+ * `secretsSet` says (2.0.4, #466): the window is never handed a key, only a mask for one that is set.
+ */
 interface ProviderAvailabilitySettings {
   openRouterEnabled?: boolean;
-  openRouterApiKey?: string;
   deepSeekEnabled?: boolean;
-  deepSeekApiKey?: string;
   moonshotEnabled?: boolean;
-  moonshotApiKey?: string;
   zhipuEnabled?: boolean;
-  zhipuApiKey?: string;
   minimaxEnabled?: boolean;
-  minimaxApiKey?: string;
   veniceEnabled?: boolean;
-  veniceApiKey?: string;
   ollamaCloudEnabled?: boolean;
-  ollamaCloudApiKey?: string;
   customOpenAIEnabled?: boolean;
   customOpenAIBaseUrl?: string;
   customOpenAIModel?: string;
+  secretsSet?: SecretsSet;
 }
 
 /**
@@ -384,7 +382,8 @@ export function computeProviderAvailability(
   settings: ProviderAvailabilitySettings | null | undefined,
   ollamaReachable?: boolean,
 ): Record<string, boolean> {
-  const viaOpenRouter = !!(settings?.openRouterEnabled && settings?.openRouterApiKey);
+  const keyed = (enabled: boolean | undefined, field: string) => !!enabled && secretIsSet(settings, field);
+  const viaOpenRouter = keyed(settings?.openRouterEnabled, 'openRouterApiKey');
   return {
     claude: !!paths?.claude,
     codex: !!paths?.codex,
@@ -396,17 +395,17 @@ export function computeProviderAvailability(
     pi: !!paths?.pi,
     local: true,
     openrouter: viaOpenRouter,
-    deepseek: !!(settings?.deepSeekEnabled && settings?.deepSeekApiKey) || viaOpenRouter,
-    moonshot: !!(settings?.moonshotEnabled && settings?.moonshotApiKey) || viaOpenRouter,
-    zhipu: !!(settings?.zhipuEnabled && settings?.zhipuApiKey) || viaOpenRouter,
-    minimax: !!(settings?.minimaxEnabled && settings?.minimaxApiKey) || viaOpenRouter,
+    deepseek: keyed(settings?.deepSeekEnabled, 'deepSeekApiKey') || viaOpenRouter,
+    moonshot: keyed(settings?.moonshotEnabled, 'moonshotApiKey') || viaOpenRouter,
+    zhipu: keyed(settings?.zhipuEnabled, 'zhipuApiKey') || viaOpenRouter,
+    minimax: keyed(settings?.minimaxEnabled, 'minimaxApiKey') || viaOpenRouter,
     qwen: viaOpenRouter,
     mimo: viaOpenRouter,
     nvidia: viaOpenRouter,
     'nous-portal': viaOpenRouter,
-    venice: !!(settings?.veniceEnabled && settings?.veniceApiKey),
+    venice: keyed(settings?.veniceEnabled, 'veniceApiKey'),
     ollama: ollamaReachable ?? false,
-    'ollama-cloud': !!(settings?.ollamaCloudEnabled && settings?.ollamaCloudApiKey),
+    'ollama-cloud': keyed(settings?.ollamaCloudEnabled, 'ollamaCloudApiKey'),
     'custom-openai': !!(settings?.customOpenAIEnabled && settings?.customOpenAIBaseUrl && settings?.customOpenAIModel),
   };
 }

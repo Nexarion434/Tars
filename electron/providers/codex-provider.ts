@@ -2,12 +2,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execCliSync, cliFailureText, CliNotRunnableError } from './cli-exec';
-import type { AgentEffort, AppSettings } from '../types';
+import type { AppSettings } from '../types';
 import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
@@ -51,15 +50,6 @@ export class CodexProvider implements CLIProvider {
     }
     const efforts = codexEffortArgs(effort, model, effort ? readCodexModels(this.configDir) : []);
     return efforts.length ? `${args} ${efforts.join(' ')}` : args;
-  }
-
-  /**
-   * A scheduled run's permission, in `codex exec`'s own flags: it has no approval policy flag, and nobody can
-   * answer it. Autonomous: codex's automatic review where it has it, else the workspace sandbox.
-   */
-  private execPermission(binaryPath: string, autonomous: boolean): string {
-    if (!autonomous) return '';
-    return codexAccepts(binaryPath)('--approve-for-me') ? ' --approve-for-me' : ' --sandbox workspace-write';
   }
 
   resolveBinaryPath(appSettings: AppSettings): string {
@@ -142,15 +132,6 @@ export class CodexProvider implements CLIProvider {
     return command;
   }
 
-  // `codex exec`'s own options go after `exec`: 0.163 refuses `codex --json exec` (exit 2).
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `${shellQuote(params.binaryPath)} exec`;
-    if (params.outputFormat) command += ' --json';
-    command += this.execPermission(params.binaryPath, params.autonomous);
-    command += this.modelAndEffort(params.model, params.effort);
-    command += ` ${shellQuote(params.prompt)}`;
-    return command;
-  }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `${shellQuote(params.binaryPath)} exec`;
@@ -374,50 +355,5 @@ export class CodexProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--add-dir';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-    model?: string;
-    effort?: AgentEffort;
-  }): string {
-    // `codex exec`'s own options after it, as buildScheduledCommand; the prompt
-    // quoted whole, where a quote in it ended the argument and ran what followed.
-    const options = `${this.execPermission(params.binaryPath, params.autonomous)}${this.modelAndEffort(params.model, params.effort)}`;
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
-
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
-fi
-
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-${shellQuote(params.binaryPath)} exec --json${options} ${shellQuote(promptWithSkills)} >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
-`;
   }
 }

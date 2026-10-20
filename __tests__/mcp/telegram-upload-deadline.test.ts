@@ -4,7 +4,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { EventEmitter } from 'node:events';
 
 /**
  * A file sent to Telegram over a link slower than the file is big.
@@ -34,71 +33,42 @@ import type { EventEmitter } from 'node:events';
  * 6. a text message, which has no body to carry, is no longer ended after a
  *    minute of silence (the rest of #227).
  *
+ * Since 2.0.4 Tars sends the file (POST /api/telegram/send-document and the
+ * others, with the bot's token it keeps in ~/.tars-private), and the server
+ * waits for Tars's answer: the same failures, on that wait. Tars uploads with
+ * the bot's client, as its own routes always did.
+ *
  * The server is the real one, mcp-telegram/src/index.ts, loaded with the MCP
  * SDK replaced by a fake that keeps its tools, as in
- * __tests__/electron/telegram-private-dir.test.ts. https is replaced by a
- * transport that answers when a test says so, whose timer of silence runs as a
- * socket's does once the body sits in the kernel: from the last write. The
- * clock is vitest's. Nothing leaves the process.
+ * __tests__/electron/telegram-private-dir.test.ts. fetch is replaced by a Tars
+ * that answers when a test says so. The clock is vitest's. Nothing leaves the
+ * process.
  */
 
-type FakeRequest = EventEmitter & {
+type FakeRequest = {
   destroyed: boolean;
-  /** Telegram answers: the response, whole, then the request closes, as Node does. */
+  /** Tars answers: the response, whole, then the request closes. */
   answer(json: unknown): void;
 };
 const requests = vi.hoisted(() => [] as FakeRequest[]);
 
-vi.mock('https', async () => {
-  const { EventEmitter } = await import('node:events');
-  const open = (onAnswer?: (res: EventEmitter) => void): FakeRequest => {
-    let silence = 0;
-    let idle: ReturnType<typeof setTimeout> | undefined;
-    const quiet = () => { clearTimeout(idle); idle = undefined; };
-    const arm = () => {
-      quiet();
-      if (silence > 0 && !req.destroyed) idle = setTimeout(() => req.emit('timeout'), silence);
-    };
-    const req = Object.assign(new EventEmitter(), {
-      destroyed: false,
-      write() { arm(); return true; },
-      end() { arm(); return req; },
-      setTimeout(ms: number, onTimeout?: () => void) {
-        silence = ms;
-        if (onTimeout) req.on('timeout', onTimeout);
-        arm();
-        return req;
-      },
-      destroy(err?: Error) {
-        if (req.destroyed) return req;
-        req.destroyed = true;
-        quiet();
-        if (err) req.emit('error', err);
-        req.emit('close');
-        return req;
-      },
-      answer(json: unknown) {
-        if (req.destroyed) throw new Error('Telegram answered a request that had already ended');
-        quiet();
-        const res = new EventEmitter();
-        onAnswer?.(res);
-        res.emit('data', JSON.stringify(json));
-        res.emit('end');
-        req.destroyed = true;
-        req.emit('close');
-      },
-    });
-    requests.push(req);
-    return req;
+// Tars, which sends the file since 2.0.4: a call that waits until a test
+// answers it, and ends as fetch ends one, when the caller's signal aborts.
+vi.stubGlobal('fetch', (_url: string, init: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+  const req: FakeRequest = {
+    destroyed: false,
+    answer(json: unknown) {
+      if (req.destroyed) throw new Error('Tars answered a request that had already ended');
+      req.destroyed = true;
+      resolve({ ok: true, status: 200, json: async () => json });
+    },
   };
-  const request = (_options: unknown, onAnswer?: (res: EventEmitter) => void) => open(onAnswer);
-  const get = (_url: unknown, onAnswer?: (res: EventEmitter) => void) => {
-    const req = open(onAnswer);
-    req.end();
-    return req;
-  };
-  return { default: { request, get }, request, get };
-});
+  init.signal?.addEventListener('abort', () => {
+    req.destroyed = true;
+    reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
+  });
+  requests.push(req);
+}));
 
 type Result = { content: Array<{ text: string }>; isError?: boolean };
 type Handler = (args: Record<string, unknown>) => Promise<Result>;
@@ -141,9 +111,7 @@ const SMALL = path.join(WORK, 'shot.png');
 
 beforeAll(async () => {
   fs.mkdirSync(path.join(os.homedir(), '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(os.homedir(), '.dorothy', 'app-settings.json'), JSON.stringify({
-    telegramBotToken: '123:tok', telegramChatId: '111',
-  }));
+  fs.writeFileSync(path.join(os.homedir(), '.dorothy', 'app-settings.json'), JSON.stringify({ telegramChatId: '111' }));
   fs.mkdirSync(WORK, { recursive: true });
   fs.writeFileSync(BIG, Buffer.alloc(3_000_000, 7));
   fs.writeFileSync(SMALL, Buffer.alloc(3_000, 7));
@@ -182,7 +150,7 @@ async function neverAnswered(name: string, args: Record<string, unknown>, noun: 
   await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
   await done;
   expect(outcome.isError, `${name} did not fail`).toBe(true);
-  const said = outcome.text!.match(new RegExp(`^Error sending ${noun} to Telegram: no answer within (\\d+) s$`));
+  const said = outcome.text!.match(new RegExp(`^Error sending ${noun} to Telegram: Tars did not answer at [^ ]+: no answer within (\\d+) s$`));
   expect(said, outcome.text).not.toBeNull();
   expect(req.destroyed, 'the request was left open').toBe(true);
   return { after: outcome.after!, said: Number(said![1]) };
@@ -195,9 +163,9 @@ describe('a file sent to Telegram over a slow link', () => {
     // QA's link: 20 KB/s, the whole file received and answered at 150.3 s.
     await vi.advanceTimersByTimeAsync(150_300);
     expect(outcome.text, 'the tool gave up while Telegram was still reading').toBeUndefined();
-    expect(req.destroyed, 'the upload was cut while Telegram was still reading').toBe(false);
+    expect(req.destroyed, 'the wait was cut while Telegram was still reading').toBe(false);
 
-    req.answer({ ok: true, result: { message_id: 1 } });
+    req.answer({ success: true });
     await done;
     expect(outcome.isError).toBeUndefined();
     expect(outcome.text).toBe(`Document sent to Telegram chat 111: ${BIG}`);
@@ -211,9 +179,9 @@ describe('a file sent to Telegram over a slow link', () => {
     // 4. The wait the words name is the one that passed, to the second.
     expect(small.after).toBe(small.said);
     expect(big.after).toBe(big.said);
-    // A small file is said after about the minute any answer gets.
-    expect(small.said).toBeGreaterThanOrEqual(60);
-    expect(small.said).toBeLessThanOrEqual(65);
+    // A small file is said after about the minute any answer gets, and the time Tars is given.
+    expect(small.said).toBeGreaterThanOrEqual(90);
+    expect(small.said).toBeLessThanOrEqual(95);
     // 2. QA's 3 MB, which a 20 KB/s link takes 150 s to carry, gets those 150 s on top.
     expect(big.said - small.said).toBeGreaterThanOrEqual(150);
     // 3. And no more than the file takes at 5 KB/s: minutes, not hours.
@@ -223,7 +191,7 @@ describe('a file sent to Telegram over a slow link', () => {
   it('5. no timer outlives the answer', async () => {
     const { done, req } = await call('send_telegram_photo', { photo_path: SMALL });
     await vi.advanceTimersByTimeAsync(5_000);
-    req.answer({ ok: true, result: { message_id: 2 } });
+    req.answer({ success: true });
     await done;
 
     expect(vi.getTimerCount(), 'a timer is still pending after Telegram answered').toBe(0);
@@ -231,16 +199,16 @@ describe('a file sent to Telegram over a slow link', () => {
 });
 
 describe('a text message, as #227 left it', () => {
-  it('6. ends after a minute of silence, and says so', async () => {
+  it('6. ends after the minute Telegram is given and the time Tars is, and says so', async () => {
     const { outcome, done, req } = await call('send_telegram', { message: 'Hi' });
 
-    await vi.advanceTimersByTimeAsync(59_000);
+    await vi.advanceTimersByTimeAsync(89_000);
     expect(outcome.text).toBeUndefined();
     await vi.advanceTimersByTimeAsync(2_000);
     await done;
 
-    expect(outcome.text).toBe('Error sending to Telegram: no answer within 60 s');
-    expect(outcome.after).toBe(60);
+    expect(outcome.text).toMatch(/^Error sending to Telegram: Tars did not answer at [^ ]+: no answer within 90 s$/);
+    expect(outcome.after).toBe(90);
     expect(req.destroyed).toBe(true);
   });
 });

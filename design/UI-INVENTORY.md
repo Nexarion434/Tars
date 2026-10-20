@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 265 root frames, 86 of them drawn and not built yet: the 75 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other hundred and ninety-three being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 291 root frames, 68 of them drawn and not built yet: the 57 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other two hundred and nineteen being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -91,16 +91,16 @@ the room relates to the chats and what follows the Backend's v2.2.
 
 | Route | Name | Frame |
 |---|---|---|
-| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy) |
+| `/` | Dashboard (terminal grid) | Dashboard · dark, Dashboard · light, Panel header · fullscreen, Agent error · reason, Message waiting · notice, Agent stopped · who and why, Agent asleep · and how it wakes, Permission asked of Tars (each with its light copy); the orchestrator layout: Dashboard · orchestrator layout · 2 agents, · 3 agents, · 6 agents, · 7 agents, the column scrolled, · equal grid, · narrowest window, · new interface, · a board with no orchestrator (6 agents, equal grid and new interface each with its light copy), and its rules in · notes |
 | `/chat` | Chat (Hermes overseer + one room per project) | Chat · Overseer (`tars-redesign.pen`). The room, all eleven in `chat-design.pen`: Chat · Hermes · with rooms, Chat · Room · agents at work, Chat · Room · you step in, Chat · Room · limit reached, Chat · Room · all stopped, Chat · Room · no agents, Chat · Room · add an agent, Chat · Room · stop an agent, Chat · Room · edit an agent, Chat · Room · the rows a room is made of, Chat · Room · at rest or stopped. The redesign, in `chat-redesign-a.pen`, which the page implements since #165: Chat · A · Room · agents at work, · at rest, · one agent busy, · one agent stopped, · everyone stopped, · an agent errors, · a long thread, scrolled up, · delivery states, · team folded, · members join and leave, · nothing said yet, how it runs open, · no agents yet, · the bus does not answer; Chat · A · Hermes, · answering, · paused, a write sent, · not connected, · nothing said yet; Chat · A · first run, nothing to watch; the sheets Chat · A · Team rows · states, · Thread rows · states, · Hermes · states, · Composer · states and · Room head · states (a long path, a long name); each with its `· light`; A · notes and A · every state · notes |
 | `/chats` | Chats (the new shell's chats page: the chat open, on its conversation, or a new chat on its first message, or a new chat's record, read from the chats' records) | Shell · chats · list, a chat open, Shell · chats · new chat, its record, Shell · chats · empty (`tars-redesign.pen`), Chat · chats · from its transcripts, working, Chat · chats · from its transcripts, waiting on you, Chat · chats · a new chat, its first message, Chat · chats · the composer, sending, Chat · chats · every slot working (`chat-redesign-a.pen`), each with its light copy |
 | `/project` | A project's page (the new shell's, under Projects; `?path=` names the project) | Shell · chats · project page, from the records (and its light copy) |
 | `/agents` | Agents | Agents · dark (every project, grouped), Agents · one project, Agents · project picker open, Agent error · reason, Agent stopped · who and why, Agent asleep · and how it wakes (each with its light copy), Permission asked of Tars (an agent's card, and its window; and its light copy), Agents · an agent deleted, what stays and where (its worktree kept, why and where, and its work on a wip/ branch, above the grid until ok; and its light copy) |
 | `/kanban` | Kanban | Kanban · dark |
 | `/crons` | Schedules | Schedules · dark |
-| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy |
+| `/review` | Review | Review · dark, Review · light, Review · states (a patch that could not be read, a patch cut short) and its light copy; every repository of every project since 2.0.4: Review · projects and their repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the narrowest window), · states (and its light copy), · notes for the Backend; their old-shop row, a project added by hand whose folder is gone, with its removal, is drawn for 2.0.5 (listed at the end) |
 | `/logs` | Logs | Logs · dark |
-| `/vault` | Vault | Vault · dark |
+| `/vault` | Vault | Vault · dark; each project's reports and tools since 2.0.4: Vault · project folders · a report, · a report, editing, · a tool (the first two with their light copies, editing at the narrowest window), · states (and its light copy), · notes for the Backend |
 | `/projects` | Projects | Projects · dark, Agent stopped · who and why (a stopped agent's row), Agent asleep · and how it wakes (an asleep agent's row) |
 | `/skills` | Extensions (Skills + Plugins) | Extensions · Skills, Extensions · Plugins |
 | `/usage` | Usage | Usage · dark, Usage · light, Usage · daily messages, Usage · last 24 hours, Usage · limits per account, Usage · cost per task, Usage · cost per agent, Usage · pages (five rows a card, states, narrowest window; notes), Usage · cards while they read (each with its light copy; the agent table's headers, figures highest first, words A to Z, and focused, are its col header states) |
@@ -127,10 +127,10 @@ part shows and what the Backend would provide.
 
 | Group | Sections |
 |---|---|
-| General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
-| AI & Providers | Providers, Claude accounts, CLI Paths, Permissions |
-| Hermes | Connection (+ link out to Schedules): Settings · Connection. Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
-| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy) |
+| General | Preferences (with the New interface switch last, off by default: Settings · Preferences, and with the row on Settings · Preferences · new interface on, each with its light copy; the last error report beside the Send error reports switch: Settings · Preferences · error reports, the last report, and its light copy), Terminal, Notifications, System (with the disk and the folders no agent owns: Settings · System · folders no agent owns, and its states, each with its light copy) |
+| AI & Providers | Providers (an API key set, replaced or cleared, never shown: Secrets · Settings, Providers, an API key, and its light copy), Claude accounts, CLI Paths (what Tars found as it opens, the detection Providers reads too: Secrets · CLIs, one detection, and its light copy), Permissions |
+| Hermes | Connection (+ link out to Schedules): Settings · Connection; its token set and replaced, never shown, and the webhook's secret copied by Tars: Secrets · Settings, Hermes connection (and its light copy). Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end) |
+| Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy); every key and token of these sections set, replaced or cleared, never shown, and Telegram's auth token shown once by Tars in a window of its own: Secrets · Settings, Telegram (its light copy, the narrowest window), Secrets · states (and its light copy), Secrets · notes for the Backend |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
@@ -266,12 +266,6 @@ provide. Once a feature is built, its frames join the line of its page above, an
 `e2e/surfaces.mjs`.
 
 For 2.0.4:
-- Vault, what agents produce (each project's reports and tools, and the documents made here), read and edited in its
-  file panel: Vault · project folders · a report, · a report, editing, · a tool (the first two with their light
-  copies, editing at the narrowest window), · states (and its light copy), · notes for the Backend.
-- Review, every repository of every project, search with no limit, a folder with no git: Review · projects and their
-  repositories, · search, · a folder with no git (the first and the last with their light copies, the first at the
-  narrowest window), · states (and its light copy), · notes for the Backend.
 - Memory, one picture (Brain links to the Vault): Memory · one picture · Settings, Memory Backends, · Brain, Backends
   (each with its light copy, Settings at the narrowest window), · states (and its light copy), · notes for the Backend.
 - Relay, one switch for every gateway Hermes has, a section under Settings, Hermes: Relay · Settings, Hermes · off,
@@ -283,6 +277,12 @@ For 2.0.4:
   the project page's team (and its light copy).
 
 For 2.0.5:
+- Review, a project added by hand whose folder is gone, said once with its removal asking once (the orchestrator's
+  decision of 19/10): the old-shop row of Review · projects and their repositories (each of its copies) and the state
+  "a project whose folder is gone: remove asks once" of Review · projects and their repositories · states (and its
+  light copy). A state within frames built in 2.0.4, so the counts above stay as they are. Not built: the window is
+  not told of such a project (fs:list-projects leaves it out), and the removal of a project known only from its
+  agents' paths is not decided yet.
 - File panel, opened from anywhere (a terminal, Brain, Review, the Vault): File panel (2.0.5) · opened from an agent's
   terminal (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend.
 - Connectors and Decisions, approved on 17/10: Decisions · waiting, rules and decided, Decisions · nothing waits,

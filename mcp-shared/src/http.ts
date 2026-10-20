@@ -12,9 +12,11 @@ export const TARS_WAIT_MS = 30_000;
  * How long a call to an outside API (SocialData, X, Telegram) may stay silent
  * before the server says so, where it used to wait for Claude Code to give up
  * on the call, about half an hour later. Silence, not a total: an answer that
- * is only slow gets a minute. Not for a file sent to Telegram, which is timed
- * by its size instead (sendFile in mcp-telegram): once its bytes sit in the
- * kernel's send buffer, silence is all Node sees while a slow link carries them.
+ * is only slow gets a minute. Tars makes those calls since 2.0.4
+ * (services/api-routes/integration-routes.ts, with the same minute): a server
+ * waits this, and Tars's own TARS_WAIT_MS, for Tars's answer. A file sent to
+ * Telegram is waited on in proportion to its size (uploadDeadlineMs in
+ * mcp-telegram).
  */
 export const API_WAIT_MS = 60_000;
 

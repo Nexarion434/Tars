@@ -33,6 +33,9 @@ vi.mock('react', async (importOriginal) => ({
  *    Audit's gate found it said a report never holds files or paths, when #221
  *    sends a path under home as ~/... and one outside it whole;
  * 5. the switch has no name of its own for assistive technology.
+ * Since 2.0.4 (#474) the switch sits beside the last report's line in the row's control, and the
+ * description says what a report carries now: the errors Tars meets, caught or not, and the agents'
+ * tool errors as a code, a caught error without its message.
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
@@ -55,9 +58,9 @@ function preferences(appSettings: AppSettings) {
     return found[0];
   };
   const toggle = () => {
-    const control = row().props.control as El;
-    expect(control.type).toBe(Toggle);
-    return control;
+    const found = ofType(row().props.control, Toggle) as unknown as El[];
+    expect(found).toHaveLength(1);
+    return found[0];
   };
   return { saved, row, toggle };
 }
@@ -101,9 +104,10 @@ describe('flipping it saves that key alone (3)', () => {
 describe('what the row tells (4, 5)', () => {
   it('says what a report holds, and what it never holds, and promises nothing a report carries', () => {
     const said = textOf(preferences(withoutTheKey()).row().props.description as never);
-    for (const sent of ['the error', "where it happened in Tars's code", 'the version', 'the system', 'a random install id']) {
+    for (const sent of ['the errors Tars meets', "where they happened in Tars's code", 'the version', 'the system', 'a random install id', "your agents' tool errors, as a code"]) {
       expect(said).toContain(sent);
     }
+    expect(said).toContain('An error Tars caught goes without its message.');
     expect(said).toContain('File paths keep their names, with your home folder shown as ~.');
     expect(said).toContain('Never your code, prompts, conversations or keys.');
     expect(said).not.toMatch(/never[^.]*\b(files?|paths?)\b/i);

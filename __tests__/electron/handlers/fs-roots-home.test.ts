@@ -188,9 +188,12 @@ describe.skipIf(process.platform === 'win32')('local-file://', () => {
     expect(await serve(path.join(homeLink, SECRET))).toBe(403);
   });
 
-  it('6. still serves a project under the home', async () => {
+  it('6. serves no project\'s file since 2.0.4, under the home or not', async () => {
+    // local-file:// serves the vault's attachments, the project files and
+    // Claude Code's memory folders, and nothing else (the Audit's Hole 2): what
+    // it still serves is window-file-access.test.ts's W6.
     customProjects([project, home]);
-    expect(await serve(path.join(project, 'CLAUDE.md'))).toBe(200);
+    expect(await serve(path.join(project, 'CLAUDE.md'))).toBe(403);
   });
 });
 

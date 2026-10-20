@@ -114,9 +114,9 @@ test('review: a project with no agent, the files without their patches, a patch 
   test.setTimeout(180_000);
   await page.goto(`${DEV_URL}/review`, { waitUntil: 'domcontentloaded' });
 
-  // The project no agent works in, under its name.
+  // The project no agent works in, under its name, its repository named by its branch (2.0.4, #472's column).
   await expect(page.getByText('DOCS', { exact: true })).toBeVisible({ timeout: 60_000 });
-  const docsRow = page.getByRole('button').filter({ hasText: 'no agent' }).filter({ hasText: 'docs' });
+  const docsRow = page.getByRole('button').filter({ hasText: 'no agent' }).filter({ hasText: 'main' });
   await expect(docsRow).toHaveCount(1);
   await docsRow.click();
   await expect(page.getByRole('button').filter({ hasText: 'big.txt' })).toBeVisible({ timeout: 30_000 });

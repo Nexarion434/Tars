@@ -7,6 +7,7 @@ import type { ClaudeInfo, AppSettings } from './types';
 import { PRIVACY_POLICY_URL } from './constants';
 import { PROVIDER_REGISTRY, computeProviderAvailability } from '@/lib/providers';
 import { errorReportsOffered } from '@/lib/error-reports';
+import { lastReportLine } from '@/lib/error-report-line';
 
 interface GeneralSectionProps {
   info: ClaudeInfo | null;
@@ -19,6 +20,15 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
   // Not on a Windows build (lib/error-reports.ts): read after hydration, as the bridge is.
   const [reportsOffered, setReportsOffered] = useState(true);
   useEffect(() => setReportsOffered(errorReportsOffered()), []);
+  // When the last report left, its kind and Sentry's answer (#474's errorReports:last), read as the page opens.
+  const [lastReport, setLastReport] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    window.electronAPI?.errorReports?.last()
+      .then((last) => { if (live) setLastReport(lastReportLine(last)); })
+      .catch(() => { /* an older main without the channel: no line */ });
+    return () => { live = false; };
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -60,7 +70,7 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
         label="Send error reports"
         description={
           <>
-            <span className="block">{"Sends Sentry the error, where it happened in Tars's code, the version, the system and a random install id."}</span>
+            <span className="block">{"Sends Sentry the errors Tars meets, where they happened in Tars's code, the version, the system and a random install id, and your agents' tool errors, as a code. An error Tars caught goes without its message."}</span>
             {/* True of what the main process sends (PR 221): a path under home as ~/..., one outside it whole. */}
             <span className="block">File paths keep their names, with your home folder shown as ~.</span>
             <span className="block">
@@ -70,11 +80,14 @@ export const GeneralSection = ({ appSettings, onSaveAppSettings }: GeneralSectio
           </>
         }
         control={
-          <Toggle
-            label="Send error reports"
-            enabled={appSettings.errorReportsEnabled === true}
-            onChange={() => onSaveAppSettings({ errorReportsEnabled: appSettings.errorReportsEnabled !== true })}
-          />
+          <div className="flex items-center gap-3">
+            {lastReport && <span className="text-[11.5px] text-muted-foreground whitespace-nowrap">{lastReport}</span>}
+            <Toggle
+              label="Send error reports"
+              enabled={appSettings.errorReportsEnabled === true}
+              onChange={() => onSaveAppSettings({ errorReportsEnabled: appSettings.errorReportsEnabled !== true })}
+            />
+          </div>
         }
       />}
 

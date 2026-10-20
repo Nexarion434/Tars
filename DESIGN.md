@@ -407,9 +407,13 @@ Frames `Usage · pages · five rows a card`, `· states`, `· narrowest window`.
 Project tabs on the Dashboard: the active tab is a `surface` box against the
 `bg` strip. `ui/Button`'s `active` prop is the segmented cell: a 26px cell whose
 border darkens to `border-strong` over a `surface-raised` fill, never an accent
-fill. Nothing uses it yet. The seven layout presets
-(`single 2-col 2-row 2x2 3x2 3x3 focus`, in `TerminalsView/constants.ts`) ship as
-a chevron dropdown in `LayoutPresetSelector.tsx`, not a row; and there is no
+fill. The seven layout presets (`single 2-col 2-row 2x2 3x2 3x3 focus`, in
+`TerminalsView/constants.ts`) are offered nowhere: `LayoutPresetSelector.tsx`,
+their chevron dropdown, is rendered by no page. A project's board follows its
+agent count, a custom tab its own preset, and a project's board with its
+orchestrator and another agent opens in the orchestrator layout, its header's
+`Orchestrator | Equal grid` switch the app's `ui/SegmentedControl`
+(`Dashboard · orchestrator layout`). And there is no
 `Dark Light System` picker anywhere: the sidebar has a single Light/Dark toggle
 button and `Settings/TerminalSection.tsx` offers two cards for the *terminal*
 theme, dark and light. Where state is shown, it is the box. There is no
