@@ -73,7 +73,8 @@ describe.skipIf(process.platform === 'win32')('the PATH an E2E sandbox hands the
     const auth = spawnSync(path.join(dir, 'claude'), ['auth', 'status'], { encoding: 'utf8', env: { PATH }, timeout: 10_000 });
     expect(auth.status).toBe(1);
     expect(JSON.parse(auth.stdout)).toMatchObject({ loggedIn: false });
-  });
+    // Five spawns, each allowed 10 s: vitest's own 5 s ran out first under the full suite's load (2.0.4's trains).
+  }, 60_000);
 
   it('4. has a stand-in started as an agent\'s CLI draw its screen and hold its terminal until it ends', async () => {
     const home = sandbox();
@@ -105,7 +106,8 @@ describe.skipIf(process.platform === 'win32')('the PATH an E2E sandbox hands the
       const run = spawnSync('/bin/sh', ['-c', `command -v ${name} && ${name} --version`], { encoding: 'utf8', env: { PATH }, timeout: 30_000 });
       expect([name, run.status, run.stdout.split('\n')[0]]).toEqual([name, 0, path.join(dir, name)]);
     }
-  });
+    // node, then npm and npx allowed 30 s each: the test's time is theirs, not vitest's 5 s.
+  }, 90_000);
 });
 
 describe('what an E2E sandbox inherits', () => {
