@@ -11,7 +11,6 @@ import {
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
@@ -76,15 +75,6 @@ export class QwenCodeProvider implements CLIProvider {
     // positional prompt runs one-shot and exits.
     if (finalPrompt) command += ` -i ${shellQuote(finalPrompt)}`;
     return command;
-  }
-
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = shellQuote(params.binaryPath);
-    if (params.autonomous) command += ' --approval-mode yolo';
-    if (params.outputFormat) command += ` --output-format ${params.outputFormat}`;
-    command += ` --include-directories ${shellQuote(DATA_DIR)}`;
-    // A positional prompt: one-shot, which a scheduled task is.
-    return `${command} ${shellQuote(params.prompt)}`;
   }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
@@ -175,29 +165,5 @@ export class QwenCodeProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--include-directories';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const prompt = params.skills && params.skills.length > 0
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-    return `#!/bin/bash
-export HOME=${shellQuote(params.homeDir)}
-export PATH=${shellQuote(params.binaryDir)}:"$PATH"
-cd ${shellQuote(params.projectPath)}
-echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-${shellQuote(params.binaryPath)}${params.autonomous ? ' --approval-mode yolo' : ''} --include-directories ${shellQuote(DATA_DIR)} ${shellQuote(prompt)} >> ${shellQuote(params.logPath)} 2>&1
-echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
-`;
   }
 }
