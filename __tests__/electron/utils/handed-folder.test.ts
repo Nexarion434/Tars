@@ -16,6 +16,8 @@ import { handedFolderProblem } from '../../../electron/utils/handed-folder';
  * 4. Another spelling of one of those is taken: a trailing separator, a `..`, a `.`.
  * 5. A link that leads to one of those is taken: a link in a project to ~/.tars-private, to a folder inside it, to the
  *    home folder.
+ * 5b. A folder not made yet behind such a link is taken: no realpath answers for it, so its spelling alone was
+ *    compared (found with the Windows suite, handed-folder-win32.test.ts, 2026-10-20).
  * 6. A folder that only looks like one of those is refused: a sibling named .tars-private-notes, a project under the
  *    home folder; or the check throws on a folder that does not exist, or while ~/.tars-private does not exist yet.
  */
@@ -66,6 +68,12 @@ describe('a folder handed to an agent besides its project', () => {
     for (const link of ['secrets', 'accounts', 'home']) {
       expect(problem(path.join(project, link)), link).not.toBeNull();
     }
+  });
+
+  it('5b. refuses a folder not made yet behind such a link', () => {
+    fs.symlinkSync(privateDir, path.join(project, 'secrets'));
+    expect(problem(path.join(project, 'secrets', 'not-made-yet'))).not.toBeNull();
+    expect(problem(path.join(project, 'secrets', 'not-made-yet', 'deeper'))).not.toBeNull();
   });
 
   it('6. takes what only looks like one of those, and a folder that does not exist yet', () => {
