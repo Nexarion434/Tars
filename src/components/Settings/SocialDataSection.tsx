@@ -1,33 +1,34 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, PasswordInput } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { secretIsSet } from '@/lib/secret-settings';
 import { Toggle } from './Toggle';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import type { AppSettings } from './types';
 
 interface SocialDataSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
 }
 
-export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: SocialDataSectionProps) => {
+export const SocialDataSection = ({ appSettings, onSaveAppSettings, onSecretChanged }: SocialDataSectionProps) => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testingX, setTestingX] = useState(false);
   const [testXResult, setTestXResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Each test asks main, which reads the keys it keeps: they are set through
+  // their own rows (secrets.set), never handed to the page (2.0.4, #466).
   const handleTestConnection = async () => {
     if (!window.electronAPI?.socialData?.test) return;
     setTesting(true);
     setTestResult(null);
     try {
-      onSaveAppSettings({
-        socialDataApiKey: appSettings.socialDataApiKey,
-      });
-      await new Promise(r => setTimeout(r, 300));
-
       const result = await window.electronAPI.socialData.test();
       if (result.success) {
         setTestResult({ success: true, message: 'API key is valid! Connected to SocialData.' });
@@ -45,15 +46,6 @@ export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLoca
     setTestingX(true);
     setTestXResult(null);
     try {
-      // Save credentials first so the main process has them
-      onSaveAppSettings({
-        xApiKey: appSettings.xApiKey,
-        xApiSecret: appSettings.xApiSecret,
-        xAccessToken: appSettings.xAccessToken,
-        xAccessTokenSecret: appSettings.xAccessTokenSecret,
-      });
-      await new Promise(r => setTimeout(r, 500));
-
       if (!window.electronAPI?.xApi?.test) {
         setTestXResult({ success: false, message: 'X API bridge not available. Please restart the app.' });
         return;
@@ -72,14 +64,26 @@ export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLoca
     }
   };
 
-  const canEnable = !!appSettings.socialDataApiKey;
-  const canEnableXPosting = !!(appSettings.xApiKey && appSettings.xApiSecret && appSettings.xAccessToken && appSettings.xAccessTokenSecret);
+  const canEnable = secretIsSet(appSettings, 'socialDataApiKey');
+  const canEnableXPosting = (['xApiKey', 'xApiSecret', 'xAccessToken', 'xAccessTokenSecret'] as const)
+    .every((field) => secretIsSet(appSettings, field));
+  const xKey = (field: 'xApiKey' | 'xApiSecret' | 'xAccessToken' | 'xAccessTokenSecret', label: string, noun: 'key' | 'secret' | 'token', description: string) => (
+    <SecretRow
+      field={field}
+      label={label}
+      noun={noun}
+      set={secretIsSet(appSettings, field)}
+      description={description}
+      clearWarning={`Clear the ${label.toLowerCase()}? Posting stops until it is set again.`}
+      onChanged={onSecretChanged}
+    />
+  );
 
-  // Four rows, no cards of our own: the bordered surface comes from the
-  // `<SettingsCard>` in `settings/page.tsx`, and the page name is in the header.
-  // The tool catalogue and the two setup guides are gone - where a credential
-  // comes from is one line on the row that asks for it. The four X credentials
-  // pair up two to a row, so the whole OAuth handshake reads as two lines.
+  // No cards of our own: the bordered surface comes from the `<SettingsCard>`
+  // in `settings/page.tsx`, and the page name is in the header. Where a
+  // credential comes from is one line on the row that asks for it, and each
+  // key has its row (frame `Secrets · states`): a set key says so, and a pair
+  // of them no longer fits the 300px column.
   return (
     <>
       <SettingsRow
@@ -90,32 +94,19 @@ export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLoca
               {testResult.message}
             </span>
           ) : (
-            <>Search and analyse X through SocialData. Key from socialdata.tools.</>
+            <>Search and analyse X through SocialData.</>
           )
         }
         control={
-          <div className="flex w-full items-center gap-2">
-            <PasswordInput
-              className="min-w-0 flex-1"
-              value={appSettings.socialDataApiKey}
-              onChange={(e) => onUpdateLocalSettings({ socialDataApiKey: e.target.value })}
-              onBlur={() => {
-                if (appSettings.socialDataApiKey) {
-                  onSaveAppSettings({ socialDataApiKey: appSettings.socialDataApiKey });
-                }
-              }}
-              placeholder="sd_..."
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              className="font-mono"
-              onClick={handleTestConnection}
-              disabled={!canEnable || testing}
-            >
-              test
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="font-mono"
+            onClick={handleTestConnection}
+            disabled={!canEnable || testing}
+          >
+            test
+          </Button>
         }
         secondaryControl={
           <Toggle
@@ -124,6 +115,16 @@ export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLoca
             disabled={!canEnable}
           />
         }
+      />
+
+      <SecretRow
+        field="socialDataApiKey"
+        label="SocialData key"
+        set={canEnable}
+        description="From socialdata.tools."
+        placeholder="sd_..."
+        clearWarning="Clear SocialData's key? Your agents can no longer search X until a key is set."
+        onChanged={onSecretChanged}
       />
 
       <SettingsRow
@@ -157,65 +158,10 @@ export const SocialDataSection = ({ appSettings, onSaveAppSettings, onUpdateLoca
         }
       />
 
-      <SettingsRow
-        label="API key + secret"
-        description="Consumer key and consumer secret of the X app."
-        control={
-          // Two halves of the 300px column, so the pair ends on the same
-          // trailing edge as every single field on this page.
-          <div className="grid w-full grid-cols-2 gap-2">
-            <PasswordInput
-              value={appSettings.xApiKey}
-              onChange={(e) => onUpdateLocalSettings({ xApiKey: e.target.value })}
-              onBlur={() => {
-                if (appSettings.xApiKey) {
-                  onSaveAppSettings({ xApiKey: appSettings.xApiKey });
-                }
-              }}
-              placeholder="key"
-            />
-            <PasswordInput
-              value={appSettings.xApiSecret}
-              onChange={(e) => onUpdateLocalSettings({ xApiSecret: e.target.value })}
-              onBlur={() => {
-                if (appSettings.xApiSecret) {
-                  onSaveAppSettings({ xApiSecret: appSettings.xApiSecret });
-                }
-              }}
-              placeholder="secret"
-            />
-          </div>
-        }
-      />
-
-      <SettingsRow
-        label="Access token + secret"
-        description="Needs Read and Write permissions, or posting fails at the API."
-        control={
-          <div className="grid w-full grid-cols-2 gap-2">
-            <PasswordInput
-              value={appSettings.xAccessToken}
-              onChange={(e) => onUpdateLocalSettings({ xAccessToken: e.target.value })}
-              onBlur={() => {
-                if (appSettings.xAccessToken) {
-                  onSaveAppSettings({ xAccessToken: appSettings.xAccessToken });
-                }
-              }}
-              placeholder="token"
-            />
-            <PasswordInput
-              value={appSettings.xAccessTokenSecret}
-              onChange={(e) => onUpdateLocalSettings({ xAccessTokenSecret: e.target.value })}
-              onBlur={() => {
-                if (appSettings.xAccessTokenSecret) {
-                  onSaveAppSettings({ xAccessTokenSecret: appSettings.xAccessTokenSecret });
-                }
-              }}
-              placeholder="secret"
-            />
-          </div>
-        }
-      />
+      {xKey('xApiKey', 'Consumer key', 'key', "The X app's API key.")}
+      {xKey('xApiSecret', 'Consumer secret', 'secret', "The X app's API secret.")}
+      {xKey('xAccessToken', 'Access token', 'token', 'Needs Read and Write permissions, or posting fails at the API.')}
+      {xKey('xAccessTokenSecret', 'Access token secret', 'secret', 'Comes with the access token.')}
     </>
   );
 };

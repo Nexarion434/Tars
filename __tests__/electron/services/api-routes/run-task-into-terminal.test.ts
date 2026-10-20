@@ -40,8 +40,15 @@ import { EventEmitter } from 'node:events';
  *      for ever as `starting`, and the queue stays held.
  *  D11. A model asked for one task is said taken while the agent's session was
  *      already open, which a model cannot change.
- *  D12. A CLI whose turns Tars cannot see (no hook: codex, opencode, amp, pi,
- *      grok) is followed for ever, or said to have answered what it did not.
+ *  D12. A CLI whose turns Tars cannot see (no hook: opencode, amp, pi, grok)
+ *      is followed for ever, or said to have answered what it did not.
+ *
+ * Added with codex's session log (fix/codex-works, 2026-10-18), before the code:
+ *  D18. codex, whose turns Tars reads from its session log and posts as the
+ *      hooks would (services/codex-sessions.ts), is said delivered as a CLI
+ *      Tars cannot see, or followed to its end without its answer.
+ *  D19. A codex turn interrupted (its log's turn_aborted, then the rest it
+ *      comes to) ends the task as completed, or never ends it.
  *  D13. Another project's orchestrator that passed allowCrossProject: true is
  *      refused, or its task goes anywhere but the target's terminal (moved
  *      here from run-task-answer-at-start.test.ts, S8, with the run over ACP).
@@ -57,8 +64,22 @@ import { EventEmitter } from 'node:events';
  *      what it left running.
  *  D16. (W1) A turn whose prompt carries another task's id is taken as this
  *      task's turn.
+ *  D18. (#461's E2E, 19/10) The interrupt watch (agent-watch) reads the Esc
+ *      first and sets the agent at rest: the task ends `completed`, `end_turn`,
+ *      though its turn was cut. Whichever reads the cut first, it ends
+ *      `stopped`, `interrupted`.
  *  D17. (W2) A task whose turn writes no text is answered with the previous
  *      task's final message.
+ *
+ * Added 19/10 (the QA's CLI matrix, gemini as B), before the code:
+ *  G1. A gemini agent, whose hooks say when its turn begins (BeforeAgent) and
+ *      ends (AfterAgent), is taken for a CLI with no hook: its task is said
+ *      delivered at once, its answer never read, its end never told.
+ *  G2. A second task to it waits for ever behind the first's turn, or goes in
+ *      before that turn ended.
+ *  G3. (the Audit's L2 on #478) A gemini whose hooks never post (a version
+ *      older than them, or an install that failed) is followed to a turn that
+ *      never begins, for ever, and every task behind it waits for ever too.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-run-task-terminal-'));
@@ -76,13 +97,17 @@ const typed: Typed[] = [];
 let writeOutcome: 'written' | 'refused' = 'written';
 vi.mock('../../../../electron/core/pty-manager', async (original) => {
   const real = await original<typeof import('../../../../electron/core/pty-manager')>();
+  const ledger = await import('../../../../electron/services/task-ledger');
   return {
     ...real,
     ptyProcesses: new Map(),
-    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
+    // As the real writer does (takeField): the line's id only under a sender, and the hand-off the turn takes noted once written.
+    writeProgrammaticInput: vi.fn((pty: { id: string }, data: string, _bp: boolean, origin?: { agentId: string; taskRef?: string; sender?: Typed['sender']; onWritten?: () => void }) => {
       if (writeOutcome === 'refused') return 'refused';
-      typed.push({ ptyId: pty.id, data, taskRef: origin?.taskRef, sender: origin?.sender });
+      const taskRef = origin?.sender ? origin.taskRef : undefined;
+      typed.push({ ptyId: pty.id, data, taskRef, sender: origin?.sender });
       origin?.onWritten?.();
+      if (origin) ledger.noteHandOff(origin.agentId, { ...ledger.handOffFrom(origin.sender as never), text: data, ref: taskRef });
       return 'written';
     }),
   };
@@ -108,9 +133,10 @@ import { registerAgentRoutes } from '../../../../electron/services/api-routes/ag
 import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-ledger';
-import { startTaskWatch, stopTaskWatch } from '../../../../electron/services/task-watch';
+import { startTaskWatch, stopTaskWatch, turnInterrupted } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
+import { endInterruptedTurnsNow } from '../../../../electron/services/agent-watch';
 import { transcriptPath } from '../../../../electron/utils/resume-session';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -352,6 +378,115 @@ describe('a task delegated into the agent\'s own terminal', () => {
   });
 });
 
+describe('a task delegated into a gemini agent, whose hooks say when its turns begin and end', () => {
+  it('(G1) is followed to its turn\'s end, and answered with what its hooks gave', async () => {
+    orchestrator();
+    const gem = liveAgent('gem', { provider: 'gemini' });
+    const { data } = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'review the notes', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(gem, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(((await call('GET', `/api/tasks/${data.taskId}`, 'lead').answer).data.task as Record<string, unknown>).outcome).toBe('running');
+    // AfterAgent: its answer (prompt_response), then the rest.
+    gem.lastCleanOutput = 'The notes are fine.';
+    rests(gem);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: 'The notes are fine.' });
+  });
+
+  it('(G2) a second task goes in at the first\'s end, and is answered with its own', async () => {
+    orchestrator();
+    const gem = liveAgent('gem', { provider: 'gemini' });
+    const first = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'first job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(gem, promptOf(typed[0]));
+    const second = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'second job', answer: 'started' }).answer;
+    expect(second.data).toMatchObject({ queued: true, outcome: 'queued' });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(typed).toHaveLength(1);
+    gem.lastCleanOutput = 'first answer';
+    rests(gem);
+    expect(((await call('GET', `/api/tasks/${first.data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>).result).toBe('first answer');
+    await until(() => typed.length === 2);
+    turnBegins(gem, promptOf(typed[1]));
+    await new Promise((r) => setTimeout(r, 30));
+    gem.lastCleanOutput = 'second answer';
+    rests(gem);
+    expect(((await call('GET', `/api/tasks/${second.data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>)).toMatchObject({ outcome: 'completed', result: 'second answer' });
+  });
+});
+
+describe('a task delegated into a gemini whose hooks never post (the Audit\'s L2 on #478)', () => {
+  it('(G3) ends as an error once its turn has not begun within the wait, and the next task goes in', async () => {
+    orchestrator();
+    liveAgent('gem', { provider: 'gemini' });
+    const first = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'first job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    const second = await call('POST', '/api/agents/gem/run-task', 'lead', { task: 'second job', answer: 'started' }).answer;
+    expect(second.data).toMatchObject({ queued: true });
+    // The wait for its turn is counted from when it went in: the clock is taken from there on.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    try {
+      // No BeforeAgent ever comes: nothing but the wait ends it.
+      await vi.advanceTimersByTimeAsync(15 * 60_000 + 5_000);
+      const ended = (await call('GET', `/api/tasks/${first.data.taskId}?wait=5`, 'lead').answer).data.task as Record<string, unknown>;
+      expect(ended.outcome).toBe('error');
+      expect(String(ended.error)).toMatch(/did not begin within 15 minutes/);
+      await until(() => typed.length === 2);
+      expect(typed[1].data).toContain('second job');
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 120_000);
+});
+
+describe('a task delegated to a codex agent', () => {
+  it("(D18) is followed to its turn's end, as codex's session log tells it, and answered with its final message", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // The answer codex wrote at the turn's end (task_complete's last_agent_message), posted in full.
+    const long = `Done. ${'detail '.repeat(1200)}END`;
+    dev.lastCleanOutput = long;
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: long });
+  });
+});
+
+describe('a task delegated to a codex agent, its turn interrupted', () => {
+  it('(D19) ends as stopped, interrupted, when codex logs the turn aborted, then rests', async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a long job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    // What the session watch does on codex's turn_aborted (main.ts wires it to this), then its post of the rest.
+    turnInterrupted(dev.id, dev.currentSessionId!);
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+  });
+
+  it("(D19) an interrupt from a session that is not the agent's is not its task's", async () => {
+    orchestrator();
+    const dev = liveAgent('dev', { provider: 'codex' });
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    turnInterrupted(dev.id, 'an-older-session');
+    dev.lastCleanOutput = 'all done';
+    rests(dev);
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'completed', stopReason: 'end_turn', result: 'all done' });
+  });
+});
+
 describe('a task from another project', () => {
   it('(D13) allowed with allowCrossProject: true, goes into the target\'s terminal', async () => {
     const lead = orchestrator();
@@ -478,4 +613,22 @@ describe('a delegated task and the background work of a turn (the Audit\'s gate 
     expect(task.outcome).toBe('completed');
     expect(task.result, 'the first task\'s answer').not.toBe('FIRST-ANSWER');
   });
+
+  it('(D18) the interrupt watch reading the Esc first does not make the cut task end_turn', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a long job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    reply(dev, 'Starting the long job.');
+    const file = transcriptPath(dev.projectPath, dev.currentSessionId!, os.homedir());
+    fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date(Date.now() + 10).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } }) + '\n');
+    await new Promise((r) => setTimeout(r, 20));
+    // The watch's tick, before the run's next look (every 500 ms).
+    endInterruptedTurnsNow();
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+  });
 });
+

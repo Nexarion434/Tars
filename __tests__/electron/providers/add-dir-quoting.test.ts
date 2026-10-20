@@ -33,7 +33,11 @@ import { execFileSync } from 'node:child_process';
  * The oracle is a real POSIX shell (`sh`, from PATH): the command Tars built
  * runs in it against a stand-in for the CLI (a shell function, or a script
  * under the home for the builders that take a path to the CLI), which prints
- * each argument it was given followed by a NUL. What the CLI would have
+ * each argument it was given followed by a NUL. codex's line starts it through
+ * `env CODEX_HOME=<Tars's codex home>` on macOS and Linux (the Audit's L4 on
+ * #465), which runs no shell function: there the stand-in is a script on the
+ * PATH, which prints the CODEX_HOME it was handed first, a folder under the
+ * home too. What the CLI would have
  * received is compared with what it should have received: the same command
  * built for a home with a plain name, whose argv is right by construction,
  * with that plain home replaced by the hostile one in every argument.
@@ -56,7 +60,19 @@ const PRINT_ARGV = `tars_argv() { for a in "$@"; do printf '%s\\0' "$a"; done; }
  * it did (`sh: skill-name: No such file or directory`).
  */
 function run(script: string): string {
-  return execFileSync('sh', ['-c', PRINT_ARGV + script], { encoding: 'utf-8', cwd: root });
+  const env = { ...process.env, PATH: `${standInOnPath()}:${process.env.PATH ?? ''}` };
+  delete env.CODEX_HOME;
+  return execFileSync('sh', ['-c', PRINT_ARGV + script], { encoding: 'utf-8', cwd: root, env });
+}
+
+/** The stand-in as a program on the PATH, for a line that starts it through `env`: the CODEX_HOME it got, then its argv. */
+function standInOnPath(): string {
+  const bin = path.join(root, 'stand-in-bin');
+  if (!fs.existsSync(path.join(bin, 'tars_argv'))) {
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'tars_argv'), '#!/bin/sh\n[ -n "${CODEX_HOME+x}" ] && printf \'CODEX_HOME=%s\\0\' "$CODEX_HOME"\nfor a in "$@"; do printf \'%s\\0\' "$a"; done\n', { mode: 0o755 });
+  }
+  return bin;
 }
 
 /** What the shell said when it would not run a command. */
@@ -114,62 +130,6 @@ function interactiveParams(homeDir: string) {
     skills: ['one', 'two'],
     orchestratorMode: true,
   };
-}
-
-/** A CLI under the home that prints its argv, one argument per NUL. */
-function cliUnder(homeDir: string): string {
-  const bin = path.join(homeDir, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
-  const cli = path.join(bin, 'tars argv');
-  fs.writeFileSync(cli, '#!/bin/sh\nfor a in "$@"; do printf \'%s\\0\' "$a"; done\n', { mode: 0o755 });
-  return cli;
-}
-
-/** Every path a scheduled command names, under the home. */
-function scheduledParams(homeDir: string) {
-  return {
-    binaryPath: cliUnder(homeDir),
-    prompt: "Summarise the night; don't stop at the first failure",
-    autonomous: true,
-    mcpConfigPath: path.join(homeDir, 'mcp.json'),
-    outputFormat: 'stream-json',
-    verbose: true,
-  };
-}
-
-/** Every path a scheduled script names, under the home, and the folders it cds and looks into. */
-function scriptParams(homeDir: string) {
-  const projectPath = path.join(homeDir, 'the project');
-  fs.mkdirSync(projectPath, { recursive: true });
-  // A key provider's script starts its CLI only with its key, read as it runs (scheduledKeyExports): one of each.
-  fs.mkdirSync(path.join(homeDir, '.tars'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.tars', 'app-settings.json'), JSON.stringify(Object.fromEntries(
-    ['deepSeekApiKey', 'moonshotApiKey', 'zhipuApiKey', 'minimaxApiKey', 'openRouterApiKey', 'ollamaCloudApiKey'].map(k => [k, `sk-${k}`]),
-  )));
-  const binaryPath = cliUnder(homeDir);
-  return {
-    binaryPath,
-    binaryDir: path.dirname(binaryPath),
-    projectPath,
-    prompt: "Summarise the night; don't stop at the first failure",
-    autonomous: true,
-    mcpConfigPath: path.join(homeDir, 'mcp.json'),
-    logPath: path.join(homeDir, 'task log.txt'),
-    homeDir,
-  };
-}
-
-/**
- * Runs a whole scheduled script and reads back what its CLI was given: the
- * script writes the CLI's output into its log, between its two banner lines.
- */
-function argvOfScript(script: string, logPath: string): string[] {
-  fs.rmSync(logPath, { force: true });
-  run(script);
-  const log = fs.readFileSync(logPath, 'utf-8');
-  const started = log.indexOf('\n') + 1;
-  const completed = log.lastIndexOf('=== Task completed');
-  return log.slice(started, completed).split('\0').slice(0, -1);
 }
 
 let plainHome: string;
@@ -232,67 +192,5 @@ describe('a home folder whose name the shell would read', () => {
     for (const [id, argv] of withDataDir) {
       expect(argv[argv.indexOf(plainDataDir) - 1], id).toBe(plain.getProvider(id as never).getAddDirFlag());
     }
-  }, 120_000);
-
-  it('reaches every provider\'s scheduled command as the folder it is', async () => {
-    const plain = await providersUnder(plainHome);
-    const plainDataDir = path.join(plainHome, '.tars');
-    // The providers that hand their scheduled CLI the data folder, the ones this covers.
-    const plainArgv = new Map(plain.getAllProviders()
-      .map(p => [p.id, argvOf(p.buildScheduledCommand(scheduledParams(plainHome)))] as const)
-      .filter(([, argv]) => argv.includes(plainDataDir)));
-
-    const hostile = await providersUnder(hostileHome);
-    const wrong: string[] = [];
-    for (const provider of hostile.getAllProviders()) {
-      if (!plainArgv.has(provider.id)) continue;
-      let got: string[] | string;
-      try {
-        got = argvOf(provider.buildScheduledCommand(scheduledParams(hostileHome)));
-      } catch (err) {
-        got = `the shell refused it: ${refusal(err)}`;
-      }
-      const want = intended(plainArgv.get(provider.id)!);
-      if (JSON.stringify(got) !== JSON.stringify(want)) wrong.push(`${provider.id}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
-    }
-
-    expect(wrong, 'these providers do not hand the scheduled CLI the folders Tars meant').toEqual([]);
-    expect(plainArgv.size).toBeGreaterThanOrEqual(15);
-  }, 120_000);
-
-  it('reaches every provider\'s scheduled script as the folder it is', async () => {
-    const plain = await providersUnder(plainHome);
-    const plainDataDir = path.join(plainHome, '.tars');
-    const plainArgv = new Map<string, string[]>();
-    const wrong: string[] = [];
-    for (const provider of plain.getAllProviders()) {
-      const params = scriptParams(plainHome);
-      const script = provider.buildScheduledScript(params);
-      // The providers whose scheduled script hands the CLI the data folder, the ones this covers.
-      if (!script.includes(plainDataDir)) continue;
-      try {
-        plainArgv.set(provider.id, argvOfScript(script, params.logPath));
-      } catch (err) {
-        // A plain home, and a task with an apostrophe as tasks have.
-        wrong.push(`${provider.id}: the shell refused it even for a plain home: ${refusal(err)}`);
-      }
-    }
-
-    const hostile = await providersUnder(hostileHome);
-    for (const provider of hostile.getAllProviders()) {
-      if (!plainArgv.has(provider.id)) continue;
-      const params = scriptParams(hostileHome);
-      let got: string[] | string;
-      try {
-        got = argvOfScript(provider.buildScheduledScript(params), params.logPath);
-      } catch (err) {
-        got = `the shell refused it: ${refusal(err)}`;
-      }
-      const want = intended(plainArgv.get(provider.id)!);
-      if (JSON.stringify(got) !== JSON.stringify(want)) wrong.push(`${provider.id}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
-    }
-
-    expect(wrong, 'these providers do not hand the scheduled script\'s CLI the folders Tars meant').toEqual([]);
-    expect(plainArgv.size).toBeGreaterThanOrEqual(15);
   }, 120_000);
 });

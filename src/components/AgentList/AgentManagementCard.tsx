@@ -6,6 +6,7 @@ import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { permissionAskLine } from '@/lib/permission-ask';
 import { asleepLine, wakingLine } from '@/lib/asleep-line';
+import { providerWord } from '@/lib/providers';
 import AgentStatusWord from '@/components/AgentStatusWord';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
@@ -48,7 +49,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const provider = agent.provider || 'claude';
   const model = provider === 'local' ? agent.localModel : agent.model;
   // Provider, model and branch as plain words, the way the frame writes them.
-  const facts = [provider, model, agent.branchName].filter(Boolean).join(' · ');
+  const facts = [providerWord(provider), model, agent.branchName].filter(Boolean).join(' · ');
 
   return (
     <div

@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from './end-of-turn';
 import { keyPrintOf } from '../services/cli-keys';
 import { readAppSettingsFromDisk } from '../providers/cli-provider';
 import { agentRecovered, reportEvent } from '../services/event-reports';
@@ -15,10 +16,10 @@ import { isSkillName } from '../utils/skill-name';
 import { quoted } from '../utils/reveal';
 import { hasOrchestratorPowers, rolesOnLoad } from './agent-role';
 import { holdsMessages } from './one-task';
-import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, writeProgrammaticInput } from './pty-manager';
+import { oweToFirstMessage, ptyProcesses, setDialogProbe, setCliProbe, setTurnProbe, setTurnInProgressProbe, writeProgrammaticInput } from './pty-manager';
 import { dialogOpen, dialogShown } from './agent-launch';
 import type * as pty from 'node-pty';
-import { cliStoppedIn, spawnAgentPty, agentShell } from './agent-pty';
+import { cliStoppedIn, spawnAgentPty, agentShell, codexLaunching } from './agent-pty';
 import { killPty } from './pty-kill';
 import { withPath, type DirectLaunch, type Launch } from '../platform';
 import { buildFullPath } from '../utils/path-builder';
@@ -34,6 +35,10 @@ import { emitAgentStatus } from '../services/agent-events';
 import { agentStatusOnExit } from './quit-state';
 import { clearStop } from './agent-stop';
 import { wakeFromSleep } from './agent-asleep';
+import { currentApiCall } from '../services/api-routes/call-context';
+import { reportAgentToolError, reportHandledError, taskNeverStarted } from '../services/error-reports/handled';
+import { UNKNOWN_TOOL } from '../services/error-reports/report';
+import { trustsTooMuch } from '../utils/trust-too-much';
 
 /**
  * When each agent's current status began (`statusSince`), stamped where the
@@ -99,6 +104,8 @@ export function wireDialogProbe(): void {
     const agent = agents.get(agentId);
     return !!agent && holdsMessages(agent);
   });
+  // The CLI's own turn, and nothing wider: what tells a message that opens a turn (pty-manager.ts, noteTurnCut).
+  setTurnInProgressProbe(agentId => agents.get(agentId)?.status === 'running');
 }
 
 /**
@@ -135,21 +142,32 @@ export function ensureProjectTrusted(projectPath: string): void {
     [key: string]: unknown;
   };
 
+  // Claude Code reads the flag under the folder it starts in, as the system
+  // names it: the real path. A project reached through a link (anything under
+  // macOS's /var or /tmp, a checkout linked elsewhere) trusted under the
+  // spelling Tars saved alone still showed the dialog, and the agent's first
+  // task answered it. Both are written; trustsTooMuch has judged both.
+  const keys = [projectPath];
+  try {
+    const real = fs.realpathSync.native(projectPath);
+    if (real !== projectPath) keys.push(real);
+  } catch {
+    // Not there yet: the saved spelling is all there is.
+  }
+
   try {
     const outcome = updateSharedJsonSync<ClaudeConfig>(claudeJsonPath, config => {
-      const existing = config?.projects?.[projectPath] ?? {};
-      if (existing.hasTrustDialogAccepted === true) return undefined;
-      return {
-        ...config,
-        projects: {
-          ...config?.projects,
-          [projectPath]: {
-            ...existing,
-            hasTrustDialogAccepted: true,
-            projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
-          },
-        },
-      };
+      if (keys.every(key => config?.projects?.[key]?.hasTrustDialogAccepted === true)) return undefined;
+      const projects = { ...config?.projects };
+      for (const key of keys) {
+        const existing = projects[key] ?? {};
+        projects[key] = {
+          ...existing,
+          hasTrustDialogAccepted: true,
+          projectOnboardingSeenCount: existing.projectOnboardingSeenCount ?? 1,
+        };
+      }
+      return { ...config, projects };
     });
     if (outcome === 'written') {
       console.log(`ensureProjectTrusted: marked ${projectPath} trusted in ~/.claude.json`);
@@ -161,34 +179,6 @@ export function ensureProjectTrusted(projectPath: string): void {
   } catch (err) {
     console.warn(`ensureProjectTrusted: failed to update ${claudeJsonPath}:`, err);
   }
-}
-
-/**
- * Whether marking this directory trusted would trust far more than a project.
- *
- * Claude Code reads `hasTrustDialogAccepted` for its working directory and
- * every directory above it, so the flag on $HOME trusts everything the account
- * owns and the flag on `/` trusts the machine. Refused: the root, the home
- * directory, anything above it, and a relative path, which names whatever the
- * app's working directory happens to be. Compared by the path given and by the
- * path the filesystem resolves, which follows a link and, on macOS, gives the
- * case the disk stores, so neither a link nor another spelling gets through.
- * Claude Code then shows its own dialog, which is the point of it.
- */
-function trustsTooMuch(projectPath: string): boolean {
-  if (!path.isAbsolute(projectPath)) return true;
-  const spellings = (p: string) => {
-    const resolved = path.resolve(p);
-    try {
-      return [resolved, fs.realpathSync.native(resolved)];
-    } catch {
-      return [resolved];
-    }
-  };
-  const homes = spellings(os.homedir());
-  return spellings(projectPath).some(dir =>
-    dir === path.parse(dir).root
-    || homes.some(home => home === dir || home.startsWith(dir + path.sep)));
 }
 
 export let agentsLoaded = false;
@@ -852,7 +842,7 @@ const TASK_START_GRACE_MS = 600_000;
  */
 export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined, task?: string): void {
   if (!ptyId) return;
-  if (getProvider(agent.provider).binaryName !== 'claude') return;
+  if (!hasClaudeHooks(agent)) return;
 
   // Only a real task is worth confirming: a start with none has nothing to lose.
   agent.pendingDelivery = task && task.trim()
@@ -895,6 +885,8 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     agent.currentSessionId = undefined;
   }
   const ownerAtArming = agent.currentSessionId;
+  // Who delivered the task (2.0.4): an agent's tool, through the API, makes its never starting that tool's error.
+  const deliveredBy = currentApiCall();
 
   const timer = setTimeout(() => {
     const live = agents.get(agent.id);
@@ -928,6 +920,13 @@ export function armTaskStartWatch(agent: AgentStatus, ptyId: string | undefined,
     // that dispatched it hang off.
     scheduleTick();
     emitAgentStatus(live.id);
+    // And in the reports, when they are on: never the agent's name or the task's words.
+    const cli = getProvider(live.provider).id;
+    if (deliveredBy?.fromMcp && deliveredBy.agentId) {
+      reportAgentToolError({ code: 'never-started', tool: deliveredBy.tool ?? UNKNOWN_TOOL, cli });
+    } else {
+      reportHandledError(taskNeverStarted(cli, TASK_START_GRACE_MS));
+    }
   }, TASK_START_GRACE_MS);
   // A pending check must never be the reason the app cannot quit.
   timer.unref();
@@ -1178,6 +1177,8 @@ export async function launchIntoTerminal(
   oweToFirstMessage(ptyProcess, '');
   if (start.platform === 'win32') return startCliInTerminal(agent, start, opts);
   if (opts.ready) await opts.ready(ptyProcess);
+  // codex typed into a shell already there, one reused too: noted as it starts (core/agent-pty.ts).
+  if (getProvider(agent.provider).binaryName === 'codex') codexLaunching(agent.id, start.cwd);
   if (opts.delayMs) {
     await new Promise<void>((resolve) => {
       setTimeout(() => {
@@ -1251,16 +1252,10 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
 
   // Build PATH that includes user-configured paths, nvm, and other common locations for claude
   const cliExtraPaths: string[] = [];
-  let savedSettings: Record<string, unknown> = {};
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    if (fs.existsSync(settingsFile)) {
-      savedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-      cliExtraPaths.push(...cliPathDirs(savedSettings.cliPaths as Record<string, unknown> | undefined));
-    }
-  } catch {
-    // Ignore settings load errors
-  }
+  // With their keys, from ~/.tars-private since 2.0.4 (services/settings-secrets.ts):
+  // app-settings.json alone holds none, and the terminal's environment needs them.
+  const savedSettings = readAppSettingsFromDisk() as Record<string, unknown>;
+  cliExtraPaths.push(...cliPathDirs(savedSettings.cliPaths as Record<string, unknown> | undefined));
   const fullPath = buildFullPath(cliExtraPaths);
 
   // For local provider, bake Tasmania env vars into the PTY process environment
@@ -1294,6 +1289,7 @@ async function spawnShell(agent: AgentStatus): Promise<{ ptyProcess: pty.IPty; c
     agent.projectPath,
     agent.skills,
     savedSettings as unknown as AppSettings,
+    { model: agent.model, effort: agent.effort },
   );
 
   const ptyProcess = spawnAgentPty({

@@ -120,6 +120,15 @@ export function revokeTerminalToken(agentId: string, token: string): void {
   agentByToken.delete(token);
 }
 
+/**
+ * The token of the agent's terminal as it is now, for the part of the main process that posts what a CLI without
+ * hooks Tars installs would have posted (services/codex-sessions.ts): it speaks as that terminal, on the routes that
+ * take that terminal's token alone. Undefined when the terminal has ended.
+ */
+export function terminalTokenOf(agentId: string): string | undefined {
+  return tokenByAgent.get(agentId);
+}
+
 /** The agent this token was minted for, or undefined if it was not minted here. */
 export function agentForToken(token: string): string | undefined {
   return agentByToken.get(token);

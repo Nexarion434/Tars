@@ -16,7 +16,7 @@ export type DiagnosticAnswer =
 export const NO_SAMPLE = 'Nothing has been recorded yet: Tars records its health every 5 minutes.';
 
 interface DiagnosticDeps {
-  reports: Pick<ErrorReports, 'refusal' | 'sendHealth'>;
+  reports: Pick<ErrorReports, 'refusal' | 'sendHealth' | 'lastReport'>;
   samplesFile: string;
   /** What a sample may name when it leaves: the channels registered, the app's pages. */
   known?: Vocabulary;
@@ -40,4 +40,7 @@ export async function sendDiagnostic(deps: DiagnosticDeps): Promise<DiagnosticAn
 
 export function registerDiagnosticHandlers(deps: Omit<DiagnosticDeps, 'now'>): void {
   ipcMain.handle('diagnostic:send', () => sendDiagnostic(deps));
+  // The last report's answer (2.0.4, F2): when, which kind, Sentry's HTTP status; null when none was kept. For
+  // Settings' line beside the switch, which is the Frontend's.
+  ipcMain.handle('errorReports:last', () => deps.reports.lastReport());
 }

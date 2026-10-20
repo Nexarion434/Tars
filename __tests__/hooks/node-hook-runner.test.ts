@@ -26,8 +26,10 @@ import * as path from 'node:path';
  *     makes SessionStart a status change instead of a registration; a
  *     `current_task` without the .sh trailing newline; `opened_at` absent).
  *  3. Ignores CLAUDE_MGR_API_URL and posts to 31415, i.e. into the live Tars.
- *  4. Uses the shared ~/.tars/api-token where the .sh uses the CLI token,
- *     or the reverse (memory calls fall back to the file, hook posts never).
+ *  4. Uses a shared token where the .sh uses the CLI token, or the reverse.
+ *     Since 2.0.4 no hook presents the shared token at all, from wherever it
+ *     is (the secrets moved to ~/.tars-private): a CLI with no token of its
+ *     own reads without one, and Tars answers 401.
  *  5. stdout that is not what Claude Code parses: SessionStart context lost,
  *     `continue` missing, a stack trace printed, or output where the .sh
  *     prints none (StopFailure).
@@ -59,6 +61,12 @@ import * as path from 'node:path';
  *     TARS_INSTANCE_ID, and no Authorization header at all otherwise. The
  *     server here answers the check for INSTANCE, outside the recorded
  *     requests; node-hook-checks-the-instance.test.ts holds the check itself.
+ * 17. (19/10, the QA's CLI matrix) A Gemini turn that Tars never sees open or
+ *     end. BeforeAgent posted `running` with no `event` and no prompt, so no
+ *     turn opened in the ledger and no delegated task's turn was found; and
+ *     AfterAgent posted `waiting` with no reason, which Tars reads as a turn
+ *     still asking, so every later task waited behind it for ever. Its answer
+ *     (`prompt_response`, gemini 0.64.0) was never posted. Both runners.
  *
  * Where bash, curl and jq exist (CI on Linux and macOS) the .sh runs too,
  * against the same server, on every case but the two Windows fixes: the same
@@ -233,6 +241,13 @@ type Case = {
 const AGENT = { CLAUDE_AGENT_ID: 'agent-1', CLAUDE_MGR_API_TOKEN: 'tok-1', TARS_INSTANCE_ID: INSTANCE };
 const GEMINI_AGENT = { DOROTHY_AGENT_ID: 'gem-1', CLAUDE_AGENT_ID: 'gem-1', CLAUDE_MGR_API_TOKEN: 'tok-g', TARS_INSTANCE_ID: INSTANCE };
 const BEARER = 'Bearer tok-1';
+/** The shared token where it was until 2.0.4 and where it is since: no hook presents it from either. */
+function sharedTokenEverywhere(home: string): void {
+  for (const dir of ['.tars', '.tars-private']) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, 'api-token'), 'shared-tok\n');
+  }
+}
 
 const TRANSCRIPT_LINES = [
   JSON.stringify({ type: 'user', message: { content: 'go' } }),
@@ -311,18 +326,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'SessionStart with no CLI token reads the shared token for bootstrap and memory only',
+    name: 'SessionStart with no CLI token reads nothing, with the shared token neither, wherever it is',
     event: 'session-start',
     payload: { session_id: S, cwd: PROJECT },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
-    setup: home => {
-      fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'shared-tok\n');
-    },
+    setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: '' } },
-      { method: 'GET', path: '/api/agents/agent-1/bootstrap', auth: 'Bearer shared-tok' },
-      { method: 'GET', path: '/api/memory/context', auth: 'Bearer shared-tok', query: { agent_id: 'agent-1', project_path: PROJECT } },
     ],
     stdout: CONTINUE,
   },
@@ -399,17 +409,13 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'PostToolUse Bash with a description, token from the shared file for memory only',
+    name: 'PostToolUse Bash with a description and no CLI token: no memory post, with the shared token neither',
     event: 'post-tool-use',
     payload: { session_id: S, cwd: PROJECT, tool_name: 'Bash', tool_input: { command: 'npm test', description: 'Run tests' } },
     env: { CLAUDE_AGENT_ID: 'agent-1' },
-    setup: home => {
-      fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
-      fs.writeFileSync(path.join(home, '.tars', 'api-token'), 'shared-tok');
-    },
+    setup: sharedTokenEverywhere,
     requests: [
       { method: 'POST', path: '/api/hooks/status', auth: undefined, body: { agent_id: 'agent-1', session_id: S, status: 'running' } },
-      { method: 'POST', path: '/api/memory/remember', auth: 'Bearer shared-tok', body: { agent_id: 'agent-1', project_path: PROJECT, content: 'Ran command: Run tests (npm test)', type: 'command' } },
     ],
     stdout: CONTINUE,
   },
@@ -625,12 +631,12 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'Gemini BeforeAgent (user-prompt-submit) sets running',
+    name: 'Gemini BeforeAgent (user-prompt-submit) opens a turn, with its prompt (17)',
     event: 'gemini/user-prompt-submit',
-    payload: { session_id: S, prompt: 'hi' },
+    payload: { session_id: S, prompt: 'review the notes', hook_event_name: 'BeforeAgent' },
     env: GEMINI_AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'running' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'running', event: 'UserPromptSubmit', hook: 'UserPromptSubmit', current_task: 'review the notes\n' } },
     ],
     stdout: CONTINUE,
   },
@@ -645,12 +651,34 @@ const CASES: Case[] = [
     stdout: CONTINUE,
   },
   {
-    name: 'Gemini AfterAgent sets waiting',
+    name: 'Gemini AfterAgent posts its answer, then ends the turn: idle (17)',
+    event: 'gemini/on-stop',
+    payload: { session_id: S, prompt: 'review the notes', prompt_response: 'Reviewed: "two" fixes', stop_hook_active: false, hook_event_name: 'AfterAgent' },
+    env: GEMINI_AGENT,
+    requests: [
+      { method: 'POST', path: '/api/hooks/output', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, output: 'Reviewed: "two" fixes' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'Gemini AfterAgent with no answer ends the turn all the same (17)',
     event: 'gemini/on-stop',
     payload: { session_id: S },
     env: GEMINI_AGENT,
     requests: [
-      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', session_id: S, status: 'waiting' } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
+    ],
+    stdout: CONTINUE,
+  },
+  {
+    name: 'Gemini AfterAgent cuts a long answer at 4000 bytes, as Stop does (17)',
+    event: 'gemini/on-stop',
+    payload: { session_id: S, prompt_response: `${'a'.repeat(3999)}é` },
+    env: GEMINI_AGENT,
+    requests: [
+      { method: 'POST', path: '/api/hooks/output', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, output: `${'a'.repeat(3999)}\ufffd` } },
+      { method: 'POST', path: '/api/hooks/status', auth: 'Bearer tok-g', body: { agent_id: 'gem-1', hook: 'Stop', session_id: S, status: 'idle' } },
     ],
     stdout: CONTINUE,
   },

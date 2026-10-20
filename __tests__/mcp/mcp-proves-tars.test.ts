@@ -24,8 +24,10 @@ import { moveTestHome } from '../setup/test-home';
  *    proves itself at its first tool call, so a CLI that outlived a quit,
  *    whose servers had all called Tars before it, handed its token to the
  *    squatter with its next call. The port proves itself before every call.
- * 5. A CLI Tars did not start (no token in its environment) loses the shared
- *    token it has always presented.
+ * 5. A CLI Tars did not start (no token in its environment) presents the
+ *    shared token. It did until 2.0.4, when the secrets left ~/.dorothy for
+ *    ~/.tars-private, which nothing handed to an agent reads: it presents
+ *    none, from wherever the file is, and Tars answers 401.
  * 6. A token with no TARS_INSTANCE_ID beside it is sent unproven.
  * 7. (The Audit's Low on #376's delta) The proof waits less than the call it
  *    guards: a Tars whose main thread is held past that answers the challenge
@@ -81,8 +83,10 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.tars', 'api-token'), SHARED);
+  for (const dir of ['.tars', '.tars-private']) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, 'api-token'), SHARED);
+  }
 });
 afterAll(async () => {
   server.closeAllConnections();
@@ -150,12 +154,12 @@ describe("the MCP servers' calls to Tars", () => {
     }
   });
 
-  it('5. a CLI Tars did not start presents the shared token, as before, unasked', async () => {
+  it('5. a CLI Tars did not start presents no token, the shared one neither, wherever its file is', async () => {
     mode = 'squatter';
     const [[, orchestrator], , [, vault]] = await clients({ CLAUDE_MGR_API_TOKEN: undefined, TARS_INSTANCE_ID: undefined });
-    await orchestrator();
-    await vault();
-    expect(calls().map((r) => r.authorization)).toEqual([`Bearer ${SHARED}`, `Bearer ${SHARED}`]);
+    await orchestrator().catch(() => undefined);
+    await vault().catch(() => undefined);
+    expect(calls().map((r) => r.authorization)).toEqual([undefined, undefined]);
     expect(received.some((r) => r.path === '/api/health')).toBe(false);
   });
 

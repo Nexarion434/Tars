@@ -409,6 +409,13 @@ export interface TaskLedger {
    * a restart ends at the next launch anyway.
    */
   delegatedTask(taskId: string): void;
+  /**
+   * Whether the agent's open task is a delegated one a run follows to its end
+   * (runInTerminal), which reads its own interrupt: the interrupt watch leaves
+   * it, or it set the agent at rest first and the cut task read completed
+   * (#461's E2E, 19/10).
+   */
+  delegatedOpen(agentId: string): boolean;
   /** One task by its id, with its run's answer when it has one. */
   task(id: string): TaskWithResult | undefined;
   /** The delegations a quit cut, found open at this start: given once, for their askers to be told. */
@@ -798,6 +805,11 @@ export function createTaskLedger(opts: {
     delegatedTask(taskId) {
       const task = byId.get(taskId);
       if (task && task.endedAt === null) delegated.add(taskId);
+    },
+
+    delegatedOpen(agentId) {
+      const id = open.get(agentId);
+      return !!id && delegated.has(id);
     },
 
     terminalEnded(taskId, end) {

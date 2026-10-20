@@ -3,13 +3,13 @@ import { PROVIDER_REGISTRY } from './providers';
 
 /**
  * Where an agent's permission selectors offer plan (frames: `Permissions · plan
- * mode · states`). PR B (#364) launches claude with --permission-mode plan; the
- * other CLIs, the API-key providers among them, read plan as normal, the
+ * mode · states`). PR B (#364) launches claude with --permission-mode plan,
+ * and Qwen Code (PR 461) qwen with --approval-mode plan; the other CLIs, the API-key providers among them, read plan as normal, the
  * narrowest they have. The main process launches an agent with no provider, or
  * with one it does not know, as claude.
  */
 export function hasPlanMode(provider: string | null | undefined): boolean {
-  if (!provider || provider === 'claude') return true;
+  if (!provider || provider === 'claude' || provider === 'qwen-code') return true;
   return !PROVIDER_REGISTRY.some(def => def.id === provider);
 }
 

@@ -3,6 +3,8 @@ import { Button, Input } from '@/components/ui';
 import { SettingsRow } from './SettingsRow';
 import type { AppSettings, CLIPaths } from './types';
 import { CLIS } from '@/lib/clis';
+import { tildePath } from '@/lib/display-path';
+import { useCliDetection } from '@/hooks/useCliDetection';
 
 interface CLIPathsSectionProps {
   appSettings: AppSettings;
@@ -12,8 +14,6 @@ interface CLIPathsSectionProps {
 }
 
 type BinaryKey = keyof Omit<CLIPaths, 'additionalPaths'>;
-
-type DetectedPaths = Record<BinaryKey, string>;
 
 // Row actions are words, not glyphs (R7): 26px lowercase mono.
 const ROW_ACTION = 'font-mono lowercase';
@@ -39,8 +39,10 @@ const EMPTY_CLI_PATHS: CLIPaths = {
 };
 
 export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSectionProps) => {
-  const [detecting, setDetecting] = useState(false);
-  const [detectedPaths, setDetectedPaths] = useState<DetectedPaths | null>(null);
+  // The detection Providers reads too (useCliDetection), shown as the page
+  // opens: it used to wait for detect now, and said "not detected" of CLIs
+  // Providers listed as ready.
+  const { paths: detectedPaths, detecting, detectAgain } = useCliDetection();
   const [localPaths, setLocalPaths] = useState<CLIPaths>(appSettings.cliPaths || EMPTY_CLI_PATHS);
   // The extra directories are one PATH string in the row, so the text has to
   // survive a trailing separator the parsed array would drop.
@@ -54,25 +56,15 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSect
   }, [appSettings.cliPaths]);
 
   const handleDetectPaths = async () => {
-    setDetecting(true);
-    try {
-      // Looks again. Detection is cached in main for the app run (#144), so
-      // without `refresh` a CLI installed while Tars runs stays not found.
-      const rawPaths = await window.electronAPI?.cliPaths?.detect({ refresh: true });
-      const paths = rawPaths as DetectedPaths | undefined;
-      if (paths) {
-        setDetectedPaths(paths);
-        // Auto-fill empty fields with detected values
-        const updatedPaths = { ...localPaths };
-        for (const { key } of BINARIES) {
-          if (!updatedPaths[key] && paths[key]) updatedPaths[key] = paths[key];
-        }
-        setLocalPaths(updatedPaths);
-      }
-    } catch (error) {
-      console.error('Failed to detect paths:', error);
+    // Looks again. Detection is cached in main for the app run (#144), so
+    // without `refresh` a CLI installed while Tars runs stays not found.
+    const paths = await detectAgain();
+    // Auto-fill empty fields with detected values
+    const updatedPaths = { ...localPaths };
+    for (const { key } of BINARIES) {
+      if (!updatedPaths[key] && paths[key]) updatedPaths[key] = paths[key];
     }
-    setDetecting(false);
+    setLocalPaths(updatedPaths);
   };
 
   const handlePathChange = (key: BinaryKey, value: string) => {
@@ -122,8 +114,8 @@ export const CLIPathsSection = ({ appSettings, onSaveAppSettings }: CLIPathsSect
             label={label}
             description={
               resolved
-                ? <span className="font-mono">{resolved}</span>
-                : 'not detected on this machine'
+                ? <span data-cli-path className="font-mono">{tildePath(resolved)}</span>
+                : detectedPaths ? 'not found' : 'looking'
             }
             control={
               <Input

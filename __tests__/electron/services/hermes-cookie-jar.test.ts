@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { hasPosixModes } from '../../setup/platform-limits';
 
@@ -36,7 +37,8 @@ vi.mock('../../../electron/constants', async importOriginal => ({
   DATA_DIR: TMP_DATA_DIR,
 }));
 
-const SESSION_FILE = path.join(TMP_DATA_DIR, 'hermes-session.json');
+// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts), where the jar is read and written.
+const SESSION_FILE = path.join(os.homedir(), '.tars-private', 'hermes-session.json');
 
 /** Set-Cookie headers the server will answer with next, and what it received. */
 let nextSetCookies: string[] = [];
@@ -207,6 +209,7 @@ describe('cookie names that only mean something over https', () => {
 describe('a jar already on disk', () => {
   /** Put a jar on disk and boot the client fresh against it. */
   async function bootWith(contents: string): Promise<typeof import('../../../electron/services/hermes-client')> {
+    fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
     fs.writeFileSync(SESSION_FILE, contents);
     vi.resetModules();
     return import('../../../electron/services/hermes-client');
@@ -260,6 +263,7 @@ describe('a jar file that is not a jar', () => {
     ['jar of strings', '{"http://gw":"not-an-object"}'],
     ['deeply wrong values', '{"http://gw":{"a":{"b":1}}}'],
   ])('boots the client anyway when the file is %s', async (_label, contents) => {
+    fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
     fs.writeFileSync(SESSION_FILE, contents);
     vi.resetModules();
 

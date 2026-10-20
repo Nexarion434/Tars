@@ -7,34 +7,84 @@ import { codexKeyConfig, keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
 import { readAppSettingsFromDisk, shellQuote } from './cli-provider';
+import { CODEX_SESSION_ID, codexAccepts, codexEffortArgs, codexHome, codexPermissionArgs, readCodexFlags, readCodexModels } from './codex-cli';
+
+/**
+ * The models of a ChatGPT account as codex-cli 0.163.0 listed them on 2026-10-18, in its order: what Tars offers
+ * until codex has written its own list (models_cache.json), which it reads first. gpt-5-codex-mini, offered here
+ * before, is refused for a ChatGPT account.
+ */
+const CODEX_MODELS_FLOOR: ProviderModel[] = [
+  { id: 'gpt-6.1-sol', name: 'GPT-6.1-Sol', description: 'Latest workhorse model for coding and everyday work.' },
+  { id: 'gpt-6-astra', name: 'GPT-6-Astra', description: 'Frontier intelligence for the most demanding work.' },
+  { id: 'gpt-6-sol', name: 'GPT-6-Sol', description: 'Previous generation workhorse model.' },
+  { id: 'gpt-6-luna', name: 'GPT-6-Luna', description: 'Fast and affordable model for easier tasks.' },
+  { id: 'gpt-5.6-sol', name: 'GPT-5.6-Sol', description: 'Older generation workhorse model.' },
+  { id: 'gpt-5.6-terra', name: 'GPT-5.6-Terra', description: 'Older balanced model for straightforward work.' },
+  { id: 'gpt-5.6-luna', name: 'GPT-5.6-Luna', description: 'Older fast and efficient model.' },
+];
 
 export class CodexProvider implements CLIProvider {
   readonly id = 'codex' as const;
   readonly displayName = 'Codex CLI';
   readonly binaryName = 'codex';
-  readonly configDir = path.join(os.homedir(), '.codex');
+  readonly configDir = codexHome();
 
+  /** The account's models from codex's own list, else the floor above. */
   getModels(): ProviderModel[] {
-    return [
-      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Recommended' },
-      { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', description: 'Balanced' },
-      { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Previous gen' },
-      { id: 'gpt-5-codex-mini', name: 'GPT-5 Codex Mini', description: 'Fast & efficient' },
-    ];
+    const listed = readCodexModels(this.configDir);
+    return listed.length > 0 ? listed.map(({ id, name, description }) => ({ id, name, description })) : CODEX_MODELS_FLOOR;
+  }
+
+  /** What follows the binary in every builder: the model, then the effort as codex takes it (codex-cli.ts). */
+  private modelAndEffort(model: string | undefined, effort: string | undefined): string {
+    let args = '';
+    if (model) {
+      if (!/^[a-zA-Z0-9._:/-]+$/.test(model)) throw new Error('Invalid model name');
+      args += ` --model '${model}'`;
+    }
+    const efforts = codexEffortArgs(effort, model, effort ? readCodexModels(this.configDir) : []);
+    return efforts.length ? `${args} ${efforts.join(' ')}` : args;
   }
 
   resolveBinaryPath(appSettings: AppSettings): string {
     return appSettings.cliPaths?.codex || 'codex';
   }
 
+  /**
+   * The installed codex's flags, read off the main thread before a launch builds its line (codex-cli.ts): in auto
+   * only, the one mode whose flag depends on them.
+   */
+  async prepareLaunch(binaryPath: string, permissionMode?: string): Promise<void> {
+    if (permissionMode === 'auto') await readCodexFlags(binaryPath);
+  }
+
   buildInteractiveCommand(params: InteractiveCommandParams): string {
-    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
+    // The codex home Tars reads and writes, handed to the codex it starts (the
+    // Audit's L4 on #465): Tars trusts the folder and names its MCP servers'
+    // variables in that home's config.toml, and reads the sessions there, while
+    // a CODEX_HOME an rc file of the agent's shell sets sent codex elsewhere, to
+    // ask "Trust this folder?" for good. On macOS and Linux in the line, which no
+    // rc file runs after; on Windows, where the line's first word is the binary
+    // itself (platform/launch.ts) and nothing is sourced, in the terminal's
+    // environment (getPtyEnvVars).
+    let command = process.platform === 'win32' ? '' : `env CODEX_HOME=${shellQuote(this.configDir)} `;
+    command += `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
+
+    // A session to go on with (measured on 0.163): `codex resume <id>` continues
+    // it in its own rollout, with its conversation, and `codex fork <id>` under a
+    // new session, as a restart that applies new settings wants
+    // (agent-restart.ts). Every option after the subcommand, a key's included, so
+    // it applies to the session resumed (0.163 also takes codex's own before it);
+    // the session before the prompt. A session id and nothing else: it reaches a
+    // command line.
+    const session = params.resumeSessionId && CODEX_SESSION_ID.test(params.resumeSessionId) ? params.resumeSessionId : undefined;
+    if (session) command += params.forkSession ? ' fork' : ' resume';
 
     // A key from Settings: its interactive session reads none from its
     // environment (0.163), so a model provider of Tars's names CODEX_API_KEY,
@@ -43,18 +93,12 @@ export class CodexProvider implements CLIProvider {
       command += ` ${shellQuote(arg)}`;
     }
 
-    // Model
-    if (params.model) {
-      if (!/^[a-zA-Z0-9._:/-]+$/.test(params.model)) {
-        throw new Error('Invalid model name');
-      }
-      command += ` --model '${params.model}'`;
-    }
+    command += this.modelAndEffort(params.model, params.effort);
 
-    // Skip permissions (Codex uses --full-auto)
-    if (params.permissionMode === 'auto' || params.permissionMode === 'bypass') {
-      command += ' --full-auto';
-    }
+    // The mode in flags the installed codex has: 0.163 refuses --full-auto, and
+    // every agent in auto or bypass died at launch on it (codex-cli.ts).
+    const permission = codexPermissionArgs(params.permissionMode, codexAccepts(params.binaryPath));
+    if (permission.length) command += ` ${permission.join(' ')}`;
 
     // Secondary project
     if (params.secondaryProjectPath) {
@@ -79,6 +123,7 @@ export class CodexProvider implements CLIProvider {
       finalPrompt = `[IMPORTANT: Use these skills for this session: ${skillsList}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`;
     }
 
+    if (session) command += ` ${shellQuote(session)}`;
     if (finalPrompt) {
       const escaped = finalPrompt.replace(/'/g, "'\\''");
       command += ` '${escaped}'`;
@@ -87,33 +132,11 @@ export class CodexProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
-
-    if (params.autonomous) {
-      command += ' --full-auto';
-    }
-
-    if (params.outputFormat) {
-      command += ' --json';
-    }
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` exec '${escaped}'`;
-
-    return command;
-  }
 
   buildOneShotCommand(params: OneShotCommandParams): string {
-    let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
-
-    if (params.model) {
-      command += ` --model ${params.model}`;
-    }
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` exec '${escaped}'`;
-
+    let command = `${shellQuote(params.binaryPath)} exec`;
+    command += this.modelAndEffort(params.model, params.effort);
+    command += ` ${shellQuote(params.prompt)}`;
     return command;
   }
 
@@ -128,6 +151,8 @@ export class CodexProvider implements CLIProvider {
       CLAUDE_AGENT_ID: agentId,
       CLAUDE_PROJECT_PATH: projectPath,
       CLAUDE_PROVIDER: this.id,
+      // The home Tars reads and writes (buildInteractiveCommand says why).
+      CODEX_HOME: this.configDir,
       // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
       ...keyEnvFor('codex', appSettings),
     };
@@ -143,6 +168,8 @@ export class CodexProvider implements CLIProvider {
       supportsNativeHooks: false,
       configDir: this.configDir,
       settingsFile: path.join(this.configDir, 'config.toml'),
+      // Read from codex's own session log (services/codex-sessions.ts).
+      turnsReported: true,
     };
   }
 
@@ -152,7 +179,17 @@ export class CodexProvider implements CLIProvider {
     console.log('Codex CLI: hooks not supported, using exit-code based status detection');
   }
 
-  async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
+  async registerMcpServer(name: string, command: string, args: string[], envVars?: readonly string[]): Promise<void> {
+    // Names for codex to hand the server from its own environment (Tars's
+    // servers: the agent's token and id, services/mcp-orchestrator-env.ts).
+    // codex hands its servers nothing else (measured, codex 0.163), and
+    // `codex mcp add` has no way to say them: only --env, which would write the
+    // values themselves. So Tars writes that section itself.
+    if (envVars && envVars.length > 0) {
+      this.writeSection(name, command, args, envVars);
+      console.log(`[codex] Registered MCP server ${name} in config.toml, with the variables it reads`);
+      return;
+    }
     // Try codex mcp add first (proper CLI registration)
     try {
       // execFileSync passes argv as a structured array, so name/command/args are
@@ -173,6 +210,11 @@ export class CodexProvider implements CLIProvider {
       console.warn(`[codex] codex mcp add failed (${cliFailureText(err)}), writing config.toml instead`);
     }
 
+    this.writeSection(name, command, args);
+    console.log(`[codex] Registered MCP server ${name} in config.toml (fallback)`);
+  }
+
+  private writeSection(name: string, command: string, args: string[], envVars?: readonly string[]): void {
     const configPath = path.join(this.configDir, 'config.toml');
 
     if (!fs.existsSync(this.configDir)) {
@@ -194,11 +236,11 @@ export class CodexProvider implements CLIProvider {
     // quote or control character to escape.
     const sectionKey = this.escapeTomlKey(name);
     const argsToml = args.map(a => this.tomlString(a)).join(', ');
-    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n`;
+    const envToml = envVars && envVars.length > 0 ? `env_vars = [${envVars.map(v => this.tomlString(v)).join(', ')}]\n` : '';
+    const section = `\n[mcp_servers.${sectionKey}]\ncommand = ${this.tomlString(command)}\nargs = [${argsToml}]\n${envToml}`;
 
     content = content.trimEnd() + '\n' + section;
     fs.writeFileSync(configPath, content);
-    console.log(`[codex] Registered MCP server ${name} in config.toml (fallback)`);
   }
 
   async removeMcpServer(name: string): Promise<void> {
@@ -229,7 +271,7 @@ export class CodexProvider implements CLIProvider {
     }
   }
 
-  isMcpServerRegistered(name: string, expectedServerPath: string): boolean {
+  isMcpServerRegistered(name: string, expectedServerPath: string, envVars?: readonly string[]): boolean {
     const configPath = path.join(this.configDir, 'config.toml');
     if (!fs.existsSync(configPath)) return false;
     try {
@@ -238,7 +280,12 @@ export class CodexProvider implements CLIProvider {
       const headerRegex = new RegExp(`\\[mcp_servers\\.${sectionKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`);
       if (!headerRegex.test(content)) return false;
       // The path as written: escaped, so a Windows path reads back doubled.
-      return content.includes(expectedServerPath) || content.includes(this.tomlString(expectedServerPath).slice(1, -1));
+      if (!content.includes(expectedServerPath) && !content.includes(this.tomlString(expectedServerPath).slice(1, -1))) return false;
+      if (!envVars || envVars.length === 0) return true;
+      // A registration made before Tars named them (2.0.4) is made again.
+      const section = content.slice(content.search(headerRegex)).split(/\n(?=\[)/)[0];
+      const named = section.match(/^env_vars\s*=\s*\[(.*)\]\s*$/m)?.[1] ?? '';
+      return envVars.every(v => named.includes(this.tomlString(v)));
     } catch {
       return false;
     }
@@ -308,46 +355,5 @@ export class CodexProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--add-dir';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const flags = params.autonomous ? '--full-auto' : '';
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
-
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
-fi
-
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" ${flags} --json exec '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
-`;
   }
 }

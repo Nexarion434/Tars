@@ -19,7 +19,8 @@ import { moveTestHome } from '../setup/test-home';
  * 2. The file read with its line end: a token that names nobody.
  * 3. A terminal's token, in the environment, overridden by a file.
  * 4. A path to nothing taken for a token, or a crash of the server: it presents what a session started before
- *    tokens existed presents.
+ *    tokens existed presents. Since 2.0.4 (#466) that is no token at all: the shared ~/.tars/api-token, left
+ *    here as an older Tars wrote it, is in ~/.tars-private now, and no server reads it.
  *
  * The transports are replaced and nothing else: the port's proof (http.request) is answered as the Tars that started
  * the CLI answers it, and the call itself (fetch) is kept, so that these read the headers it would have sent. The
@@ -106,8 +107,8 @@ describe("a delegated run's MCP server", () => {
     expect(await presented()).toBe('Bearer the-token-minted-for-this-terminal');
   });
 
-  it('takes no path to nothing for a token, and presents what a session without one does', async () => {
+  it('takes no path to nothing for a token, and presents what a session without one does: none, the shared file left alone', async () => {
     process.env.CLAUDE_MGR_API_TOKEN_FILE = path.join(home, 'run', 'gone');
-    expect(await presented()).toBe('Bearer the-shared-token-from-the-file');
+    expect(await presented()).toBeUndefined();
   });
 });

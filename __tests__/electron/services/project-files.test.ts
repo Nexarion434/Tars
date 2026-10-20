@@ -93,14 +93,14 @@ describe('the project folder on disk', () => {
     expect(dir.startsWith(path.join(data, 'tmp'))).toBe(false);
   });
 
-  it('is made with tools, notes and reports, and making it again keeps what is there (9)', () => {
+  it('is made with tools and reports, and making it again keeps what is there (9; notes/ went in 2.0.4, vault-project-files.test.ts V5)', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'project-files-'));
     const dir = ensureProjectFiles(project).dir!;
     expect(dir).toBe(projectFilesDir(project));
-    for (const sub of ['tools', 'notes', 'reports']) expect(fs.statSync(path.join(dir, sub)).isDirectory()).toBe(true);
-    fs.writeFileSync(path.join(dir, 'notes', 'kept.md'), 'kept');
+    for (const sub of ['tools', 'reports']) expect(fs.statSync(path.join(dir, sub)).isDirectory()).toBe(true);
+    fs.writeFileSync(path.join(dir, 'reports', 'kept.md'), 'kept');
     expect(ensureProjectFiles(project).dir).toBe(dir);
-    expect(fs.readFileSync(path.join(dir, 'notes', 'kept.md'), 'utf8')).toBe('kept');
+    expect(fs.readFileSync(path.join(dir, 'reports', 'kept.md'), 'utf8')).toBe('kept');
     expect(ensureProjectFiles('relative/app')).toEqual({ dir: null, why: 'its path is not absolute' });
   });
 

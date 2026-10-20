@@ -6,7 +6,6 @@ import type { AppSettings } from '../types';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
@@ -116,33 +115,6 @@ export class ClaudeProvider implements CLIProvider {
     }
 
     command += promptOperand(finalPrompt);
-
-    return command;
-  }
-
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = shellQuote(params.binaryPath);
-
-    if (params.autonomous) {
-      command += ' --dangerously-skip-permissions';
-    }
-
-    if (params.outputFormat) {
-      command += ` --output-format ${params.outputFormat}`;
-    }
-
-    if (params.verbose) {
-      command += ' --verbose';
-    }
-
-    if (params.mcpConfigPath) {
-      command += ` --mcp-config ${shellQuote(params.mcpConfigPath)}`;
-    }
-
-    command += ` --add-dir ${shellQuote(DATA_DIR)}`;
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` -p '${escaped}'`;
 
     return command;
   }
@@ -400,47 +372,5 @@ export class ClaudeProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--add-dir';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const flags = params.autonomous ? '--dangerously-skip-permissions' : '';
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME=${shellQuote(params.homeDir)}
-
-if [ -s ${shellQuote(params.homeDir)}/.nvm/nvm.sh ]; then
-  source ${shellQuote(params.homeDir)}/.nvm/nvm.sh 2>/dev/null || true
-fi
-
-if [ -f ${shellQuote(params.homeDir)}/.bashrc ]; then
-  source ${shellQuote(params.homeDir)}/.bashrc 2>/dev/null || true
-elif [ -f ${shellQuote(params.homeDir)}/.bash_profile ]; then
-  source ${shellQuote(params.homeDir)}/.bash_profile 2>/dev/null || true
-elif [ -f ${shellQuote(params.homeDir)}/.zshrc ]; then
-  source ${shellQuote(params.homeDir)}/.zshrc 2>/dev/null || true
-fi
-
-export PATH=${shellQuote(params.binaryDir)}:"$PATH"
-cd ${shellQuote(params.projectPath)}
-echo "=== Task started at $(date) ===" >> ${shellQuote(params.logPath)}
-unset CLAUDECODE
-CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 ${shellQuote(params.binaryPath)} ${flags} --output-format stream-json --verbose --mcp-config ${shellQuote(params.mcpConfigPath)} --add-dir ${shellQuote(DATA_DIR)} -p ${shellQuote(promptWithSkills)} >> ${shellQuote(params.logPath)} 2>&1
-echo "=== Task completed at $(date) ===" >> ${shellQuote(params.logPath)}
-`;
   }
 }

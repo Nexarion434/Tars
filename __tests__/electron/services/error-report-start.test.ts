@@ -230,7 +230,8 @@ describe('main.ts', () => {
   });
 
   it('7. starts the reports before the app is ready, and tells them each time the settings are replaced', () => {
-    expect(main).toMatch(/startErrorReports\(\(\) => appSettings\.errorReportsEnabled === true\)/);
+    // 2.0.4 hands it main's onFatalError and what an agent tool error may name (error-report-start-coverage.test.ts).
+    expect(main).toMatch(/startErrorReports\(\(\) => appSettings\.errorReportsEnabled === true[,)]/);
     expect(main.indexOf('startErrorReports(')).toBeLessThan(main.indexOf('app.whenReady()'));
     const setters = main.match(/setAppSettings: \([^)]*\)[^\n]*=> \{[^}]*\}/g) ?? [];
     expect(setters.length).toBeGreaterThanOrEqual(2);

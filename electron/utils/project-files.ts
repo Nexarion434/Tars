@@ -6,8 +6,9 @@ import { pathKey } from '../platform/path-compare';
 
 /**
  * The folder Tars keeps for each project: ~/.tars/project-files/<key>, with
- * tools/, notes/ and reports/, where the project's agents keep the scripts,
- * notes and reports worth keeping. They kept them in temporary folders, which
+ * tools/ and reports/, where the project's agents keep the scripts and the
+ * reports worth keeping (notes/ went in 2.0.4: moveNotesOut). The Vault shows
+ * and edits them (services/vault-project-files.ts). They kept them in temporary folders, which
  * a session's end or a cleanup empties, or under ~/Documents, which iCloud
  * evicts (a read of an evicted file then blocks). Outside the repository, so
  * nothing there is committed by mistake; never deleted by Tars.
@@ -19,7 +20,7 @@ import { pathKey } from '../platform/path-compare';
  */
 
 export const PROJECT_FILES_DIR_NAME = 'project-files';
-export const PROJECT_FILES_SUBDIRS = ['tools', 'notes', 'reports'] as const;
+export const PROJECT_FILES_SUBDIRS = ['tools', 'reports'] as const;
 
 /** Names Windows keeps for devices, whatever follows them. */
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com\d|lpt\d)$/;
@@ -66,9 +67,47 @@ export function ensureProjectFiles(projectPath: string): ProjectFolder {
   if (!dir) return { dir: null, why: 'its path is not absolute' };
   try {
     for (const sub of PROJECT_FILES_SUBDIRS) fs.mkdirSync(path.join(dir, sub), { recursive: true });
+    moveNotesOut(dir);
     return { dir };
   } catch (err) {
     console.warn(`[project-files] ${dir} could not be made:`, (err as Error).message);
     return { dir: null, why: `${dir} could not be made: ${(err as Error).message}` };
+  }
+}
+
+/** Today as a file name takes it. */
+const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * notes/ goes (2.0.4, the maintainer's decision of 18/10: a project's folder
+ * holds reports/ and tools/): its files move, whole and as they are, into
+ * reports/notes, or reports/notes-<date> when that is taken. Nothing in it is
+ * deleted. An empty notes/ is removed; a notes/ that is a link is left alone.
+ * Returns where they went, or null when there was nothing to move.
+ */
+export function moveNotesOut(dir: string): { to: string } | { left: string } | null {
+  const notes = path.join(dir, 'notes');
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(notes);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return { left: `${notes} is not a folder: left as it is` };
+  try {
+    if (fs.readdirSync(notes).length === 0) {
+      fs.rmdirSync(notes);
+      return null;
+    }
+    const reports = path.join(dir, 'reports');
+    fs.mkdirSync(reports, { recursive: true });
+    let to = path.join(reports, 'notes');
+    for (let n = 1; fs.existsSync(to); n++) to = path.join(reports, n === 1 ? `notes-${today()}` : `notes-${today()}-${n}`);
+    fs.renameSync(notes, to);
+    console.log(`[project-files] ${notes} moved to ${to}: a project's folder keeps reports/ and tools/`);
+    return { to };
+  } catch (err) {
+    console.warn(`[project-files] ${notes} could not be moved, and stays: ${(err as Error).message}`);
+    return { left: `${notes} could not be moved: ${(err as Error).message}` };
   }
 }

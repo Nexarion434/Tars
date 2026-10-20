@@ -122,6 +122,21 @@ function blockedPlaces(home: string): string[] {
   ].map(name => path.join(home, name));
 }
 
+/**
+ * Whether `target` is in a folder of credentials (~/.ssh, ~/.gnupg, ~/.aws,
+ * ~/.config, ~/.kube, ~/.docker...) or is one, as spelled or where it really
+ * lies (`real`, its real path, when it has one): the window reads none of
+ * them, whatever names it as a project (the Audit's L1 on #466). ~/.claude,
+ * ~/.tars and ~/.tars-private, also blocked to a link, have rules of their
+ * own (window-file-access.ts).
+ */
+export function inCredentialPlace(target: string, real: string | null, deps: { home?: string } = {}): boolean {
+  const home = deps.home ?? os.homedir();
+  const own = new Set(['.claude', DATA_DIR_NAME, PRIVATE_DIR_NAME].map(name => path.join(home, name)));
+  return blockedPlaces(home).filter(place => !own.has(place)).some(place => [target, real].some(p => !!p
+    && (p === place || p.startsWith(place + path.sep) || isWithinDir(p, place))));
+}
+
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 
 /**

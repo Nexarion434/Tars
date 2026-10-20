@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, PasswordInput, Select, SegmentedControl, StatusBadge, StatusSquare } from '@/components/ui';
 import type { AnyTone } from '@/components/ui';
+import { SECRET_MASK } from '@/lib/secret-settings';
 import { SettingsRow } from './SettingsRow';
 import { HermesRelayRow } from './HermesRelayRow';
 import type { AppSettings, } from './types';
@@ -22,16 +23,8 @@ interface HermesSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
-}
-
-interface ConnectionInfo {
-  apiPort: number;
-  webhookPath: string;
-  webhookLocalUrl: string;
-  webhookTailnetUrl?: string;
-  apiToken: string;
-  tailscale: { installed: boolean; running: boolean; dnsName?: string; ip?: string; serveConfigured: boolean };
-  serveCommand: string;
+  /** Gateways, where each Hermes that hands Tars work has its addresses, its secret and its projects (PR 469). */
+  onOpenGateways: () => void;
 }
 
 const AUTH_MODES = [
@@ -57,11 +50,7 @@ export function gatewayStatus(
   return result.success ? { word: 'connected', tone: 'running' } : { word: 'unreachable', tone: 'error' };
 }
 
-export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionProps) => {
-  const [info, setInfo] = useState<ConnectionInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-
+export const HermesSection = ({ appSettings, onSaveAppSettings, onOpenGateways }: HermesSectionProps) => {
   const [conn, setConn] = useState<HermesConnection>({ mode: 'local', localPort: 9119, authMode: 'token' });
   const [savedConn, setSavedConn] = useState<string>('');
   const [desktopAvailable, setDesktopAvailable] = useState(false);
@@ -78,6 +67,10 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   // The last import came without the token Hermes Desktop keeps encrypted. Said
   // until something answers it: a sign-in, a token typed in, another import.
   const [tokenNotImported, setTokenNotImported] = useState(false);
+  // The form's token as main hands it: the mask when one is saved, never the
+  // token (#466). Replace empties the field; a save with nothing typed keeps it.
+  const [replacingToken, setReplacingToken] = useState(false);
+  const tokenSaved = conn.token === SECRET_MASK;
   const connDirty = JSON.stringify(conn) !== savedConn;
 
   /**
@@ -153,18 +146,14 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   async function handleSaveConn() {
     const r = await window.electronAPI?.hermes?.saveConnection(conn);
-    if (r?.success) setSavedConn(JSON.stringify(conn));
-    else setGatewayResult({ success: false, message: r?.error || 'Save failed' });
+    if (!r?.success) { setGatewayResult({ success: false, message: r?.error || 'Save failed' }); return; }
+    // Read back as main hands it: a token typed in comes back as the mask.
+    const saved = await window.electronAPI?.hermes?.getConnection();
+    const form = saved?.connection ?? conn;
+    setConn(form);
+    setSavedConn(JSON.stringify(form));
+    setReplacingToken(false);
   }
-
-  const refreshInfo = () => {
-    setLoading(true);
-    window.electronAPI?.hermes?.getConnectionInfo()
-      .then(i => setInfo(i))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(refreshInfo, []);
 
   /**
    * The one reading of the gateway, used by the mount probe and by Test, so
@@ -207,10 +196,6 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
 
   const handleTestGateway = () => probeGateway(conn);
 
-  const webhookUrl = info?.tailscale.serveConfigured && info.webhookTailnetUrl
-    ? info.webhookTailnetUrl
-    : info?.webhookTailnetUrl ?? info?.webhookLocalUrl ?? '';
-
   // The gateway URL is only typed in for remote and cloud; for local and SSH it
   // falls out of the port, so the row shows the address Tars will actually call.
   const derivedUrl = conn.mode === 'ssh'
@@ -219,18 +204,6 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
   const typedUrl = conn.mode === 'remote' || conn.mode === 'cloud';
 
   const { word: statusWord, tone: statusTone } = gatewayStatus(gatewayTesting, gatewayResult, needsSignIn);
-
-  // What Tailscale is doing decides whether a VPS can reach the webhook at all,
-  // so it stays - as the row's one muted line, not as a panel of prose.
-  const tailscaleLine = !info
-    ? 'reading the tailnet…'
-    : info.tailscale.serveConfigured
-      ? `tailscale serve active${info.tailscale.dnsName ? ` · ${info.tailscale.dnsName}` : ''}`
-      : info.tailscale.running
-        ? 'tailscale running · the API still only listens on localhost'
-        : info.tailscale.installed
-          ? 'tailscale installed but not running'
-          : 'no tailscale · a VPS cannot reach this machine';
 
   return (
     <>
@@ -352,7 +325,8 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
           description={
             (conn.authMode || 'token') === 'oauth'
               ? "The gateway's own sign-in. Use the row below."
-              : 'A static session token, sent as X-Hermes-Session-Token.'
+              // main keeps a saved token on the mask or an empty field, and nothing clears it (keepToken)
+              : 'A static session token, sent as X-Hermes-Session-Token. Switching to OAuth keeps it, unused.'
           }
           control={
             <div className="flex items-center gap-2 w-full justify-end">
@@ -367,14 +341,26 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
               {/* Only in token mode. Rendering it disabled under OAuth left a
                   dead field with a `show` affordance next to it, which read as
                   a broken button - OAuth has no static token to reveal. */}
-              {(conn.authMode || 'token') === 'token' && (
-                <PasswordInput
-                  className="min-w-0 flex-1"
-                  value={conn.token || ''}
-                  onChange={e => patchConn({ token: e.target.value })}
-                  placeholder="X-Hermes-Session-Token"
-                />
-              )}
+              {(conn.authMode || 'token') === 'token' && (tokenSaved && !replacingToken ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-[11.5px] text-success"><StatusSquare tone="running" />a token is set</span>
+                  <Button size="sm" className={ROW_ACTION} onClick={() => { setReplacingToken(true); patchConn({ token: '' }); }}>replace</Button>
+                </>
+              ) : (
+                <>
+                  <PasswordInput
+                    className="min-w-0 flex-1"
+                    aria-label="Hermes session token"
+                    autoComplete="off"
+                    value={conn.token === SECRET_MASK ? '' : conn.token || ''}
+                    onChange={e => patchConn({ token: e.target.value })}
+                    placeholder="Paste a token"
+                  />
+                  {replacingToken && (
+                    <Button size="sm" className={ROW_ACTION} onClick={() => { setReplacingToken(false); patchConn({ token: SECRET_MASK }); }}>cancel</Button>
+                  )}
+                </>
+              ))}
             </div>
           }
         />
@@ -458,36 +444,12 @@ export const HermesSection = ({ appSettings, onSaveAppSettings }: HermesSectionP
         }
       />
 
+      {/* Each Hermes's address, secret and projects moved to Gateways (PR 469's window): this row points there. */}
       <SettingsRow
-        label="Incoming webhook"
-        description={tailscaleLine}
-        control={
-          <div className="flex items-center gap-2 w-full">
-            <Input
-              mono
-              readOnly
-              className="min-w-0 flex-1"
-              value={webhookUrl}
-              placeholder={loading ? 'detecting…' : 'unavailable'}
-              onFocus={e => e.currentTarget.select()}
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              className={ROW_ACTION}
-              disabled={!info}
-              title="Copy the bearer token Hermes must send in the Authorization header"
-              onClick={() => {
-                if (!info) return;
-                navigator.clipboard.writeText(info.apiToken);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }}
-            >
-              {copied ? 'copied' : 'copy secret'}
-            </Button>
-          </div>
-        }
+        label="Incoming webhooks"
+        description="Each Hermes that hands Tars work has its own address, secret and projects, set in Gateways."
+        wrap
+        control={<Button size="sm" className={ROW_ACTION} onClick={onOpenGateways}>open gateways</Button>}
       />
 
       {/* Telegram through Hermes, after the webhook as the frame draws it. */}

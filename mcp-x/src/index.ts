@@ -3,8 +3,8 @@
  * MCP server for posting tweets via X API v2 (OAuth 1.0a)
  * Available to all Claude agents for publishing content on X/Twitter.
  *
- * Credentials are read from ~/.tars/app-settings.json:
- *   xApiKey, xApiSecret, xAccessToken, xAccessTokenSecret
+ * Tars makes the calls with the account's credentials, which it keeps in
+ * ~/.tars-private (utils/api.ts).
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

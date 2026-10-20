@@ -3,14 +3,43 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
 import { keyEnvFor } from '../services/cli-keys';
+import { DATA_DIR } from '../constants';
+import { piSessionDir } from '../services/pi-sessions';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
+import { updateSharedJsonSync } from '../utils/shared-file';
+
+/**
+ * Where pi reads its MCP servers (`@earendil-works/pi-coding-agent` 1.3.0,
+ * docs/mcp.md and docs/configuration.md, read on 19/10): `mcp.json` of its
+ * agent folder, `$PI_CODING_AGENT_DIR` or `~/.pi/agent`, under `mcpServers`,
+ * each started with pi's whole environment (pi-mcp 1.3.0, transports/stdio.js),
+ * the agent's token in it. `@mariozechner/pi-coding-agent`, its former name,
+ * has no MCP at all.
+ */
+function mcpConfigFile(): string {
+  return path.join(process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'mcp.json');
+}
+
+/** Where Tars wrote them until 2.0.4, which pi never reads. */
+const legacyMcpFile = (): string => path.join(os.homedir(), '.pi', 'config.json');
+
+type McpServersFile = { mcpServers?: Record<string, unknown>; [key: string]: unknown };
+
+/** The server out of `file`'s `mcpServers`, the rest of the file left as it is. */
+function dropServer(file: string, name: string): void {
+  updateSharedJsonSync<McpServersFile>(file, current => {
+    const servers = current?.mcpServers;
+    if (!servers || typeof servers !== 'object' || !(name in servers)) return undefined;
+    delete servers[name];
+    return current;
+  });
+}
 
 export class PiProvider implements CLIProvider {
   readonly id = 'pi' as const;
@@ -57,22 +86,6 @@ export class PiProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
-
-    // Pi uses -p for print mode (non-interactive)
-    command += ' -p';
-
-    if (params.outputFormat) {
-      command += ' --mode json';
-    }
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` '${escaped}'`;
-
-    return command;
-  }
-
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
@@ -101,6 +114,9 @@ export class PiProvider implements CLIProvider {
       CLAUDE_PROVIDER: this.id,
       // Its API key from Settings, under the variable it reads (services/cli-keys.ts).
       ...keyEnvFor('pi', appSettings),
+      // Its sessions in a folder of its own, which pi ranks above its own setting:
+      // every file there is this agent's, read for its turns (services/pi-sessions.ts).
+      PI_CODING_AGENT_SESSION_DIR: piSessionDir(DATA_DIR, agentId),
     };
   }
 
@@ -111,6 +127,8 @@ export class PiProvider implements CLIProvider {
   getHookConfig(): HookConfig {
     return {
       supportsNativeHooks: false,
+      // Its turns are read from its session file and posted as the hooks would (services/pi-sessions.ts).
+      turnsReported: true,
       configDir: this.configDir,
       settingsFile: path.join(this.configDir, 'config.json'),
     };
@@ -126,57 +144,33 @@ export class PiProvider implements CLIProvider {
   }
 
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
-    // Pi doesn't have built-in MCP support; it uses extensions instead.
-    // We can try writing to a config file if Pi supports it in the future.
-    const configPath = path.join(this.configDir, 'config.json');
-
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-
-    let config: Record<string, unknown> = {};
-    if (fs.existsSync(configPath)) {
-      try {
-        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-      config.mcpServers = {};
-    }
-
-    (config.mcpServers as Record<string, unknown>)[name] = { command, args };
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    console.log(`[pi] Registered MCP server ${name} in config.json`);
+    const file = mcpConfigFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const outcome = updateSharedJsonSync<McpServersFile>(file, current => {
+      const config: McpServersFile = current ?? {};
+      const servers = config.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers : {};
+      config.mcpServers = { ...servers, [name]: { command, args } };
+      return config;
+    }, { createMode: 0o644 });
+    if (outcome === 'unreadable') console.warn(`[pi] MCP server ${name} not registered: ${file} is not JSON, left untouched`);
+    else if (outcome === 'busy') console.warn(`[pi] MCP server ${name} not registered: ${file} changed under every attempt, tried again at the next start`);
+    else console.log(`[pi] Registered MCP server ${name} in ${file}`);
+    dropServer(legacyMcpFile(), name);
   }
 
   async removeMcpServer(name: string): Promise<void> {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return;
-
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (config.mcpServers && typeof config.mcpServers === 'object') {
-        delete config.mcpServers[name];
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-        console.log(`[pi] Removed MCP server ${name} from config.json`);
-      }
-    } catch {
-      // Ignore errors
-    }
+    dropServer(mcpConfigFile(), name);
+    dropServer(legacyMcpFile(), name);
   }
 
   isMcpServerRegistered(name: string, expectedServerPath: string): boolean {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return false;
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (!config.mcpServers?.[name]) return false;
+      const config = JSON.parse(fs.readFileSync(mcpConfigFile(), 'utf-8')) as McpServersFile;
+      const server = config.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers[name] : undefined;
+      if (!server) return false;
       // The path as JSON writes it too: a Windows path has every backslash
       // doubled there, never matched, and was registered again at every launch.
-      const entry = JSON.stringify(config.mcpServers[name]);
+      const entry = JSON.stringify(server);
       return entry.includes(expectedServerPath) || entry.includes(JSON.stringify(expectedServerPath).slice(1, -1));
     } catch {
       return false;
@@ -217,45 +211,5 @@ export class PiProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
-
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
-fi
-
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" -p '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
-`;
   }
 }

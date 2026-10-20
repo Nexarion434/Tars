@@ -178,15 +178,14 @@ export async function tarsProvesInstance(env = process.env) {
 /**
  * tars-hook.sh, TARS_READ_TOKEN: the token the bootstrap and memory calls
  * present. The CLI's own once the port proved it is this CLI's Tars
- * (`proven`, tarsProvesInstance); ~/.tars/api-token when Tars did not
- * start this CLI and gave it none; nothing otherwise, the shared file neither:
- * a squatter on the port would get it instead (the Audit's Info on #355).
+ * (`proven`, tarsProvesInstance); nothing otherwise: a squatter on the port
+ * would get it (the Audit's Info on #355). A CLI Tars did not start reads with
+ * none and Tars answers 401: the shared ~/.dorothy/api-token it used until
+ * 2.0.4 is in ~/.tars-private, which nothing an agent runs reads.
  */
 export function tokenForReads(env = process.env, proven = false) {
   const own = env.CLAUDE_MGR_API_TOKEN || '';
-  if (own) return proven ? own : '';
-  const file = path.join(dataDir(), 'api-token');
-  return isFile(file) ? catFile(file) : '';
+  return own && proven ? own : '';
 }
 
 /**

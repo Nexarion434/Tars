@@ -71,7 +71,7 @@ test('Settings shows the Claude account Claude Code answers now, after a sign-in
     await expect.poll(() => statusRuns(log), { timeout: 30_000, message: 'the first list asked Claude Code' }).toBeGreaterThanOrEqual(1);
     values.runsAtLoad = statusRuns(log);
     await page.getByText('AI & Providers', { exact: true }).click();
-    await page.getByText('Claude accounts', { exact: true }).click();
+    await page.getByTestId('settings-nav').getByText('Claude accounts', { exact: true }).click();
     await stepShot(page, '1-off');
 
     // Three minutes into the run, a login in a terminal: Claude Code is now signed in with another account.

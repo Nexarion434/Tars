@@ -3,6 +3,7 @@ import { mount, settle, ofType, textOf, deferred, type Mount } from './hook-runt
 import { DiscordSection } from '../../src/components/Settings/DiscordSection';
 import { SettingsRow } from '../../src/components/Settings/SettingsRow';
 import type { AppSettings } from '../../src/components/Settings/types';
+import { SECRET_MASK } from '../../src/lib/secret-settings';
 
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
@@ -31,12 +32,14 @@ vi.mock('react', async (importOriginal) => ({
  *    if the field were empty (the Audit's gate of #206), or the opposite: an
  *    empty field, a call that failed or no answer yet is said to hold no bot
  *    id, which nobody has found out.
+ * Since 2.0.4 (the window's side of #466) the page holds no token: it asks for
+ * the link of the token Tars keeps, by the mask main takes for it, while
+ * `secretsSet` says one is set, and for none otherwise. "The token in the
+ * field" above is now that token: set, cleared, or set again.
  */
 
 type El = { type: unknown; props: Record<string, unknown> };
 const g = globalThis as unknown as { window?: unknown; navigator?: unknown };
-const TOKEN_A = 'MTE4NzM0MjE1NTYyODExODA2Nw.GhXyZa.first-token-secret';
-const TOKEN_B = 'MjgzNzQ2NTEwMjkzODQ3NTYx.GhXyZa.second-token-secret';
 const LINK_A = 'https://discord.com/oauth2/authorize?client_id=1187342155628118067&scope=bot&permissions=3072';
 const LINK_B = 'https://discord.com/oauth2/authorize?client_id=283746510293847561&scope=bot&permissions=3072';
 const READY = 'Adds the bot to a server of yours, allowed to see channels and send messages, in channels, threads and direct messages.';
@@ -62,19 +65,19 @@ afterEach(() => {
   else delete g.navigator;
 });
 
-/** The section on a token, with main's inviteUrl answered by `answer`. */
-function section(answer?: (token: string) => Promise<string | null>) {
+/** The section on the token Tars keeps (`set`) or none, with main's inviteUrl answered by `answer`. */
+function section(answer?: (token: string) => Promise<string | null>, set = true) {
   const asked: string[] = [];
   g.window = answer
     ? { electronAPI: { discord: { inviteUrl: (token: string) => { asked.push(token); return answer(token); } } } }
     : {};
-  const settings = { discordEnabled: true, discordBotToken: TOKEN_A } as unknown as AppSettings;
-  page = mount(() => DiscordSection({ appSettings: settings, onSaveAppSettings: () => {}, onUpdateLocalSettings: () => {} }));
+  const settings = { discordEnabled: true, discordBotToken: set ? SECRET_MASK : '', secretsSet: { discordBotToken: set } } as unknown as AppSettings;
+  page = mount(() => DiscordSection({ appSettings: settings, onSaveAppSettings: () => {}, onUpdateLocalSettings: () => {}, onSecretChanged: () => {} }));
   const row = () => (ofType(page!.result, SettingsRow) as unknown as El[]).find(el => el.props.label === 'Invite')!;
   const button = () => row().props.control as El;
   return {
     asked,
-    retype: (token: string) => { settings.discordBotToken = token; page!.rerender(); },
+    setToken: (on: boolean) => { settings.secretsSet = { discordBotToken: on }; page!.rerender(); },
     said: () => textOf(row().props.description as never),
     disabled: () => button().props.disabled as boolean,
     copy: async () => { (button().props.onClick as () => Promise<void>)(); await settle(); },
@@ -82,33 +85,38 @@ function section(answer?: (token: string) => Promise<string | null>) {
 }
 
 describe("the invite link is main's (#200)", () => {
-  it('copies exactly what main answered for the token in the field (1)', async () => {
-    const s = section(async token => (token === TOKEN_A ? LINK_A : null));
+  it('copies exactly what main answered for the token Tars keeps (1)', async () => {
+    const s = section(async token => (token === SECRET_MASK ? LINK_A : null));
     await settle();
-    expect(s.asked).toEqual([TOKEN_A]);
+    expect(s.asked).toEqual([SECRET_MASK]);
     expect(s.disabled()).toBe(false);
     expect(s.said()).toBe(READY);
     await s.copy();
     expect(copied).toEqual([LINK_A]);
   });
 
-  it('never shows or copies an answer for a token that is no longer in the field (2)', async () => {
+  it('never shows or copies an answer for a token since cleared, and asks again once one is set (2)', async () => {
     const late = deferred<string | null>();
-    const s = section(token => (token === TOKEN_A ? late.promise : Promise.resolve(LINK_B)));
-    s.retype(TOKEN_B);
+    let calls = 0;
+    const s = section(token => (token === SECRET_MASK ? (calls++ === 0 ? late.promise : Promise.resolve(LINK_B)) : Promise.resolve(null)));
+    s.setToken(false);
     await settle();
     late.resolve(LINK_A);
     await settle();
-    expect(s.asked).toEqual([TOKEN_A, TOKEN_B]);
+    expect(s.disabled()).toBe(true);
+    expect(s.said()).toBe(WAITING);
+    s.setToken(true);
+    await settle();
+    expect(s.asked).toEqual([SECRET_MASK, '', SECRET_MASK]);
     await s.copy();
     expect(copied).toEqual([LINK_B]);
   });
 
-  it('offers no link before main has answered for the token being typed (2, 3)', async () => {
+  it('offers no link before main has answered for a token just set (2, 3)', async () => {
     const pending = deferred<string | null>();
-    const s = section(token => (token === TOKEN_A ? Promise.resolve(LINK_A) : pending.promise));
+    const s = section(token => (token === SECRET_MASK ? pending.promise : Promise.resolve(null)), false);
     await settle();
-    s.retype(TOKEN_B);
+    s.setToken(true);
     expect(s.disabled()).toBe(true);
     expect(s.said()).toBe(WAITING);
     await s.copy();
@@ -127,20 +135,24 @@ describe("the invite link is main's (#200)", () => {
     expect(copied).toEqual([]);
   });
 
-  it('asks for the token when the field is blank, whatever main answers for it (5)', async () => {
-    const s = section(async () => null);
-    s.retype('   ');
+  it('asks for the token when none is set, whatever main answers (5)', async () => {
+    const s = section(async () => null, false);
     await settle();
+    expect(s.asked).toEqual(['']);
     expect(s.disabled()).toBe(true);
     expect(s.said()).toBe(WAITING);
   });
 
   it('says a token holds no bot id only once main has answered for that token (5)', async () => {
     const pending = deferred<string | null>();
-    const s = section(token => (token === TOKEN_A ? Promise.resolve(null) : pending.promise));
+    let calls = 0;
+    const s = section(token => (token === SECRET_MASK ? (calls++ === 0 ? Promise.resolve(null) : pending.promise) : Promise.resolve(null)));
     await settle();
     expect(s.said()).toBe(NO_BOT_ID);
-    s.retype(TOKEN_B);
+    s.setToken(false);
+    await settle();
+    expect(s.said()).toBe(WAITING);
+    s.setToken(true);
     expect(s.said()).toBe(WAITING);
     pending.resolve(null);
     await settle();

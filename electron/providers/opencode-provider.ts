@@ -6,12 +6,40 @@ import { keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
 } from './cli-provider';
 import { safeEffort } from './cli-provider';
+import { updateSharedJsonSync } from '../utils/shared-file';
+
+/**
+ * Where opencode reads its MCP servers (opencode 1.19.3, read in its compiled
+ * bundle on 19/10): `opencode.json` of its config folder,
+ * `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`, the file its own
+ * `opencode mcp add` writes; it merges `config.json` and `opencode.jsonc` there
+ * too. Each server is `mcp.<name>`, and a local one is started with opencode's
+ * whole environment, the agent's token in it.
+ */
+function mcpConfigFile(): string {
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode', 'opencode.json');
+}
+
+/** Where Tars wrote them until 2.0.4, which opencode never reads. */
+const legacyMcpFile = (): string => path.join(os.homedir(), '.opencode', 'config.json');
+
+type OpencodeConfig = { mcp?: Record<string, unknown>; [key: string]: unknown };
+type LegacyConfig = { mcpServers?: Record<string, unknown>; [key: string]: unknown };
+
+/** A server Tars wrote in the old place: taken out, the rest of that file left as it is. */
+function dropLegacy(name: string): void {
+  updateSharedJsonSync<LegacyConfig>(legacyMcpFile(), current => {
+    const servers = current?.mcpServers;
+    if (!servers || typeof servers !== 'object' || !(name in servers)) return undefined;
+    delete servers[name];
+    return current;
+  });
+}
 
 export class OpenCodeProvider implements CLIProvider {
   readonly id = 'opencode' as const;
@@ -76,15 +104,6 @@ export class OpenCodeProvider implements CLIProvider {
     return command;
   }
 
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = `"${params.binaryPath}"`;
-
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` run '${escaped}'`;
-
-    return command;
-  }
-
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
@@ -131,57 +150,35 @@ export class OpenCodeProvider implements CLIProvider {
   }
 
   async registerMcpServer(name: string, command: string, args: string[]): Promise<void> {
-    const configPath = path.join(this.configDir, 'config.json');
-
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-
-    let config: Record<string, unknown> = {};
-    if (fs.existsSync(configPath)) {
-      try {
-        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      } catch {
-        config = {};
-      }
-    }
-
-    if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-      config.mcpServers = {};
-    }
-
-    (config.mcpServers as Record<string, unknown>)[name] = {
-      command,
-      args,
-    };
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    console.log(`[opencode] Registered MCP server ${name} in config.json`);
+    const file = mcpConfigFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const outcome = updateSharedJsonSync<OpencodeConfig>(file, current => {
+      const config: OpencodeConfig = current ?? { $schema: 'https://opencode.ai/config.json' };
+      const servers = config.mcp && typeof config.mcp === 'object' ? config.mcp : {};
+      config.mcp = { ...servers, [name]: { type: 'local', command: [command, ...args], enabled: true } };
+      return config;
+    }, { createMode: 0o644 });
+    // A file Tars cannot read (opencode takes JSONC, comments and all) is the user's, and left as it is.
+    if (outcome === 'unreadable') console.warn(`[opencode] MCP server ${name} not registered: ${file} is not plain JSON, left untouched`);
+    else if (outcome === 'busy') console.warn(`[opencode] MCP server ${name} not registered: ${file} changed under every attempt, tried again at the next start`);
+    else console.log(`[opencode] Registered MCP server ${name} in ${file}`);
+    dropLegacy(name);
   }
 
   async removeMcpServer(name: string): Promise<void> {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return;
-
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (config.mcpServers && typeof config.mcpServers === 'object') {
-        delete config.mcpServers[name];
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-        console.log(`[opencode] Removed MCP server ${name} from config.json`);
-      }
-    } catch {
-      // Ignore
-    }
+    updateSharedJsonSync<OpencodeConfig>(mcpConfigFile(), current => {
+      const servers = current?.mcp;
+      if (!servers || typeof servers !== 'object' || !(name in servers)) return undefined;
+      delete servers[name];
+      return current;
+    });
+    dropLegacy(name);
   }
 
   isMcpServerRegistered(name: string, expectedServerPath: string): boolean {
-    const configPath = path.join(this.configDir, 'config.json');
-    if (!fs.existsSync(configPath)) return false;
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (!config.mcpServers || typeof config.mcpServers !== 'object') return false;
-      const server = config.mcpServers[name];
+      const config = JSON.parse(fs.readFileSync(mcpConfigFile(), 'utf-8')) as OpencodeConfig;
+      const server = config.mcp && typeof config.mcp === 'object' ? config.mcp[name] : undefined;
       if (!server) return false;
       // The path as JSON writes it too: a Windows path has every backslash
       // doubled there, never matched, and was registered again at every launch.
@@ -229,45 +226,5 @@ export class OpenCodeProvider implements CLIProvider {
 
   getAddDirFlag(): string {
     return '--cwd';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    skills?: string[];
-  }): string {
-    const promptWithSkills = (params.skills && params.skills.length > 0)
-      ? `[IMPORTANT: Use these skills for this session: ${params.skills.join(', ')}. Invoke them with /<skill-name> when relevant to the task.] ${params.prompt}`
-      : params.prompt;
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME="${params.homeDir}"
-
-if [ -s "${params.homeDir}/.nvm/nvm.sh" ]; then
-  source "${params.homeDir}/.nvm/nvm.sh" 2>/dev/null || true
-fi
-
-if [ -f "${params.homeDir}/.bashrc" ]; then
-  source "${params.homeDir}/.bashrc" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.bash_profile" ]; then
-  source "${params.homeDir}/.bash_profile" 2>/dev/null || true
-elif [ -f "${params.homeDir}/.zshrc" ]; then
-  source "${params.homeDir}/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="${params.binaryDir}:$PATH"
-cd "${params.projectPath}"
-echo "=== Task started at $(date) ===" >> "${params.logPath}"
-"${params.binaryPath}" run '${promptWithSkills}' >> "${params.logPath}" 2>&1
-echo "=== Task completed at $(date) ===" >> "${params.logPath}"
-`;
   }
 }

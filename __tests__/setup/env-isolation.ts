@@ -45,8 +45,12 @@ import { afterAll } from 'vitest';
  *  OR_         OR_SITE_URL, OR_APP_NAME, OpenRouter's attribution headers
  *  DISABLE_    DISABLE_AUTOUPDATER, and DISABLE_UPDATES which Tars deliberately
  *              never sets and has a test saying so
+ *  TARS_       TARS_CLAUDE_ACCOUNT, TARS_CHATS_READ, TARS_INSTANCE_ID: what Tars
+ *              puts in its agents' terminals, where QA and every agent run the
+ *              suite (acp-account-env.test.ts read TARS_CLAUDE_ACCOUNT=default
+ *              there, 2026-10-19); the suite's own opt-ins are kept below
  */
-const PRODUCT_PREFIXES = ['CLAUDE', 'ANTHROPIC_', 'DOROTHY_', 'AMP_', 'OR_', 'DISABLE_'];
+const PRODUCT_PREFIXES = ['CLAUDE', 'ANTHROPIC_', 'DOROTHY_', 'AMP_', 'OR_', 'DISABLE_', 'TARS_'];
 
 /**
  * Kept on purpose, with the reason, because each one breaks something real.
@@ -78,6 +82,11 @@ const KEPT: Record<string, string> = {
   // toolchain reads it; removing it would change what is under test rather
   // than isolate it.
   NODE_ENV: 'vitest owns it, and the product branches on it deliberately',
+  // The suite's own opt-ins, set by whoever runs it, in the TARS_ namespace swept above.
+  TARS_STRESS: 'the opt-in for the measurements on the real disk',
+  TARS_REAL_CLAUDE: 'the opt-in, or the path, for the tests that start a real claude',
+  TARS_HERMES_TREE: 'with TARS_HERMES_PYTHON, where the live Hermes kanban test finds a Hermes checkout',
+  TARS_HERMES_PYTHON: 'with TARS_HERMES_TREE, the python the live Hermes kanban test runs it with',
 };
 
 const removed: Record<string, string> = {};

@@ -1,10 +1,9 @@
 import { BrowserWindow, protocol, app, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { getAppBasePath } from '../utils';
-import { DATA_DIR, MIME_TYPES, dataPath } from '../constants';
-import { landsUnderSafeRoot } from '../utils/real-target';
+import { MIME_TYPES } from '../constants';
+import { localFileServes } from '../utils/window-file-access';
 import { titleBarOptions } from '../platform/desktop-shell';
 import { installEditContextMenu } from './edit-context-menu';
 
@@ -263,33 +262,6 @@ function isUnder(root: string, candidate: string): boolean {
   return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
 }
 
-/**
- * Roots local-file:// may read from: the user's own project and app data.
- * None that is the home or above it, and judged where the file really lies: a
- * project added as `~`, or a link under ~/.tars or in a project, made any
- * file of the home a local-file:// URL (utils/real-target.ts).
- */
-function isUnderAllowedRoot(filePath: string): boolean {
-  const roots = [
-    DATA_DIR,
-    path.join(os.homedir(), '.claude'),
-    ...listKnownProjectRoots(),
-  ];
-  return landsUnderSafeRoot(filePath, roots, isUnder);
-}
-
-/** Project folders the user added, read fresh so a new project works at once. */
-function listKnownProjectRoots(): string[] {
-  try {
-    const file = dataPath('projects.json');
-    if (!fs.existsSync(file)) return [];
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 export function setupProtocolHandler() {
   // Serve local files via local-file:// protocol (for vault image previews etc.)
   // URLs are encoded as: local-file://host/path where host is empty
@@ -300,10 +272,12 @@ export function setupProtocolHandler() {
       const url = new URL(request.url);
       const filePath = path.resolve(decodeURIComponent(url.pathname));
 
-      // Confined to the directories the app actually shows files from.
-      // Unrestricted, this served ~/.ssh/id_rsa and ~/.aws/credentials to
-      // anything that could put a URL in the renderer.
-      if (!isUnderAllowedRoot(filePath)) {
+      // Confined to what a page may show: the vault's attachments, the
+      // project-files folders, Claude Code's memory folders, never a secret
+      // (utils/window-file-access.ts). Unrestricted, this served ~/.ssh/id_rsa
+      // to anything that could put a URL in the renderer; until 2.0.4, all of
+      // ~/.tars and ~/.claude, every key app-settings.json held included.
+      if (!localFileServes(filePath)) {
         console.error('local-file:// refused, outside the allowed roots:', filePath);
         return new Response('Forbidden', { status: 403 });
       }

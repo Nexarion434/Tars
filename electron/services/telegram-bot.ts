@@ -1,4 +1,4 @@
-import { withoutCliKeys } from './cli-keys';
+import { settingsForWindow } from './settings-secrets';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
@@ -764,7 +764,7 @@ export function initTelegramBot() {
           // Also update legacy field for backwards compatibility
           live.telegramChatId = chatId;
           saveAppSettings(live);
-          mainWindow?.webContents.send('settings:updated', withoutCliKeys(live));
+          mainWindow?.webContents.send('settings:updated', settingsForWindow(live));
         }
 
         telegramBot?.sendMessage(chatId,

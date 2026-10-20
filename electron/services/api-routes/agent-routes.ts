@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../../core/end-of-turn';
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
 import { dropPermissionAsks } from '../permission-asks';
@@ -6,9 +7,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
+import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
+import { hasEndOfTurn } from '../../core/end-of-turn';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
 import { clearStop, noteRestartAfterStop, stopAgent, stopReasonOf } from '../../core/agent-stop';
 import { diskRefusal, freeSpace } from '../../core/disk-space';
@@ -21,10 +23,11 @@ import { planModeRefusal } from '../../providers/plan-mode';
 // refused is only what could not start, on the platform Tars runs on (2.0.2).
 import { cliPathProblem } from '../../platform/cli-path';
 import { skillsProblem } from '../../utils/skill-name';
+import { handedFolderProblem } from '../../utils/handed-folder';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
-import { AgentStatus, AgentCharacter, AgentRole } from '../../types';
+import { AgentStatus, AgentCharacter, AgentRole, AgentProvider, AgentEffort, AgentPermissionMode } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
@@ -32,10 +35,10 @@ import { agentGuideSection, guideForPrompt, guideIndex, guideTopic } from '../ag
 import { ensureProjectFiles } from '../../utils/project-files';
 import { app } from 'electron';
 import { usableHermesConnection } from '../hermes-config';
-import { consumeResumeSessionId } from '../../utils/resume-session';
+import { consumeResumeSessionId, newConversationOnNextStart, nextStartResumes } from '../../utils/resume-session';
 import { getTasmaniaStatus } from '../tasmania-client';
 import { emitAgentStatus } from '../agent-events';
-import { liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
+import { handOffFrom, liveTaskLedger, noteHandOff, watchTurns, type TaskWithResult } from '../task-ledger';
 import { readTaskCosts } from '../task-cost';
 import { readFinalAnswer } from '../terminal-answer';
 import { typeLaunchTask } from '../../core/typed-task';
@@ -43,14 +46,16 @@ import { accountDir } from '../claude-accounts/registry';
 import { announceTask, firstLineOf } from '../task-banner';
 import { taskOfPrompt, enqueueRequest, requestDelivered, requestDropped, requestStartsSession, requestGivenUp, endWorkerRequests, mayInterrupt, mayRestart, cutWorkOf } from '../../core/task-requests';
 import { clientRequestIdOf, liveReceipts, payloadHash, type ReceiptOutcome } from '../request-receipts';
-import { levelOf, modeGapMark } from '../../core/permission-ceiling';
+import { isPermissionLevel, levelOf, modeGapMark, raises, type PermissionLevel } from '../../core/permission-ceiling';
 import { canInterrupt } from '../bus-store';
 import { interruptTurn } from '../bus-delivery';
 import { broadcastToAllWindows } from '../../utils/broadcast';
 import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
-import { noteLaunch, launchSettings, restartForSettings, forgetRestart } from '../../core/agent-restart';
+import { turnInterruptedAt } from '../task-watch';
+import { noteLaunch, launchSettings, restartForSettings, forgetRestart, type RestartOutcome, type RestartWait } from '../../core/agent-restart';
+import { cliAtWork, updateAgent, type AgentUpdate } from '../../core/agent-update';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
@@ -72,7 +77,8 @@ function orchestratorInstructionsFile(isOrchestrator: boolean | undefined): stri
 
 type SpawnOpts = {
   model?: string;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  /** The session's mode: the agent's own, or narrower (modeRefusal). */
+  permissionMode?: PermissionLevel;
   printMode?: boolean;
   /** Who starts it: noted when the start undoes a stop (core/agent-stop.ts). */
   by?: string;
@@ -80,6 +86,13 @@ type SpawnOpts = {
   wokenBy?: { by: string; via: AgentWakeVia };
   /** The request this prompt runs (core/task-requests.ts): delivered as the session starts. */
   taskRef?: string;
+  /**
+   * Who sent the prompt, when it is a dispatch: its task is that sender's when
+   * no request names its asker. An asker the agent once handed work to queues
+   * none (requestFor), and its task, starting the session, was filed as Tars's
+   * or under the agent's own requester (the Audit's M1 on #470).
+   */
+  sender?: MessageSender;
 };
 
 /**
@@ -133,6 +146,24 @@ function announceAgent(agent: AgentStatus): void {
   scheduleTick();
 }
 
+/**
+ * A mode asked for an agent's session that it may not have: none of Tars's (400), or wider than the agent's own
+ * (403). A session runs at its agent's mode or narrower: whoever starts it, a /start, a /dispatch or a Hermes
+ * gateway's message, may lower it for that session, never raise it (core/permission-ceiling.ts, the Audit's NOW-3
+ * and R4.1, 2.0.4: the webhook started any agent of any project in bypass). Undefined when none was asked, or the
+ * one asked is fine.
+ */
+export function modeRefusal(agent: AgentStatus, asked: unknown): { status: number; error: string } | undefined {
+  if (asked === undefined || asked === null) return undefined;
+  if (!isPermissionLevel(asked)) return { status: 400, error: 'permissionMode is one of plan, normal, auto, bypass.' };
+  const own = levelOf(agent);
+  if (!raises(asked, own)) return undefined;
+  return {
+    status: 403,
+    error: `${agent.name || agent.id} runs in ${own} mode: a session started for it may run narrower, never wider, and ${asked} is wider. Change its mode in Tars to widen it.`,
+  };
+}
+
 async function spawnAgentSession(
   agent: AgentStatus,
   prompt: string,
@@ -140,6 +171,13 @@ async function spawnAgentSession(
   ctx: RouteContext,
   sendJson: SendJson
 ): Promise<boolean> {
+  // Never wider than the agent's own mode, whoever asked (modeRefusal): the one
+  // place a session starts says it last, before anything is ended or spawned.
+  const wider = modeRefusal(agent, opts.permissionMode);
+  if (wider) {
+    sendJson({ error: wider.error }, wider.status);
+    return false;
+  }
   // A session started while the quit ends the others would be in no map the
   // quit ends: refused before anything here ends the old terminal (the Audit's
   // gate of #235: a /start 200 ms into the quit answered 200 and its CLI
@@ -195,7 +233,7 @@ async function spawnAgentSessionInSlot(
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
-  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings);
+  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings, { model: opts.model ?? agent.model, effort: agent.effort });
 
   const keyRefusal = missingKeyRefusal(agent.provider, providerEnvVars);
   if (keyRefusal) {
@@ -257,7 +295,7 @@ async function spawnAgentSessionInSlot(
   // the Agents page back on the old one. A `/model` typed into a terminal
   // lasts for that session; the Agents page is where a model is kept.
   const resolvedModel = opts.model || agent.model;
-  const effectiveMode = opts.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal');
+  const effectiveMode = opts.permissionMode ?? levelOf(agent);
 
 
   // CLIs without Claude's SessionStart hook get the project's memory in the
@@ -281,16 +319,30 @@ async function spawnAgentSessionInSlot(
   // never becomes a turn.
   // And how Tars works (services/agent-guide.ts): a claude terminal gets it
   // in its bootstrap, a CLI without that hook here.
-  const guide = guideForPrompt(agent, cliProvider.configDir);
+  // Its own header says who the agent is: the guide without the line.
+  const guide = guideForPrompt(agent, cliProvider.configDir, { identity: false });
   const guideBlock = guide ? `\n\n${guide}` : '';
   const taskPrompt = `${identityHeader}${guideBlock}${memoryBlock}\n\n${prompt}`;
 
+  // The conversation to continue: the last session, once per run or after a
+  // sleep. The agent's own session is a tombstone once this launch ends its
+  // terminal (below): continued under its id, every post of it would be
+  // refused, so it continues under a new one, as a restart does
+  // (agent-restart.ts), and the ended CLI's late posts stay refused.
+  const resumeSessionId = consumeResumeSessionId(agent) ?? undefined;
+  const forkSession = !!resumeSessionId && resumeSessionId === agent.currentSessionId;
+
   // Build the CLI command through the provider so non-claude CLIs (codex,
-  // gemini, grok, opencode, pi) get their own syntax instead of claude flags.
+  // gemini, grok, opencode, pi) get their own syntax instead of claude flags,
+  // once what its line needs is read from the CLI (codex's flags), off the
+  // main thread.
+  await cliProvider.prepareLaunch?.(binaryPath, effectiveMode);
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
-      resumeSessionId: consumeResumeSessionId(agent) ?? undefined,
+      agentId: agent.id,
+      resumeSessionId,
+      forkSession,
       binaryPath,
       prompt: taskPrompt,
       model: resolvedModel && resolvedModel !== 'default' ? resolvedModel : undefined,
@@ -383,8 +435,9 @@ async function spawnAgentSessionInSlot(
   if (agent.currentSessionId) {
     agent.lastKilledSessionId = agent.currentSessionId;
   }
-  // Whatever it resumes, this session is not a fork waiting on its first turn.
-  agent.forkedFromSessionId = undefined;
+  // A fork writes no transcript before its first turn: until it does, the
+  // conversation to resume is still the one it continues (resume-session.ts).
+  agent.forkedFromSessionId = forkSession ? resumeSessionId : undefined;
 
   // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd.
   ensureProjectTrusted(rawWorkingDir);
@@ -446,10 +499,14 @@ async function spawnAgentSessionInSlot(
   agent.workHandedAt = new Date().toISOString();
   // Work handed over, for the task its first turn opens (task-ledger.ts).
   if (prompt.trim()) {
-    const asker = request?.requesterAgentId ?? agent.requestedBy?.agentId;
+    const asker = request?.requesterAgentId;
     noteHandOff(agent.id, asker
       ? { source: 'agent', requesterAgentId: asker, text: prompt }
-      : { source: 'tars', text: prompt });
+      : opts.sender && opts.sender.kind !== 'tars'
+        ? { ...handOffFrom(opts.sender), text: prompt }
+        : agent.requestedBy?.agentId
+          ? { source: 'agent', requesterAgentId: agent.requestedBy.agentId, text: prompt }
+          : { source: 'tars', text: prompt });
   }
   agent.currentTask = prompt;
   agent.output = [];
@@ -1010,17 +1067,20 @@ function followTask(workerId: string, askerId: string): () => void {
 
 /**
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
- * UserPromptSubmit post, which opens the ledger's task) and end: claude, and
- * the providers that run it. Gemini's BeforeAgent hook posts `running` with no
- * prompt, and codex, opencode, amp, pi and grok have no such hook.
+ * UserPromptSubmit post, which opens the ledger's task) and end: every CLI
+ * whose hooks say both, or whose turns Tars reads and posts as those hooks
+ * would (core/end-of-turn.ts): claude, the providers that run it, Qwen Code (Claude Code's hooks), gemini
+ * (BeforeAgent and AfterAgent, hooks/gemini/, since 2.0.4), and codex, from
+ * its session log (services/codex-sessions.ts). opencode, amp, pi and grok
+ * have no such hook.
  */
 function turnsHeard(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasEndOfTurn(agent);
 }
 
-/** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
+/** Whether its final answer can be read from a transcript Tars knows: Claude Code's, Qwen Code's. */
 function transcriptRead(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasClaudeHooks(agent);
 }
 
 /** What the asker is told of a task typed into a CLI whose turns Tars cannot see. */
@@ -1099,7 +1159,6 @@ async function runInTerminal(
     let restart: RestartNote | undefined;
     let gaveUp = false;
     let withdrawn = false;
-    let typedRef: string | undefined;
     const callerId = resolveCallerId(req);
     const requester = callerId && callerId !== agent.id ? callerId : undefined;
     // The agent is at rest (one task at a time): a task still open there is
@@ -1109,14 +1168,14 @@ async function runInTerminal(
     await performDispatch(agent, {
       message: job.task, model: job.model, from: senderName(agent, req), sender: senderOf(agent, req), mark: markFor(agent, req),
       turnTaken: true,
-      onAccepted: () => (typedRef = requestFor(agent, req, job.task, job.ref)),
-      // Typed into the live session: the turn it opens is this hand-off's, and
-      // its asker the task's (task-ledger.ts). A session started for it notes
-      // its own (spawnAgentSession).
-      onWritten: () => noteHandOff(agent.id, {
-        ...(requester ? { source: 'agent' as const, requesterAgentId: requester } : { source: 'tars' as const }),
-        text: job.task, ...(typedRef ? { ref: typedRef } : {}),
-      }),
+      onAccepted: () => requestFor(agent, req, job.task, job.ref),
+      // An agent's task carries its id on its line, a request queued for it
+      // or not; Tars's line carries none (taskOfPrompt reads an agent's). The
+      // writer notes the hand-off the turn takes (pty-manager.ts, takeField):
+      // noted here too, a second one, with no id when the line had none, was
+      // left over for the agent's next turn with none, and that turn was filed
+      // under this task's asker (the QA's CLI matrix, H1).
+      ...(requester ? { taskId: job.ref } : {}),
       onDropped: () => { gaveUp = true; },
       // Taken back by its asker while held in the terminal (a draft): the
       // turn it kept is given back at once, not after TURN_START_MAX_MS (the
@@ -1146,13 +1205,25 @@ async function runInTerminal(
       return { status: 200, body };
     }
     onHanded(handed);
-    const latest = Date.now() + TURN_START_MAX_MS;
+    const handedAt = Date.now();
+    const latest = handedAt + TURN_START_MAX_MS;
     while (!turnTask) {
       if (gaveUp) return never('the terminal gave it up before it went in');
       if (withdrawn) return never('it was cancelled', 409, { code: 'cancelled' });
       if (agents.get(agent.id) !== agent) return never('its agent was removed');
       if (agent.status === 'stopped') return never('its agent was stopped before its turn began');
-      if (Date.now() > latest) return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      if (Date.now() > latest) {
+        // Its CLI never said a turn began (a gemini older than its hooks, or
+        // whose hooks were not installed): the `running` Tars set as it typed
+        // the task is undone, or every task behind this one waited for a turn
+        // that would never end (the Audit's L2 on #478).
+        if (agent.status === 'running' && !(Date.parse(agent.lastTurnStartedAt ?? '') >= handedAt)) {
+          agent.status = 'idle';
+          agent.lastActivity = new Date().toISOString();
+          emitAgentStatus(agent.id);
+        }
+        return never(`its turn did not begin within ${TURN_START_MAX_MS / 60_000} minutes`);
+      }
       await sleep(TASK_WAIT_STEP_MS);
     }
     const taskId = turnTask;
@@ -1167,6 +1238,9 @@ async function runInTerminal(
         const cut = lastInterruptAt(agent);
         if (cut !== undefined && cut >= now.startedAt && ledger?.openTaskOf(agent.id)?.id === taskId) {
           interrupted = true;
+          // The Esc that cut it left the field as it was: what waits for the agent goes in.
+          const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+          if (terminal) noteTurnCut(terminal);
           ledger.stateChanged({ id: agent.id, status: 'stopped' });
           if (agent.status === 'running') {
             agent.status = 'idle';
@@ -1181,6 +1255,8 @@ async function runInTerminal(
       }
       const ended = ledger?.task(taskId);
       const outcome = ended?.outcome === 'running' || !ended ? 'stopped' : ended.outcome;
+      // Or its CLI's own log said the turn was interrupted, which stopped its task (codex: task-watch.ts).
+      if (!interrupted && outcome === 'stopped' && ended && (turnInterruptedAt(agent.id) ?? -Infinity) >= ended.startedAt) interrupted = true;
       const stopReason = interrupted ? 'interrupted' : outcome === 'completed' ? 'end_turn' : outcome === 'error' ? 'error' : 'stopped';
       const result = (ended && transcriptRead(agent) ? await readFinalAnswer({ ...ended, configDir: accountFolderOf(ended.accountId) }) : null)
         ?? agent.lastCleanOutput ?? undefined;
@@ -1321,7 +1397,8 @@ async function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<
 export interface DispatchOpts {
   message: string;
   model?: string;
-  permissionMode?: 'normal' | 'auto' | 'bypass';
+  /** For a session it starts: the agent's own mode, or narrower (modeRefusal). */
+  permissionMode?: PermissionLevel;
   from?: string;
   sender?: MessageSender;
   /**
@@ -1330,6 +1407,14 @@ export interface DispatchOpts {
    * whose id goes in the sender line and which the write delivers.
    */
   onAccepted?: () => string | undefined | void;
+  /**
+   * The id its asker follows this task by (delegate_task's terminal path):
+   * typed on the sender line when no request of onAccepted's carries one, so
+   * its turn is told apart. A worker the agent once handed work to queues no
+   * request there (requestFor), and its task went in with no id at all (the
+   * QA's CLI matrix, H1).
+   */
+  taskId?: string;
   /**
    * Typed into a live session: once it is written into the terminal, once the
    * terminal gives it up, or once a cancel takes it back before it went in
@@ -1484,7 +1569,7 @@ async function performDispatchLocked(
       onDropped: () => { cancelRetell?.(); givenUp(agent, taskRef); opts.onDropped?.(); },
       // Cancelled before it went in (task-routes.ts): whoever cancelled it tells the asker.
       onWithdrawn: () => { cancelRetell?.(); opts.onWithdrawn?.(); },
-      taskRef,
+      taskRef: taskRef ?? opts.taskId,
       untilRest,
       mark: opts.mark,
     });
@@ -1527,7 +1612,7 @@ async function performDispatchLocked(
   // No session: spawn a fresh one with the message as the prompt.
   const since = new Date().toISOString();
   const wokenBy = { by: opts.from ?? 'Tars', via: 'message' as const };
-  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef }, ctx, sendJson))) {
+  if (!(await spawnAgentSession(agent, opts.message, { model: opts.model, permissionMode: opts.permissionMode, by: opts.from, wokenBy, taskRef, sender: opts.sender }, ctx, sendJson))) {
     dropped(agent, taskRef);
     return;
   }
@@ -1621,6 +1706,231 @@ function missingKeyRefusal(provider: AgentStatus['provider'], providerEnvVars: R
   return isAltProvider && !providerEnvVars.ANTHROPIC_BASE_URL
     ? `No API key configured for provider "${provider}". Add it (or an OpenRouter key) in Settings > AI Providers.`
     : null;
+}
+
+/** A model's name as a command line takes it: what create_agent and update_agent accept. */
+const MODEL_NAME = /^[a-zA-Z0-9._:\/\[\]-]+$/;
+
+/** What update_agent changes, as POST /api/agents/:id/update takes it. */
+const UPDATE_FIELDS = [
+  'name', 'character', 'provider', 'model', 'localModel', 'effort', 'permissionMode', 'cliPath', 'skills', 'secondaryProjectPath',
+] as const;
+const CHARACTERS: readonly AgentCharacter[] = ['robot', 'ninja', 'wizard', 'astronaut', 'knight', 'pirate', 'alien', 'viking'];
+const EFFORTS: readonly AgentEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+const PERMISSION_MODES: readonly AgentPermissionMode[] = ['plan', 'normal', 'auto', 'bypass'];
+
+/**
+ * Who changes an agent's settings over the API (update_agent): Tars's own
+ * pass, and an agent with the orchestrator's powers in the agent's project
+ * (its orchestrator, or one of its chats' runners, as for handing work). A
+ * worker never, not even its own: they are its orchestrator's to change, and
+ * the user's. Never across projects, allowCrossProject or not: a change of
+ * settings outlives the mistake that sent it, which a message does not. And
+ * never an agent with the orchestrator's powers, whoever asks: the
+ * orchestrator's settings, which its chats run on, and a runner's, which are
+ * the orchestrator's, are the window's, as the role is.
+ */
+function mayUpdate(req: RouteRequest, agent: AgentStatus, sendJson: SendJson): boolean {
+  const driver = resolveDriver(req, sendJson);
+  if (!driver) return false;
+  if (driver.kind === 'agent' && !hasOrchestratorPowers(driver.agent)) {
+    sendJson({
+      error: 'A worker does not change an agent\'s settings, its own included: only the user\'s window and your project\'s orchestrator do. '
+        + 'Ask your orchestrator for it (send_message to "orchestrator"), saying what to change and why.',
+      code: 'worker_may_not_update',
+    }, 403);
+    return false;
+  }
+  if (driver.kind === 'agent' && driver.agent.projectPath !== agent.projectPath) {
+    sendJson({
+      error: `${envelopeValue(agent.name || agent.id)} belongs to project ${agent.projectPath}, and you are the orchestrator of ${driver.agent.projectPath}: `
+        + 'an orchestrator changes the agents of its own project only, and allowCrossProject does not change that here. list_agents shows yours.',
+      code: 'other_project',
+    }, 403);
+    return false;
+  }
+  const withPowers = hasOrchestratorPowers(agent);
+  if (withPowers) {
+    sendJson({
+      error: `${envelopeValue(agent.name || agent.id)} ${agent.kind === 'chat' ? 'runs a chat, on its orchestrator\'s settings' : 'is its project\'s orchestrator, and its chats run on its settings'}: `
+        + 'those are changed in the Agents page of Tars, not over the API.',
+      code: 'orchestrator_settings',
+    }, 403);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The update a body asks for, each field checked as POST /api/agents checks a
+ * new agent's, or why it is refused. A field it does not take is refused, not
+ * dropped: dropped, the answer would say the agent was changed. A new
+ * provider clears the model and the CLI path it is not given: they named the
+ * old CLI's, and its binary would run for the new one.
+ */
+function updateFrom(body: unknown, agent: AgentStatus, ctx: RouteContext): { update: Omit<AgentUpdate, 'id'> } | { status: number; error: string } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'The body is an object of the settings to change.' };
+  const asked = body as Record<string, unknown>;
+  const takes = `It takes: ${UPDATE_FIELDS.join(', ')}.`;
+  for (const key of Object.keys(asked)) {
+    if (key === 'role' || key === 'orchestratorMode') {
+      return { status: 403, error: 'An agent\'s role is changed in the Agents page of Tars, not over the API: the user makes an agent the orchestrator, or takes it back.' };
+    }
+    if (key === 'projectPath') return { status: 403, error: 'An agent moves to another project in the Agents page of Tars, not over the API.' };
+    if (key === 'allowCrossProject') continue;
+    if (!(UPDATE_FIELDS as readonly string[]).includes(key)) return { status: 400, error: `${JSON.stringify(key)} is not a setting update_agent changes. ${takes}` };
+  }
+  if (!UPDATE_FIELDS.some(field => asked[field] !== undefined)) return { status: 400, error: `Nothing to change: name a setting. ${takes}` };
+
+  const { name, character, provider, model, localModel, effort, permissionMode, cliPath, skills, secondaryProjectPath } = asked;
+  const update: Omit<AgentUpdate, 'id'> = {};
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim()) return { status: 400, error: 'An agent\'s name is a string with at least one character in it.' };
+    // As POST /api/agents refuses it (the Audit's gate of #351).
+    if (/,\s*task\s+t-/i.test(name)) {
+      return { status: 400, error: 'An agent\'s name cannot contain ", task t-": Tars types the task id after the name in the line that says who a message is from.' };
+    }
+    update.name = name;
+  }
+  if (character !== undefined) {
+    if (!CHARACTERS.includes(character as AgentCharacter)) return { status: 400, error: `Invalid character: ${CHARACTERS.join(', ')}` };
+    update.character = character as AgentCharacter;
+  }
+  if (provider !== undefined) {
+    if (typeof provider !== 'string' || !isValidProvider(provider)) {
+      return { status: 400, error: `Unknown provider ${JSON.stringify(provider)}. Providers: ${getAllProviders().map((p) => p.id).join(', ')}.` };
+    }
+    update.provider = provider as AgentProvider;
+  }
+  if (model !== undefined) {
+    if (model !== null && (typeof model !== 'string' || !MODEL_NAME.test(model))) return { status: 400, error: 'Invalid model name' };
+    update.model = model;
+  }
+  if (localModel !== undefined) {
+    if (localModel !== null && (typeof localModel !== 'string' || !MODEL_NAME.test(localModel))) return { status: 400, error: 'Invalid local model name' };
+    update.localModel = localModel;
+  }
+  if (effort !== undefined) {
+    if (effort !== null && !EFFORTS.includes(effort as AgentEffort)) {
+      return { status: 400, error: 'Invalid effort level: low, medium, high, xhigh or max, or null for the CLI\'s own' };
+    }
+    update.effort = effort as AgentEffort | null;
+  }
+  if (permissionMode !== undefined) {
+    if (!PERMISSION_MODES.includes(permissionMode as AgentPermissionMode)) return { status: 400, error: 'Invalid permission mode: plan, normal, auto or bypass' };
+    update.permissionMode = permissionMode as AgentPermissionMode;
+  }
+  if (cliPath !== undefined) {
+    if (cliPath !== null) {
+      const why = cliPathProblem(cliPath);
+      if (why) return { status: 400, error: why };
+    }
+    update.cliPath = cliPath as string | null;
+  }
+  if (skills !== undefined) {
+    const wrong = skillsProblem(skills);
+    if (wrong) return { status: 400, error: `Not changed: ${wrong}` };
+    update.skills = skills as string[];
+  }
+  if (secondaryProjectPath !== undefined) {
+    if (secondaryProjectPath !== null && (typeof secondaryProjectPath !== 'string' || !path.isAbsolute(secondaryProjectPath))) {
+      return { status: 400, error: 'secondaryProjectPath is an absolute path, or null to take it away' };
+    }
+    const handed = secondaryProjectPath === null ? null : handedFolderProblem(secondaryProjectPath);
+    if (handed) return { status: 400, error: `Not changed: ${handed}` };
+    update.secondaryProjectPath = secondaryProjectPath;
+  }
+  if (update.provider !== undefined && update.provider !== agent.provider) {
+    if (!('model' in update)) update.model = null;
+    if (!('cliPath' in update)) update.cliPath = null;
+  }
+  // Plan on a provider that has none would run as normal (the Audit's Low 2 on #407).
+  if (update.provider !== undefined || update.permissionMode !== undefined) {
+    const noPlan = planModeRefusal(update.provider ?? agent.provider, update.permissionMode ?? agent.permissionMode);
+    if (noPlan) return { status: 400, error: noPlan };
+  }
+  // Refused as its next launch would be: an API-key provider without its key.
+  if (update.provider !== undefined) {
+    const keyRefusal = missingKeyRefusal(update.provider, getProvider(update.provider).getPtyEnvVars(agent.id, agent.projectPath, agent.skills, ctx.getAppSettings()));
+    if (keyRefusal) return { status: 400, error: keyRefusal };
+  }
+  return { update };
+}
+
+/** What a restart for new settings waits on, as update_agent's answer says it (core/agent-restart.ts). */
+const WAIT_TEXT: Record<RestartWait, string> = {
+  turn: 'its turn ends',
+  permission: 'its permission question is answered and its turn ends',
+  note: 'what Tars owes it has been typed in',
+  background: 'the work it left running in the background has reported back',
+  launch: 'its CLI, starting from its last restart, is up',
+  writing: 'the message just typed into it has started',
+  queued: 'the messages waiting for its field have gone in',
+  draft: 'its field is empty: something is typed in it and not sent',
+  typing: 'nobody has typed in it for five seconds',
+};
+
+/**
+ * When an update applies, and whether the agent goes on in its conversation,
+ * as update_agent answers it: `applies` is now, when what it is doing ends
+ * (`when-free`, and `waitingFor` says what), or at its next start; `session`
+ * is `kept` or `new`. A new CLI, or one Tars cannot restart without cutting a
+ * turn, applies at the next start; that start continues the last
+ * conversation only on the claude binary, and only on an agent's first start
+ * since Tars opened (utils/resume-session.ts), never after a move to another
+ * binary.
+ */
+function whenItApplies(
+  agent: AgentStatus,
+  how: { cliWasUp: boolean; newCli: boolean; newBinary: boolean; changed: string[]; changedAtLaunch: string[]; restart?: RestartOutcome },
+): { applies: 'now' | 'when-free' | 'next-start'; session: 'kept' | 'new'; waitingFor?: RestartWait; text: string } {
+  const cli = getProvider(agent.provider);
+  const nextStart = (lead: string) => {
+    const resumes = !how.newBinary && cli.binaryName === 'claude' && nextStartResumes(agent);
+    return {
+      applies: 'next-start' as const,
+      session: resumes ? 'kept' as const : 'new' as const,
+      text: `${lead}, ${resumes ? 'continuing its last conversation' : 'on a new conversation'}${how.newBinary ? ': no CLI continues another one\'s' : ''}.`,
+    };
+  };
+  if (how.newCli) return nextStart(`Its next start runs ${cli.displayName}${agent.cliPath ? ` (${agent.cliPath})` : ''}`);
+  if (how.changedAtLaunch.length === 0) {
+    // Its name and skills are given to a session when it starts (the identity Tars types, CLAUDE_SKILLS), and are
+    // no launch setting: nothing restarts for them, and the session up keeps the old ones (the Audit's L2 on #480).
+    const name = how.changed.includes('name');
+    const skills = how.changed.includes('skills');
+    if (how.cliWasUp && (name || skills)) {
+      const old = name && skills ? 'under its old name and skills' : name ? 'under its old name' : 'with its old skills';
+      return {
+        applies: 'next-start',
+        session: 'kept',
+        text: `Changed in Tars now. The session in its terminal was given ${name && skills ? 'these' : name ? 'its name' : 'its skills'} when it `
+          + `started and goes on ${old}, untouched; its next session starts with the new ${name && !skills ? 'one' : 'ones'}.`,
+      };
+    }
+    return { applies: 'now', session: 'kept', text: 'Changed. Nothing it reads when it starts was changed: its session goes on as it is.' };
+  }
+  if (!how.cliWasUp) return nextStart('No CLI runs in its terminal: its next start reads the new settings');
+  if (cli.binaryName !== 'claude') {
+    return {
+      applies: 'next-start',
+      session: 'new',
+      text: `${cli.displayName} reads these when it starts and does not tell Tars when its turns end, so they apply at its next start, `
+        + 'on a new conversation: what it is doing now goes on untouched. Stopping it with stop_agent once its work is done applies them sooner.',
+    };
+  }
+  const session = agent.resumableSessionId ? 'kept' as const : 'new' as const;
+  const on = session === 'kept' ? 'on the same conversation' : 'on a new conversation: Tars knows no conversation of it to continue';
+  if (how.restart?.action === 'restarted') return { applies: 'now', session, text: `Its CLI was restarted on the new settings, ${on}.` };
+  if (how.restart?.action === 'waiting') {
+    return {
+      applies: 'when-free', session, waitingFor: how.restart.for,
+      text: `Its CLI restarts on the new settings once ${WAIT_TEXT[how.restart.for]}, ${on}. A running turn is never cut.`,
+    };
+  }
+  // The restart found nothing to do: its CLI runs on these values already, or has just ended.
+  if (!cliRunningIn(agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined)) return nextStart('Its CLI has ended: its next start reads the new settings');
+  return { applies: 'now', session: 'kept', text: 'Its CLI already runs on these settings: its session goes on as it is.' };
 }
 
 export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
@@ -1902,6 +2212,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // the audit of lot 4; the code was brought to the document, since
     // creating in the wrong project is the mistake this guard exists for.
     if (!mayActIn(req, driver, projectPath, `a new agent would belong to project ${projectPath}`, sendJson)) return;
+    // The folder it is handed besides its project: never ~/.tars-private (the Audit's L1 on #480), as update_agent.
+    if (secondaryProjectPath !== undefined && secondaryProjectPath !== null && secondaryProjectPath !== '') {
+      const handed = typeof secondaryProjectPath === 'string'
+        ? handedFolderProblem(secondaryProjectPath)
+        : 'secondaryProjectPath is the path of a folder';
+      if (handed) {
+        sendJson({ error: handed }, 400);
+        return;
+      }
+    }
     if (provider !== undefined && !isValidProvider(provider)) {
       sendJson({ error: `Unknown provider "${provider}". Providers: ${getAllProviders().map((p) => p.id).join(', ')}.` }, 400);
       return;
@@ -1929,7 +2249,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       sendJson({ error: `Not created: ${skillsWrong}` }, 400);
       return;
     }
-    if (model !== undefined && !/^[a-zA-Z0-9._:\/\[\]-]+$/.test(model)) {
+    if (model !== undefined && !MODEL_NAME.test(model)) {
       sendJson({ error: 'Invalid model name' }, 400);
       return;
     }
@@ -2003,6 +2323,43 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson({ agent });
   });
 
+  // POST /api/agents/:id/update: an agent's settings, changed by its
+  // project's orchestrator (update_agent) through the window's own path
+  // (core/agent-update.ts), never ending a CLI at work: a change that needs a
+  // new terminal waits for the agent to be stopped (cli_running). The answer
+  // says when the change applies and whether the conversation is kept.
+  app_.post(/^\/api\/agents\/([^/]+)\/update$/, async (req, sendJson) => {
+    const agent = agents.get(req.params.id);
+    if (!agent) {
+      sendJson({ error: 'Agent not found' }, 404);
+      return;
+    }
+    if (!mayUpdate(req, agent, sendJson)) return;
+    // After a start this agent is already in, or before the next: never in the middle of one.
+    await withAgentLock(agent.id, async () => {
+      const asked = updateFrom(req.body, agent, ctx);
+      if ('error' in asked) {
+        sendJson({ error: asked.error }, asked.status);
+        return;
+      }
+      const cliWasUp = cliAtWork(agent);
+      const binaryBefore = getProvider(agent.provider).binaryName;
+      const result = await updateAgent({ id: agent.id, ...asked.update }, { endsNoCli: true });
+      if (!result.success) {
+        sendJson({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.code === 'cli_running' ? 409 : 400);
+        return;
+      }
+      const newCli = result.changed.includes('provider') || result.changed.includes('cliPath');
+      const newBinary = getProvider(result.agent.provider).binaryName !== binaryBefore;
+      if (newBinary) newConversationOnNextStart(agent.id);
+      sendJson({
+        agent: projectAgent(result.agent),
+        changed: result.changed,
+        ...whenItApplies(result.agent, { cliWasUp, newCli, newBinary, changed: result.changed, changedAtLaunch: result.changedAtLaunch, restart: result.restart }),
+      });
+    });
+  });
+
   // POST /api/agents/:id/start
   app_.post(/^\/api\/agents\/([^/]+)\/start$/, async (req, sendJson) => {
     const agent = agents.get(req.params.id);
@@ -2015,10 +2372,16 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     const since = new Date().toISOString();
     const { prompt, model, permissionMode: bodyPermissionMode, printMode } = req.body as {
-      prompt: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; printMode?: boolean;
+      prompt: string; model?: string; permissionMode?: PermissionLevel; printMode?: boolean;
     };
     if (!prompt) {
       sendJson({ error: 'prompt is required' }, 400);
+      return;
+    }
+    // Never wider than the agent's own, refused before anything is recorded.
+    const wider = modeRefusal(agent, bodyPermissionMode);
+    if (wider) {
+      sendJson({ error: wider.error }, wider.status);
       return;
     }
     const taskRef = requestFor(agent, req);
@@ -2043,7 +2406,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         }, 409);
         return false;
       }
-      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef }, ctx, sendJson);
+      return spawnAgentSession(agent, prompt, { model, permissionMode: bodyPermissionMode, printMode, by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'start' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson);
     });
     if (!spawned) {
       dropped(agent, taskRef);
@@ -2064,7 +2427,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     if (!assertMayDriveAgent(req, agent, sendJson)) return;
 
     const { message: asSent, model, permissionMode, mode: asked, reason, intent } = req.body as {
-      message: string; model?: string; permissionMode?: 'normal' | 'auto' | 'bypass'; mode?: unknown; reason?: unknown; intent?: unknown;
+      message: string; model?: string; permissionMode?: PermissionLevel; mode?: unknown; reason?: unknown; intent?: unknown;
     };
     if (!asSent) {
       sendJson({ error: 'message is required' }, 400);
@@ -2073,6 +2436,12 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const askedMode = (asked ?? 'auto') as SendMode;
     if (!SEND_MODES.includes(askedMode)) {
       sendJson({ error: `mode is one of ${SEND_MODES.join(', ')}.`, code: 'invalid_mode' }, 400);
+      return;
+    }
+    // Never wider than the agent's own, refused before a receipt, a stop or anything typed.
+    const wider = modeRefusal(agent, permissionMode);
+    if (wider) {
+      sendJson({ error: wider.error }, wider.status);
       return;
     }
     // A worker never orders work (core/one-task.ts): a task (start_agent,
@@ -2406,7 +2775,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         // ensures send_message and delegate_task reconnect transparently
         // instead of timing out.
         const since = new Date().toISOString();
-        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef }, ctx, sendJson))) {
+        if (!(await spawnAgentSession(agent, message, { by: senderName(agent, req), wokenBy: { by: senderName(agent, req), via: 'message' }, taskRef, sender: senderOf(agent, req) }, ctx, sendJson))) {
           dropped(agent, taskRef);
           return;
         }

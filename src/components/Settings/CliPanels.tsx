@@ -5,17 +5,22 @@ import type { ReactNode } from 'react';
 import { Button, Dropdown, MetaChip, PanelCaption, PasswordInput, StatusSquare } from '@/components/ui';
 import type { CliKeyState } from '@/types/electron';
 import { CLIS, type CliDef } from '@/lib/clis';
+import { tildePath } from '@/lib/display-path';
 import { SettingsRow } from './SettingsRow';
+import type { CLIPaths } from './types';
 
-export type CliVersions = Record<string, { version: string | null; loading: boolean }>;
+/** Each CLI as the one detection found it (useCliDetection): its path, the version that binary gave, or still checking. */
+export type CliVersions = Record<string, { path: string | null; version: string | null; loading: boolean }>;
 
 /**
  * Settings > Providers, one panel per CLI (frame: `Providers · one panel per
  * CLI · Codex`): the CLIs in one list (src/lib/clis.ts), and the one picked,
  * with its API key (the cliKeys of PR 459: set or cleared, never shown back), its
- * command and version. Claude Code's own options keep their rows.
+ * command and version. Claude Code's own options keep their rows. A CLI is ready
+ * where the detection CLI Paths shows found it, and its version is that binary's
+ * number alone (frame `Secrets · CLIs, one detection`).
  */
-export default function CliPanels({ versions, claudeRows }: { versions: CliVersions; claudeRows: ReactNode }) {
+export default function CliPanels({ versions, configuredPaths, claudeRows }: { versions: CliVersions; configuredPaths?: CLIPaths; claudeRows: ReactNode }) {
   const [selected, setSelected] = useState('claude');
   const [keys, setKeys] = useState<CliKeyState[] | null>(null);
   const readKeys = useCallback(async () => {
@@ -37,7 +42,7 @@ export default function CliPanels({ versions, claudeRows }: { versions: CliVersi
           {driven.map((c) => {
             const state = versions[c.id];
             const on = c.id === cli.id;
-            const word = state?.loading ? 'checking' : state?.version ? 'ready' : 'not installed';
+            const word = state?.loading ? 'checking' : state?.path ? 'ready' : 'not installed';
             return (
               <li key={c.id}>
                 <button
@@ -47,12 +52,13 @@ export default function CliPanels({ versions, claudeRows }: { versions: CliVersi
                   className={`w-full text-left px-2.5 py-1.5 border transition-colors ${on ? 'bg-secondary border-border-accent' : 'border-transparent hover:bg-secondary'}`}
                 >
                   <span className="flex items-center gap-2">
-                    <StatusSquare tone={state?.version ? 'running' : 'idle'} />
-                    <span className={`text-[12.5px] ${state?.version ? 'text-foreground' : 'text-muted-foreground'}`}>{c.name}</span>
+                    <StatusSquare tone={state?.path ? 'running' : 'idle'} />
+                    <span className={`text-[12.5px] ${state?.path ? 'text-foreground' : 'text-muted-foreground'}`}>{c.name}</span>
                     <span className="ml-auto font-mono text-[10px] text-muted-foreground">{word}</span>
                   </span>
                   <span className="block pl-[14px] font-mono text-[10.5px] text-muted-foreground">
-                    {state?.version ? `${c.command} ${state.version}` : c.command}
+                    {c.command}
+                    {state?.version && <> <span data-cli-version>{state.version}</span></>}
                   </span>
                 </button>
               </li>
@@ -73,17 +79,23 @@ export default function CliPanels({ versions, claudeRows }: { versions: CliVersi
         <div className="flex items-center gap-2 pt-3 pb-2">
           <h3 className="font-display text-[20px] leading-tight text-foreground">{cli.name}</h3>
           <MetaChip>{cli.command}</MetaChip>
-          {v?.version && <MetaChip>{v.version}</MetaChip>}
+          {v?.version && <span data-cli-version className="inline-flex"><MetaChip>{v.version}</MetaChip></span>}
         </div>
         {cli.keyId && (
           <KeyRow cli={cli} state={keyState} onChanged={readKeys} />
         )}
         {cli.id === 'claude' && claudeRows}
+        {cli.id === 'qwen-code' && <QwenCodeRows />}
         <SettingsRow
           label="Command"
-          description={v?.version
-            ? `${cli.command} ${v.version}, found where Tars looks for CLIs. Change it in Settings, CLI Paths.`
-            : `${cli.command} is not installed. Tars finds it on your PATH once it is, or in Settings, CLI Paths.`}
+          description={v?.path ? (
+            <>
+              <span data-cli-path className="font-mono">{tildePath(v.path)}</span>
+              {configuredPaths?.[cli.pathKey as keyof CLIPaths] === v.path
+                ? ', set in CLI Paths.'
+                : ', found on your PATH. Change it in CLI Paths.'}
+            </>
+          ) : `${cli.command} is not installed. Tars finds it on your PATH once it is, or in CLI Paths.`}
         />
       </section>
     </div>
@@ -173,6 +185,40 @@ function KeyRow({ cli, state, onChanged }: { cli: CliDef; state: CliKeyState | n
         </div>
       )}
       {error && <p className="pb-2 text-[11.5px] text-danger">{error}</p>}
+    </>
+  );
+}
+
+/**
+ * Qwen Code's own rows (PR 461): its models, read from the CLI's settings
+ * (models.ofCli), and how it takes effort and permissions.
+ */
+function QwenCodeRows() {
+  const [models, setModels] = useState<Array<{ id: string; name: string }> | null>(null);
+  useEffect(() => {
+    let live = true;
+    window.electronAPI?.models?.ofCli('qwen-code')
+      .then((res) => { if (live) setModels(res?.models ?? []); })
+      .catch(() => { if (live) setModels([]); });
+    return () => { live = false; };
+  }, []);
+  return (
+    <>
+      <SettingsRow
+        label="Models"
+        description={models === null
+          ? 'Reading Qwen Code\'s models.'
+          : models.length
+            ? 'From Qwen Code\'s own settings (~/.qwen/settings.json): a new Qwen Code agent picks one of these.'
+            : 'None in Qwen Code\'s settings (~/.qwen/settings.json): add a model provider there, then pick its models here.'}
+        control={models && models.length > 0 ? (
+          <ul aria-label="Qwen Code models" className="flex flex-col items-end gap-0.5">
+            {models.map((m) => <li key={m.id} className="font-mono text-[11.5px] text-foreground">{m.name}</li>)}
+          </ul>
+        ) : undefined}
+      />
+      <SettingsRow label="Effort" description="Written into the settings Tars gives each Qwen Code agent, from the effort the agent is given." />
+      <SettingsRow label="Permission mode" description="Plan, normal, auto or bypass, picked for each agent in New agent: Qwen Code runs them as its own approval modes." />
     </>
   );
 }

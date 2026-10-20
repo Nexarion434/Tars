@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * What a delegated run tells whoever delegated it about the work it could not
@@ -25,10 +26,13 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-left-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 const serverBundle = path.join(tmp, 'bundle.js');
 fs.writeFileSync(serverBundle, '');
 
-const PRELUDE = `
+const PRELUDE = `${RECORDS_ITS_PID}
 let buf = '';
 const send = m => process.stdout.write(JSON.stringify(m) + '\\n');
 process.stdin.on('data', chunk => {

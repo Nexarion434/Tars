@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
-import { test } from '@playwright/test';
+import { execFile, execFileSync } from 'child_process';
+import { expect, test } from '@playwright/test';
 
 /**
  * What the sandboxed app has in it when we photograph it.
@@ -392,6 +392,11 @@ export function seedSandbox(home, { chatRooms = false } = {}) {
     // version the machine had installed. See writeFakeCli.
     cliPath: fakeCli,
     ...a,
+    // The tars room's frame draws its Backend Engineer as a CLI with no turn
+    // signal. Codex stood for one until 2.0.4, which reads its turns from its
+    // session log (#465), so in the rooms it runs on amp, still hookless; the
+    // shared seed keeps codex, which every other baseline shows.
+    ...(chatRooms && a.id === 'a3' ? { provider: 'amp', model: 'default' } : {}),
     projectPath: a.projectPath === REL_PROJECT ? PROJECT : SECOND,
     ...(a.worktreePath ? { worktreePath: path.join(PROJECT, '.worktrees', a.branchName) } : {}),
     // loadAgents clears currentSessionId on every launch and keeps this one,
@@ -454,6 +459,141 @@ export function seedSandbox(home, { chatRooms = false } = {}) {
 const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', 'logs', 'crashDumps'];
 
 /**
+ * Windows names the home in its own variables, and the app reads them, not
+ * HOME. Measured on 2026-09-25: `os.homedir()` is USERPROFILE, so DATA_DIR
+ * followed it to the caller's profile, and so did Electron's appData (and the
+ * cache under it), which is USERPROFILE\AppData\Roaming whatever APPDATA says.
+ * The profile variables are all pointed at the sandbox. Electron's
+ * getPath('home') answers the account's profile whatever the environment says,
+ * and nothing of the app's own is kept there, so that one value is not held
+ * against the launch; what the app does keep under a home, `os.homedir()` and
+ * DATA_DIR, is asked of it and must land in the sandbox.
+ */
+const onWindows = process.platform === 'win32';
+
+function windowsHome(sandboxHome) {
+  if (!onWindows) return {};
+  const roaming = path.join(sandboxHome, 'AppData', 'Roaming');
+  const local = path.join(sandboxHome, 'AppData', 'Local');
+  for (const dir of [roaming, local]) fs.mkdirSync(dir, { recursive: true });
+  const drive = path.parse(sandboxHome).root.replace(/[\\/]+$/, '');
+  return {
+    USERPROFILE: sandboxHome,
+    HOMEDRIVE: drive,
+    HOMEPATH: sandboxHome.slice(drive.length),
+    APPDATA: roaming,
+    LOCALAPPDATA: local,
+  };
+}
+
+/**
+ * Where a spec that photographs the app makes its sandbox: a folder whose path
+ * is the same length on every machine.
+ *
+ * The pages print the seeded projects' paths, which start with the sandbox, and
+ * even masked their width moves the picture: the mask is the text's box. On
+ * Windows os.tmpdir() is %TEMP%, which follows the user name and whatever the
+ * shell set. Measured on 2026-09-26: references recorded under
+ * C:\Users\<name>\AppData\Local\Temp (33 characters) differed from a run under
+ * C:\Users\Public\tars-tmp (24) on nine surfaces, 1,080 to 2,211 pixels each,
+ * all of them in the masks of the Agents group headings and the chat room head.
+ * So on Windows the sandbox is <SystemDrive>\tars-e2e\<prefix><6 characters>:
+ * the drive is two characters, mkdtemp's suffix is six. Any signed-in user may
+ * create a folder at the root of the system drive (Authenticated Users hold
+ * "create folders" on C:\ by default; checked on this machine from a
+ * non-elevated shell), and CI's runner is an administrator.
+ *
+ * darwin and linux keep the parent the spec always used (`elsewhere`): their
+ * references were recorded so.
+ */
+const WINDOWS_E2E_ROOT = onWindows ? path.win32.join(`${process.env.SystemDrive || 'C:'}\\`, 'tars-e2e') : null;
+
+export function makeShotSandbox(prefix, elsewhere) {
+  if (!onWindows) return fs.mkdtempSync(path.join(elsewhere, prefix));
+  fs.mkdirSync(WINDOWS_E2E_ROOT, { recursive: true });
+  return fs.mkdtempSync(path.join(WINDOWS_E2E_ROOT, prefix));
+}
+
+/** Removes a sandbox made by makeShotSandbox (removeHome), and on Windows the root once nothing else is in it. */
+export async function removeShotSandbox(dir) {
+  if (dir) await removeHome(dir);
+  if (!onWindows) return;
+  try {
+    fs.rmdirSync(WINDOWS_E2E_ROOT);
+  } catch (error) {
+    // Another run's sandbox is still in it, or it is already gone.
+    if (error.code !== 'ENOTEMPTY' && error.code !== 'ENOENT' && error.code !== 'EBUSY') throw error;
+  }
+}
+
+/**
+ * The PATH a Windows run hands the app: the system's own folders, Git, and
+ * the node running the suite (the fake CLIs' shims call `node` by name), and
+ * nothing of the user's: no npm, nvm, .local\bin or WinGet folder.
+ *
+ * What the app finds on its PATH is in the pictures: Settings > Providers and
+ * the New agent dialog read `codex ready` or `not installed` from it. Measured
+ * on 2026-09-26: recorded with the caller's PATH, the references showed the
+ * Codex and Claude Code of the machine recording, which a clean runner such as
+ * CI's windows-latest does not have. With this PATH no agent CLI is found, on
+ * any machine, and every spec that runs one names it (cliPath, cliPaths).
+ * The app's own additions stay sandboxed: %USERPROFILE%\.local\bin and
+ * %APPDATA%\npm are under the sandbox home (windowsHome above).
+ *
+ * darwin and linux keep the caller's PATH: their references were recorded so.
+ */
+function windowsSystemPath() {
+  const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  return [
+    path.join(root, 'System32'),
+    root,
+    path.join(root, 'System32', 'Wbem'),
+    path.join(root, 'System32', 'WindowsPowerShell', 'v1.0'),
+    path.join(programFiles, 'Git', 'cmd'),
+    path.dirname(process.execPath),
+  ].filter(dir => fs.existsSync(dir)).join(';');
+}
+
+/**
+ * On win32, the environment with one PATH under one spelling (Windows reads
+ * whichever of `Path` and `PATH` it finds first, electron/platform/path-env.ts):
+ * the spec's own when it sets one, else windowsSystemPath().
+ */
+function withSandboxPath(full, specEnv) {
+  if (!onWindows) return full;
+  const isPath = name => name.toUpperCase() === 'PATH';
+  const own = Object.keys(specEnv).find(isPath);
+  const out = Object.fromEntries(Object.entries(full).filter(([name]) => !isPath(name)));
+  out.Path = own ? specEnv[own] : windowsSystemPath();
+  return out;
+}
+
+/**
+ * How every run renders, whichever machine it runs on.
+ *
+ * `--lang=fr-FR`, on every platform. The Chat dates its rooms and its day
+ * separators in the renderer's own locale (toLocaleDateString([], ...)), and
+ * both sets of references were recorded on French systems: "20 août", "jeudi
+ * 20 août", on macOS and on Windows alike. CI's windows-latest is en-US and
+ * drew "Aug 20", "Thursday, August 20": six surfaces failed on the dates alone.
+ * Measured with a bare Electron 44 on 2026-09-26: the
+ * renderer's navigator.language and its Intl default follow --lang (fr-FR:
+ * "jeudi 20 août"; en-US: "Thursday, August 20"), the main process keeps the
+ * system's. Nothing else is pinned: LANG or LC_ALL would reach every program
+ * the app starts (git, ps, the fake CLIs), whose output the specs read.
+ *
+ * `--disable-lcd-text`, on Windows. Chromium draws text with ClearType's
+ * coloured subpixels where a layer allows it, and chooses per composited layer,
+ * which depends on the GPU: the Brain graph's labels were greyscale on the
+ * machine that recorded the references and ClearType on the runner, which has
+ * none (375 pixels). Greyscale everywhere draws the same on both. The pictures
+ * then show the design, not the display's subpixel order. macOS has no
+ * subpixel text since 10.14, and its references stay as they are.
+ */
+const RENDERING_ARGS = ['--lang=fr-FR', ...(onWindows ? ['--disable-lcd-text'] : [])];
+
+/**
  * The one way a spec starts the app: inside its sandbox, Chromium profile
  * included, or not at all.
  *
@@ -473,7 +613,9 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
  * closes it and fails the spec before a page is opened.
  *
  * DOROTHY_TAILSCALE_BIN names the sandbox's own `tailscale` (writeFakeTailscale),
- * unless the spec's env names another, or none with ''.
+ * unless the spec's env names another, or none with ''. PATH is the sandbox's
+ * own (sandboxPath): its four stand-in CLIs, and nothing of the account's home,
+ * unless the spec's env names another.
  *
  * `profile` names the profile folder in the sandbox, `electron-profile` unless
  * given: Tars is one instance per profile (core/desktop-lifecycle.ts), so a
@@ -482,8 +624,9 @@ const ELECTRON_PATHS = ['home', 'appData', 'userData', 'sessionData', 'cache', '
 export async function launchSandboxed(electron, sandboxHome, { env = {}, profile = 'electron-profile', ...options } = {}) {
   const app = await electron.launch({
     ...options,
-    args: ['.', `--user-data-dir=${path.join(sandboxHome, profile)}`],
-    env: { ...inheritable(process.env), DOROTHY_TAILSCALE_BIN: writeFakeTailscale(sandboxHome), ...env, HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome },
+    // A packed app (executablePath, e2e/sandbox-build.packed.spec.ts) runs its own code: no '.' to name it.
+    args: [...(options.executablePath ? [] : ['.']), `--user-data-dir=${path.join(sandboxHome, profile)}`, ...RENDERING_ARGS],
+    env: withSandboxPath({ ...inheritable(process.env), PATH: sandboxPath(sandboxHome), DOROTHY_TAILSCALE_BIN: writeFakeTailscale(sandboxHome), ...env, ...windowsHome(sandboxHome), HOME: sandboxHome, CFFIXED_USER_HOME: sandboxHome }, env),
   });
   // What the app inherited, checked the way its folders are below: a run
   // started by an agent inside Tars carries that agent's CLAUDE_MGR_API_URL
@@ -496,18 +639,38 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, profile
     await app.close();
     throw new Error(`the app inherited the caller's ${leaked.join(', ')}; launchSandboxed hands it nothing of that family`);
   }
+  watchSlowClose(app);
   if (process.env.E2E_TRACE === 'on') await traceApp(app);
-  const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries(
-    names.map(name => {
+  const landed = await app.evaluate(({ app: running }, names) => Object.fromEntries([
+    ...names.map(name => {
       try {
         return [name, running.getPath(name)];
       } catch (error) {
         return [name, `unavailable: ${error}`];
       }
     }),
-  ), ELECTRON_PATHS);
+    // The home the app's own code resolves, and the data directory it computed
+    // from it at load: the constants module beside the app's main script, the
+    // instance the main process already holds (a require returns it cached).
+    ...[
+      ['os.homedir()', () => process.getBuiltinModule('node:os').homedir()],
+      ['DATA_DIR', () => {
+        const { join, dirname } = process.getBuiltinModule('node:path');
+        const manifest = join(running.getAppPath(), 'package.json');
+        const load = process.getBuiltinModule('node:module').createRequire(manifest);
+        return load(join(running.getAppPath(), dirname(load(manifest).main), 'constants')).DATA_DIR;
+      }],
+    ].map(([name, read]) => {
+      try {
+        return [name, read()];
+      } catch (error) {
+        return [name, `unavailable: ${error}`];
+      }
+    }),
+  ]), ELECTRON_PATHS);
   const roots = [sandboxHome, fs.realpathSync(sandboxHome)];
   const outside = Object.entries(landed)
+    .filter(([name]) => !(onWindows && name === 'home'))
     .filter(([, where]) => !roots.some(root => where === root || where.startsWith(root + path.sep)));
   if (outside.length > 0) {
     await app.close();
@@ -522,13 +685,79 @@ export async function launchSandboxed(electron, sandboxHome, { env = {}, profile
 /**
  * The environment the app is handed: the caller's, less what belongs to a Tars
  * that may be running the suite. An agent inside Tars carries CLAUDE_AGENT_ID,
- * CLAUDE_MGR_API_URL (the live Tars on 31415) and CLAUDE_MGR_API_TOKEN, and a
- * shell may carry DOROTHY_* or ANTHROPIC_* of its own; a spec that wants one
- * sets it in its env.
+ * CLAUDE_MGR_API_URL (the live Tars on 31415) and CLAUDE_MGR_API_TOKEN, with
+ * TARS_CLAUDE_ACCOUNT, TARS_INSTANCE_ID and TARS_CHATS_READ, and a shell may
+ * carry DOROTHY_* or ANTHROPIC_* of its own; a spec that wants one sets it in
+ * its env.
  */
-const LEAKY = /^(CLAUDE|DOROTHY|ANTHROPIC)|^CLAUDECODE$/;
-function inheritable(env) {
+const LEAKY = /^(CLAUDE|DOROTHY|ANTHROPIC|TARS_)|^CLAUDECODE$/;
+export function inheritable(env) {
   return Object.fromEntries(Object.entries(env).filter(([name]) => !LEAKY.test(name)));
+}
+
+/**
+ * The CLIs the sandbox sees, as `--version` answers for each: stand-ins, and
+ * none of this machine's.
+ *
+ * The app looks for each CLI on its PATH (cliPaths:detect, shell:version), and
+ * the PATH it was handed was the caller's: on 2026-10-18 a codex installed in
+ * ~/.local/bin turned two surfaces red on main (settings-ai-providers,
+ * overlay-new-agent), and this Mac's claude, qwen and amp had been showing all
+ * along. These four are the set the settings-ai-providers reference shows
+ * ready; the app's own folders (/opt/homebrew/bin, /usr/local/bin) are still the
+ * machine's, and hold none of them on the Mac the references come from.
+ */
+export const SANDBOX_CLIS = {
+  claude: '2.1.303 (Claude Code)',
+  codex: 'codex-cli 0.163.0',
+  qwen: '0.25.2',
+  amp: '0.0.1788811227-gce258b (released 2026-09-07T20:00:27.000Z, 1mo ago)',
+};
+
+/**
+ * The PATH the app is handed: the sandbox's own folder first, with the four
+ * stand-ins and relays to the node running the suite and its npm and npx, then
+ * every folder `inherited` names but those of the account's home, where
+ * ~/.local/bin, nvm, npm, pnpm and yarn keep the CLIs a user installs. Windows,
+ * where the suite does not run, keeps what it inherited.
+ */
+export function sandboxPath(home, inherited = process.env.PATH ?? '', accountHome = os.userInfo().homedir) {
+  if (process.platform === 'win32') return inherited;
+  const dir = path.join(home, 'sandbox-clis');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, version] of Object.entries(SANDBOX_CLIS)) {
+    fs.writeFileSync(path.join(dir, name), standIn(version, name === 'claude'), { mode: 0o755 });
+  }
+  // Scripts that run this node, never links into the account's home: a removal of the sandbox would read as a write there.
+  const relay = (...argv) => `#!/bin/sh\nexec ${argv.map(word => `'${word.replace(/'/g, `'\\''`)}'`).join(' ')} "$@"\n`;
+  fs.writeFileSync(path.join(dir, 'node'), relay(process.execPath), { mode: 0o755 });
+  for (const name of ['npm', 'npx']) {
+    const script = path.join(path.dirname(process.execPath), name);
+    if (fs.existsSync(script)) fs.writeFileSync(path.join(dir, name), relay(process.execPath, fs.realpathSync(script)), { mode: 0o755 });
+  }
+  const fold = process.platform === 'darwin' ? (p => p.toLowerCase()) : (p => p);
+  const own = fold(path.resolve(accountHome));
+  const kept = inherited.split(path.delimiter)
+    .filter(entry => entry && !(fold(path.resolve(entry)) === own || fold(path.resolve(entry)).startsWith(own + path.sep)));
+  return [...new Set([dir, ...kept])].join(path.delimiter);
+}
+
+/**
+ * A stand-in: it answers the app's probes as the real CLI does in an empty
+ * home (`--version`; for claude, `auth status`: signed out, exit 1, measured on
+ * claude 2.1.303), and otherwise does what fake-cli.cjs does as an agent's CLI:
+ * one fixed screen, and the terminal held until its input ends.
+ */
+function standIn(version, answersAuth) {
+  return [
+    `#!${process.execPath}`,
+    'const args = process.argv.slice(2);',
+    `if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) { process.stdout.write(${JSON.stringify(`${version}\n`)}); process.exit(0); }`,
+    ...(answersAuth ? ["if (args[0] === 'auth' && args[1] === 'status') { process.stdout.write(JSON.stringify({ loggedIn: false }) + '\\n'); process.exit(1); }"] : []),
+    "process.stdout.write('\\x1b[2J\\x1b[Ha CLI of the E2E sandbox: no model, no network, no hook\\r\\n> ');",
+    'process.stdin.resume();',
+    '',
+  ].join('\n');
 }
 
 /**
@@ -543,14 +772,35 @@ function inheritable(env) {
 function writeFakeCli(home) {
   const dir = path.join(home, 'bin');
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'fake-cli.cjs');
-  fs.writeFileSync(file, [
-    `#!${process.execPath}`,
+  return writeNodeCli(path.join(dir, 'fake-cli.cjs'), [
     "process.stdout.write('\\x1b[2J\\x1b[Ha CLI of the E2E sandbox: no model, no network, no hook\\r\\n> ');",
     'process.stdin.resume();',
     '',
-  ].join('\n'), { mode: 0o755 });
-  return file;
+  ].join('\n'));
+}
+
+/**
+ * A node script written as a CLI an agent can be given as its `cliPath`, and
+ * the path to give it.
+ *
+ * darwin and linux: `file` itself, a `#!node` script, mode 0755, started as
+ * any executable is. Windows starts no shebang file, and Tars refuses one as
+ * "not a Windows executable" (resolveCliBinary), which is right:
+ * there a node CLI is installed by npm as a cmd-shim. So on win32 the same
+ * script (node skips its shebang line) gets npm's shim beside it, as npm 10
+ * writes one and as agent-launch.spec.ts installs its recorder: node.exe
+ * beside the shim, else `node` from the PATH. The shim is the path returned.
+ */
+export function writeNodeCli(file, source) {
+  fs.writeFileSync(file, `#!${process.execPath}\n${source}`, { mode: 0o755 });
+  if (!onWindows) return file;
+  const shim = path.join(path.dirname(file), `${path.basename(file, path.extname(file))}.cmd`);
+  fs.writeFileSync(shim, [
+    '@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
+    'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (', '  SET "_prog=node"', ')', '',
+    `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${path.basename(file)}" %*`, '',
+  ].join('\r\n'));
+  return shim;
 }
 
 /** The tailnet the sandbox's `tailscale` reports: a name no machine has, and the first address of the tailnet range. */
@@ -602,6 +852,8 @@ export const SWEEP_STATUSES = { a1: 'running', a2: 'running', a3: 'running', a4:
 function sandboxRoots() {
   const roots = [os.tmpdir()];
   if (process.platform !== 'win32') roots.push('/tmp');
+  // Windows: the root makeShotSandbox makes its sandboxes in.
+  if (onWindows) roots.push(WINDOWS_E2E_ROOT);
   if (process.platform === 'darwin') {
     try {
       roots.push(execFileSync('getconf', ['DARWIN_USER_TEMP_DIR'], { encoding: 'utf8' }).trim());
@@ -715,6 +967,63 @@ export async function stepShot(page, name) {
 }
 
 /**
+ * An app whose close takes more than 5 s leaves close-hang.json in its test's output folder: the tree under its main
+ * process every second until the close ends (pid, ppid, state, command), what the main process's threads were doing
+ * once (`sample`, macOS), when the main process exited and how long the close took, and the run's log says so. The
+ * night of 18 to 19/10, most runs met closes of up to 60 s under load and nothing said what held them (item 9 of the
+ * QA's list of 19/10). Wrapped before the trace's own close, so the time is the app's, not the trace's saving.
+ */
+function watchSlowClose(app) {
+  if (process.platform === 'win32' || !inTest()) return;
+  const pid = app.process().pid;
+  const close = app.close.bind(app);
+  app.close = async () => {
+    const started = Date.now();
+    const record = { pid, startedAt: new Date(started).toISOString(), trees: [], stacks: null, exit: null, tookMs: null };
+    app.process().once('exit', (code, signal) => { record.exit = { code, signal, atMs: Date.now() - started }; });
+    let next = null;
+    let stacks = null;
+    const look = () => {
+      try {
+        const all = execFileSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,stat=,command='], { encoding: 'utf8', timeout: 5000 })
+          .split('\n').map(line => /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)).filter(Boolean)
+          .map(m => ({ pid: Number(m[1]), ppid: Number(m[2]), stat: m[3], command: m[4].slice(0, 240) }));
+        const ids = new Set([pid]);
+        const tree = all.filter(p => p.pid === pid);
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const p of all) if (!ids.has(p.pid) && ids.has(p.ppid)) { ids.add(p.pid); tree.push(p); grew = true; }
+        }
+        record.trees.push({ atMs: Date.now() - started, tree });
+        // Beside the runner, never in its way: a `sample` run in line held a 9 s close for 23 s (measured on 19/10).
+        if (stacks === null && process.platform === 'darwin' && tree.some(p => p.pid === pid)) {
+          stacks = new Promise(resolve => execFile('sample', [String(pid), '1', '-mayDie'], { encoding: 'utf8', timeout: 20_000, maxBuffer: 16 * 1024 * 1024 },
+            (error, out) => resolve(error ? `sample failed: ${String(error).slice(0, 300)}` : out.slice(0, 200_000))));
+        }
+      } catch (error) {
+        record.trees.push({ atMs: Date.now() - started, error: String(error).slice(0, 300) });
+      }
+      next = setTimeout(look, 1000);
+    };
+    const slow = setTimeout(look, 5000);
+    try {
+      return await close();
+    } finally {
+      clearTimeout(slow);
+      if (next) clearTimeout(next);
+      record.tookMs = Date.now() - started;
+      if (stacks) record.stacks = await Promise.race([stacks, new Promise(resolve => setTimeout(() => resolve('sample still running after 20 s'), 20_000))]);
+      if (record.trees.length > 0) {
+        try {
+          fs.writeFileSync(test.info().outputPath('close-hang.json'), JSON.stringify(record, null, 2));
+        } catch { /* outside a test's body (an afterAll), there is no output folder */ }
+        console.warn(`[e2e] the app took ${record.tookMs} ms to close: close-hang.json in the test's output folder`);
+      }
+    }
+  };
+}
+
+/**
  * With E2E_TRACE=on, the app's own trace: its pages, clicks, DOM snapshots and
  * screenshots, saved as app-trace.zip in the test's output folder when the app
  * closes. Playwright's --trace records the runner's steps only: for an app
@@ -738,6 +1047,115 @@ async function traceApp(app) {
     }
     return close();
   };
+}
+
+/**
+ * The launch splash's words, read from the component that shows them, so a
+ * wording change there cannot leave splashGone() waiting for nothing.
+ */
+const SPLASH_SOURCE = fs.readFileSync(path.join(process.cwd(), 'src', 'components', 'Splash.tsx'), 'utf8');
+const SPLASH_STEPS = [...SPLASH_SOURCE.matchAll(/\{ label: '([^']+)', ready:/g)].map(m => m[1]);
+if (SPLASH_STEPS.length === 0) throw new Error('fixture: no step of the launch splash found in src/components/Splash.tsx');
+
+/**
+ * The longest the splash may stand once React holds it, read from the
+ * component: its cap on the calls it waits for (MAX_WAIT_MS) and its fade
+ * (EXIT_MS). SPLASH_SLACK_MS is for timers and polling on a loaded machine:
+ * measured on 2026-09-27 with one call made never to answer and all eight
+ * cores of the machine kept busy, the splash left 4299 to 4344 ms after
+ * hydration over 16 loads, 84 ms at most past its 4260.
+ */
+const splashConstant = name => {
+  const found = new RegExp(`const ${name} = (\\d+);`).exec(SPLASH_SOURCE);
+  if (!found) throw new Error(`fixture: no ${name} found in src/components/Splash.tsx`);
+  return Number(found[1]);
+};
+const SPLASH_SLACK_MS = 2_000;
+const SPLASH_BOUND_MS = splashConstant('MAX_WAIT_MS') + splashConstant('EXIT_MS') + SPLASH_SLACK_MS;
+
+/**
+ * Waits for the launch splash to be gone. Every document load shows it again
+ * (page.goto included), until the calls it names have answered or its cap has
+ * passed. On CI's windows-latest the Usage page was photographed behind it,
+ * "reading your projects", 1.5 s after its load.
+ *
+ * Two waits, because the splash is in the server's HTML and its cap starts only
+ * when React hydrates the page. Until then the wait is on next dev and the
+ * renderer, and lasts what the spec allows: a flat 15 s from the load had them
+ * share one guessed bound, and a runner slow to hydrate /chat failed there.
+ * Once React holds the splash, it is gone within
+ * its own cap and fade, or the spec fails.
+ */
+const escapeRegExp = text => text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+
+export async function splashGone(page) {
+  const words = new RegExp(`^(${SPLASH_STEPS.map(escapeRegExp).join('|')})$`);
+  // Hydrated: React has set its fiber on the splash's node, and the splash's
+  // effect, which starts the cap, runs right after that commit. Or it is gone.
+  await page.waitForFunction(pattern => {
+    const re = new RegExp(pattern);
+    const splash = [...document.querySelectorAll('div.fixed.inset-0')]
+      .find(el => [...el.querySelectorAll('span')].some(span => re.test((span.textContent || '').trim())));
+    return !splash || Object.keys(splash).some(key => key.startsWith('__reactFiber$'));
+  }, words.source, { polling: 100, timeout: 0 });
+  await page.locator('div.fixed.inset-0').filter({ has: page.getByText(words) }).waitFor({ state: 'detached', timeout: SPLASH_BOUND_MS });
+}
+
+/**
+ * Waits for the Chat page's room list to be read, and fails with the page's
+ * own words if the read failed. `rooms` are the rows the caller needs listed.
+ *
+ * The list is read by bus:listRooms, which the page gives 10 s (BUS_READ_MS in
+ * src/lib/bus-read.ts) before it puts the bus-error note where the rows would
+ * be. On a slow runner that read ran out, and the specs failed on a row or a
+ * count that was "not found", which named neither the read nor its failure,
+ * in chat-rooms.spec.ts and chat-rooms-behaviour.spec.ts. The page no longer stops there: an answer after the 10 s still
+ * lists the rooms, and a refused read is sent again 3, 12 and 30 s after the
+ * first failure, the note standing meanwhile. So a note is not the end: this
+ * waits for the rows through the page's own tries, and fails in the note's
+ * words (`bus:listRooms, no answer in 10 s`) only if they never came.
+ */
+const ROOM_LIST_MS = 60_000;
+
+export async function roomListSettled(page, rooms) {
+  const sidebar = page.locator('[data-chat-sidebar]');
+  const busNote = sidebar.getByText('The bus did not answer', { exact: false });
+  const row = name => sidebar.getByRole('button', { name, exact: false }).filter({ hasText: name }).first();
+  // Page load, then the page's tries: the last is sent 30 s after the first
+  // failure and given its 10 s. This can outlast what is left of the test's own
+  // time, and the page's words are the point of the wait.
+  test.info().setTimeout(test.info().timeout + ROOM_LIST_MS);
+  try {
+    await expect(row(rooms[0]), `room ${rooms[0]} is listed`).toBeVisible({ timeout: ROOM_LIST_MS });
+  } catch (err) {
+    if (!(await busNote.isVisible())) throw err;
+    // The note's sentence and the failure's own words under it, not its retry button.
+    const said = (await busNote.locator('xpath=ancestor::div[1]').locator('p').allInnerTexts()).join(' ').replace(/\s+/g, ' ').trim();
+    throw new Error(`the room list could not be read, the page says: "${said}"`);
+  }
+  for (const name of rooms) await expect(row(name), `room ${name} is listed`).toBeVisible();
+}
+
+/**
+ * Fails the spec, saying why, when the window's content is not wholly on the
+ * screen's work area. A capture of the screen reads black and a real click
+ * lands nowhere outside it: CI's windows-latest has a 1024x768 display, and
+ * the 1200x800 window's caption buttons were off it, read as #000000. For
+ * the specs that capture or click the real screen.
+ */
+export async function assertWindowOnScreen(app) {
+  const where = await app.evaluate(({ BrowserWindow, screen }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const content = w.getContentBounds();
+    return { content, workArea: screen.getDisplayMatching(content).workArea };
+  });
+  const { content: c, workArea: a } = where;
+  const inside = c.x >= a.x && c.y >= a.y && c.x + c.width <= a.x + a.width && c.y + c.height <= a.y + a.height;
+  if (!inside) {
+    throw new Error(`the window's content (${c.width}x${c.height} at ${c.x},${c.y}) is not wholly on the screen's work area `
+      + `(${a.width}x${a.height} at ${a.x},${a.y}): a capture reads black and a click lands nowhere outside it. `
+      + 'Give the machine a larger display (CI sets 1920x1080 before the E2E step).');
+  }
 }
 
 /** Whether a Playwright test is running: test.info() throws outside one. */

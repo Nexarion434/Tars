@@ -9,15 +9,20 @@
  * - MCP orchestrator integration
  */
 
-// First: every module required after it is compiled from the cache it keeps.
+// First of all: a test build on the account's own home stops before anything reads it.
+import { SANDBOX_BUILD } from './core/sandbox-guard';
+// Then: every module required after it is compiled from the cache it keeps.
 import './core/compile-cache';
+// Then the guard that keeps an uncaught exception from freezing main behind
+// Electron's error box, before any other module loads (core/uncaught-guard.ts).
+import { uncaught } from './uncaught';
 
 import { startGithubWatch } from './services/github-watch';
 import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, startHermesRelay, tellUser } from './services/hermes-relay';
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
-import { app, ipcMain, Notification } from 'electron';
+import { app, dialog, ipcMain, Notification } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,7 +31,7 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_TOKEN_FILE, DATA_DIR, DATA_DIR_MOVE, DATA_DIR_REWRITTEN, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
+import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, DATA_DIR_MOVE, DATA_DIR_REWRITTEN, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
 import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
 import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
 import { APP_PAGES } from './services/health/pages';
@@ -122,6 +127,8 @@ import { registerBusHandlers } from './handlers/bus-handlers';
 import { registerChatHandlers } from './handlers/chat-handlers';
 import { flushBus } from './services/bus-store';
 import { registerVaultHandlers } from './handlers/vault-handlers';
+import { registerVaultProjectFilesHandlers } from './handlers/vault-project-files-handlers';
+import { registerReviewHandlers } from './handlers/review-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
 import { registerTeamTemplateHandlers } from './handlers/team-template-handlers';
 import { registerHermesHandlers } from './handlers/hermes-handlers';
@@ -130,24 +137,36 @@ import { startOverseerWatch, stopOverseerWatch, migrateOverseerOutOfAgentReach }
 import { migrateWebhookSecretOutOfAgentReach } from './services/hermes-webhook-secret';
 import { startAgentWatch, watchInterruptedTurns } from './services/agent-watch';
 import { endRequestsAtLaunch, endUnresumed } from './core/task-requests';
-import { startTaskWatch } from './services/task-watch';
+import { startTaskWatch, turnInterrupted } from './services/task-watch';
+import { cliRunningIn } from './core/agent-pty';
 import { beginRun, type PreviousRun } from './services/run-state';
 import { endRestartRecovery, startRestartRecovery } from './services/restart-recovery';
-import { startStallWatch, stopStallWatch } from './services/stall-watch';
+import { startStallWatch, stopStallWatch, readProcesses, cliProcess, processTreeOf } from './services/stall-watch';
+import { filesOpenBy, openFilesReadable } from './platform/open-files';
+import { startCodexSessionWatch, type HookPost } from './services/codex-sessions';
+import { startPiSessionWatch, piSessionDir } from './services/pi-sessions';
+import { codexHome, codexSignInGap, loginShellCodexHome } from './providers/codex-cli';
+import { codexKeyConfig } from './services/cli-keys';
+import { getProvider } from './providers';
+import { scheduleTick } from './utils/agents-tick';
+import { terminalTokenOf } from './core/agent-tokens';
+import { codexDialogOnScreen } from './core/terminal-mirror';
 import { startSleepWatch, stopSleepWatch } from './services/agent-sleep';
 import { endUsageProbes } from './services/claude-accounts/usage-probe';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
+import { checksForUpdates } from './core/sandbox-build';
 import { startCliUpdates } from './services/cli-updater';
 import { migrateLocalTasks, setKanbanAgentDirectory } from './services/kanban-board';
 import { hermesKanban, tellOrchestratorAsTars } from './services/api-routes/kanban-routes';
 import { startErrorTriage, stopErrorTriage } from './services/error-triage';
 import { sentryTokenOutOf, settingsToSave } from './services/sentry-token';
-import { agentStatusEmitter } from './services/agent-events';
+import { SECRETS_FILE, migrateSecrets, readSecrets, saveSettingsSplit } from './services/settings-secrets';
+import { agentStatusEmitter, emitAgentStatus } from './services/agent-events';
 import { endAcpRunsOnQuit, agentsRunningOverAcp } from './services/acp/delegate';
 import { retentionLog, startTmpRetention } from './services/agent-tmp';
 import { sweepRunTokenFolders } from './services/acp/run-token-file';
-import { writeSecretFileSync, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
+import { describeSecretFileError, ensureSecretFileMode, narrowDataDir, closeSecretsToOtherAccounts } from './utils/secret-file';
 import { HERMES_CONNECTION_FILE, configuredHermesConnection } from './services/hermes-config';
 import { createHermesSessionWatch, setHermesSessionWatch } from './services/hermes-session-watch';
 import { probeHermes } from './services/hermes-client';
@@ -165,6 +184,9 @@ import {
 } from './utils';
 import { endVersionProbes } from './core/version-probe';
 import { endAuthCommands } from './services/claude-accounts/auth';
+import { TOOL_TOPIC } from './services/agent-guide';
+import { getAllProviders } from './providers';
+import { cliEnv, currentFolderLookupsOff, nodeMissing } from './platform';
 
 // ============== App Settings Management ==============
 
@@ -176,6 +198,10 @@ for (const stream of [process.stdout, process.stderr]) {
   });
 }
 
+// On Windows, nothing Tars starts by a bare name is looked up in the folder
+// it is started in, which is often a project's (platform/git-command.ts).
+Object.assign(process.env, currentFolderLookupsOff());
+
 let appSettings: AppSettings = loadAppSettings();
 let stopTmpRetention: () => void = () => undefined;
 let previousRun: PreviousRun | null = null;
@@ -185,7 +211,12 @@ let recovery: { flush: () => void } | null = null;
 // (services/health/monitor.ts): before any of them is registered.
 timeIpcHandlers(ipcMain as unknown as Parameters<typeof timeIpcHandlers>[0]);
 
-const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true);
+const errorReports = startErrorReports(() => appSettings.errorReportsEnabled === true, process.platform, {
+  onFatalError: uncaught.onFatalError,
+  // What an agent tool error may name (2.0.4): Tars's own tools and the CLIs it runs.
+  vocabulary: { tools: new Set(Object.keys(TOOL_TOPIC)), clis: new Set(getAllProviders().map(provider => provider.id)) },
+  channels: ipcChannels.known(),
+});
 
 /** The health samples, ~/.tars, on this machine only (services/health/samples.ts). */
 const HEALTH_FILE = dataPath('health-samples.jsonl');
@@ -272,28 +303,30 @@ function loadAppSettings(): AppSettings {
       additionalPaths: [],
     },
   };
+  // Every key out of ~/.tars before anything reads one (services/settings-secrets.ts).
+  migrateSecrets();
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
-      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts).
+      // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts),
+      // and so are the other secrets (settings-secrets.json).
       // The switch is on only for the boolean true: the file is in ~/.tars,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
-      return { ...defaults, ...sentryTokenOutOf(saved), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
+      return { ...defaults, ...sentryTokenOutOf(saved), ...readSecrets(), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
     }
   } catch (err) {
-    console.error('Failed to load app settings:', err);
+    console.error(`Failed to load app settings: ${describeSecretFileError(err)}`);
   }
-  return { ...defaults, ...sentryTokenOutOf({}) };
+  return { ...defaults, ...sentryTokenOutOf({}), ...readSecrets() };
 }
 
 function saveAppSettingsToFile(settings: AppSettings) {
   try {
     ensureDataDir();
-    // 0600 and atomic: this file carries every provider API key, the Hermes
-    // gateway token and the memory-backend credentials.
-    // Everything but the Sentry token, which goes to ~/.tars-private.
-    writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(settingsToSave(settings), null, 2));
+    // 0600 and atomic. The secrets go to ~/.tars-private (settings-secrets.json,
+    // and the Sentry token's own file), the rest to app-settings.json.
+    saveSettingsSplit(settingsToSave(settings) as AppSettings);
   } catch (err) {
     console.error('Failed to save app settings:', err);
   }
@@ -513,7 +546,7 @@ app.whenReady().then(async () => {
   // Narrow the credential files on installs that predate the 0600 write.
   // A `mode` passed to writeFileSync only applies at creation, so an
   // app-settings.json already sitting at 0644 would keep it forever.
-  for (const secret of [APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
+  for (const secret of [APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE]) {
     ensureSecretFileMode(secret);
   }
   // And the directory itself with everything in it: the fleet, the board, the
@@ -532,7 +565,7 @@ app.whenReady().then(async () => {
   // set in the background (it never rejects, each failure is logged).
   // The health samples too: the privacy page says they are readable by the
   // user's account only.
-  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
+  void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
   // Write Tars's CLAUDE.md to ~/.tars/ so all spawned agents can load it
   ensureAgentInstructions();
@@ -600,6 +633,7 @@ app.whenReady().then(async () => {
   if (DATA_DIR_MOVE.notice && process.env.DOROTHY_E2E !== '1' && Notification.isSupported()) {
     new Notification({ title: 'Tars: two data folders', body: DATA_DIR_MOVE.notice }).show();
   }
+  uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,
@@ -617,6 +651,11 @@ app.whenReady().then(async () => {
 
   // Initialize macOS menu bar tray with custom popup panel
   initTray();
+
+  // Windows: the hooks and the bundled tools run on Node, which a native
+  // claude.exe does not bring. Said at each launch until it is installed.
+  const noNode = nodeMissing(cliEnv() ?? process.env);
+  if (noNode) void dialog.showMessageBox({ type: 'warning', ...noNode });
 
   // Register all IPC handlers
   const deps = createIpcDependencies();
@@ -678,6 +717,10 @@ app.whenReady().then(async () => {
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });
+  // Each project's reports/ and tools/, what its agents produce.
+  registerVaultProjectFilesHandlers();
+  // Review: every repository of every project, scanned and searched (services/review-repositories.ts).
+  registerReviewHandlers();
 
 
   // The relay to the user's Telegram through their Hermes, following its switch
@@ -744,6 +787,90 @@ app.whenReady().then(async () => {
   startStallWatch();
   // Agents with no turn for 30 minutes sleep, orchestrators never (services/agent-sleep.ts).
   startSleepWatch();
+  // codex's turns, read from its session log and posted as its terminal's hooks
+  // would post them, with that terminal's own token (services/codex-sessions.ts).
+  // What a CLI without Tars's hooks would have posted, posted as its terminal,
+  // with that terminal's own token, on the routes its hooks use.
+  const postAsTerminal = (watch: string) => async (agentId: string, { path: route, body }: HookPost) => {
+    const token = terminalTokenOf(agentId);
+    if (!token) return;
+    try {
+      await fetch(`http://127.0.0.1:${API_PORT}${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      console.warn(`[${watch}] ${route} for ${agentId} not posted:`, err instanceof Error ? err.message : err);
+    }
+  };
+  // pi's turns, read from its session file (services/pi-sessions.ts).
+  startPiSessionWatch({
+    dirOf: (agentId) => piSessionDir(DATA_DIR, agentId),
+    post: postAsTerminal('pi-sessions'),
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+  });
+  startCodexSessionWatch({
+    post: postAsTerminal('codex-sessions'),
+    dialogTitle: (agentId) => {
+      const agent = agents.get(agentId);
+      return codexDialogOnScreen(agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
+    },
+    interrupted: (agentId, sessionId) => turnInterrupted(agentId, sessionId),
+    resumableSessionOf: (agentId) => agents.get(agentId)?.resumableSessionId,
+    codexRunning: (agentId) => {
+      const agent = agents.get(agentId);
+      const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+      return !!terminal && cliRunningIn(terminal);
+    },
+    // Whose own codex holds a new session's file, read once per session that
+    // names nobody: the codex under each waiting agent's terminal and what it
+    // started (the Audit's M1 on #465). Unknown where files cannot be read, and
+    // asked again when ps or lsof failed (the Audit's L5).
+    openFilesReadable: () => openFilesReadable(),
+    heldOpenBy: async (file, agentIds) => {
+      if (!openFilesReadable()) return undefined;
+      const procs = await readProcesses();
+      if (!procs) return undefined;
+      let real: string;
+      try { real = fs.realpathSync(file); } catch { return null; }
+      for (const agentId of agentIds) {
+        const agent = agents.get(agentId);
+        const terminal = agent?.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+        const codex = terminal ? cliProcess(terminal.pid, procs, 'codex') : undefined;
+        if (!codex) continue;
+        const open = await filesOpenBy(processTreeOf(codex.pid, procs));
+        if (open === undefined) return undefined;
+        if (open.has(real)) return agentId;
+      }
+      return null;
+    },
+    // Why the agent's codex will start not signed in, asked at its launch (the
+    // Audit's L7 on #465): Tars hands codex its own home, and the user's login
+    // may be in the CODEX_HOME their shell sets. Said in its status: codex shows
+    // its sign-in screen and writes no session, so nothing else would say it.
+    signInGapOf: async (agentId) => {
+      const agent = agents.get(agentId);
+      if (!agent) return undefined;
+      return codexSignInGap({
+        binaryPath: agent.cliPath || getProvider(agent.provider).resolveBinaryPath(appSettings),
+        home: codexHome(),
+        keyed: codexKeyConfig(appSettings).length > 0,
+        shellHome: () => loginShellCodexHome(),
+      });
+    },
+    notSignedIn: (agentId, text) => {
+      const agent = agents.get(agentId);
+      if (!agent) return;
+      console.warn(`[codex] ${agent.name || agentId}: ${text}`);
+      agent.status = 'error';
+      agent.error = text;
+      agent.lastActivity = new Date().toISOString();
+      saveAgents();
+      scheduleTick();
+      emitAgentStatus(agentId);
+    },
+  });
   // Each agent's temporary folder, which a boot does not empty, kept to 7 days
   // and 20 GB in all (services/agent-tmp.ts). A development run may bring the
   // first pass forward, for the e2e.
@@ -814,7 +941,7 @@ app.whenReady().then(async () => {
   // off stops the next check, and turning it on starts one within half an hour,
   // without a restart. It is the one switch for these and the CLIs' below.
   const check = () => {
-    if (appSettings.autoCheckUpdates === false) return;
+    if (appSettings.autoCheckUpdates === false || !checksForUpdates({ sandbox: SANDBOX_BUILD })) return;
     checkForUpdates().catch((err) => {
       console.error('Auto-update check failed:', err);
     });

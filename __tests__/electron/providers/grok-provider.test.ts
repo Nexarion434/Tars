@@ -133,30 +133,6 @@ describe('GrokProvider', () => {
     });
   });
 
-  describe('buildScheduledCommand', () => {
-    it('runs headless with -p and bypasses permissions when autonomous', async () => {
-      const provider = await getProvider();
-      const cmd = provider.buildScheduledCommand({
-        binaryPath: 'grok',
-        prompt: 'do the thing',
-        autonomous: true,
-      });
-      expect(cmd).toContain("-p 'do the thing'");
-      expect(cmd).toContain('--permission-mode bypassPermissions');
-    });
-
-    it('emits streaming-json when an output format is requested', async () => {
-      const provider = await getProvider();
-      const cmd = provider.buildScheduledCommand({
-        binaryPath: 'grok',
-        prompt: 'x',
-        autonomous: false,
-        outputFormat: 'json',
-      });
-      expect(cmd).toContain('--output-format streaming-json');
-    });
-  });
-
   describe('buildOneShotCommand', () => {
     it('places -m before -p so the prompt is the value of -p', async () => {
       const provider = await getProvider();

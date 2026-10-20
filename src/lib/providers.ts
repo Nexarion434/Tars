@@ -6,6 +6,7 @@
  */
 
 import type { AgentProvider } from '@/types/electron';
+import { secretIsSet, type SecretsSet } from '@/lib/secret-settings';
 
 export type ProviderIconDef =
   | { type: 'image'; src: string }
@@ -78,13 +79,30 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
     icon: { type: 'image', src: '/chatgpt-icon.webp' },
     accent: 'accent-green',
     requiresCli: true,
+    // The floor until codex has written the account's own list, which
+    // models:list reads first (electron/providers/codex-cli.ts): a ChatGPT
+    // account's models as codex 0.163 listed them on 2026-10-18.
     models: [
-      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Recommended' },
-      { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', description: 'Balanced' },
-      { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Previous gen' },
-      { id: 'gpt-5-codex-mini', name: 'GPT-5 Codex Mini', description: 'Fast & efficient' },
+      { id: 'gpt-6.1-sol', name: 'GPT-6.1-Sol', description: 'Latest workhorse model for coding and everyday work.' },
+      { id: 'gpt-6-astra', name: 'GPT-6-Astra', description: 'Frontier intelligence for the most demanding work.' },
+      { id: 'gpt-6-sol', name: 'GPT-6-Sol', description: 'Previous generation workhorse model.' },
+      { id: 'gpt-6-luna', name: 'GPT-6-Luna', description: 'Fast and affordable model for easier tasks.' },
+      { id: 'gpt-5.6-sol', name: 'GPT-5.6-Sol', description: 'Older generation workhorse model.' },
+      { id: 'gpt-5.6-terra', name: 'GPT-5.6-Terra', description: 'Older balanced model for straightforward work.' },
+      { id: 'gpt-5.6-luna', name: 'GPT-5.6-Luna', description: 'Older fast and efficient model.' },
     ],
-    defaultModel: 'gpt-5.2-codex',
+    defaultModel: 'gpt-6.1-sol',
+  },
+  {
+    // Qwen Code, the CLI `qwen` (2.0.4, #461). Its models are the user's own, read from the CLI
+    // (models.ofCli('qwen-code'), its settings.json modelProviders), never a list kept here.
+    id: 'qwen-code',
+    label: 'Qwen Code',
+    icon: { type: 'svg-qwen' },
+    accent: 'primary',
+    requiresCli: true,
+    models: [],
+    defaultModel: '',
   },
   {
     id: 'gemini',
@@ -207,7 +225,8 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
   },
   {
     id: 'qwen',
-    label: 'Qwen',
+    // The Qwen API, through the claude binary: not Qwen Code, the CLI below.
+    label: 'Qwen API',
     icon: { type: 'svg-qwen' },
     accent: 'blue-500',
     models: [
@@ -335,25 +354,22 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
 ];
 
 
-/** Minimal shape of the app settings needed to compute provider availability. */
+/**
+ * Minimal shape of the app settings needed to compute provider availability. Whether a key is set is what
+ * `secretsSet` says (2.0.4, #466): the window is never handed a key, only a mask for one that is set.
+ */
 interface ProviderAvailabilitySettings {
   openRouterEnabled?: boolean;
-  openRouterApiKey?: string;
   deepSeekEnabled?: boolean;
-  deepSeekApiKey?: string;
   moonshotEnabled?: boolean;
-  moonshotApiKey?: string;
   zhipuEnabled?: boolean;
-  zhipuApiKey?: string;
   minimaxEnabled?: boolean;
-  minimaxApiKey?: string;
   veniceEnabled?: boolean;
-  veniceApiKey?: string;
   ollamaCloudEnabled?: boolean;
-  ollamaCloudApiKey?: string;
   customOpenAIEnabled?: boolean;
   customOpenAIBaseUrl?: string;
   customOpenAIModel?: string;
+  secretsSet?: SecretsSet;
 }
 
 /**
@@ -378,7 +394,8 @@ export function computeProviderAvailability(
   settings: ProviderAvailabilitySettings | null | undefined,
   ollamaReachable?: boolean,
 ): Record<string, boolean> {
-  const viaOpenRouter = !!(settings?.openRouterEnabled && settings?.openRouterApiKey);
+  const keyed = (enabled: boolean | undefined, field: string) => !!enabled && secretIsSet(settings, field);
+  const viaOpenRouter = keyed(settings?.openRouterEnabled, 'openRouterApiKey');
   return {
     claude: !!paths?.claude,
     codex: !!paths?.codex,
@@ -390,17 +407,17 @@ export function computeProviderAvailability(
     pi: !!paths?.pi,
     local: true,
     openrouter: viaOpenRouter,
-    deepseek: !!(settings?.deepSeekEnabled && settings?.deepSeekApiKey) || viaOpenRouter,
-    moonshot: !!(settings?.moonshotEnabled && settings?.moonshotApiKey) || viaOpenRouter,
-    zhipu: !!(settings?.zhipuEnabled && settings?.zhipuApiKey) || viaOpenRouter,
-    minimax: !!(settings?.minimaxEnabled && settings?.minimaxApiKey) || viaOpenRouter,
+    deepseek: keyed(settings?.deepSeekEnabled, 'deepSeekApiKey') || viaOpenRouter,
+    moonshot: keyed(settings?.moonshotEnabled, 'moonshotApiKey') || viaOpenRouter,
+    zhipu: keyed(settings?.zhipuEnabled, 'zhipuApiKey') || viaOpenRouter,
+    minimax: keyed(settings?.minimaxEnabled, 'minimaxApiKey') || viaOpenRouter,
     qwen: viaOpenRouter,
     mimo: viaOpenRouter,
     nvidia: viaOpenRouter,
     'nous-portal': viaOpenRouter,
-    venice: !!(settings?.veniceEnabled && settings?.veniceApiKey),
+    venice: keyed(settings?.veniceEnabled, 'veniceApiKey'),
     ollama: ollamaReachable ?? false,
-    'ollama-cloud': !!(settings?.ollamaCloudEnabled && settings?.ollamaCloudApiKey),
+    'ollama-cloud': keyed(settings?.ollamaCloudEnabled, 'ollamaCloudApiKey'),
     'custom-openai': !!(settings?.customOpenAIEnabled && settings?.customOpenAIBaseUrl && settings?.customOpenAIModel),
   };
 }
@@ -408,4 +425,17 @@ export function computeProviderAvailability(
 /** Look up a provider definition by ID. */
 export function getProviderDef(id: string): ProviderDef | undefined {
   return PROVIDER_REGISTRY.find((p) => p.id === id);
+}
+
+/** Ids that are not a word a reader knows, and the words their cards write instead. */
+const PROVIDER_WORDS: Record<string, string> = { 'qwen-code': 'Qwen Code' };
+
+/**
+ * The word an agent's card, its detail panel and its window's header write for its provider: the provider's own id,
+ * as the frames write it ("claude · fable 5 · main"), except Qwen Code's `qwen-code`, which reads Qwen Code, apart
+ * from the Qwen API's `qwen`. An agent with no provider is Claude's; an id not known yet reads as itself.
+ */
+export function providerWord(provider?: string | null): string {
+  if (!provider) return 'claude';
+  return PROVIDER_WORDS[provider] ?? provider;
 }

@@ -19,6 +19,9 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * (a.txt changed, b.txt new), shows a.txt's patch and b.txt's, the repository's summary is read, a file reached
  * through the link out of the repository is not shown, and the marker never appears.
  * Red on main d96be134: the fsmonitor, the submodule's fsmonitor, the post-index-change hook and the filter run.
+ * Since #488 Review scans each project for its repositories before it reads one (services/review-repositories.ts):
+ * the repository is opened from that scan, its project's working tree in the Repositories column, so the scan's git
+ * calls are under the same assertion as the reads.
  * The artefact: values.json (what Review answered, what ran), screenshots, E2E_TRACE=on.
  */
 
@@ -51,16 +54,18 @@ for (const newInterface of [false, true]) {
       await page.goto(`${DEV_URL}/review`, { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('navigation', { name: 'Main menu' })).toHaveCount(newInterface ? 1 : 0, { timeout: 30_000 });
 
-      // The repository, its changes, and each file's patch.
-      const row = page.getByRole('button').filter({ hasText: 'no agent' }).filter({ hasText: 'repo' });
+      // The repository, its changes, and each file's patch. The project is one repository: its row in the column is
+      // its working tree, the branch and no agent.
+      const row = page.getByRole('navigation', { name: 'Repositories' }).getByRole('button').filter({ hasText: 'no agent' });
       await expect(row).toHaveCount(1, { timeout: 60_000 });
       await row.click();
-      await expect(page.getByRole('button').filter({ hasText: 'a.txt' })).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByRole('button').filter({ hasText: 'b.txt' })).toBeVisible();
-      await page.getByRole('button').filter({ hasText: 'a.txt' }).click();
+      const files = page.getByRole('region', { name: 'Changed files' });
+      await expect(files.getByRole('button').filter({ hasText: 'a.txt' })).toBeVisible({ timeout: 30_000 });
+      await expect(files.getByRole('button').filter({ hasText: 'b.txt' })).toBeVisible();
+      await files.getByRole('button').filter({ hasText: 'a.txt' }).click();
       await expect(page.getByText('+two', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
       await stepShot(page, `01-hostile-repo-a-patch${newInterface ? '-new' : ''}`);
-      await page.getByRole('button').filter({ hasText: 'b.txt' }).click();
+      await files.getByRole('button').filter({ hasText: 'b.txt' }).click();
       await expect(page.getByText('+new', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
       // The summary, and a file through the link out of the repository.
