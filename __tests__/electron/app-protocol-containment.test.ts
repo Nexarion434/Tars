@@ -11,7 +11,7 @@ import * as path from 'path';
  * page, and a markdown image is fetched without a click and never passes
  * through `isSafeUrl`. A vault note, which any agent can write, holding
  *
- *     ![](app://-/a/..%2f..%2f..%2f.dorothy%2fapp-settings.json)
+ *     ![](app://-/a/..%2f..%2f..%2f.tars%2fapp-settings.json)
  *
  * read every provider API key the moment the note was opened.
  *
@@ -55,7 +55,7 @@ describe('app:// path containment', () => {
   it('refuses the reported vault-note vector', () => {
     const { allowed } = resolveRequest(
       BASE,
-      'app://-/a/..%2f..%2f..%2f..%2f..%2fUsers%2fyou%2f.dorothy%2fapp-settings.json',
+      'app://-/a/..%2f..%2f..%2f..%2f..%2fUsers%2fyou%2f.tars%2fapp-settings.json',
     );
     expect(allowed).toBe(false);
   });
@@ -80,7 +80,7 @@ describe('app:// path containment', () => {
     const inside = (filePath: string) => filePath.startsWith(path.normalize(BASE) + path.sep);
     // `%5c` is `\`: a separator on Windows, where it climbs out and is refused;
     // an ordinary character of a file name elsewhere, where it stays inside.
-    const climb = resolveRequest(BASE, 'app://-/a/..%5c..%5c..%5c..%5c..%5cUsers%5cdemo%5c.dorothy%5capp-settings.json');
+    const climb = resolveRequest(BASE, 'app://-/a/..%5c..%5c..%5c..%5c..%5cUsers%5cdemo%5c.tars%5capp-settings.json');
     if (process.platform === 'win32') expect(climb.allowed).toBe(false);
     else expect(inside(climb.filePath)).toBe(true);
     // A drive and a UNC name are joined under the bundle, never taken as roots.

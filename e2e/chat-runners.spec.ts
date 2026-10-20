@@ -184,7 +184,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-runners-'));
   const project = path.join(home, 'projects', 'demo');
   const origin = path.join(home, 'origin.git');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
 
@@ -217,7 +217,7 @@ test("chats: each runs its own conversation, within the RAM's limit, and owns it
     agent('x1', 'Marked', 'worker', { kind: 'chat', chatId: 'ed17ed00-0000-4000-8000-000000000002' }),
   ], null, 2));
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
-  // chats.json as Tars writes it, with one record an agent edited (the file is in ~/.dorothy, which agents may
+  // chats.json as Tars writes it, with one record an agent edited (the file is in ~/.tars, which agents may
   // write): chat #2 names the worker as its runner.
   const at = '2026-10-12T08:00:00.000Z';
   const record = (id: string, number: number, title: string, runnerId: string, inbox: boolean) => ({

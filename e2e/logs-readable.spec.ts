@@ -34,7 +34,7 @@ test('the Logs page reads a Claude Code session as its terminal showed it', asyn
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-logs-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([{
@@ -87,7 +87,7 @@ test('the Logs page reads a stopped full-screen Claude agent from its transcript
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-logs-fs-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const session = '5f0c2d4e-8a61-4b7e-9d3a-2c1b0e9f7a64';

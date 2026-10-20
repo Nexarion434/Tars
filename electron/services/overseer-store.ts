@@ -8,8 +8,8 @@ import type { FleetSnapshot } from './overseer-fleet';
 // Conversation + job id live in ~/.tars-private/overseer.json, written
 // atomically at 0600.
 //
-// They lived in ~/.dorothy/overseer.json, which is the directory every agent
-// is started with (`--add-dir ~/.dorothy`), at 0644: 146 KB and 344 messages
+// They lived in ~/.tars/overseer.json, which is the directory every agent
+// is started with (`--add-dir ~/.tars`), at 0644: 146 KB and 344 messages
 // of JeanBrasse's own conversation, reachable with an `ls` and a `cat`, no API call
 // and no token. The file moves out on the first start that finds it, and
 // nothing in the private directory is ever handed to a CLI. See PRIVATE_DIR

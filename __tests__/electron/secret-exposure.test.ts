@@ -29,7 +29,7 @@ describe('writeSecretFileSync', () => {
   it.skipIf(!hasPosixModes())('creates the file readable only by its owner', () => {
     const p = tmp('app-settings.json');
     writeSecretFileSync(p, '{"telegramBotToken":"secret"}');
-    // 0644 was the real mode of ~/.dorothy/app-settings.json, which holds every
+    // 0644 was the real mode of ~/.tars/app-settings.json, which holds every
     // provider API key, while api-token beside it was already 0600.
     expect(fs.statSync(p).mode & 0o777).toBe(0o600);
   });
@@ -159,7 +159,7 @@ describe('MCP registration argument handling', () => {
 describe('Telegram path guard', () => {
   // Mirrors isSafeTelegramPath and the MCP server's assertSendablePath.
   const home = os.homedir();
-  const BLOCKED = ['.ssh', '.gnupg', '.aws', '.claude', '.dorothy', '.config',
+  const BLOCKED = ['.ssh', '.gnupg', '.aws', '.claude', '.tars', '.config',
                    '.kube', '.docker', '.env', '.netrc', '.git-credentials'];
   const safe = (p: string) => {
     const resolved = path.resolve(p);
@@ -171,11 +171,11 @@ describe('Telegram path guard', () => {
   };
 
   it('blocks our own credential store, which it used to allow', () => {
-    // ~/.ssh was blocked from the start; ~/.dorothy - which holds every API key
+    // ~/.ssh was blocked from the start; ~/.tars - which holds every API key
     // in app-settings.json - was not.
-    expect(safe(path.join(home, '.dorothy', 'app-settings.json'))).toBe(false);
-    expect(safe(path.join(home, '.dorothy', 'api-token'))).toBe(false);
-    expect(safe(path.join(home, '.dorothy', 'hermes-webhook-secret'))).toBe(false);
+    expect(safe(path.join(home, '.tars', 'app-settings.json'))).toBe(false);
+    expect(safe(path.join(home, '.tars', 'api-token'))).toBe(false);
+    expect(safe(path.join(home, '.tars', 'hermes-webhook-secret'))).toBe(false);
   });
 
   it('still blocks the directories it always did', () => {

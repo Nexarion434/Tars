@@ -34,7 +34,7 @@ async function openCliPaths(page: import('@playwright/test').Page) {
 test('the extra PATH list keeps a drive path through save and reload', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-cli-paths-'));
   seedSandbox(home);
-  const settingsFile = path.join(home, '.dorothy', 'app-settings.json');
+  const settingsFile = path.join(home, '.tars', 'app-settings.json');
 
   const app = await launchSandboxed(electron, home, {
     env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(31486), DOROTHY_E2E: '1' },

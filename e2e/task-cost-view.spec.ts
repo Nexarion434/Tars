@@ -11,7 +11,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * usage.tasks (PLAN-1.9.3.md, item 2). Frames: `Usage · cost per task`, and
  * its light copy.
  *
- * The sandbox holds a ledger of tasks (~/.dorothy/task-ledger.jsonl), the
+ * The sandbox holds a ledger of tasks (~/.tars/task-ledger.jsonl), the
  * transcripts their sessions wrote, and a catalogue pricing claude-opus-5 at
  * $1 a million tokens in and $2 out, marked fresh so no fetch replaces it,
  * and two Claude accounts on, Main and Second, which the lead and the worker
@@ -44,7 +44,7 @@ type Api = { electronAPI: { usage: { tasks(q?: { sinceDays?: number }): Promise<
 test('the usage page lists each task with its own cost and its total, the averages per agent and per model, filtered by project, agent and period', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-task-cost-view-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const tars = path.join(home, 'projects', 'tars');
   const site = path.join(home, 'projects', 'site');
   for (const folder of [dir, tars, site]) fs.mkdirSync(folder, { recursive: true });

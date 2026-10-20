@@ -15,7 +15,7 @@ import * as path from 'path';
  * These drive the real store, the real fan out and the real queue. The journal
  * is redirected into a temp dir, which matters more here than usual: saveBus()
  * writes on every call with no `loaded` guard in front of it, so an unredirected
- * run would write over the real ~/.dorothy/bus.json.
+ * run would write over the real ~/.tars/bus.json.
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-bus-'));
@@ -1330,7 +1330,7 @@ describe('what is waiting in each room', () => {
  * 7. Send now to an agent outside the room records a message for nobody.
  * 8. The draft guard is skipped on the "now" path: the message is typed
  *    across somebody's draft.
- * 9. A staged file is written outside ~/.dorothy, or its name climbs out of
+ * 9. A staged file is written outside ~/.tars, or its name climbs out of
  *    its folder, or it is too large to hand an agent.
  * 10. A message naming a staged file does not tell the agent where the file
  *     is: the agent receives a sentence about a file it cannot read.
@@ -1498,7 +1498,7 @@ describe('files for a room', () => {
       success: boolean; error?: string; attachments: Array<{ id: string; name: string; path: string; bytes: number; isImage: boolean }>;
     }>;
 
-  it('writes the bytes under ~/.dorothy, where every agent can read them', async () => {
+  it('writes the bytes under ~/.tars, where every agent can read them', async () => {
     const result = await stage([{ name: 'shot.png', mimeType: 'image/png', data: new Uint8Array([1, 2, 3]) }]);
 
     expect(result.success, result.error).toBe(true);

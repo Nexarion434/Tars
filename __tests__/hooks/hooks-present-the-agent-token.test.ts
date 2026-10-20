@@ -86,7 +86,7 @@ describe.skipIf(shHooksNotShipped())('a hook post', () => {
   it('logs in the data folder of the Tars that owns the CLI, for its user only', async () => {
     await runHook({ CLAUDE_AGENT_ID: 'a1', CLAUDE_MGR_API_TOKEN: 'token-of-a1s-terminal', TARS_INSTANCE_ID: INSTANCE });
 
-    const dir = path.join(home, '.dorothy', 'logs');
+    const dir = path.join(home, '.tars', 'logs');
     const log = path.join(dir, 'hooks.log');
     expect(fs.readFileSync(log, 'utf-8')).toContain('session-token-1');
     expect(fs.statSync(log).mode & 0o777).toBe(0o600);

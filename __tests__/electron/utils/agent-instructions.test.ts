@@ -6,7 +6,7 @@ import * as path from 'path';
 /**
  * What Tars hands every agent it runs, in every project.
  *
- * ~/.dorothy/CLAUDE.md is mounted into every agent through --add-dir, whatever
+ * ~/.tars/CLAUDE.md is mounted into every agent through --add-dir, whatever
  * project it is working in. It used to be a copy of whatever CLAUDE.md sat
  * next to the application, which packaged is nothing, and run from a clone is
  * Tars's own development rules: draw the frame in design/tars-redesign.pen
@@ -19,7 +19,7 @@ import * as path from 'path';
  */
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-agent-instr-'));
-const dataDir = path.join(home, '.dorothy');
+const dataDir = path.join(home, '.tars');
 
 /**
  * app.getAppPath() run from a clone IS the repository, which is Nexarion434's case

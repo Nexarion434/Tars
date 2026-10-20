@@ -31,8 +31,8 @@ export function ensureDataDir() {
 /**
  * Publish the instructions Tars gives every agent it runs.
  *
- * Written to ~/.dorothy/CLAUDE.md, which every agent mounts through
- * `--add-dir ~/.dorothy` with CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1,
+ * Written to ~/.tars/CLAUDE.md, which every agent mounts through
+ * `--add-dir ~/.tars` with CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1,
  * whatever project it is working in.
  *
  * The content is a shipped resource and nothing else. It used to look for the
@@ -98,14 +98,14 @@ export function ensureAgentInstructions(): void {
 }
 
 /**
- * Migrate data from ~/.claude-manager to ~/.dorothy on first launch after rebrand.
+ * Migrate data from ~/.claude-manager to ~/.tars on first launch after rebrand.
  * Only copies files that don't already exist in the new location to avoid overwriting newer data.
  * Removes the old directory after successful migration.
  */
 export function migrateFromClaudeManager() {
   if (!fs.existsSync(OLD_DATA_DIR)) return;
 
-  console.log('Migrating data from ~/.claude-manager to ~/.dorothy...');
+  console.log('Migrating data from ~/.claude-manager to ~/.tars...');
 
   const items = [
     'agents.json',
@@ -123,7 +123,7 @@ export function migrateFromClaudeManager() {
 
     if (!fs.existsSync(src)) continue;
     if (fs.existsSync(dest)) {
-      console.log(`  Skipping ${item} (already exists in ~/.dorothy)`);
+      console.log(`  Skipping ${item} (already exists in ~/.tars)`);
       continue;
     }
 

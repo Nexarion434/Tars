@@ -37,7 +37,7 @@ describe('insidePath (2)', () => {
     expect(insidePath('/Users/you/meridian', '/Users/you/meridian/services/a/b/indexer')).toBe('services/a/b/indexer');
     expect(insidePath('/Users/you/meridian', '/Users/you/meridian')).toBe('meridian');
     expect(insidePath('C:\\Users\\you\\meridian', 'C:\\Users\\you\\meridian\\sdk-js')).toBe('sdk-js');
-    expect(insidePath('/Users/you/meridian', '/Users/you/.dorothy/worktrees/meridian-feat')).toBe('meridian-feat');
+    expect(insidePath('/Users/you/meridian', '/Users/you/.tars/worktrees/meridian-feat')).toBe('meridian-feat');
   });
 });
 

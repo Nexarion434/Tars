@@ -20,7 +20,7 @@ import { projectFilesKey, projectFilesDir, ensureProjectFiles, PROJECT_FILES_DIR
  * 5. the key changes from one run to the next, and the folder is lost;
  * 6. a long project name makes a path past what Windows takes;
  * 7. the folder is inside the repository, a temporary folder or ~/Documents
- *    (iCloud evicts it), or clashes with ~/.dorothy/projects.json;
+ *    (iCloud evicts it), or clashes with ~/.tars/projects.json;
  * 8. a relative path is given a folder relative to wherever Tars runs;
  * 9. making it again empties or replaces what is there (it is never deleted).
  * 10. an accented name (café) loses its letters instead of keeping them without
@@ -85,7 +85,7 @@ describe('the key of a project folder', () => {
 describe('the project folder on disk', () => {
   it('lives under the data folder, apart from projects.json, the project and the temporary folders (7)', () => {
     const dir = projectFilesDir('/home/u/app')!;
-    const data = path.join(os.homedir(), '.dorothy');
+    const data = path.join(os.homedir(), '.tars');
     expect(path.dirname(dir)).toBe(path.join(data, PROJECT_FILES_DIR_NAME));
     expect(PROJECT_FILES_DIR_NAME).not.toMatch(/^projects(\.json)?$/);
     expect(dir.startsWith('/home/u/app')).toBe(false);

@@ -19,7 +19,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * What the run proves, in order:
  * - the option is off and account 1 is alone until somebody changes it, and
  *   account 1 is asked about without CLAUDE_CONFIG_DIR;
- * - an account added gets its own directory outside ~/.dorothy, with projects/
+ * - an account added gets its own directory outside ~/.tars, with projects/
  *   linked to ~/.claude/projects, and is saved;
  * - its login terminal runs the binary's own login aimed at that directory,
  *   streams to the page, and the account reads as signed in once it closes;
@@ -126,7 +126,7 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
   // resolved once, as Tars resolves the accounts' root.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-'));
   const resolvedHome = fs.realpathSync(home);
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'demo');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });
@@ -160,7 +160,7 @@ test('claude accounts: added, signed in by their own login, refused twice, saved
     await expect.poll(async () => (await a.state('default'))?.email, { timeout: 20_000 }).toBe('one@example.com');
     expect(calls(home).filter(c => c.args.join(' ') === 'auth status')[0]?.cfg).toBeNull();
 
-    // Added: its own directory, outside ~/.dorothy, sharing ~/.claude/projects.
+    // Added: its own directory, outside ~/.tars, sharing ~/.claude/projects.
     const added = await page.evaluate(() => (window as unknown as Api).electronAPI.claudeAccounts.add({ label: 'Max two' }));
     expect(added.success, added.error).toBe(true);
     const two = added.account;

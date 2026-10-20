@@ -8,7 +8,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
 
 /**
  * The Sentry token, out of agents' reach (the Audit's #242 and #292 gates): it reads JeanBrasse's Sentry organisation, user
- * reports included, and ~/.dorothy, where app-settings.json lives, is in every agent's --add-dir. It is kept in
+ * reports included, and ~/.tars, where app-settings.json lives, is in every agent's --add-dir. It is kept in
  * ~/.tars-private, as the Hermes token is since 1.9.2, and the settings in memory still carry it, so the triage and
  * the Settings page read it where they did.
  *
@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 describe('the Sentry token', () => {
-  it('lives in ~/.tars-private, not in ~/.dorothy', () => {
+  it('lives in ~/.tars-private, not in ~/.tars', () => {
     expect(SENTRY_TOKEN_FILE).toBe(path.join(os.homedir(), '.tars-private', 'sentry-token'));
   });
 

@@ -31,7 +31,7 @@ const SPLASH = 'div.fixed.inset-0.z-\\[200\\]';
 test('an install that never chose it: Settings, Preferences offers New interface, last and off; turned on, the new shell at once, and saved', async () => {
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-preview-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
   fs.writeFileSync(path.join(dir, 'projects.json'), '[]');

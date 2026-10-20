@@ -47,7 +47,7 @@ type Api = { electronAPI: { hermes: { relayStatus(): Promise<{ enabled: boolean;
 test('Telegram through Hermes warns before it erases the bot\'s token, and says how the relay stands', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-relay-switch-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   const priv = path.join(home, '.tars-private');
   fs.mkdirSync(priv, { recursive: true, mode: 0o700 });

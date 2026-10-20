@@ -75,7 +75,7 @@ describe.runIf(onWindows)('a git.exe planted in a project is never the git Tars 
 
   it('the status line, run in the project, reads the branch with the git on the PATH', async () => {
     const home = fs.mkdtempSync(path.join(root, 'home-'));
-    fs.mkdirSync(path.join(home, '.dorothy'));
+    fs.mkdirSync(path.join(home, '.tars'));
     const env: NodeJS.ProcessEnv = {};
     for (const [k, v] of Object.entries(process.env)) if (!/^(CLAUDE_|DOROTHY_|TARS_)/.test(k) && k !== VAR) env[k] = v;
     const out = await new Promise<string>((resolve, reject) => {

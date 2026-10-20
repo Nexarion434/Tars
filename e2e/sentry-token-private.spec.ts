@@ -7,7 +7,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
 import { currentUserSid, readDacls } from '../__tests__/electron/platform/read-dacl';
 
 /**
- * The Sentry token leaves ~/.dorothy, which every agent is handed, for
+ * The Sentry token leaves ~/.tars, which every agent is handed, for
  * ~/.tars-private, which none is (the Audit's gates of #242 and #292), in the
  * real app: a token saved by an older Tars in app-settings.json moves at the
  * first start, and a save, of that token or of anything else, never writes it
@@ -52,10 +52,10 @@ function privacyOf(file: string): string {
   return closed ? OWNER_ONLY : JSON.stringify({ file: ofFile, dir: ofDir });
 }
 
-test('the Sentry token moves out of ~/.dorothy at the first start, and a save never writes it back', async () => {
+test('the Sentry token moves out of ~/.tars at the first start, and a save never writes it back', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-sentry-token-'));
   seedSandbox(home);
-  const settingsFile = path.join(home, '.dorothy', 'app-settings.json');
+  const settingsFile = path.join(home, '.tars', 'app-settings.json');
   const seeded = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
   fs.writeFileSync(settingsFile, JSON.stringify({ ...seeded, sentryAuthToken: OLD, sentryTriageProject: '/work/tars' }, null, 2));
   const privateFile = path.join(home, '.tars-private', 'sentry-token');

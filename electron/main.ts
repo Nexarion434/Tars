@@ -22,7 +22,7 @@ import { onRelayReply, onRelayStatus, relayEnabled, relaySend, relayWasSent, sta
 import { startRelayRouting } from './services/hermes-relay-routing';
 import { settingsForRelay } from './services/hermes-relay-switch';
 import { reportsOn } from './services/event-reports';
-import { app, dialog, ipcMain } from 'electron';
+import { app, dialog, ipcMain, Notification } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -31,7 +31,7 @@ import * as path from 'path';
 import type { AppSettings, AgentStatus } from './types';
 
 // Constants
-import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
+import { APP_SETTINGS_FILE, API_PORT, API_TOKEN_FILE, DATA_DIR, DATA_DIR_MOVE, DATA_DIR_REWRITTEN, KANBAN_FILE, PRIVATE_DIR, dataPath } from './constants';
 import { timeIpcHandlers, startHealthMonitor, pageOf, ipcChannels } from './services/health/monitor';
 import { readSamples, onlyKnown, type Vocabulary } from './services/health/samples';
 import { APP_PAGES } from './services/health/pages';
@@ -218,7 +218,7 @@ const errorReports = startErrorReports(() => appSettings.errorReportsEnabled ===
   channels: ipcChannels.known(),
 });
 
-/** The health samples, ~/.dorothy, on this machine only (services/health/samples.ts). */
+/** The health samples, ~/.tars, on this machine only (services/health/samples.ts). */
 const HEALTH_FILE = dataPath('health-samples.jsonl');
 /** Every 5 minutes; a test run may ask for a shorter period (DOROTHY_HEALTH_EVERY_MS, under DOROTHY_E2E only). */
 function healthEveryMs(): number {
@@ -303,14 +303,14 @@ function loadAppSettings(): AppSettings {
       additionalPaths: [],
     },
   };
-  // Every key out of ~/.dorothy before anything reads one (services/settings-secrets.ts).
+  // Every key out of ~/.tars before anything reads one (services/settings-secrets.ts).
   migrateSecrets();
   try {
     if (fs.existsSync(APP_SETTINGS_FILE)) {
       const saved = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf-8'));
       // The Sentry token is kept in ~/.tars-private (services/sentry-token.ts),
       // and so are the other secrets (settings-secrets.json).
-      // The switch is on only for the boolean true: the file is in ~/.dorothy,
+      // The switch is on only for the boolean true: the file is in ~/.tars,
       // which every agent can write, and "false" or 1 would read as on to a
       // page that tests it for truth (the Audit's L1 on #360).
       return { ...defaults, ...sentryTokenOutOf(saved), ...readSecrets(), newInterface: saved.newInterface === true, chatsReadEachOther: saved.chatsReadEachOther === true };
@@ -477,7 +477,7 @@ function initApiServer() {
 /**
  * The agents' kanban is the Hermes board now (services/kanban-board.ts). The
  * open tasks of the old local board, which no page shows, move there once,
- * parked, on their project; ~/.dorothy/kanban-tasks.json stays as it is, the
+ * parked, on their project; ~/.tars/kanban-tasks.json stays as it is, the
  * backup. Whatever Hermes did not take is tried again at the next launch.
  */
 function moveLocalKanbanToHermes() {
@@ -553,13 +553,13 @@ app.whenReady().then(async () => {
   // ledger and the vault were readable by every account on the machine.
   narrowDataDir(DATA_DIR);
 
-  // Take JeanBrasse's conversation with the super chat out of ~/.dorothy, which is
+  // Take JeanBrasse's conversation with the super chat out of ~/.tars, which is
   // the directory every agent is handed. Here rather than on the first read of
   // it: a run in which the Chat is never opened would otherwise leave the file
   // sitting there for its whole length.
   migrateOverseerOutOfAgentReach();
   // And the Hermes webhook secret, for the same reason: through the webhook it
-  // gives any agent of any project work, and ~/.dorothy is one `cat` away.
+  // gives any agent of any project work, and ~/.tars is one `cat` away.
   migrateWebhookSecretOutOfAgentReach();
   // Windows: the modes above do nothing there; an access list does the same,
   // set in the background (it never rejects, each failure is logged).
@@ -567,7 +567,7 @@ app.whenReady().then(async () => {
   // user's account only.
   void closeSecretsToOtherAccounts([APP_SETTINGS_FILE, SECRETS_FILE, HERMES_CONNECTION_FILE, API_TOKEN_FILE, HEALTH_FILE], PRIVATE_DIR);
 
-  // Write Tars's CLAUDE.md to ~/.dorothy/ so all spawned agents can load it
+  // Write Tars's CLAUDE.md to ~/.tars/ so all spawned agents can load it
   ensureAgentInstructions();
 
   // Install/update statusline script if enabled (ensures script is always up-to-date after app updates)
@@ -591,6 +591,13 @@ app.whenReady().then(async () => {
   // Migrate data from ~/.claude-manager if it exists (rebrand migration)
   migrateFromClaudeManager();
 
+  // ~/.dorothy became ~/.tars as constants loaded (core/data-dir-move.ts), and
+  // the old path was rewritten where Tars wrote it: said once here.
+  if (DATA_DIR_MOVE.did !== 'none' && DATA_DIR_MOVE.did !== 'already') {
+    console.log(`[data-dir] ${DATA_DIR_MOVE.did}: ${DATA_DIR}${DATA_DIR_MOVE.why ? ` (${DATA_DIR_MOVE.why})` : ''}`);
+  }
+  if (DATA_DIR_REWRITTEN.length) console.log(`[data-dir] ~/.dorothy rewritten to ~/.tars in ${DATA_DIR_REWRITTEN.length} file(s)`);
+
   // Load agents from disk
   loadAgents();
   // And the run token folders a delegated run or a crash left behind (services/acp/run-token-file.ts).
@@ -603,7 +610,7 @@ app.whenReady().then(async () => {
   // before this run's first, and sent once every handler is registered, below.
   const lastRunSamples = previousRun ? readSamples(HEALTH_FILE) : [];
   // What leaves names only the channels this Tars registered and the app's
-  // pages: the samples file is in ~/.dorothy, which agents may write.
+  // pages: the samples file is in ~/.tars, which agents may write.
   const healthWords: Vocabulary = { channels: ipcChannels.known(), pages: APP_PAGES };
   startHealthMonitor({
     file: HEALTH_FILE,
@@ -620,6 +627,12 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  // Two data folders (core/data-dir-move.ts): which one Tars runs on is said
+  // where the user sees it, once per start, and the window can ask for it
+  // (app:dataDir). Never from an E2E run, which must put nothing on the screen.
+  if (DATA_DIR_MOVE.notice && process.env.DOROTHY_E2E !== '1' && Notification.isSupported()) {
+    new Notification({ title: 'Tars: two data folders', body: DATA_DIR_MOVE.notice }).show();
+  }
   uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
@@ -940,7 +953,7 @@ app.whenReady().then(async () => {
 
   // And the CLIs the agents run, which Tars keeps from updating themselves:
   // claude and Amp, when at least one agent runs them, 5 s after launch and
-  // every half hour, logged to ~/.dorothy/cli-updates.log. Under the same
+  // every half hour, logged to ~/.tars/cli-updates.log. Under the same
   // switch. See services/cli-updater.ts.
   startCliUpdates(() => appSettings, () => [...agents.values()].map(agent => agent.provider));
 

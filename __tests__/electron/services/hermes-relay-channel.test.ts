@@ -14,7 +14,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * 1. A send does not reach the plugin, or reaches it without the dashboard's token, or other than as the caller wrote
  *    it: its text, kind and ref, and the project as the one word the plugin takes.
  * 2. The message id that came back is not in Tars's own list of what it sent; or that list is kept where agents can
- *    write it (~/.dorothy), or where others can read it (not 0600 in a 0700 folder).
+ *    write it (~/.tars), or where others can read it (not 0600 in a 0700 folder).
  * 3. With the relay off, anything is sent, polled or acked, or a send says it went.
  * 4. With Hermes down, a send is lost, or goes another way (there is no fallback), or its caller is told it went; it
  *    does not go once Hermes answers again; it goes twice; or it still goes after its time is up.
@@ -102,7 +102,7 @@ describe('a send', () => {
       expect(fs.statSync(privateFile('relay-sent.json')).mode & 0o777).toBe(0o600);
       expect(fs.statSync(path.join(os.homedir(), '.tars-private')).mode & 0o777).toBe(0o700);
     }
-    expect(fs.existsSync(path.join(os.homedir(), '.dorothy', 'relay-sent.json'))).toBe(false);
+    expect(fs.existsSync(path.join(os.homedir(), '.tars', 'relay-sent.json'))).toBe(false);
   });
 
   it('3. with the relay off, nothing is sent, polled or acked, and the caller is told why', async () => {

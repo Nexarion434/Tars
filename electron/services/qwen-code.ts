@@ -11,7 +11,7 @@ import type { AgentPermissionMode } from '../types';
  * fork) on 2026-10-18:
  * - QWEN_CODE_SYSTEM_SETTINGS_PATH names a settings file read above the
  *   user's ~/.qwen/settings.json, its hooks concatenated with theirs. Tars
- *   writes one per agent under ~/.dorothy/qwen-code/ (its hooks, its MCP
+ *   writes one per agent under ~/.tars/qwen-code/ (its hooks, its MCP
  *   servers, its effort, qwen's own updater off) and never writes the user's.
  * - It fires Claude Code's hooks with Claude Code's fields: SessionStart,
  *   UserPromptSubmit (the prompt, the sender line included), Stop

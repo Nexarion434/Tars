@@ -22,7 +22,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(150_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qwen-window-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     for (const d of [project, dir, path.join(home, '.qwen')]) fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(home, '.qwen', 'settings.json'), JSON.stringify({
       model: { name: 'deepseek-v4-pro' },

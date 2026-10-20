@@ -43,7 +43,7 @@ import * as path from 'node:path';
  *  9. Blocks the CLI: an API that is down, or accepts and never answers, must
  *     cost a bounded time and still exit 0, as curl --max-time does.
  * 10. A non-zero exit or a crash on bad stdin, where the .sh exits 0.
- * 11. Logs written elsewhere than ~/.dorothy/logs of the HOME it runs in.
+ * 11. Logs written elsewhere than ~/.tars/logs of the HOME it runs in.
  * 12. The Windows bugs kept: a backslash path pasted raw into JSON or into a
  *     query string.
  * 13. An unknown event swallowed silently instead of failing loudly.
@@ -243,7 +243,7 @@ const GEMINI_AGENT = { DOROTHY_AGENT_ID: 'gem-1', CLAUDE_AGENT_ID: 'gem-1', CLAU
 const BEARER = 'Bearer tok-1';
 /** The shared token where it was until 2.0.4 and where it is since: no hook presents it from either. */
 function sharedTokenEverywhere(home: string): void {
-  for (const dir of ['.dorothy', '.tars-private']) {
+  for (const dir of ['.tars', '.tars-private']) {
     fs.mkdirSync(path.join(home, dir), { recursive: true });
     fs.writeFileSync(path.join(home, dir, 'api-token'), 'shared-tok\n');
   }
@@ -895,12 +895,12 @@ describe('a long transcript', () => {
 });
 
 describe('the runner logs where the .sh logs', () => {
-  it('appends to hooks.log and hooks-debug.log under ~/.dorothy/logs of its HOME', async () => {
+  it('appends to hooks.log and hooks-debug.log under ~/.tars/logs of its HOME', async () => {
     const home = caseHome('logs');
     responder = () => ({});
     await runNode('session-start', baseEnv(home, AGENT), JSON.stringify({ session_id: S, cwd: PROJECT }));
     await runNode('on-stop', baseEnv(home, AGENT), JSON.stringify({ session_id: S, last_assistant_message: 'hello' }));
-    const dir = path.join(home, '.dorothy', 'logs');
+    const dir = path.join(home, '.tars', 'logs');
     const hooksLog = fs.readFileSync(path.join(dir, 'hooks.log'), 'utf-8');
     expect(hooksLog).toMatch(new RegExp(`SESSION_START hook\\. AGENT_ID=agent-1 SESSION_ID=${S}`));
     expect(hooksLog).toContain('SESSION_START curl result: {"success":true}');

@@ -2,7 +2,7 @@
 # Lance la NOUVELLE Tars en bac à sable, à côté de l'app de prod.
 #
 # Isolation :
-#   - HOME pointé sur ~/Tars-sandbox  → ~/.dorothy (agents, settings, token),
+#   - HOME pointé sur ~/Tars-sandbox  → ~/.tars (agents, settings, token),
 #     ~/.claude (mémoire, MCP, hooks) et ~/Library/Application Support/Tars
 #     (localStorage, fenêtres) sont des copies de test, jamais les vrais.
 #   - API sur le port 31499              → aucun conflit avec la prod (31415).

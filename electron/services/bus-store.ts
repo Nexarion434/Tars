@@ -28,7 +28,7 @@ import type {
 /**
  * The bus journal: rooms, threads, messages and deliveries.
  *
- * One JSON file under ~/.dorothy, written the way agents.json is (temp file
+ * One JSON file under ~/.tars, written the way agents.json is (temp file
  * then rename, through the shared writeAtomicSync). No new service, no
  * database, no network: a room is a view over the fleet Tars already has, and
  * only the journal and the membership overrides are persisted.
@@ -148,7 +148,7 @@ export function loadBus(): void {
  */
 function realAccountJournal(): string | undefined {
   try {
-    return path.join(os.userInfo().homedir, '.dorothy', 'bus.json');
+    return path.join(os.userInfo().homedir, '.tars', 'bus.json');
   } catch {
     return undefined;
   }

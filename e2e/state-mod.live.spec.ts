@@ -39,7 +39,7 @@ function resolveClaude() {
 function seed(claude) {
   const home = fs.mkdtempSync('/tmp/tars-mod-');
   const project = path.join(home, 'projects', 'mod');
-  for (const dir of [path.join(home, '.claude'), path.join(home, '.dorothy'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [path.join(home, '.claude'), path.join(home, '.tars'), path.join(home, 'bin'), project]) fs.mkdirSync(dir, { recursive: true });
   execFileSync('git', ['init', '-q', project]);
   fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ theme: 'dark', skipDangerousModePermissionPrompt: true }, null, 2));
   const version = path.basename(claude);
@@ -59,12 +59,12 @@ function seed(claude) {
     projectPath: project, skills: [], output: [], permissionMode: 'bypass', cliPath,
     lastActivity: new Date().toISOString(),
   });
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([
     agent('mod', 'Mod agent', claude), agent('hooks', 'Hooks agent', plain),
   ], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude },
   }, null, 2));
   return home;
@@ -137,7 +137,7 @@ test("the state mod reports a claude agent's turn and heartbeat, and a claude wi
     const beat = (await state('mod')).beat;
     fact('mod beat', beat);
 
-    const hookLog = fs.readFileSync(path.join(HOME, '.dorothy', 'logs', 'hooks.log'), 'utf8');
+    const hookLog = fs.readFileSync(path.join(HOME, '.tars', 'logs', 'hooks.log'), 'utf8');
     const promptResults = hookLog.split('\n').filter(l => l.includes('USER_PROMPT_SUBMIT curl result'));
     fact('shell hooks', { promptResults });
     const setAside = id => promptResults.some(l => l.includes('"ignored":"state-mod"') && l.includes(`"id":"${id}"`));

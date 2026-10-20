@@ -1,6 +1,6 @@
 /**
  * The chats' records (ORCHESTRATOR-PER-CHAT.md v2.2, 4.1 and 4.6, PR C):
- * `~/.dorothy/chats.json`, one record per chat of a project, and the
+ * `~/.tars/chats.json`, one record per chat of a project, and the
  * migration that makes each project's orchestrator's conversation its chat
  * #1, "Main" (electron/services/chats.ts). The store keeps the records; who
  * runs a chat (PR D) and what it says (PR E) are not here.

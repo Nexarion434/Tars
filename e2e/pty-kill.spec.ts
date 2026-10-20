@@ -51,7 +51,7 @@ type Case = { site: string; state: 'alive' | 'exited'; pid: number; heldAtKill: 
 test('twenty terminals ended through every kill site raise no AttachConsole failure and leave nothing running', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-pty-kill-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'kill-sites');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(project, { recursive: true });

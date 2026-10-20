@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
  *
  * scripts/sandbox.sh, and the Frontend's sandbox that proved the chat loop,
  * start Tars with HOME on a throwaway directory so that nothing they do reaches
- * the real ~/.claude or ~/.dorothy. os.homedir() follows HOME. Electron's home
+ * the real ~/.claude or ~/.tars. os.homedir() follows HOME. Electron's home
  * path does not on macOS: measured on 2026-09-16, a bare Electron started with
  * HOME on a temp directory answered os.homedir() with that directory and
  * app.getPath('home') with the account's own home. spawnAgentSession used the second, so

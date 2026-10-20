@@ -5,7 +5,7 @@
  *
  * What goes wrong if it is wrong, first:
  * - nothing changes when the option is off: with no TARS_CLAUDE_ACCOUNT the
- *   render is account 1's, and ~/.dorothy/rate-limits.json, which the Usage
+ *   render is account 1's, and ~/.tars/rate-limits.json, which the Usage
  *   page reads, is written as it always was;
  * - a secondary account's usage written into rate-limits.json, where the Usage
  *   page would show it as account 1's;
@@ -29,12 +29,12 @@ beforeAll(() => {
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-statusline-accounts-'));
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
 });
 
 afterEach(() => {
@@ -56,7 +56,7 @@ function render(account: string | undefined, rateLimits: unknown = LIMITS) {
   return spawnSync('bash', [script], { input, cwd: home, encoding: 'utf-8', env });
 }
 
-const dataFile = (...p: string[]) => path.join(home, '.dorothy', ...p);
+const dataFile = (...p: string[]) => path.join(home, '.tars', ...p);
 const readJson = (f: string) => JSON.parse(fs.readFileSync(f, 'utf-8'));
 
 describe.skipIf(shHooksNotShipped())('the counters the status line leaves, per account', () => {

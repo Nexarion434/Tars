@@ -69,7 +69,7 @@ test('a panel sends the wheel a full-screen CLI asked for as wheel reports, and 
   }
   // Only the two readers, idle and without a terminal, so the board's auto
   // start runs them, and them alone, through the agent's own CLI path.
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify(agents.map(agent => ({
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify(agents.map(agent => ({
     id: agent.id, name: agent.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cliPaths.get(agent.id),
     createdAt: '2026-09-16T08:00:00.000Z', lastActivity: '2026-09-16T08:00:00.000Z',

@@ -176,12 +176,12 @@ function seedBracketedPasteCli(home: string): void {
     'process.stdin.resume();',
     '',
   ].join('\n'));
-  const file = path.join(home, '.dorothy', 'agents.json');
+  const file = path.join(home, '.tars', 'agents.json');
   const agents = JSON.parse(fs.readFileSync(file, 'utf-8')).map((a: { id: string }) => (a.id === 'a4' ? { ...a, cliPath: cli } : a));
   fs.writeFileSync(file, JSON.stringify(agents, null, 2));
 }
 
-const SETTINGS_FILE = (home: string) => path.join(home, '.dorothy', 'app-settings.json');
+const SETTINGS_FILE = (home: string) => path.join(home, '.tars', 'app-settings.json');
 const readSettings = (home: string) => JSON.parse(fs.readFileSync(SETTINGS_FILE(home), 'utf-8'));
 
 test.describe('the Windows desktop shell', () => {
@@ -685,7 +685,7 @@ test.describe('the Windows desktop shell', () => {
       process.mainModule!.require(`${dist}/core/agent-manager.js`)[call](), { dist: DIST, call });
     await autosave('stopAgentAutosave');
     try {
-      const agentsBefore = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
+      const agentsBefore = fs.readFileSync(path.join(home, '.tars', 'agents.json'), 'utf-8');
       const electronPath = (await import('electron')).default as unknown as string;
       const env: Record<string, string> = Object.fromEntries(Object.entries(process.env)
         .filter(([k, v]) => v !== undefined && !/^(CLAUDE|DOROTHY|ANTHROPIC)|^CLAUDECODE$/.test(k))) as Record<string, string>;
@@ -703,7 +703,7 @@ test.describe('the Windows desktop shell', () => {
       });
       await sleep(1000);
       const shown = await inMain<{ visible: boolean; focused: boolean }>(app, 'return { visible: w.isVisible(), focused: w.isFocused() };');
-      const agentsAfter = fs.readFileSync(path.join(home, '.dorothy', 'agents.json'), 'utf-8');
+      const agentsAfter = fs.readFileSync(path.join(home, '.tars', 'agents.json'), 'utf-8');
       recordValues({ singleInstance: { exitCode: code, ms: Date.now() - started, firstWindow: shown, agentsUntouched: agentsBefore === agentsAfter } });
       expect(code).toBe(0);
       expect(shown.visible).toBe(true);
@@ -828,7 +828,7 @@ test.describe('the end of the Windows session', () => {
     const { app, errors } = await launch(home, 31463);
     try {
       await settleFleet(app);
-      const agentsFile = path.join(home, '.dorothy', 'agents.json');
+      const agentsFile = path.join(home, '.tars', 'agents.json');
       const marker = `session-end-${Date.now()}`;
       const ptyPids: number[] = await app.evaluate((_e, { dist, marker }) => {
         const req = process.mainModule!.require;

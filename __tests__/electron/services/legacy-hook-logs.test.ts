@@ -5,7 +5,7 @@ import * as path from 'node:path';
 /**
  * The hooks of 1.7.9 and before logged to /tmp/dorothy-hooks.log and
  * /tmp/dorothy-hooks-debug.log, readable by every user of the machine. #135
- * moved the logs to ~/.dorothy/logs at 0600 and left the old files behind:
+ * moved the logs to ~/.tars/logs at 0600 and left the old files behind:
  * about 4 MB of session ids and prompt openings (the Audit, gate of #135).
  * Tars removes them once, at startup.
  *

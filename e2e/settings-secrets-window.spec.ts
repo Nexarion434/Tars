@@ -7,7 +7,7 @@ import { launchSandboxed, listenForErrors, markWhatsNewSeen, recordValues, stepS
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * The window's side of #466 (2.0.4): since the secrets left ~/.dorothy, Settings is handed none, and holds none.
+ * The window's side of #466 (2.0.4): since the secrets left ~/.tars, Settings is handed none, and holds none.
  * Frames: `Secrets · Settings, Telegram`, `· Settings, Providers, an API key`, `· Settings, Hermes connection`,
  * `· states`, `· CLIs, one detection` (each with its light copy).
  *
@@ -57,7 +57,7 @@ type Handoffs = { copied: string[]; dialogs: { message: string; detail: string }
 
 function seed(newInterface: boolean, tag: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-secrets-window-${tag}-`));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   const bin = path.join(home, 'bin');
   fs.mkdirSync(dir, { recursive: true });

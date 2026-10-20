@@ -7,19 +7,19 @@ import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
- * The secrets leave ~/.dorothy (2.0.4, the maintainer's decision of 18/10): ~/.dorothy is every agent's --add-dir,
+ * The secrets leave ~/.tars (2.0.4, the maintainer's decision of 18/10): ~/.tars is every agent's --add-dir,
  * and app-settings.json held every key of the app. They go to ~/.tars-private, which no agent is handed, and the
  * window loses its reach into both folders (the Audit's Holes 1 and 2).
  *
  * The real app on a sandbox HOME seeded as an install before 2.0.4 leaves it: an app-settings.json holding a bot
  * token, a provider's key, a codex key (#459), SocialData's and X's keys, Hermes's gateway token and Honcho's key;
  * a backup of it holding OpenRouter's key, and a temp file a write left; api-token, hermes-connection.json and
- * hermes-session.json in ~/.dorothy. Two agents whose CLIs are stand-ins that record the NAMES of the key variables
+ * hermes-session.json in ~/.tars. Two agents whose CLIs are stand-ins that record the NAMES of the key variables
  * they got and a sha256 of each value, so no key is written down.
  *
  * Asserted, once with the classic shell and once with the new interface:
  * 1. the move: no file under the HOME but ~/.tars-private holds a seeded key, the window's profile included; the
- *    copies of the settings are gone; api-token and the Hermes files are in ~/.tars-private and not in ~/.dorothy;
+ *    copies of the settings are gone; api-token and the Hermes files are in ~/.tars-private and not in ~/.tars;
  *    settings-secrets.json is 0600 in a 0700 folder;
  * 2. every feature finds its secret: the window is told each is set; the deepseek agent gets DeepSeek's key, the
  *    codex agent codex's; the local API takes the token now in ~/.tars-private; Hermes reads its connection there;
@@ -90,11 +90,11 @@ function filesHolding(dir: string, needles: string[], out: string[] = []): strin
 }
 
 for (const newInterface of [false, true]) {
-  test(`the secrets leave ~/.dorothy, every feature finds them, and the window reads and writes none${newInterface ? ' (new interface)' : ''}`, async () => {
+  test(`the secrets leave ~/.tars, every feature finds them, and the window reads and writes none${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(240_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-secrets-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const priv = path.join(home, '.tars-private');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin, path.join(project, '.git', 'hooks'), path.join(dir, 'vault', 'attachments')]) fs.mkdirSync(d, { recursive: true });
@@ -198,7 +198,7 @@ for (const newInterface of [false, true]) {
       for (const f of [attachment, path.join(dir, 'app-settings.json'), path.join(priv, 'settings-secrets.json')]) {
         // With a host: local-file is a standard scheme, so Chromium reads local-file:///var/... as the host
         // `var` and the path /folders/..., and the empty-host form serves nothing at all. Any host keeps the
-        // path whole, which is how a page reached ~/.dorothy through it.
+        // path whole, which is how a page reached ~/.tars through it.
         served[f] = await app.evaluate(async ({ net }, url) => (await net.fetch(url)).status, `local-file://h${f}`);
       }
       keep({ reads, served });
@@ -229,7 +229,7 @@ for (const newInterface of [false, true]) {
       fs.mkdirSync(path.join(project, 'src'), { recursive: true });
       fs.writeFileSync(path.join(project, 'src', 'a.ts'), 'export const a = 1;\n');
       const added = await api((a, p) => a.fs.addCustomProject(p as string), kube);
-      // As an agent could: the projects' list lives in ~/.dorothy (projects.json).
+      // As an agent could: the projects' list lives in ~/.tars (projects.json).
       fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project, kube]));
       const reads6 = {
         kube: await api((a, p) => a.fs.readTextFile(p as string), path.join(kube, 'config')),
@@ -248,11 +248,11 @@ for (const newInterface of [false, true]) {
 }
 
 for (const newInterface of [false, true]) {
-  test(`Tars starts when the secrets cannot leave ~/.dorothy yet${newInterface ? ' (new interface)' : ''}`, async () => {
+  test(`Tars starts when the secrets cannot leave ~/.tars yet${newInterface ? ' (new interface)' : ''}`, async () => {
     test.setTimeout(180_000);
     test.skip(process.platform === 'win32', 'a folder made read-only by its mode');
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-secrets-locked-'));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const priv = path.join(home, '.tars-private');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'app-settings.json'), JSON.stringify({

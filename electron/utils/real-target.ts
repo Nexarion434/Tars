@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DATA_DIR_NAME, PRIVATE_DIR_NAME } from '../constants';
+import { LEGACY_DATA_DIR_NAME } from '../core/data-dir-move';
 import { isWithinDir } from './path-identity';
 import { fileId, isUnderSafeRoot, withoutHomeCover, type HomeRootDeps } from './home-root';
 
@@ -12,7 +13,7 @@ import { fileId, isUnderSafeRoot, withoutHomeCover, type HomeRootDeps } from './
  * The file handlers (fs:read-text-file, fs:write-text-file,
  * fs:read-project-files, local-file://, /api/local-file) judged the path as
  * spelled, then readFileSync / writeFileSync / a read stream followed every
- * link on the way. ~/.dorothy is one of their roots and every agent is handed
+ * link on the way. ~/.tars is one of their roots and every agent is handed
  * it: one symlink in it to the home opened ~/.ssh and ~/.tars-private, to read
  * and to write, and a symlink in a cloned repository did the same through its
  * project. So the target is followed as the call will follow it, and its real
@@ -36,12 +37,12 @@ import { fileId, isUnderSafeRoot, withoutHomeCover, type HomeRootDeps } from './
  * renderer's reads and writes of instruction files (fs:read-text-file,
  * fs:write-text-file, fs:read-project-files: the Brain page). /api/local-file,
  * which takes no token, and local-file:// stay strict: there it would serve
- * any note in the home through a link planted under ~/.dorothy. The exception
+ * any note in the home through a link planted under ~/.tars. The exception
  * is for `~/.claude/CLAUDE.md`, or a project's CLAUDE.md or AGENTS.md, linked
  * to a file in a dotfiles repository outside every root, which many Claude
  * Code users keep. The target's last name may be a FILE link out of every root
  * when everything above it really lies in a root (a folder link on the way is
- * the escape itself: ~/.dorothy/h linked to the home) and the file it finally
+ * the escape itself: ~/.tars/h linked to the home) and the file it finally
  * leads to passes linkedFileAllowed.
  *
  * What remains: the check and the read or write that follows are two calls,
@@ -116,7 +117,7 @@ function inRealRoot(spelled: string, real: string, roots: string[], isInside: In
  */
 function blockedPlaces(home: string): string[] {
   return [
-    '.ssh', '.gnupg', '.aws', '.claude', '.env', DATA_DIR_NAME, PRIVATE_DIR_NAME,
+    '.ssh', '.gnupg', '.aws', '.claude', '.env', DATA_DIR_NAME, LEGACY_DATA_DIR_NAME, PRIVATE_DIR_NAME,
     '.config', '.kube', '.docker', '.netrc', '.git-credentials',
   ].map(name => path.join(home, name));
 }
@@ -126,7 +127,7 @@ function blockedPlaces(home: string): string[] {
  * ~/.config, ~/.kube, ~/.docker...) or is one, as spelled or where it really
  * lies (`real`, its real path, when it has one): the window reads none of
  * them, whatever names it as a project (the Audit's L1 on #466). ~/.claude,
- * ~/.dorothy and ~/.tars-private, also blocked to a link, have rules of their
+ * ~/.tars and ~/.tars-private, also blocked to a link, have rules of their
  * own (window-file-access.ts).
  */
 export function inCredentialPlace(target: string, real: string | null, deps: { home?: string } = {}): boolean {

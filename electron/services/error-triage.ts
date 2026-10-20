@@ -39,7 +39,7 @@ import type { RelayMessage, RelayReply, RelaySendResult } from './hermes-relay';
  * own list. A note the orchestrator could not get, its CLI not running, is
  * owed there, and goes once the CLI runs, after a restart of Tars too.
  *
- * Once per issue. `~/.dorothy/error-triage.json` (0600) keeps the issues filed
+ * Once per issue. `~/.tars/error-triage.json` (0600) keeps the issues filed
  * and when, and Hermes's idempotency key (`tars-sentry:<issue id>`) hands back
  * the task already on the board when that list is lost, or when Tars stopped
  * between a task and the list. A list that cannot be read stops the triage:

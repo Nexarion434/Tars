@@ -20,7 +20,7 @@ export function ProjectFileList({ folder, sub, list, selected, notesMoved, onOpe
 }) {
   const files = list && 'files' in list ? list.files : [];
   const count = files.length + (list && 'files' in list ? list.more ?? 0 : 0);
-  const folderPath = `~/.dorothy/project-files/${folder.key}/${sub}`;
+  const folderPath = `~/.tars/project-files/${folder.key}/${sub}`;
   const notesName = notesMoved ? notesMoved.split(/[\\/]/).filter(Boolean).pop() : undefined;
 
   return (

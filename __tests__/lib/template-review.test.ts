@@ -39,7 +39,7 @@
  * 12. using a template sends its prompt by default when it is not built in:
  *    an imported template looks just like one you made;
  * 13. an edited built-in starts with its prompt: its override lives in
- *    ~/.dorothy/templates.json, which any agent can write (the Audit's gate of
+ *    ~/.tars/templates.json, which any agent can write (the Audit's gate of
  *    #204 wrote bypass and a "curl ... | sh" prompt there, and one click sent
  *    it);
  * 14. a newline, a carriage return or a tab in a one-line field (a name, a

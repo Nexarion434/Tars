@@ -14,7 +14,7 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * The ways it fails:
  * 1. One secret for every gateway: whoever holds gateway A's dispatches as gateway B, and B cannot be cut off without
  *    A. Each gateway has its own, minted from 32 random bytes (64 hex), in its own file of the private folder, 0600 in
- *    a 0700 folder, and never in ~/.dorothy, which every agent is handed.
+ *    a 0700 folder, and never in ~/.tars, which every agent is handed.
  * 2. A rotated secret still opening, or a removed gateway's: its file left behind, or the old value still matched.
  * 3. The secret the Hermes of before 2.0.4 holds lost: its jobs stop. The default gateway keeps
  *    `~/.tars-private/hermes-webhook-secret` as it is.

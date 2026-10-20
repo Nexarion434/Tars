@@ -38,7 +38,7 @@ type Api = { electronAPI: { agent: { start(p: { id: string; prompt: string }): P
 function sandbox(prefix: string, agent: Record<string, unknown>, fakeEnv: Record<string, string>, newInterface: boolean) {
   const home = fs.mkdtempSync(`/tmp/dorothy-e2e-${prefix}-`);
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin, path.join(home, '.codex')]) fs.mkdirSync(d, { recursive: true });
   execFileSync('git', ['init', '-q', project]);

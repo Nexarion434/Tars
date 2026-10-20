@@ -29,16 +29,16 @@ interface AppSettings {
  * now (registerTelegramTools), whose routes check `isSafeTelegramPath` and
  * the authorized chats again, so both guards hold whichever runs first. An agent that can call these tools could name any absolute path
  * and any chat id: `send_telegram_document` with
- * `~/.dorothy/app-settings.json` and the attacker's own chat id is a one-call
+ * `~/.tars/app-settings.json` and the attacker's own chat id is a one-call
  * exfiltration of every API key the app holds.
  *
  * Both halves of the guard are enforced here, in the same shape the app uses.
  */
 const BLOCKED_DIRS = [
-  ".ssh", ".gnupg", ".aws", ".claude", ".dorothy", ".config",
+  ".ssh", ".gnupg", ".aws", ".claude", ".tars", ".config",
   ".kube", ".docker",
   // What Tars keeps out of the agents' directory: JeanBrasse's conversation with
-  // the super chat and the Hermes webhook secret. Blocking .dorothy alone made
+  // the super chat and the Hermes webhook secret. Blocking .tars alone made
   // them sendable again the moment they moved out of it.
   ".tars-private",
 ];

@@ -41,18 +41,18 @@ for (const newInterface of [false, true]) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-trust-link-'));
     const real = path.join(home, 'elsewhere', 'demo');
     const bin = path.join(home, 'bin');
-    for (const d of [real, bin, path.join(home, '.dorothy')]) fs.mkdirSync(d, { recursive: true });
+    for (const d of [real, bin, path.join(home, '.tars')]) fs.mkdirSync(d, { recursive: true });
     fs.symlinkSync(path.join(home, 'elsewhere'), path.join(home, 'linked'));
     const project = path.join(home, 'linked', 'demo');
     const claude = path.join(bin, 'claude');
     fs.writeFileSync(claude, `#!${process.execPath}\n${STAND_IN}`, { mode: 0o755 });
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ projects: {} }));
-    fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{
+    fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([{
       id: 'dev', name: 'Build Agent', character: 'robot', provider: 'claude', status: 'idle', role: 'worker', projectPath: project, skills: [],
       permissionMode: 'bypass', cliPath: claude, createdAt: '2026-10-19T08:00:00.000Z', lastActivity: '2026-10-19T08:00:00.000Z',
     }], null, 2));
-    fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify([project]));
-    fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface, cliPaths: { additionalPaths: [bin] } }));
+    fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([project]));
+    fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface, cliPaths: { additionalPaths: [bin] } }));
     const log = path.join(home, 'stand-in.jsonl');
     const app = await launchSandboxed(electron, home, {
       env: { NODE_ENV: 'development', DOROTHY_DEV_URL: DEV_URL, DOROTHY_API_PORT: apiPort(newInterface ? 31383 : 31384), DOROTHY_E2E: '1' },

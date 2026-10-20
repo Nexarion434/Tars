@@ -10,7 +10,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * Visual + technical sweep of the real Electron app.
  *
  * The app boots sandboxed through launchSandboxed in fixture.mjs: HOME points
- * at a temp dir, so ~/.dorothy and ~/.claude are test fixtures, its Chromium
+ * at a temp dir, so ~/.tars and ~/.claude are test fixtures, its Chromium
  * profile is moved there too, which HOME alone does not do, and the API binds
  * a dedicated port.
  *

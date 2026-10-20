@@ -38,7 +38,7 @@ type Gateway = { id: string; label: string; projects: string[] };
 
 function seed(newInterface: boolean) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-gateways-window-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   const billing = path.join(home, 'code', 'harbor-billing');
   const landing = path.join(home, 'code', 'landing-site');

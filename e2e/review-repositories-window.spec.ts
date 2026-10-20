@@ -59,7 +59,7 @@ for (const newInterface of [false, true]) {
   test(`review lists every repository of every project, says a folder with no git or gone, and searches them all${shell}`, async () => {
     test.setTimeout(300_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-review-window-${newInterface ? 'ni' : 'classic'}-`));
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const meridian = path.join(home, 'projects', 'meridian');
     const fieldNotes = path.join(home, 'projects', 'field-notes');
     fs.mkdirSync(dir, { recursive: true });

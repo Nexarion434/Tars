@@ -9,7 +9,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
  * A durable temporary folder per agent, in the real app (RD-REDEMARRAGE.md, 2.1): an agent's CLI is handed
- * ~/.dorothy/tmp/<short id>/t as TMPDIR and .../c as CLAUDE_CODE_TMPDIR, not the folder macOS empties at boot, and
+ * ~/.tars/tmp/<short id>/t as TMPDIR and .../c as CLAUDE_CODE_TMPDIR, not the folder macOS empties at boot, and
  * what it leaves there is still there after Tars starts again. The retention runs at launch (15 s after, in a
  * development run): a deleted agent's folder untouched for 8 days goes, with a line in the log. Of an agent whose CLI
  * runs (#384): an entry of its t/ untouched for a day goes, with its own line in the log; the folder of the session it
@@ -28,11 +28,11 @@ const shortIdOf = (id: string) => createHash('sha256').update(id).digest('hex').
 const DAY = 86_400_000;
 const LIVE_SESSION = '0f1e2d3c-4b5a-4968-8776-655443322110';
 
-test("an agent's CLI gets a temporary folder under ~/.dorothy/tmp that outlives Tars, and the retention keeps it to 7 days", async () => {
+test("an agent's CLI gets a temporary folder under ~/.tars/tmp that outlives Tars, and the retention keeps it to 7 days", async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-tmp-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const seen = path.join(home, 'env-seen.jsonl');

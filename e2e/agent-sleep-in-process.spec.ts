@@ -98,7 +98,7 @@ test('an agent waiting on its own timer or background agent is not put to sleep;
   test.setTimeout(300_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qa-sleep-bg-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   // writeNodeCli: the script itself on macOS and Linux; on Windows npm's shim beside it, which Tars reads through

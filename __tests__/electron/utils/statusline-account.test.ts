@@ -7,7 +7,7 @@ import { enableStatusLine } from '../../../electron/utils/statusline';
 import { shHooksNotShipped } from '../../setup/platform-limits';
 
 /**
- * Which account a Claude session ran on, written beside its provider in ~/.dorothy/token-stats.json.
+ * Which account a Claude session ran on, written beside its provider in ~/.tars/token-stats.json.
  *
  * The Usage page cannot say which account spent what: the status line writes each session's provider, and no account
  * (the Audit's AUDIT-USAGE-COMPTES.md, 01/10, gap 8). A session started on one of several accounts carries the
@@ -29,12 +29,12 @@ beforeAll(() => {
   const jq = spawnSync('jq', ['--version'], { encoding: 'utf-8' });
   if (jq.status !== 0) throw new Error('jq is not on PATH: the status line needs it, and so do these cases');
   enableStatusLine();
-  script = path.join(os.homedir(), '.dorothy', 'statusline.sh');
+  script = path.join(os.homedir(), '.tars', 'statusline.sh');
 });
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-statusline-account-'));
-  fs.mkdirSync(path.join(home, '.dorothy'));
+  fs.mkdirSync(path.join(home, '.tars'));
 });
 
 afterEach(() => {
@@ -51,7 +51,7 @@ function render(sessionId: string, env: Record<string, string>) {
   });
   const run = spawnSync('bash', [script], { input, cwd: home, encoding: 'utf-8', env: { PATH: process.env.PATH, HOME: home, ...env } });
   expect(run.status, run.stderr).toBe(0);
-  return JSON.parse(fs.readFileSync(path.join(home, '.dorothy', 'token-stats.json'), 'utf-8'));
+  return JSON.parse(fs.readFileSync(path.join(home, '.tars', 'token-stats.json'), 'utf-8'));
 }
 
 describe.skipIf(shHooksNotShipped())('the account of a session, in token-stats.json', () => {

@@ -109,7 +109,7 @@ test('an asleep agent reads asleep since when on its card, its panel, its window
   // The real path: the CLI runs there, and Claude Code files its transcripts
   // under it, which the Projects page lists beside the one Tars was given.
   const project = path.join(fs.realpathSync(home), 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   // writeNodeCli: the script itself on macOS and Linux; on Windows npm's shim beside it, which Tars reads through

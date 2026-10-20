@@ -40,7 +40,7 @@ const PRELOAD = path.join(HERE, "https-to-fake.mjs");
 /**
  * On Windows a server's os.homedir() is USERPROFILE, and with none in its
  * environment libuv asks Windows for the account's real profile: HOME alone
- * would have the servers read the real ~/.dorothy. The same variables
+ * would have the servers read the real ~/.tars. The same variables
  * __tests__/setup/test-home.ts moves; nothing is added elsewhere.
  */
 function windowsHome(home) {
@@ -170,7 +170,7 @@ function bundledFrom(server) {
 }
 
 function writeSettings(home, settings) {
-  const file = path.join(home, ".dorothy", "app-settings.json");
+  const file = path.join(home, ".tars", "app-settings.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (settings === null) fs.rmSync(file, { force: true });
   else fs.writeFileSync(file, typeof settings === "string" ? settings : JSON.stringify(settings, null, 2));

@@ -165,7 +165,7 @@ const replyTo = (id: string, text: string) =>
 
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-error-triage-'));
-  seenFile = path.join(home, '.dorothy', 'error-triage.json');
+  seenFile = path.join(home, '.tars', 'error-triage.json');
   logs = [];
   told = [];
   hermes = new FakeHermes();

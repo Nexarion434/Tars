@@ -200,7 +200,7 @@ It also keeps claude and Amp up to date, when an agent runs them, at launch and 
 hour, under the same "Check for updates" switch as Tars itself, so a model
 a new CLI release brings is there for every agent without a `claude update` by
 hand. Sessions already running are left alone and restarts pick up the new version;
-what was updated, or why not, is in `~/.dorothy/cli-updates.log`. The other CLIs
+what was updated, or why not, is in `~/.tars/cli-updates.log`. The other CLIs
 are yours to update: [OPERATIONS.md](OPERATIONS.md#the-agents-clis-kept-up-to-date-by-tars)
 says which and why.
 

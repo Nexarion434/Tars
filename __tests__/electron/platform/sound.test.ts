@@ -9,7 +9,7 @@ import { windowsSoundCommand } from '../../../electron/platform';
  * The notification sound on Windows. It was played with
  * `powershell -c "(New-Object Media.SoundPlayer '<path>').PlaySync()"`: the
  * path, read from app-settings.json, which every agent is handed with
- * ~/.dorothy, was pasted into PowerShell code. A `'` in a file name ended the
+ * ~/.tars, was pasted into PowerShell code. A `'` in a file name ended the
  * string, and what followed ran in a process the main process started.
  *
  * How it can fail, written before the code:

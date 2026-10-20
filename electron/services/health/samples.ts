@@ -4,11 +4,11 @@ import { writeSecretFileSync } from '../../utils/secret-file';
 /**
  * The health samples Tars keeps on this machine (2.0.3, monitoring option 2):
  * one every 5 minutes (monitor.ts), 24 hours of them, in a bounded file under
- * ~/.dorothy: numbers, with the names of Tars's own calls and pages, no
+ * ~/.tars: numbers, with the names of Tars's own calls and pages, no
  * content, no file path, no name. They leave only attached to the report of an
  * abrupt end, or when the user sends a diagnostic (error-reports).
  *
- * The file is in ~/.dorothy, which every agent may write: whatever is read
+ * The file is in ~/.tars, which every agent may write: whatever is read
  * back is rebuilt field by field from what a sample may hold (cleanSample),
  * never passed on as it was found, so a line an agent or a broken write left
  * cannot carry a name, a path or a conversation out.
@@ -84,7 +84,7 @@ function inWindow(sample: HealthSample, now: number): boolean {
 
 /**
  * What a sample may name when it leaves: the channels this Tars registered,
- * the app's pages. The file is in ~/.dorothy, which agents may write: a line
+ * the app's pages. The file is in ~/.tars, which agents may write: a line
  * that passes cleanSample holds words in a channel's or a page's pattern,
  * which are only kept when they are one of these.
  */

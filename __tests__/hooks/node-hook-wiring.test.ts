@@ -538,7 +538,7 @@ describe('the statusline on win32', () => {
   async function statusline() {
     vi.doMock('../../electron/constants', async importOriginal => {
       const actual = await importOriginal<typeof import('../../electron/constants')>();
-      return { ...actual, DATA_DIR: path.join(home, '.dorothy'), dataPath: (...s: string[]) => path.join(home, '.dorothy', ...s) };
+      return { ...actual, DATA_DIR: path.join(home, '.tars'), dataPath: (...s: string[]) => path.join(home, '.tars', ...s) };
     });
     return import('../../electron/utils/statusline');
   }
@@ -549,7 +549,7 @@ describe('the statusline on win32', () => {
     expect(read(claudeSettingsFile()).statusLine).toEqual({
       type: 'command', command: `node "${fwd(path.join(HOOKS_DIR, 'statusline.mjs'))}"`, padding: 1,
     });
-    expect(fs.existsSync(path.join(home, '.dorothy', 'statusline.sh'))).toBe(false);
+    expect(fs.existsSync(path.join(home, '.tars', 'statusline.sh'))).toBe(false);
     expect(s.isStatusLineConfigured()).toBe(true);
 
     s.disableStatusLine({ platform: 'win32', hooksDir: HOOKS_DIR });
@@ -607,7 +607,7 @@ describe('the statusline on win32', () => {
   it('on darwin still installs statusline.sh and points at it', async () => {
     const s = await statusline();
     s.enableStatusLine({ platform: 'darwin' });
-    const script = path.join(home, '.dorothy', 'statusline.sh');
+    const script = path.join(home, '.tars', 'statusline.sh');
     expect(read(claudeSettingsFile()).statusLine).toEqual({ type: 'command', command: script, padding: 1 });
     expect(fs.readFileSync(script, 'utf-8').startsWith('#!/usr/bin/env bash')).toBe(true);
   });

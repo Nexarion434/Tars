@@ -17,7 +17,7 @@ import { dataPath } from '../../../electron/constants';
  * - the Memory page's delete (deleteMemoryFile), which answered "EBUSY:
  *   resource busy or locked" for a file that was free a moment later;
  * - turning the status line off (disableStatusLine), whose delete of
- *   ~/.dorothy/rate-limits.json threw out of the Settings save, so the save
+ *   ~/.tars/rate-limits.json threw out of the Settings save, so the save
  *   answered failure although the settings had been written.
  *
  * How it can fail, written before the change:

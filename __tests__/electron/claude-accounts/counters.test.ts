@@ -1,12 +1,12 @@
 /**
  * The 5 h and weekly counters of each account, as the status line leaves them
- * in ~/.dorothy/rate-limits.d/<account>.json
+ * in ~/.tars/rate-limits.d/<account>.json
  * (electron/services/claude-accounts/counters.ts).
  *
  * What goes wrong if it is wrong, first:
  * - a counter filed under another account: the file name is the account, and
  *   only `default` and `acct-` plus six hex digits are read;
- * - a file an agent planted (~/.dorothy is every agent's) read as anything but
+ * - a file an agent planted (~/.tars is every agent's) read as anything but
  *   two percentages and two reset times: anything else is no counter;
  * - a counter shown after its window reset (the page would say 98 % on a fresh
  *   window): a window whose reset has passed shows as nothing;
@@ -31,8 +31,8 @@ beforeEach(() => {
 });
 
 describe('reading the counters', () => {
-  it('lives in ~/.dorothy/rate-limits.d, and none there reads as none', () => {
-    expect(countersDir()).toBe(path.join(os.homedir(), '.dorothy', 'rate-limits.d'));
+  it('lives in ~/.tars/rate-limits.d, and none there reads as none', () => {
+    expect(countersDir()).toBe(path.join(os.homedir(), '.tars', 'rate-limits.d'));
     expect(readAccountUsage()).toEqual({});
   });
 

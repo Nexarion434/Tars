@@ -57,7 +57,7 @@ vi.mock('child_process', async importOriginal => ({
 }));
 
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
-// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.dorothy moves there at the first read.
+// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.tars moves there at the first read.
 const file = path.join(home, '.tars-private', 'hermes-connection.json');
 
 let usableHermesConnection: () => unknown;

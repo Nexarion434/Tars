@@ -221,7 +221,7 @@ export function orchestratorToolFlags(orchestratorMode: boolean | undefined): st
  * Several of claude's options are variadic (`--add-dir <directories...>`,
  * `--mcp-config`, `--allowed-tools`, `--disallowed-tools`, `--betas`, `--file`),
  * and one written just before the prompt takes the prompt as one more of its
- * values. Tars ends its command line with `--add-dir ~/.dorothy`, so every task
+ * values. Tars ends its command line with `--add-dir ~/.tars`, so every task
  * handed over as an argument was being read as a second directory: the CLI came
  * up with no task at all, registered its session about a second later, and Tars
  * marked the agent as working. Measured on claude 2.1.241 through 2.1.268, and

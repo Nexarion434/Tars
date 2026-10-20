@@ -18,7 +18,7 @@ import { homeVariables } from './test-home';
  * redirect it, and that suite never did. With the guard below and without the
  * redirect, three files write into the home they start in: that one and
  * task-never-started.test.ts into ~/.claude.json, and
- * agent-start-missing-skills.test.ts into ~/.dorothy/amp-settings.json, which
+ * agent-start-missing-skills.test.ts into ~/.tars/amp-settings.json, which
  * JeanBrasse's copy shows rewritten at the minute a suite ran. A rule each file has to
  * remember is how the class got three members.
  *
@@ -40,7 +40,7 @@ import { homeVariables } from './test-home';
  * Electron's getPath('home') does.
  *
  * Windows, measured on 2026-09-25: `os.homedir()` reads USERPROFILE, not HOME,
- * so HOME alone left DATA_DIR on the real %USERPROFILE%\.dorothy. There the
+ * so HOME alone left DATA_DIR on the real %USERPROFILE%\.tars. There the
  * profile variables move with HOME (USERPROFILE, HOMEDRIVE + HOMEPATH, APPDATA,
  * LOCALAPPDATA), and the ones the run started with are protected as HOME is.
  * And the temp dir lives under the account home (%LOCALAPPDATA%\Temp), so the

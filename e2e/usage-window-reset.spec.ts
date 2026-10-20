@@ -9,7 +9,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
 /**
  * A Claude window past its reset, on the Usage page (the Audit's
  * AUDIT-USAGE-COMPTES.md, gap 7). The status line writes the windows to
- * ~/.dorothy/rate-limits.json as Claude Code reports them; the sandbox's says a
+ * ~/.tars/rate-limits.json as Claude Code reports them; the sandbox's says a
  * 5 h window at 97% that reset a minute ago, and a weekly one still running.
  * The 5 h row must read reset over an empty bar, where it read "97% used ·
  * resetting" until the next status line; the weekly one is as it was. Frame:
@@ -25,7 +25,7 @@ test.beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-usage-reset-'));
   seedSandbox(home);
   const now = Math.floor(Date.now() / 1000);
-  fs.writeFileSync(path.join(home, '.dorothy', 'rate-limits.json'), JSON.stringify({
+  fs.writeFileSync(path.join(home, '.tars', 'rate-limits.json'), JSON.stringify({
     five_hour: { used_percentage: 97, resets_at: now - 60 },
     seven_day: { used_percentage: 31, resets_at: now + 3 * 86_400 },
   }));

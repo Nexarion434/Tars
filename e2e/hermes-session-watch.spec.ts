@@ -69,7 +69,7 @@ test('Tars renews its Hermes session by asking it, and the window is told at onc
   const port = (gateway.address() as AddressInfo).port;
 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-hermes-session-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(home, '.tars-private'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');

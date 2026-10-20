@@ -11,7 +11,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * The Audit (AUDIT-USAGE-COMPTES.md, gap 6, 2026-10-01): only account 1's
  * status lines write rate-limits.json, so the page showed account 1's 5 h and
  * weekly bars while the agents ran on account 2. Each account's counters are
- * in ~/.dorothy/rate-limits.d (the status line writes them per account), and
+ * in ~/.tars/rate-limits.d (the status line writes them per account), and
  * `claude:getData`, the page's load, now carries them: one pair per account
  * in use, in Settings' order, a window past its reset left out. The bars
  * themselves are the Frontend's; this proves the window receives them.
@@ -28,7 +28,7 @@ test.skip(process.platform === 'win32', 'several Claude accounts are off on a Wi
 test('the Usage page is handed each Claude account its own 5 h and weekly counters', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-account-counters-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const priv = path.join(home, '.tars-private');
   fs.mkdirSync(path.join(dir, 'rate-limits.d'), { recursive: true });
   fs.mkdirSync(priv, { recursive: true, mode: 0o700 });

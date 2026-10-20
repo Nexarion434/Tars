@@ -380,7 +380,7 @@ describe('the super chat, which is JeanBrasse driving every project', () => {
   it('holds a pass that is in no file an agent can read', () => {
     // A file is what made the shared token shared. This walks everything the
     // app writes under its data directory and refuses to find the pass in any
-    // of it; `~/.dorothy` is the directory every agent is handed.
+    // of it; `~/.tars` is the directory every agent is handed.
     const pass = tokens.internalToken();
     const found: string[] = [];
     const walk = (dir: string): void => {
@@ -570,7 +570,7 @@ describe('Hermes, the one caller published off this machine', () => {
     expect(terminal.written, 'an agent was driven through a webhook that has no secret').toEqual([]);
   });
 
-  it('takes a secret still in ~/.dorothy out of it, and Hermes keeps the one it holds', async () => {
+  it('takes a secret still in ~/.tars out of it, and Hermes keeps the one it holds', async () => {
     // Where every install before this one keeps it: the directory every agent
     // is handed, one `cat` away. A Hermes job holds that value, so it moves
     // as it is.
@@ -592,7 +592,7 @@ describe('Hermes, the one caller published off this machine', () => {
     if (hasPosixModes()) expect(fs.statSync(HERMES_SECRET).mode & 0o777).toBe(0o600);
   });
 
-  it('once moved, a secret an older build left in ~/.dorothy opens nothing, and goes', async () => {
+  it('once moved, a secret an older build left in ~/.tars opens nothing, and goes', async () => {
     // An older build run after the move mints a fresh one where it always did.
     provisionWebhookSecret();
     const older = 'e'.repeat(64);

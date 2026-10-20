@@ -19,7 +19,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
 test('claude data store: a skill added since the last read shows when Settings is opened again', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-skill-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(path.join(home, '.claude', 'skills', 'alpha'), { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'agents.json'), '[]');

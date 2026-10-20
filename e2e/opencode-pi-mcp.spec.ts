@@ -87,7 +87,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(180_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-opencode-pi-mcp-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
     for (const name of ['opencode', 'pi']) fs.writeFileSync(path.join(bin, name), `#!${process.execPath}\n${STAND_IN}`, { mode: 0o755 });

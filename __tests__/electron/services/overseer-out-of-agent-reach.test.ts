@@ -9,8 +9,8 @@ import { hasPosixModes } from '../../setup/platform-limits';
  * JeanBrasse's conversation with the super chat leaves the directory the agents are
  * handed, and no message is lost on the way.
  *
- * Measured on b17db0f: `~/.dorothy/overseer.json`, 148,654 bytes, 344 message
- * objects, mode 0644. Every agent is started with `--add-dir ~/.dorothy`, so
+ * Measured on b17db0f: `~/.tars/overseer.json`, 148,654 bytes, 344 message
+ * objects, mode 0644. Every agent is started with `--add-dir ~/.tars`, so
  * reading it took no API call, no token and no permission prompt: an `ls` of
  * the directory it was pointed at, and a `cat`. It now lives in
  * `~/.tars-private/`, which is handed to nothing.
@@ -224,7 +224,7 @@ describe('a save the private directory cannot take', () => {
 
   it('is taken out of the agents\' directory by the next read, once the private one can be written', async () => {
     // After a save that fell back, the next read or write of this run tries
-    // the move again, rather than leave the conversation in ~/.dorothy until
+    // the move again, rather than leave the conversation in ~/.tars until
     // the next start. A read that skipped the move left it there until
     // something happened to write.
     fs.writeFileSync(PRIVATE_DIR, 'not a directory');
@@ -296,7 +296,7 @@ describe('both files at once', () => {
 describe('the app itself', () => {
   it('puts the conversation outside the directory the agents are handed', async () => {
     // The paths every test above works with are this file's own, so nothing in
-    // it would notice the real constant pointing back into ~/.dorothy. These
+    // it would notice the real constant pointing back into ~/.tars. These
     // are the real ones.
     const real = await vi.importActual<typeof import('../../../electron/constants')>('../../../electron/constants');
 
@@ -309,7 +309,7 @@ describe('the app itself', () => {
   it('moves the file when it starts, not when something first reads it', () => {
     // A run in which JeanBrasse never opens the Chat reads no state, so a migration
     // that only happens on the first read never happens at all, and the file
-    // stays in ~/.dorothy for the length of that run. The call belongs in
+    // stays in ~/.tars for the length of that run. The call belongs in
     // whenReady, which is the one place that runs once per start.
     const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
     const ready = main.slice(main.indexOf('app.whenReady()'));

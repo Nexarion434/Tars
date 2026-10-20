@@ -44,7 +44,7 @@ for (const newInterface of [false, true]) {
     const hermesHome = path.join(home, 'hermes-home');
     const alpha = path.join(home, 'projects', 'alpha');
     const beta = path.join(home, 'projects', 'beta');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [alpha, beta, dir, bin, hermesHome]) fs.mkdirSync(d, { recursive: true });
 

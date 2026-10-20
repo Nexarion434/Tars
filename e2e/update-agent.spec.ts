@@ -109,7 +109,7 @@ for (const newInterface of [false, true]) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-update-agent-'));
     const project = path.join(home, 'projects', 'demo');
     const elsewhere = path.join(home, 'projects', 'elsewhere');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, elsewhere, dir, bin]) fs.mkdirSync(d, { recursive: true });
     const launchesFile = path.join(home, 'launches.jsonl');

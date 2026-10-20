@@ -66,7 +66,7 @@ test('agents use the kanban freely on a real Hermes, and its dispatcher takes no
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-kanban-hermes-'));
   const project = path.join(home, 'projects', 'demo');
   const other = path.join(home, 'projects', 'other');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, other, dir, bin]) fs.mkdirSync(d, { recursive: true });
 

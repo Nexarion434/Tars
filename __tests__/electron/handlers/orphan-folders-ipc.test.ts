@@ -57,7 +57,7 @@ import { agents } from '../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../electron/core/pty-manager';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
 
-fs.mkdirSync(path.join(tmpHome, '.dorothy'), { recursive: true });
+fs.mkdirSync(path.join(tmpHome, '.tars'), { recursive: true });
 function deps(): IpcHandlerDependencies {
   const fixed: Record<string, unknown> = { agents, ptyProcesses, saveAgents: vi.fn(), getAppSettings: () => ({} as AppSettings) };
   return new Proxy(fixed, {
@@ -87,7 +87,7 @@ describe("the window's calls", () => {
   it("1, 2. list and remove the orphans of Tars's projects, never an agent's worktree, telling each step", async () => {
     const added = project('added');
     const agentsOnly = project('agents-only');
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([added]));
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'projects.json'), JSON.stringify([added]));
     fs.mkdirSync(path.join(added, '.worktrees', 'old-one'), { recursive: true });
     fs.writeFileSync(path.join(added, '.worktrees', 'old-one', 'x.txt'), 'x');
     fs.mkdirSync(path.join(agentsOnly, '.worktrees', 'stale'), { recursive: true });
@@ -118,7 +118,7 @@ describe("the window's calls", () => {
 
   it("5. never offers an agent's own project folder inside a .worktrees", async () => {
     const host = project('host');
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'projects.json'), JSON.stringify([host]));
     const folder = path.join(host, '.worktrees', 'agent-project');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'work'), 'mine\n');
@@ -133,7 +133,7 @@ describe("the window's calls", () => {
 
   it("6. never offers an agent's secondary project folder inside a .worktrees", async () => {
     const host = project('host2');
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'projects.json'), JSON.stringify([host]));
     const folder = path.join(host, '.worktrees', 'second-home');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'work'), 'mine\n');
@@ -148,7 +148,7 @@ describe("the window's calls", () => {
 
   it('7. removes nothing when the window names no folder, or sends something that is not a list of paths', async () => {
     const host = project('host3');
-    fs.writeFileSync(path.join(tmpHome, '.dorothy', 'projects.json'), JSON.stringify([host]));
+    fs.writeFileSync(path.join(tmpHome, '.tars', 'projects.json'), JSON.stringify([host]));
     const stray = path.join(host, '.worktrees', 'stray');
     fs.mkdirSync(stray, { recursive: true });
     fs.writeFileSync(path.join(stray, 'x.txt'), 'x');

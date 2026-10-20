@@ -92,7 +92,7 @@ test('a Dashboard panel keeps the last 5,000 lines of history, not 10,000', asyn
   const cli = writeNodeCli(path.join(home, `${AGENT.id}.cjs`), writer());
   // The writer alone, idle and without a terminal, so the board's auto start
   // runs it through the agent's own CLI path.
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([{
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([{
     id: AGENT.id, name: AGENT.name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker',
     projectPath: project, skills: [], cliPath: cli,
     createdAt: '2026-10-05T08:00:00.000Z', lastActivity: '2026-10-05T08:00:00.000Z',

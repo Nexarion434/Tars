@@ -87,7 +87,7 @@ describe('the skills.sh listing', () => {
 });
 
 describe('a listing nobody vouches for', () => {
-  // ~/.dorothy is in every agent's --add-dir, so the kept listing is a file any
+  // ~/.tars is in every agent's --add-dir, so the kept listing is a file any
   // agent can write, and skills.sh is someone else's server. What is served
   // reaches the Extensions page, and `repo` becomes the github URL
   // `npx skills add` installs from when the user clicks Install.

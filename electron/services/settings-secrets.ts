@@ -6,7 +6,7 @@ import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-fi
 
 /**
  * The settings' secrets, apart from the rest: in ~/.tars-private, which no
- * agent is handed, where app-settings.json is in ~/.dorothy, in every agent's
+ * agent is handed, where app-settings.json is in ~/.tars, in every agent's
  * --add-dir (the maintainer's decision of 2026-10-18). Until 2.0.4 every key of
  * the app sat in that one file, one `cat` away from any agent.
  *
@@ -244,7 +244,7 @@ function erase(file: string): boolean {
 }
 
 /**
- * A credential file out of ~/.dorothy into the private folder, its contents
+ * A credential file out of ~/.tars into the private folder, its contents
  * unchanged: copied, read back, and only then erased, as the webhook secret
  * moved (hermes-webhook-secret.ts). When the private one exists already it is
  * the file, and the old copy is only erased. When the copy cannot be made, the
@@ -271,7 +271,7 @@ export function moveOutOfAgentReach(legacy: string, target: string): boolean {
   return erase(legacy);
 }
 
-/** The credential files that used to live in ~/.dorothy, and where they live now. */
+/** The credential files that used to live in ~/.tars, and where they live now. */
 export const MOVED_FILES: ReadonlyArray<readonly [string, string]> = [
   ['api-token', 'api-token'],
   ['hermes-connection.json', 'hermes-connection.json'],
@@ -281,7 +281,7 @@ export const MOVED_FILES: ReadonlyArray<readonly [string, string]> = [
 /**
  * At load, before anything reads a key: every secret out of app-settings.json
  * and out of every copy of it, into the private file, and the credential files
- * out of ~/.dorothy.
+ * out of ~/.tars.
  *
  * In this order, so that a stop anywhere loses nothing and the next load
  * finishes it: the keys of the live file, then of each copy (into the fields
@@ -301,10 +301,10 @@ export function migrateSecrets(): { moved: number; copiesRemoved: number; filesM
   let filesMoved = 0;
   try {
     for (const [legacy, target] of MOVED_FILES) if (moveOutOfAgentReach(legacy, target)) filesMoved++;
-    if (filesMoved) console.log(`[secrets] out of ~/.dorothy: ${filesMoved} credential file(s) moved`);
+    if (filesMoved) console.log(`[secrets] out of ~/.tars: ${filesMoved} credential file(s) moved`);
     return { ...moveKeys(), filesMoved };
   } catch (err) {
-    console.error(`[secrets] the keys could not all leave ~/.dorothy (${describeSecretFileError(err)}): they stay where they are, are read from there, and the next start tries again`);
+    console.error(`[secrets] the keys could not all leave ~/.tars (${describeSecretFileError(err)}): they stay where they are, are read from there, and the next start tries again`);
     return { moved: 0, copiesRemoved: 0, filesMoved, failed: true };
   }
 }
@@ -339,7 +339,7 @@ function moveKeys(): { moved: number; copiesRemoved: number } {
     writeSecretFileSync(APP_SETTINGS_FILE, JSON.stringify(withoutSecrets(live), null, 2));
   }
   if (moved || copiesRemoved) {
-    console.log(`[secrets] out of ~/.dorothy: ${moved} key(s) of app-settings.json, ${copiesRemoved} copy(ies) of it erased`);
+    console.log(`[secrets] out of ~/.tars: ${moved} key(s) of app-settings.json, ${copiesRemoved} copy(ies) of it erased`);
   }
   return { moved, copiesRemoved };
 }

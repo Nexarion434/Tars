@@ -32,7 +32,7 @@ test('plan, a permission mode: chosen for Claude Code in New agent and passed to
   const real = fs.realpathSync(home);
   const project = path.join(real, 'projects', 'demo');
   fs.mkdirSync(project, { recursive: true });
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   const argsFile = path.join(real, 'stand-in-args.jsonl');
   // In Node, not bash: a bash stand-in is named like the shell in the pty's

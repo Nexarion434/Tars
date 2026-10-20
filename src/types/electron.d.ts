@@ -906,7 +906,7 @@ export interface BusMembersChanged {
   dropped: number;
 }
 
-/** A file staged for a room (`bus:stageFiles`): written under ~/.dorothy,
+/** A file staged for a room (`bus:stageFiles`): written under ~/.tars,
  *  which is in every agent's `--add-dir`, and named by its absolute path in
  *  what each target receives. */
 export interface BusAttachment {
@@ -1121,7 +1121,7 @@ export type ClaudeAccountsResult<T = object> = ({ success: true } & T) | { succe
 
 /* ── The chats of each project (electron/services/chats.ts, handlers/chat-handlers.ts) ── */
 
-/** A chat's record, as ~/.dorothy/chats.json keeps it. */
+/** A chat's record, as ~/.tars/chats.json keeps it. */
 export interface Chat {
   id: string;
   /** The project's path as Tars saved it (its orchestrator's). */
@@ -1555,10 +1555,12 @@ export interface ElectronAPI {
   // App settings (notifications, etc.)
   app?: {
     getVersion: () => Promise<{ version: string }>;
+    /** The data folder this run uses; `notice` when two folders stood at ~/.tars and ~/.dorothy, for the window to say. */
+    dataDir: () => Promise<{ dir: string; did: 'moved' | 'already' | 'kept-old' | 'both' | 'none'; notice?: string }>;
   };
 
   /**
-   * Spend from Tars's own ledger, ~/.dorothy/usage-ledger.jsonl, and nothing
+   * Spend from Tars's own ledger, ~/.tars/usage-ledger.jsonl, and nothing
    * else: one record per ACP turn, any provider. The Claude transcripts are not
    * in it; they come through `claude.getData`. A `claude` row here is a turn
    * the transcripts count as well, since the Claude ACP adapter runs the claude
@@ -2151,7 +2153,7 @@ export interface ElectronAPI {
   // Vault
   vault?: {
     /**
-     * Each project's folder, ~/.dorothy/project-files/<key>: what its agents
+     * Each project's folder, ~/.tars/project-files/<key>: what its agents
      * produce, in reports/ and tools/ (electron/services/vault-project-files.ts).
      * A file is named by its folder's key, a subfolder and a name, never a
      * path; every failure is `{ error, code }`.

@@ -6,7 +6,7 @@ import * as path from 'node:path';
 /**
  * An API key per CLI (2.0.4, the maintainer's request of 18/10: every CLI
  * works in Tars, not only the API providers that ride on the claude binary).
- * Kept in ~/.dorothy/app-settings.json only, and handed to that CLI's agents
+ * Kept in ~/.tars/app-settings.json only, and handed to that CLI's agents
  * only, through their PTY environment (which their ACP runs take as well),
  * under the variable that CLI reads.
  *

@@ -31,7 +31,7 @@ test('an agent\'s worktree set in its settings is saved and used, and a worktree
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-worktree-'));
   const repo = path.join(home, 'projects', 'demo');
   const plain = path.join(home, 'projects', 'notes');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [repo, plain, dir]) fs.mkdirSync(d, { recursive: true });
   const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(repo, 'init', '-q', '-b', 'main');

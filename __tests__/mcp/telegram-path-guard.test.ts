@@ -17,7 +17,7 @@ import * as os from 'os';
  */
 
 const BLOCKED_DIRS = [
-  '.ssh', '.gnupg', '.aws', '.claude', '.dorothy', '.config',
+  '.ssh', '.gnupg', '.aws', '.claude', '.tars', '.config',
   '.kube', '.docker',
 ];
 
@@ -68,7 +68,7 @@ describe('what the Telegram server will send', () => {
     for (const dir of BLOCKED_DIRS) {
       refuses(path.join(HOME, dir, 'anything'));
     }
-    refuses(path.join(HOME, '.dorothy', 'app-settings.json'));
+    refuses(path.join(HOME, '.tars', 'app-settings.json'));
   });
 
   it('refuses a project .env, which is the case the first fix missed', () => {
@@ -94,7 +94,7 @@ describe('what the Telegram server will send', () => {
   });
 
   it('refuses a traversal that lands on a blocked path', () => {
-    refuses(path.join(HOME, 'proj', '..', '.dorothy', 'api-token'));
+    refuses(path.join(HOME, 'proj', '..', '.tars', 'api-token'));
   });
 
   it('still sends the ordinary files this tool exists for', () => {

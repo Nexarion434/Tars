@@ -46,7 +46,7 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
 
   const home = fs.mkdtempSync('/tmp/tars-effort-live-');
   const projects = { a: path.join(home, 'projects', 'alpha'), b: path.join(home, 'projects', 'beta') };
-  for (const dir of [path.join(home, '.claude'), path.join(home, '.dorothy'), projects.a, projects.b]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [path.join(home, '.claude'), path.join(home, '.tars'), projects.a, projects.b]) fs.mkdirSync(dir, { recursive: true });
   for (const p of Object.values(projects)) execFileSync('git', ['init', '-q', p]);
   const settingsFile = path.join(home, '.claude', 'settings.json');
   const saved = (level: string) => ({ modelSettings: { [MODEL]: { effortLevel: level } } });
@@ -62,10 +62,10 @@ test('real claude sends each agent its own effort: at launch, after settings.jso
     id, name, character: 'robot', provider: 'claude', status: 'idle', role: 'worker', projectPath, skills: [], output: [],
     permissionMode: 'bypass', cliPath: CLAUDE, model: MODEL, effort, lastActivity: new Date().toISOString(),
   });
-  fs.writeFileSync(path.join(home, '.dorothy', 'agents.json'), JSON.stringify([agent('a', 'Alpha', projects.a, 'max'), agent('b', 'Beta', projects.b, 'high')], null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'projects.json'), JSON.stringify(Object.values(projects), null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
-  fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude: CLAUDE } }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'agents.json'), JSON.stringify([agent('a', 'Alpha', projects.a, 'max'), agent('b', 'Beta', projects.b, 'high')], null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify(Object.values(projects), null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'hermes-connection.json'), JSON.stringify({ mode: 'local', localPort: 9, authMode: 'token' }, null, 2));
+  fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude: CLAUDE } }, null, 2));
 
   const stub = spawn(process.execPath, [path.join(WT, 'e2e', 'live', 'fake-messages-api.mjs')], {
     env: { PATH: process.env.PATH, FAKE_PORT: String(STUB), FAKE_LOG }, stdio: 'ignore',

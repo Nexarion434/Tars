@@ -370,6 +370,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App settings (notifications, etc.)
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
+    dataDir: () => ipcRenderer.invoke('app:dataDir'),
   },
 
   usage: {
@@ -918,7 +919,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // The chats of each project (handlers/chat-handlers.ts): their records,
-  // kept in ~/.dorothy/chats.json. `send` refuses until the chats have
+  // kept in ~/.tars/chats.json. `send` refuses until the chats have
   // orchestrators of their own.
   chat: {
     list: () => ipcRenderer.invoke('chat:list'),

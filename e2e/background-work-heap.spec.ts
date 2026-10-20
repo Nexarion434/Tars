@@ -23,7 +23,7 @@ const MB = 1e6;
 test('the rests of agents with long transcripts leave the main heap with their few kept lines, not the transcripts', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-bg-heap-'));
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   const T0 = Date.UTC(2026, 9, 17, 2, 0, 0);
   const at = (ms: number) => new Date(ms).toISOString();

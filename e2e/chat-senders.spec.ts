@@ -99,7 +99,7 @@ test('every sender reaches the inbox chat, Telegram names a chat by its number, 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-senders-'));
   const project = path.join(home, 'projects', 'demo');
   const origin = path.join(home, 'origin.git');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
   const env = { ...process.env, GIT_AUTHOR_NAME: 'e2e', GIT_AUTHOR_EMAIL: 'e2e@example.com', GIT_COMMITTER_NAME: 'e2e', GIT_COMMITTER_EMAIL: 'e2e@example.com' };

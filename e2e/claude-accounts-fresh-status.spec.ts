@@ -45,7 +45,7 @@ const statusRuns = (log: string) => (fs.existsSync(log) ? fs.readFileSync(log, '
 test('Settings shows the Claude account Claude Code answers now, after a sign-in changed outside Tars', async () => {
   test.setTimeout(240_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-fresh-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', 'demo');
   for (const d of [project, dataDir, path.join(home, '.claude')]) fs.mkdirSync(d, { recursive: true });
   const marker = path.join(home, '.claude', '.fake-signed-in');

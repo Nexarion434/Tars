@@ -67,7 +67,7 @@ test('the real qwen code: created by an orchestrator, it answers a delegated tas
   test.setTimeout(600_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qwen-live-'));
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, dir, path.join(home, '.qwen')]) fs.mkdirSync(d, { recursive: true });
   fs.copyFileSync(USER_QWEN_SETTINGS, path.join(home, '.qwen', 'settings.json'));
   fs.chmodSync(path.join(home, '.qwen', 'settings.json'), 0o600);

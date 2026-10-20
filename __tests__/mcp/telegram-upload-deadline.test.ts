@@ -110,8 +110,8 @@ const BIG = path.join(WORK, 'big.bin');
 const SMALL = path.join(WORK, 'shot.png');
 
 beforeAll(async () => {
-  fs.mkdirSync(path.join(os.homedir(), '.dorothy'), { recursive: true });
-  fs.writeFileSync(path.join(os.homedir(), '.dorothy', 'app-settings.json'), JSON.stringify({ telegramChatId: '111' }));
+  fs.mkdirSync(path.join(os.homedir(), '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(os.homedir(), '.tars', 'app-settings.json'), JSON.stringify({ telegramChatId: '111' }));
   fs.mkdirSync(WORK, { recursive: true });
   fs.writeFileSync(BIG, Buffer.alloc(3_000_000, 7));
   fs.writeFileSync(SMALL, Buffer.alloc(3_000, 7));

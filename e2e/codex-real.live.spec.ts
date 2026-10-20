@@ -38,7 +38,7 @@ test('the real codex starts in a new folder, answers, and messages a claude agen
   test.setTimeout(9 * 60_000);
   const home = fs.mkdtempSync('/tmp/dorothy-e2e-codex-real-');
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   const codexHome = path.join(home, '.codex');
   for (const d of [project, dir, bin, codexHome]) fs.mkdirSync(d, { recursive: true });

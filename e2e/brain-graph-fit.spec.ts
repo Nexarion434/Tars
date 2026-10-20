@@ -50,7 +50,7 @@ const title = (name: string) => name[0].toUpperCase() + name.slice(1);
 const agentName = (project: string, i: number) => `${title(project)} ${String(i + 1).padStart(2, '0')}`;
 
 function seed(home: string, newInterface: boolean): void {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const folder of [dir, path.join(home, '.claude')]) fs.mkdirSync(folder, { recursive: true });
   const agents: unknown[] = [];
   let n = 0;

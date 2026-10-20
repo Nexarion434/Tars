@@ -40,7 +40,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    task waits, never typed after the user's words, and goes in once the user has cleared the field.
  * The stand-in's field is qwen's, as its code reads (0.25.2): keys and pastes into it, a backspace out, Ctrl+C
  * clearing it, an Enter during a turn queueing it, and on Esc the queue back into the field, else the cut prompt.
- * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.dorothy/qwen-code/mcp-servers.json),
+ * Tars's MCP servers are the entry a packaged Tars registers for Qwen Code (~/.tars/qwen-code/mcp-servers.json),
  * seeded on this checkout's bundle: a dev run finds no bundle under its resources and registers none, for any CLI.
  * Red on feat/cli-api-keys (24469620), before the provider: qwen-code is Claude, and none of this holds.
  * The artefact: values.json (every answer, the stand-in's records, the settings file, the usage), E2E_TRACE=on.
@@ -235,7 +235,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(560_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-qwen-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin, path.join(home, '.qwen')]) fs.mkdirSync(d, { recursive: true });
     const qwenSettingsFile = path.join(home, '.qwen', 'settings.json');

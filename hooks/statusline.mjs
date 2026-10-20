@@ -5,9 +5,9 @@
 // what macOS and Linux run, and remains the reference.
 //
 // It renders the same line and writes the same files the Usage page reads:
-// ~/.dorothy/rate-limits.json (the `rate_limits` object as Claude Code sent
-// it, for account 1), each account's counter in ~/.dorothy/rate-limits.d,
-// and ~/.dorothy/token-stats.json (one entry per session, with its provider
+// ~/.tars/rate-limits.json (the `rate_limits` object as Claude Code sent
+// it, for account 1), each account's counter in ~/.tars/rate-limits.d,
+// and ~/.tars/token-stats.json (one entry per session, with its provider
 // and account), the last under the same mkdir lock, written beside itself
 // and renamed over.
 //
@@ -22,7 +22,19 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const DATA_DIR = path.join(os.homedir(), '.dorothy');
+// Tars's data folder, by pickDataDir's rule (electron/core/data-dir-move.ts): ~/.tars when it is a folder, else ~/.dorothy; of two different folders, ~/.dorothy only when it alone holds Tars's records.
+function dataDir() {
+  const tars = path.join(os.homedir(), '.tars');
+  const old = path.join(os.homedir(), '.dorothy');
+  const folder = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+  const present = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const records = (d) => ['agents.json', 'app-settings.json'].some((f) => { try { return fs.statSync(path.join(d, f)).isFile(); } catch { return false; } });
+  if (!folder(tars)) return present(tars) || folder(old) ? old : tars;
+  if (!folder(old) || real(tars) === real(old)) return tars;
+  return records(old) && !records(tars) ? old : tars;
+}
+const DATA_DIR = dataDir();
 
 function readStdin() {
   return new Promise(resolve => {

@@ -15,7 +15,7 @@
 - **Local API**: a plain `node:http` server on **31415**, bearer-token authenticated, so the CLIs' hooks and the bundled MCP servers can call back into the app
 - **MCP**: seven servers in `mcp-*/`, each bundled to `dist/bundle.js` and shipped in `extraResources`: orchestrator, memory, telegram, kanban, vault, socialdata, x
 - **Delegation**: into the agent's own permanent terminal, always (2.0.4, the maintainer's decision of 2026-10-18: permanent agents, never temporary copies). `/run-task` types the task into the session the agent's card shows, or starts that session on its conversation, one task at a time, and `GET /api/tasks/:id` reads its end back from that session: the final answer from the transcript (`services/terminal-answer.ts`), tokens and cost (`services/task-cost.ts`), for claude; gemini's final answer from its AfterAgent hook (cut at 4000 bytes), no tokens; other CLIs are `delivered`. `electron/services/acp/` is no longer called to delegate
-- **Storage**: JSON + SQLite under `~/.dorothy/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is every secret of the settings (`settings-secrets.json`, since 2.0.4: `app-settings.json` keeps none), the local API's shared token (`api-token`), the Hermes connection and its session cookies, JeanBrasse's conversation with the super chat, the Hermes gateways' webhook secrets with the projects each may reach, and the Claude accounts' registry (`claude-accounts.json`: ids, names, thresholds, never a credential). `~/.dorothy` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI. Each Claude account after the first is a Claude Code folder of its own, `~/.claude-accounts/<id>`, which the agents started on it run in
+- **Storage**: JSON + SQLite under `~/.tars/` (`better-sqlite3` for the vault). No server, no cloud, no database migrations. One exception: `~/.tars-private/` holds what the agents are not handed, which today is every secret of the settings (`settings-secrets.json`, since 2.0.4: `app-settings.json` keeps none), the local API's shared token (`api-token`), the Hermes connection and its session cookies, JeanBrasse's conversation with the super chat, the Hermes gateways' webhook secrets with the projects each may reach, and the Claude accounts' registry (`claude-accounts.json`: ids, names, thresholds, never a credential). `~/.tars` is in every agent's `--add-dir`; nothing under `~/.tars-private` is ever passed to a CLI. Each Claude account after the first is a Claude Code folder of its own, `~/.claude-accounts/<id>`, which the agents started on it run in
 - **Tests**: E2E first: `@playwright/test` drives the real Electron app (`e2e/`), and every run leaves an artefact. `vitest` (`__tests__/`) is the regression net and the home of units tested in isolation, written failures first. The rules are in Workflow Rule 3
 - **Node**: 22, pinned in `.nvmrc`. Run `nvm use` first. `package.json` `engines` declares `>=22.12.0`, Electron's own floor since 43, and CI runs 22
 
@@ -25,7 +25,7 @@
 |---|---|
 | `electron/main.ts` | Entry point. Wires window, agent state, IPC, Telegram/Slack bots, the HTTP API, the tray, the MCP orchestrator, and the model catalogue |
 | `electron/preload.ts` | The only bridge to the renderer: `contextBridge.exposeInMainWorld('electronAPI', …)`. Every new IPC channel is declared here first |
-| `electron/constants/index.ts` | `DATA_DIR` = `~/.dorothy`, `PRIVATE_DIR` = `~/.tars-private` (what agents are not handed), `API_PORT` = 31415, the file paths for agents/settings/kanban/vault/token, `GITHUB_REPO`, the MIME map used by the `app://` handler |
+| `electron/constants/index.ts` | `DATA_DIR` = `~/.tars`, `PRIVATE_DIR` = `~/.tars-private` (what agents are not handed), `API_PORT` = 31415, the file paths for agents/settings/kanban/vault/token, `GITHUB_REPO`, the MIME map used by the `app://` handler |
 | `electron/types/index.ts` | `AgentStatus`, `AppSettings`, `CLIPaths`, `AgentProvider`, `AgentPermissionMode`, `AgentEffort`. A new setting or provider starts here |
 | `electron/core/agent-manager.ts` | The agent `Map`, persistence to `agents.json`, `initAgentPty`, `ensureProjectTrusted` (pre-writes `hasTrustDialogAccepted` in `~/.claude.json`), `killStalePty` |
 | `electron/core/pty-manager.ts` | Four PTY maps (agent / quick / skill / plugin), `killAllPty`, and `writeProgrammaticInput`: the bracket-paste + delayed `\r` dance Claude Code's TUI requires |
@@ -38,7 +38,7 @@
 | `electron/services/api-routes/hooks-routes.ts` | The session-ownership contract: SessionStart registers via the `source` field; posts from any other session, or from the `lastKilledSessionId` tombstone, are rejected as `stale` |
 | `electron/services/acp/` | `client.ts`, `delegate.ts`, `registry.ts`. Delegation that returns: stop reason, tools used, tokens, cost |
 | `electron/services/mcp-orchestrator.ts` | Resolves the seven bundled servers under `process.resourcesPath` and writes them into each CLI's MCP config |
-| `electron/services/model-catalog.ts` | Live model list and per-million-token prices from models.dev, cached at `~/.dorothy/model-catalog.json`, with a compiled-in floor. Never let a network failure zero a price |
+| `electron/services/model-catalog.ts` | Live model list and per-million-token prices from models.dev, cached at `~/.tars/model-catalog.json`, with a compiled-in floor. Never let a network failure zero a price |
 | `electron/services/usage-ledger.ts`, `transcript-usage.ts` | The two token sources: ACP turns recorded as they happen (covers every CLI), and `~/.claude/projects/**/*.jsonl` reconstructed after the fact (Claude only) |
 | `electron/services/memory-hub.ts` | The Brain page's backends (Hermes, gbrain, Honcho) over MCP HTTP |
 | `electron/services/git-review.ts` | The Review page. Every git call goes through `execFile` with an argv array, never a shell |
@@ -62,7 +62,7 @@
 
 ## Environment Variables
 
-There is no `.env` file and there never will be one. Every secret (bot tokens, provider API keys, Hermes tokens) lives in `~/.tars-private/settings-secrets.json` since 2.0.4 (`electron/services/settings-secrets.ts`), set by the Settings pages through `secrets:set` and read by `readAppSettingsFromDisk()`, which merges it with `~/.dorothy/app-settings.json`, which keeps the rest. The window never gets a secret back. Do not add a dotenv loader.
+There is no `.env` file and there never will be one. Every secret (bot tokens, provider API keys, Hermes tokens) lives in `~/.tars-private/settings-secrets.json` since 2.0.4 (`electron/services/settings-secrets.ts`), set by the Settings pages through `secrets:set` and read by `readAppSettingsFromDisk()`, which merges it with `~/.tars/app-settings.json`, which keeps the rest. The window never gets a secret back. Do not add a dotenv loader.
 
 The variables the code actually reads:
 
@@ -102,8 +102,8 @@ CLAUDE_CONFIG_DIR     # with several Claude accounts on (Settings), the folder o
 TARS_CLAUDE_ACCOUNT   # the same account's id ('default' for account 1), read by the status line to file that account's 5 h and weekly counters
 CLAUDE_CODE_PLUGIN_DIRS            # a claude agent at 2.1.289 or newer: a read-only copy of the state mod (mods/tars-state) in Tars's userData, after any the user named
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS  # set to 1 with it: the mod is a hooks module of Claude Code's early-access function hooks
-TMPDIR                # ~/.dorothy/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
-CLAUDE_CODE_TMPDIR    # ~/.dorothy/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
+TMPDIR                # ~/.tars/tmp/<short id>/t, the agent's own temporary folder, which a boot does not empty (services/agent-tmp.ts)
+CLAUDE_CODE_TMPDIR    # ~/.tars/tmp/<short id>/c, where Claude Code keeps the agent's scratchpad and background task output
 TARS_CHATS_READ       # '1' for an agent that runs a chat, started while chatsReadEachOther is on: mcp-orchestrator then registers chat_list
 ```
 
@@ -126,7 +126,7 @@ Four roles work this tree. They map to the long-lived branches `feat/frontend`, 
 - **Owns**: `electron/`, `mcp-*/`, `hooks/`, `scripts/`
 - **Never touches**: `src/components/`, `src/app/`, `design/`
 - **Owns the contract**: `electron/preload.ts` and `src/types/electron.d.ts` change together, in one commit, or the renderer breaks silently
-- **Spawn rule**: `spawnAgentSession()` in `electron/services/api-routes/agent-routes.ts` is the only place an API-driven session is started: the skills prefix, MCP config, model flag, `--disallowed-tools`, workspace trust, identity header and `--add-dir ~/.dorothy` all live there. Underneath it, `initAgentPty()` in `electron/core/agent-manager.ts` is the one function that spawns a PTY; `main.ts`, `ipc-handlers.ts` and the Telegram/Slack bots already call it directly. Route new work through one of those two. Do not add a third way in
+- **Spawn rule**: `spawnAgentSession()` in `electron/services/api-routes/agent-routes.ts` is the only place an API-driven session is started: the skills prefix, MCP config, model flag, `--disallowed-tools`, workspace trust, identity header and `--add-dir ~/.tars` all live there. Underneath it, `initAgentPty()` in `electron/core/agent-manager.ts` is the one function that spawns a PTY; `main.ts`, `ipc-handlers.ts` and the Telegram/Slack bots already call it directly. Route new work through one of those two. Do not add a third way in
 - **Session rule**: status, output and task-completed posts are authoritative only from `agent.currentSessionId`. Anything from another session, or matching `lastKilledSessionId`, is `stale` and must be dropped. Never clear `currentSessionId` on idle
 - **Shell rule**: no `exec`/`execSync` with an interpolated string. `execFile` with an argv array, as in `git-review.ts`. Paths derived from user input go through the guards in `electron/utils/worktree-path.ts`
 - **Auth rule**: exactly two routes are exempt from the bearer token: `/api/local-file` and `/api/health`. Anything you add under `/api/` is authenticated. `/api/hooks/*` was exempt until 2026-09-23 and now takes the agent's own token (`CLAUDE_MGR_API_TOKEN`, which the hooks inherit from the CLI they run in), for the `agent_id` it names and no other: the shared token is refused there, and so is a delegated ACP run's token (`isTerminalToken`), and a terminal's token dies with its terminal. It was four until `/api/kanban/complete` was removed: unauthenticated, uncalled, and it deleted agents
@@ -252,7 +252,7 @@ npm run e2e:guard                        # every inventory page is covered by th
 npm run e2e                              # Playwright drives the real Electron app, 42 surfaces
 ```
 
-`npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.dorothy` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.
+`npm run e2e` boots Electron in a sandbox through `launchSandboxed` (`e2e/fixture.mjs`). `HOME` pointed at a temp dir moves `~/.tars` and `~/.claude` and nothing else: Electron finds its profile through macOS, so until 2026-09-16 every run opened `~/Library/Application Support/tars`, the installed Tars's own profile. `--user-data-dir` and `CFFIXED_USER_HOME` move it now, and the launch fails if the app reports any of its folders outside the sandbox. It asserts zero uncaught page errors per surface as well as the screenshot. Re-run `tsc -p electron/tsconfig.json` before it or you test a stale main process. `npm test` runs in a throwaway `HOME` too (`__tests__/setup/home-isolation.ts`), and fails a file that writes into the real one.
 
 To see a change in a real packaged build without disturbing your live instance: `npm run electron:pack` then `npm run sandbox`.
 
@@ -296,7 +296,7 @@ node scripts/worktree.mjs prune --dry-run      # what the cleanup would remove, 
 - **`remove`** refuses a dirty worktree (commit, or `--save` to keep the work on `wip/<name>`), one
   any process works in (your own shell excepted, for `remove` only), a locked one, one with a
   rebase, merge, cherry-pick or bisect in progress, the worktree of one of Tars's own agents
-  (`~/.dorothy/agents.json`), and one holding ignored files other than rebuildable caches
+  (`~/.tars/agents.json`), and one holding ignored files other than rebuildable caches
   (`node_modules`, `.next`, `electron/dist`, `mcp-*/dist`...): move an e2e run directory you named in
   a PR under `~/Documents` first. Git is never told `--force`. The branch stays, and
   `.worktrees/.removed.log` records its head

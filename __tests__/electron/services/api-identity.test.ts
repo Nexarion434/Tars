@@ -44,7 +44,7 @@ function freePort(): Promise<number> {
 
 // Everything the server could write goes to the temp dir. saveBus() in
 // particular writes on every call, and unredirected it would write over the
-// real ~/.dorothy/bus.json.
+// real ~/.tars/bus.json.
 vi.mock('../../../electron/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../electron/constants')>();
   return {
@@ -429,7 +429,7 @@ describe('the MCP servers that call the API', () => {
     // it for nobody; since, the file is in ~/.tars-private, which no client
     // reads, and the client presents nothing: Tars does not take the call.
     const sharedHome = fs.mkdtempSync(path.join(tmp, 'shared-home-'));
-    for (const dir of ['.dorothy', '.tars-private']) {
+    for (const dir of ['.tars', '.tars-private']) {
       fs.mkdirSync(path.join(sharedHome, dir));
       fs.writeFileSync(path.join(sharedHome, dir, 'api-token'), sharedToken);
     }

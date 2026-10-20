@@ -46,7 +46,7 @@ type Box = { x: number; y: number; width: number; height: number };
 
 /** A home holding the five projects, their agents on the sandbox's CLI, nothing started at launch. */
 function seed(home: string, newInterface: boolean): void {
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const project = (name: string) => path.join(home, 'projects', name);
   fs.mkdirSync(dir, { recursive: true });
   for (const name of Object.keys(PROJECTS)) fs.mkdirSync(project(name), { recursive: true });

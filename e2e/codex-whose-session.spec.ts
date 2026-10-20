@@ -35,7 +35,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(3 * 60_000);
     const home = fs.mkdtempSync('/tmp/dorothy-e2e-codex-whose-');
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin, path.join(home, '.codex')]) fs.mkdirSync(d, { recursive: true });
     execFileSync('git', ['init', '-q', project]);

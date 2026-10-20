@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as os from 'os';
+import { settleDataDir, rewriteLegacyPaths, legacyPathFiles, LEGACY_DATA_DIR_NAME } from '../core/data-dir-move';
 
 // Overridable so an E2E-sandboxed instance can run beside the real app
 export const API_PORT = Number(process.env.DOROTHY_API_PORT) || 31415;
@@ -18,16 +19,26 @@ export const OPENAI_BRIDGE_PORT = API_PORT + 1;
 export const OLD_DATA_DIR = path.join(os.homedir(), '.claude-manager');
 
 /**
- * Everything the app owns on disk lives here.
- *
- * The directory still carries the pre-rename name because it holds live user
- * data - agents, settings, the API token, observations, memory - and moving it
- * is a migration, not a rename. This constant is the single place that decides;
- * it used to be ignored by ~70 call sites that each rebuilt the path by hand,
- * which is what made the rename look impossible.
+ * Everything the app owns on disk lives here: ~/.tars since 2.0.4, ~/.dorothy
+ * before. The folder moves once, as this module loads, before any other reads
+ * or writes it (core/data-dir-move.ts): a run that could not move it goes on
+ * from ~/.dorothy, and DATA_DIR says which. This constant is the single place
+ * that decides; it used to be ignored by ~70 call sites that each rebuilt the
+ * path by hand, which is what made the rename look impossible.
  */
-export const DATA_DIR_NAME = '.dorothy';
-export const DATA_DIR = path.join(os.homedir(), DATA_DIR_NAME);
+export const DATA_DIR_MOVE = settleDataDir(os.homedir());
+export const DATA_DIR = DATA_DIR_MOVE.dir;
+export const DATA_DIR_NAME = path.basename(DATA_DIR);
+/** Where the data was before 2.0.4, a link to DATA_DIR once it moved. */
+export const LEGACY_DATA_DIR = path.join(os.homedir(), LEGACY_DATA_DIR_NAME);
+/**
+ * While the link at the old place stands (2.0.4), the old path is rewritten
+ * where Tars wrote it, before anything loads a file that names it: the files
+ * rewritten at this start.
+ */
+export const DATA_DIR_REWRITTEN = DATA_DIR_MOVE.linked && DATA_DIR_NAME === '.tars'
+  ? rewriteLegacyPaths({ home: os.homedir(), files: legacyPathFiles(os.homedir(), DATA_DIR), ...(process.platform === 'win32' ? { winHome: os.homedir() } : {}) })
+  : [];
 
 /** Join a path inside the data directory. */
 export const dataPath = (...segments: string[]) => path.join(DATA_DIR, ...segments);
@@ -35,14 +46,14 @@ export const dataPath = (...segments: string[]) => path.join(DATA_DIR, ...segmen
 /**
  * What the app owns that its agents are not handed.
  *
- * Every agent is started with `--add-dir ~/.dorothy`: the directory holds the
+ * Every agent is started with `--add-dir ~/.tars`: the directory holds the
  * Tars CLAUDE.md they are meant to read and the vault they are meant to write,
  * so it is handed over deliberately. JeanBrasse's own conversation with the super
  * chat was in it too, in clear, and reading it took no API call and no token -
  * an `ls` of the directory the agent was given, and a `cat`.
  *
  * So there is a second directory, and the difference between the two is the
- * whole of its documentation: `.dorothy` is what agents work in, this is what
+ * whole of its documentation: `.tars` is what agents work in, this is what
  * they have no business in. Nothing here is ever passed to a CLI.
  *
  * What it is not. `--add-dir` sets tool permissions, not an access boundary,
@@ -50,7 +61,7 @@ export const dataPath = (...segments: string[]) => path.join(DATA_DIR, ...segmen
  * anyway: an agent that goes looking still reads any file its user can read,
  * here as anywhere else in $HOME. What moving the file out does is take it out
  * of the directory an agent is pointed at, off the listing it gets for free,
- * and out of reach of anything that walks `~/.dorothy` on purpose. Closing the
+ * and out of reach of anything that walks `~/.tars` on purpose. Closing the
  * rest takes a sandbox, not a path.
  */
 export const PRIVATE_DIR_NAME = '.tars-private';

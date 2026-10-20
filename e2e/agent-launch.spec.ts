@@ -198,7 +198,7 @@ async function quickTerminalPrompt(page: Page, prompt: RegExp): Promise<number> 
 test('an agent is created, started from a window, over the API and from a bot, running its CLI with the exact argv and never through a shell', async () => {
   test.setTimeout(360_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-agent-launch-'));
-  const dataDir = path.join(home, '.dorothy');
+  const dataDir = path.join(home, '.tars');
   const project = path.join(home, 'projects', PROJECT_NAME);
   const log = path.join(home, 'launches.jsonl');
   fs.mkdirSync(dataDir, { recursive: true });
@@ -309,7 +309,7 @@ test('an agent is created, started from a window, over the API and from a bot, r
       const manager = req(`${dist}/core/agent-manager.js`);
       const { ptyProcesses } = req(`${dist}/core/pty-manager.js`);
       const { startWithTask } = req(`${dist}/services/bot-core.js`);
-      const settings = JSON.parse(req('fs').readFileSync(req('path').join(req('os').homedir(), '.dorothy', 'app-settings.json'), 'utf8'));
+      const settings = JSON.parse(req('fs').readFileSync(req('path').join(req('os').homedir(), '.tars', 'app-settings.json'), 'utf8'));
       const fleet = {
         agents: manager.agents, ptyProcesses, settings: () => settings, saveAgents: manager.saveAgents,
         initAgentPty: (agent: unknown) => manager.initAgentPty(agent, null, () => {}, manager.saveAgents),

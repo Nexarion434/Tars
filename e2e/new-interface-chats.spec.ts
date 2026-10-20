@@ -53,7 +53,7 @@ test('the chat list from the records: sections, a new chat, rename, pin, snooze,
   const harbor = project('harbor-demo');
   const docs = project('docs-demo');
   for (const p of [tars, harbor, docs]) fs.mkdirSync(p, { recursive: true });
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'agents.json'), JSON.stringify([
     agent({ id: 'lead', name: 'Lead', role: 'orchestrator', projectPath: tars, lastActivity: iso(30) }),

@@ -19,11 +19,11 @@ import { ANSWER_MAX } from './terminal-answer';
  * cost is not written here: it is read from the transcripts when asked
  * (task-cost.ts), so a price that changes later is the price shown.
  *
- * Kept in ~/.dorothy/task-ledger.jsonl, which every agent can read, without
+ * Kept in ~/.tars/task-ledger.jsonl, which every agent can read, without
  * what each task said: that is its first line of JeanBrasse's typed prompts and of
  * the chat messages handed to orchestrators, kept in ~/.tars-private, which no
  * agent is handed (`textFile`, 0600; JeanBrasse's answer of 2026-10-05), and cut to
- * 200 characters. Durations, turns, sessions and costs stay in ~/.dorothy.
+ * 200 characters. Durations, turns, sessions and costs stay in ~/.tars.
  */
 
 export type TaskSource = 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
@@ -201,7 +201,7 @@ const isOptionalString = (v: unknown): v is string | null => v === null || (type
 
 /**
  * A task as the file holds it, checked field by field, or null. The file is in
- * ~/.dorothy, which every agent can write: a line that parses is not therefore
+ * ~/.tars, which every agent can write: a line that parses is not therefore
  * a task (the Audit's Low 2 on #305). A line with a field of the wrong type is
  * dropped whole; the text, the one free field, is cut to 200 characters here
  * as well as when it is written.

@@ -117,7 +117,7 @@ test('every start of an agent\'s CLI runs at that agent\'s own effort: window, r
   test.setTimeout(480_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-effort-'));
   const project = seedProject(home);
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   const bin = path.join(home, 'bin');
   for (const d of [dir, bin]) fs.mkdirSync(d, { recursive: true });
   const cli = path.join(bin, 'claude');

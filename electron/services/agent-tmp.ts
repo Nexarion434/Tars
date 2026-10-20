@@ -11,8 +11,8 @@ import { DATA_DIR } from '../constants';
  * and every agent's scratchpad and background task output went with them on
  * the night of 2026-10-01: Claude Code files those under its own
  * CLAUDE_CODE_TMPDIR, the agent's commands under TMPDIR, and Tars set neither.
- * Each agent now gets ~/.dorothy/tmp/<short id>/, with `t/` as the TMPDIR of
- * its commands and `c/` as Claude Code's CLAUDE_CODE_TMPDIR. ~/.dorothy is in
+ * Each agent now gets ~/.tars/tmp/<short id>/, with `t/` as the TMPDIR of
+ * its commands and `c/` as Claude Code's CLAUDE_CODE_TMPDIR. ~/.tars is in
  * every agent's --add-dir, so writing there asks no permission. The path stays
  * short, as the Unix sockets made under it require.
  *
@@ -60,7 +60,7 @@ export function agentTmpEnvOrNone(agentId: string): { TMPDIR?: string; CLAUDE_CO
   }
 }
 
-/** Where each deletion is written: ~/.dorothy/logs/agent-tmp.log, moved to .1 past 256 KB. */
+/** Where each deletion is written: ~/.tars/logs/agent-tmp.log, moved to .1 past 256 KB. */
 export function retentionLog(line: string, file = path.join(DATA_DIR, 'logs', 'agent-tmp.log')): void {
   console.log(line);
   try {
@@ -247,7 +247,7 @@ export async function enforceTmpRetention(deps: RetentionDeps): Promise<Retentio
   /**
    * Still the folder the pass began in, and the entry still inside it. Checked
    * before each deletion, not once: a pass awaits a long time between its
-   * start and its deletions, and an agent that swapped ~/.dorothy/tmp for a
+   * start and its deletions, and an agent that swapped ~/.tars/tmp for a
    * link meanwhile would have the same name deleted elsewhere (the Audit's
    * gate of #306).
    */

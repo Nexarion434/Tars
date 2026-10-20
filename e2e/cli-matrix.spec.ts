@@ -91,7 +91,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(40 * 60_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-cli-matrix-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
     // delegate_task waits 25 s at most in a stand-in: a pair whose task Tars holds does not hold the next pairs.
     const fakes = writeFakeClis(home, undefined, { delegateTimeoutS: 25 }) as Record<string, string>;

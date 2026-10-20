@@ -46,7 +46,7 @@ const RELEASE = [
 function seedProject(home: string) {
   const project = path.join(home, 'projects', 'atlas');
   fs.mkdirSync(project, { recursive: true });
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'projects.json'), JSON.stringify([project]));
   fs.writeFileSync(path.join(dir, 'agents.json'), '[]');
@@ -85,7 +85,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(300_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), `dorothy-e2e-vault-window-${newInterface ? 'ni' : 'classic'}-`));
     const project = seedProject(home);
-    fs.writeFileSync(path.join(home, '.dorothy', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface }));
+    fs.writeFileSync(path.join(home, '.tars', 'app-settings.json'), JSON.stringify({ autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', newInterface }));
     const values: Record<string, unknown> = { newInterface };
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
     const app = await launchSandboxed(electron, home, {

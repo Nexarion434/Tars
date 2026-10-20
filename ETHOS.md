@@ -97,7 +97,7 @@ them, everywhere, in one commit.
 machine, and the renderer holds the whole `electronAPI` bridge, so anything that
 reaches it runs with the user's privileges. That is why `shell:exec` (an arbitrary
 renderer-supplied string through a login shell) is gone, replaced by named handlers
-using `execFile` with an argv array; why `local-file://` is confined to `~/.dorothy`,
+using `execFile` with an argv array; why `local-file://` is confined to `~/.tars`,
 `~/.claude` and the user's own project roots instead of serving `~/.ssh/id_rsa`; and
 why a marketplace manifest's `installCommand` is rebuilt here from validated parts
 rather than executed verbatim. Autonomy is the one place the code still decides for the
@@ -127,7 +127,7 @@ This principle exists because it kept being violated, in the same shape every ti
 its provider union as `'claude' | 'codex' | 'gemini' | 'grok'`. Memory reached only
 claude-binary agents while the Brain page said "Connected" for backends nothing had
 ever spoken to. "Usage by Provider" showed nothing because it read
-`~/.dorothy/token-stats.json`, a file only our own statusline writes, and the
+`~/.tars/token-stats.json`, a file only our own statusline writes, and the
 statusline is off by default. Five providers exported `DOROTHY_AGENT_ID` while the
 orchestrator MCP and the hooks read `CLAUDE_AGENT_ID`, so those agents had no
 identity and `list_agents` fell back to every project's agents: the exact
@@ -232,7 +232,7 @@ guard you have to remember is half a guard.
 
 ## 7. The User's Data Outlives the App
 
-`~/.dorothy/agents.json` is the only durable record of what the user set up. Losing
+`~/.tars/agents.json` is the only durable record of what the user set up. Losing
 it means they rebuild their fleet by hand. Treat every file the app writes that way.
 
 It used to be an unversioned bare array written straight over itself. Three ways to
@@ -246,7 +246,7 @@ unrelated action happened to trigger a save, so they are flushed on a 30s dirty
 timer. The file carries a version now, and still reads the legacy bare array.
 
 **Migrate, don't rename.** The rebrand touched every user-facing string and left
-three things alone on purpose: the `~/.dorothy` data directory, the fork URL, and
+three things alone on purpose: the `~/.tars` data directory, the fork URL, and
 this checkout's folder, so projects, agents and settings survive the change of name.
 The previous rename came with `migrateFromClaudeManager()`, which copies from
 `~/.claude-manager` only what does not already exist at the destination before

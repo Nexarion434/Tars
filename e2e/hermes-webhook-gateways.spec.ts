@@ -26,7 +26,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    404;
  * 5. no refusal names an agent, a project or a mode it is in;
  * 6. one gateway's secret on another's route is refused 403, a rotated secret opens nothing, the new one does;
- * 7. each secret is in its own file of ~/.tars-private, 0600, in its 0700 folder, and in no file of ~/.dorothy;
+ * 7. each secret is in its own file of ~/.tars-private, 0600, in its 0700 folder, and in no file of ~/.tars;
  * 8. the page never holds a gateway's secret (the Audit's L3 on #469): add and rotate answer `set`, and the main
  *    process shows the new secret once, in a dialog of its own; copySecret copies it, from the main process. The
  *    dialog and the clipboard are recorded in the main process, so the user's own clipboard is never touched.
@@ -51,7 +51,7 @@ for (const newInterface of [false, true]) {
     const home = fs.mkdtempSync('/tmp/dorothy-e2e-hermes-gw-');
     const alpha = path.join(home, 'projects', 'alpha');
     const beta = path.join(home, 'projects', 'beta');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [alpha, beta, dir, bin]) fs.mkdirSync(d, { recursive: true });
 

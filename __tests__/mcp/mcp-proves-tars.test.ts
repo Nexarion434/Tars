@@ -83,7 +83,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  for (const dir of ['.dorothy', '.tars-private']) {
+  for (const dir of ['.tars', '.tars-private']) {
     fs.mkdirSync(path.join(home, dir), { recursive: true });
     fs.writeFileSync(path.join(home, dir, 'api-token'), SHARED);
   }

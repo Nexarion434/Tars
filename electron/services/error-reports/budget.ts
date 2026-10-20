@@ -9,7 +9,7 @@ import { REPORT_KINDS } from './report';
  * that crashes and is restarted in a loop does not send 20 more at each start,
  * and with it the random id the installation is known by.
  *
- * The file (`~/.dorothy/error-reports.json`, 0600) holds that id, when each
+ * The file (`~/.tars/error-reports.json`, 0600) holds that id, when each
  * report of the last 24 hours left, and the fingerprint of each error sent in
  * that time with when. A file that cannot be read is started again, never a
  * reason to throw.

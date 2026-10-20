@@ -137,7 +137,7 @@ for (const newInterface of [false, true]) {
     test.setTimeout(480_000);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-delegate-terminal-'));
     const project = path.join(home, 'projects', 'demo');
-    const dir = path.join(home, '.dorothy');
+    const dir = path.join(home, '.tars');
     const bin = path.join(home, 'bin');
     for (const d of [project, dir, bin]) fs.mkdirSync(d, { recursive: true });
     const claude = path.join(bin, 'claude');

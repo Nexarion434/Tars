@@ -69,7 +69,7 @@ async function startFakeSentry() {
 
 function seed(home: string, reportsOn: boolean) {
   const project = path.join(home, 'projects', 'demo');
-  const dir = path.join(home, '.dorothy');
+  const dir = path.join(home, '.tars');
   for (const d of [project, dir]) fs.mkdirSync(d, { recursive: true });
   const agent = (id: string) => ({
     id, name: id, character: 'robot', provider: 'claude', status: 'idle', role: 'worker', permissionMode: 'normal',
@@ -147,7 +147,7 @@ test('an abrupt end is reported once at the next launch, a diagnostic sends the 
 
     // ── Send a diagnostic ──
     await expect.poll(() => samplesIn(samplesFile).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
-    // A line as an agent could write it (~/.dorothy is theirs too): words in a channel's and a page's pattern.
+    // A line as an agent could write it (~/.tars is theirs too): words in a channel's and a page's pattern.
     const planted = { ...samplesIn(samplesFile).at(-1)!, at: Date.now() - 500, slowest: [{ channel: 'ship-it-tonight', ms: 5 }], page: '/acme-merger' };
     fs.appendFileSync(samplesFile, `${JSON.stringify(planted)}\n`);
     if (onWindows) {
