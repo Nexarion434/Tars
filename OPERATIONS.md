@@ -938,7 +938,7 @@ work.
 | `~/.tars-private/hermes-connection.json` | `electron/services/hermes-config.ts` | gateway mode/url/ssh (in `~/.dorothy` until 2.0.4); its token is in `~/.tars-private/hermes-token` |
 | `~/.tars/kanban-tasks.json` | nothing (read at launch by `moveLocalKanbanToHermes`, `electron/main.ts`) | the old local board, gone since 06/10: its open tasks move to the Hermes board once, and it stays as the backup |
 | `~/.tars/kanban-moved-to-hermes.json` | `electron/services/kanban-board.ts` | local task id to Hermes task id, for every task moved |
-| `~/.tars/project-files/<name>-<hash>/` | `electron/utils/project-files.ts` | each project's folder, for its agents: `tools/`, `notes/`, `reports/`. `<name>` is the project folder's name in lower case letters, digits and dashes (40 at most), `<hash>` ten hex digits of the SHA-256 of its path as the platform compares paths (on Windows, case and separators do not count). Made when an agent of the project gets its identity or reads the guide's project-folder topic; never deleted by Tars, so a project removed from Tars keeps it: delete it by hand. Outside the repository, outside `~/.tars/tmp`, and not under `~/Documents`, which iCloud can evict |
+| `~/.tars/project-files/<name>-<hash>/` | `electron/utils/project-files.ts` | each project's folder, for its agents: `tools/` and `reports/` (`notes/` moves into `reports/notes` the first time Tars opens it, 2.0.4). `<name>` is the project folder's name in lower case letters, digits and dashes (40 at most), `<hash>` ten hex digits of the SHA-256 of its path as the platform compares paths (on Windows, case and separators do not count). Made when an agent of the project gets its identity or reads the guide's project-folder topic; never deleted by Tars, so a project removed from Tars keeps it: delete it by hand. Outside the repository, outside `~/.tars/tmp`, and not under `~/Documents`, which iCloud can evict |
 | `~/.tars/error-triage.json` | `electron/services/error-triage.ts` | each Sentry issue filed on the board, with its task and when, and when each task of the last 24 hours was filed; mode `0600`. Removed, nothing is filed twice (Hermes's idempotency key); unreadable, the triage stops |
 | `~/.tars/bus.json` | `electron/services/bus-store.ts` | the agent bus journal: threads, messages, deliveries, and any membership set by hand. Rooms themselves are derived from the fleet, and the global room is the overseer's own conversation, not a copy of it |
 | `~/.tars/chats.json` | `electron/services/chats.ts` | the chats of each project: one record per chat (its number, title, runner and sessions, pinned, snoozed, settled, the inbox), and each project's last number (`numbers`). Not the conversations: those are the runners' transcripts (A chat's record, below) |
@@ -1889,7 +1889,7 @@ The agents' kanban tools (`mcp-kanban`: `create_task`, `list_tasks`, `get_task`,
 the one the Kanban page shows. They go through Tars (`/api/kanban/*`, with the agent's own token)
 and never write a file. When Hermes is not configured, refuses, or does not answer, each tool's error
 says what happened, what was written, and what to do: the user connects or signs in to Hermes in
-Tars (Settings, Hermes); the agent says so once, keeps the task in its project folder's `notes/`, and
+Tars (Settings, Hermes); the agent says so once, keeps the task in its project folder's `reports/`, and
 goes on (2.0.4; a bare `Hermes refused: Unauthorized` before). "Nothing was written" is said only
 when it is known: Hermes refused, or the connection was never taken (`ECONNREFUSED`, `ENOTFOUND`,
 `EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH`). An answer lost after the request went (a timeout, a
@@ -2349,8 +2349,9 @@ Each decision is a `[resume] <agent id>: ...` line in the main process log (resu
 Two independent sources feed the Usage page:
 
 1. **`~/.tars/usage-ledger.jsonl`**: one record per turn, written by
-   `recordUsage()`. Every ACP turn reports its own tokens, which is the only source that covers
-   Codex, Gemini, Grok and the rest. When the agent does not report a cost, the ledger prices
+   `recordUsage()`. Every ACP turn reported its own tokens, the only source that covered
+   Codex, Gemini, Grok and the rest; since 2.0.4 no task goes over ACP, so the ledger holds what
+   earlier versions wrote and nothing new reaches it. When the agent does not report a cost, the ledger prices
    the turn itself from the catalogue; cache reads default to 10 % of input and cache writes to
    125 % when the catalogue omits them.
 2. **Claude Code transcripts**: `~/.claude/projects/**/*.jsonl`, and `$CLAUDE_CONFIG_DIR/projects`
@@ -2407,7 +2408,7 @@ jq -c '[.caller, .id, .outcome.body.taskRef // .outcome.body.taskId, .outcome.st
 
 | Symptom | Cause |
 |---|---|
-| "Usage by Provider" empty for non-Claude CLIs | those agents ran over PTY, not ACP; only ACP turns hit `recordUsage()` |
+| "Usage by Provider" empty for non-Claude CLIs | those agents run in their terminals, and only ACP turns hit `recordUsage()`, none since 2.0.4 |
 | costs plausible but stale | catalogue served from disk after a failed fetch; delete `~/.tars/model-catalog*.json` and restart |
 | Claude costs zero | no transcripts under `~/.claude/projects/` for the window being shown |
 | an orchestrator says its send was answered `duplicate` and nothing reached the agent | the first call with that `clientRequestId` was made and answered; read its receipt (above) for what came of it. Only a first call answered 300 or more is tried again |

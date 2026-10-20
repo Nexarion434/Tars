@@ -151,7 +151,7 @@ again on their own conversation at the next launch, a few at a time, with a note
 from Tars: when it stopped, what was cut, and to check before redoing anything.
 Their last request is not sent again.
 
-**Any CLI, any model.** Nineteen providers, plus local models and any OpenAI-compatible
+**Any CLI, any model.** Twenty-one providers, plus local models and any OpenAI-compatible
 endpoint of your own. Model lists and prices come from a
 live catalogue, so a model released this morning is selectable this morning,
 and its real price is used, not one baked into the last release.
@@ -230,9 +230,11 @@ is required; Node 18 fails at startup.
 
 The distinction matters. The agent that does the work is the one you see,
 with everything it already knows, and it is still there after the task.
-For claude agents the orchestrator learns how the task ended and what it
-cost; for a CLI without hooks it learns the task was delivered, and Tars says
-so rather than inventing an answer.
+For claude agents, the API-key providers and Qwen Code the orchestrator learns
+how the task ended and what it cost; for codex, pi and gemini, how it ended
+without the cost; for opencode, amp and grok, which tell Tars nothing of their
+turns, it learns the task was delivered, and Tars says so rather than
+inventing an answer.
 
 ---
 
@@ -343,17 +345,20 @@ conversation with the project's orchestrator on one topic.
 
 Everything is a file in your home directory. Nothing is uploaded. On Windows that
 is `%USERPROFILE%`, and a file marked `0600` below is closed to every account but
-yours by its access list, Windows having no mode bits.
+yours by its access list, Windows having no mode bits. Tars's data is in `~/.tars`
+(`~/.dorothy` before 2.0.4), which every agent is handed; what no agent is handed,
+your keys and tokens first, is in `~/.tars-private`.
 
 | File | What it holds |
 |---|---|
 | `agents.json` | Your agents. Written atomically, with a backup |
-| `app-settings.json` | Preferences and provider API keys. `0600` |
-| `api-token` | Bearer token for the local API. `0600` |
-| `hermes-connection.json` | Gateway address and session token. `0600` |
+| `app-settings.json` | Preferences. No key or token since 2.0.4 |
+| `~/.tars-private/settings-secrets.json` | Provider and CLI API keys, the bots' tokens and the other secrets of the settings. `0600` |
+| `~/.tars-private/api-token` | Bearer token for the local API. `0600` |
+| `~/.tars-private/hermes-connection.json` | Gateway address; its session token beside it. `0600` |
 | `projects.json` | The folders you added by hand |
 | `kanban-tasks.json` | The old local board, kept as a backup: its open tasks moved to the Hermes board |
-| `project-files/` | A folder per project for its agents' tools, notes and reports, outside the repository. Never deleted by Tars |
+| `project-files/` | A folder per project for its agents' tools and reports, outside the repository. Never deleted by Tars |
 | `vault.db` | Vault documents |
 | `observations/` | The per-project session ledger |
 | `model-catalog.json` | Cached model and price catalogue |
