@@ -8,6 +8,7 @@ import { Menu, X, AlertCircle } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import NewShell from '@/components/NewShell/NewShell';
+import { DataFolderNotice } from '@/components/DataFolderNotice';
 import { useNewInterface } from '@/hooks/useNewInterface';
 import { Splash } from '@/components/Splash';
 import { Button, BrandSpinner } from '@/components/ui';
@@ -303,6 +304,8 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
           transition={{ duration: 0.2, ease: 'easeInOut' }}
           className="min-h-screen p-4 pt-16 lg:px-[26px] lg:pb-[22px] lg:pt-[22px]"
         >
+          {/* Across the top of the column, above the page's own 22px header gutter. */}
+          <DataFolderNotice className="-mx-4 -mt-4 mb-4 lg:-mx-[26px] lg:-mt-[22px] lg:mb-[22px]" />
           {children}
         </motion.main>
         </>

@@ -671609,6 +671609,1494 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "IkJ5q",
+      "x": 0,
+      "y": 97200,
+      "name": "Data folder · notice",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 18,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "IjBOK",
+          "name": "title",
+          "fill": "$text-primary",
+          "content": "Data folder · notice: when Tars could not settle on ~/.tars, it says which folder it runs on",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "i92pZ1",
+          "name": "case two data folders: the one Tars runs on, said at each start while both stand",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "arCRi",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "two data folders: the one Tars runs on, said at each start while both stand",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "LHHb2",
+              "name": "main 1180",
+              "width": 1180,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "EC0xI",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "nfsGa",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kdz3G",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UfL3L",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "LyJ0v",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Two data folders: ~/.tars and ~/.dorothy, which are not the same folder. Tars uses ~/.dorothy, which holds its agents and settings, and has left ~/.tars as it is.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "fgwex",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "f79qUj",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "mNrsU",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "vRi5P",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "InUFW",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "A7SJw",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "cXW9v",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "WE2J3",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RTBcy",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "cuTKd",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rIr16",
+          "name": "case the move refused (a folder in use, no permission): Tars goes on from the old folder",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "Q2zrx3",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "the move refused (a folder in use, no permission): Tars goes on from the old folder",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "Xmroz",
+              "name": "main 1180",
+              "width": 1180,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "fYSoA",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "aAEUc",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "SGzbS",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "h53Dd",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "w3ybRg",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Tars could not move ~/.dorothy to ~/.tars: it goes on from ~/.dorothy, and tries again at each start.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Xk2m5",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "i9FvoG",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "V9rE0",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "t7HMS9",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "cjptH",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "tbsIy",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JeMEH",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "UFpX4",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "HR7US",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "gG0Va",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "HZfKc",
+          "name": "case the narrowest window, 984 wide: the sentence is cut, the whole of it in its tooltip; the actions stay",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "YNWeg",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "the narrowest window, 984 wide: the sentence is cut, the whole of it in its tooltip; the actions stay",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "zPZbm",
+              "name": "main 984",
+              "width": 984,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OUVrJ",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "hc70z",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "QF4qL",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "eY4qf",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "aijli",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Two data folders: ~/.tars and ~/.dorothy, which are not the same folder. Tars uses ~/.dorothy, which holds its agents and settings, and has left ~/.tars as it is.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "uLvNT",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "PaxQj",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "MTo1R",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ZeOWk",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Tktyd",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bIEXQ",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ft8Ho",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "f8YBH8",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "AFayU",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "L5xKM",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "BSrhp",
+          "name": "note where",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 4,
+          "children": [
+            {
+              "type": "text",
+              "id": "ojVko",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "where",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "GQRUv",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 1180,
+              "content": "Across the top of the main column, above the page's header, on every page, in the classic shell and in the new interface. Show folder opens the folder Tars runs on. Dismiss hides it until Tars starts again: the folders stay as they are until you settle them.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "zi4Df",
+          "name": "note what it reads",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 4,
+          "children": [
+            {
+              "type": "text",
+              "id": "XD4K1",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "what it reads",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "Gkk0g",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 1180,
+              "content": "app:dataDir (#473): its notice when two data folders stand, said as main writes it with the home folder as ~; its did kept-old when the move was refused. Nothing shows for moved, already or none.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "tJ1qp",
+      "x": 1540,
+      "y": 97200,
+      "name": "Data folder · notice · light",
+      "theme": {
+        "mode": "light"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 18,
+      "padding": 24,
+      "children": [
+        {
+          "type": "text",
+          "id": "za84s",
+          "name": "title",
+          "fill": "$text-primary",
+          "content": "Data folder · notice: when Tars could not settle on ~/.tars, it says which folder it runs on",
+          "lineHeight": 1.4,
+          "fontFamily": "$font-display",
+          "fontSize": 20,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "Ksikm",
+          "name": "case two data folders: the one Tars runs on, said at each start while both stand",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "vj8Je",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "two data folders: the one Tars runs on, said at each start while both stand",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "aznGN",
+              "name": "main 1180",
+              "width": 1180,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "RH4ZN",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "HObcv",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xKxJE",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Rqfe9",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "H0JX4k",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Two data folders: ~/.tars and ~/.dorothy, which are not the same folder. Tars uses ~/.dorothy, which holds its agents and settings, and has left ~/.tars as it is.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "z1Jmh6",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pI7De",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "kr7Ap",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "q5sfR",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "j8Cf8O",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "lbM3e",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ybNVs",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "u7DK2O",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "d9cPn",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "C97pYj",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "BeuOO",
+          "name": "case the move refused (a folder in use, no permission): Tars goes on from the old folder",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "z9Ez9s",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "the move refused (a folder in use, no permission): Tars goes on from the old folder",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "V4IvZ",
+              "name": "main 1180",
+              "width": 1180,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "piuTE",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "xGznf",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "g78fuC",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "vYPWI",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "gQcof",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Tars could not move ~/.dorothy to ~/.tars: it goes on from ~/.dorothy, and tries again at each start.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mXrhE",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "icbGu",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "f8BIz",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "eBpT9",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "E8wPoO",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "CfE5c",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "aafXe",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "hUzaZ",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "J89QdJ",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "gVxB3",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "U5lwE8",
+          "name": "case the narrowest window, 984 wide: the sentence is cut, the whole of it in its tooltip; the actions stay",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "l91hf",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "the narrowest window, 984 wide: the sentence is cut, the whole of it in its tooltip; the actions stay",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "ovwpr",
+              "name": "main 984",
+              "width": 984,
+              "fill": "$bg",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "p0714i",
+                  "name": "notice",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": 26,
+                  "fill": "$surface-raised",
+                  "stroke": "$border",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    4,
+                    0,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "o5mbgy",
+                      "name": "d",
+                      "fill": "$status-waiting",
+                      "width": 6,
+                      "height": 6
+                    },
+                    {
+                      "type": "frame",
+                      "id": "JUk8E",
+                      "name": "line",
+                      "clip": true,
+                      "width": "fill_container",
+                      "gap": 5,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "au3dg",
+                          "name": "who",
+                          "fill": "$text-primary",
+                          "content": "Data folder:",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "UsNVr",
+                          "name": "rest",
+                          "fill": "$text-secondary",
+                          "content": "Two data folders: ~/.tars and ~/.dorothy, which are not the same folder. Tars uses ~/.dorothy, which holds its agents and settings, and has left ~/.tars as it is.",
+                          "lineHeight": 1.4,
+                          "fontFamily": "$font-ui",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "RNzvb",
+                      "name": "actions",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "mN5zP",
+                          "name": "action show folder",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "I4W4b",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "show folder",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Ac6iy",
+                          "name": "action dismiss",
+                          "height": 26,
+                          "padding": [
+                            0,
+                            10
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "rKTDe",
+                              "name": "l",
+                              "fill": "$text-secondary",
+                              "content": "dismiss",
+                              "lineHeight": 1.4,
+                              "fontFamily": "$font-mono",
+                              "fontSize": 12,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "rNUsY",
+                  "name": "Header",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "padding": [
+                    22,
+                    26,
+                    14,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "wjoqG",
+                      "name": "Title",
+                      "fill": "$text-primary",
+                      "content": "Dashboard",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-display",
+                      "fontSize": 24,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "qlDA5",
+                      "name": "Subtitle",
+                      "fill": "$text-secondary",
+                      "content": "Every agent's terminal, live.",
+                      "lineHeight": 1.4,
+                      "fontFamily": "$font-ui",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RjA0o",
+                  "name": "Content",
+                  "width": "fill_container",
+                  "height": 120,
+                  "padding": [
+                    0,
+                    26,
+                    22,
+                    26
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "jVLvS",
+                      "name": "page",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "fill": "$surface",
+                      "stroke": "$border",
+                      "strokeWidth": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "PUbm2",
+          "name": "note where",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 4,
+          "children": [
+            {
+              "type": "text",
+              "id": "ltHCT",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "where",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "MUGdI",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 1180,
+              "content": "Across the top of the main column, above the page's header, on every page, in the classic shell and in the new interface. Show folder opens the folder Tars runs on. Dismiss hides it until Tars starts again: the folders stay as they are until you settle them.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "jTGtu",
+          "name": "note what it reads",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 4,
+          "children": [
+            {
+              "type": "text",
+              "id": "ZGe8N",
+              "name": "cap",
+              "fill": "$text-muted",
+              "content": "what it reads",
+              "lineHeight": 1.4,
+              "fontFamily": "$font-mono",
+              "fontSize": 10.5,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "g8yx5c",
+              "name": "p",
+              "fill": "$text-secondary",
+              "textGrowth": "fixed-width",
+              "width": 1180,
+              "content": "app:dataDir (#473): its notice when two data folders stand, said as main writes it with the home folder as ~; its did kept-old when the move was refused. Nothing shows for moved, already or none.",
+              "lineHeight": 1.5,
+              "fontFamily": "$font-ui",
+              "fontSize": 11.5,
+              "fontWeight": "normal"
+            }
+          ]
+        }
+      ]
     }
   ],
   "themes": {

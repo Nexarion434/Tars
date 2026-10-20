@@ -280,7 +280,7 @@ export default function AgentsPage() {
   if (agentsLoading && agents.length === 0) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <LoadingState loading what="Still loading your agents…" detail="reading ~/.dorothy/agents.json" />
+        <LoadingState loading what="Still loading your agents…" detail="reading ~/.tars/agents.json" />
       </div>
     );
   }
