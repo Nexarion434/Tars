@@ -254,7 +254,7 @@ function SettingsPageInner() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <LoadingState loading what="Loading your settings" detail="reading ~/.dorothy/app-settings.json" />
+        <LoadingState loading what="Loading your settings" detail="reading ~/.tars/app-settings.json" />
       </div>
     );
   }

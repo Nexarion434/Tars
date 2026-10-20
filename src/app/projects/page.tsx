@@ -154,7 +154,7 @@ export default function ProjectsPage() {
     };
   }, [terminalPty]);
 
-  // Custom projects live in ~/.dorothy/projects.json (main process): they
+  // Custom projects live in ~/.tars/projects.json (main process): they
   // survive app updates and every surface sees them (agent creation, team
   // deployment, Brain). Anything left in localStorage is migrated once.
   useEffect(() => {

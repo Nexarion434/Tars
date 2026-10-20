@@ -92,7 +92,7 @@ export default function DocumentViewer({ document, attachments, onEdit, onDelete
           <PanelCaption>Attachments ({attachments.length})</PanelCaption>
           <div className="mt-2 space-y-px">
             {attachments.map(att => (
-              // Copied into ~/.dorothy/vault/attachments on attach, so this is
+              // Copied into ~/.tars/vault/attachments on attach, so this is
               // the only route allowed to serve it back out: see the allowedDir
               // check on /api/local-file. Without this link the file was listed
               // but nothing let you ever open it again.

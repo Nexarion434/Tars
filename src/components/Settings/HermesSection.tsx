@@ -76,7 +76,7 @@ export const HermesSection = ({ appSettings, onSaveAppSettings, onOpenGateways }
   /**
    * Whether we are signed in is not local knowledge: it depends on the gateway
    * and on the session cookie the main process keeps in
-   * ~/.dorothy/hermes-session.json. This effect used to read the connection and
+   * ~/.tars-private/hermes-session.json. This effect used to read the connection and
    * stop there, so `signedIn` stayed false until the user pressed Test - which
    * is why leaving this section and coming back offered a sign-in form for a
    * gateway Tars was already signed in to. One probe on mount settles it, and

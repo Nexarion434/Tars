@@ -292,7 +292,7 @@ export function importButtonLabel(count: number): string {
  * Whether "Use" starts the new agent with the template's prompt before you
  * touch the switch. Only a built-in as it ships: once saved, an imported
  * template looks just like one you made, and an edit to a built-in lives in
- * ~/.dorothy/templates.json, which any agent can write.
+ * ~/.tars/templates.json, which any agent can write.
  */
 export function startsWithPromptByDefault(template: { builtin: boolean; overridden?: boolean }): boolean {
   return template.builtin && !template.overridden;
