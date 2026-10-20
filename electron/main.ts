@@ -627,13 +627,13 @@ app.whenReady().then(async () => {
 
   // Create the main window
   createWindow();
+  uncaught.windowOpened();
   // Two data folders (core/data-dir-move.ts): which one Tars runs on is said
   // where the user sees it, once per start, and the window can ask for it
   // (app:dataDir). Never from an E2E run, which must put nothing on the screen.
   if (DATA_DIR_MOVE.notice && process.env.DOROTHY_E2E !== '1' && Notification.isSupported()) {
     new Notification({ title: 'Tars: two data folders', body: DATA_DIR_MOVE.notice }).show();
   }
-  uncaught.windowOpened();
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
   installDesktopShell({
     getMainWindow,
