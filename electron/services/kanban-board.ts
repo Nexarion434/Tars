@@ -230,7 +230,7 @@ function taskIn(answer: unknown): HermesTask {
  */
 const USER_FIXES = 'they connect or sign in to Hermes in Tars (Settings, Hermes). ';
 const WHAT_TO_DO = `Only the user can fix this: ${USER_FIXES}`
-  + 'Tell the user or your requester once, keep the task in your project folder\'s notes/ (tars_guide, project-folder), '
+  + 'Tell the user or your requester once, keep the task in your project folder\'s reports/ (tars_guide, project-folder), '
   + 'and go on with your work without calling the kanban again until then.';
 
 function notConfigured(): { ok: false; status: number; error: string } {

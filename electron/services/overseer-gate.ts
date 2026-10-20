@@ -50,13 +50,14 @@ export function resolveTarget(agentId: string): { ok: true; target: ResolvedTarg
  * backend spawn rule. Going through it here means sendToAgent gets that
  * behavior for free instead of a second copy of it.
  *
- * It presents Tars's own pass, not `~/.tars-private/api-token`. The shared file is
- * readable by every agent, so while the super chat authenticated with it the
- * routes that drive an agent could not refuse it: refusing the file would have
- * taken JeanBrasse's chat down with whoever else had read it. The pass is minted in
- * memory and written nowhere, so the refusal costs the super chat nothing. A
- * dedicated file elsewhere would only have moved the credential: any path
- * under $HOME is readable by the same agents.
+ * It presents Tars's own pass, not `~/.tars-private/api-token`. The shared file
+ * was in ~/.dorothy until 2.0.4, readable by every agent, so while the super
+ * chat authenticated with it the routes that drive an agent could not refuse
+ * it: refusing the file would have taken JeanBrasse's chat down with whoever
+ * else had read it. ~/.tars-private is handed to no agent, but an agent in
+ * bypass mode runs as the user and reads any path under $HOME, so a file there
+ * still names no one. The pass is minted in memory and written nowhere, so the
+ * refusal costs the super chat nothing.
  */
 function postLocalDispatch(agentId: string, message: string): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
