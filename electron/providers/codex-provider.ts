@@ -111,7 +111,8 @@ export class CodexProvider implements CLIProvider {
     // the agent's permission mode allows there, reading and writing alike.
     if (params.obsidianVaultPaths) {
       for (const vp of params.obsidianVaultPaths) {
-        if (fs.existsSync(vp)) {
+        // Read back from agents.json or templates.json, which any agent can write: never ~/.tars-private.
+        if (handedSecondaryFolder(vp) && fs.existsSync(vp)) {
           command += ` --add-dir ${shellQuote(vp)}`;
         }
       }

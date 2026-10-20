@@ -15,6 +15,9 @@ import * as os from 'os';
  * 3. A launch hands a link in a project that leads to it.
  * 4. Over-refusal: a plain secondary folder is no longer on the line of a provider that hands one, or a launch
  *    throws instead of leaving the refused folder out.
+ * 5. The template's folders (obsidianVaultPaths), which a launch hands with the same flag, hand any of those: they are
+ *    read back from agents.json and templates.json under ~/.tars, which any agent can write (the Audit's L1 on #501).
+ *    And over-refusal there: a plain vault beside a refused one is left out too.
  */
 
 let root: string;
@@ -41,7 +44,7 @@ afterAll(() => {
 /** The four providers that hand a secondary folder, and the flag each hands it with. */
 const HANDING = { claude: '--add-dir', codex: '--add-dir', gemini: '--include-directories', 'qwen-code': '--include-directories' } as const;
 
-async function lineFor(id: keyof typeof HANDING, secondaryProjectPath: string): Promise<string> {
+async function lineFor(id: keyof typeof HANDING, secondaryProjectPath?: string, obsidianVaultPaths?: string[]): Promise<string> {
   vi.resetModules();
   const { getProvider } = await import('../../../electron/providers');
   return getProvider(id).buildInteractiveCommand({
@@ -49,8 +52,19 @@ async function lineFor(id: keyof typeof HANDING, secondaryProjectPath: string): 
     prompt: 'go',
     permissionMode: 'normal',
     secondaryProjectPath,
+    obsidianVaultPaths,
   });
 }
+
+/** What a launch must never hand, spelled each way it can be (cases 1 to 3). */
+const refusedFolders = () => [
+  path.join(home, '.tars-private'),
+  path.join(home, '.tars-private', 'accounts'),
+  `${path.join(home, '.tars-private')}/`,
+  home,
+  path.parse(home).root,
+  path.join(home, 'projects', 'demo', 'secrets'),
+];
 
 /** Whether the line hands `folder` with `flag`, quoted or not. */
 function hands(line: string, flag: string, folder: string): boolean {
@@ -59,14 +73,7 @@ function hands(line: string, flag: string, folder: string): boolean {
 
 describe('the secondary folder on a launch line', () => {
   it('1 to 3. never hands ~/.tars-private, a folder inside it, a folder that holds it, or a link to it', async () => {
-    const refused = [
-      path.join(home, '.tars-private'),
-      path.join(home, '.tars-private', 'accounts'),
-      `${path.join(home, '.tars-private')}/`,
-      home,
-      path.parse(home).root,
-      path.join(home, 'projects', 'demo', 'secrets'),
-    ];
+    const refused = refusedFolders();
     const wrong: string[] = [];
     for (const [id, flag] of Object.entries(HANDING) as [keyof typeof HANDING, string][]) {
       for (const folder of refused) {
@@ -82,5 +89,12 @@ describe('the secondary folder on a launch line', () => {
     for (const [id, flag] of Object.entries(HANDING) as [keyof typeof HANDING, string][]) {
       expect(hands(await lineFor(id, shared), flag, shared), id).toBe(true);
     }
+  });
+
+  it.each(Object.entries(HANDING) as [keyof typeof HANDING, string][])('5. %s never hands one as a template\'s folder, and still hands a plain one', async (id, flag) => {
+    const vault = path.join(home, 'projects', 'shared');
+    const line = await lineFor(id, undefined, [...refusedFolders(), vault]);
+    expect(refusedFolders().filter(folder => hands(line, flag, folder))).toEqual([]);
+    expect(hands(line, flag, vault)).toBe(true);
   });
 });

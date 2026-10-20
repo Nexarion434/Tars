@@ -65,7 +65,7 @@ export class QwenCodeProvider implements CLIProvider {
     const secondary = handedSecondaryFolder(params.secondaryProjectPath);
     if (secondary) command += ` --include-directories ${shellQuote(secondary)}`;
     for (const vp of params.obsidianVaultPaths ?? []) {
-      if (fs.existsSync(vp)) command += ` --include-directories ${shellQuote(vp)}`;
+      if (handedSecondaryFolder(vp) && fs.existsSync(vp)) command += ` --include-directories ${shellQuote(vp)}`;
     }
     command += ` --include-directories ${shellQuote(DATA_DIR)}`;
 
