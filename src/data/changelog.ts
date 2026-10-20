@@ -76,6 +76,7 @@ export const CHANGELOG: Release[] = [
       'Tars draws its own title bar under the Windows buttons, in the theme\'s colours. Closing the window keeps your agents working, with Tars in the tray; Quit Tars in the tray\'s menu ends it. Fixed by Nexarion434.',
       'Settings, Terminal picks the shell a terminal opens: PowerShell 7, Windows PowerShell, the Command Prompt or Git Bash. Fixed by Nexarion434.',
       'Not on Windows yet: several Claude accounts, putting an idle agent to sleep, marking a frozen agent stalled, and removing the folders Settings, System lists.',
+      'Qwen Code in the window: New agent offers it with plan, and the models of Qwen Code\'s own settings rather than a list kept in Tars; Settings, Providers shows those models in its panel; Usage and the agent cards name it Qwen Code, and the Qwen API that runs through Claude Code is now named Qwen API, so the two are never confused.',
     ],
   },
   {
