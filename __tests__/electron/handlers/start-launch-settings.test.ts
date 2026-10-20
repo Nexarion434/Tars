@@ -35,6 +35,8 @@ type FakePty = {
   resize: ReturnType<typeof vi.fn>;
   onData: ReturnType<typeof vi.fn>;
   onExit: ReturnType<typeof vi.fn>;
+  /** What node-pty was asked to run: the API's launch passes its command here, not typed in. */
+  args?: string[];
 };
 
 const spawned = vi.hoisted(() => [] as FakePty[]);
@@ -44,10 +46,11 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, homedir: () => tmpHome, default: { ...actual, homedir: () => tmpHome } };
 });
 vi.mock('node-pty', () => ({
-  spawn: vi.fn((file: string): FakePty => {
+  spawn: vi.fn((file: string, args?: string[]): FakePty => {
     const terminal: FakePty = {
       pid: 4242 + spawned.length,
       process: file,
+      args,
       write: vi.fn(),
       kill: vi.fn(),
       resize: vi.fn(),
@@ -99,6 +102,7 @@ import { registerHooksRoutes } from '../../../electron/services/api-routes/hooks
 import { registerAgentRoutes } from '../../../electron/services/api-routes/agent-routes';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../electron/types';
+import { qwenTranscriptPath } from '../../../electron/services/qwen-code';
 
 // The launch these hold is darwin and linux's: a line typed into the shell, or
 // `bash -l -c`. On a Windows host they read it as linux; the win32 launch (the
@@ -847,6 +851,61 @@ describe('a restart asked for from the Dashboard', () => {
     expect(typedInto(newTerminal(before))).not.toContain('--resume');
   });
 
+  // The Audit's M1 on #475: a launch that names the session it resumes (this
+  // restart, a chat's runner) was not counted as the run's first, so the next
+  // start, after a stop, resumed the session the stop had just made the
+  // tombstone, under its own id, and every post of it was refused.
+  const FORKED_AFTER_RESTART = '7c0d2e4f-5a6b-4c7d-8e9f-a0b1c2d3e4f5';
+  async function restartedThenStopped(): Promise<AgentStatus> {
+    lastSessionAnsweredOn('claude-opus-5-5');
+    const dir = path.join(tmpHome, '.claude', 'projects', encodeProjectDirName(project));
+    fs.copyFileSync(path.join(dir, `${OLD_SESSION}.jsonl`), path.join(dir, `${FORKED_AFTER_RESTART}.jsonl`));
+    const agent = agentAtRest({ resumableSessionId: OLD_SESSION });
+    expect(await settled(restart(agent.id))).toEqual({ success: true });
+    expect(hookStatus({ agent_id: agent.id, session_id: FORKED_AFTER_RESTART, status: 'idle', source: 'resume' }))
+      .toMatchObject({ registered: true });
+    await handlers.get('agent:stop')!({}, agent.id);
+    expect(agent.lastKilledSessionId).toBe(FORKED_AFTER_RESTART);
+    return agent;
+  }
+
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('counts as the first launch of the run: a stop then a start from the window resumes nothing', async () => {
+    const agent = await restartedThenStopped();
+    const before = spawned.length;
+    await settled(start(agent.id));
+    expect(typedInto(newTerminal(before))).not.toContain('--resume');
+  });
+
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('counts as the first launch of the run: a stop then a start through the API resumes nothing', async () => {
+    const agent = await restartedThenStopped();
+    const app: RouteApp = {
+      routes: [],
+      add(method, pattern, handler) { this.routes.push({ method, pattern, handler }); },
+      get(pattern, handler) { this.add('GET', pattern, handler); },
+      post(pattern, handler) { this.add('POST', pattern, handler); },
+      put(pattern, handler) { this.add('PUT', pattern, handler); },
+      delete(pattern, handler) { this.add('DELETE', pattern, handler); },
+    };
+    registerAgentRoutes(app, {
+      mainWindow: null, appSettings: {} as AppSettings, getAppSettings: () => ({} as AppSettings),
+      getTelegramBot: () => null, getSlackApp: () => null, slackResponseChannel: null, slackResponseThreadTs: null,
+      handleStatusChangeNotificationCallback: vi.fn(), sendNotificationCallback: vi.fn(),
+      initAgentPtyCallback: vi.fn(async () => 'unused'), agentStatusEmitter: new EventEmitter(),
+    } as unknown as RouteContext);
+    const pathname = `/api/agents/${agent.id}/start`;
+    const route = app.routes.find(r => r.method === 'POST' && typeof r.pattern !== 'string' && r.pattern.test(pathname))!;
+    let answer: Record<string, unknown> = {};
+    const before = spawned.length;
+    await settled(Promise.resolve(route.handler({
+      method: 'POST', pathname, url: new URL(`http://localhost${pathname}`), body: { prompt: 'go on' },
+      raw: { headers: {}, on: () => {} }, res: {}, params: { id: agent.id }, internal: true,
+    } as unknown as RouteRequest, (json) => { answer = json as Record<string, unknown>; }, {} as RouteContext)), 2_000);
+    expect(answer).toMatchObject({ success: true });
+    const launched = `${(newTerminal(before).args ?? []).join(' ')} ${typedInto(newTerminal(before))}`;
+    expect(launched).toContain('claude');
+    expect(launched).not.toContain('--resume');
+  });
+
   it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('does now what a restart waiting on new settings would have done later, and says the wait is over', async () => {
     lastSessionAnsweredOn('claude-opus-5');
     const { agent } = agentWithTerminal({
@@ -1059,5 +1118,31 @@ describe('a deleted agent and the restart it waited for, through every way in', 
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(restartPushes()).toEqual([]);
+  });
+});
+
+// A Qwen Code agent (the Audit's L4 on #461): the same restart, continued with
+// qwen's own --resume and --fork-session (qwen 0.25.2 has both, `qwen --help`),
+// its conversation found in qwen's transcript folder, not Claude's.
+describe('a qwen code agent with a changed model', () => {
+  it.skipIf(NO_POSIX_TRANSCRIPT_FOLDER)('restarts on its conversation, under --resume and --fork-session', async () => {
+    const transcript = qwenTranscriptPath(project, OLD_SESSION, tmpHome);
+    fs.mkdirSync(path.dirname(transcript), { recursive: true });
+    fs.writeFileSync(transcript, JSON.stringify({ sessionId: OLD_SESSION, type: 'user', message: { role: 'user', parts: [{ text: 'hello' }] } }) + '\n');
+    const { agent, terminal } = agentWithTerminal({
+      foreground: 'qwen', provider: 'qwen-code', model: 'deepseek-v4-flash', effort: 'high',
+      currentSessionId: OLD_SESSION, resumableSessionId: OLD_SESSION, sessionPtyId: 'pty-a',
+    });
+    const before = spawned.length;
+
+    await update({ id: agent.id, model: 'deepseek-v4-pro' });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(terminal.kill).toHaveBeenCalled();
+    const restarted = newTerminal(before);
+    expect(restarted, 'no new terminal was opened').toBeDefined();
+    const typed = typedInto(restarted);
+    expect(typed).toContain(`--resume '${OLD_SESSION}' --fork-session`);
+    expect(typed).toContain("-m 'deepseek-v4-pro'");
   });
 });

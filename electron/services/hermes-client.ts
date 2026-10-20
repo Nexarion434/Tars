@@ -3,8 +3,9 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import { HermesConnection, resolveHermesBaseUrl, sessionToken } from '../types/hermes';
-import { DATA_DIR } from '../constants';
+import { DATA_DIR, privatePath } from '../constants';
 import { describeSecretFileError, writeSecretFileSync } from '../utils/secret-file';
+import { moveOutOfAgentReach } from './settings-secrets';
 
 /**
  * Minimal Hermes gateway client.
@@ -42,7 +43,9 @@ interface HermesResponse {
  * it stays in the main process - `hermesRequest` reads it, the renderer has no
  * channel that returns it.
  */
-const SESSION_FILE = path.join(DATA_DIR, 'hermes-session.json');
+const SESSION_FILE = privatePath('hermes-session.json');
+// In ~/.dorothy, every agent's --add-dir, until 2.0.4 (services/settings-secrets.ts).
+moveOutOfAgentReach(path.join(DATA_DIR, 'hermes-session.json'), SESSION_FILE);
 
 const cookieJars = new Map<string, Map<string, string>>();
 

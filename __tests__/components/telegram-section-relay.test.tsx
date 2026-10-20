@@ -3,6 +3,7 @@ import { mount, ofType, textOf, type Mount } from './hook-runtime';
 import { TelegramSection } from '../../src/components/Settings/TelegramSection';
 import { Toggle } from '../../src/components/Settings/Toggle';
 import { SettingsRow } from '../../src/components/Settings/SettingsRow';
+import { SecretRow } from '../../src/components/Settings/SecretRow';
 import { DEFAULT_APP_SETTINGS } from '../../src/components/Settings/constants';
 import type { AppSettings } from '../../src/components/Settings/types';
 import { Button, Input, PasswordInput, StatusBadge } from '../../src/components/ui';
@@ -28,7 +29,8 @@ vi.mock('react', async (importOriginal) => ({
  * 3. it gives no way back: the second row must say how to bring the bot back,
  *    and its one button must open Settings, Hermes, where the switch is;
  * 4. with the relay off, or a settings file older than the relay, the section
- *    is not the bot's own as before: its switch and its token field.
+ *    is not the bot's own as before: its switch and its token's row, which
+ *    since 2.0.4 says the token is set (the window's side of #466).
  */
 
 type Section = ReturnType<typeof TelegramSection>;
@@ -50,12 +52,13 @@ function open(relay: boolean | undefined) {
   const appSettings: AppSettings = {
     ...DEFAULT_APP_SETTINGS,
     telegramEnabled: true,
-    telegramBotToken: '123456:ABCDEF',
-    telegramAuthToken: 'auth-token',
+    telegramBotToken: '\u2022'.repeat(8),
+    telegramAuthToken: '\u2022'.repeat(8),
+    secretsSet: { telegramBotToken: true, telegramAuthToken: true },
     telegramAuthorizedChatIds: ['42'],
     hermesRelayEnabled: relay,
   };
-  section = mount(() => TelegramSection({ appSettings, onSaveAppSettings: onSave, onUpdateLocalSettings: onLocal, onOpenHermes }));
+  section = mount(() => TelegramSection({ appSettings, onSaveAppSettings: onSave, onUpdateLocalSettings: onLocal, onSecretChanged: () => {}, onOpenHermes }));
   return section;
 }
 
@@ -67,6 +70,7 @@ describe('Settings, Telegram with Telegram through Hermes on', () => {
   it('offers nothing to type and nothing to switch (1)', () => {
     const s = open(true);
     expect(fields(s)).toHaveLength(0);
+    expect(ofType(s.result, SecretRow)).toHaveLength(0);
     expect(ofType(s.result, Toggle)).toHaveLength(0);
     expect(buttons(s).map(b => b.text)).toEqual(['open hermes']);
   });
@@ -98,7 +102,7 @@ describe('Settings, Telegram with Telegram through Hermes on', () => {
     const s = open(relay);
     expect(rows(s)[0].label).toBe('Enable Telegram bot');
     expect(ofType(s.result, Toggle).length).toBeGreaterThan(0);
-    expect(ofType(s.result, PasswordInput).some(p => p.props.value === '123456:ABCDEF')).toBe(true);
+    expect(ofType(s.result, SecretRow).some(p => p.props.field === 'telegramBotToken' && p.props.set === true)).toBe(true);
     expect(buttons(s).map(b => b.text)).not.toContain('open hermes');
   });
 });

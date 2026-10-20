@@ -7,11 +7,15 @@ import { rememberTerminalOwner, terminalExited } from './pty-manager';
 import { attachTerminalMirror, panelSizeOf } from './terminal-mirror';
 import { accountEnvFor, withAccountEnv } from './account-env';
 import { refuseWhileQuitting } from './quit-state';
-import { childEnv, type Env } from '../platform';
+import { childEnv, currentFolderLookupsOff, type Env } from '../platform';
 import { refuseOnFullDisk } from './disk-space';
 import { stateModLaunchEnv } from '../services/state-mod';
 import { agentTmpEnvOrNone } from '../services/agent-tmp';
 import { chatsReadEnv } from './chat-inbox';
+import { cliLaunchExit, reportHandledError } from '../services/error-reports/handled';
+import { noteCodexLaunch } from '../services/codex-sessions';
+import { piSessionWatch } from '../services/pi-sessions';
+import { ensureCodexProjectTrusted } from '../providers/codex-cli';
 
 export { setAccountEnvResolver } from './account-env';
 /** Moved to electron/platform/shell.ts; re-exported for the callers that import it from here. */
@@ -84,6 +88,19 @@ const NODE_PTY_HELPER = 'spawn-helper';
  * checking nothing. Here they reach the real one and keep asserting what they
  * always did.
  */
+/**
+ * codex is starting for this agent (2.0.4): its folder trusted first, since
+ * codex asks "Trust this folder?" in a new one and waits there for good
+ * (providers/codex-cli.ts), and its launch noted, the session it begins or
+ * resumes being the agent's (services/codex-sessions.ts). At every spawn of a
+ * codex agent's terminal, and where a codex line is typed into a shell already
+ * there (agent-manager.ts, launchIntoTerminal).
+ */
+export function codexLaunching(agentId: string, cwd: string): void {
+  ensureCodexProjectTrusted(cwd);
+  noteCodexLaunch(agentId, cwd);
+}
+
 export function spawnAgentPty(opts: {
   /** The provider's binary, which decides what Tars is allowed to impose. */
   binaryName: string;
@@ -133,6 +150,7 @@ export function spawnAgentPty(opts: {
   // CLI" and says nothing to Tars then (gate of #380). Never handed on.
   delete env.CLAUDE_PID;
 
+  const spawnedAt = Date.now();
   const spawned = pty.spawn(opts.shell, opts.args, {
     name: TERMINAL_NAME,
     cols: size.cols,
@@ -154,6 +172,10 @@ export function spawnAgentPty(opts: {
       // parent's value, and the app that spawns a CLI is the app that CLI must
       // report to.
       CLAUDE_MGR_API_URL: `http://127.0.0.1:${API_PORT}`,
+      // On Windows, the CLI looks git and rg up by name in the project it runs
+      // in: nothing out of that folder (platform/git-command.ts). After the
+      // caller's env, which cannot take it back.
+      ...currentFolderLookupsOff(),
       // What this CLI is, provably. CLAUDE_AGENT_ID travels in the same
       // environment and says who the agent is, but anything that can read an
       // environment can repeat it, so it was a claim and not a proof. This
@@ -183,15 +205,27 @@ export function spawnAgentPty(opts: {
   // one function that spawns an agent's terminal, and a caller that has to
   // remember is a caller that will not.
   if (agentId) rememberTerminalOwner(spawned, agentId);
+  // codex reports no turn through a hook: its session log does, and the one
+  // this terminal's codex begins is the agent's (services/codex-sessions.ts).
+  if (agentId && opts.binaryName === 'codex') codexLaunching(agentId, opts.cwd);
+  // pi's, from the session file it writes in the agent's own folder (services/pi-sessions.ts).
+  if (agentId && opts.binaryName === 'pi') piSessionWatch.noteLaunch(agentId);
   // And what it held goes when it does: a message queued for a terminal whose
   // CLI has exited would be probed for, and later typed into nothing.
-  spawned.onExit(() => {
+  spawned.onExit(({ exitCode, signal }: { exitCode?: number; signal?: number } = {}) => {
     terminalExited(spawned);
     // And what it was spawned as: gone, node-pty on Linux still names the
     // shell it spawned, and a terminal handed a command read as a running CLI.
     spawnedAs.delete(spawned);
     // And its token: a stopped CLI's stayed valid until the agent's next launch.
     if (agentId && token) revokeTerminalToken(agentId, token);
+    // An agent's CLI that failed to start, where the terminal is the CLI (the API's sessions everywhere, every
+    // terminal on Windows): it exited on its own with a failure code at its launch (2.0.4, F1). A CLI typed into
+    // a shell leaves the shell behind, and its code with it.
+    const failed = agentId && opts.runsCommand && exitCode !== undefined
+      ? cliLaunchExit({ provider: opts.binaryName, exitCode, signal, livedMs: Date.now() - spawnedAt })
+      : null;
+    if (failed) reportHandledError(failed);
   });
   // Before any caller subscribes, so a chunk is in the mirror before it is
   // broadcast. Here for the reason above: every agent terminal needs one. The

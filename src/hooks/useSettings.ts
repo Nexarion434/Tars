@@ -6,6 +6,7 @@ import type { ClaudeSettings, ClaudeInfo, Skill, AppSettings } from '@/component
 import { DEFAULT_APP_SETTINGS } from '@/components/Settings/constants';
 import { readClaudeData } from '@/hooks/useClaude';
 import { followErrorReports } from '@/lib/error-reports';
+import { withoutSecrets, withSecretState } from '@/lib/secret-settings';
 import { NEW_INTERFACE_EVENT } from './useNewInterface';
 
 /** The settings a bot fills in itself, which the page shows as they change. */
@@ -128,9 +129,12 @@ export const useSettings = () => {
     }
   };
 
-  const handleSaveAppSettings = async (newSettings: Partial<AppSettings>) => {
-    const updated = { ...appSettings, ...newSettings };
-    setAppSettings(updated);
+  const handleSaveAppSettings = async (changes: Partial<AppSettings>) => {
+    // Never a secret, masked or typed (lib/secret-settings.ts): a page sets or
+    // clears one through secrets.set, and this copy never takes one in.
+    const newSettings = withoutSecrets(changes);
+    if (!Object.keys(newSettings).length) return;
+    setAppSettings(prev => ({ ...prev, ...newSettings }));
 
     if (!window.electronAPI?.appSettings) return;
 
@@ -161,7 +165,7 @@ export const useSettings = () => {
         // changed, so it says the same of its own copy, or Settings, Telegram
         // would go on showing a bot that no longer runs.
         if (newSettings.hermesRelayEnabled === true) {
-          setAppSettings(prev => ({ ...prev, telegramEnabled: false, telegramBotToken: '' }));
+          setAppSettings(prev => withSecretState({ ...prev, telegramEnabled: false, telegramBotToken: '' }, 'telegramBotToken', false));
         }
       }
     } catch (err) {
@@ -180,7 +184,12 @@ export const useSettings = () => {
   };
 
   const updateLocalAppSettings = (updates: Partial<AppSettings>) => {
-    setAppSettings(prev => ({ ...prev, ...updates }));
+    setAppSettings(prev => ({ ...prev, ...withoutSecrets(updates) }));
+  };
+
+  /** What secrets.set answered for `field`: the row reads it (SecretRow), never a value. */
+  const setSecretState = (field: string, set: boolean) => {
+    setAppSettings(prev => withSecretState(prev, field, set));
   };
 
   return {
@@ -200,5 +209,6 @@ export const useSettings = () => {
     handleSaveAppSettings,
     updateSettings,
     updateLocalAppSettings,
+    setSecretState,
   };
 };

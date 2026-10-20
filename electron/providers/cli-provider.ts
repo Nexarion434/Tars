@@ -1,8 +1,5 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import type { AgentProvider, AppSettings, AgentPermissionMode, AgentEffort } from '../types';
-import { dataPath, DATA_DIR_SHELL } from '../constants';
+import { loadSettingsWithSecrets } from '../services/settings-secrets';
 
 /**
  * Synchronously read the persisted app settings. Providers use this in
@@ -10,18 +7,22 @@ import { dataPath, DATA_DIR_SHELL } from '../constants';
  * initAgentPty and the automation handlers already use).
  */
 export function readAppSettingsFromDisk(): Partial<AppSettings> {
-  try {
-    const settingsFile = dataPath('app-settings.json');
-    return JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) as Partial<AppSettings>;
-  } catch {
-    return {};
-  }
+  // With their secrets, from ~/.tars-private (services/settings-secrets.ts).
+  return loadSettingsWithSecrets();
 }
 
 /**
  * Parameters for building an interactive (PTY) agent command.
  */
+/** What a launch runs on, for getPtyEnvVars. */
+export interface PtyLaunch {
+  model?: string;
+  effort?: string;
+}
+
 export interface InteractiveCommandParams {
+  /** The agent it launches: a CLI whose settings Tars writes for each agent (Qwen Code) writes them again for this launch. */
+  agentId?: string;
   binaryPath: string;
   prompt: string;
   model?: string;
@@ -56,24 +57,13 @@ export interface InteractiveCommandParams {
 }
 
 /**
- * Parameters for building a scheduled (non-interactive, one-shot) command.
- */
-export interface ScheduledCommandParams {
-  binaryPath: string;
-  prompt: string;
-  autonomous: boolean;
-  mcpConfigPath?: string;
-  outputFormat?: string;
-  verbose?: boolean;
-}
-
-/**
  * Parameters for building a quick one-shot command (e.g. kanban task generation).
  */
 export interface OneShotCommandParams {
   binaryPath: string;
   prompt: string;
   model?: string;
+  effort?: AgentEffort;
 }
 
 /**
@@ -92,6 +82,12 @@ export interface HookConfig {
   supportsNativeHooks: boolean;
   configDir: string;
   settingsFile: string;
+  /**
+   * The CLI's turns reach Tars by another way than hooks Tars installs: codex's session log, which Tars reads and
+   * reports as the hooks would (services/codex-sessions.ts). A provider with either has an end of turn
+   * (core/end-of-turn.ts).
+   */
+  turnsReported?: boolean;
 }
 
 /**
@@ -111,6 +107,13 @@ export interface CLIProvider {
   /** Resolve the binary path from app settings or defaults */
   resolveBinaryPath(appSettings: AppSettings): string;
 
+  /**
+   * What the line for this binary in this mode needs read from the CLI itself, read off the main thread: every launch
+   * path awaits it before it calls buildInteractiveCommand (codex's own flags in auto, the Audit's L6 on #465).
+   * Absent: nothing to read.
+   */
+  prepareLaunch?(binaryPath: string, permissionMode?: string): Promise<void>;
+
   /** Build command string for interactive PTY sessions */
   buildInteractiveCommand(params: InteractiveCommandParams): string;
 
@@ -123,14 +126,16 @@ export interface CLIProvider {
   /** With taskTypedAfterLaunch: the text a launch types in for this task ('' for none). */
   typedTask?(params: Pick<InteractiveCommandParams, 'prompt' | 'skills' | 'isSuperAgent'>): string;
 
-  /** Build command string for scheduled task execution */
-  buildScheduledCommand(params: ScheduledCommandParams): string;
-
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
-  /** Get environment variables to set for PTY sessions */
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string>;
+  /**
+   * Get environment variables to set for PTY sessions. `launch`: the model and
+   * effort this launch runs on, for a CLI that takes them through its
+   * environment (Qwen Code: its key's variable is its model's, its effort a
+   * setting).
+   */
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings, launch?: PtyLaunch): Record<string, string>;
 
   /** Get environment variable names to delete before spawning PTY */
   getEnvVarsToDelete(): string[];
@@ -144,14 +149,18 @@ export interface CLIProvider {
   /** MCP configuration strategy: 'flag' = pass via CLI flag, 'config-file' = write to config file */
   getMcpConfigStrategy(): 'flag' | 'config-file';
 
-  /** Register an MCP server with this provider's configuration */
-  registerMcpServer(name: string, command: string, args: string[]): Promise<void>;
+  /**
+   * Register an MCP server with this provider's configuration. `envVars`: the names of variables the server is to
+   * be handed from the CLI's own environment, for a CLI that hands its servers only what it is told to (codex);
+   * the others hand theirs everything and ignore it.
+   */
+  registerMcpServer(name: string, command: string, args: string[], envVars?: readonly string[]): Promise<void>;
 
   /** Remove an MCP server from this provider's configuration */
   removeMcpServer(name: string): Promise<void>;
 
-  /** Check if an MCP server is registered with the expected server path */
-  isMcpServerRegistered(name: string, expectedServerPath: string): boolean;
+  /** Check if an MCP server is registered with the expected server path (and, where the CLI needs them, `envVars`) */
+  isMcpServerRegistered(name: string, expectedServerPath: string, envVars?: readonly string[]): boolean;
 
   /** Directories where this provider reads skills from */
   getSkillDirectories(): string[];
@@ -167,20 +176,6 @@ export interface CLIProvider {
 
   /** Get the Tars --add-dir equivalent flag for this provider */
   getAddDirFlag(): string;
-
-  /** Generate the shell script content for scheduled tasks */
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-    /** Optional skills list to inject as a prompt prefix (same as interactive sessions) */
-    skills?: string[];
-  }): string;
 }
 
 /**
@@ -250,8 +245,7 @@ export function promptOperand(prompt: string | undefined): string {
  * backticks and line breaks reach the program as they are.
  *
  * Every folder a command hands its CLI (`--add-dir`, `--include-directories`)
- * goes through this. They used to be written `'${DATA_DIR}'`, and the scheduled
- * builders `"${DATA_DIR}"`, and DATA_DIR carries the home folder's own name:
+ * goes through this. They used to be written `'${DATA_DIR}'`, and DATA_DIR carries the home folder's own name:
  * a home such as `/Users/o'neil` closed the quote early and the command did
  * not run, and a name built to close it could add arguments of its own.
  */
@@ -271,9 +265,12 @@ export function shellQuote(value: string): string {
  * flag is worse than none: it would look enforced and silently do nothing.
  * Until one is verified against the real binary, an orchestrator on those runs
  * on its persona alone, and the app says so rather than implying otherwise.
+ * Qwen Code (qwen 0.25.2) has one, verified: `--exclude-tools edit write_file
+ * agent` takes its edit, write and sub-agent tools away.
  */
 export function enforcesOrchestratorMode(binaryName: string): boolean {
-  return binaryName === 'claude';
+  // Qwen Code's --exclude-tools, its ToolNames read in 0.25.2 (services/qwen-code.ts).
+  return binaryName === 'claude' || binaryName === 'qwen';
 }
 
 /**
@@ -337,40 +334,10 @@ export function managedCliEnv(binaryName: string): Record<string, string> {
  *
  * ANTHROPIC_API_KEY is blanked: a key the user's shell exports, inherited,
  * would bring the question back, about itself, and go out as `x-api-key` to a
- * vendor it has nothing to do with. Scheduled runs (`claude -p`) take the key
- * the same way, from scheduledKeyExports.
+ * vendor it has nothing to do with.
  */
 export function keyProviderEnv(baseUrl: string, key: string): Record<string, string> {
   return { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_API_KEY: '' };
-}
-
-/**
- * The lines of a scheduled script that point `claude -p` at a key provider
- * and hand it the key, as keyProviderEnv does a terminal's (the Audit's M1 on
- * #458). Measured on claude 2.1.302 against a stand-in of the vendor:
- * `claude -p` with ANTHROPIC_API_KEY empty or unset, or ANTHROPIC_AUTH_TOKEN
- * empty, and a subscription signed in, sends the subscription's OAuth token
- * as a Bearer to the vendor's URL. So the key is read as the task runs, by
- * Tars's own node (the launcher its MCP servers run on, else `node`), never by
- * jq, which macOS ships only from 15, and never in an argument; with no key,
- * or settings it cannot read, the script says why in the task's log and ends
- * before claude starts.
- */
-export function scheduledKeyExports(baseUrl: string, setting: string, logPath: string): string {
-  const read = 'try{const v=JSON.parse(require("fs").readFileSync(process.env.TARS_SETTINGS,"utf8"))[process.env.TARS_KEY_NAME];'
-    + 'if(typeof v==="string"&&v.trim())process.stdout.write(v.trim())}catch(e){}';
-  return [
-    `export ANTHROPIC_BASE_URL=${shellQuote(baseUrl)}`,
-    `TARS_NODE="${DATA_DIR_SHELL}/bin/tars-mcp-node"; [ -x "$TARS_NODE" ] || TARS_NODE=node`,
-    `TARS_KEY="$(TARS_SETTINGS="${DATA_DIR_SHELL}/app-settings.json" TARS_KEY_NAME=${shellQuote(setting)} "$TARS_NODE" -e '${read}' 2>/dev/null)"`,
-    'if [ -z "$TARS_KEY" ]; then',
-    `  echo "=== Not run: no ${setting} in Tars's settings, or they could not be read. claude was not started, and nothing was sent to ${baseUrl} ===" >> ${shellQuote(logPath)}`,
-    '  exit 1',
-    'fi',
-    'export ANTHROPIC_AUTH_TOKEN="$TARS_KEY" ANTHROPIC_API_KEY=""',
-    'unset TARS_KEY TARS_NODE',
-    '',
-  ].join('\n');
 }
 
 export function safeEffort(effort: string | undefined): string | undefined {

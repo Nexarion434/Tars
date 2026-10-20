@@ -60,7 +60,7 @@ async function section(imports: Array<Record<string, unknown>>, signIn: { succes
     notice: () => (elements(page!.result) as unknown as El[]).find(el => el.type === 'div' && textOf(el.props.children as never) === COPY) ?? null,
     importIt: async () => { (button('import').props.onClick as () => Promise<void>)(); await settle(); },
     typeToken: (value: string) => {
-      const field = (ofType(page!.result, PasswordInput) as unknown as El[]).find(p => p.props.placeholder === 'X-Hermes-Session-Token')!;
+      const field = (ofType(page!.result, PasswordInput) as unknown as El[]).find(p => p.props['aria-label'] === 'Hermes session token')!;
       (field.props.onChange as (e: unknown) => void)({ target: { value } });
       page!.rerender();
     },

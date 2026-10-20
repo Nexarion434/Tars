@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchSandboxed, recordValues, removeHome } from './fixture.mjs';
+import { launchSandboxed, recordValues, removeHome, writeNodeCli } from './fixture.mjs';
 import { DEV_URL, apiPort } from './ports.mjs';
 
 /**
@@ -75,14 +75,13 @@ test("each result goes back to the agent that asked for that piece of work", asy
   fs.mkdirSync(dir, { recursive: true });
   const cliFor = (id: string) => {
     const file = path.join(home, `${id}.received`);
-    const cli = path.join(home, `${id}-cli.cjs`);
-    fs.writeFileSync(cli, [
-      `#!${process.execPath}`,
+    // writeNodeCli: the script itself on macOS and Linux, npm's shim beside it on Windows.
+    const cli = writeNodeCli(path.join(home, `${id}-cli.cjs`), [
       "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
       `process.stdin.on('data', d => require('fs').appendFileSync(require('path').join(${JSON.stringify(home)}, process.env.CLAUDE_AGENT_ID + '.received'), d));`,
       "process.stdout.write('stand-in ready\\n');",
       '',
-    ].join('\n'), { mode: 0o755 });
+    ].join('\n'));
     return { cli, file };
   };
   const stand = { w1: cliFor('w1'), o1: cliFor('o1'), b1: cliFor('b1') };
@@ -231,14 +230,13 @@ test('a request sent during another request\'s turn: each end goes to its own as
   fs.mkdirSync(dir, { recursive: true });
   const cliFor = (id: string) => {
     const file = path.join(home, `${id}.received`);
-    const cli = path.join(home, `${id}-cli.cjs`);
-    fs.writeFileSync(cli, [
-      `#!${process.execPath}`,
+    // writeNodeCli: the script itself on macOS and Linux, npm's shim beside it on Windows.
+    const cli = writeNodeCli(path.join(home, `${id}-cli.cjs`), [
       "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
       `process.stdin.on('data', d => require('fs').appendFileSync(require('path').join(${JSON.stringify(home)}, process.env.CLAUDE_AGENT_ID + '.received'), d));`,
       "process.stdout.write('stand-in ready\\n');",
       '',
-    ].join('\n'), { mode: 0o755 });
+    ].join('\n'));
     return { cli, file };
   };
   const stand = { w1: cliFor('w1'), o1: cliFor('o1'), b1: cliFor('b1') };

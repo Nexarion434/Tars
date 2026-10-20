@@ -85,6 +85,8 @@ const hhmm = (at: number) => { const d = new Date(at); return `${String(d.getHou
 /** Main's sentence for a registry that does not parse (#263, registryProblem). */
 const UNREADABLE = '~/.tars-private/claude-accounts.json does not read as a list of accounts. Nothing is changed until it is fixed or removed.';
 
+test.skip(process.platform === 'win32', 'several Claude accounts are off on a Windows build until they are ported; this runs on macOS and Linux');
+
 test('claude accounts: the section, the sign-in terminal, and an agent pinned from its card', async () => {
   test.setTimeout(180_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorothy-e2e-accounts-ui-'));
@@ -117,7 +119,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
 
     // Under AI & Providers, after Providers; off, with its three lines.
     await page.getByText('AI & Providers', { exact: true }).click();
-    await page.getByText('Claude accounts', { exact: true }).click();
+    await page.getByTestId('settings-nav').getByText('Claude accounts', { exact: true }).click();
     const toggle = page.getByRole('switch', { name: 'Use several Claude subscriptions' });
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByText('Each account signs in through Claude Code itself, in a terminal Tars opens. Tars never sees the sign-in.')).toBeVisible();
@@ -243,7 +245,7 @@ test('claude accounts: the section, the sign-in terminal, and an agent pinned fr
     fs.writeFileSync(path.join(home, '.tars-private', 'claude-accounts.json'), '{ not a list');
     await page.goto(`${DEV_URL}/settings`, { waitUntil: 'domcontentloaded' });
     await page.getByText('AI & Providers', { exact: true }).click();
-    await page.getByText('Claude accounts', { exact: true }).click();
+    await page.getByTestId('settings-nav').getByText('Claude accounts', { exact: true }).click();
     await expect(page.getByText(UNREADABLE)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(UNREADABLE)).toHaveCount(1);
     await stepShot(page, '11-registry-unreadable');

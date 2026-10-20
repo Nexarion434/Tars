@@ -1,3 +1,5 @@
+import type { SecretsSet } from '@/lib/secret-settings';
+
 export interface ClaudeSettings {
   enabledPlugins: Record<string, boolean>;
   env: Record<string, string>;
@@ -160,6 +162,11 @@ export interface AppSettings {
   defaultProjectPath?: string;
   /** Monthly ceiling per provider, in dollars. Set on the Usage page. */
   providerBudgets?: Record<string, number>;
+  /**
+   * Whether each secret is set, as main says it (2.0.4, #466): the window is handed a mask for a secret that is set
+   * and '' for one that is not, never the value, and reads this instead (lib/secret-settings.ts).
+   */
+  secretsSet?: SecretsSet;
 }
 
-export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'memory' | 'mcp' | 'cli' | 'system';
+export type SettingsSection = 'general' | 'terminal' | 'git' | 'notifications' | 'telegram' | 'slack' | 'discord' | 'socialdata' | 'tasmania' | 'google-workspace' | 'ai-providers' | 'claude-accounts' | 'permissions' | 'skills' | 'hermes' | 'hermes-gateways' | 'memory' | 'mcp' | 'cli' | 'system';

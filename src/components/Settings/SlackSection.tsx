@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Input, PasswordInput } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
+import { secretIsSet } from '@/lib/secret-settings';
 import { Toggle } from './Toggle';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import type { AppSettings } from './types';
 
 const ACTION = 'font-mono lowercase';
@@ -21,9 +23,11 @@ interface SlackSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
 }
 
-export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: SlackSectionProps) => {
+export const SlackSection = ({ appSettings, onSaveAppSettings, onSecretChanged }: SlackSectionProps) => {
   const [testingSlack, setTestingSlack] = useState(false);
   const [slackTestResult, setSlackTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [newMember, setNewMember] = useState('');
@@ -99,40 +103,26 @@ export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSett
         }
       />
 
-      <SettingsRow
+      <SecretRow
+        field="slackBotToken"
         label="Bot token"
+        noun="token"
+        set={secretIsSet(appSettings, 'slackBotToken')}
         description="xoxb-… from OAuth & Permissions, once the app is installed to the workspace."
-        control={
-          <PasswordInput
-            width="control"
-            value={appSettings.slackBotToken}
-            onChange={(e) => onUpdateLocalSettings({ slackBotToken: e.target.value })}
-            onBlur={() => {
-              if (appSettings.slackBotToken) {
-                onSaveAppSettings({ slackBotToken: appSettings.slackBotToken });
-              }
-            }}
-            placeholder="xoxb-..."
-          />
-        }
+        placeholder="xoxb-..."
+        clearWarning="Clear the bot token? The Slack bot stops now, and starts again once both tokens are set."
+        onChanged={onSecretChanged}
       />
 
-      <SettingsRow
+      <SecretRow
+        field="slackAppToken"
         label="App token"
+        noun="token"
+        set={secretIsSet(appSettings, 'slackAppToken')}
         description="xapp-… Socket Mode token, scoped connections:write."
-        control={
-          <PasswordInput
-            width="control"
-            value={appSettings.slackAppToken}
-            onChange={(e) => onUpdateLocalSettings({ slackAppToken: e.target.value })}
-            onBlur={() => {
-              if (appSettings.slackAppToken) {
-                onSaveAppSettings({ slackAppToken: appSettings.slackAppToken });
-              }
-            }}
-            placeholder="xapp-..."
-          />
-        }
+        placeholder="xapp-..."
+        clearWarning="Clear the app token? The Slack bot stops now, and starts again once both tokens are set."
+        onChanged={onSecretChanged}
       />
 
       <SettingsRow
@@ -212,7 +202,7 @@ export const SlackSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSett
               variant="ghost"
               className="font-mono"
               onClick={handleTestTokens}
-              disabled={!appSettings.slackBotToken || !appSettings.slackAppToken || testingSlack}
+              disabled={!secretIsSet(appSettings, 'slackBotToken') || !secretIsSet(appSettings, 'slackAppToken') || testingSlack}
             >
               test tokens
             </Button>

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Leftovers, RECORDS_ITS_PID, takePidsRecordedIn } from '../../setup/leftover-processes';
 
 /**
  * How Tars works (services/agent-guide.ts), in the prompt of a delegated run.
@@ -23,6 +24,9 @@ import * as path from 'node:path';
  */
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-acp-guide-once-'));
+// Ended by its id in the test's own teardown, stopped or not, whatever the run's own stop got to (leftover-processes.ts).
+const leftovers = new Leftovers();
+afterEach(() => { leftovers.push(...takePidsRecordedIn(tmp)); leftovers.end(); });
 afterAll(() => fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 const FAKE_AGENT = `
@@ -50,7 +54,7 @@ function handle(msg) {
 `;
 
 const script = path.join(tmp, 'agent.mjs');
-fs.writeFileSync(script, FAKE_AGENT);
+fs.writeFileSync(script, RECORDS_ITS_PID + FAKE_AGENT);
 
 vi.mock('../../../electron/services/acp/registry', () => ({
   acpLaunchFor: () => ({ command: process.execPath, args: [script] }),

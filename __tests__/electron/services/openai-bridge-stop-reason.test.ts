@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
@@ -28,6 +29,8 @@ let bridgePort = 0;
 let upstreamUrl = '';
 
 vi.mock('../../../electron/constants', () => ({
+  // The bridge's own token (services/bridge-token.ts), in the suite's throwaway home.
+  get BRIDGE_TOKEN_FILE() { return `${process.env.HOME}/.tars-private/bridge-token`; },
   get API_PORT() { return bridgePort - 1; },
   get OPENAI_BRIDGE_PORT() { return bridgePort; },
   DATA_DIR: '/tmp/tars-bridge-stop-reason',
@@ -79,6 +82,8 @@ function stopReasonIn(text: string, stream: boolean): unknown {
 }
 
 beforeAll(async () => {
+  fs.mkdirSync(`${process.env.HOME}/.tars-private`, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(`${process.env.HOME}/.tars-private/bridge-token`, TOKEN, { mode: 0o600 });
   upstream = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', c => chunks.push(c as Buffer));

@@ -30,7 +30,8 @@ describe('which providers have plan mode', () => {
 
 describe('the refusal of plan', () => {
   it('1, 4. refuses plan for every other provider, naming it, with the window\'s reason', () => {
-    for (const p of getAllProviders().filter((p) => p.id !== 'claude')) {
+    // Qwen Code has one too (--approval-mode plan, 2.0.4).
+    for (const p of getAllProviders().filter((p) => p.id !== 'claude' && p.id !== 'qwen-code')) {
       expect(planModeRefusal(p.id, 'plan'), p.id).toBe(`${p.displayName} has no plan mode here: plan would run as manual. Ask for normal, auto or bypass.`);
     }
   });

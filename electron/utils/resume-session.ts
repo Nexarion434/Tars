@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { transcriptProjectDirName } from '../platform/claude-project-dir';
+import { codexHome, codexRolloutOf } from '../providers/codex-cli';
 
 /**
  * Whether an agent's last session can actually be resumed.
@@ -21,6 +22,10 @@ import { transcriptProjectDirName } from '../platform/claude-project-dir';
  * Encoding is lossy, so several paths can encode to the same directory name;
  * that is fine here, because the session id is a UUID and the check is only
  * asking whether this exact transcript exists.
+ *
+ * A codex agent's session is codex's rollout instead (2.0.4): kept in codex's
+ * own home under the day it began, whatever the folder, and continued there by
+ * `codex resume <id>` (providers/codex-cli.ts).
  */
 
 /** Claude Code's project directory name for a filesystem path. */
@@ -69,9 +74,13 @@ export function transcriptRoots(...paths: Array<string | undefined>): string[] {
  * session id, or a transcript that is no longer on disk.
  */
 export function resolveResumeSessionId(
-  agent: { resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { provider?: string; resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
   homeDir = os.homedir(),
 ): string | null {
+  // Qwen Code's transcripts are its own (services/qwen-code.ts, which this cannot import: it is below the providers).
+  const fileOf = agent.provider === 'qwen-code'
+    ? (root: string, id: string) => path.join(homeDir, '.qwen', 'projects', (process.platform === 'win32' ? root.toLowerCase() : root).replace(/[^a-zA-Z0-9]/g, '-'), 'chats', `${id}.jsonl`)
+    : (root: string, id: string) => transcriptPath(root, id, homeDir);
   // The session itself, or, while a fork has no transcript of its own yet, the
   // session it continues: the conversation is that one's, untouched.
   for (const candidate of [agent.resumableSessionId, agent.forkedFromSessionId]) {
@@ -81,6 +90,11 @@ export function resolveResumeSessionId(
     // shape check is what keeps it from being anything but an id.
     if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(sessionId)) continue;
 
+    if (agent.provider === 'codex') {
+      if (codexRolloutOf(sessionId, codexHome(process.env, homeDir))) return sessionId;
+      continue;
+    }
+
     // An agent with its own worktree ran there, so that is where its transcript
     // was written. Both are checked because an agent can be moved onto a
     // worktree after the session that is being resumed.
@@ -88,7 +102,7 @@ export function resolveResumeSessionId(
     for (const root of roots) {
       for (const spelling of spellingsOf(root)) {
         try {
-          if (fs.existsSync(transcriptPath(spelling, sessionId, homeDir))) return sessionId;
+          if (fs.existsSync(fileOf(spelling, sessionId))) return sessionId;
         } catch {
           // An unreadable home directory is not a reason to fail the start.
         }
@@ -112,7 +126,7 @@ const startedThisRun = new Set<string>();
 /** The id to resume for this start, or null. Returns an id at most once per
  *  agent per app run. */
 export function consumeResumeSessionId(
-  agent: { id: string; resumableSessionId?: string; projectPath?: string; worktreePath?: string },
+  agent: { id: string; provider?: string; resumableSessionId?: string; projectPath?: string; worktreePath?: string },
   homeDir?: string,
 ): string | null {
   const first = !startedThisRun.has(agent.id);
@@ -122,13 +136,47 @@ export function consumeResumeSessionId(
 }
 
 /**
+ * Whether the next start of this agent continues its last conversation, as
+ * consumeResumeSessionId would answer it, without counting as that start:
+ * update_agent says so before the start happens.
+ */
+export function nextStartResumes(
+  agent: { id: string; resumableSessionId?: string; forkedFromSessionId?: string; projectPath?: string; worktreePath?: string },
+  homeDir?: string,
+): boolean {
+  return !startedThisRun.has(agent.id) && resolveResumeSessionId(agent, homeDir) !== null;
+}
+
+/**
  * The next start of this agent resumes its conversation again, as the first of
  * a run does: it was put to sleep (core/agent-asleep.ts), and woken, it must
  * pick up where it was, whichever sender wakes it and however often this run
  * has started it before.
  */
+/**
+ * A launch that names the session it resumes, or that it resumes none (a
+ * restart, a chat's runner relaunched by its chat), is the run's first launch
+ * too: the next start resumes nothing, as after any other. Left unspent, a
+ * stop then a start resumed the session the stop had just made the agent's
+ * tombstone, under its own id, and Tars refused every post of it (the Audit's
+ * M1 on #475).
+ */
+export function spendResume(agentId: string): void {
+  startedThisRun.add(agentId);
+}
+
 export function resumeOnNextStart(agentId: string): void {
   startedThisRun.delete(agentId);
+}
+
+/**
+ * The next start of this agent begins a new conversation, even the first of a
+ * run: update_agent moved it to another CLI, and no CLI continues another
+ * one's. Its last session is another CLI's, or one the new CLI had before the
+ * move, which is not the conversation the agent was having.
+ */
+export function newConversationOnNextStart(agentId: string): void {
+  startedThisRun.add(agentId);
 }
 
 /** Test seam: forget which agents have started. */

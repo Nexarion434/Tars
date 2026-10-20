@@ -36,6 +36,18 @@ import { EventEmitter } from 'node:events';
  *    with launchIntoTerminal, the section in its own command: the next message
  *    typed in carries the section a second time, with the memory as it was at
  *    the first start.
+ * 10. (the Audit's M1 on #465, written before the fix) the session never told
+ *    whose it is: no line of what Tars gives it names the agent, so codex's
+ *    session log, which Tars binds to an agent only on evidence, has none in
+ *    its first message, and on Windows, where the codex holding a file cannot
+ *    be read, no session of an agent started from the window is ever its own.
+ *    The first message typed in, or the command of a start with a task, says
+ *    it once: Tars's identity line, `(id <agent id>)`, as spawnAgentSession's.
+ * 11. (19/10, a gemini agent's first delegated task, written before the fix)
+ *    Tars's words typed ahead of the sender's line push that line out of the
+ *    prompt's start: a CLI whose hooks report the prompt (gemini's BeforeAgent,
+ *    its first 200 bytes) never shows whose task the turn is, nor its id, and
+ *    the task is filed as nobody's, its asker answered 404.
  *
  * And the guide route (the Audit's L-A on #448): GET /api/guide?topic=project-folder
  * says why a project's folder could not be made, and so does the section
@@ -301,13 +313,14 @@ describe('a CLI without Claude\'s hook started from the window with no task', ()
     expect(first).toContain('assign_task');
     // One message, one Enter: the section goes in with the task, not as a turn of its own.
     expect(count(first, '\r')).toBe(1);
-    // Tars's words under Tars's line, then the task under its sender's.
+    // The task under its sender's line, which opens the prompt (11), then Tars's words under Tars's line.
     const tars = first.indexOf('Message from Tars: ');
     const sender = first.indexOf('Message from agent "Lead" ("orch")');
-    expect(tars).toBeGreaterThanOrEqual(0);
-    expect(first.indexOf(SECTION)).toBeGreaterThan(tars);
-    expect(sender).toBeGreaterThan(first.indexOf(MEMORY));
+    expect(sender, first).toBe(0);
     expect(first.indexOf('FIRST>> rebase onto main')).toBeGreaterThan(sender);
+    expect(tars).toBeGreaterThan(first.indexOf('FIRST>> rebase onto main'));
+    expect(first.indexOf(SECTION)).toBeGreaterThan(tars);
+    expect(first.indexOf(MEMORY)).toBeGreaterThan(tars);
 
     terminal.write.mockClear();
     expect(await dispatch(agent.id, 'SECOND>> and push it')).toMatchObject({ success: true, mode: 'message' });
@@ -357,6 +370,26 @@ describe('a CLI launched again into a terminal that still owes the section', () 
       expect(count(next), next).toBe(0);
       expect(next).not.toContain(MEMORY);
     }
+  });
+});
+
+describe("whose session it is (10)", () => {
+  it.each(NO_HOOK)("%s: the first task typed in says whose session it is, once, and the next message does not", async (provider) => {
+    const { agent, terminal } = await startedFromWindow('', { provider });
+    const identity = `[Tars: you are agent "${agent.name}" (id ${agent.id}),`;
+    await dispatch(agent.id, 'FIRST>> rebase onto main');
+    const first = typedInto(terminal);
+    expect(count(first, identity), first).toBe(1);
+    expect(first.indexOf(identity)).toBeLessThan(first.indexOf(SECTION));
+
+    terminal.write.mockClear();
+    await dispatch(agent.id, 'NEXT>> and push it');
+    expect(count(typedInto(terminal), identity)).toBe(0);
+  });
+
+  it('a start with a task says it in its command, once', async () => {
+    const { agent, command } = await startedFromWindow('WINDOW>> read the guide', { provider: 'codex' });
+    expect(count(command, `(id ${agent.id})`), command).toBe(1);
   });
 });
 

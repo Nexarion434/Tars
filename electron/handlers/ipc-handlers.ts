@@ -55,16 +55,18 @@ import { assembleDigest, needsPromptInjection, wrapDigestForPrompt, searchMemory
 import { guideForPrompt } from '../services/agent-guide';
 import { usableHermesConnection } from '../services/hermes-config';
 import { reviewDiff, fileDiff, repoSummary } from '../services/git-review';
+import { refuseUnknownRepository } from './review-handlers';
 import { searchLogs, agentTail, fleetSummary } from '../services/log-search';
 import { usageByProvider as ledgerUsageByProvider } from '../services/usage-ledger';
 import { tasksReport } from '../services/task-watch';
 import type { TaskQuery } from '../services/task-cost';
 import { oneReadingAtATime } from '../core/one-reading-at-a-time';
-import { consumeResumeSessionId, resolveResumeSessionId } from '../utils/resume-session';
+import { consumeResumeSessionId, resolveResumeSessionId, spendResume } from '../utils/resume-session';
 import { registerAgentLauncher, launchAgent, launchBegins, launchAbandoned, sessionStarting, type AgentLauncher } from '../core/agent-launch';
 import { orchestratorMoved } from '../core/chat-identity';
-import { launchSettings, changedLaunchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
+import { launchSettings, restartForSettings, noteLaunch, restartAgent, pendingRestarts } from '../core/agent-restart';
 import { assignRole, hasOrchestratorPowers, requestedRole } from '../core/agent-role';
+import { updateAgent, type AgentUpdate } from '../core/agent-update';
 import type { ClaudeSettings, ClaudeStats, ClaudeProject, ClaudePlugin, ClaudeSkill, ClaudeHistoryEntry } from '../services/claude-service';
 import * as crypto from 'crypto';
 import * as https from 'https';
@@ -77,7 +79,11 @@ import { spawnSkillInstallerOnWindows, startPluginInstallOnWindows } from '../co
 import { updateSharedJsonSync } from '../utils/shared-file';
 import { terminalSnapshot, leftFullscreenIn, rememberPanelSize, resizeTerminalMirror } from '../core/terminal-mirror';
 import { probeVersion } from '../core/version-probe';
-import { cliKeyStates, keepCliKeys, withCliKey, withoutCliKeys } from '../services/cli-keys';
+import { readCodexModels } from '../providers/codex-cli';
+import { cliKeyStates, withCliKey } from '../services/cli-keys';
+import { keepSecrets, secretStates, setSecret, settingsForWindow, type SecretField } from '../services/settings-secrets';
+import { isSecretFile, mayBeProject, windowMayRead, windowMayWrite } from '../utils/window-file-access';
+import { copySecret, showSecretOnce } from '../services/secret-handoff';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -408,7 +414,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Get provider-specific env vars
     const agentProvider = getProvider(config.provider);
-    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings);
+    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings, { model: config.model, effort: config.effort });
 
     // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd so
     // bypass/auto-mode agents never see the first-launch trust prompt.
@@ -754,6 +760,8 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     const appSettingsForCommand = getAppSettings();
     const cliProvider = getProvider(provider);
     const binaryPath = agent.cliPath || cliProvider.resolveBinaryPath(appSettingsForCommand);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await cliProvider.prepareLaunch?.(binaryPath, options?.permissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal'));
 
     // The orchestrator's powers: its project's orchestrator (the toggle, never
     // the name) or a chat's runner (core/agent-role.ts).
@@ -825,6 +833,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // the header, the conversation answers from its history, and the
     // transcript is a new file under a new id.
     const namedResume = options?.resumeSessionId;
+    if (namedResume !== undefined) spendResume(agent.id);
     const resumeSessionId = namedResume === undefined
       ? consumeResumeSessionId(agent)
       : namedResume === null
@@ -841,6 +850,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // not carry (see noteLaunch).
     const launched = launchSettings(agent);
     const command = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: resumeSessionId ?? undefined,
       forkSession,
       binaryPath,
@@ -1053,189 +1063,16 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     return stopTask(agentId, ref);
   });
 
-  // Update an agent (supports all editable fields)
-  ipcMain.handle('agent:update', async (_event, params: {
-    id: string;
-    projectPath?: string;
-    skills?: string[];
-    secondaryProjectPath?: string | null;
-    permissionMode?: AgentPermissionMode;
-    effort?: AgentEffort | null;
-    name?: string;
-    character?: AgentCharacter;
-    model?: string | null;
-    provider?: AgentProvider;
-    localModel?: string | null;
-    savedPrompt?: string | null;
-    obsidianVaultPaths?: string[];
-    worktree?: WorktreeConfig;
-    /** The Orchestrator toggle. See core/agent-role.ts. */
-    role?: AgentRole;
-    /** The toggle's old name, read when `role` is absent. */
-    orchestratorMode?: boolean;
-    cliPath?: string | null;
-  }) => {
-    const agent = agents.get(params.id);
-    if (!agent) {
-      return { success: false, error: 'Agent not found' };
-    }
-    // A chat's runner takes its settings from the project's orchestrator at
-    // each launch (services/chat-runners.ts): changed here, its role would take
-    // the orchestrator's place, its project would lose its worktree, and the
-    // rest would be undone at its next send (the Audit's M2 on #379).
-    if (agent.kind === 'chat') {
-      return { success: false, error: `${agent.name || agent.id} runs a chat: its settings are the project's orchestrator's. Change them there.` };
-    }
-    // Plan on a provider that has none, set here or kept across a move to it, would run as normal (the Audit's Low 2 on #407).
-    if (params.provider !== undefined || params.permissionMode !== undefined) {
-      const noPlan = planModeRefusal(params.provider ?? agent.provider, params.permissionMode ?? agent.permissionMode);
-      if (noPlan) return { success: false, error: noPlan };
-    }
-    let role: AgentRole | undefined;
-    try {
-      role = requestedRole(params);
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-    // Every check first, git's included: a save refused changes nothing on the record and kills no terminal, as
-    // the Agents page tells the user ("Not saved: <reason>. Your changes are still here."). The name, the CLI and
-    // the rest used to be written, and a terminal killed for a new provider or CLI, before git ran, and a refusal
-    // undid none of it (the Audit's MEDIUM on #403).
-    if (params.skills !== undefined) {
-      const skillsWrong = skillsProblem(params.skills);
-      if (skillsWrong) return { success: false, error: `Not saved: ${skillsWrong}.` };
-    }
-    const moving = params.projectPath !== undefined && params.projectPath !== agent.projectPath;
-    if (moving && !fs.existsSync(params.projectPath!)) {
-      return { success: false, error: 'Project path does not exist' };
-    }
-    if (params.secondaryProjectPath && !fs.existsSync(params.secondaryProjectPath)) {
-      return { success: false, error: 'Secondary project path does not exist' };
-    }
-    // The worktree, the one check that writes: made before the record changes, in the project the agent will be in.
-    // Only for an agent with none (a move detaches the old one): changing it under a running agent could be
-    // destructive.
-    let worktree: { worktreePath: string; branchName: string } | undefined;
-    if (params.worktree?.enabled && params.worktree.branchName && (moving || !agent.worktreePath)) {
-      const made = await makeAgentWorktree(moving ? params.projectPath! : agent.projectPath, params.worktree.branchName);
-      if ('error' in made) return { success: false, error: made.error };
-      worktree = made;
-    }
-    // What the running CLI was started with, as far as this edit can change it.
-    const launchBefore = launchSettings(agent);
-
-    // Then the save, which nothing refuses any more.
-    if (moving) {
-      agent.projectPath = params.projectPath!;
-      agent.pathMissing = false;
-      // The old worktree belongs to the previous repository. Detach it so the
-      // agent works directly in the new project (a new worktree can be set up
-      // via the worktree param).
-      agent.worktreePath = undefined;
-      agent.branchName = undefined;
-      // BUG 4: any live PTY still has the old repo as cwd.
-      killStalePty(agent);
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-    }
-    if (params.skills !== undefined) {
-      agent.skills = params.skills;
-    }
-    if (params.secondaryProjectPath !== undefined) {
-      agent.secondaryProjectPath = params.secondaryProjectPath === null ? undefined : params.secondaryProjectPath;
-    }
-    if (params.permissionMode !== undefined) {
-      agent.permissionMode = params.permissionMode;
-    }
-    if (params.effort !== undefined) {
-      agent.effort = params.effort === null ? undefined : params.effort;
-    }
-    if (params.name !== undefined) {
-      // Only the name: the role is the toggle's (core/agent-role.ts).
-      agent.name = params.name;
-    }
-    if (params.character !== undefined) {
-      agent.character = params.character;
-    }
-    if (params.model !== undefined) {
-      agent.model = params.model === null ? undefined : params.model;
-    }
-    if (params.provider !== undefined) {
-      if (params.provider !== agent.provider && agent.ptyId) {
-        // The live PTY still carries the OLD provider's ANTHROPIC_* env.
-        // Messages would silently route to the previous vendor. Kill it so
-        // the next start/dispatch respawns with the new provider's env.
-        const staleProviderPty = ptyProcesses.get(agent.ptyId);
-        if (staleProviderPty) {
-          killPty(staleProviderPty);
-          ptyProcesses.delete(agent.ptyId);
-        }
-        agent.ptyId = undefined;
-        agent.ptyCwd = undefined;
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-      }
-      agent.provider = params.provider;
-    }
-    if (params.localModel !== undefined) {
-      agent.localModel = params.localModel === null ? undefined : params.localModel;
-    }
-    if (params.savedPrompt !== undefined) {
-      agent.savedPrompt = params.savedPrompt === null ? undefined : params.savedPrompt;
-    }
-    if (params.obsidianVaultPaths !== undefined) {
-      agent.obsidianVaultPaths = params.obsidianVaultPaths;
-    }
-    if (params.cliPath !== undefined) {
-      const newCliPath = params.cliPath === null ? undefined : params.cliPath;
-      if (newCliPath !== agent.cliPath && agent.ptyId) {
-        // Same reasoning as a provider change: the running PTY was spawned
-        // with the old binary.
-        const staleCliPty = ptyProcesses.get(agent.ptyId);
-        if (staleCliPty) {
-          killPty(staleCliPty);
-          ptyProcesses.delete(agent.ptyId);
-        }
-        agent.ptyId = undefined;
-        agent.ptyCwd = undefined;
-        agent.status = 'idle';
-        agent.currentTask = undefined;
-      }
-      agent.cliPath = newCliPath;
-    }
-    if (worktree) {
-      agent.worktreePath = worktree.worktreePath;
-      agent.branchName = worktree.branchName;
-      // BUG 4: the running PTY (if any) was spawned with cwd=projectPath.
-      // It must be killed so the next agent:start respawns in the new
-      // worktree directory. Otherwise writes leak into the main workspace.
-      killStalePty(agent);
-      agent.status = 'idle';
-      agent.currentTask = undefined;
-    }
-
-    // Last, once the project is settled: an orchestrator, whether the toggle
-    // was just switched on or it has just moved in, is its project's only one.
-    const demoted = assignRole(agent, role ?? (agent.role === 'orchestrator' ? 'orchestrator' : 'worker'), agents.values());
-
-    agent.lastActivity = new Date().toISOString();
-    saveAgents();
-    // The role moved: its project's Main follows the orchestrator (core/chat-identity.ts).
-    orchestratorMoved();
-
-    // A model, an effort or another flag the CLI only reads when it starts is
-    // applied by restarting it, at a moment that cuts nothing: see
-    // core/agent-restart.ts. Saving it used to change the record and leave the
-    // CLI running on the old value until somebody relaunched it by hand. The
-    // orchestrator this one replaced goes back to work as a worker the same way.
-    const changedAtLaunch = changedLaunchSettings(launchBefore, launchSettings(agent));
-    if (changedAtLaunch.length > 0) restartForSettings(agent.id, changedAtLaunch);
-    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
+  // Update an agent (supports all editable fields), through core/agent-update.ts, which update_agent's route
+  // shares. The window ends the terminal a new provider, CLI path, project or worktree needs, whatever runs in
+  // it: the user who saves sees what that cuts.
+  ipcMain.handle('agent:update', async (_event, params: AgentUpdate) => {
+    const result = await updateAgent(params, { makeWorktree: makeAgentWorktree });
+    if (!result.success) return { success: false, error: result.error };
     // An orchestrator's chats run on its configuration: each runner takes it,
     // and a live one restarts on what changed (services/chat-runners.ts).
-    restartRunnersOf(agent.id, changedAtLaunch);
-
-    return { success: true, agent };
+    restartRunnersOf(result.agent.id, result.changedAtLaunch);
+    return { success: true, agent: result.agent };
   });
 
   // Stop an agent, from the window: filed under "you" (core/agent-stop.ts).
@@ -1981,9 +1818,10 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
   // The data folder this run uses, and what the user must be told about it (core/data-dir-move.ts).
   ipcMain.handle('app:dataDir', async () => ({ dir: DATA_DIR, did: DATA_DIR_MOVE.did, ...(DATA_DIR_MOVE.notice ? { notice: DATA_DIR_MOVE.notice } : {}) }));
 
-  // Never a CLI's key: the window learns only whether one is set (cliKeys:list).
+  // Never a secret: the window learns only whether each is set (secretsSet,
+  // and cliKeys:list for the CLIs' keys).
   ipcMain.handle('app:getSettings', async () => {
-    return withoutCliKeys(getAppSettings());
+    return settingsForWindow(getAppSettings());
   });
 
   // An API key per CLI (2.0.4, services/cli-keys.ts): set here and nowhere
@@ -2011,8 +1849,24 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       const model = getAppSettings().customOpenAIModel?.trim();
       return { models: model ? [{ id: model, name: model, description: 'Configured in Settings' }] : [] };
     }
+    // The models of the account codex is signed in with, from codex's own
+    // list: models.dev's OpenAI list offered gpt-5-codex-mini, which codex
+    // refuses for a ChatGPT account (codex-cli.ts).
+    if (provider === 'codex') {
+      const listed = readCodexModels();
+      if (listed.length > 0) {
+        return { models: listed.map(m => ({ id: m.id, name: m.name, description: m.description, effortValues: m.efforts, contextWindow: m.contextWindow })) };
+      }
+    }
     await loadCatalog();
     return { models: modelsForProvider(provider) };
+  });
+
+  // What a CLI offers itself, read from its own settings, never written
+  // (qwen-code: ~/.qwen/settings.json modelProviders). An unknown provider has none.
+  ipcMain.handle('models:cli', async (_event, { provider }: { provider: string }) => {
+    const known = getAllProviders().find((p) => p.id === provider);
+    return { models: known ? known.getModels() : [] };
   });
 
   ipcMain.handle('models:price', async (_event, { modelId, provider }: { modelId: string; provider?: string }) => {
@@ -2028,6 +1882,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     _event,
     { repoPath, baseBranch, listOnly }: { repoPath: string; baseBranch?: string; listOnly?: boolean },
   ) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, diff: await reviewDiff(repoPath, { baseBranch, listOnly: listOnly === true }) };
     } catch (err) {
@@ -2071,6 +1927,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }));
 
   ipcMain.handle('review:repo', async (_event, { repoPath }: { repoPath: string }) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, summary: await repoSummary(repoPath) };
     } catch (err) {
@@ -2082,6 +1940,8 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     _event,
     { repoPath, file, baseBranch }: { repoPath: string; file: string; baseBranch?: string },
   ) => {
+    const refused = refuseUnknownRepository(repoPath);
+    if (refused) return refused;
     try {
       return { success: true as const, patch: await fileDiff(repoPath, file, baseBranch) };
     } catch (err) {
@@ -2117,8 +1977,23 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     return catalogStatus();
   });
 
-  // Save app settings
-  ipcMain.handle('app:saveSettings', async (_event, newSettings: Partial<AppSettings>) => {
+  // Save app settings. The window holds no secret (app:getSettings), so its
+  // save never writes or erases one: a key typed in a page is set, an empty
+  // field keeps the key (services/settings-secrets.ts, keepSecrets).
+  ipcMain.handle('app:saveSettings', async (_event, newSettings: Partial<AppSettings>) =>
+    applySettings(newSettings ?? {}, (current) => keepSecrets(current, newSettings ?? {})));
+
+  // One secret set or cleared from the window (2.0.4): the only way a page
+  // clears one. Answers whether it is set, never the value.
+  ipcMain.handle('secrets:set', async (_event, field: unknown, value: unknown) => {
+    const r = setSecret(getAppSettings(), String(field), value as string | null);
+    if (!r.ok) return { success: false, error: r.error };
+    const name = String(field) as SecretField;
+    const saved = await applySettings({ [name]: r.settings[name] } as Partial<AppSettings>, () => r.settings);
+    return saved.success ? { success: true, set: secretStates(getAppSettings())[name] } : saved;
+  });
+
+  async function applySettings(newSettings: Partial<AppSettings>, merge: (current: AppSettings) => AppSettings): Promise<{ success: boolean; error?: string }> {
     try {
       const telegramChanged = newSettings.telegramEnabled !== undefined ||
                               newSettings.telegramBotToken !== undefined;
@@ -2136,7 +2011,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       // With the relay on, Hermes is the only voice on the user's Telegram: the
       // Tars bot's token is erased and the bot off, whatever else was saved
       // (hermes-relay-switch.ts).
-      const updatedSettings = settingsForRelay(keepCliKeys(currentSettings, newSettings));
+      const updatedSettings = settingsForRelay(merge(currentSettings));
       const relayTurnedOn = updatedSettings.hermesRelayEnabled === true && currentSettings.hermesRelayEnabled !== true;
       setAppSettings(updatedSettings);
       saveAppSettings(updatedSettings);
@@ -2181,7 +2056,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
       console.error('Failed to save app settings:', err);
       return { success: false, error: String(err) };
     }
-  });
+  }
 
   // Test Telegram connection
   ipcMain.handle('telegram:test', async () => {
@@ -2221,7 +2096,9 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }
   });
 
-  // Generate or regenerate Telegram auth token
+  // Generate or regenerate the Telegram auth token. The page is told it is
+  // set, never the token: the main process shows it once (secret-handoff.ts),
+  // and telegram:authToken:copy copies it again.
   ipcMain.handle('telegram:generateAuthToken', async () => {
     const appSettings = getAppSettings();
     const newToken = crypto.randomBytes(16).toString('hex');
@@ -2230,8 +2107,12 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     saveAppSettings(appSettings);
     setAppSettings(appSettings);
 
-    return { success: true, token: newToken };
+    void showSecretOnce('Telegram authorization token', newToken,
+      'Send /auth followed by this token to your bot from each Telegram account that may use it. Tars shows it only here: Copy puts it on the clipboard, and Copy token in Settings does again.');
+    return { success: true, set: true };
   });
+
+  ipcMain.handle('telegram:authToken:copy', async () => ({ copied: copySecret(getAppSettings().telegramAuthToken) }));
 
   // Remove an authorized Telegram chat ID
   ipcMain.handle('telegram:removeAuthorizedChatId', async (_event, chatId: string) => {
@@ -2255,7 +2136,7 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
 
     // Notify frontend of settings change
     const mainWindow = getMainWindow();
-    mainWindow?.webContents.send('settings:updated', withoutCliKeys(appSettings));
+    mainWindow?.webContents.send('settings:updated', settingsForWindow(appSettings));
 
     return { success: true };
   });
@@ -2516,50 +2397,17 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
    * shell:exec: a path containing $(...) or a backtick executed arbitrary
    * code as soon as the page opened.
    */
-  /** Roots a free-form file path is allowed to live under. */
-  const textFileRoots = () => [
-    path.join(os.homedir(), '.claude'),
-    path.join(os.homedir(), '.codex'),
-    path.join(os.homedir(), '.gemini'),
-    path.join(os.homedir(), '.grok'),
-    DATA_DIR,
-    ...readCustomProjects(),
-  ];
-
   /**
-   * Under a root that is not the home nor above it, where the path really
-   * lands: a project added as `~` or `/Users` made every file of the home
-   * readable and writable here, and so did a link under ~/.tars or in a
-   * project, followed by the read or the write. One file link to a markdown
-   * file may lead out, a CLAUDE.md kept in a dotfiles repository
-   * (utils/real-target.ts).
+   * What the window reads and writes here, and nothing else (the Audit's
+   * Holes 1 and 2, utils/window-file-access.ts): it reads what the Brain and
+   * the code panel show, never a secret, and writes the instruction files the
+   * Brain edits. It wrote any text under ~/.dorothy, the CLIs' folders and the
+   * projects, statusline.sh and bin/tars-mcp-node included.
    */
-  const isAllowedTextFile = (target: string) => {
-    const resolved = path.resolve(target.replace(/^~/, os.homedir()));
-    return landsUnderSafeRoot(resolved, textFileRoots(), (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true });
-  };
-
-  /**
-   * Claude's own JSON files, which fs:write-text-file never writes although
-   * `~/.claude` is one of its roots. It writes the text it is given, in place,
-   * and every claude binary reads these as it starts: a half-written or
-   * mistyped settings.json or mcp.json stops Claude Code. Tars changes them
-   * through updateSharedJsonSync, and the one caller, the Brain page, edits
-   * CLAUDE.md files. Compared through links, which the write would follow.
-   */
-  const isClaudeJsonFile = (target: string) => {
-    const real = (file: string) => (fs.existsSync(file) ? fs.realpathSync(file) : file);
-    return [
-      path.join(os.homedir(), '.claude.json'),
-      path.join(os.homedir(), '.claude', 'settings.json'),
-      path.join(os.homedir(), '.claude', 'mcp.json'),
-    ].some(file => real(file) === real(target));
-  };
-
   ipcMain.handle('fs:read-text-file', async (_event, filePath: string) => {
     try {
       const target = path.resolve(String(filePath || '').replace(/^~/, os.homedir()));
-      if (!isAllowedTextFile(target)) return { content: '', error: 'Path outside allowed roots' };
+      if (!windowMayRead(target, readCustomProjects())) return { content: '', error: 'Path outside allowed roots' };
       if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return { content: '', error: 'Not found' };
       return { content: fs.readFileSync(target, 'utf-8') };
     } catch (err) {
@@ -2570,8 +2418,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
   ipcMain.handle('fs:write-text-file', async (_event, params: { filePath: string; content: string }) => {
     try {
       const target = path.resolve(String(params?.filePath || '').replace(/^~/, os.homedir()));
-      if (!isAllowedTextFile(target)) return { success: false, error: 'Path outside allowed roots' };
-      if (isClaudeJsonFile(target)) return { success: false, error: `${path.basename(target)} is Claude Code's own file and is not written as text` };
+      if (!windowMayWrite(target, readCustomProjects())) return { success: false, error: 'Only an instruction file (CLAUDE.md) is written from here' };
       fs.writeFileSync(target, String(params?.content ?? ''), 'utf-8');
       return { success: true };
     } catch (err) {
@@ -2646,7 +2493,8 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
           // Under a root that is not the home nor above it, where the read
           // really lands: a link in the base or in `rel` may lead out of every
           // root, except one file link to a markdown file (utils/real-target.ts).
-          if (fs.existsSync(target) && fs.statSync(target).isFile()
+          // Never a secret, whatever folder it is asked of (2.0.4).
+          if (fs.existsSync(target) && fs.statSync(target).isFile() && !isSecretFile(target)
             && landsUnderSafeRoot(target, roots, (root, t) => t === root || t.startsWith(root + path.sep), { linkedMarkdown: true })) {
             out[target] = fs.readFileSync(target, 'utf-8');
           }
@@ -2660,6 +2508,7 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
     try {
       const clean = String(projectPath || '').trim();
       if (!clean || !fs.existsSync(clean)) return { success: false, error: 'Folder not found' };
+      if (!mayBeProject(clean)) return { success: false, error: 'A folder of credentials or of Tars\'s own cannot be a project' };
       const list = readCustomProjects();
       if (!list.includes(clean)) {
         list.push(clean);

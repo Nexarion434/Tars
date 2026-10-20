@@ -12,6 +12,7 @@ import { DeepSeekProvider } from './deepseek-provider';
 import { MiMoProvider } from './mimo-provider';
 import { MoonshotProvider } from './moonshot-provider';
 import { QwenProvider } from './qwen-provider';
+import { QwenCodeProvider } from './qwen-code-provider';
 import { ZhipuProvider } from './zhipu-provider';
 import { MiniMaxProvider } from './minimax-provider';
 import { NvidiaProvider } from './nvidia-provider';
@@ -24,10 +25,10 @@ import { CustomOpenAIProvider } from './custom-openai-provider';
 export type { CLIProvider } from './cli-provider';
 export type {
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
+  PtyLaunch,
 } from './cli-provider';
 
 const providers: Record<string, CLIProvider> = {
@@ -43,6 +44,8 @@ const providers: Record<string, CLIProvider> = {
   mimo: new MiMoProvider(),
   moonshot: new MoonshotProvider(),
   qwen: new QwenProvider(),
+  // Qwen Code, the CLI qwen: not the Qwen API above, which runs the claude binary.
+  'qwen-code': new QwenCodeProvider(),
   zhipu: new ZhipuProvider(),
   minimax: new MiniMaxProvider(),
   nvidia: new NvidiaProvider(),

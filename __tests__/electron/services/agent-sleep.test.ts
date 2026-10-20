@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { factsOf, restPendingOf, sleepRefusal, waitsOnItself, SLEEP_AFTER_MS, type SleepFacts } from '../../../electron/services/agent-sleep';
 import { agents } from '../../../electron/core/agent-manager';
 import { enqueueRequest } from '../../../electron/core/task-requests';
@@ -43,6 +46,11 @@ import type { Proc } from '../../../electron/services/stall-watch';
  * 18. (PR D, written with its code and shown to bite by a mutant) A chat's runner put to sleep to free a slot,
  *     or because its chat was settled (`anyAge`), is held to the 30 minutes, so no slot is ever freed; or
  *     `anyAge` lets through what the other rules refuse.
+ * 19. (2.0.4, before its code) A codex agent never put to sleep though codex resumes its session (`codex resume`,
+ *     measured on 0.163), or put to sleep when its rollout is gone, so that woken it would start anew.
+ * 20. (2.0.4, before its code, seen in the e2e of the resume) A codex agent's CLI never found under its terminal:
+ *     only a claude process was looked for, so every pass said `no-process-table`. Or a claude agent's terminal
+ *     taken to run a claude because a codex runs there.
  */
 
 const NOW = Date.parse('2026-10-05T12:00:00.000Z');
@@ -191,6 +199,40 @@ describe('a request still out at a worker', () => {
     enqueueRequest(worker, 'orch');
     expect(factsOf(orch, [], Date.now()).owes).toBe(true);
     agents.clear();
+  });
+});
+
+describe("a codex agent's terminal (2.0.4)", () => {
+  const SHELL = 5100;
+  const codexProcs = (codex: string): Proc[] => [
+    { pid: SHELL, ppid: 1, stat: 'S', age: 3000, command: '/bin/bash -l' },
+    { pid: 5101, ppid: SHELL, stat: 'S', age: 2900, command: `${codex} resume --model gpt-6-luna 01a14fb7-9e95-7c81-8980-2b82c8316805` },
+    { pid: 5102, ppid: 5101, stat: 'S', age: 2900, command: 'node /Applications/Tars.app/Contents/Resources/mcp-orchestrator/dist/bundle.js' },
+  ];
+
+  it('20. finds its codex under the shell, the binary or node running it, and only for a codex agent', () => {
+    expect(sleepRefusal(facts({ binary: 'codex', procs: codexProcs('/Users/u/.local/bin/codex'), terminalPid: SHELL }))).toBeNull();
+    expect(sleepRefusal(facts({ binary: 'codex', procs: codexProcs('node /tmp/home/bin/codex'), terminalPid: SHELL }))).toBeNull();
+    expect(sleepRefusal(facts({ procs: codexProcs('/Users/u/.local/bin/codex'), terminalPid: SHELL }))).toBe('no-process-table');
+  });
+});
+
+describe('a codex agent (2.0.4)', () => {
+  it('19. is resumable once codex has its rollout, and only then', () => {
+    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-sleep-codex-'));
+    vi.stubEnv('CODEX_HOME', codexHome);
+    try {
+      const id = '01a14fb7-9e95-7c81-8980-2b82c8316805';
+      const agent = { id: 'cx', name: 'Cody', provider: 'codex', status: 'idle', projectPath: '/p', skills: [], output: [], lastActivity: '', resumableSessionId: id } as unknown as AgentStatus;
+      expect(factsOf(agent, [], Date.now()).resumable).toBe(false);
+      const dir = path.join(codexHome, 'sessions', '2026', '10', '15');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `rollout-2026-10-15T09-00-00-${id}.jsonl`), '{}\n');
+      expect(factsOf(agent, [], Date.now()).resumable).toBe(true);
+      expect(factsOf({ ...agent, provider: 'gemini' } as AgentStatus, [], Date.now()).resumable).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

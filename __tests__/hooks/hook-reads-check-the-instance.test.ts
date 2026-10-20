@@ -24,7 +24,9 @@ import { shHooksNotShipped } from '../setup/platform-limits';
  * 3. Over-correction: the Tars that spawned the CLI no longer gets the token
  *    on these reads, and the agent starts without its name and its memory.
  * 4. A CLI Tars did not start (no token in its environment) loses the shared
- *    token it read the bootstrap with until now.
+ *    token it read the bootstrap with until now. Since 2.0.4 that is the rule:
+ *    the shared token is in ~/.tars-private, out of every agent's reach, and
+ *    such a CLI reads nothing.
  * 5. The memory post goes out anyway, with an empty Bearer, when the port did
  *    not prove itself: no token leaks, but what the agent did ('Created/wrote
  *    file: <path>', 'Ran command: <command>', its id and project) reaches the
@@ -159,9 +161,9 @@ describe.skipIf(shHooksNotShipped())("a hook's reads, before they carry its toke
     }, 60_000);
   }
 
-  it('4. a CLI Tars did not start reads with the shared token, as before', async () => {
+  it('4. a CLI Tars did not start reads nothing: the shared token is out of its reach since 2.0.4', async () => {
     mode = 'tars';
     await run('session-start.sh', { CLAUDE_AGENT_ID: 'a1', CLAUDE_PROJECT_PATH: '/work/demo' }, START);
-    expect(reads().filter((r) => r.path.endsWith('/bootstrap')).map((r) => r.authorization)).toEqual([`Bearer ${SHARED}`]);
+    expect(reads().map((r) => r.authorization)).toEqual([]);
   }, 60_000);
 });

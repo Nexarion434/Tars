@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Button, Input, PasswordInput } from '@/components/ui';
+import { useEffect, useState } from 'react';
+import { Button, Input } from '@/components/ui';
+import { SECRET_MASK, secretIsSet } from '@/lib/secret-settings';
 import { Toggle } from './Toggle';
 import { SettingsCard } from './SettingsCard';
 import { SettingsRow } from './SettingsRow';
+import { SecretRow } from './SecretRow';
 import type { AppSettings } from './types';
 
 const ACTION = 'font-mono lowercase';
@@ -19,6 +21,8 @@ interface DiscordSectionProps {
   appSettings: AppSettings;
   onSaveAppSettings: (updates: Partial<AppSettings>) => void;
   onUpdateLocalSettings: (updates: Partial<AppSettings>) => void;
+  /** What secrets.set answered (useSettings' setSecretState). */
+  onSecretChanged: (field: string, set: boolean) => void;
 }
 
 /**
@@ -26,46 +30,39 @@ interface DiscordSectionProps {
  * `Settings · Discord` and `Settings · Discord · states` in
  * design/tars-redesign.pen (#182), against the bot's contract (#193).
  */
-export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSettings }: DiscordSectionProps) => {
+export const DiscordSection = ({ appSettings, onSaveAppSettings, onSecretChanged }: DiscordSectionProps) => {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
   const [newMember, setNewMember] = useState('');
   const [memberError, setMemberError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Saving the token restarts the bot (#193), so a blur that changed nothing
-  // saves nothing: the token as it was last saved, or as the page loaded it.
-  const savedToken = useRef(appSettings.discordBotToken ?? '');
-
-  const token = appSettings.discordBotToken ?? '';
+  // Whether the token is set is all the page knows of it (2.0.4, #466): it is
+  // set and cleared through secrets.set, which restarts the bot (#193).
+  const tokenSet = secretIsSet(appSettings, 'discordBotToken');
   const channel = appSettings.discordChannelId ?? '';
   const allowed = appSettings.discordAllowedUserIds ?? [];
   const requireMention = appSettings.discordRequireMention ?? true;
 
-  // The invite link is main's, made from the token as it is typed (#200): the
-  // permissions it asks for are decided there. An answer for a token that has
-  // since been typed over is dropped, and there is no link until main answers.
-  // A call that fails is no answer: nothing is known about the token then.
-  const [inviteAnswer, setInviteAnswer] = useState<{ token: string; url: string | null } | null>(null);
+  // The invite link is main's, made from the token it keeps (#200): the page
+  // sends the mask, which main takes for that token, and the permissions the
+  // link asks for are decided there. An answer for a token since set or
+  // cleared is dropped, and there is no link until main answers. A call that
+  // fails is no answer: nothing is known about the token then.
+  const [inviteAnswer, setInviteAnswer] = useState<{ tokenSet: boolean; url: string | null } | null>(null);
   useEffect(() => {
     const inviteUrl = window.electronAPI?.discord?.inviteUrl;
     if (!inviteUrl) return;
     let current = true;
-    inviteUrl(token)
-      .then(url => { if (current) setInviteAnswer({ token, url }); })
+    inviteUrl(tokenSet ? SECRET_MASK : '')
+      .then(url => { if (current) setInviteAnswer({ tokenSet, url }); })
       .catch(() => {});
     return () => { current = false; };
-  }, [token]);
-  const answered = inviteAnswer?.token === token ? inviteAnswer : null;
+  }, [tokenSet]);
+  const answered = inviteAnswer?.tokenSet === tokenSet ? inviteAnswer : null;
   const invite = answered?.url ?? null;
-  // Main looked at a token that is there and found no bot in it.
-  const noBotId = !!answered && answered.url === null && token.trim() !== '';
-
-  const saveToken = () => {
-    if (token === savedToken.current) return;
-    savedToken.current = token;
-    onSaveAppSettings({ discordBotToken: token });
-  };
+  // Main looked at the token it keeps and found no bot in it.
+  const noBotId = !!answered && answered.url === null && tokenSet;
 
   const addMember = () => {
     const id = newMember.trim();
@@ -140,21 +137,18 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
         }
       />
 
-      <SettingsRow
+      <SecretRow
+        field="discordBotToken"
         label="Bot token"
+        noun="token"
+        set={tokenSet}
         // The intent is the part a cut line would lose: without it the bot
         // reads every message as empty. The frame gives it two lines.
         wrap
         description="From the Developer Portal: your application, Bot, Reset Token. Turn on the Message Content intent on the same page, or the bot reads every message as empty."
-        control={
-          <PasswordInput
-            width="control"
-            value={token}
-            onChange={(e) => onUpdateLocalSettings({ discordBotToken: e.target.value })}
-            onBlur={saveToken}
-            placeholder="not set"
-          />
-        }
+        placeholder="Paste a token"
+        clearWarning="Clear the bot token? The Discord bot stops now, and starts again once a token is set."
+        onChanged={onSecretChanged}
       />
 
       <SettingsRow
@@ -252,10 +246,10 @@ export const DiscordSection = ({ appSettings, onSaveAppSettings, onUpdateLocalSe
         }
         control={
           <div className="flex items-center gap-2">
-            <Button size="sm" className={ACTION} onClick={testToken} disabled={!token || testing}>
+            <Button size="sm" className={ACTION} onClick={testToken} disabled={!tokenSet || testing}>
               test token
             </Button>
-            <Button size="sm" className={ACTION} onClick={sendTest} disabled={!channel || !token || testing}>
+            <Button size="sm" className={ACTION} onClick={sendTest} disabled={!channel || !tokenSet || testing}>
               send test
             </Button>
           </div>

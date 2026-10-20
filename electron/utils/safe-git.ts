@@ -1,5 +1,6 @@
 import { execFile, execFileSync, type ExecFileOptions, type StdioOptions } from 'child_process';
 import * as os from 'os';
+import { gitCommand } from '../platform/git-command';
 
 /**
  * Every git call Tars's main process makes on a project folder (2.0.4, the
@@ -39,8 +40,12 @@ const NO_PROGRAMS = [
   `gpg.x509.program=${os.devNull}`,
   `gpg.ssh.allowedSignersFile=${os.devNull}`,
   'credential.helper=',
-  'protocol.allow=never',
+  // What ssh and http would run: the repository's ssh command, and an askpass
+  // for a password (credential.helper= above already empties the helpers).
+  'core.sshCommand=ssh',
+  'core.askPass=',
   'submodule.recurse=false',
+  'fetch.recurseSubmodules=false',
   'diff.ignoreSubmodules=all',
   'status.submoduleSummary=false',
   'core.quotePath=false',
@@ -66,6 +71,17 @@ export function safeGitEnv(base: GitEnv = process.env, extra: GitEnv = {}): Node
     env[k] = v;
   }
   env.GIT_CONFIG_NOSYSTEM = '1';
+  // A fetch goes out by https, http or ssh, and by nothing else, whatever any
+  // configuration allows: git reads this before every protocol.allow and
+  // protocol.<name>.allow, the repository's included, which a -c could not
+  // beat (a repository's own protocol.ext.allow=always outranks a command
+  // line protocol.allow=never). Refused so: ext:: (runs a command), fd::,
+  // file:// and local paths (git-upload-pack runs here, and
+  // remote.<name>.uploadpack names it), git:// (its core.gitProxy keeps its
+  // first value), and every remote helper on the PATH (git-remote-<x>, by an
+  // <x>:: remote or remote.<name>.vcs: ftp, ftps, keybase), the Audit's M1 on
+  // #495. `protocol.allow=never` alone, before, refused https and ssh too.
+  env.GIT_ALLOW_PROTOCOL = 'https:http:ssh';
   env.GIT_TERMINAL_PROMPT = '0';
   env.GIT_OPTIONAL_LOCKS = '0';
   return env as NodeJS.ProcessEnv;
@@ -127,7 +143,7 @@ export interface SafeGitOptions {
 export async function safeGit(cwd: string, args: string[], opts: SafeGitOptions = {}): Promise<{ stdout: string; stderr: string }> {
   const env = safeGitEnv(process.env, opts.env);
   const call = (argv: string[], o: ExecFileOptions = {}) => new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    execFile('git', argv, { cwd, env, encoding: 'utf8', maxBuffer: opts.maxBuffer ?? 8 * 1024 * 1024, timeout: opts.timeout ?? 30_000, windowsHide: true, ...o }, (err, stdout, stderr) => {
+    execFile(gitCommand(), argv, { cwd, env, encoding: 'utf8', maxBuffer: opts.maxBuffer ?? 8 * 1024 * 1024, timeout: opts.timeout ?? 30_000, windowsHide: true, ...o }, (err, stdout, stderr) => {
       if (err) reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }));
       else resolve({ stdout: String(stdout), stderr: String(stderr) });
     });
@@ -147,10 +163,10 @@ export function safeGitSync(cwd: string, args: string[], opts: SafeGitOptions & 
   let filters: string[] = [];
   if (needsFilters(args)) {
     try {
-      filters = filterOverrides(execFileSync('git', ['--no-optional-locks', ...globals(), ...LOOKUP], { ...base, stdio: 'pipe', encoding: 'utf8' }));
+      filters = filterOverrides(execFileSync(gitCommand(), ['--no-optional-locks', ...globals(), ...LOOKUP], { ...base, stdio: 'pipe', encoding: 'utf8' }));
     } catch {
       filters = [];
     }
   }
-  return execFileSync('git', argvOf(args, filters), { ...base, stdio: opts.stdio ?? 'pipe', encoding: opts.encoding ?? 'utf8' }) as unknown as string;
+  return execFileSync(gitCommand(), argvOf(args, filters), { ...base, stdio: opts.stdio ?? 'pipe', encoding: opts.encoding ?? 'utf8' }) as unknown as string;
 }

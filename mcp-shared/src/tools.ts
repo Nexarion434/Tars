@@ -10,6 +10,8 @@
  * `_output` zod 3 and zod 4 both declare.
  */
 
+import { toolCall } from "./tool-call.js";
+
 /** A tools/call result, as every server here builds one. */
 export interface ToolResult {
   [key: string]: unknown;
@@ -54,7 +56,7 @@ export const tool = <S extends Shape>(row: Tool<S>): Tool => row as unknown as T
  * real, overloaded signature is the SDK's, in each server's own version,
  * which this folder cannot name.
  */
-interface ToolServer {
+export interface ToolServer {
   tool(name: string, description: never, schema: never, run: never): unknown;
 }
 
@@ -63,7 +65,8 @@ export function registerTools(server: ToolServer, tools: readonly Tool[]): void 
   for (const { name, description, schema, failure, run } of tools) {
     const guarded = async (args: never, extra: ToolExtra): Promise<ToolResult> => {
       try {
-        return await run(args, extra);
+        // Its calls to Tars name it (tool-call.ts).
+        return await toolCall.run(name, () => run(args, extra));
       } catch (error) {
         return failed(failure, error);
       }

@@ -17,6 +17,9 @@ interface SettingsRowProps {
   /** A description that must be read whole: it wraps, 560 wide as the frames
    *  set their hints, and the row grows with it instead of cutting it. */
   wrap?: boolean;
+  /** A control column for an address and its copy (Settings, Hermes, Gateways): 358px, 458 from 1280 wide, as the
+   *  frames set it at the narrowest window and at 1440. */
+  wide?: boolean;
   className?: string;
 }
 
@@ -35,6 +38,7 @@ export const SettingsRow = ({
   control,
   secondaryControl,
   wrap = false,
+  wide = false,
   className = '',
 }: SettingsRowProps) => (
   // The data hooks let a spec read a sub-page as rows, whatever its section.
@@ -47,7 +51,7 @@ export const SettingsRow = ({
     </div>
 
     {(control || secondaryControl) && (
-      <div className="w-[300px] shrink-0 flex items-center justify-end gap-2">
+      <div className={`${wide ? 'w-[358px] xl:w-[458px]' : 'w-[300px]'} shrink-0 flex items-center justify-end gap-2`}>
         {control && <div className="min-w-0 flex-1 flex items-center justify-end">{control}</div>}
         {secondaryControl && (
           <div className="w-[30px] shrink-0 flex items-center justify-end">{secondaryControl}</div>

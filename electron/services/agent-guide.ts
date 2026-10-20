@@ -41,14 +41,15 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     text: [
       'You delegate to the agents of your own project: `list_agents` shows them, `whoami` shows you. Another project is refused unless the tool takes allowCrossProject and you set it.',
       '`delegate_task` is the way to hand work: the task goes into the agent\'s own terminal, the session its card shows, which keeps its conversation, its memory and its background work. With no CLI running there, Tars starts that session on its conversation, with the task. No temporary copy of the agent is ever made. Tars answers at once with a taskId, and the tool follows the task in steps of two minutes.',
-      'You get back the agent\'s full final message for the task, why it ended (completed, error, stopped, interrupted), and its tokens and cost. That is read from the session itself, and only where its CLI lets Tars read it: claude (and the API-key providers that run it) gives all of it, from its hooks and its transcript. gemini, codex, opencode, amp, pi and grok give Tars no prompt hook: the task goes into their terminal, in their interactive session, which stays after it (opencode and gemini started with it as their first prompt, amp with it typed in), and the tool says it was delivered, with no answer, tokens or cost. Read their terminal with `get_agent_output`, or ask them to report with send_message to "requester".',
+      'You get back the agent\'s full final message for the task, why it ended (completed, error, stopped, interrupted), and its tokens and cost. That is read from the session itself, and only where its CLI lets Tars read it: claude (and the API-key providers that run it) gives all of it, from its hooks and its transcript. codex gives its final message and why it ended, from its own session log, but not its tokens or cost. gemini, opencode, amp, pi and grok give Tars no prompt hook: the task goes into their terminal, in their interactive session, which stays after it (opencode and gemini started with it as their first prompt, amp with it typed in), and the tool says it was delivered, with no answer, tokens or cost. Read their terminal with `get_agent_output`, or ask them to report with send_message to "requester".',
       'A task you delegate runs in the permission mode of the agent that receives it, whatever yours: from a sender in a narrower mode (plan, say) it arrives marked so, "(sender in plan mode, you in bypass mode)", which asks that agent and does not bind it. Delegate to an agent whose own mode fits the work.',
-      'One task at a time: an agent at work (a task in hand, or a turn in its terminal, which counts only on a CLI that tells Tars its turns end: not amp, codex, grok, opencode or pi) gets the task queued, and delegate_task keeps waiting and returns its real result, or says which task it waits behind, from whom and since when. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now. A task still queued when Tars restarts is lost and never ran: ask for it again.',
+      'One task at a time: an agent at work (a task in hand, or a turn in its terminal, which counts only on a CLI that tells Tars its turns end: not amp, grok, opencode or pi) gets the task queued, and delegate_task keeps waiting and returns its real result, or says which task it waits behind, from whom and since when. When the answer says it is queued, follow it with `task_status` by its id, not `wait_for_agent`, which follows the task the agent works on now. A task still queued when Tars restarts is lost and never ran: ask for it again.',
       'timeoutSeconds is how long the tool waits: 3600 s (an hour) when you give none. The task is never stopped there: it goes on in the agent\'s terminal, and `task_status` reads its end later.',
       'If delegate_task says the task may still be working (Tars was out of reach for a while), do not send it again: read it with `task_status`, by its taskId or its clientRequestId. A task still waiting its turn can be taken back with `task_cancel`.',
       'A `model` given to delegate_task applies only when Tars starts the agent\'s session for the task; an open session keeps its own, and the answer says so.',
       '`start_agent` is deprecated: it hands the task the same way and answers with its taskId without waiting. Use delegate_task. `wait_for_agent` waits on an agent\'s status, `get_agent_output` reads its terminal, `get_agent` gives its whole record.',
       '`create_agent` adds an agent to your project, on any provider; `stop_agent` stops one with a reason the user reads; `remove_agent` deletes one for good.',
+      '`update_agent` changes one of your agents afterwards (name, provider, model, effort, permission mode, CLI path, skills), never its role, and never your own settings: those stay the user\'s, in the Agents page. A running turn is never cut: a new model or effort restarts a claude agent once its turn ends, on the same conversation, and another CLI takes it at its next start; a new provider or CLI path waits until you stop the agent with `stop_agent` (cli_running until then), and its next start is on a new conversation. The answer says when the change applies.',
       'An orchestrator does not edit files: its sessions are denied the editing tools. It splits the work, delegates, and reports.',
     ].join('\n'),
   },
@@ -86,7 +87,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       'Claim a task with `assign_task` before you work on it (one at a time); report with `update_task_progress`; finish it with `mark_task_done` and a one to three sentence summary. `move_task` moves a task you hold between backlog, ongoing and done; planned is the user\'s: it hands a task to Hermes, and only the user does that. `list_tasks` and `get_task` read the board; `delete_task` removes a task you filed by mistake.',
       'On a Hermes whose version Tars has not measured, a task you claim stays `scheduled` on Hermes (`list_tasks` shows it ongoing, Hermes: scheduled): it is yours all the same, and `mark_task_done` finishes it.',
       'An orchestrator files the work it splits, so the user sees it on the board, and its workers claim and finish their own.',
-      'When Hermes is not configured, refuses or cannot be reached, or Tars is signed out of it ("Tars is signed out of Hermes: sign in again in Settings, Hermes."), the tool says so and what was written: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s notes/, and go on with the work; do not call the tool again in a loop.',
+      'When Hermes is not configured, refuses or cannot be reached, or Tars is signed out of it ("Tars is signed out of Hermes: sign in again in Settings, Hermes."), the tool says so and what was written: the user connects or signs in to Hermes in Tars (Settings, Hermes). Tell the user or your requester once, keep the task in your project folder\'s reports/, and go on with the work; do not call the tool again in a loop.',
       'A claim or a release whose answer says its note could not be written on the board still stood: the task moved, so do not do it again.',
       'When the error names a task that was created, or says Hermes may have done what you asked before its answer was lost, read the board (`get_task`, `list_tasks`) before writing again: never create a task twice.',
     ].join('\n'),
@@ -97,7 +98,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     roles: ['orchestrator', 'worker'],
     text: [
       'Tars keeps a folder for your project, outside the repository: {folder}',
-      'tools/ for scripts and benches worth running again, notes/ for what the next session should know, reports/ for what you hand over. Every agent of the project shares it, and Tars never deletes it.',
+      'tools/ for scripts and benches worth running again, reports/ for what you hand over and what the next session should know. The user reads and edits both in Tars\'s Vault. Every agent of the project shares it, and Tars never deletes it.',
       'Durable files go there: never create folders at the top of your home folder. Keep nothing there that belongs in the repository, and nothing secret.',
       'Your temporary folder ($TMPDIR) is scratch: a session or a cleanup can empty it. Do not keep work under ~/Documents either: it can be evicted to the cloud and a read then blocks.',
     ].join('\n'),
@@ -152,6 +153,7 @@ export const TOOL_TOPIC: Readonly<Record<string, string>> = {
   get_agent: 'delegation',
   get_agent_output: 'delegation',
   create_agent: 'delegation',
+  update_agent: 'delegation',
   start_agent: 'delegation',
   stop_agent: 'delegation',
   remove_agent: 'delegation',
@@ -241,7 +243,7 @@ export function guideTopic(id: string, version: string, folder: string | null, w
  */
 export function identitySection(role: GuideRole, folder: string | null, why?: string): string[] {
   const where = folder
-    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, notes/, reports/). Keep scripts, notes and reports worth keeping there, never in a temporary folder, under ~/Documents or in a folder you create at the top of your home folder.`
+    ? `- Your project folder, kept by Tars outside the repository: ${folder} (tools/, reports/). Keep scripts and reports worth keeping there, never in a temporary folder, under ~/Documents or in a folder you create at the top of your home folder.`
     : `- Your project has no folder kept by Tars (${why ?? NOT_ABSOLUTE}): keep what must last in the repository or ask your requester.`;
   const lines = [`## How Tars works`];
   if (role === 'orchestrator') {
@@ -280,13 +282,27 @@ export function agentGuideSection(agent: AgentStatus): string {
 }
 
 /**
+ * Who the agent is, in Tars's identity line, as spawnAgentSession's header
+ * begins it: what a CLI with no bootstrap to tell it learns first, and the line
+ * a codex session is bound to its agent by (services/codex-sessions.ts, the
+ * Audit's M1 on #465).
+ */
+export function identityLine(agent: AgentStatus): string {
+  const role = agent.kind === 'chat' ? 'orchestrator' : agent.role || 'worker';
+  return `[Tars: you are agent "${agent.name || agent.id}" (id ${agent.id}), ${role} of project ${agent.projectPath}.]`;
+}
+
+/**
  * The section for the prompt a session starts on, once: a CLI whose config
  * folder is not Claude's has no SessionStart hook to fetch the bootstrap, so
- * it gets it here; a claude CLI, in a terminal or over ACP, gets it from its
- * bootstrap, and nothing here. Every launch that builds a CLI's first prompt
- * reads it: spawnAgentSession, the window's (Start, a wake, a restart), the
- * bots', and a run over ACP.
+ * it gets it here, after the agent's identity line; a claude CLI, in a
+ * terminal or over ACP, gets it from its bootstrap, and nothing here. Every
+ * launch that builds a CLI's first prompt reads it: spawnAgentSession (whose
+ * own header says who the agent is, `identity: false`), the window's (Start, a
+ * wake, a restart), the bots', and a run over ACP.
  */
-export function guideForPrompt(agent: AgentStatus, providerConfigDir: string): string {
-  return needsPromptInjection(providerConfigDir) ? agentGuideSection(agent) : '';
+export function guideForPrompt(agent: AgentStatus, providerConfigDir: string, opts: { identity?: boolean } = {}): string {
+  if (!needsPromptInjection(providerConfigDir)) return '';
+  const section = agentGuideSection(agent);
+  return opts.identity === false ? section : `${identityLine(agent)}\n\n${section}`;
 }

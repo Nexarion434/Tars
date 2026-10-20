@@ -57,7 +57,8 @@ vi.mock('child_process', async importOriginal => ({
 }));
 
 const home = os.homedir(); // a throwaway HOME, per __tests__/setup/home-isolation.ts
-const file = path.join(home, '.tars', 'hermes-connection.json');
+// In ~/.tars-private since 2.0.4 (services/settings-secrets.ts); one in ~/.tars moves there at the first read.
+const file = path.join(home, '.tars-private', 'hermes-connection.json');
 
 let usableHermesConnection: () => unknown;
 // The handlers bring the overseer with them: loaded once, with the time that takes.
@@ -186,6 +187,7 @@ describe('the Hermes pages\' handlers', () => {
       const handle = [...before.matchAll(/ipcMain\.handle\('([^']+)'/g)].pop();
       return handle?.[1] ?? '(outside any handler)';
     });
-    expect(channels.sort()).toEqual(['hermes:connection:get', 'hermes:testGateway']);
+    // hermes:connection:save reads it for the dashboard token alone, which the form holds as the mask (the Audit's L2 on #466).
+    expect(channels.sort()).toEqual(['hermes:connection:get', 'hermes:connection:save', 'hermes:testGateway']);
   });
 });

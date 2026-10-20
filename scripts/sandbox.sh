@@ -22,12 +22,16 @@
 set -e
 
 SANDBOX="$HOME/Tars-sandbox"
-APP="${1:-$(dirname "$0")/../release/mac-arm64/Tars.app}"
-BIN="$APP/Contents/MacOS/Tars"
+# La build de test, que npm run electron:pack nomme "Tars Sandbox", avec son
+# propre identifiant et sa propre icone : une copie de test ne passe jamais pour
+# la vraie Tars dans le Dock (point 13 du plan, 19/10).
+APP="${1:-$(dirname "$0")/../release/mac-arm64/Tars Sandbox.app}"
+# L'executable porte le nom de l'app : "Tars Sandbox", ou "Tars" pour une release passee en argument.
+BIN="$APP/Contents/MacOS/$(basename "$APP" .app)"
 
 if [ ! -x "$BIN" ]; then
   echo "App introuvable: $APP"
-  echo "Construis-la d'abord (next build + npm run electron:pack) ou passe le chemin: scripts/sandbox.sh /chemin/Tars.app"
+  echo "Construis-la d'abord (npm run build:renderer puis npm run electron:pack) ou passe le chemin: scripts/sandbox.sh \"/chemin/Tars Sandbox.app\""
   exit 1
 fi
 

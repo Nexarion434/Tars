@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, settle, deferred, ofType, textOf, type Mount } from './hook-runtime';
 import { LoadingState, PanelCaption } from '../../src/components/ui';
 import ReviewPage from '../../src/app/review/page';
+import { RepositoryColumn } from '../../src/components/Review/RepositoryColumn';
 import LogsPage from '../../src/app/logs/page';
 import TrayPanel from '../../src/components/TrayPanel/TrayPanel';
 import type { AgentStatus, AgentTickItem, FleetEntry } from '../../src/types/electron';
@@ -44,16 +45,36 @@ function agent(over: Partial<AgentStatus> = {}): AgentStatus {
 }
 
 describe('Review', () => {
-  const EMPTY = 'No agent has a working tree yet.';
+  // Since 2.0.4 (#488) Review lists every repository of every project, the projects and the agent list read first,
+  // then each project scanned (review.repositories). It hands them to its column, which says "No working tree yet"
+  // for an empty list: so the page must not hand it one before both lists have answered. One component deep, the
+  // page's side of that is whether it shows the column, and with which projects.
   let list: ReturnType<typeof deferred<AgentStatus[]>>;
   let page: Mount<ReturnType<typeof ReviewPage>>;
+  const columns = () => ofType(page.result, RepositoryColumn);
 
   beforeEach(() => {
     list = deferred<AgentStatus[]>();
     g.window = {
       electronAPI: {
         agent: { list: vi.fn(() => list.promise) },
-        review: { diff: vi.fn(() => new Promise(() => {})), file: vi.fn() },
+        fs: { listProjects: vi.fn(async () => []) },
+        review: {
+          diff: vi.fn(() => new Promise(() => {})),
+          file: vi.fn(),
+          repo: vi.fn(() => new Promise(() => {})),
+          repositories: vi.fn(async (projectPath: string) => ({
+            cached: {
+              state: 'repository',
+              skipped: [],
+              repositories: [{ path: projectPath, branch: 'feat/plan', changed: [], base: null, ahead: null, agents: [{ id: 'a1', name: 'Planner' }] }],
+            },
+          })),
+          search: vi.fn(),
+          cancel: vi.fn(),
+          onRepositoriesEvent: vi.fn(() => () => {}),
+          onSearchEvent: vi.fn(() => () => {}),
+        },
       },
     };
     page = mount(() => ReviewPage());
@@ -65,29 +86,31 @@ describe('Review', () => {
   });
 
   it('waits on the ladder, not on the empty state, until the agent list answers', () => {
-    expect(waits(page.result, /working trees/)).toBe(true);
-    expect(textOf(page.result)).not.toContain(EMPTY);
+    expect(waits(page.result, /repositories/)).toBe(true);
+    expect(columns()).toHaveLength(0);
   });
 
   it('says it has no working tree once the list answers with none', async () => {
     list.resolve([]);
     await settle();
-    expect(textOf(page.result)).toContain(EMPTY);
-    expect(waits(page.result, /working trees/)).toBe(false);
+    expect(columns()).toHaveLength(1);
+    expect(columns()[0].props.projects).toEqual([]);
+    expect(waits(page.result, /repositories/)).toBe(false);
   });
 
   it('lists the working trees once the list answers with some', async () => {
     list.resolve([agent()]);
     await settle();
-    expect(textOf(page.result)).toContain('feat/plan');
-    expect(textOf(page.result)).not.toContain(EMPTY);
-    expect(waits(page.result, /working trees/)).toBe(false);
+    const projects = (columns()[0]?.props.projects ?? []) as Array<{ path: string; repositories: Array<{ branch: string }> }>;
+    expect(projects.map(p => p.path)).toEqual(['/tmp/tars-hermes']);
+    expect(projects[0]?.repositories.map(r => r.branch)).toEqual(['feat/plan']);
+    expect(waits(page.result, /repositories/)).toBe(false);
   });
 
   it('does not wait forever when the list fails', async () => {
     list.reject(new Error('ipc gone'));
     await settle();
-    expect(waits(page.result, /working trees/)).toBe(false);
+    expect(waits(page.result, /repositories/)).toBe(false);
   });
 });
 

@@ -492,6 +492,11 @@ export function keepCallerListening(
   return () => clearInterval(timer);
 }
 
+/** The providers by id, as create_agent and update_agent name them. */
+const PROVIDERS = "The provider, by id. Its own CLI: claude, codex, gemini, grok, opencode, pi, amp, qwen-code (Qwen Code, the CLI qwen, on the models of its own settings). Claude Code run against another provider, with the key set in Tars's Settings (refused without it): openrouter, deepseek, mimo, moonshot, qwen (the Qwen API), zhipu, minimax, nvidia, nous-portal, ollama, ollama-cloud, venice, custom-openai.";
+
+const CHARACTERS = ["robot", "ninja", "wizard", "astronaut", "knight", "pirate", "alien", "viking"] as const;
+
 /** The agent tools, in the order tools/list gives them. */
 const AGENT_TOOLS: Tool[] = [
   // Identity handshake for orchestrator sessions
@@ -612,10 +617,7 @@ const AGENT_TOOLS: Tool[] = [
       projectPath: z.string().optional().describe("Absolute path to the project directory (defaults to your own project)"),
       name: z.string().optional().describe("Name for the agent (e.g., 'Backend Worker', 'Test Runner')"),
       skills: z.array(z.string()).optional().describe("List of skill names to enable for this agent"),
-      character: z
-        .enum(["robot", "ninja", "wizard", "astronaut", "knight", "pirate", "alien", "viking"])
-        .optional()
-        .describe("Visual character for the agent"),
+      character: z.enum(CHARACTERS).optional().describe("Visual character for the agent"),
       skipPermissions: z
         .boolean()
         .optional()
@@ -623,11 +625,8 @@ const AGENT_TOOLS: Tool[] = [
         .describe("If true (default), agent runs with --dangerously-skip-permissions flag for autonomous operation"),
       secondaryProjectPath: z.string().optional().describe("Secondary project path to add as context (--add-dir)"),
       allowCrossProject: z.boolean().optional().describe("Explicitly allow creating the agent in ANOTHER project than yours (normally rejected)"),
-      provider: z
-        .string()
-        .optional()
-        .describe("The provider, by id (default claude). Its own CLI: claude, codex, gemini, grok, opencode, pi, amp. Claude Code run against another provider, with the key set in Tars's Settings (refused without it): openrouter, deepseek, mimo, moonshot, qwen, zhipu, minimax, nvidia, nous-portal, ollama, ollama-cloud, venice, custom-openai."),
-      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-5-codex' for codex). Omit for the provider's default."),
+      provider: z.string().optional().describe(`${PROVIDERS} Default claude.`),
+      model: z.string().optional().describe("The model, as the provider names it (e.g. 'opus' for claude, 'gpt-6-luna' for codex). Omit for the provider's default."),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort. Omit for the CLI's own."),
       permissionMode: z
         .enum(["plan", "normal", "auto", "bypass"])
@@ -656,6 +655,43 @@ const AGENT_TOOLS: Tool[] = [
         cliPath,
       })) as { agent: { id: string; name: string; provider?: string } };
       return text(`Created agent "${data.agent.name}" with ID: ${data.agent.id}${data.agent.provider ? ` (${data.agent.provider})` : ""}`);
+    },
+  }),
+
+  tool({
+    name: "update_agent",
+    description: "Change an agent of your project after creating it: its name, provider (any CLI or API-key provider), model, effort, permission mode, CLI path, skills, character or secondary project path. Only your project's orchestrator does this, on its project's other agents: a worker is refused (worker_may_not_update), and so is an agent of another project (other_project). The role stays the user's: an agent is made the orchestrator, or stops being it, in the Agents page of Tars, where the orchestrator's own settings are changed too (orchestrator_settings), and so is a move to another project. A running turn is never cut. A change of model, effort or permission mode on the same CLI restarts a claude agent's CLI once its turn ends, on the same conversation; another CLI takes it at its next start. A change of provider or CLI path is refused while a CLI runs in the agent's terminal (cli_running): stop it with stop_agent once its work is done, then change it; its next start runs the new CLI on a new conversation, and the old CLI's model and CLI path are cleared unless you give new ones. The answer says when the change applies and whether the conversation is kept.",
+    schema: {
+      id: z.string().describe("The agent ID"),
+      name: z.string().min(1).optional().describe("Its new name"),
+      provider: z.string().optional().describe(PROVIDERS),
+      model: z.string().nullable().optional().describe("The model, as the provider's CLI names it (e.g. 'opus' or 'sonnet' for claude); null for the provider's default."),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullable().optional().describe("Reasoning effort; null for the CLI's own."),
+      permissionMode: z
+        .enum(["plan", "normal", "auto", "bypass"])
+        .optional()
+        .describe("plan (Claude Code: reads and plans, edits nothing until approved), normal (asks before acting), auto, or bypass (asks nothing)."),
+      cliPath: z.string().nullable().optional().describe("Absolute path of the CLI's executable file, run instead of the provider's own; null for the provider's own. Refused unless it is an executable file."),
+      skills: z.array(z.string()).optional().describe("Its skills: the whole list, which replaces the one it has"),
+      character: z.enum(CHARACTERS).optional().describe("Visual character for the agent"),
+      secondaryProjectPath: z.string().nullable().optional().describe("Secondary project path added as context (--add-dir); null to take it away"),
+    },
+    failure: "updating agent",
+    async run({ id, ...fields }) {
+      // Only what was named: null clears a setting, so a field nobody named must not reach Tars as one.
+      const body = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+      try {
+        const data = (await apiRequest(`/api/agents/${encodeURIComponent(id)}/update`, "POST", body)) as {
+          agent: { id: string; name?: string }; changed?: string[]; text?: string;
+        };
+        const changed = data.changed?.length ? data.changed.join(", ") : "nothing";
+        return text(`Updated "${data.agent.name || data.agent.id}" (${changed}). ${data.text ?? ""}`.trim());
+      } catch (err) {
+        // The refusal's code, which the description names, with its reason.
+        const code = (err as { body?: { code?: unknown } }).body?.code;
+        if (typeof code === "string") return problem(`Error updating agent (${code}): ${(err as Error).message}`);
+        throw err;
+      }
     },
   }),
 

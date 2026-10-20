@@ -31,7 +31,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    task as `--prompt`, never `opencode run`, which exits after the task;
  * 5b. a delegation to `ap` (amp, no interactive form that takes a prompt) starts its TUI with no `-x`, which exits
  *    after the task, and the task is typed into it once it runs;
- * 6. start_agent, the deprecated alias, answers at once with a task id, and the task goes into the same terminal.
+ * 6. start_agent, the deprecated alias, answers at once with a task id, and the task goes into the same terminal;
+ * 7. (the Audit's M2 on #461) an Esc cuts a task's turn: Claude Code 2.1.302 puts the cut prompt back into an empty
+ *    field (auto_restore_cancel), and the stand-in does too. The task ends interrupted, and the next one goes in
+ *    alone, never sent with the cut one.
  * Red on main (9df7c099): delegate_task tries a run over ACP first, a hidden copy of dev outside its terminal; with
  * no ACP agent there it falls back to typing, and returns the hooks' copy, cut at 4000 bytes, with no tokens or cost.
  * The artefact: values.json (every tool answer, the stand-ins' logs, dev's transcript, the ledger's tasks, the
@@ -65,11 +68,22 @@ const reply = (text, input, output) => fs.appendFileSync(transcript, JSON.string
 }) + '\n');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+let cancelTurn = null;
 async function turn(prompt) {
   log({ turn: prompt });
   hook('user-prompt-submit.sh', { hook_event_name: 'UserPromptSubmit', prompt });
   fs.appendFileSync(transcript, JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: prompt } }) + '\n');
   reply('Reading it now.', 100000, 0);
+  if (prompt.includes('HALT')) {
+    // Esc in a turn, as Claude Code 2.1.302 does it: the turn ends with no Stop, the transcript says so, and an
+    // empty field gets the cut prompt back (auto_restore_cancel).
+    await new Promise((r) => { cancelTurn = r; setTimeout(r, 60000); });
+    cancelTurn = null;
+    fs.appendFileSync(transcript, JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } }) + '\n');
+    if (buffer === '') buffer = prompt;
+    log({ cancelled: prompt, field: buffer });
+    return;
+  }
   if (prompt.includes('SLOW')) await sleep(12000);
   if (prompt.includes('LONG')) reply(LONG, 400000, 100000);
   else reply('Second task done: the tests pass.', 200000, 50000);
@@ -85,10 +99,12 @@ let queue = Promise.resolve();
 const dashes = process.argv.indexOf('--');
 if (dashes !== -1 && process.argv.slice(dashes + 1).join(' ').trim()) queue = queue.then(() => turn(process.argv.slice(dashes + 1).join(' ')));
 process.stdin.on('data', (data) => {
-  buffer += data.toString();
+  const typed = data.toString();
+  if (typed === '\x1b' && cancelTurn) { cancelTurn(); return; }
+  for (const ch of typed.replace(/\x1b\[20[01]~/g, '')) buffer = ch === '\x7f' ? buffer.slice(0, -1) : ch === '\x03' ? '' : buffer + ch;
   let end;
   while ((end = buffer.search(/[\r\n]/)) !== -1) {
-    const line = buffer.slice(0, end).replace(/\x1b\[20[01]~/g, '');
+    const line = buffer.slice(0, end);
     buffer = buffer.slice(end + 1);
     if (line.trim()) queue = queue.then(() => turn(line));
   }
@@ -228,6 +244,18 @@ for (const newInterface of [false, true]) {
       // 6. The deprecated alias: answered at once with a task id, into the same terminal.
       const started = await tool('start_agent', { id: 'dev', prompt: 'ALIAS tidy the changelog' });
       await expect.poll(() => lines(path.join(home, 'stand-in.jsonl')).filter((e) => typeof e.turn === 'string' && e.turn.includes('ALIAS')).length, { timeout: 30_000 }).toBe(1);
+      // 7. An Esc cuts a task's turn, and Claude Code puts the cut prompt back into the field.
+      const halted = tool('delegate_task', { id: 'dev', prompt: 'HALT-ME write the long report', timeoutSeconds: 120 });
+      await expect.poll(() => devTurnsWith('HALT-ME').length, { timeout: 60_000 }).toBe(1);
+      await page.evaluate(() => (window as unknown as { electronAPI: { agent: { sendInput(p: { id: string; input: string }): Promise<unknown> } } }).electronAPI.agent.sendInput({ id: 'dev', input: '\x1b' }));
+      const cutAnswer = await halted;
+      const afterCut = await tool('delegate_task', { id: 'dev', prompt: 'AFTERCUT one more thing', timeoutSeconds: 120 });
+      const afterTurns = devTurnsWith('AFTERCUT');
+      keep({ cutAnswer, afterCut, afterTurns });
+      expect.soft(cutAnswer.text).toContain('ended: interrupted');
+      expect.soft(afterCut.text).toContain('Second task done');
+      expect.soft(afterTurns.length, 'turns that carried the next task').toBe(1);
+      expect.soft(afterTurns.map((e) => e.turn).join('\n'), 'the cut task sent again with the next').not.toContain('HALT-ME');
 
       const standIn = lines(path.join(home, 'stand-in.jsonl'));
       const noHook = lines(path.join(home, 'opencode.jsonl'));

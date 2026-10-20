@@ -43,6 +43,12 @@ function describe(m: {
 
 async function fetchProviderModels(providerId: string): Promise<ProviderModel[] | null> {
   try {
+    // Qwen Code's models are the user's own, read from the CLI's settings
+    // (models.ofCli), never the catalogue's: none there, none offered.
+    if (providerId === 'qwen-code') {
+      const own = await window.electronAPI?.models?.ofCli(providerId);
+      return (own?.models ?? []).map(m => ({ id: m.id, name: m.name || m.id, description: m.description }));
+    }
     const res = await window.electronAPI?.models?.list(providerId);
     if (!res?.models?.length) return null;
     return res.models.map(m => ({ id: m.id, name: m.name || m.id, description: describe(m) }));

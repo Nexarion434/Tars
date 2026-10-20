@@ -7,12 +7,13 @@ import { BrowserWindow } from 'electron';
 import TelegramBot from 'node-telegram-bot-api';
 import { App as SlackApp } from '@slack/bolt';
 import { AgentStatus, AppSettings } from '../types';
-import { API_PORT, API_TOKEN_FILE, privatePath } from '../constants';
+import { API_PORT, API_TOKEN_FILE, DATA_DIR, privatePath } from '../constants';
+import { moveOutOfAgentReach } from './settings-secrets';
 import { RouteApp, RouteContext, RouteRequest } from './api-routes';
 import { registerAllRoutes } from './api-routes';
 import { callerHeaderFrom } from './api-routes/utils';
 import { agentForToken, isInternalToken, isTerminalToken } from '../core/agent-tokens';
-import { isWebhookSecret } from './hermes-webhook-secret';
+import { gatewayOfPath, gatewayOfSecret } from './hermes-gateways';
 import { writeSecretFileEvenIfHeldSync, oneTimeRotationDue, oneTimeRotationDone } from '../utils/secret-file';
 
 /** Enough for a prompt or a webhook payload, far short of a memory attack. */
@@ -37,6 +38,11 @@ const KEEP_ALIVE_GRACE_MS = 55_000;
 // so. Re-exported here because callers reach it through this file.
 export { emitAgentStatus } from './agent-events';
 import { agentStatusEmitter } from './agent-events';
+import { inApiCall } from './api-routes/call-context';
+import { apiAnswerReports, reportAgentToolError, reportHandledError } from './error-reports/handled';
+import { TOOL_TOPIC } from './agent-guide';
+import { agents } from '../core/agent-manager';
+import { getProvider } from '../providers';
 export { agentStatusEmitter };
 
 let apiServer: http.Server | null = null;
@@ -109,6 +115,8 @@ function setApiServerState(patch: Partial<ApiServerState>): void {
 function initApiToken(): string {
   // Windows: minted anew once, the first time this build starts (secret-file.ts).
   const rotated = privatePath('api-token-rotated');
+  // In ~/.dorothy, every agent's --add-dir, until 2.0.4 (services/settings-secrets.ts).
+  moveOutOfAgentReach(path.join(DATA_DIR, 'api-token'), API_TOKEN_FILE);
   try {
     if (!oneTimeRotationDue(rotated) && fs.existsSync(API_TOKEN_FILE)) {
       const existing = fs.readFileSync(API_TOKEN_FILE, 'utf-8').trim();
@@ -142,12 +150,11 @@ export function getApiToken(): string {
  *  the webhook secret on the webhook. */
 export type CallerResolution =
   | { ok: true; agentId?: string; internal?: boolean; hermes?: boolean;
+    /** The Hermes gateway whose secret this is (services/hermes-gateways.ts). */
+    hermesGateway?: string;
     /** The token is the agent's terminal's, as it is now: not a delegated run's. */
     terminal?: boolean }
   | { ok: false; status: number; error: string };
-
-/** The one route published off this machine, and the only one the webhook secret opens. */
-const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
 
 /**
  * Who this call is from, decided by what it presents rather than what it says.
@@ -169,13 +176,16 @@ const HERMES_WEBHOOK_PATH = '/api/webhooks/hermes';
  *   the caller is the main process itself, which is no agent either but is not
  *   refused where an agent is required. The super chat holds it; nothing else
  *   can, since it never reaches a file or a child's environment.
- * - The **Hermes webhook secret**, `~/.tars-private/hermes-webhook-secret`:
- *   Hermes, on `/api/webhooks/hermes` and nowhere else. It is the only
- *   credential Tars publishes off the machine. Read here, at the door, because
- *   the door used to know only the other secrets, and Hermes presenting the
- *   one Tars minted for it was refused 401 before the route it was aimed at
- *   could run (measured on b17db0f). On any other path it is nothing, and the
- *   401 below.
+ * - A **Hermes gateway's secret**, `~/.tars-private/hermes-webhook-secret` for
+ *   the default gateway, `hermes-webhook-<id>.secret` for another
+ *   (services/hermes-gateways.ts): that gateway, on a webhook route, and on no
+ *   other path. These are the only credentials Tars publishes off the machine.
+ *   Read here, at the door, because the door used to know only the other
+ *   secrets, and Hermes presenting the one Tars minted for it was refused 401
+ *   before the route it was aimed at could run (measured on b17db0f). Which
+ *   gateway's route it may open is the route's to say (webhook-routes.ts): one
+ *   gateway's secret on another's route is refused there, 403. On any other
+ *   path it is nothing, and the 401 below.
  * - Anything else: unauthorised, with the same flat message as before, which
  *   tells a prober nothing about which of the two it got wrong.
  *
@@ -196,8 +206,9 @@ export function resolveCaller(
     ? auth.slice('Bearer '.length)
     : '';
 
-  if (pathname === HERMES_WEBHOOK_PATH && isWebhookSecret(presented)) {
-    return { ok: true, hermes: true };
+  if (gatewayOfPath(pathname) !== undefined) {
+    const hermesGateway = gatewayOfSecret(presented);
+    if (hermesGateway) return { ok: true, hermes: true, hermesGateway };
   }
 
   const agentId = presented ? agentForToken(presented) : undefined;
@@ -224,6 +235,9 @@ export function resolveCaller(
 
   return { ok: false, status: 401, error: 'Unauthorized' };
 }
+
+/** Tars's own tools, which an agent tool error may name (agent-guide.ts). */
+const TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(TOOL_TOPIC));
 
 function createRouteApp(): RouteApp {
   const app: RouteApp = {
@@ -381,10 +395,19 @@ export function startApiServer(
       }
     }
 
+    // What was answered, for the reports (services/error-reports/handled.ts): a 500 a route answered without
+    // throwing, and an agent's tool call answered 400 or more.
+    const answered: { status: number; bodyCode?: unknown } = { status: 0 };
     const sendJson = (data: unknown, status = 200) => {
+      const said = data && typeof data === 'object' ? data as { code?: unknown } : {};
+      answered.status = status;
+      answered.bodyCode = said.code;
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
     };
+    const fromMcp = req.headers['x-tars-client'] === 'mcp';
+    const tool = typeof req.headers['x-tars-tool'] === 'string' ? req.headers['x-tars-tool'] : undefined;
+    const callerAgent = caller.ok ? caller.agentId : undefined;
 
     // A hook runs inside an agent's CLI, whose environment carries that
     // terminal's own token (CLAUDE_MGR_API_TOKEN, minted per spawn), and posts
@@ -411,12 +434,15 @@ export function startApiServer(
       }
     }
 
+    let matched: string | RegExp | undefined;
+    let threw = false;
     try {
       // Dispatch to first matching route
       for (const route of routeApp.routes) {
         if (route.method !== req.method) continue;
         const params = matchRoute(route.pattern, pathname);
         if (params === null) continue;
+        matched = route.pattern;
 
         const routeReq: RouteRequest = {
           method: req.method!,
@@ -430,15 +456,25 @@ export function startApiServer(
           callerTerminal: caller.ok ? caller.terminal === true : false,
           internal: caller.ok ? caller.internal === true : false,
           hermes: caller.ok ? caller.hermes === true : false,
+          hermesGateway: caller.ok ? caller.hermesGateway : undefined,
         };
-        await route.handler(routeReq, sendJson, ctx);
+        await inApiCall({ tool, fromMcp, agentId: callerAgent }, () => route.handler(routeReq, sendJson, ctx));
         return;
       }
 
       sendJson({ error: 'Not found' }, 404);
     } catch (error) {
+      threw = true;
       console.error('API error:', error);
       sendJson({ error: 'Internal server error' }, 500);
+    } finally {
+      const agent = callerAgent && !pathname.startsWith('/api/hooks/') ? agents.get(callerAgent) : undefined;
+      const reports = apiAnswerReports({
+        method: req.method ?? '', route: matched, status: answered.status, bodyCode: answered.bodyCode, threw,
+        agent: agent ? { provider: getProvider(agent.provider).id } : undefined, fromMcp, tool, tools: TOOL_NAMES,
+      });
+      if (reports.handled) reportHandledError(reports.handled);
+      if (reports.agentTool) reportAgentToolError(reports.agentTool);
     }
   });
 

@@ -3,6 +3,7 @@ import type { AgentStatus } from '@/types/electron';
 import { AgentMark, Button } from '@/components/ui';
 import { stopLine } from '@/lib/stop-line';
 import { asleepLine, wakingLine } from '@/lib/asleep-line';
+import { providerWord } from '@/lib/providers';
 import AgentStatusWord from '@/components/AgentStatusWord';
 import { AgentAccountControl } from '@/components/ClaudeAccounts/AgentAccountControl';
 
@@ -40,7 +41,7 @@ export const AgentDialogHeader = memo(function AgentDialogHeader({
   // cards write, and the effort only this window has room for.
   const model = agent.localModel || agent.model;
   const facts = [
-    isSuperAgentMode ? 'orchestrator' : agent.provider || 'claude',
+    isSuperAgentMode ? 'orchestrator' : providerWord(agent.provider),
     model,
     agent.branchName,
     agent.effort,

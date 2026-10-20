@@ -10,13 +10,11 @@
 
 import * as fs from "fs";
 import * as http from "http";
-import * as path from "path";
 import { createHash, randomBytes } from "crypto";
 import { noAnswerWithin, send, TARS_WAIT_MS } from "./http.js";
-import { dataDir } from "./settings.js";
+import { toolCall } from "./tool-call.js";
 
 export const API_URL = process.env.CLAUDE_MGR_API_URL || "http://127.0.0.1:31415";
-const API_TOKEN_FILE = path.join(dataDir(), "api-token");
 
 // Caller identity, injected into the PTY environment by Tars when it spawns
 // the agent. Sent on every request so the server can scope agent listings and
@@ -30,13 +28,13 @@ export function getCallerIdentity(): { agentId: string; projectPath: string } {
 }
 
 // This agent's own token, minted by Tars when it spawned the process and
-// handed down through the environment. It says which agent is calling, where
-// the file below is one secret shared by every agent on the machine and says
-// only that the caller is on it. Preferred whenever it is there; the file
-// remains for the sessions that started before Tars minted any. A delegated
-// run hands its servers the path of a file that holds it instead
-// (CLAUDE_MGR_API_TOKEN_FILE, services/acp/delegate.ts): the list of servers a
-// run hands its CLI is written into the claude adapter's command line.
+// handed down through the environment. It says which agent is calling. The
+// only token a server presents: the shared ~/.tars/api-token, which said
+// only that the caller was on the machine, went to ~/.tars-private in 2.0.4,
+// and nothing an agent runs reads that folder. A delegated run hands its
+// servers the path of a file that holds it instead (CLAUDE_MGR_API_TOKEN_FILE,
+// services/acp/delegate.ts): the list of servers a run hands its CLI is
+// written into the claude adapter's command line.
 function tokenFromFile(file: string | undefined): string {
   if (!file) return "";
   try {
@@ -90,9 +88,9 @@ async function portHolder(waitMs: number): Promise<"this" | "another" | "none"> 
 
 /**
  * The token a call presents: this agent's own, once the port proved it is the
- * Tars that started this CLI, and none when it did not (the shared file
- * neither: a squatter would get that instead). A CLI Tars did not start has no
- * token and no instance to prove: it presents the shared file, as before.
+ * Tars that started this CLI, and none when it did not: a squatter would get
+ * it. A CLI Tars did not start has no token: it presents none, and Tars
+ * answers 401.
  */
 export async function tokenToPresent(waitMs: number = TARS_WAIT_MS): Promise<string | null> {
   return (await credentials(waitMs)).token;
@@ -100,16 +98,9 @@ export async function tokenToPresent(waitMs: number = TARS_WAIT_MS): Promise<str
 
 /** The token a call presents, and whether it was withheld because another Tars holds the port. */
 async function credentials(waitMs: number): Promise<{ token: string | null; anotherTars: boolean }> {
-  if (AGENT_API_TOKEN) {
-    const holder = await portHolder(waitMs);
-    return { token: holder === "this" ? AGENT_API_TOKEN : null, anotherTars: holder === "another" };
-  }
-  try {
-    if (fs.existsSync(API_TOKEN_FILE)) {
-      return { token: fs.readFileSync(API_TOKEN_FILE, "utf-8").trim(), anotherTars: false };
-    }
-  } catch { /* ignore */ }
-  return { token: null, anotherTars: false };
+  if (!AGENT_API_TOKEN) return { token: null, anotherTars: false };
+  const holder = await portHolder(waitMs);
+  return { token: holder === "this" ? AGENT_API_TOKEN : null, anotherTars: holder === "another" };
 }
 
 export async function apiRequest(
@@ -136,6 +127,11 @@ export async function apiRequest(
   }
   if (CALLER_AGENT_ID) {
     headers["X-Tars-Caller-Id"] = CALLER_AGENT_ID;
+  }
+  // The tool this call runs for, so that Tars can report an error it answers with as that tool's (tool-call.ts).
+  const tool = toolCall.getStore();
+  if (tool) {
+    headers["X-Tars-Tool"] = tool;
   }
   if (CALLER_PROJECT_PATH) {
     headers["X-Tars-Caller-Project"] = CALLER_PROJECT_PATH;

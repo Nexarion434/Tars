@@ -377,7 +377,10 @@ export async function startWithTask(
     // here leaves the conversation to resume next time.
     const binaryPath = provider.resolveBinaryPath(fleet.settings());
     const mcpConfigPath = mcpConfigPathFor(provider);
+    // What its line needs read from the CLI (codex's flags), off the main thread.
+    await provider.prepareLaunch?.(binaryPath, agent.permissionMode ?? (agent.skipPermissions ? 'bypass' : 'normal'));
     const command = provider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: opts.resume || asleep ? consumeResumeSessionId(agent) ?? undefined : undefined,
       binaryPath,
       prompt: withGuide(agent, provider, task),
@@ -493,10 +496,12 @@ export async function forwardToOrchestrator(
     const provider = getProvider(orchestrator.provider || 'claude');
     const binaryPath = provider.resolveBinaryPath(fleet.settings());
     const mcpConfigPath = mcpConfigPathFor(provider);
+    await provider.prepareLaunch?.(binaryPath, opts.permissionMode);
     // A file, never inlined: in a double-quoted shell word the instructions'
     // backticks became command substitutions and ran.
     const systemPromptFile = opts.systemPromptFile();
     const command = provider.buildInteractiveCommand({
+      agentId: orchestrator.id,
       resumeSessionId: opts.resume ? consumeResumeSessionId(orchestrator) ?? undefined : undefined,
       binaryPath,
       prompt: withGuide(orchestrator, provider, prompt),

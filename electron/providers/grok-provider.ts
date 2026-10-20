@@ -7,7 +7,6 @@ import { keyEnvFor } from '../services/cli-keys';
 import type {
   CLIProvider,
   InteractiveCommandParams,
-  ScheduledCommandParams,
   OneShotCommandParams,
   ProviderModel,
   HookConfig,
@@ -95,24 +94,6 @@ export class GrokProvider implements CLIProvider {
       const escaped = finalPrompt.replace(/'/g, "'\\''");
       command += ` '${escaped}'`;
     }
-
-    return command;
-  }
-
-  buildScheduledCommand(params: ScheduledCommandParams): string {
-    let command = this.shellQuote(params.binaryPath);
-
-    if (params.autonomous) {
-      command += ' --permission-mode bypassPermissions';
-    }
-
-    if (params.outputFormat) {
-      command += ' --output-format streaming-json';
-    }
-
-    // Headless single-turn: -p/--single takes the prompt as its value and exits.
-    const escaped = params.prompt.replace(/'/g, "'\\''");
-    command += ` -p '${escaped}'`;
 
     return command;
   }
@@ -328,51 +309,5 @@ export class GrokProvider implements CLIProvider {
   getAddDirFlag(): string {
     // Grok has no --add-dir / multi-root flag.
     return '';
-  }
-
-  buildScheduledScript(params: {
-    binaryPath: string;
-    binaryDir: string;
-    projectPath: string;
-    prompt: string;
-    autonomous: boolean;
-    mcpConfigPath: string;
-    logPath: string;
-    homeDir: string;
-  }): string {
-    const permissionFlag = params.autonomous ? '--permission-mode bypassPermissions ' : '';
-
-    // Shell-escape every interpolated value so paths/prompts containing spaces,
-    // quotes, $(), or backticks can't break the script or inject commands.
-    const homeDir = this.shellQuote(params.homeDir);
-    const binaryDir = this.shellQuote(params.binaryDir);
-    const projectPath = this.shellQuote(params.projectPath);
-    const logPath = this.shellQuote(params.logPath);
-    const binaryPath = this.shellQuote(params.binaryPath);
-    const prompt = this.shellQuote(params.prompt);
-
-    return `#!/bin/bash
-
-# Source shell profile for proper PATH (nvm, homebrew, etc.)
-export HOME=${homeDir}
-
-if [ -s ${homeDir}/.nvm/nvm.sh ]; then
-  source ${homeDir}/.nvm/nvm.sh 2>/dev/null || true
-fi
-
-if [ -f ${homeDir}/.bashrc ]; then
-  source ${homeDir}/.bashrc 2>/dev/null || true
-elif [ -f ${homeDir}/.bash_profile ]; then
-  source ${homeDir}/.bash_profile 2>/dev/null || true
-elif [ -f ${homeDir}/.zshrc ]; then
-  source ${homeDir}/.zshrc 2>/dev/null || true
-fi
-
-export PATH=${binaryDir}:$PATH
-cd ${projectPath}
-echo "=== Task started at $(date) ===" >> ${logPath}
-${binaryPath} ${permissionFlag}--output-format streaming-json -p ${prompt} >> ${logPath} 2>&1
-echo "=== Task completed at $(date) ===" >> ${logPath}
-`;
   }
 }

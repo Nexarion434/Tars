@@ -18,7 +18,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * ~/.claude.json); a run token folder of a Tars that is gone, and one of a Tars still running. Then Tars starts on
  * that home.
  *
- * Asserted, both shells: no file of the home holds the key's 20 characters but app-settings.json, where the key is;
+ * Asserted, both shells: no file of the home holds the key's 20 characters but the settings' secrets, where the key
+ * is (~/.tars-private/settings-secrets.json, where the first start of 2.0.4 moves it since #466);
  * the agent's kept output keeps everything else; ~/.claude.json keeps the user's own entry and its other fields, in
  * 0600, and the account folder's its own; agents.json is at version 4; the gone Tars's run token folder is removed,
  * and the running one's is kept. The artefact: values.json (where the tail was found, before and after) and the
@@ -109,7 +110,7 @@ for (const newInterface of [false, true]) {
       const page = await app.firstWindow();
       // The cleaning's end, which a build without it never reaches: soft, so that its values.json says what was left.
       await expect.soft.poll(() => holding(home, tail(key)), { message: 'the key\'s 20 characters, left anywhere but in the settings', timeout: 30_000 })
-        .toEqual(['.tars/app-settings.json']);
+        .toEqual(['.tars-private/settings-secrets.json']);
       await stepShot(page, newInterface ? 'cleaned-new-interface' : 'cleaned');
 
       const saved = (file: string) => (JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')).agents as Array<{ output: string[] }>)[0].output.join('');

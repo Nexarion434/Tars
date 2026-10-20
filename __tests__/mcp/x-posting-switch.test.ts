@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { EventEmitter } from 'node:events';
 
 /**
  * The X server posts only while Posting is on in Settings > X (Twitter).
@@ -23,25 +22,20 @@ import { EventEmitter } from 'node:events';
  * 7. with Posting on, the call no longer reaches X at all: the fix refuses everything.
  *
  * The tools are the real ones, registered on a server that keeps their
- * handlers. The network is a recorder: nothing here reaches X.
+ * handlers. The network is a recorder: nothing here reaches X, nor Tars.
  */
 
 const net = vi.hoisted(() => ({ requests: [] as Array<{ method?: string; path?: string }> }));
-vi.mock('https', () => {
-  const request = (options: { method?: string; path?: string }, onResponse: (res: EventEmitter & { statusCode: number }) => void) => {
-    net.requests.push({ method: options.method, path: options.path });
-    const req = new EventEmitter() as EventEmitter & { write: () => void; end: () => void };
-    req.write = () => {};
-    req.end = () => {
-      const res = Object.assign(new EventEmitter(), { statusCode: options.method === 'DELETE' ? 200 : 201 });
-      onResponse(res);
-      const body = options.method === 'DELETE' ? { data: { deleted: true } } : { data: { id: '42', text: 'hello' } };
-      res.emit('data', JSON.stringify(body));
-      res.emit('end');
-    };
-    return req;
-  };
-  return { default: { request }, request };
+// Since 2.0.4 the server asks Tars to make the call (POST /api/x/request,
+// with the keys Tars keeps in ~/.tars-private): the recorder stands in for
+// Tars and X both, and reads the X call out of what was asked of Tars. Tars
+// refuses with Posting off too; this file proves the server's own refusal,
+// which comes before any call.
+vi.stubGlobal('fetch', async (_url: string, init: { body?: string }) => {
+  const asked = JSON.parse(init.body ?? '{}') as { method?: string; endpoint?: string };
+  net.requests.push({ method: asked.method, path: asked.endpoint });
+  const data = asked.method === 'DELETE' ? { data: { deleted: true } } : { data: { id: '42', text: 'hello' } };
+  return { ok: true, status: 200, json: async () => ({ status: asked.method === 'DELETE' ? 200 : 201, data: JSON.stringify(data) }) };
 });
 
 type Result = { content: Array<{ text: string }>; isError?: boolean };
