@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readGainedUsageLines, pricingFor, costOf, diff, add, type Counts, type Pricing } from './transcript-usage';
 import { transcriptPath, transcriptRoots } from '../utils/resume-session';
+import { QWEN_PROVIDER_ID, qwenTranscriptPath } from './qwen-code';
 import type { TaskRecord, TurnTokens } from './task-ledger';
 
 /**
@@ -126,6 +127,14 @@ async function timedLinesOf(file: string, now: number): Promise<{ mtimeMs: numbe
 
 /** The session's transcript and its subagents', under the first folder that holds it. */
 function filesOfSession(task: TaskRecord, sessionId: string, homeDir: string): string[] {
+  // Qwen Code's, under ~/.qwen (services/qwen-code.ts).
+  if (task.provider === QWEN_PROVIDER_ID) {
+    for (const root of transcriptRoots(task.worktreePath ?? undefined, task.projectPath ?? undefined)) {
+      const file = qwenTranscriptPath(root, sessionId, homeDir);
+      if (fs.existsSync(file)) return [file];
+    }
+    return [];
+  }
   for (const root of transcriptRoots(task.worktreePath ?? undefined, task.projectPath ?? undefined)) {
     const main = transcriptPath(root, sessionId, homeDir);
     if (!fs.existsSync(main)) continue;

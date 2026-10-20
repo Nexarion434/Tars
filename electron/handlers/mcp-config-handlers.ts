@@ -39,8 +39,6 @@ function getConfigPath(provider: string): string {
       return path.join(os.homedir(), '.opencode', 'mcp.json');
     case 'pi':
       return path.join(os.homedir(), '.pi', 'mcp.json');
-    case 'qwencode':
-      return path.join(os.homedir(), '.qwen-code', 'mcp.json');
     case 'minimax':
     case 'nvidia':
     case 'nous-portal':
@@ -305,15 +303,28 @@ function removeTomlSection(content: string, name: string): string {
 
 // ── Dispatch by provider ────────────────────────────────────────────
 
+/**
+ * Qwen Code's servers are not this page's (the Audit's L3 on #461): it wrote
+ * them to ~/.qwen-code/mcp.json, which qwen never reads. qwen reads the user's
+ * own ~/.qwen/settings.json, and Tars's agents a settings file of Tars's
+ * (services/qwen-code.ts), so saying so replaces a save that went nowhere.
+ */
+const QWEN_IDS = new Set(['qwencode', 'qwen-code']);
+function refuseQwen(provider: string): void {
+  if (QWEN_IDS.has(provider)) {
+    throw new Error("Settings > MCP does not manage Qwen Code's servers: qwen reads its own ~/.qwen/settings.json (mcpServers), and Tars's agents get Tars's servers by themselves");
+  }
+}
+
 function listServers(provider: string): McpServer[] {
+  refuseQwen(provider);
   switch (provider) {
     case 'claude': return readClaudeMcp();
     case 'codex': return readCodexMcp();
     case 'gemini': return readGeminiMcp();
     case 'grok': return readCodexMcp('grok');
     case 'opencode':
-    case 'pi':
-    case 'qwencode': return readJsonMcp(provider);
+    case 'pi': return readJsonMcp(provider);
     case 'minimax':
     case 'nvidia':
     case 'nous-portal':
@@ -326,14 +337,14 @@ function listServers(provider: string): McpServer[] {
 }
 
 function updateServer(provider: string, server: McpServer): void {
+  refuseQwen(provider);
   switch (provider) {
     case 'claude': writeJsonMcp('claude', 'update', server); break;
     case 'codex': writeCodexMcp('update', server); break;
     case 'gemini': writeGeminiMcp('update', server); break;
     case 'grok': writeCodexMcp('update', server, undefined, 'grok'); break;
     case 'opencode':
-    case 'pi':
-    case 'qwencode': writeJsonMcp(provider, 'update', server); break;
+    case 'pi': writeJsonMcp(provider, 'update', server); break;
     case 'minimax':
     case 'nvidia':
     case 'nous-portal':
@@ -345,14 +356,14 @@ function updateServer(provider: string, server: McpServer): void {
 }
 
 function deleteServer(provider: string, name: string): void {
+  refuseQwen(provider);
   switch (provider) {
     case 'claude': writeJsonMcp('claude', 'delete', undefined, name); break;
     case 'codex': writeCodexMcp('delete', undefined, name); break;
     case 'gemini': writeGeminiMcp('delete', undefined, name); break;
     case 'grok': writeCodexMcp('delete', undefined, name, 'grok'); break;
     case 'opencode':
-    case 'pi':
-    case 'qwencode': writeJsonMcp(provider, 'delete', undefined, name); break;
+    case 'pi': writeJsonMcp(provider, 'delete', undefined, name); break;
     case 'minimax':
     case 'nvidia':
     case 'nous-portal':

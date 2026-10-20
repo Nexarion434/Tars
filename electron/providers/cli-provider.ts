@@ -14,7 +14,15 @@ export function readAppSettingsFromDisk(): Partial<AppSettings> {
 /**
  * Parameters for building an interactive (PTY) agent command.
  */
+/** What a launch runs on, for getPtyEnvVars. */
+export interface PtyLaunch {
+  model?: string;
+  effort?: string;
+}
+
 export interface InteractiveCommandParams {
+  /** The agent it launches: a CLI whose settings Tars writes for each agent (Qwen Code) writes them again for this launch. */
+  agentId?: string;
   binaryPath: string;
   prompt: string;
   model?: string;
@@ -121,8 +129,13 @@ export interface CLIProvider {
   /** Build command string for quick one-shot prompts */
   buildOneShotCommand(params: OneShotCommandParams): string;
 
-  /** Get environment variables to set for PTY sessions */
-  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings): Record<string, string>;
+  /**
+   * Get environment variables to set for PTY sessions. `launch`: the model and
+   * effort this launch runs on, for a CLI that takes them through its
+   * environment (Qwen Code: its key's variable is its model's, its effort a
+   * setting).
+   */
+  getPtyEnvVars(agentId: string, projectPath: string, skills: string[] | undefined, appSettings?: AppSettings, launch?: PtyLaunch): Record<string, string>;
 
   /** Get environment variable names to delete before spawning PTY */
   getEnvVarsToDelete(): string[];
@@ -252,9 +265,12 @@ export function shellQuote(value: string): string {
  * flag is worse than none: it would look enforced and silently do nothing.
  * Until one is verified against the real binary, an orchestrator on those runs
  * on its persona alone, and the app says so rather than implying otherwise.
+ * Qwen Code (qwen 0.25.2) has one, verified: `--exclude-tools edit write_file
+ * agent` takes its edit, write and sub-agent tools away.
  */
 export function enforcesOrchestratorMode(binaryName: string): boolean {
-  return binaryName === 'claude';
+  // Qwen Code's --exclude-tools, its ToolNames read in 0.25.2 (services/qwen-code.ts).
+  return binaryName === 'claude' || binaryName === 'qwen';
 }
 
 /**

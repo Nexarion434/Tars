@@ -227,7 +227,7 @@ export async function delegateOverAcp(opts: {
       // "spawn npx ENOENT" of 2026-09-18. The agent inherits it too, which is
       // how npx finds node and the agent finds its MCP servers' node.
       PATH: buildFullPath(cliPathDirs(appSettings.cliPaths)),
-      ...provider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills ?? [], appSettings),
+      ...provider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills ?? [], appSettings, { model: agent.model, effort: agent.effort }),
       CLAUDE_AGENT_ID: agent.id,
       CLAUDE_PROJECT_PATH: agent.projectPath,
       CLAUDE_MGR_API_TOKEN: apiToken,

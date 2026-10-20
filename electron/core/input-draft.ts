@@ -50,6 +50,12 @@ export interface Draft {
    * `unknown`: a key went by that the model cannot follow.
    */
   state: 'known' | 'pending' | 'unknown';
+  /**
+   * Known empty to the model, but the CLI may have put back, after a cut turn,
+   * the message Tars typed to open it: at most this many characters, which
+   * Tars takes out before it types (pty-manager.ts, noteTurnCut).
+   */
+  refilled?: number;
 }
 
 export function emptyDraft(): Draft {
@@ -69,6 +75,7 @@ type Token =
   | { k: 'end' }
   | { k: 'clear' }
   | { k: 'ignore' }
+  | { k: 'esc' }
   | { k: 'other' };
 
 const PASTE_START = '\x1b[200~';
@@ -165,7 +172,7 @@ function tokenize(data: string): Token[] {
       const len = sequenceLength(data, i);
       const seq = data.slice(i, i + len);
       if (/^\x1b\[<[\d;]*[Mm]$/.test(seq) || /^\x1b\[M/.test(seq) || CSI_REPLY.test(seq)) tokens.push({ k: 'ignore' });
-      else tokens.push({ k: SEQUENCES[seq] ?? 'other' } as Token);
+      else tokens.push({ k: SEQUENCES[seq] ?? (seq === '\x1b' ? 'esc' : 'other') } as Token);
       i += len;
       continue;
     }
@@ -226,9 +233,14 @@ function apply(d: Draft, t: Token): Draft {
   // ever and only Ctrl+C ever got out of it, so a message held behind one
   // waited through a whole submission and a whole turn of the agent.
   if (t.k === 'enter' && d.state === 'unknown') return { text: '', cursor: 0, state: 'pending' };
+  // Lost track already: whatever the key.
   if (d.state === 'unknown') return d;
 
   switch (t.k) {
+    case 'esc':
+      // On an idle field it arms a clear or opens the rewind dialog; in a turn
+      // it cuts the turn and leaves the field. Which, only the transcript says.
+      return { ...d, state: 'unknown' };
     case 'text':
       return insert(d, t.s);
     case 'paste': {

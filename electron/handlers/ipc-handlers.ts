@@ -414,7 +414,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     // Get provider-specific env vars
     const agentProvider = getProvider(config.provider);
-    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings);
+    const providerEnvVars = agentProvider.getPtyEnvVars(id, config.projectPath, allSkills, currentSettings, { model: config.model, effort: config.effort });
 
     // BUG 6: pre-accept Claude Code's workspace trust dialog for this cwd so
     // bypass/auto-mode agents never see the first-launch trust prompt.
@@ -850,6 +850,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // not carry (see noteLaunch).
     const launched = launchSettings(agent);
     const command = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId: resumeSessionId ?? undefined,
       forkSession,
       binaryPath,
@@ -1856,6 +1857,13 @@ function registerAppSettingsHandlers(deps: IpcHandlerDependencies): void {
     }
     await loadCatalog();
     return { models: modelsForProvider(provider) };
+  });
+
+  // What a CLI offers itself, read from its own settings, never written
+  // (qwen-code: ~/.qwen/settings.json modelProviders). An unknown provider has none.
+  ipcMain.handle('models:cli', async (_event, { provider }: { provider: string }) => {
+    const known = getAllProviders().find((p) => p.id === provider);
+    return { models: known ? known.getModels() : [] };
   });
 
   ipcMain.handle('models:price', async (_event, { modelId, provider }: { modelId: string; provider?: string }) => {

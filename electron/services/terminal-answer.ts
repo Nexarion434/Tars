@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as readline from 'readline';
 import * as path from 'path';
 import { encodeProjectDirName, transcriptPath, transcriptRoots } from '../utils/resume-session';
+import { QWEN_PROVIDER_ID, qwenTranscriptPath } from './qwen-code';
 
 /**
  * The answer delegate_task returns for a task typed into an agent's permanent
@@ -31,7 +32,7 @@ function answerReader(window: Window) {
   return {
     line(line: string): void {
       if (!line.includes('"assistant"')) return;
-      let rec: { type?: unknown; timestamp?: unknown; isSidechain?: unknown; isMeta?: unknown; message?: { id?: unknown; content?: unknown } };
+      let rec: { type?: unknown; timestamp?: unknown; isSidechain?: unknown; isMeta?: unknown; uuid?: unknown; message?: { id?: unknown; content?: unknown; parts?: unknown } };
       try {
         rec = JSON.parse(line);
       } catch {
@@ -41,9 +42,14 @@ function answerReader(window: Window) {
       const at = Date.parse(String(rec.timestamp ?? ''));
       if (!Number.isFinite(at) || at < window.since || at > window.until) return;
       const content = Array.isArray(rec.message?.content) ? rec.message.content as Array<{ type?: unknown; text?: unknown }> : [];
-      const texts = content.filter((b) => b?.type === 'text' && typeof b.text === 'string' && b.text.trim()).map((b) => b.text as string);
+      // Qwen Code writes `parts` (Gemini's shape), a part of thinking marked `thought`.
+      const qwenParts = Array.isArray(rec.message?.parts) ? rec.message.parts as Array<{ text?: unknown; thought?: unknown }> : [];
+      const texts = [
+        ...content.filter((b) => b?.type === 'text' && typeof b.text === 'string' && b.text.trim()).map((b) => b.text as string),
+        ...qwenParts.filter((b) => b && b.thought !== true && typeof b.text === 'string' && b.text.trim()).map((b) => b.text as string),
+      ];
       if (!texts.length) return;
-      const messageId = typeof rec.message?.id === 'string' ? rec.message.id : null;
+      const messageId = typeof rec.message?.id === 'string' ? rec.message.id : typeof rec.uuid === 'string' ? rec.uuid : null;
       if (messageId === null || messageId !== id) {
         id = messageId;
         parts = [];
@@ -89,14 +95,14 @@ async function answerInFile(file: string, window: Window): Promise<string | null
  * which keeps its transcripts under projects/ instead of ~/.claude.
  */
 export async function readFinalAnswer(
-  task: { sessionIds: string[]; projectPath: string | null; worktreePath: string | null; startedAt: number; endedAt: number | null; configDir?: string },
+  task: { sessionIds: string[]; projectPath: string | null; worktreePath: string | null; startedAt: number; endedAt: number | null; configDir?: string; provider?: string | null },
   homeDir = os.homedir(),
 ): Promise<string | null> {
   const window = { since: task.startedAt, until: (task.endedAt ?? Date.now()) + END_SLACK_MS };
   const roots = transcriptRoots(task.worktreePath ?? undefined, task.projectPath ?? undefined);
   for (const sessionId of [...task.sessionIds].reverse()) {
     for (const root of roots) {
-      const files = [
+      const files = task.provider === QWEN_PROVIDER_ID ? [qwenTranscriptPath(root, sessionId, homeDir)] : [
         ...(task.configDir ? [path.join(task.configDir, 'projects', encodeProjectDirName(root), `${sessionId}.jsonl`)] : []),
         transcriptPath(root, sessionId, homeDir),
       ];

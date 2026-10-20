@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../../core/end-of-turn';
 import * as path from 'path';
 import { stopAcpRuns } from '../acp/delegate';
 import { dropPermissionAsks } from '../permission-asks';
@@ -6,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
-import { ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
+import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
 import { killPty } from '../../core/pty-kill';
 import { hasEndOfTurn } from '../../core/end-of-turn';
@@ -232,7 +233,7 @@ async function spawnAgentSessionInSlot(
 
   // Provider env vars: CLAUDE_* tracking vars + ANTHROPIC_BASE_URL /
   // ANTHROPIC_API_KEY for alt providers (OpenRouter, DeepSeek, Moonshot...).
-  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings);
+  const providerEnvVars = cliProvider.getPtyEnvVars(agent.id, agent.projectPath, agent.skills || [], appSettings, { model: opts.model ?? agent.model, effort: agent.effort });
 
   const keyRefusal = missingKeyRefusal(agent.provider, providerEnvVars);
   if (keyRefusal) {
@@ -339,6 +340,7 @@ async function spawnAgentSessionInSlot(
   let cliCommand: string;
   try {
     cliCommand = cliProvider.buildInteractiveCommand({
+      agentId: agent.id,
       resumeSessionId,
       forkSession,
       binaryPath,
@@ -1067,7 +1069,7 @@ function followTask(workerId: string, askerId: string): () => void {
  * Whether Tars hears this CLI's turns begin with the prompt they run (the
  * UserPromptSubmit post, which opens the ledger's task) and end: every CLI
  * whose hooks say both, or whose turns Tars reads and posts as those hooks
- * would (core/end-of-turn.ts): claude, the providers that run it, gemini
+ * would (core/end-of-turn.ts): claude, the providers that run it, Qwen Code (Claude Code's hooks), gemini
  * (BeforeAgent and AfterAgent, hooks/gemini/, since 2.0.4), and codex, from
  * its session log (services/codex-sessions.ts). opencode, amp, pi and grok
  * have no such hook.
@@ -1076,9 +1078,9 @@ function turnsHeard(agent: AgentStatus): boolean {
   return hasEndOfTurn(agent);
 }
 
-/** Whether its final answer can be read from a transcript Tars knows: Claude Code's. */
+/** Whether its final answer can be read from a transcript Tars knows: Claude Code's, Qwen Code's. */
 function transcriptRead(agent: AgentStatus): boolean {
-  return getProvider(agent.provider).binaryName === 'claude';
+  return hasClaudeHooks(agent);
 }
 
 /** What the asker is told of a task typed into a CLI whose turns Tars cannot see. */
@@ -1236,6 +1238,9 @@ async function runInTerminal(
         const cut = lastInterruptAt(agent);
         if (cut !== undefined && cut >= now.startedAt && ledger?.openTaskOf(agent.id)?.id === taskId) {
           interrupted = true;
+          // The Esc that cut it left the field as it was: what waits for the agent goes in.
+          const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
+          if (terminal) noteTurnCut(terminal);
           ledger.stateChanged({ id: agent.id, status: 'stopped' });
           if (agent.status === 'running') {
             agent.status = 'idle';

@@ -9,7 +9,9 @@ import { getProvider } from './index';
  * it has asked), nor Claude Code through an API key.
  */
 export function hasPlanMode(provider: string | null | undefined): boolean {
-  return getProvider((provider ?? undefined) as AgentProvider | undefined).id === 'claude';
+  // Claude Code's --permission-mode plan; Qwen Code's --approval-mode plan (0.25.2).
+  const id = getProvider((provider ?? undefined) as AgentProvider | undefined).id;
+  return id === 'claude' || id === 'qwen-code';
 }
 
 /**

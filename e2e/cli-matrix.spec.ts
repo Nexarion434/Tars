@@ -32,7 +32,6 @@ import { writeFakeClis } from './fake-clis.mjs';
  * A cell is green or red, with what was seen. KNOWN_RED says which cells are red on main today and why; the spec
  * fails when a cell outside it is red (a regression) and when a cell in it turns green or goes red for another
  * reason (the table is then out of date: the PR that fixed it removes its rule). On main (371d3c70), in short:
- *   - Qwen Code has no provider (feat/qwen-code);
  *   - gemini cannot call Tars: its MCP servers get no TOKEN variable (documented by gemini, not measured on a real install);
  *   - Tars reads no answer and no turn from a CLI without hooks (opencode, amp, grok); pi's are read from its session file (#483);
  * OpenRouter starts since #458 and codex since #465; gemini's tasks close since #478, and opencode and pi reach Tars's
@@ -67,9 +66,6 @@ type Rule = { from?: string[]; to?: string[]; steps: Array<Step | 'starts'>; why
 const ALL: Step[] = ['delegate.reaches', 'delegate.answer', 'turn', 'message', 'reply'];
 // First match wins: the CLIs that do not start, then what A cannot do, then what B cannot do.
 const KNOWN_RED: Rule[] = [
-  { from: ['qwen-code'], to: ['qwen-code'], steps: ['starts'], why: 'no Qwen Code provider on main (feat/qwen-code): its agent runs as claude, with flags qwen 0.25.2 refuses', seen: /refused .*dangerously-skip-permissions/ },
-  { from: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
-  { to: ['qwen-code'], steps: ALL, why: 'Qwen Code does not start (above)', seen: /qwen-code's CLI is not running/ },
   { from: ['gemini'], steps: ALL, why: 'gemini hands its MCP servers no variable named like TOKEN (documented by gemini, not measured on a real install): Tars\'s server has no token to present then, since #466 put the shared one out of its reach, and Tars answers Unauthorized', seen: /Unauthorized|B never got the message|no task reached B/ },
   { to: ['gemini'], steps: ['reply'], why: 'gemini has no identity (above; documented, not measured)', seen: /Unauthorized/ },
   { to: ['opencode', 'amp', 'grok'], steps: ['delegate.answer'], why: 'a CLI without hooks: Tars reads no answer from it', seen: /gives Tars no hook/ },

@@ -1,3 +1,4 @@
+import { hasClaudeHooks } from '../core/end-of-turn';
 import type { AgentStatus } from '../types';
 import { agents, saveAgents } from '../core/agent-manager';
 import { ptyProcesses, endTerminalTree, fieldInUse } from '../core/pty-manager';
@@ -113,10 +114,10 @@ export function factsOf(agent: AgentStatus, procs: Proc[] | undefined, now: numb
     cliRunning: cliRunningIn(terminal),
     starting: sessionStarting(agent),
     // Tars resumes the claude binary's conversations, the providers that run
-    // it included, and codex's (2.0.4, `codex resume`), and only once their
-    // transcript or rollout is on disk: what the wake resumes is what this
-    // finds (consumeResumeSessionId).
-    resumable: ['claude', 'codex'].includes(getProvider(agent.provider).binaryName) && resolveResumeSessionId(agent) !== null,
+    // it included, qwen code's (the same hooks), and codex's (2.0.4, `codex
+    // resume`), and only once their transcript or rollout is on disk: what the
+    // wake resumes is what this finds (consumeResumeSessionId).
+    resumable: (hasClaudeHooks(agent) || getProvider(agent.provider).binaryName === 'codex') && resolveResumeSessionId(agent) !== null,
     owed: holdsFor(agent.id)
       || owedKanban().some((k) => k.agentId === agent.id)
       || waitingDeliveries().some((d) => d.targetAgentId === agent.id)

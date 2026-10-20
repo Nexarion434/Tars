@@ -64,6 +64,10 @@ import { EventEmitter } from 'node:events';
  *      what it left running.
  *  D16. (W1) A turn whose prompt carries another task's id is taken as this
  *      task's turn.
+ *  D18. (#461's E2E, 19/10) The interrupt watch (agent-watch) reads the Esc
+ *      first and sets the agent at rest: the task ends `completed`, `end_turn`,
+ *      though its turn was cut. Whichever reads the cut first, it ends
+ *      `stopped`, `interrupted`.
  *  D17. (W2) A task whose turn writes no text is answered with the previous
  *      task's final message.
  *
@@ -132,6 +136,7 @@ import { noteTurn, liveTaskLedger } from '../../../../electron/services/task-led
 import { startTaskWatch, stopTaskWatch, turnInterrupted } from '../../../../electron/services/task-watch';
 import { emitAgentStatus } from '../../../../electron/services/agent-events';
 import { oneTaskQueue } from '../../../../electron/core/one-task';
+import { endInterruptedTurnsNow } from '../../../../electron/services/agent-watch';
 import { transcriptPath } from '../../../../electron/utils/resume-session';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -608,4 +613,22 @@ describe('a delegated task and the background work of a turn (the Audit\'s gate 
     expect(task.outcome).toBe('completed');
     expect(task.result, 'the first task\'s answer').not.toBe('FIRST-ANSWER');
   });
+
+  it('(D18) the interrupt watch reading the Esc first does not make the cut task end_turn', async () => {
+    orchestrator();
+    const dev = liveAgent('dev');
+    const { data } = await call('POST', '/api/agents/dev/run-task', 'lead', { task: 'a long job', answer: 'started' }).answer;
+    await until(() => typed.length === 1);
+    turnBegins(dev, promptOf(typed[0]));
+    await new Promise((r) => setTimeout(r, 30));
+    reply(dev, 'Starting the long job.');
+    const file = transcriptPath(dev.projectPath, dev.currentSessionId!, os.homedir());
+    fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date(Date.now() + 10).toISOString(), message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } }) + '\n');
+    await new Promise((r) => setTimeout(r, 20));
+    // The watch's tick, before the run's next look (every 500 ms).
+    endInterruptedTurnsNow();
+    const ended = (await call('GET', `/api/tasks/${data.taskId}?wait=10`, 'lead').answer).data.task as Record<string, unknown>;
+    expect(ended).toMatchObject({ outcome: 'stopped', stopReason: 'interrupted' });
+  });
 });
+

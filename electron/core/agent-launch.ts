@@ -1,8 +1,8 @@
+import { hasClaudeHooks } from './end-of-turn';
 import type { AgentPermissionMode, AgentProvider } from '../types';
 import { ptyProcesses } from './pty-manager';
 import { cliRunningIn } from './agent-pty';
 import { dialogOnScreen } from './terminal-mirror';
-import { getProvider } from '../providers';
 import { lastInterruptAt } from '../services/agent-truth';
 
 /**
@@ -227,7 +227,7 @@ type StartingAgent = {
 function sessionUp(agent: StartingAgent, launch: { since: number; withTask: boolean }): boolean {
   const terminal = agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined;
   if (!terminal || !cliRunningIn(terminal)) return false;
-  if (getProvider(agent.provider).binaryName !== 'claude') return true;
+  if (!hasClaudeHooks(agent)) return true;
   const at = launch.withTask ? agent.lastTurnStartedAt : agent.sessionRegisteredAt;
   return !!at && Date.parse(at) >= launch.since;
 }
