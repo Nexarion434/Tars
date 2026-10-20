@@ -304,9 +304,11 @@ for (const newInterface of [false, true]) {
     const keep = (more: Record<string, unknown>) => { Object.assign(values, more); recordValues(values); };
     const { page } = s;
     try {
-      // CLI Paths, as it opens: the codex set in the settings.
+      // CLI Paths, as it opens: the codex set in the settings, and what Tars found for the others.
       await section(page, 'AI & Providers', 'CLI Paths');
       await expect(rowOf(page, 'Codex').locator('[data-cli-path]')).toHaveText(s.codex, { timeout: 30_000 });
+      const found: Record<string, boolean> = {};
+      for (const name of DRIVEN) found[name] = (await rowOf(page, name).locator('[data-cli-path]').count()) > 0;
       await stepShot(page, '01-cli-paths');
 
       // Providers: the same CLIs ready, codex's version its number alone, its Command row naming that path.
@@ -322,15 +324,8 @@ for (const newInterface of [false, true]) {
         await expect(item).not.toContainText('checking', { timeout: 30_000 });
         ready[name] = (await item.innerText()).includes('ready');
       }
-      // And what Tars found for the others, on CLI Paths again once Providers has seen the detection end. Read as
-      // CLI Paths opened, it raced the detection: under load a CLI still being probed showed no path there and read
-      // ready here (train 2b and train 3 of 2.0.4, once in each full run).
-      await section(page, 'AI & Providers', 'CLI Paths');
-      const found: Record<string, boolean> = {};
-      for (const name of DRIVEN) found[name] = (await rowOf(page, name).locator('[data-cli-path]').count()) > 0;
       keep({ found, ready });
       expect(ready, 'Providers says ready exactly where CLI Paths shows a path').toEqual(found);
-      await section(page, 'AI & Providers', 'Providers');
       await codex.click();
       const command = page.getByRole('region', { name: 'Codex settings' }).locator('[data-settings-row]').filter({ has: page.locator('[data-settings-label]', { hasText: /^Command$/ }) });
       await expect(command.locator('[data-cli-path]')).toHaveText(s.codex);
