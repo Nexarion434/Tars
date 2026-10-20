@@ -274,7 +274,16 @@ test('an agent is created, started from a window, over the API and from a bot, r
 
     await stepShot(page, '02-started-from-window');
 
-    // ── Started over the API (spawnAgentSession), by the worker's own token ─
+    // ── Started over the API (spawnAgentSession), by the project's orchestrator's own token ─
+    // Since 2.0.4 (#449, #480) a worker starts no other agent: only Tars, the window and the project's
+    // orchestrator do. Its CLI, started from the window, is handed its terminal's token, which the
+    // stand-in writes down as it starts.
+    const lead = await call(page, (api, arg) => api.agent.create(arg as Record<string, unknown>), {
+      projectPath: project, skills: [], name: 'Launch Lead', cliPath: cli, permissionMode: 'normal', role: 'orchestrator',
+    });
+    const leadStarted = await call(page, (api, arg) => api.agent.start(arg as { id: string; prompt: string }), { id: lead.id, prompt: 'lead' });
+    expect(leadStarted, JSON.stringify(leadStarted)).toMatchObject({ success: true });
+    await launchOf(log, lead.id);
     const token = fs.readFileSync(`${log}.token`, 'utf8');
     const response = await fetch(`http://127.0.0.1:${port}/api/agents/${apiStarted.id}/start`, {
       method: 'POST',
