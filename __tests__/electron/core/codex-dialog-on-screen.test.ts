@@ -20,6 +20,11 @@ import * as os from 'node:os';
  *    than the form (an agent's panel, 86 columns in the specs), "Always allow"'s description runs onto a row of
  *    its own.
  * 5. A false alarm: a title quoted in the conversation, with no answer under it.
+ * 6. (Train 2b of 2.0.4, written before the fix) A title longer than the terminal is wide not seen: the
+ *    orchestrator layout gives a worker about 52 columns, and `Allow the claude-mgr-orchestrator MCP server to run
+ *    tool "send_message"?` is 72 characters. Wrapped by the terminal onto the next row (the stand-in prints it as
+ *    one line), or laid out by codex itself over two rows, it was read one row at a time, matched no title, and
+ *    dialogOnScreen fell with it: a message typed into the terminal could answer the dialog.
  */
 
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }));
@@ -90,5 +95,23 @@ describe("codex's approval on the screen", () => {
       '› Should it say: Allow the probe MCP server to run tool "ping"?', '', '• It asks before each call.', '', '› ',
     ]))).toBeUndefined();
     expect(codexDialogOnScreen(mirrored([...TOOL_CALL.slice(0, 9), '• Called probe.ping', '  └ pong', '', '• PONG DONE', '', '› ']))).toBeUndefined();
+  });
+});
+
+describe('a title wider than the terminal', () => {
+  const title = 'Allow the claude-mgr-orchestrator MCP server to run tool "send_message"?';
+  const at = TOOL_CALL.findIndex(row => row.includes('MCP server to run tool'));
+  const withTitle = (...rows: string[]) => [...TOOL_CALL.slice(0, at), ...rows, ...TOOL_CALL.slice(at + 1)];
+
+  it.each([72, 60, 52])('6. wrapped by a terminal of %i columns onto the next row, is seen whole', (cols) => {
+    const pty = mirrored(withTitle(`  ${title}`), cols);
+    expect(codexDialogOnScreen(pty)).toBe(title);
+    expect(dialogOnScreen(pty)).toBe(true);
+  });
+
+  it('6. laid out by codex over two rows of 52 columns, is seen whole', () => {
+    const pty = mirrored(withTitle('  Allow the claude-mgr-orchestrator MCP server to', '  run tool "send_message"?'), 52);
+    expect(codexDialogOnScreen(pty)).toBe(title);
+    expect(dialogOnScreen(pty)).toBe(true);
   });
 });
