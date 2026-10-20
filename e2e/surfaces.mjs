@@ -255,13 +255,15 @@ export const VOLATILE = {
   'cli-paths': {
     surfaces: ['settings-ai-providers', 'settings-cli-paths'],
     // Where the one detection found each CLI (2.0.4): CLI Paths shows it as it
-    // opens, and Providers' Command row names it. Masked with the line that
-    // holds it, a box as wide as the row's words whatever the path: the
-    // sandbox's stand-in CLIs (main's b422b1cd) sit under its mkdtemp home,
-    // whose length moves with the run's TMPDIR, and a mask the path's own width
-    // moved with it (6,091 and 23,655 pixels on 0b171098). The Command row's
-    // words after the path are masked with it.
-    selector: '[data-settings-hint]:has([data-cli-path])',
+    // opens, and Providers' Command row names it. Masked with the row's left
+    // column (its name and the line that holds the path), a box as wide as the
+    // column whatever the path: the sandbox's stand-in CLIs (main's b422b1cd)
+    // sit under its mkdtemp home, whose length moves with the run's TMPDIR, and
+    // a mask the path's own width moved with it (6,091 and 23,655 pixels on
+    // 0b171098). Not the line alone: sandbox-paths masks the path's span too,
+    // and the span's box stands about 1 px above its line, so a 1-px row at the
+    // path's width was left above the line's box (the Audit on #498).
+    selector: '[data-settings-row]:has([data-cli-path]) > div:first-child',
     why: 'where the CLIs are installed on the machine recording, which moves with each install and each Node version',
   },
   'log-chunk-counts': {
