@@ -42,6 +42,8 @@ import { EventEmitter } from 'events';
  *     ~/.tars-private, inside it, or holds it (the home folder, the root) is
  *     taken, by update_agent or by create_agent: the agent would be handed
  *     what agents are never handed (the Audit's L1 on #480).
+ * 12c. The same folder is taken by the window's agent:update, which calls
+ *     core/agent-update.ts without the route's check (the Audit's L4 on #480).
  *
  * When it applies (a running turn is never cut)
  * 13. A change of provider or CLI path while a CLI runs, or starts, in the
@@ -122,6 +124,7 @@ import { agents, saveAgents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses } from '../../../../electron/core/pty-manager';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
 import { restartForSettings } from '../../../../electron/core/agent-restart';
+import { updateAgent } from '../../../../electron/core/agent-update';
 import { consumeResumeSessionId, resetResumeTracking, transcriptPath } from '../../../../electron/utils/resume-session';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
@@ -404,6 +407,17 @@ describe('the folder handed besides the project', () => {
       expect(String(answer.error), folder).toMatch(/tars-private/);
     }
     expect([...agents.keys()].sort()).toEqual(['far', 'far-lead', 'lead', 'runner', 'w1', 'w2']);
+  });
+
+  it('12c. the window\'s agent:update refuses the same, and writes nothing', async () => {
+    for (const folder of never) {
+      const before = recordOf('w2');
+      const result = await updateAgent({ id: 'w2', secondaryProjectPath: folder });
+      expect(result.success, folder).toBe(false);
+      expect(result.success ? '' : result.error, folder).toMatch(/tars-private/);
+      expect(recordOf('w2'), folder).toEqual(before);
+    }
+    expect(saveAgents).not.toHaveBeenCalled();
   });
 });
 

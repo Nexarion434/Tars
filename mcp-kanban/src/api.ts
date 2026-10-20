@@ -19,9 +19,8 @@ const REQUEST_TIMEOUT_MS = 60_000;
 export async function apiRequest(method: string, path_: string, body?: Record<string, unknown>): Promise<unknown> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   // This agent's own token, minted by Tars when it spawned the process. The
-  // kanban tools act for an agent, so the shared ~/.tars-private/api-token, which
-  // names none and which readApiToken would fall back to, is no use here: Tars
-  // refuses it with a message that says so.
+  // kanban tools act for an agent, so the shared ~/.tars-private/api-token,
+  // which names none, is no use here: Tars refuses it with a message that says so.
   // Sent only once the port proved it is the Tars that started this CLI (tokenToPresent).
   if (AGENT_API_TOKEN && await tokenToPresent(REQUEST_TIMEOUT_MS)) headers["Authorization"] = `Bearer ${AGENT_API_TOKEN}`;
   const { status, data } = await send(http, {

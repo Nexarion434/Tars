@@ -304,7 +304,7 @@ describe('8b. every refusal of Hermes says what to do (2.0.4)', () => {
     const error = (r as { error: string }).error;
     expect(error).toMatch(/Settings, Hermes/);
     expect(error).toMatch(/[Nn]othing was written/);
-    expect(error).toMatch(/notes\//);
+    expect(error).toMatch(/reports\//);
   };
 
   it('when Hermes refuses (a token it no longer takes)', async () => {

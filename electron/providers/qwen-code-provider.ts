@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { AppSettings } from '../types';
 import { DATA_DIR } from '../constants';
+import { handedSecondaryFolder } from '../utils/handed-folder';
 import { keyEnvFor } from '../services/cli-keys';
 import {
   QWEN_MODEL_ID, QWEN_ORCHESTRATOR_EXCLUDED, qwenApprovalMode, qwenMcpServers, qwenModels, saveQwenHooks,
@@ -60,9 +61,11 @@ export class QwenCodeProvider implements CLIProvider {
       command += ` --resume ${shellQuote(params.resumeSessionId)}`;
       if (params.forkSession) command += ' --fork-session';
     }
-    if (params.secondaryProjectPath) command += ` --include-directories ${shellQuote(params.secondaryProjectPath)}`;
+    // Never ~/.tars-private (utils/handed-folder.ts).
+    const secondary = handedSecondaryFolder(params.secondaryProjectPath);
+    if (secondary) command += ` --include-directories ${shellQuote(secondary)}`;
     for (const vp of params.obsidianVaultPaths ?? []) {
-      if (fs.existsSync(vp)) command += ` --include-directories ${shellQuote(vp)}`;
+      if (handedSecondaryFolder(vp) && fs.existsSync(vp)) command += ` --include-directories ${shellQuote(vp)}`;
     }
     command += ` --include-directories ${shellQuote(DATA_DIR)}`;
 
