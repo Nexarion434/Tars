@@ -14,7 +14,7 @@ Nothing runs in the cloud. No account, no server, no analytics. The state lives 
 
 ```
 Electron 44.9 main process (Node 24.22, Chromium 152; electron/, ~47k LOC)
-├── BrowserWindow  → Next.js 16.3 static export (src/, ~44k LOC)
+├── BrowserWindow  → Next.js 16.4 static export (src/, ~44k LOC)
 │                     contextIsolation, nodeIntegration off, app:// protocol
 │                     ↕ 214 IPC channels via contextBridge (electron/preload.ts)
 │
@@ -117,7 +117,7 @@ The mirror of a `claude` PTY also watches how it is repainted. Fullscreen Claude
 
 ### Renderer
 
-Next.js 16.3 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `src/app/api` temporarily moved aside). React 19, Tailwind 4, Zustand, xterm 5.3, framer-motion. Served from `app://-/index.html` in production, `http://localhost:3000` in dev. The app:// scheme has the `codeCache` privilege: V8 keeps the compiled bundle in the profile, and a later launch does not compile it again (OPERATIONS.md, "Run the app").
+Next.js 16.4 App Router, static-exported (`ELECTRON_BUILD=1 next build` with `src/app/api` temporarily moved aside). React 19, Tailwind 4, Zustand, xterm 5.3, framer-motion. Served from `app://-/index.html` in production, `http://localhost:3000` in dev. The app:// scheme has the `codeCache` privilege: V8 keeps the compiled bundle in the profile, and a later launch does not compile it again (OPERATIONS.md, "Run the app").
 
 ---
 
