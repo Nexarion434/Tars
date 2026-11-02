@@ -1,5 +1,7 @@
 # Tars cloud, step 2: a spoke sees and drives a hub's agents. Implementation Plan
 
+> **Superseded on 2026-11-02** by `2026-11-02-tars-cloud.md`: a headless Tars server reached over SSH replaces the hub, the tailnet pairing and the relay. Kept for its analysis of the fork's code, which the new plan reuses.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** a Tars that pairs with a hub Tars on the same tailnet shows the hub's agents mixed into its Dashboard and Agents page (machine badge, machine filter, offline line), with a live terminal it can type into and size, and starts, stops (with a reason) and messages them where the hub allows Drive. Off by default: a Tars with no pairing and serving off behaves exactly as `upstream/main`.
