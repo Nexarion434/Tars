@@ -854,21 +854,38 @@ no window: the same agents, terminals, hooks and local API. What it adds is a
 door for its clients and what each client may do there. Measured on the fork's
 `up/tars-cloud`, on Windows 11 and on GitHub's ubuntu runner, in November 2026.
 
-**The door listens on 127.0.0.1 only** (`services/cloud/door.ts`, on the API
-port plus 2). Nothing on a network reaches it: a desktop comes through its own
-SSH forward, Hermes from the server itself. Its gates, in this order: a caller
-whose address is not loopback; a path that is not a route (404, before any
+**The door is a Unix socket in the private folder** (`services/cloud/door.ts`,
+`door-socket.ts`): `~/.tars-private/door.sock`, 0600 in a folder that must be
+0700, owned by the server's user and not a link. It was a loopback port until
+the review of 6096a87d found the hole: while the server is down (a restart, a
+boot), any local process, another account or a container on the host's network
+can bind that port first, answer `/hello` with the real server's id (which
+`/hello` gives anyone) and collect the credentials desktops send. A path in a
+folder no one else can enter cannot be taken that way. A link at the socket's
+path is never followed, a file there is never removed, a socket another door
+answers on is refused, and a socket left by a killed server is removed. A door
+that cannot open ends the server (exit 1), so systemd or the container tries
+again, and `status` names the socket the door listens on. A desktop reaches it
+with `ssh -L 127.0.0.1:<local port>:<socket path>`; nothing on any network
+does. Its gates, in this order: a path that is not a route (404, before any
 credential is read, so no answer tells whether one is good); an `Origin`
-header, which only a web page sends; a `Host` other than this loopback port,
-which is what a page rebinding a name to a desktop's forward would send; a body
-over 64 KB, refused unread; then the client's credential and the route's scope.
+header, which only a web page sends; a `Host` other than `localhost` or
+`127.0.0.1`, which is what a page rebinding a name to a desktop's forward would
+send; a body over 64 KB, refused unread; then the client's credential and the
+route's scope. 128 connections at most, headers within 10 s, a request within
+30 s; 64 streams in all, 32 a client, a reader 1 MB behind cut.
 An agent is looked up only after those, and an unknown one gets one sentence
 that names none.
 
-**SSH access is the real authority over a server.** Whoever can `ssh` there as
-its user can mint a credential (`cli.js clients add`), read the private folder,
-or run a shell. A credential scopes what a client does through the door; it is
-no boundary against whoever holds that SSH key.
+**SSH access is the real authority over a server, and so is every agent on
+it.** Whoever can `ssh` there as its user can mint a credential (`cli.js clients
+add`), read the private folder, or run a shell; and every agent and MCP server
+the server runs, running as that same user, can do the same. A credential
+scopes what a client does through the door; it is no boundary against that
+user, nor against an agent driven into minting one. What makes a mint visible:
+the server logs each client that appears in its clients file, and `clients
+list` shows where each was minted from (over SSH, with the address, or on the
+server itself).
 
 **A client credential is not the master token.** 32 random bytes, shown once on
 stdout when minted, kept only as their sha256 in `cloud-clients.json` in the
@@ -877,7 +894,7 @@ constant time and reads the file again at every request: a revoked or expired
 credential, a malformed one, and the master API token itself are refused. The
 local API never accepts a client credential. `clients list` shows no
 credential and no hash. A revoke ends that client's open streams within half a
-second (the file is watched); an expiry ends them at the next re-check.
+second (the file is watched); an expiry, or losing see, ends them at the next re-check (15 s).
 
 **Scopes.** `see`: the fleet, an agent's screen, its live output. `drive`:
 start, stop with a reason, message, keys, size. `create` and `files` come with
@@ -902,9 +919,10 @@ agent "<name>": `); it never types keys and never sets a size, whatever scopes i
 holds, since those are a person at a keyboard.
 
 **One server per data folder.** A server refuses a folder another live server
-holds (`server.json` in the private folder) and one whose API port a Tars
-already answers. A desktop started second on a server's folder is not refused
-yet: it fails to take the API port instead.
+holds (`server.json` in the private folder, created exclusively; a pid that
+/proc shows running something else is a server that died) and one whose API
+port a Tars already answers. A desktop started second on a server's folder is
+not refused yet (M2): it fails to take the API port instead.
 
 Each refusal above has a test written before the code and shown to fail on a
 deliberately broken version (`__tests__/electron/cloud/`,

@@ -20,7 +20,10 @@ export function runClientsCommand(
   try {
     if (verb === 'add') {
       const input = JSON.parse(stdin || '{}') as Parameters<typeof addClient>[1];
-      const { client, credential } = addClient(files.clientsFile, input);
+      // Where this mint comes from, for clients list: never taken from the input, which anyone could write.
+      const from = (process.env.SSH_CONNECTION ?? '').split(' ')[0];
+      const via = /^[0-9A-Fa-f:.]{2,45}$/.test(from) ? `ssh from ${from}` : 'on the server';
+      const { client, credential } = addClient(files.clientsFile, { ...input, via });
       out(JSON.stringify({ id: client.id, credential, serverId: serverIdentity(files.serverFile).id }));
       return 0;
     }

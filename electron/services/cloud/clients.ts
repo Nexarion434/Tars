@@ -75,7 +75,7 @@ function cleanScopes(scopes: unknown): Scope[] {
 
 export function addClient(
   file: string,
-  input: { name: string; kind: ClientKind; scopes: Scope[]; days?: number },
+  input: { name: string; kind: ClientKind; scopes: Scope[]; days?: number; via?: string },
   now = Date.now(),
 ): { client: ClientView; credential: string } {
   const name = cleanName(input.name);
@@ -97,6 +97,7 @@ export function addClient(
     hash: hashOf(credential),
     createdAt: new Date(now).toISOString(),
     ...(input.days ? { expiresAt: new Date(now + input.days * 86_400_000).toISOString() } : {}),
+    ...(input.via ? { mintedVia: cleanName(input.via) } : {}),
   };
   write(file, [...clients, client]);
   const { hash: _hash, ...view } = client;
@@ -141,16 +142,22 @@ export function may(client: CloudClient, scope: Scope): boolean {
 }
 
 /** Calls onRevoke with each client id that leaves the file, polling every intervalMs. Returns the stop. */
-export function watchClients(file: string, onRevoke: (id: string) => void, intervalMs = 1000): () => void {
-  const idsOf = (): Set<string> | null => {
+export function watchClients(file: string, onRevoke: (id: string) => void, intervalMs = 1000, onAdd?: (client: ClientView) => void): () => void {
+  const clientsNow = (): CloudClient[] | null => {
     const result = read(file);
-    return result.ok ? new Set(result.clients.map(c => c.id)) : null;
+    return result.ok ? result.clients : null;
+  };
+  const idsOf = (): Set<string> | null => {
+    const clients = clientsNow();
+    return clients ? new Set(clients.map(c => c.id)) : null;
   };
   let known = idsOf() ?? new Set<string>();
   const listener = () => {
-    const now = idsOf();
-    if (!now) return;
+    const clients = clientsNow();
+    if (!clients) return;
+    const now = new Set(clients.map(c => c.id));
     for (const id of known) if (!now.has(id)) onRevoke(id);
+    for (const { hash: _hash, ...view } of clients) { void _hash; if (!known.has(view.id)) onAdd?.(view); }
     known = now;
   };
   fs.watchFile(file, { interval: intervalMs, persistent: false }, listener);

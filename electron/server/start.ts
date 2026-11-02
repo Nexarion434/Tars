@@ -17,6 +17,15 @@ export interface StartDeps {
   timeoutMs?: number;
 }
 
+/**
+ * What a detached server inherits: the caller's environment without its SSH session (SSH_AUTH_SOCK would hand
+ * every agent the desktop's forwarded SSH agent), marked as started by `start`.
+ */
+export function detachedEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const kept = Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('SSH_')));
+  return { ...kept, TARS_SERVER_STARTED_BY: 'cli' } as unknown as NodeJS.ProcessEnv;
+}
+
 export async function startServer(deps: StartDeps): Promise<ServerStatus> {
   const first = deps.status();
   if (first.running) return first;
@@ -27,7 +36,7 @@ export async function startServer(deps: StartDeps): Promise<ServerStatus> {
   for (;;) {
     const status = deps.status();
     if (status.running) return status;
-    if (now() >= deadline) throw new Error('tars-server did not start: see DATA_DIR/logs/server.log');
+    if (now() >= deadline) throw new Error('tars-server did not start: see ~/.tars-private/logs/server.log, or journalctl --user -u tars-server');
     await deps.sleep(250);
   }
 }

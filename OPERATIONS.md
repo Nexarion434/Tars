@@ -2535,21 +2535,24 @@ node electron/dist/server/cli.js status     # one JSON line: running, pid, apiPo
 As a systemd user unit: `scripts/server/install-user-unit.sh` fills the template
 `scripts/server/tars-server.service` (this Node, this checkout, this PATH), enables and starts it,
 and prints the one command that needs root: `loginctl enable-linger <user>`, so it keeps running
-after logout. A detached start logs to `~/.tars/logs/server.log`; the unit logs to the journal
+after logout. A detached start logs to `~/.tars-private/logs/server.log` (not under `~/.tars`, which agents can write) and leaves the SSH session's variables behind; the unit logs to the journal
 (`journalctl --user -u tars-server`).
 
 One server per data folder: it refuses to start on a folder another server holds, or whose API
 port a Tars already answers.
 
-### Ports
+### Where it listens
 
 | What | Where |
 |---|---|
 | Local API (agents, hooks, MCP servers) | `127.0.0.1:31415`, as on the desktop |
-| The door, for clients | `127.0.0.1:31417` (API port + 2; moves with `DOROTHY_API_PORT`) |
+| The door, for clients | the Unix socket `~/.tars-private/door.sock` (0600, its folder 0700) |
 
-Nothing listens on another address. A desktop reaches the door through an SSH forward
-(`ssh -N -L <local>:127.0.0.1:31417 <host>`).
+Nothing listens on another address, and no port is the door: a port could be taken by any local
+process while the server is down (SECURITY.md §8). A desktop reaches the door through an SSH
+forward to the socket: `ssh -N -L 127.0.0.1:<local port>:/home/<user>/.tars-private/door.sock <host>`.
+A door that cannot open (a link or a file at its path, a folder others can enter, another door on
+it) ends the server with exit 1, and `status` names the socket once it listens.
 
 ### Clients
 
@@ -2561,7 +2564,7 @@ node electron/dist/server/cli.js clients revoke c_1a2b3c4d   # its open streams 
 ```
 
 Scopes: `see`, `drive`, `create`, `files`. Kinds: `desktop`, `outside-agent` (Hermes: never types
-or resizes). An optional `"days"` sets a lifetime. The input goes on stdin, never on the command
+or resizes). An optional `"days"` sets a lifetime. `clients list` says where each was minted (`ssh from <address>`, or `on the server`, which an agent there can do too), and the server's log says each mint as it happens. The input goes on stdin, never on the command
 line, so a name never reaches a remote shell.
 
 ### Files

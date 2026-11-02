@@ -5,6 +5,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { addClient, revokeClient } from '../../../electron/services/cloud/clients';
 import { startDoor, type Door } from '../../../electron/services/cloud/door';
+import { doorSocketPath } from '../../../electron/services/cloud/door-socket';
+
+/** A socket in a folder of its own (0700, as mkdtemp makes it); a named pipe on Windows. */
+function testSocketPath(): string {
+  return doorSocketPath(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-')));
+}
 import type { DriveRequest } from '../../../electron/services/cloud/drive';
 
 /**
@@ -27,7 +33,7 @@ function setup() {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-drive-')), 'cloud-clients.json');
   const driven: Array<{ request: DriveRequest; caller: string }> = [];
   const deps = {
-    port: 0,
+    socketPath: testSocketPath(),
     clientsFile: file,
     identity: () => ({ id: '0123456789abcdef', name: 'vps', version: '9.9.9' }),
     fleet: () => ({}),
@@ -47,9 +53,9 @@ async function open(deps: Parameters<typeof startDoor>[0]): Promise<Door> {
   return d;
 }
 
-function post(port: number, urlPath: string, body: string, credential?: string, beforeBody?: () => void): Promise<{ status: number; body: string }> {
+function post(socketPath: string, urlPath: string, body: string, credential?: string, beforeBody?: () => void): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers: { 'Content-Type': 'application/json', ...(credential ? { Authorization: `Bearer ${credential}` } : {}) } }, res => {
+    const req = http.request({ socketPath, path: urlPath, method: 'POST', headers: { 'Content-Type': 'application/json', ...(credential ? { Authorization: `Bearer ${credential}` } : {}) } }, res => {
       let text = '';
       res.on('data', c => { text += c; });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
@@ -68,8 +74,8 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     const d = await open(deps);
-    expect((await post(d.port, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'ls\r' }), credential)).status).toBe(200);
-    expect((await post(d.port, '/cloud/v1/agents/nova/size', JSON.stringify({ cols: 100, rows: 30 }), credential)).status).toBe(200);
+    expect((await post(d.path, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'ls\r' }), credential)).status).toBe(200);
+    expect((await post(d.path, '/cloud/v1/agents/nova/size', JSON.stringify({ cols: 100, rows: 30 }), credential)).status).toBe(200);
     expect(driven).toEqual([
       { request: { action: 'keys', agentId: 'nova', data: 'ls\r' }, caller: 'Mac' },
       { request: { action: 'size', agentId: 'nova', cols: 100, rows: 30 }, caller: 'Mac' },
@@ -80,9 +86,9 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     const d = await open(deps);
-    expect((await post(d.port, '/cloud/v1/agents/nova/start', '{}', credential)).status).toBe(200);
-    expect((await post(d.port, '/cloud/v1/agents/nova/stop', JSON.stringify({ reason: 'done' }), credential)).status).toBe(200);
-    expect((await post(d.port, '/cloud/v1/agents/nova/message', JSON.stringify({ text: 'hello' }), credential)).status).toBe(200);
+    expect((await post(d.path, '/cloud/v1/agents/nova/start', '{}', credential)).status).toBe(200);
+    expect((await post(d.path, '/cloud/v1/agents/nova/stop', JSON.stringify({ reason: 'done' }), credential)).status).toBe(200);
+    expect((await post(d.path, '/cloud/v1/agents/nova/message', JSON.stringify({ text: 'hello' }), credential)).status).toBe(200);
     expect(driven).toEqual([
       { request: { action: 'start', agentId: 'nova' }, caller: 'Mac' },
       { request: { action: 'stop', agentId: 'nova', reason: 'done' }, caller: 'Mac' },
@@ -94,7 +100,7 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see'] });
     const d = await open(deps);
-    const answer = await post(d.port, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x' }), credential);
+    const answer = await post(d.path, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x' }), credential);
     expect(answer.status).toBe(403);
     expect(JSON.parse(answer.body).error).toMatch(/vps does not let Mac drive/);
     expect(driven).toEqual([]);
@@ -105,7 +111,7 @@ describe('drive routes', () => {
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see'] });
     const d = await open(deps);
     const status = await new Promise<number | 'no answer'>(resolve => {
-      const req = http.request({ host: '127.0.0.1', port: d.port, path: '/cloud/v1/agents/nova/keys', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': '1000', Authorization: `Bearer ${credential}` } }, res => { res.resume(); resolve(res.statusCode ?? 0); });
+      const req = http.request({ socketPath: d.path, path: '/cloud/v1/agents/nova/keys', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': '1000', Authorization: `Bearer ${credential}` } }, res => { res.resume(); resolve(res.statusCode ?? 0); });
       req.on('error', () => resolve('no answer'));
       req.flushHeaders();
       setTimeout(() => { resolve('no answer'); req.destroy(); }, 1500);
@@ -117,7 +123,7 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { client, credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     const d = await open(deps);
-    const answer = await post(d.port, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x' }), credential, () => revokeClient(file, client.id));
+    const answer = await post(d.path, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x' }), credential, () => revokeClient(file, client.id));
     expect(answer.status).toBe(401);
     expect(driven).toEqual([]);
   });
@@ -126,7 +132,7 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     const d = await open(deps);
-    const answer = await post(d.port, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x'.repeat(70 * 1024) }), credential).catch(() => ({ status: 413, body: '' }));
+    const answer = await post(d.path, '/cloud/v1/agents/nova/keys', JSON.stringify({ data: 'x'.repeat(70 * 1024) }), credential).catch(() => ({ status: 413, body: '' }));
     expect(answer.status).toBe(413);
     expect(driven).toEqual([]);
   });
@@ -135,14 +141,14 @@ describe('drive routes', () => {
     const { deps, file, driven } = setup();
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     const d = await open(deps);
-    expect((await post(d.port, '/cloud/v1/agents/nova/keys', 'not json', credential)).status).toBe(400);
+    expect((await post(d.path, '/cloud/v1/agents/nova/keys', 'not json', credential)).status).toBe(400);
     expect(driven).toEqual([]);
   });
 
   it('answer 401 for a known and an unknown agent alike without a credential', async () => {
     const { deps } = setup();
     const d = await open(deps);
-    expect((await post(d.port, '/cloud/v1/agents/nova/keys', '{"data":"x"}')).status).toBe(401);
-    expect((await post(d.port, '/cloud/v1/agents/ghost/keys', '{"data":"x"}')).status).toBe(401);
+    expect((await post(d.path, '/cloud/v1/agents/nova/keys', '{"data":"x"}')).status).toBe(401);
+    expect((await post(d.path, '/cloud/v1/agents/ghost/keys', '{"data":"x"}')).status).toBe(401);
   });
 });

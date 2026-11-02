@@ -6,6 +6,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { writeFakeClis } from '../../../e2e/fake-clis.mjs';
+import { doorSocketPath } from '../../../electron/services/cloud/door-socket';
 
 /**
  * M1's proof (plan Task 8): a Tars server under plain Node, its agent a real
@@ -91,7 +92,7 @@ async function boot(port: number): Promise<() => string> {
   child.stdout!.on('data', c => { output += String(c); });
   child.stderr!.on('data', c => { output += String(c); });
   const deadline = Date.now() + 120_000;
-  const markers = ['App initialization complete', 'Agent API server running on', '[cloud] door on 127.0.0.1:'];
+  const markers = ['App initialization complete', 'Agent API server running on', '[cloud] door on '];
   while (!markers.every(m => output.includes(m))) {
     if (child.exitCode !== null || Date.now() > deadline) throw new Error(`no boot (exit ${child.exitCode}):\n${output.slice(-3000)}`);
     await new Promise(r => setTimeout(r, 250));
@@ -99,9 +100,9 @@ async function boot(port: number): Promise<() => string> {
   return () => output;
 }
 
-function call(port: number, method: string, urlPath: string, credential: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
+function call(socketPath: string, method: string, urlPath: string, credential: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: urlPath, method, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' } }, res => {
+    const req = http.request({ socketPath, path: urlPath, method, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' } }, res => {
       let text = '';
       res.on('data', c => { text += c; });
       res.on('end', () => { let json = {}; try { json = JSON.parse(text); } catch { /* not JSON */ } resolve({ status: res.statusCode ?? 0, json }); });
@@ -111,10 +112,10 @@ function call(port: number, method: string, urlPath: string, credential: string,
   });
 }
 
-function openStream(port: number, credential: string): { text: () => string; ended: () => boolean; close: () => void } {
+function openStream(socketPath: string, credential: string): { text: () => string; ended: () => boolean; close: () => void } {
   let text = '';
   let ended = false;
-  const req = http.get({ host: '127.0.0.1', port, path: '/cloud/v1/agents/nova/stream', headers: { Authorization: `Bearer ${credential}` } }, res => {
+  const req = http.get({ socketPath, path: '/cloud/v1/agents/nova/stream', headers: { Authorization: `Bearer ${credential}` } }, res => {
     res.on('data', c => { text += c; });
     res.on('end', () => { ended = true; });
     res.on('close', () => { ended = true; });
@@ -133,7 +134,7 @@ async function until<T>(read: () => T | Promise<T>, ok: (v: T) => boolean, ms: n
   }
 }
 
-const nova = async (door: number, credential: string) =>
+const nova = async (door: string, credential: string) =>
   ((await call(door, 'GET', '/cloud/v1/fleet', credential)).json.agents as Array<Record<string, unknown>> | undefined)?.find(a => a.agentId === 'nova');
 const typedLines = (log: string) => (fs.existsSync(log) ? fs.readFileSync(log, 'utf-8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) as { typed?: string }; } catch { return {}; } }).map(r => r.typed).filter((t): t is string => typeof t === 'string') : []);
 
@@ -146,7 +147,7 @@ describe.skipIf(process.platform === 'win32')('a client drives a real agent on a
     const env = { ...process.env, DOROTHY_API_PORT: String(port) };
     const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] }), env }).toString());
     await boot(port);
-    const door = port + 2;
+    const door = doorSocketPath(path.join(HOME, '.tars-private'));
     const credential = minted.credential as string;
 
     expect(await nova(door, credential)).toMatchObject({ agentId: 'nova', cliRunning: false });
@@ -186,7 +187,7 @@ describe.skipIf(process.platform === 'win32')('a client drives a real agent on a
     const env = { ...process.env, DOROTHY_API_PORT: String(port) };
     const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] }), env }).toString());
     const credential = minted.credential as string;
-    const door = port + 2;
+    const door = doorSocketPath(path.join(HOME, '.tars-private'));
     await boot(port);
     expect((await call(door, 'POST', '/cloud/v1/agents/nova/start', credential, {})).status).toBe(200);
     await until(() => nova(door, credential), a => a?.cliRunning === true, 60_000, 'the CLI to run');

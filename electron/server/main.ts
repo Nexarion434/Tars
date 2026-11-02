@@ -67,7 +67,10 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
 
   // The door for the server's clients, beside the boot: it reads the fleet at
   // each request, so a request before the agents are loaded sees fewer.
-  const { CLOUD_DOOR_PORT } = await import('../constants');
+  const { PRIVATE_DIR } = await import('../constants');
+  const { doorSocketPath } = await import('../services/cloud/door-socket');
+  const { recordDoor } = await import('./lock');
+  const socketPath = doorSocketPath(PRIVATE_DIR);
   const { agents } = await import('../core/agent-manager');
   const { ptyProcesses } = await import('../core/pty-manager');
   const { cliRunningIn } = await import('../core/agent-pty');
@@ -87,7 +90,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const terminalOf = (agent: { ptyId?: string }) => (agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
   try {
     const door = await startDoor({
-      port: CLOUD_DOOR_PORT,
+      socketPath,
       clientsFile: privatePath('cloud-clients.json'),
       identity: () => ({ ...identity, version: electron.app.getVersion() }),
       fleet: client => fleetAnswer(client, identity, agents.values(), agent => {
@@ -144,10 +147,19 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
         },
       }),
     });
-    console.log(`[cloud] door on 127.0.0.1:${door.port}`);
+    recordDoor(privatePath('server.json'), door.path);
+    // A credential minted while the server runs, by SSH or by anything running as its user (its own agents
+    // included), is said in its log: the clients list says where it came from.
+    const { watchClients } = await import('../services/cloud/clients');
+    watchClients(privatePath('cloud-clients.json'), () => {}, 1000, client => {
+      console.log(`[cloud] a client was minted: ${client.name} (${client.id}, ${client.kind}, ${client.scopes.join(' ')}), ${client.mintedVia ?? 'from an unknown place'}`);
+    });
+    console.log(`[cloud] door on ${door.path}`);
   } catch (err) {
-    // The agents keep running; only the clients cannot reach them, which status says.
-    console.error(`[cloud] the door could not open on 127.0.0.1:${CLOUD_DOOR_PORT}: ${(err as Error).message}`);
+    // Fatal: a server without its door serves no client, and a door that did not open may be one another
+    // process holds. A non-zero exit lets systemd (or the container) try again.
+    console.error(`[cloud] the door could not open on ${socketPath}: ${(err as Error).message}`);
+    electron.app.exit(1);
   }
 }
 

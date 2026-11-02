@@ -15,8 +15,6 @@ export const API_PORT = Number(process.env.DOROTHY_API_PORT) || 31415;
  * the real app never collides.
  */
 export const OPENAI_BRIDGE_PORT = API_PORT + 1;
-/** A Tars server's door for its clients, on 127.0.0.1 only (services/cloud/door.ts); moves with DOROTHY_API_PORT. */
-export const CLOUD_DOOR_PORT = API_PORT + 2;
 
 export const OLD_DATA_DIR = path.join(os.homedir(), '.claude-manager');
 

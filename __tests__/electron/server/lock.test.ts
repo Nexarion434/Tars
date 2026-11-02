@@ -6,7 +6,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { answersHealth, claimDataFolder, readServerRecord, serverStatus } from '../../../electron/server/lock';
-import { startServer } from '../../../electron/server/start';
+import { detachedEnv, startServer } from '../../../electron/server/start';
 
 /**
  * One Tars server per data folder, and never a server on the folder a Tars
@@ -51,8 +51,9 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-function sleeper(): Promise<number> {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+/** A live process; one that looks like a Tars server in /proc unless asServer is false. */
+function sleeper(asServer = true): Promise<number> {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', ...(asServer ? ['electron/dist/server/main.js'] : [])], { stdio: 'ignore' });
   children.push(child.pid!);
   return Promise.resolve(child.pid!);
 }
@@ -73,6 +74,15 @@ describe('claimDataFolder', () => {
     const claim = await claimDataFolder({ file, apiPort: await freePort(), record });
     expect(claim).toEqual({ ok: false, heldBy: 'server', pid, apiPort: 31415 });
     expect(readServerRecord(file)?.pid).toBe(pid);
+  });
+
+  it.skipIf(!fs.existsSync('/proc/self/cmdline'))('takes over a record whose pid now runs something else', async () => {
+    const file = tmpFile();
+    const pid = await sleeper(false);
+    fs.writeFileSync(file, JSON.stringify({ ...record, pid, apiPort: 31415 }));
+    const claim = await claimDataFolder({ file, apiPort: await freePort(), record });
+    expect(claim.ok).toBe(true);
+    expect(readServerRecord(file)?.pid).toBe(process.pid);
   });
 
   it('takes over the record of a server that died', async () => {
@@ -135,6 +145,13 @@ describe('serverStatus', () => {
     const pid = await sleeper();
     fs.writeFileSync(file, JSON.stringify({ ...record, pid, apiPort: 31415 }));
     expect(serverStatus(file)).toEqual({ running: true, ...record, pid, apiPort: 31415 });
+  });
+});
+
+describe('detachedEnv', () => {
+  it('keeps no SSH session in what a detached server and its agents inherit', () => {
+    const env = detachedEnv({ PATH: '/usr/bin', HOME: '/home/tars', SSH_AUTH_SOCK: '/tmp/ssh-agent.sock', SSH_CONNECTION: '1 2 3 4', SSH_CLIENT: '1 2 3', SSH_TTY: '/dev/pts/1' });
+    expect(env).toEqual({ PATH: '/usr/bin', HOME: '/home/tars', TARS_SERVER_STARTED_BY: 'cli' });
   });
 });
 

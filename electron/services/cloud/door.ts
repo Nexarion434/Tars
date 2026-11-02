@@ -1,41 +1,46 @@
 import * as http from 'http';
-import type { AddressInfo } from 'net';
+import { closeDoorSocket, prepareDoorSocket } from './door-socket';
 import { admit, may, watchClients } from './clients';
 import type { DriveCaller, DriveOutcome, DriveRequest } from './drive';
 import type { CloudClient, Scope } from './types';
 
 /**
  * The door of a Tars server (docs/superpowers/plans/2026-11-02-tars-cloud.md,
- * Task 6): a second node:http listener beside the local API, on 127.0.0.1 only.
- * A desktop reaches it through its SSH forward, Hermes from the server itself;
- * nothing on any network does. It admits client credentials alone (never the
- * master API token, which no route reads or returns), each within its scopes,
- * read from the clients file at every request.
+ * Task 6): a second node:http listener beside the local API, on a Unix socket in
+ * the private folder (door-socket.ts), which no other account or container can
+ * take while the server is down. A desktop reaches it through its SSH forward
+ * (ssh -L 127.0.0.1:<local>:<socket>); nothing on any network does. It admits
+ * client credentials alone (never the master API token, which no route reads or
+ * returns), each within its scopes, read from the clients file at every request.
  *
- * Every request goes through the same gates, in this order, and the first
- * that fails answers: a caller whose address is not loopback (403); a path
- * that is not a route (404, before any credential is looked at, so no answer
- * tells whether one is good); an Origin header, which only a web page sends
- * (403); a Host other than this loopback port, which is what a page rebinding a
- * name to the forward would send (403); a body over 64 KB (413, unread); then,
- * for every route but hello, the credential (401) and the route's scope (403).
- * Only then is an agent looked up, with one sentence for any it does not know.
+ * Every request goes through the same gates, in this order, and the first that
+ * fails answers: a path that is not a route (404, before any credential is
+ * looked at, so no answer tells whether one is good); an Origin header, which
+ * only a web page sends (403); a Host other than localhost or 127.0.0.1, which is
+ * what a page rebinding a name to a desktop's forward would send (403); a body
+ * over 64 KB (413, unread); then, for every route but hello, the credential
+ * (401) and the route's scope (403). Only then is an agent looked up, with one
+ * sentence for any it does not know. 128 connections at most, headers within
+ * 10 s, a request within 30 s.
  *
- * A stream (one agent's live output, server-sent events) is held by its
- * client: 32 at most each; ended at once when the client is revoked (the
- * clients file is watched), at the next re-check once it expires, and when its
- * reader falls 4 MB behind.
+ * A stream (one agent's live output, server-sent events) is held by its client:
+ * 32 at most each and 64 in all; ended at once when the client is revoked (the
+ * clients file is watched), at the next re-check (15 s) once it expires or loses
+ * see, and when its reader falls 1 MB behind.
  */
 
 export const MAX_BODY = 64 * 1024;
 export const MAX_STREAMS_PER_CLIENT = 32;
-export const MAX_BEHIND = 4 * 1024 * 1024;
+/** All clients together: what one server holds open at most. */
+export const MAX_STREAMS = 64;
+export const MAX_BEHIND = 1024 * 1024;
+export const MAX_CONNECTIONS = 128;
 
 export interface AgentScreen { screen: string; cliRunning: boolean; cols: number; rows: number }
 
 export interface DoorDeps {
-  /** CLOUD_DOOR_PORT; 0 for an ephemeral port (tests). */
-  port: number;
+  /** The Unix socket the door listens on (door-socket.ts): PRIVATE_DIR/door.sock on a server. */
+  socketPath: string;
   clientsFile: string;
   identity(): { id: string; name: string; version: string };
   fleet(client: CloudClient): unknown;
@@ -52,8 +57,8 @@ export interface DoorDeps {
 }
 
 export interface Door {
-  port: number;
-  address: string;
+  /** The socket it listens on. */
+  path: string;
   /** Open streams, all clients: for tests and logs. */
   streamCount(): number;
   close(): Promise<void>;
@@ -63,12 +68,6 @@ interface Request { client: CloudClient | null; credential: string | null; agent
 interface Route { method: string; pattern: RegExp; scope: Scope | null; handle(r: Request): void }
 
 const AGENT_PATH = '([A-Za-z0-9_-]{1,64})';
-
-export function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return false;
-  const v4 = address.startsWith('::ffff:') ? address.slice(7) : address;
-  return v4 === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v4);
-}
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -101,6 +100,10 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
 
   const openStream = ({ client, credential, agentId, req, res }: Request) => {
     const own = streams.get(client!.id) ?? new Set();
+    if (streamCount() >= MAX_STREAMS) {
+      json(res, 429, { error: `This server holds ${MAX_STREAMS} streams at most.` });
+      return;
+    }
     if (own.size >= MAX_STREAMS_PER_CLIENT) {
       json(res, 429, { error: `${MAX_STREAMS_PER_CLIENT} streams at most for one client.` });
       return;
@@ -136,7 +139,8 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
       })
       : () => {};
     const recheck = setInterval(() => {
-      if (!admit(deps.clientsFile, credential ?? undefined, now())) end('revoked');
+      const still = admit(deps.clientsFile, credential ?? undefined, now());
+      if (!still || !may(still, 'see')) end('revoked');
       else res.write(': keepalive\n\n');
     }, deps.recheckMs ?? 15_000);
     own.add(end);
@@ -240,10 +244,6 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
   ];
 
   const server = http.createServer((req, res) => {
-    if (!isLoopbackAddress(req.socket.remoteAddress)) {
-      json(res, 403, { error: 'This door answers this machine alone.' });
-      return;
-    }
     const pathname = (req.url ?? '').split('?')[0];
     let route: Route | undefined;
     let agentId: string | undefined;
@@ -263,8 +263,8 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
       json(res, 403, { error: 'No web page may call this door.' });
       return;
     }
-    const { port } = server.address() as AddressInfo;
-    if (req.headers.host !== `127.0.0.1:${port}` && req.headers.host !== `localhost:${port}`) {
+    // Through the forward, a desktop's client says its own loopback port; a page rebinding a name says the name.
+    if (!/^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/.test(req.headers.host ?? '')) {
       json(res, 403, { error: 'Wrong host for this door.' });
       return;
     }
@@ -291,13 +291,16 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     route.handle({ client, credential, agentId, req, res });
   });
 
-  return new Promise((resolve, reject) => {
+  server.maxConnections = MAX_CONNECTIONS;
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 30_000;
+
+  return prepareDoorSocket(deps.socketPath).then(() => new Promise<Door>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(deps.port, '127.0.0.1', () => {
-      const address = server.address() as AddressInfo;
+    server.listen(deps.socketPath, () => {
+      closeDoorSocket(deps.socketPath);
       resolve({
-        port: address.port,
-        address: address.address,
+        path: deps.socketPath,
         streamCount,
         close: () => new Promise(done => {
           stopWatching();
@@ -307,5 +310,8 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
         }),
       });
     });
+  }), err => {
+    stopWatching();
+    throw err;
   });
 }

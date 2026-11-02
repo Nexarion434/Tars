@@ -46,7 +46,7 @@ async function run(command: string | undefined, args: string[]): Promise<number>
     await serve({ dev: args.includes('--dev') });
     return -1;
   }
-  const { DATA_DIR, privatePath } = await import('../constants');
+  const { privatePath } = await import('../constants');
   const { serverStatus } = await import('./lock');
   const file = privatePath('server.json');
   const { serverIdentity } = await import('../services/cloud/server-identity');
@@ -62,20 +62,21 @@ async function run(command: string | undefined, args: string[]): Promise<number>
     return runClientsCommand(args, stdin, { clientsFile: privatePath('cloud-clients.json'), serverFile }, line => process.stdout.write(`${line}\n`));
   }
   if (command === 'start') {
-    const { startServer } = await import('./start');
+    const { detachedEnv, startServer } = await import('./start');
     try {
       printJson(await startServer({
         status: () => serverStatus(file),
         hasUnit,
         startUnit: () => execFileSync('systemctl', ['--user', 'start', UNIT], { stdio: 'ignore' }),
         spawnDetached: () => {
-          const logs = path.join(DATA_DIR, 'logs');
+          // In the private folder: the agents are handed ~/.tars, and must not write the server's log.
+          const logs = privatePath('logs');
           fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
           const log = fs.openSync(path.join(logs, 'server.log'), 'a', 0o600);
           spawn(process.execPath, [path.join(__dirname, 'main.js')], {
             detached: true,
             stdio: ['ignore', log, log],
-            env: { ...process.env, TARS_SERVER_STARTED_BY: 'cli' },
+            env: detachedEnv(process.env),
           }).unref();
         },
         sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),

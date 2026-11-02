@@ -5,6 +5,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { doorSocketPath } from '../../../electron/services/cloud/door-socket';
 
 /**
  * A Tars server boots: plain Node, no window, no display, the whole of main.ts
@@ -29,6 +30,9 @@ const ENTRY = path.join(ROOT, 'electron', 'dist', 'server', 'main.js');
 const GUARD = path.join(ROOT, '__tests__', 'fixtures', 'no-electron.cjs');
 const CLI = path.join(ROOT, 'electron', 'dist', 'server', 'cli.js');
 
+/** The door of a server started in this suite's HOME: its socket in the private folder. */
+const DOOR = () => doorSocketPath(path.join(os.homedir(), '.tars-private'));
+
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -40,9 +44,9 @@ function freePort(): Promise<number> {
   });
 }
 
-function get(port: number, urlPath: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+function get(target: number | string, urlPath: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.get({ host: '127.0.0.1', port, path: urlPath, headers }, res => {
+    const req = http.get({ ...(typeof target === 'string' ? { socketPath: target } : { host: '127.0.0.1', port: target }), path: urlPath, headers }, res => {
       let body = '';
       res.on('data', chunk => { body += chunk; });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
@@ -140,11 +144,11 @@ describe('tars-server', () => {
     expect(status.serverId).toBe(printed.serverId);
   }, 60_000);
 
-  it('opens its door on API_PORT + 2: hello, the fleet for a client, and never the master token', async () => {
-    const { port } = await boot([...BOOTED, '[cloud] door on 127.0.0.1:']);
+  it('opens its door on its socket: hello, the fleet for a client, and never the master token', async () => {
+    const { port } = await boot([...BOOTED, '[cloud] door on ']);
     const env = { ...process.env, DOROTHY_API_PORT: String(port) };
     const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see'] }), env }).toString());
-    const door = port + 2;
+    const door = DOOR();
     const hello = await get(door, '/cloud/v1/hello');
     expect(hello.status).toBe(200);
     expect(JSON.parse(hello.body).serverId).toBe(minted.serverId);
@@ -160,10 +164,10 @@ describe('tars-server', () => {
   it('status --json reads the running server, in one line', async () => {
     // Inherited by whatever a systemd unit starts, GitHub's runner included: it says nothing of who started this server.
     process.env.INVOCATION_ID = 'inherited-from-a-unit';
-    const { port } = await boot();
+    const { port } = await boot([...BOOTED, '[cloud] door on ']);
     delete process.env.INVOCATION_ID;
     const out = execFileSync(process.execPath, [CLI, 'status', '--json'], { env: { ...process.env, DOROTHY_API_PORT: String(port) } }).toString();
     expect(out.trim().split(/\r?\n/)).toHaveLength(1);
-    expect(JSON.parse(out)).toMatchObject({ running: true, pid: child!.pid, apiPort: port, startedBy: 'shell' });
+    expect(JSON.parse(out)).toMatchObject({ running: true, pid: child!.pid, apiPort: port, startedBy: 'shell', door: DOOR() });
   }, 180_000);
 });

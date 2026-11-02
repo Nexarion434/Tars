@@ -23,6 +23,8 @@ export interface CloudClient {
   createdAt: string;
   /** Absent: until revoked. */
   expiresAt?: string;
+  /** Where it was minted from: 'ssh from <address>' or 'on the server' (an agent or a shell there). */
+  mintedVia?: string;
 }
 
 /** What a listing shows: never the hash, never a credential. */

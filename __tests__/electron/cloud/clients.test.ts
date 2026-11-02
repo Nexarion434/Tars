@@ -156,6 +156,34 @@ describe('watchClients', () => {
   });
 });
 
+describe('a mint is visible', () => {
+  it('tells a running server of a new client, without its hash', async () => {
+    const f = files();
+    addClient(f.clients, { ...desktop, scopes: ['see'] });
+    const added: unknown[] = [];
+    stops.push(watchClients(f.clients, () => {}, 100, client => added.push(client)));
+    const { client } = addClient(f.clients, { name: 'Agent minted', kind: 'desktop', scopes: ['see'], via: 'on the server' });
+    const deadline = Date.now() + 2000;
+    while (added.length === 0 && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+    expect(added).toEqual([client]);
+    expect(JSON.stringify(added)).not.toMatch(/hash/);
+  });
+
+  it('records where a credential was minted from: SSH and its address, or the server itself', () => {
+    const f = files();
+    const saved = process.env.SSH_CONNECTION;
+    try {
+      process.env.SSH_CONNECTION = '100.76.84.44 51234 100.101.245.29 22';
+      runClientsCommand(['add', '--json'], JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see'] }), { clientsFile: f.clients, serverFile: f.server }, () => {});
+      delete process.env.SSH_CONNECTION;
+      runClientsCommand(['add', '--json'], JSON.stringify({ name: 'Here', kind: 'desktop', scopes: ['see'] }), { clientsFile: f.clients, serverFile: f.server }, () => {});
+    } finally {
+      if (saved === undefined) delete process.env.SSH_CONNECTION; else process.env.SSH_CONNECTION = saved;
+    }
+    expect(listClients(f.clients).map(c => [c.name, c.mintedVia])).toEqual([['Mac', 'ssh from 100.76.84.44'], ['Here', 'on the server']]);
+  });
+});
+
 describe('serverIdentity', () => {
   it('keeps one id across calls', () => {
     const f = files();
