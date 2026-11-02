@@ -4,7 +4,7 @@
 
 **Goal:** Nicolas's cloud projects live on his Linux server, where a Tars without a window keeps their agents, terminals and conversations running 24/7, and every desktop Tars he opens (Mac, PC) shows them beside its local projects, sees and drives them, creates new ones there, and moves a local project there on one click; Hermes, on the same server, acts on them as an outside agent with its own credential.
 
-**Architecture:** the main process's core reaches Electron through one `Host` interface, with an Electron implementation (the desktop, unchanged) and a headless one (plain Node 22, no display), so `tars-server serve` runs the same agent manager, PTYs, hooks and local API as a systemd user service. The server adds a *door*: a second `node:http` listener bound to `127.0.0.1` only, admitting scoped client credentials minted on the server. A desktop reaches it with Nicolas's own SSH key: it starts the server if it is down, mints its credential over the SSH session, and forwards a local loopback port to the door; nothing new listens on any network, and no master token travels.
+**Architecture:** on a server, `require('electron')` answers a headless module (`electron/host/headless-electron.ts`, installed first by the server's entry; the desktop never loads it), so `tars-server serve` runs the core's own files unchanged under plain Node 22, no display: the same agent manager, PTYs, hooks and local API, as a systemd user service. The server adds a *door*: a second `node:http` listener bound to `127.0.0.1` only, admitting scoped client credentials minted on the server. A desktop reaches it with Nicolas's own SSH key: it starts the server if it is down, mints its credential over the SSH session, and forwards a local loopback port to the door; nothing new listens on any network, and no master token travels.
 
 **Tech Stack:** Node 22 (`.nvmrc`) and Electron 44.9 main process (TypeScript, CommonJS, `tsc -p electron/tsconfig.json`), `node:http`, `node:crypto`, `node-pty` 1.1 (N-API: one binary serves Node and Electron), `better-sqlite3` 13 (built for Node by `npm ci`, rebuilt for Electron only by `electron-builder`), the system `ssh` client (OpenSSH on macOS, Windows and Linux) through `spawn` with an argv array, systemd user units, Next.js 16.4 renderer (React 19, xterm 5), vitest (its ubuntu CI job is the first Linux run of the core), Playwright, the `pen` CLI.
 
@@ -57,20 +57,23 @@
 | Desktop | Tars as today, plus a cloud link when a server is configured | nothing new beyond `127.0.0.1:<ephemeral>` while a forward is up | its own master token (never leaves), `cloud-link.json` (host, server id, client id, credential) |
 | Hermes (M5) | its own process on the server | nothing | its own client credential, used on `127.0.0.1:31417` directly |
 
-**The seam.** Measured on `upstream/main` (dc623b59): 46 of 301 non-test files under `electron/` import `electron`; walking value imports from the core (`api-server`, `agent-manager`, `pty-manager`, `telegram-bot`, `mcp-orchestrator`, `hooks-manager`) reaches 228 modules and 15 of those 46. Twelve are core and go through the host: `core/agent-manager.ts`, `core/pty-manager.ts` (`app.once`, `app.exit`), `services/api-server.ts`, `services/api-routes/{agent-routes,types}.ts`, `services/mcp-orchestrator.ts` (`app.isPackaged`, `app.getAppPath`, three `ipcMain.handle`), `services/state-mod.ts` (`app.getPath('userData')`), `services/telegram-bot.ts`, `utils/{broadcast,hooks-path,index,mcp-node}.ts`. Three are reached by one edge each and are cut, not wrapped: `handlers/chat-handlers.ts` (through `task-routes.ts`'s `liveChatStore`), `core/window-manager.ts` and `core/edit-context-menu.ts` (through `discord-bot.ts` and `slack-bot.ts`'s `getMainWindow`). The other 31 (window, tray, menus, dialogs, the 22 IPC handler files, the updater, `secret-handoff.ts`) stay desktop-only and untouched. The core already copes with `mainWindow === null` (a macOS Tars runs with every window closed), so the headless host is "a desktop whose window never opens", minus the `electron` module.
+**The seam.** Measured on `upstream/main` (dc623b59): 46 of 301 non-test files under `electron/` import `electron`; walking value imports from the core (`api-server`, `agent-manager`, `pty-manager`, `telegram-bot`, `mcp-orchestrator`, `hooks-manager`) reaches 228 modules and 15 of those 46 (`core/{agent-manager,pty-manager,window-manager,edit-context-menu}.ts`, `handlers/chat-handlers.ts`, `services/{api-server,mcp-orchestrator,state-mod,telegram-bot}.ts`, `services/api-routes/{agent-routes,types}.ts`, `utils/{broadcast,hooks-path,index,mcp-node}.ts`). None of them calls Electron at load; inside functions they use `app` (`getAppPath`, `getPath`, `isPackaged`, `getVersion`, `once`, `exit`, `whenReady`, `focus`, `dock`), `BrowserWindow` (`getAllWindows`, `fromWebContents`, `new`), `Notification`, `ipcMain.handle`, and, in window code the server never runs, `protocol`, `shell`, `Menu`. The core already copes with `mainWindow === null` (a macOS Tars runs with every window closed), so a server is "a desktop whose window never opens".
 
-| Host member | Desktop (`ElectronHost`) | Headless (`HeadlessHost`) |
+**Plan change (measured while executing Task 1, 2026-11-02):** the first version of this plan routed those 12 core files through a `host()` call. But 136 test files mock `electron` and import one of those modules directly, many asserting through the mocked `app` or `BrowserWindow`: a `host()` seam would have meant editing a large share of them, and touching 12 core files. The seam is instead the `electron` module itself: the server answers `require('electron')` with `createHeadlessElectron(...)`, and the core, its tests and the desktop stay exactly as they are. Requiring Electron's own npm package is avoided on a server for a second reason: with Electron 44, loading it downloads Electron's binary when it is missing (seen in this worktree).
+
+| `electron` member | Desktop | Server (`headless-electron.ts`) |
 |---|---|---|
-| `mainWindow()` | the window getter `main.ts` already has | always `null` |
-| `broadcast(channel, ...args)` | `BrowserWindow.getAllWindows()` and `webContents.send`, as `utils/broadcast.ts` does | an in-process event bus the door can subscribe to |
-| `appPath()`, `resourcesPath()`, `unpacked(p)` | `app.getAppPath()`, `process.resourcesPath`, `app.asar` to `app.asar.unpacked` | the install root (where `hooks/`, `skills/`, `mcp-*/dist` live) for both; `unpacked` is the identity |
-| `userDataPath()` | `app.getPath('userData')` | `$XDG_STATE_HOME/tars-server` when absolute, else `~/.local/state/tars-server` |
-| `isPackaged()` | `app.isPackaged` | `true` unless started with `--dev`, so the overrides a packaged Tars refuses stay refused on a server |
-| `version()`, `name()` | `app.getVersion()`, `app.getName()` | `package.json` at the install root, `tars-server` |
-| `notify(note)` | `new Notification(...)` where supported | a log line and an event on the bus (Telegram and Hermes already reach the phone) |
-| `once('before-quit' or 'will-quit')`, `quit()`, `exit(code)` | `app.once`, `app.quit`, `app.exit` | SIGTERM and SIGINT run the same shutdown steps, then `process.exit` |
+| `app.getAppPath()` | the app | the install root (where `hooks/`, `skills/`, `mcp-*/dist` live), which also makes the `app.asar` rewrites a no-op |
+| `app.getPath(name)` | Electron's | `userData`: `$XDG_STATE_HOME/tars-server` when absolute, else `~/.local/state/tars-server`; `home`, `temp`, `appData`, `logs`; any other name throws naming it |
+| `app.isPackaged` | Electron's | `true` unless started with `--dev`, so the overrides a packaged Tars refuses stay refused on a server |
+| `app.getVersion()`, `getName()` | Electron's | the install root's `package.json`, `tars-server` |
+| `app.whenReady()`, `isReady()`, `on`, `once`, `quit()`, `exit(code)` | Electron's | ready at once; `quit()` runs `before-quit` then `will-quit` listeners, either can prevent it, as the shutdown steps do; `exit` ends the process |
+| `BrowserWindow` | windows | none to find (`getAllWindows()` is `[]`, `fromWebContents` and `getFocusedWindow` `null`), `new BrowserWindow()` throws |
+| `Notification` | system notifications | `isSupported()` false; `show()` writes a line to the log (Telegram and Hermes already reach the phone) |
+| `ipcMain` | the renderer's calls | handlers accepted, never called |
+| `dialog`, `shell`, `Menu`, `Tray`, `protocol`, `screen`, `clipboard`, `nativeImage`, `powerSaveBlocker`, `safeStorage` | Electron's | any call throws `A headless Tars has no <name>`: a window-only path reached on a server is loud |
 
-Nothing in the headless host opens a dialog, a tray or a URL: none of the 15 reached files uses `dialog`, `shell`, `Menu` or `clipboard`, and Task 2's graph test keeps it that way.
+Broadcasts to windows vanish on a server (no window); the door gets agent output from `onAgentOutput` (Task 6), not from IPC.
 
 **Native modules.** `node-pty` 1.1.0 is an N-API addon: the same binary loads in Node and Electron (prebuilds for darwin and win32; on Linux it compiles at `npm ci`, so the server needs `build-essential` and `python3`). `better-sqlite3` 13.0.3 is installed for Node by `npm ci` (measured: both load under plain Node 24 from this worktree) and rebuilt for Electron only by `electron-builder` at packaging. The server installs with `ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci`, then `tsc -p electron/tsconfig.json` and the `mcp-*` builds, and runs `node electron/dist/server/cli.js serve`. No rebuild step is added for the desktop.
 
@@ -114,7 +117,7 @@ M2 to M5 each get their own detailed plan (same format) once the milestone befor
 
 Each branch is cut from `upstream/main` and takes its PR's commits from `up/tars-cloud` (a clean history from `upstream/main`, so cherry-picking from it is allowed; never from the old-history branches).
 
-1. `refactor: the main process reaches electron through one host` (Tasks 1 to 3): no behaviour change. The one Noah must agree with first: it touches 15 core files and `main.ts`. Recommended: an issue describing it once M1 is proven, before M2's UI, on Nicolas's go.
+1. `refactor: a headless electron, and the core started from one function` (Tasks 1 to 3): no behaviour change. The one Noah must agree with first: it answers `require('electron')` with another module on a server, and moves the core's start out of `main.ts`. Recommended: an issue describing it once M1 is proven, before M2's UI, on Nicolas's go.
 2. `feat: run tars without a window, as a server` (Task 4).
 3. `feat: clients of a tars server, and what they may see` (Tasks 5 and 6).
 4. `feat: drive a tars server's agents from a client` (Task 7).
@@ -148,17 +151,10 @@ Critical lane, per milestone, in this order:
 
 | File | Responsibility |
 |---|---|
-| `electron/host/types.ts` (new) | `Host`, `HostEvents` |
-| `electron/host/index.ts` (new) | `setHost`, `host` |
-| `electron/host/asar.ts` (new) | `unpackedPathOf`, today duplicated in `utils/index.ts:17-19` and `utils/hooks-path.ts:16-19` |
-| `electron/host/electron-host.ts` (new) | `createElectronHost` |
-| `electron/host/headless-host.ts` (new) | `createHeadlessHost`, the event bus |
-| the 12 core files listed above | `electron` values replaced by `host()` calls; `import type` kept |
-| `electron/services/live-chat-store.ts` (new) | `liveChatStore`, moved out of `handlers/chat-handlers.ts` |
-| `electron/handlers/orchestrator-handlers.ts` (new) | the three `orchestrator:*` IPC handlers moved out of `services/mcp-orchestrator.ts` |
-| `electron/services/discord-bot.ts`, `slack-bot.ts` | `host().mainWindow()` instead of `window-manager`'s `getMainWindow` |
+| `electron/host/headless-electron.ts` (new, Task 1, done) | `createHeadlessElectron`: the `electron` a server loads |
+| `electron/host/install-headless.ts` (new, Task 1, done) | `installHeadlessElectron`: `require('electron')` answers it, Electron's package never loaded |
 | `electron/core/start-core.ts` (new) | `startCore`: what keeps agents alive and reachable without a window, in `main.ts`'s order |
-| `electron/main.ts` | `setHost(createElectronHost(...))` first; calls `startCore`; registers `orchestrator-handlers` |
+| `electron/main.ts` | calls `startCore` where those calls were |
 | `electron/server/main.ts`, `cli.ts`, `lock.ts` (new) | the headless entry, `serve`, `start`, `status`, `clients`; the data-folder claim |
 | `electron/constants/index.ts` | `CLOUD_DOOR_PORT` |
 | `electron/services/cloud/types.ts`, `clients.ts`, `server-identity.ts` (new) | scopes, clients, the credential store, the server's id and name |
@@ -173,43 +169,37 @@ Critical lane, per milestone, in this order:
 
 ## M1: a headless Tars server, proven locally
 
-### Task 1: The host seam
+### Task 1: The headless electron (done, see the plan change above)
 
 **Files:**
-- Create: `electron/host/types.ts`, `electron/host/index.ts`, `electron/host/asar.ts`, `electron/host/electron-host.ts`, `electron/host/headless-host.ts`
-- Test: `__tests__/electron/host/host.test.ts`, `__tests__/electron/host/headless-host.test.ts`
+- Create: `electron/host/headless-electron.ts`, `electron/host/install-headless.ts`
+- Test: `__tests__/electron/host/headless-electron.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `export interface Host { readonly kind: 'desktop' | 'headless'; mainWindow(): BrowserWindow | null; broadcast(channel: string, ...args: unknown[]): void; appPath(): string; resourcesPath(): string; unpacked(p: string): string; userDataPath(): string; isPackaged(): boolean; version(): string; name(): string; notify(note: { title: string; body: string }): void; once(event: 'before-quit' | 'will-quit', listener: () => void): void; quit(): void; exit(code: number): void }` (`BrowserWindow` by `import type` only)
-  - `export interface HostEvents { on(channel: string, listener: (...args: unknown[]) => void): () => void }`
-  - `setHost(h: Host): void`, `host(): Host` (throws `Tars host not set: main.ts or server/main.ts calls setHost() first` when unset)
-  - `unpackedPathOf(p: string): string`
-  - `createElectronHost(getMainWindow: () => BrowserWindow | null): Host`
-  - `createHeadlessHost(opts: { root: string; dev: boolean; log: (line: string) => void }): Host & { events: HostEvents; emitQuit(): Promise<void> }`
+  - `createHeadlessElectron(opts: { root: string; dev: boolean; log: (line: string) => void; exit: (code: number) => void })` returning `{ app, BrowserWindow, Notification, ipcMain, dialog, shell, Menu, MenuItem, Tray, protocol, screen, clipboard, nativeImage, powerSaveBlocker, safeStorage }` as the table above says; `export type HeadlessElectron`
+  - `installHeadlessElectron(electron: HeadlessElectron): () => void` (resolves `electron` to the id `tars:headless-electron` served from the require cache; a second install throws; the returned function uninstalls)
 
-- [ ] **Step 1: Write the failing tests.** Header, the ways it fails: `host()` before `setHost` returning anything; a headless `mainWindow()` other than `null`; a broadcast that misses a subscriber, or stops at a subscriber that throws; `unpackedPathOf` touching a path without `app.asar`, or missing `app.asar` inside a longer path; a relative `XDG_STATE_HOME` used (the XDG spec makes it invalid); `isPackaged()` false on a headless host started without `--dev`; `version()` read from anywhere but the root's `package.json`; `notify` on a headless host throwing or writing nothing; `once('before-quit')` listeners not run, or run twice, by `emitQuit`.
-- [ ] **Step 2:** run `npx vitest run __tests__/electron/host`. Expected: FAIL (modules missing).
-- [ ] **Step 3:** implement. `ElectronHost` delegates each member to the exact call the core makes today (see the table above); it is the only file under `electron/host/` that imports `electron` by value.
-- [ ] **Step 4:** run it again. Expected: PASS.
-- [ ] **Step 5:** commit `refactor: a host interface for the main process, desktop and headless`.
+- [x] **Step 1: Write the failing tests.** Header: userData outside `$XDG_STATE_HOME/tars-server`, or a relative `XDG_STATE_HOME` used; an unknown `getPath` name answered; `isPackaged` false without `--dev`; the version read elsewhere than the root's `package.json`; a `before-quit` listener not run, run twice, or a prevented quit exiting; a window found, made or focused; a notification throwing or leaving no log line; `dialog`, `shell`, `Menu`, `protocol`, `Tray`, `screen`, `clipboard` answering; the install hook not answering `require('electron')`, installed twice, or left behind.
+- [x] **Step 2:** `npx vitest run __tests__/electron/host`: FAIL (module missing).
+- [x] **Step 3:** implement.
+- [x] **Step 4:** PASS, 19 of 19. Bites: `stateHome()` taking a relative `XDG_STATE_HOME` turns `ignores a relative XDG_STATE_HOME` red.
+- [x] **Step 5:** commit `feat: a headless electron for a tars server`.
 
-### Task 2: The core reaches no Electron
+### Task 2: The server's graph asks only what the headless electron answers
 
 **Files:**
-- Create: `__tests__/electron/host/server-graph.test.ts`, `electron/services/live-chat-store.ts`, `electron/handlers/orchestrator-handlers.ts`
-- Modify: the 12 core files (wiring: `host().<member>()` where they used `app`, `BrowserWindow`, `Notification`; `utils/broadcast.ts` becomes `host().broadcast`), `electron/services/api-routes/task-routes.ts` and `electron/handlers/chat-handlers.ts` (import `liveChatStore` from its new module), `electron/services/discord-bot.ts`, `electron/services/slack-bot.ts`, `electron/services/mcp-orchestrator.ts` (its `ipcMain.handle` calls move out), `electron/main.ts` (`setHost(createElectronHost(getMainWindow))` before the first line that can reach the core; `registerOrchestratorHandlers()` where the handlers were registered)
+- Create: `__tests__/electron/host/server-graph.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1.
-- Produces: `CORE_ROOTS` in the test (the six roots measured above; Task 4 adds `electron/server/main.ts`); `registerOrchestratorHandlers(): void`.
+- Produces: `CORE_ROOTS` in the test (the six roots measured above; Task 4 adds `electron/server/main.ts`).
 
-- [ ] **Step 1: Write the failing tests.** `server-graph.test.ts` walks value imports (not `import type`) from `CORE_ROOTS` through relative specifiers and fails on any `electron` import, printing the chain that reaches it. A second case imports every core module with no host set and expects no throw: no `host()` call at module load. Header: a value import of `electron` anywhere in the core's graph; a `host()` call at module scope; a dynamic `import('electron')` or `require('electron')` missed by the walk.
-- [ ] **Step 2:** run it. Expected: FAIL listing the 15 files.
-- [ ] **Step 3:** route the 12 files through the host, cut the three edges, move the orchestrator handlers. No other change in those files: same calls, same order, same messages.
-- [ ] **Step 4:** run it. Expected: PASS. **Show it bites:** put `import { app } from 'electron'` back in `utils/hooks-path.ts`; the test turns red naming the chain; record it in the commit body.
-- [ ] **Step 5: The desktop is unchanged.** Both `tsc`, `npm test`, `npm run lint`, then `npm run e2e:auto` (it runs the whole suite for any `electron/` change). Expected: every surface keeps its reference screenshot, zero page errors. Then a dev run of the desktop: agents start, the tray, a notification, quit and relaunch with restart recovery.
-- [ ] **Step 6:** commit `refactor: the core reaches electron only through the host`.
+- [ ] **Step 1: Write the failing tests.** The walk follows value imports (not `import type`) from `CORE_ROOTS` through relative specifiers, collects every `<member>.<name>` and `new <member>` used on an `electron` import in the files it reaches, and fails on any the headless electron does not answer (`app` and `BrowserWindow` members it lacks, or a member of `Menu`, `shell`, `protocol` and the like outside the window files the server never calls: `core/window-manager.ts`, `core/edit-context-menu.ts`, `handlers/chat-handlers.ts`), printing the chain that reaches it. A second case imports every reached module under `vi.mock('electron', () => createHeadlessElectron(...))` and expects no throw at load. Header: a new `electron` member used by the core and missing here; an `electron` call at module scope; a dynamic `import('electron')` or `require('electron')` missed by the walk.
+- [ ] **Step 2:** run it against a headless electron with `app.getAppPath` removed. Expected: FAIL naming `app.getAppPath` and its chain (the test must be shown to bite before it can pass).
+- [ ] **Step 3:** no product change is expected; a member the walk finds missing is added to `headless-electron.ts` with its own failing case in Task 1's test file first.
+- [ ] **Step 4:** PASS.
+- [ ] **Step 5:** commit `test: the core asks a server's electron only what it answers`.
 
 ### Task 3: `startCore`, out of `main.ts`
 
@@ -224,9 +214,9 @@ Critical lane, per milestone, in this order:
 
 Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents alive and reachable without a window (known so far: `loadAgents`, `startAgentAutosave`, `configureStatusHooks`, the MCP setup, `initVaultDb`, `startHermesRelay`, `startRelayRouting`, `startHermesSessionWatch`, `initTelegramBot`, `initSlackBot`, `startDiscordBot`, `initApiServer` with the OpenAI bridge, `startRestartRecovery`, `startAgentWatch`, `startTaskWatch`, the stall, sleep, Codex and Pi session watches, `startCliUpdates`, `startErrorTriage`, `startTmpRetention`); **desktop** is whatever draws, asks the person at the screen, or updates the app (`setupProtocolHandler`, `createWindow`, `initTray`, `registerIpcHandlers` and every `register*Handlers`, `startHealthMonitor`, `installDesktopShell`, `initAutoUpdater`, the data-folder notice, `startOverseerWatch`). A call that fits neither is listed in the commit body with where it went and why. `CoreHandle.stop` feeds `runShutdownSteps`.
 
-- [ ] **Step 1: Write the failing tests.** Header: `startCore` twice; `stop()` leaving the API port bound (a second `startCore` in the same process cannot listen); `startCore` with a headless host touching the window. The test runs `startCore` under a headless host in the vitest sandbox HOME on an API port of its own.
+- [ ] **Step 1: Write the failing tests.** Header: `startCore` twice; `stop()` leaving the API port bound (a second `startCore` in the same process cannot listen); `startCore` under the headless electron touching a window or failing on a member it lacks. The test runs `startCore` with `vi.mock('electron', () => createHeadlessElectron(...))` in the vitest sandbox HOME on an API port of its own.
 - [ ] **Step 2:** FAIL. **Step 3:** move the calls, keeping their order. **Step 4:** PASS.
-- [ ] **Step 5: The desktop is unchanged:** as Task 2 Step 5, full suite.
+- [ ] **Step 5: The desktop is unchanged.** Both `tsc`, `npm test`, `npm run lint`, then `npm run e2e:auto` (the whole suite for any `electron/` change): every surface keeps its reference screenshot, zero page errors; then a dev run: agents start, the tray, a notification, quit and relaunch with restart recovery.
 - [ ] **Step 6:** commit `refactor: the core starts from one function the desktop calls`.
 
 ### Task 4: `tars-server`: the entry, its CLI, its lock
@@ -245,7 +235,7 @@ Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents al
 
 - [ ] **Step 1: Write the failing tests.** Header: `serve` requiring `electron` (it runs under `node -r __tests__/fixtures/no-electron.cjs`, which throws on any load of `electron`); `refuses a data folder another Tars uses` (a fake health server on the API port: `serve` exits 1 naming it, writes nothing under `DATA_DIR`); a stale lock blocking; `status --json` printing more than one line or a log line on stdout; SIGTERM leaving a port bound or exiting non-zero after 10 s; `start` when already running starting a second one.
 - [ ] **Step 2:** run `npx tsc -p electron/tsconfig.json && npx vitest run __tests__/electron/server`. Expected: FAIL.
-- [ ] **Step 3:** implement `server/main.ts`: `setHost(createHeadlessHost(...))`, `claimDataFolder`, `startCore`, signals to the shutdown steps. The MCP bundles may be absent (a dev checkout): the server logs it once and runs on. Write the unit and `server-install.sh` (the steps OPERATIONS.md lists in Task 8, `set -eu`, no `sudo` inside: what needs root is printed for the person to run); neither is run against the server in M1.
+- [ ] **Step 3:** implement `server/main.ts`: `installHeadlessElectron(createHeadlessElectron(...))` before any other require, then `claimDataFolder`, `startCore`, signals to the shutdown steps. The MCP bundles may be absent (a dev checkout): the server logs it once and runs on. Write the unit and `server-install.sh` (the steps OPERATIONS.md lists in Task 8, `set -eu`, no `sudo` inside: what needs root is printed for the person to run); neither is run against the server in M1.
 - [ ] **Step 4:** PASS, then the graph test again with the new root. Expected: PASS.
 - [ ] **Step 5:** commit `feat: run tars without a window, as a server`.
 
@@ -295,7 +285,7 @@ Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents al
 - Test: `__tests__/electron/core/sender-line-machine.test.ts` (a case per reader), `__tests__/electron/cloud/drive.test.ts`, `__tests__/electron/cloud/door-drive.test.ts`
 
 **Interfaces:**
-- Consumes: `launchAgent` (`core/agent-launch.ts:80`), `sessionStarting` (`:173`), `wakeAgent` (`core/agent-asleep.ts:137`), `stopAgent`, `noteRestartAfterStop` (`core/agent-stop.ts`), `writeProgrammaticInput` (`core/pty-manager.ts:1288`), `writeHumanInput` (`:686`), `resizeTerminalMirror` (`core/terminal-mirror.ts:179`), `rememberPanelSize` (`:520`), `host().broadcast`, `scheduleTick`.
+- Consumes: `launchAgent` (`core/agent-launch.ts:80`), `sessionStarting` (`:173`), `wakeAgent` (`core/agent-asleep.ts:137`), `stopAgent`, `noteRestartAfterStop` (`core/agent-stop.ts`), `writeProgrammaticInput` (`core/pty-manager.ts:1288`), `writeHumanInput` (`:686`), `resizeTerminalMirror` (`core/terminal-mirror.ts:179`), `rememberPanelSize` (`:520`), `broadcastToAllWindows`, `scheduleTick`.
 - Produces:
   - `export type DriveRequest = { action: 'start'; agentId: string } | { action: 'stop'; agentId: string; reason: string } | { action: 'message'; agentId: string; text: string } | { action: 'keys'; agentId: string; data: string } | { action: 'size'; agentId: string; cols: number; rows: number }`
   - `export interface DriveCaller { name: string; kind: ClientKind }`; `export type DriveOutcome = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409; error: string }`
