@@ -248,7 +248,9 @@ Task 4 then shrinks: `electron/server/main.ts` installs the headless electron an
 - [ ] **Step 4:** PASS, then the graph test again with the new root. Expected: PASS.
 - [ ] **Step 5:** commit `feat: run tars without a window, as a server`.
 
-### Task 5: Client credentials
+### Task 5: Client credentials (done)
+
+**Status 2026-11-02:** `services/cloud/{types,clients,server-identity}.ts` and `server/clients-command.ts`, wired as `cli.js clients add|list|revoke`; `status --json` now carries `serverId` and `name`. As planned, plus an optional lifetime (`days`, 1 to 3650: `expiresAt`, refused once past) and `may(client, scope)`; functions take the file path (the CLI passes `PRIVATE_DIR/cloud-clients.json`). `watchClients(file, onRevoke, intervalMs)` polls the file (`fs.watchFile`) in place of an `onRevoke` global. Tests: `__tests__/electron/cloud/clients.test.ts` 20 (+ the 0600 case on POSIX) and `serve.test.ts` (the compiled CLI: input on stdin, one line out, the `serverId` `status` gives). Eight mutants, each killed: expiry ignored, any well-formed credential admitted, revoke not written, `may` granting all, the hash in a listing, format characters in a name, a corrupt file read as empty, `revoke` taking any id.
 
 **Files:**
 - Create: `electron/services/cloud/types.ts`, `electron/services/cloud/clients.ts`, `electron/services/cloud/server-identity.ts`

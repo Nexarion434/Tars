@@ -111,6 +111,16 @@ describe('tars-server', () => {
     }
   }, 120_000);
 
+  it('clients add takes its input on stdin and prints one line, with the id status gives', () => {
+    const out = execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'PC', kind: 'desktop', scopes: ['see'] }) }).toString();
+    const lines = out.trim().split(/\r?\n/);
+    expect(lines).toHaveLength(1);
+    const printed = JSON.parse(lines[0]);
+    expect(Object.keys(printed).sort()).toEqual(['credential', 'id', 'serverId']);
+    const status = JSON.parse(execFileSync(process.execPath, [CLI, 'status', '--json']).toString());
+    expect(status.serverId).toBe(printed.serverId);
+  }, 60_000);
+
   it('status --json reads the running server, in one line', async () => {
     const { port } = await boot();
     const out = execFileSync(process.execPath, [CLI, 'status', '--json'], { env: { ...process.env, DOROTHY_API_PORT: String(port) } }).toString();

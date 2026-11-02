@@ -4,6 +4,8 @@
  *   node electron/dist/server/cli.js serve [--dev]   the server, in the foreground
  *   node electron/dist/server/cli.js start [--json]  start it unless it runs
  *   node electron/dist/server/cli.js status [--json] whether it runs, from its record
+ *   node electron/dist/server/cli.js clients add --json < { name, kind, scopes, days? }
+ *   node electron/dist/server/cli.js clients list --json | clients revoke <id>
  *
  * `start` and `status` write exactly one JSON line on stdout and nothing else
  * (a desktop reads it over SSH); what they have to say goes to stderr.
@@ -16,6 +18,16 @@ const UNIT = 'tars-server.service';
 
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('end', () => resolve(data));
+    process.stdin.on('error', reject);
+  });
 }
 
 function hasUnit(): boolean {
@@ -37,9 +49,17 @@ async function run(command: string | undefined, args: string[]): Promise<number>
   const { DATA_DIR, privatePath } = await import('../constants');
   const { serverStatus } = await import('./lock');
   const file = privatePath('server.json');
+  const { serverIdentity } = await import('../services/cloud/server-identity');
+  const serverFile = privatePath('cloud-server.json');
   if (command === 'status') {
-    printJson(serverStatus(file));
+    const identity = serverIdentity(serverFile);
+    printJson({ ...serverStatus(file), serverId: identity.id, name: identity.name });
     return 0;
+  }
+  if (command === 'clients') {
+    const { runClientsCommand } = await import('./clients-command');
+    const stdin = args[0] === 'add' ? await readStdin() : '';
+    return runClientsCommand(args, stdin, { clientsFile: privatePath('cloud-clients.json'), serverFile }, line => process.stdout.write(`${line}\n`));
   }
   if (command === 'start') {
     const { startServer } = await import('./start');
@@ -66,7 +86,7 @@ async function run(command: string | undefined, args: string[]): Promise<number>
       return 1;
     }
   }
-  process.stderr.write('usage: tars-server serve [--dev] | start [--json] | status [--json]\n');
+  process.stderr.write('usage: tars-server serve [--dev] | start [--json] | status [--json] | clients add|list|revoke\n');
   return 2;
 }
 
