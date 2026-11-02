@@ -73,6 +73,10 @@ describe('the headless app', () => {
     expect(() => app.getPath('desktop')).toThrow(/desktop/);
   });
 
+  it('marks its app headless, which main.ts reads (isHeadless)', () => {
+    expect(make().electron.app.headless).toBe(true);
+  });
+
   it('is packaged unless started with --dev', () => {
     expect(make().electron.app.isPackaged).toBe(true);
     expect(make({ dev: true }).electron.app.isPackaged).toBe(false);

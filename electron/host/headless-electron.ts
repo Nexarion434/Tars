@@ -76,6 +76,8 @@ export function createHeadlessElectron(opts: HeadlessElectronOptions) {
   };
 
   const app = {
+    /** Read by host/headless.ts: this electron is the headless one. */
+    headless: true as const,
     isPackaged: !opts.dev,
     getAppPath: () => opts.root,
     getPath(name: string): string {

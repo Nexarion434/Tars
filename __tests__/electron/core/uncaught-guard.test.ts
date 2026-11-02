@@ -143,7 +143,8 @@ describe('main.ts (F4)', () => {
 
   it('8, 9. tells it when the window is open, right after createWindow in the ready callback, and hands the SDK its onFatalError', () => {
     const ready = main.slice(main.indexOf('app.whenReady().then('));
-    expect(ready).toMatch(/\n {2}createWindow\(\);\n {2}uncaught\.windowOpened\(\);/);
+    // The same block: the desktop's, which a Tars server skips whole (if (!HEADLESS), Task 3 of the cloud plan).
+    expect(ready).toMatch(/\n( {2}| {4})createWindow\(\);\n\1uncaught\.windowOpened\(\);/);
     expect(main.match(/uncaught\.windowOpened\(\)/g)).toHaveLength(1);
     expect(main).not.toMatch(/mainLoaded/);
     expect(main).toMatch(/startErrorReports\(\(\) => appSettings\.errorReportsEnabled === true, [^;]*onFatalError: uncaught\.onFatalError/s);
