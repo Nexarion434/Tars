@@ -846,3 +846,66 @@ installer's first run, and `electron-updater` installs an update without
 checking a publisher: whoever can write to the releases of
 `cooper-labs-tech/Tars` ships code to every Windows install. On macOS the
 update must carry the app's own signature; on Windows nothing stands in for it.
+
+## 8. A Tars server and its clients
+
+A Tars server (`electron/server/`) is the desktop's core under plain Node, with
+no window: the same agents, terminals, hooks and local API. What it adds is a
+door for its clients and what each client may do there. Measured on the fork's
+`up/tars-cloud`, on Windows 11 and on GitHub's ubuntu runner, in November 2026.
+
+**The door listens on 127.0.0.1 only** (`services/cloud/door.ts`, on the API
+port plus 2). Nothing on a network reaches it: a desktop comes through its own
+SSH forward, Hermes from the server itself. Its gates, in this order: a caller
+whose address is not loopback; a path that is not a route (404, before any
+credential is read, so no answer tells whether one is good); an `Origin`
+header, which only a web page sends; a `Host` other than this loopback port,
+which is what a page rebinding a name to a desktop's forward would send; a body
+over 64 KB, refused unread; then the client's credential and the route's scope.
+An agent is looked up only after those, and an unknown one gets one sentence
+that names none.
+
+**SSH access is the real authority over a server.** Whoever can `ssh` there as
+its user can mint a credential (`cli.js clients add`), read the private folder,
+or run a shell. A credential scopes what a client does through the door; it is
+no boundary against whoever holds that SSH key.
+
+**A client credential is not the master token.** 32 random bytes, shown once on
+stdout when minted, kept only as their sha256 in `cloud-clients.json` in the
+private folder (0600, never handed to a CLI). The door compares hashes in
+constant time and reads the file again at every request: a revoked or expired
+credential, a malformed one, and the master API token itself are refused. The
+local API never accepts a client credential. `clients list` shows no
+credential and no hash. A revoke ends that client's open streams within half a
+second (the file is watched); an expiry ends them at the next re-check.
+
+**Scopes.** `see`: the fleet, an agent's screen, its live output. `drive`:
+start, stop with a reason, message, keys, size. `create` and `files` come with
+later milestones. The server checks them at every request, and again once a
+body is in: a client revoked or stripped of `drive` while its body travels
+drives nothing.
+
+**What `see` shows.** An agent's fields are picked one by one
+(`services/cloud/fleet-share.ts`): no token, environment, CLI path, session id,
+skills, permission mode or worktree, and no control or format character in what
+is left. The screen and the stream are the terminal as it is: a secret a CLI
+prints there is shown to every client with `see`.
+
+**What `drive` gives away.** Keys reach the CLI as a person's would, its `!` and
+the shell behind it included: `drive` is a shell as the server's user. A message
+goes in after `Message from the machine "<name>": `, and a stop is filed under
+`<name> (machine)` with its reason, so the agent and the window know who did it.
+
+**An outside agent has a ceiling, not only scopes.** Hermes, as a client of kind
+`outside-agent`, may start, stop and message (after `Message from the outside
+agent "<name>": `); it never types keys and never sets a size, whatever scopes it
+holds, since those are a person at a keyboard.
+
+**One server per data folder.** A server refuses a folder another live server
+holds (`server.json` in the private folder) and one whose API port a Tars
+already answers. A desktop started second on a server's folder is not refused
+yet: it fails to take the API port instead.
+
+Each refusal above has a test written before the code and shown to fail on a
+deliberately broken version (`__tests__/electron/cloud/`,
+`__tests__/electron/server/`).

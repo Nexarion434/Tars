@@ -2498,6 +2498,84 @@ and crash the app. Any other stream error still rethrows.
 
 ---
 
+## A Tars server (headless)
+
+`tars-server` is Tars without a window, under plain Node, for a Linux machine that keeps the agents
+running while the desktops come and go. It runs `main.ts` itself, answering `require('electron')`
+with `electron/host/headless-electron.ts`, which skips the window steps where they stand. What it
+admits and what it refuses is in [SECURITY.md](SECURITY.md) §8.
+
+### Requirements
+
+Linux, a non-root user, Node 22.12 or later, and the compiler tools `node-pty` needs (it has no
+Linux prebuild): on Ubuntu, as root, `apt-get install -y build-essential python3`. Each CLI the
+agents run is installed and signed in for that user (`claude login` and the like, once, in a
+terminal on the server).
+
+### Build
+
+From a checkout of the branch, as the server's user:
+
+```bash
+scripts/server/build.sh        # Node and tools checked, npm ci without Electron's binary,
+                               # the main build, every mcp-* found
+```
+
+The same script is the build step of a container image; a container's entry is
+`node electron/dist/server/cli.js serve`.
+
+### Run
+
+```bash
+node electron/dist/server/cli.js serve      # in the foreground; SIGTERM is Tars's quit
+node electron/dist/server/cli.js start      # unless it runs: the user unit, else detached
+node electron/dist/server/cli.js status     # one JSON line: running, pid, apiPort, startedBy, serverId
+```
+
+As a systemd user unit: `scripts/server/install-user-unit.sh` fills the template
+`scripts/server/tars-server.service` (this Node, this checkout, this PATH), enables and starts it,
+and prints the one command that needs root: `loginctl enable-linger <user>`, so it keeps running
+after logout. A detached start logs to `~/.tars/logs/server.log`; the unit logs to the journal
+(`journalctl --user -u tars-server`).
+
+One server per data folder: it refuses to start on a folder another server holds, or whose API
+port a Tars already answers.
+
+### Ports
+
+| What | Where |
+|---|---|
+| Local API (agents, hooks, MCP servers) | `127.0.0.1:31415`, as on the desktop |
+| The door, for clients | `127.0.0.1:31417` (API port + 2; moves with `DOROTHY_API_PORT`) |
+
+Nothing listens on another address. A desktop reaches the door through an SSH forward
+(`ssh -N -L <local>:127.0.0.1:31417 <host>`).
+
+### Clients
+
+```bash
+echo '{"name":"Mac","kind":"desktop","scopes":["see","drive"]}' \
+  | node electron/dist/server/cli.js clients add --json      # prints { id, credential, serverId } once
+node electron/dist/server/cli.js clients list --json         # no credential, no hash
+node electron/dist/server/cli.js clients revoke c_1a2b3c4d   # its open streams end at once
+```
+
+Scopes: `see`, `drive`, `create`, `files`. Kinds: `desktop`, `outside-agent` (Hermes: never types
+or resizes). An optional `"days"` sets a lifetime. The input goes on stdin, never on the command
+line, so a name never reaches a remote shell.
+
+### Files
+
+In the server user's home, as on a desktop: `~/.tars` (the agents, their records) and
+`~/.tars-private`, which adds `server.json` (the running server's pid and port),
+`cloud-server.json` (the server's id and name) and `cloud-clients.json` (the clients, hashes only).
+Back up both folders; `cloud-clients.json` restored elsewhere keeps every client admitted.
+
+### Update
+
+Stop it, pull the branch, `scripts/server/build.sh`, start it. Agents that were running come back
+through restart recovery, as after a desktop relaunch.
+
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.
