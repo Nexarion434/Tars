@@ -43,7 +43,7 @@ export interface DoorDeps {
   screenOf?(agentId: string): AgentScreen | null;
   onOutput?(listener: (agentId: string, chunk: string) => void): () => void;
   /** executeDrive over the server's terminals (drive.ts). */
-  drive?(request: DriveRequest, caller: DriveCaller): DriveOutcome;
+  drive?(request: DriveRequest, caller: DriveCaller): Promise<DriveOutcome>;
   /** How often an open stream's credential is admitted again (default 15 s). */
   recheckMs?: number;
   /** How often the clients file is polled for a revoke (default 500 ms). */
@@ -149,7 +149,7 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
    * the client admitted again, so one revoked or stripped of `drive` while its
    * body was on the way drives nothing; then the executor.
    */
-  const driveRoute = (action: 'keys' | 'size') => ({ client, credential, agentId, req, res }: Request) => {
+  const driveRoute = (action: DriveRequest['action']) => ({ client, credential, agentId, req, res }: Request) => {
     let size = 0;
     const chunks: Buffer[] = [];
     let refused = false;
@@ -188,12 +188,20 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
         json(res, 404, { error: 'Not found.' });
         return;
       }
-      const request: DriveRequest = action === 'keys'
-        ? { action, agentId: agentId!, data: body.data as string }
-        : { action, agentId: agentId!, cols: body.cols as number, rows: body.rows as number };
-      const outcome = deps.drive(request, { name: again.name, kind: again.kind });
-      if (outcome.ok) json(res, 200, { ok: true });
-      else json(res, outcome.status, { error: outcome.error });
+      const id = agentId!;
+      const request: DriveRequest =
+        action === 'keys' ? { action, agentId: id, data: body.data as string }
+          : action === 'size' ? { action, agentId: id, cols: body.cols as number, rows: body.rows as number }
+            : action === 'stop' ? { action, agentId: id, reason: body.reason as string }
+              : action === 'message' ? { action, agentId: id, text: body.text as string }
+                : { action, agentId: id };
+      deps.drive(request, { name: again.name, kind: again.kind }).then(
+        outcome => (outcome.ok ? json(res, 200, { ok: true }) : json(res, outcome.status, { error: outcome.error })),
+        err => {
+          console.error('[cloud] a drive failed:', err);
+          json(res, 500, { error: 'The server could not do it.' });
+        },
+      );
     });
   };
 
@@ -226,6 +234,9 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     },
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/keys$`), scope: 'drive', handle: driveRoute('keys') },
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/size$`), scope: 'drive', handle: driveRoute('size') },
+    { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/start$`), scope: 'drive', handle: driveRoute('start') },
+    { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/stop$`), scope: 'drive', handle: driveRoute('stop') },
+    { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/message$`), scope: 'drive', handle: driveRoute('message') },
   ];
 
   const server = http.createServer((req, res) => {

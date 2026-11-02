@@ -32,7 +32,7 @@ function setup() {
     identity: () => ({ id: '0123456789abcdef', name: 'vps', version: '9.9.9' }),
     fleet: () => ({}),
     screenOf: (id: string) => (id === 'nova' ? { screen: '', cliRunning: true, cols: 80, rows: 24 } : null),
-    drive: (request: DriveRequest, caller: { name: string }) => {
+    drive: async (request: DriveRequest, caller: { name: string }) => {
       if (request.agentId !== 'nova') return { ok: false as const, status: 404 as const, error: 'No such agent on this Tars server.' };
       driven.push({ request, caller: caller.name });
       return { ok: true as const };
@@ -73,6 +73,20 @@ describe('drive routes', () => {
     expect(driven).toEqual([
       { request: { action: 'keys', agentId: 'nova', data: 'ls\r' }, caller: 'Mac' },
       { request: { action: 'size', agentId: 'nova', cols: 100, rows: 30 }, caller: 'Mac' },
+    ]);
+  });
+
+  it('start, stop with its reason and message, under the client\'s name', async () => {
+    const { deps, file, driven } = setup();
+    const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
+    const d = await open(deps);
+    expect((await post(d.port, '/cloud/v1/agents/nova/start', '{}', credential)).status).toBe(200);
+    expect((await post(d.port, '/cloud/v1/agents/nova/stop', JSON.stringify({ reason: 'done' }), credential)).status).toBe(200);
+    expect((await post(d.port, '/cloud/v1/agents/nova/message', JSON.stringify({ text: 'hello' }), credential)).status).toBe(200);
+    expect(driven).toEqual([
+      { request: { action: 'start', agentId: 'nova' }, caller: 'Mac' },
+      { request: { action: 'stop', agentId: 'nova', reason: 'done' }, caller: 'Mac' },
+      { request: { action: 'message', agentId: 'nova', text: 'hello' }, caller: 'Mac' },
     ]);
   });
 

@@ -73,7 +73,11 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { cliRunningIn } = await import('../core/agent-pty');
   const { terminalSnapshot } = await import('../core/terminal-mirror');
   const { onAgentOutput } = await import('../core/agent-output');
-  const { writeHumanInput } = await import('../core/pty-manager');
+  const { writeHumanInput, writeProgrammaticInput } = await import('../core/pty-manager');
+  const { launchAgent } = await import('../core/agent-launch');
+  const { stopAgent } = await import('../core/agent-stop');
+  const { saveAgents } = await import('../core/agent-manager');
+  const { scheduleTick } = await import('../utils/agents-tick');
   const { rememberPanelSize, resizeTerminalMirror } = await import('../core/terminal-mirror');
   const { executeDrive } = await import('../services/cloud/drive');
   const { startDoor } = await import('../services/cloud/door');
@@ -113,6 +117,24 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
           if (!pty) return 'no-terminal';
           pty.resize(cols, rows);
           resizeTerminalMirror(pty, cols, rows);
+          return 'ok';
+        },
+        // agent:start, with no first prompt.
+        start: async agentId => {
+          const launched = await launchAgent(agentId, '');
+          return launched.success ? { ok: true as const } : { ok: false as const, error: launched.error ?? 'The agent did not start.' };
+        },
+        // agent:stop, filed under the client.
+        stop: async (agentId, by, reason) => {
+          const agent = agents.get(agentId);
+          if (agent) await stopAgent(agent, { by, reason }, { save: saveAgents, announce: () => scheduleTick() });
+        },
+        // A message as Tars types one, after the client's own sender line.
+        message: (agentId, text, sender) => {
+          const pty = terminalOf(agents.get(agentId) ?? {});
+          if (!pty) return 'no-terminal';
+          if (!cliRunningIn(pty)) return 'not-running';
+          writeProgrammaticInput(pty, text, true, { agentId, from: sender.kind === 'machine' || sender.kind === 'outside-agent' ? sender.name : 'Tars', sender });
           return 'ok';
         },
       }),

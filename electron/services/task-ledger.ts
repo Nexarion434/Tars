@@ -26,7 +26,7 @@ import { ANSWER_MAX } from './terminal-answer';
  * 200 characters. Durations, turns, sessions and costs stay in ~/.tars.
  */
 
-export type TaskSource = 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp';
+export type TaskSource = 'terminal' | 'agent' | 'tars' | 'telegram' | 'slack' | 'discord' | 'hermes' | 'acp' | 'machine' | 'outside-agent';
 export type TaskOutcome = 'running' | 'completed' | 'error' | 'stopped';
 
 /** What the ledger reads of an agent: the fields of AgentStatus it needs. */
@@ -189,7 +189,7 @@ export function endingOf(agent: TaskAgentView): Exclude<TaskOutcome, 'running'> 
   }
 }
 
-const SOURCES: readonly TaskSource[] = ['terminal', 'agent', 'tars', 'telegram', 'slack', 'discord', 'hermes', 'acp'];
+const SOURCES: readonly TaskSource[] = ['terminal', 'agent', 'tars', 'telegram', 'slack', 'discord', 'hermes', 'acp', 'machine', 'outside-agent'];
 const OUTCOMES: readonly TaskOutcome[] = ['running', 'completed', 'error', 'stopped'];
 /** A session id as Claude Code writes them: never a path, since it becomes one (task-cost.ts). */
 const SESSION_ID = /^[A-Za-z0-9_-]{1,100}$/;
@@ -877,6 +877,7 @@ export function liveTaskLedger(): TaskLedger | null {
 export function handOffFrom(sender: MessageSender | undefined): Pick<HandOff, 'source' | 'requesterAgentId'> {
   if (sender?.kind === 'agent') return { source: 'agent', requesterAgentId: sender.id };
   if (sender?.kind === 'channel') return { source: sender.channel.toLowerCase() as HandOff['source'] };
+  if (sender?.kind === 'machine' || sender?.kind === 'outside-agent') return { source: sender.kind };
   return { source: 'tars' };
 }
 
