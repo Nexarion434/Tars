@@ -21,11 +21,14 @@ import type { ServerRecord } from './lock';
 
 export const INSTALL_ROOT = path.resolve(__dirname, '..', '..', '..');
 
+/**
+ * Said by whoever starts the server: `start` (cli) and the unit (systemd) set
+ * TARS_SERVER_STARTED_BY. Not INVOCATION_ID, which systemd hands down to
+ * everything a unit starts (a CI runner's jobs, a shell under a service).
+ */
 function startedBy(): ServerRecord['startedBy'] {
-  if (process.env.TARS_SERVER_STARTED_BY === 'cli') return 'cli';
-  // systemd sets INVOCATION_ID in every unit it starts.
-  if (process.env.INVOCATION_ID) return 'systemd';
-  return 'shell';
+  const said = process.env.TARS_SERVER_STARTED_BY;
+  return said === 'cli' || said === 'systemd' ? said : 'shell';
 }
 
 export async function serve(opts: { dev: boolean }): Promise<void> {

@@ -11,6 +11,8 @@ Type=simple
 WorkingDirectory=@ROOT@
 # The PATH the agents' CLIs (claude, codex...) were installed on, taken at install.
 Environment=PATH=@PATH@
+# What `status` reports as the server's starter.
+Environment=TARS_SERVER_STARTED_BY=systemd
 ExecStart=@NODE@ @ROOT@/electron/dist/server/cli.js serve
 Restart=on-failure
 RestartSec=5

@@ -150,7 +150,10 @@ describe('tars-server', () => {
   }, 180_000);
 
   it('status --json reads the running server, in one line', async () => {
+    // Inherited by whatever a systemd unit starts, GitHub's runner included: it says nothing of who started this server.
+    process.env.INVOCATION_ID = 'inherited-from-a-unit';
     const { port } = await boot();
+    delete process.env.INVOCATION_ID;
     const out = execFileSync(process.execPath, [CLI, 'status', '--json'], { env: { ...process.env, DOROTHY_API_PORT: String(port) } }).toString();
     expect(out.trim().split(/\r?\n/)).toHaveLength(1);
     expect(JSON.parse(out)).toMatchObject({ running: true, pid: child!.pid, apiPort: port, startedBy: 'shell' });
