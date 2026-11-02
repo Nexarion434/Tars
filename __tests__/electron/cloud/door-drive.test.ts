@@ -55,16 +55,24 @@ async function open(deps: Parameters<typeof startDoor>[0]): Promise<Door> {
 
 function post(socketPath: string, urlPath: string, body: string, credential?: string, beforeBody?: () => void): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
+    // The door answers a refusal at the head and closes without reading the body (401, 403): the body is then
+    // not sent, and a write the close beat (EPIPE) is what such a refusal looks like, not a failure.
+    let answered = false;
     const req = http.request({ socketPath, path: urlPath, method: 'POST', headers: { 'Content-Type': 'application/json', ...(credential ? { Authorization: `Bearer ${credential}` } : {}) } }, res => {
+      answered = true;
       let text = '';
       res.on('data', c => { text += c; });
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
     });
-    req.on('error', reject);
+    req.on('error', err => {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EPIPE' || code === 'ECONNRESET') setTimeout(() => { if (!answered) reject(err); }, 500);
+      else reject(err);
+    });
     req.flushHeaders();
     setTimeout(() => {
       beforeBody?.();
-      setTimeout(() => req.end(body), beforeBody ? 50 : 0);
+      setTimeout(() => { if (!answered && !req.destroyed) req.end(body); }, beforeBody ? 50 : 0);
     }, beforeBody ? 100 : 0);
   });
 }

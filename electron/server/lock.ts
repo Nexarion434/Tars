@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -63,10 +64,13 @@ export function answersHealth(port: number, timeoutMs = 1000): Promise<boolean> 
 }
 
 /**
- * Whether a pid is a running Tars server: alive, and, where /proc shows it, running a server's entry, so a pid the
- * system gave to another program after a crash blocks no restart.
+ * Whether a pid is a running Tars server of this install: alive, and, where /proc shows it, running this
+ * checkout's own server entry (an argument that resolves, from that process's folder, to SERVER_ENTRIES), so a pid
+ * the system gave to another program, or to another checkout's server, blocks no restart.
  */
-export function isServerPid(pid: number, procRoot = '/proc'): boolean {
+export const SERVER_ENTRIES = ['main.js', 'cli.js'].map(name => path.join(__dirname, name));
+
+export function isServerPid(pid: number, procRoot = '/proc', entries: readonly string[] = SERVER_ENTRIES): boolean {
   if (!pidAlive(pid)) return false;
   let cmdline: string;
   try {
@@ -74,19 +78,28 @@ export function isServerPid(pid: number, procRoot = '/proc'): boolean {
   } catch {
     return true;
   }
-  return /server[/\\](?:main|cli)\.js/.test(cmdline);
+  let cwd = '/';
+  try { cwd = fs.readlinkSync(`${procRoot}/${pid}/cwd`); } catch { /* relative arguments then resolve from / */ }
+  return cmdline.split(String.fromCharCode(0)).some(arg => arg !== '' && entries.includes(path.resolve(cwd, arg)));
 }
 
+/**
+ * The record made whole first, in a file of its own, then linked to its name: link fails if the name exists, so
+ * two servers starting at once cannot both take the folder, and no reader ever sees half a record.
+ */
 function writeExclusive(file: string, text: string): boolean {
   // A first start: the private folder is made here, for its owner alone, as writeSecretFileSync makes it.
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  fs.writeFileSync(temp, text, { mode: 0o600, flag: 'wx' });
   try {
-    const fd = fs.openSync(file, 'wx', 0o600);
-    try { fs.writeSync(fd, text); } finally { fs.closeSync(fd); }
+    fs.linkSync(temp, file);
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw err;
+  } finally {
+    fs.rmSync(temp, { force: true });
   }
 }
 
@@ -95,13 +108,13 @@ export async function claimDataFolder(opts: {
   apiPort: number;
   record: Omit<ServerRecord, 'pid' | 'apiPort'>;
   procRoot?: string;
+  entries?: readonly string[];
 }): Promise<Claim> {
   if (await answersHealth(opts.apiPort)) return { ok: false, heldBy: 'tars', apiPort: opts.apiPort };
-  const text = `${JSON.stringify({ ...opts.record, pid: process.pid, apiPort: opts.apiPort })}
-`;
-  // Created exclusively (O_EXCL): two servers starting at once cannot both take the folder. A record left by a
-  // server that is gone is removed once, then the create is tried again.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const text = `${JSON.stringify({ ...opts.record, pid: process.pid, apiPort: opts.apiPort })}\n`;
+  const live = (record: ServerRecord | null): record is ServerRecord =>
+    record !== null && record.pid !== process.pid && isServerPid(record.pid, opts.procRoot, opts.entries);
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (writeExclusive(opts.file, text)) {
       return {
         ok: true,
@@ -111,10 +124,24 @@ export async function claimDataFolder(opts: {
       };
     }
     const existing = readServerRecord(opts.file);
-    if (existing && existing.pid !== process.pid && isServerPid(existing.pid, opts.procRoot)) {
-      return { ok: false, heldBy: 'server', pid: existing.pid, apiPort: existing.apiPort };
+    if (live(existing)) return { ok: false, heldBy: 'server', pid: existing.pid, apiPort: existing.apiPort };
+    // A stale record is moved aside, then what was moved is checked: a live server may have replaced the stale
+    // record between the read above and the move. Its record is then put back (link: never over another) and
+    // the claim refused; a stale one is dropped and the create tried again.
+    const aside = `${opts.file}.${process.pid}.stale`;
+    try {
+      fs.renameSync(opts.file, aside);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw err;
     }
-    fs.rmSync(opts.file, { force: true });
+    const moved = readServerRecord(aside);
+    if (live(moved)) {
+      try { fs.linkSync(aside, opts.file); } catch { /* a third record is there: it stands */ }
+      fs.rmSync(aside, { force: true });
+      return { ok: false, heldBy: 'server', pid: moved.pid, apiPort: moved.apiPort };
+    }
+    fs.rmSync(aside, { force: true });
   }
   return { ok: false, heldBy: 'server', pid: 0, apiPort: opts.apiPort };
 }

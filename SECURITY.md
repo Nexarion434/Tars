@@ -864,8 +864,9 @@ can bind that port first, answer `/hello` with the real server's id (which
 folder no one else can enter cannot be taken that way. A link at the socket's
 path is never followed, a file there is never removed, a socket another door
 answers on is refused, and a socket left by a killed server is removed. A door
-that cannot open ends the server (exit 1), so systemd or the container tries
-again, and `status` names the socket the door listens on. A desktop reaches it
+that cannot open ends the server (exit 1), checked before `main.ts` loads so no
+agent restarts in vain, and systemd or the container tries again, five times
+at most, and `status` names the socket the door listens on. A desktop reaches it
 with `ssh -L 127.0.0.1:<local port>:<socket path>`; nothing on any network
 does. Its gates, in this order: a path that is not a route (404, before any
 credential is read, so no answer tells whether one is good); an `Origin`
@@ -885,7 +886,9 @@ scopes what a client does through the door; it is no boundary against that
 user, nor against an agent driven into minting one. What makes a mint visible:
 the server logs each client that appears in its clients file, and `clients
 list` shows where each was minted from (over SSH, with the address, or on the
-server itself).
+server itself). That is what the minter claims, not proof: it is read from the
+minting process's `SSH_CONNECTION`, which anything running as the server's
+user can set.
 
 **A client credential is not the master token.** 32 random bytes, shown once on
 stdout when minted, kept only as their sha256 in `cloud-clients.json` in the

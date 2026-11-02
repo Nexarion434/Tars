@@ -5,7 +5,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { answersHealth, claimDataFolder, readServerRecord, serverStatus } from '../../../electron/server/lock';
+import { answersHealth, claimDataFolder, readServerRecord, serverStatus, SERVER_ENTRIES } from '../../../electron/server/lock';
 import { detachedEnv, startServer } from '../../../electron/server/start';
 
 /**
@@ -51,9 +51,9 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-/** A live process; one that looks like a Tars server in /proc unless asServer is false. */
-function sleeper(asServer = true): Promise<number> {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', ...(asServer ? ['electron/dist/server/main.js'] : [])], { stdio: 'ignore' });
+/** A live process, running as this install's server in /proc (its entry's full path), or as entry says. */
+function sleeper(entry: string | null = SERVER_ENTRIES[0]): Promise<number> {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', ...(entry ? [entry] : [])], { stdio: 'ignore' });
   children.push(child.pid!);
   return Promise.resolve(child.pid!);
 }
@@ -78,11 +78,19 @@ describe('claimDataFolder', () => {
 
   it.skipIf(!fs.existsSync('/proc/self/cmdline'))('takes over a record whose pid now runs something else', async () => {
     const file = tmpFile();
-    const pid = await sleeper(false);
+    const pid = await sleeper(null);
     fs.writeFileSync(file, JSON.stringify({ ...record, pid, apiPort: 31415 }));
     const claim = await claimDataFolder({ file, apiPort: await freePort(), record });
     expect(claim.ok).toBe(true);
     expect(readServerRecord(file)?.pid).toBe(process.pid);
+  });
+
+  it.skipIf(!fs.existsSync('/proc/self/cmdline'))('takes over a record whose pid runs the server of another checkout', async () => {
+    const file = tmpFile();
+    const pid = await sleeper('/elsewhere/tars/electron/dist/server/main.js');
+    fs.writeFileSync(file, JSON.stringify({ ...record, pid, apiPort: 31415 }));
+    const claim = await claimDataFolder({ file, apiPort: await freePort(), record });
+    expect(claim.ok).toBe(true);
   });
 
   it('takes over the record of a server that died', async () => {

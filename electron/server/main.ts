@@ -32,6 +32,12 @@ function startedBy(): ServerRecord['startedBy'] {
 }
 
 export async function serve(opts: { dev: boolean }): Promise<void> {
+  // A Tars server is for Linux (SECURITY.md section 8): its door is a Unix socket only its user can open. On
+  // Windows only a development run serves, for the tests on a developer's machine.
+  if (process.platform === 'win32' && !opts.dev) {
+    console.error('tars-server runs on Linux; on Windows only a development run (--dev) serves.');
+    process.exit(1);
+  }
   const electron = createHeadlessElectron({
     root: INSTALL_ROOT,
     dev: opts.dev,
@@ -45,7 +51,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const withResources = process as NodeJS.Process & { resourcesPath?: string };
   withResources.resourcesPath ??= INSTALL_ROOT;
 
-  const { API_PORT, DATA_DIR, privatePath } = await import('../constants');
+  const { API_PORT, DATA_DIR, PRIVATE_DIR, privatePath } = await import('../constants');
   const { claimDataFolder, refusal } = await import('./lock');
   const claim = await claimDataFolder({
     file: privatePath('server.json'),
@@ -58,6 +64,17 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   }
   process.on('exit', () => claim.release());
 
+  // The door's place checked before main.ts loads: a door that can never open (a file or a link at its path, a
+  // folder others can enter) ends the server before it restarts any agent, so a restart loop restarts none.
+  const { doorSocketPath, prepareDoorSocket } = await import('../services/cloud/door-socket');
+  const socketPath = doorSocketPath(PRIVATE_DIR);
+  try {
+    await prepareDoorSocket(socketPath);
+  } catch (err) {
+    console.error(`[cloud] the door cannot open on ${socketPath}: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
   // systemd and docker stop a service with SIGTERM: the desktop's quit, before-quit steps included.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => electron.app.quit());
@@ -67,10 +84,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
 
   // The door for the server's clients, beside the boot: it reads the fleet at
   // each request, so a request before the agents are loaded sees fewer.
-  const { PRIVATE_DIR } = await import('../constants');
-  const { doorSocketPath } = await import('../services/cloud/door-socket');
   const { recordDoor } = await import('./lock');
-  const socketPath = doorSocketPath(PRIVATE_DIR);
   const { agents } = await import('../core/agent-manager');
   const { ptyProcesses } = await import('../core/pty-manager');
   const { cliRunningIn } = await import('../core/agent-pty');

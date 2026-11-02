@@ -2507,7 +2507,7 @@ admits and what it refuses is in [SECURITY.md](SECURITY.md) §8.
 
 ### Requirements
 
-Linux, a non-root user, Node 22.12 or later, and the compiler tools `node-pty` needs (it has no
+Linux (on Windows `serve` refuses to run, except a development run with `--dev`), a non-root user, Node 22.12 or later, and the compiler tools `node-pty` needs (it has no
 Linux prebuild): on Ubuntu, as root, `apt-get install -y build-essential python3`. Each CLI the
 agents run is installed and signed in for that user (`claude login` and the like, once, in a
 terminal on the server).
@@ -2564,7 +2564,7 @@ node electron/dist/server/cli.js clients revoke c_1a2b3c4d   # its open streams 
 ```
 
 Scopes: `see`, `drive`, `create`, `files`. Kinds: `desktop`, `outside-agent` (Hermes: never types
-or resizes). An optional `"days"` sets a lifetime. `clients list` says where each was minted (`ssh from <address>`, or `on the server`, which an agent there can do too), and the server's log says each mint as it happens. The input goes on stdin, never on the command
+or resizes). An optional `"days"` sets a lifetime. `clients list` says where each was minted (`ssh from <address>`, or `on the server`, which an agent there can do too; what the minter claims, not proof), and the server's log says each mint as it happens. The input goes on stdin, never on the command
 line, so a name never reaches a remote shell.
 
 ### Files

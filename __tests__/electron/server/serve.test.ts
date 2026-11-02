@@ -29,6 +29,8 @@ const ROOT = path.resolve(__dirname, '../../..');
 const ENTRY = path.join(ROOT, 'electron', 'dist', 'server', 'main.js');
 const GUARD = path.join(ROOT, '__tests__', 'fixtures', 'no-electron.cjs');
 const CLI = path.join(ROOT, 'electron', 'dist', 'server', 'cli.js');
+/** A server serves on Linux; this suite runs it on Windows too, as a development run. */
+const WINDOWS_DEV = process.platform === 'win32' ? ['--dev'] : [];
 
 /** The door of a server started in this suite's HOME: its socket in the private folder. */
 const DOOR = () => doorSocketPath(path.join(os.homedir(), '.tars-private'));
@@ -84,7 +86,7 @@ async function boot(markers: string[] = BOOTED): Promise<{ port: number; output:
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-server-state-'));
   let output = '';
-  child = spawn(process.execPath, ['-r', GUARD, ENTRY], {
+  child = spawn(process.execPath, ['-r', GUARD, ENTRY, ...WINDOWS_DEV], {
     cwd: os.tmpdir(),
     env: { ...process.env, DOROTHY_API_PORT: String(port), XDG_STATE_HOME: state, NODE_ENV: 'production' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -117,12 +119,43 @@ describe('tars-server', () => {
     expect(code).toBe(0);
   }, 180_000);
 
+  // The review's round 2: a door that can never open must end the server before main.ts restarts any agent,
+  // or systemd restarts it, and its agents, again and again.
+  it.skipIf(process.platform === 'win32')('ends before main.ts loads when its door can never open', async () => {
+    const privateDir = path.join(os.homedir(), '.tars-private');
+    fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    const blocker = path.join(privateDir, 'door.sock');
+    fs.writeFileSync(blocker, 'not a socket');
+    try {
+      let output = '';
+      child = spawn(process.execPath, ['-r', GUARD, ENTRY], { cwd: os.tmpdir(), env: { ...process.env, DOROTHY_API_PORT: String(await freePort()) }, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout!.on('data', chunk => { output += String(chunk); });
+      child.stderr!.on('data', chunk => { output += String(chunk); });
+      const code = await Promise.race([new Promise<number | null>(r => child!.once('exit', c => r(c))), new Promise<string>(r => setTimeout(() => r('still running'), 60_000))]);
+      expect(code).toBe(1);
+      expect(output).toMatch(/not a socket/);
+      expect(output).not.toMatch(/App ready, initializing/);
+    } finally {
+      fs.rmSync(blocker, { force: true });
+    }
+  }, 120_000);
+
+  it.runIf(process.platform === 'win32')('refuses to serve on Windows unless started with --dev', async () => {
+    let output = '';
+    child = spawn(process.execPath, ['-r', GUARD, ENTRY], { cwd: os.tmpdir(), env: { ...process.env, DOROTHY_API_PORT: String(await freePort()) }, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout!.on('data', chunk => { output += String(chunk); });
+    child.stderr!.on('data', chunk => { output += String(chunk); });
+    const code = await Promise.race([new Promise<number | null>(r => child!.once('exit', c => r(c))), new Promise<string>(r => setTimeout(() => r('still running'), 60_000))]);
+    expect(code).toBe(1);
+    expect(output).toMatch(/runs on Linux/);
+  }, 120_000);
+
   it('refuses a data folder another Tars answers for', async () => {
     const fake = http.createServer((req, res) => { res.writeHead(req.url === '/api/health' ? 200 : 404); res.end('{}'); });
     const port = await new Promise<number>(r => fake.listen(0, '127.0.0.1', () => r((fake.address() as net.AddressInfo).port)));
     try {
       let output = '';
-      child = spawn(process.execPath, ['-r', GUARD, ENTRY], { cwd: os.tmpdir(), env: { ...process.env, DOROTHY_API_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(process.execPath, ['-r', GUARD, ENTRY, ...WINDOWS_DEV], { cwd: os.tmpdir(), env: { ...process.env, DOROTHY_API_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout!.on('data', chunk => { output += String(chunk); });
       child.stderr!.on('data', chunk => { output += String(chunk); });
       const code = await Promise.race([new Promise<number | null>(r => child!.once('exit', c => r(c))), new Promise<string>(r => setTimeout(() => r('still running'), 60_000))]);

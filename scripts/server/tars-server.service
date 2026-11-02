@@ -5,6 +5,9 @@
 [Unit]
 Description=Tars server (headless)
 After=network-online.target
+# Five tries in five minutes, then it stays down: a door that can never open does not loop for ever.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
