@@ -68,7 +68,15 @@ beforeAll(() => {
   execFileSync(process.execPath, [path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', path.join(ROOT, 'electron', 'tsconfig.json')], { stdio: 'pipe' });
 }, 300_000);
 
-async function boot(): Promise<{ port: number; output: () => string; exited: Promise<number | null> }> {
+/**
+ * Booted means every marker is in the output: the end of main.ts's boot, the
+ * local API's own `listening` line (its listen is asynchronous and retries, so
+ * the boot's last line can come first: a measured ECONNREFUSED), and whatever
+ * else a case needs (the door's line).
+ */
+const BOOTED = ['App initialization complete', 'Agent API server running on'];
+
+async function boot(markers: string[] = BOOTED): Promise<{ port: number; output: () => string; exited: Promise<number | null> }> {
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-server-state-'));
   let output = '';
@@ -81,7 +89,7 @@ async function boot(): Promise<{ port: number; output: () => string; exited: Pro
   child.stderr!.on('data', chunk => { output += String(chunk); });
   const exited = new Promise<number | null>(resolve => child!.once('exit', code => resolve(code)));
   const deadline = Date.now() + 120_000;
-  while (!output.includes('App initialization complete')) {
+  while (!markers.every(marker => output.includes(marker))) {
     if (child.exitCode !== null || Date.now() > deadline) {
       throw new Error(`the server did not finish booting (exit ${child.exitCode}):\n${output.slice(-4000)}`);
     }
@@ -133,7 +141,7 @@ describe('tars-server', () => {
   }, 60_000);
 
   it('opens its door on API_PORT + 2: hello, the fleet for a client, and never the master token', async () => {
-    const { port } = await boot();
+    const { port } = await boot([...BOOTED, '[cloud] door on 127.0.0.1:']);
     const env = { ...process.env, DOROTHY_API_PORT: String(port) };
     const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see'] }), env }).toString());
     const door = port + 2;

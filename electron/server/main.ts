@@ -73,6 +73,9 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { cliRunningIn } = await import('../core/agent-pty');
   const { terminalSnapshot } = await import('../core/terminal-mirror');
   const { onAgentOutput } = await import('../core/agent-output');
+  const { writeHumanInput } = await import('../core/pty-manager');
+  const { rememberPanelSize, resizeTerminalMirror } = await import('../core/terminal-mirror');
+  const { executeDrive } = await import('../services/cloud/drive');
   const { startDoor } = await import('../services/cloud/door');
   const { fleetAnswer } = await import('../services/cloud/fleet-source');
   const { serverIdentity } = await import('../services/cloud/server-identity');
@@ -95,6 +98,24 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
         return { screen: terminalSnapshot(pty) ?? '', cliRunning: cliRunningIn(pty), cols: pty?.cols ?? 80, rows: pty?.rows ?? 24 };
       },
       onOutput: onAgentOutput,
+      // The window's own path: agent:input (writeHumanInput) and agent:resize.
+      drive: (request, caller) => executeDrive(request, caller, {
+        hasAgent: agentId => agents.has(agentId),
+        typeKeys: (agentId, data) => {
+          const pty = terminalOf(agents.get(agentId) ?? {});
+          if (!pty) return 'no-terminal';
+          writeHumanInput(pty, data);
+          return 'ok';
+        },
+        resize: (agentId, cols, rows) => {
+          rememberPanelSize(agentId, cols, rows);
+          const pty = terminalOf(agents.get(agentId) ?? {});
+          if (!pty) return 'no-terminal';
+          pty.resize(cols, rows);
+          resizeTerminalMirror(pty, cols, rows);
+          return 'ok';
+        },
+      }),
     });
     console.log(`[cloud] door on 127.0.0.1:${door.port}`);
   } catch (err) {

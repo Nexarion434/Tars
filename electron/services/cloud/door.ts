@@ -1,6 +1,7 @@
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 import { admit, may, watchClients } from './clients';
+import type { DriveCaller, DriveOutcome, DriveRequest } from './drive';
 import type { CloudClient, Scope } from './types';
 
 /**
@@ -41,6 +42,8 @@ export interface DoorDeps {
   /** One agent's terminal as it shows now, or null for an agent the server does not have. */
   screenOf?(agentId: string): AgentScreen | null;
   onOutput?(listener: (agentId: string, chunk: string) => void): () => void;
+  /** executeDrive over the server's terminals (drive.ts). */
+  drive?(request: DriveRequest, caller: DriveCaller): DriveOutcome;
   /** How often an open stream's credential is admitted again (default 15 s). */
   recheckMs?: number;
   /** How often the clients file is polled for a revoke (default 500 ms). */
@@ -141,6 +144,59 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     req.on('close', () => end('closed'));
   };
 
+  /**
+   * A drive route: the body read up to 64 KB (counted, chunked or not), then
+   * the client admitted again, so one revoked or stripped of `drive` while its
+   * body was on the way drives nothing; then the executor.
+   */
+  const driveRoute = (action: 'keys' | 'size') => ({ client, credential, agentId, req, res }: Request) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    let refused = false;
+    req.on('data', (chunk: Buffer) => {
+      if (refused) return;
+      size += chunk.length;
+      if (size > MAX_BODY) {
+        refused = true;
+        res.setHeader('Connection', 'close');
+        json(res, 413, { error: `A request carries ${MAX_BODY / 1024} KB at most.` });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (refused) return;
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as Record<string, unknown>;
+        if (!body || typeof body !== 'object') throw new Error('not an object');
+      } catch {
+        json(res, 400, { error: 'The body is a JSON object.' });
+        return;
+      }
+      const again = admit(deps.clientsFile, credential ?? undefined, now());
+      if (!again || again.id !== client!.id) {
+        json(res, 401, { error: 'Not a client of this Tars server, or no longer one.' });
+        return;
+      }
+      if (!may(again, 'drive')) {
+        json(res, 403, { error: `${deps.identity().name} does not let ${again.name} ${SCOPE_WORDS.drive}.` });
+        return;
+      }
+      if (!deps.drive) {
+        json(res, 404, { error: 'Not found.' });
+        return;
+      }
+      const request: DriveRequest = action === 'keys'
+        ? { action, agentId: agentId!, data: body.data as string }
+        : { action, agentId: agentId!, cols: body.cols as number, rows: body.rows as number };
+      const outcome = deps.drive(request, { name: again.name, kind: again.kind });
+      if (outcome.ok) json(res, 200, { ok: true });
+      else json(res, outcome.status, { error: outcome.error });
+    });
+  };
+
   const routes: Route[] = [
     {
       method: 'GET', pattern: /^\/cloud\/v1\/hello$/, scope: null,
@@ -168,6 +224,8 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
         else openStream(request);
       },
     },
+    { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/keys$`), scope: 'drive', handle: driveRoute('keys') },
+    { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/size$`), scope: 'drive', handle: driveRoute('size') },
   ];
 
   const server = http.createServer((req, res) => {
