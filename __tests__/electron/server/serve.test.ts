@@ -125,6 +125,8 @@ describe('tars-server', () => {
     const privateDir = path.join(os.homedir(), '.tars-private');
     fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
     const blocker = path.join(privateDir, 'door.sock');
+    // An earlier case of this file leaves its killed server's socket there.
+    fs.rmSync(blocker, { force: true });
     fs.writeFileSync(blocker, 'not a socket');
     try {
       let output = '';
