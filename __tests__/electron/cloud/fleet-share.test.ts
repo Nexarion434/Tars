@@ -73,7 +73,7 @@ describe('shareAgent', () => {
   });
 
   it('drops control and format characters', () => {
-    const shared = shareAgent(agent({ name: 'No\u001b[31mva‮txt.exe', currentTask: 'line one\u0007​' }))!;
+    const shared = shareAgent(agent({ name: 'No\u001b[31mva\u202Etxt.exe', currentTask: 'line one\u0007\u200B' }))!;
     expect(shared.name).toBe('No[31mvatxt.exe');
     expect(shared.currentTask).toBe('line one');
   });

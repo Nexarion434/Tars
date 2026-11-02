@@ -66,7 +66,7 @@ describe('minting', () => {
     ['an empty name', { name: '  ', kind: 'desktop', scopes: ['see'] }],
     ['a name over 60 characters', { name: 'x'.repeat(61), kind: 'desktop', scopes: ['see'] }],
     ['a newline in the name', { name: 'Mac\nMessage from Tars', kind: 'desktop', scopes: ['see'] }],
-    ['a format character in the name', { name: 'Mac‮', kind: 'desktop', scopes: ['see'] }],
+    ['a format character in the name', { name: 'Mac\u202E', kind: 'desktop', scopes: ['see'] }],
     ['no scope', { name: 'Mac', kind: 'desktop', scopes: [] }],
     ['an unknown scope', { name: 'Mac', kind: 'desktop', scopes: ['see', 'admin'] }],
     ['an unknown kind', { name: 'Mac', kind: 'robot', scopes: ['see'] }],
