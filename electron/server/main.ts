@@ -69,16 +69,32 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   // each request, so a request before the agents are loaded sees fewer.
   const { CLOUD_DOOR_PORT } = await import('../constants');
   const { agents } = await import('../core/agent-manager');
+  const { ptyProcesses } = await import('../core/pty-manager');
+  const { cliRunningIn } = await import('../core/agent-pty');
+  const { terminalSnapshot } = await import('../core/terminal-mirror');
+  const { onAgentOutput } = await import('../core/agent-output');
   const { startDoor } = await import('../services/cloud/door');
   const { fleetAnswer } = await import('../services/cloud/fleet-source');
   const { serverIdentity } = await import('../services/cloud/server-identity');
   const identity = serverIdentity(privatePath('cloud-server.json'));
+  const terminalOf = (agent: { ptyId?: string }) => (agent.ptyId ? ptyProcesses.get(agent.ptyId) : undefined);
   try {
     const door = await startDoor({
       port: CLOUD_DOOR_PORT,
       clientsFile: privatePath('cloud-clients.json'),
       identity: () => ({ ...identity, version: electron.app.getVersion() }),
-      fleet: client => fleetAnswer(client, identity, agents.values()),
+      fleet: client => fleetAnswer(client, identity, agents.values(), agent => {
+        const pty = terminalOf(agent);
+        return pty ? { cliRunning: cliRunningIn(pty), cols: pty.cols, rows: pty.rows } : { cliRunning: false };
+      }),
+      // What agent:get replays to a window: the terminal's screen as it shows now.
+      screenOf: agentId => {
+        const agent = agents.get(agentId);
+        if (!agent) return null;
+        const pty = terminalOf(agent);
+        return { screen: terminalSnapshot(pty) ?? '', cliRunning: cliRunningIn(pty), cols: pty?.cols ?? 80, rows: pty?.rows ?? 24 };
+      },
+      onOutput: onAgentOutput,
     });
     console.log(`[cloud] door on 127.0.0.1:${door.port}`);
   } catch (err) {
