@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -19,11 +20,14 @@ import * as path from 'node:path';
  * - the local API not answering /api/health on its port
  * - SIGTERM leaving the process running past 20 s (POSIX: on Windows a signal
  *   is a hard kill, and a server runs on Linux)
+ * - a server booting on a data folder another Tars answers for (Review Focus 3)
+ * - `status --json` printing more than one line, or not the running server
  */
 
 const ROOT = path.resolve(__dirname, '../../..');
 const ENTRY = path.join(ROOT, 'electron', 'dist', 'server', 'main.js');
 const GUARD = path.join(ROOT, '__tests__', 'fixtures', 'no-electron.cjs');
+const CLI = path.join(ROOT, 'electron', 'dist', 'server', 'cli.js');
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -37,9 +41,16 @@ function freePort(): Promise<number> {
 }
 
 let child: ChildProcess | null = null;
-afterEach(() => {
-  if (child && child.exitCode === null) child.kill('SIGKILL');
+// Waits for the exit too: on Windows a killed server holds its HOME's files
+// until it is gone, and the suite's folder must be removable when the file ends.
+afterEach(async () => {
+  const running = child;
   child = null;
+  if (!running || running.exitCode !== null || running.signalCode !== null) return;
+  const gone = new Promise(resolve => running.once('exit', resolve));
+  running.kill('SIGKILL');
+  await Promise.race([gone, new Promise(resolve => setTimeout(resolve, 10_000))]);
+  await new Promise(resolve => setTimeout(resolve, 500));
 });
 
 beforeAll(() => {
@@ -81,5 +92,29 @@ describe('tars-server', () => {
     child!.kill('SIGTERM');
     const code = await Promise.race([exited, new Promise<string>(r => setTimeout(() => r('still running'), 20_000))]);
     expect(code).toBe(0);
+  }, 180_000);
+
+  it('refuses a data folder another Tars answers for', async () => {
+    const fake = http.createServer((req, res) => { res.writeHead(req.url === '/api/health' ? 200 : 404); res.end('{}'); });
+    const port = await new Promise<number>(r => fake.listen(0, '127.0.0.1', () => r((fake.address() as net.AddressInfo).port)));
+    try {
+      let output = '';
+      child = spawn(process.execPath, ['-r', GUARD, ENTRY], { cwd: os.tmpdir(), env: { ...process.env, DOROTHY_API_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout!.on('data', chunk => { output += String(chunk); });
+      child.stderr!.on('data', chunk => { output += String(chunk); });
+      const code = await Promise.race([new Promise<number | null>(r => child!.once('exit', c => r(c))), new Promise<string>(r => setTimeout(() => r('still running'), 60_000))]);
+      expect(code).toBe(1);
+      expect(output).toMatch(/never shares a data folder/);
+      expect(output).not.toMatch(/App initialization complete/);
+    } finally {
+      fake.close();
+    }
+  }, 120_000);
+
+  it('status --json reads the running server, in one line', async () => {
+    const { port } = await boot();
+    const out = execFileSync(process.execPath, [CLI, 'status', '--json'], { env: { ...process.env, DOROTHY_API_PORT: String(port) } }).toString();
+    expect(out.trim().split(/\r?\n/)).toHaveLength(1);
+    expect(JSON.parse(out)).toMatchObject({ running: true, pid: child!.pid, apiPort: port, startedBy: 'shell' });
   }, 180_000);
 });
