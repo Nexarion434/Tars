@@ -117,7 +117,7 @@ M2 to M5 each get their own detailed plan (same format) once the milestone befor
 
 Each branch is cut from `upstream/main` and takes its PR's commits from `up/tars-cloud` (a clean history from `upstream/main`, so cherry-picking from it is allowed; never from the old-history branches).
 
-1. `refactor: a headless electron, and the core started from one function` (Tasks 1 to 3): no behaviour change. The one Noah must agree with first: it answers `require('electron')` with another module on a server, and moves the core's start out of `main.ts`. Recommended: an issue describing it once M1 is proven, before M2's UI, on Nicolas's go.
+1. `refactor: a headless electron, and main.ts without a window` (Tasks 1 to 3): no behaviour change. The one Noah must agree with first: it answers `require('electron')` with another module on a server, and skips `main.ts`'s window steps there. Recommended: an issue describing it once M1 is proven, before M2's UI, on Nicolas's go.
 2. `feat: run tars without a window, as a server` (Task 4).
 3. `feat: clients of a tars server, and what they may see` (Tasks 5 and 6).
 4. `feat: drive a tars server's agents from a client` (Task 7).
@@ -153,8 +153,8 @@ Critical lane, per milestone, in this order:
 |---|---|
 | `electron/host/headless-electron.ts` (new, Task 1, done) | `createHeadlessElectron`: the `electron` a server loads |
 | `electron/host/install-headless.ts` (new, Task 1, done) | `installHeadlessElectron`: `require('electron')` answers it, Electron's package never loaded |
-| `electron/core/start-core.ts` (new) | `startCore`: what keeps agents alive and reachable without a window, in `main.ts`'s order |
-| `electron/main.ts` | calls `startCore` where those calls were |
+| `electron/host/headless.ts` (new, Task 3) | `HEADLESS` |
+| `electron/main.ts` (Task 3) | `if (!HEADLESS)` around the window steps, in place |
 | `electron/server/main.ts`, `cli.ts`, `lock.ts` (new) | the headless entry, `serve`, `start`, `status`, `clients`; the data-folder claim |
 | `electron/constants/index.ts` | `CLOUD_DOOR_PORT` |
 | `electron/services/cloud/types.ts`, `clients.ts`, `server-identity.ts` (new) | scopes, clients, the credential store, the server's id and name |
@@ -201,23 +201,27 @@ Critical lane, per milestone, in this order:
 - [x] **Step 4:** PASS, 5 of 5.
 - [x] **Step 5:** commit `test: the core asks a server's electron only what it answers`.
 
-### Task 3: `startCore`, out of `main.ts`
+### Task 3: `main.ts` runs without a window
+
+**Plan change (measured at the start of Task 3, 2026-11-02):** the first version moved the core's calls into one `startCore()`, "in the same order". Read in full, `main.ts`'s `app.whenReady` body (lines 539 to 805) interleaves the two all the way down: `loadAgents`, then `startHealthMonitor`, `startAgentAutosave`, `setupProtocolHandler`, `createWindow`, `installDesktopShell`, `initTray`, the IPC handlers, `setAccountEnvResolver`, more handlers, `startOverseerWatch`, `initVaultDb`, more handlers, the relays, the bots, the API, recovery, the watches, the MCP setup, the hooks, the updater, the CLI updates; and its steps share `main.ts`'s own `appSettings`, `errorReports` and `previousRun`. One function cannot keep that order, and moving 270 lines is the riskiest diff of M1. Instead, `main.ts` stays the one composition root for both: a server loads it under the headless electron, and only the steps the headless electron refuses are skipped there, each in place, so the order of everything else is the desktop's by construction. IPC handlers need no guard: the headless `ipcMain` accepts them and nothing calls them.
 
 **Files:**
-- Create: `electron/core/start-core.ts`
-- Modify: `electron/main.ts` (the `app.whenReady` body from line 539: the core's calls move into `startCore`, in the same order; the desktop's stay)
-- Test: `__tests__/electron/core/start-core.test.ts`
+- Create: `electron/host/headless.ts` (`export const HEADLESS = process.versions.electron === undefined`: true under plain Node only, never in the desktop)
+- Modify: `electron/main.ts`: `if (!HEADLESS)` around, in place: `registerProtocolSchemes`, `setupProtocolHandler`, `createWindow` and `uncaught.windowOpened`, `installDesktopShell`, `initTray`, the `nodeMissing` dialog (a log line instead on a server), `initAutoUpdater` and the update checks, and whatever Task 4's boot finds refusing (each added with its failing case first)
+- Test: `__tests__/electron/host/main-headless.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2.
-- Produces: `export interface CoreContext { settings(): AppSettings; saveSettings(next: AppSettings): void; onStatusChange(agent: AgentStatus, status: string): void; previousRun: PreviousRun }`, `export interface CoreHandle { stop(): Promise<void> }`, `startCore(ctx: CoreContext): Promise<CoreHandle>` (a second call throws).
+- Consumes: Tasks 1 and 2.
+- Produces: `HEADLESS: boolean`; `WINDOW_STEPS` in the test (the calls above).
 
-Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents alive and reachable without a window (known so far: `loadAgents`, `startAgentAutosave`, `configureStatusHooks`, the MCP setup, `initVaultDb`, `startHermesRelay`, `startRelayRouting`, `startHermesSessionWatch`, `initTelegramBot`, `initSlackBot`, `startDiscordBot`, `initApiServer` with the OpenAI bridge, `startRestartRecovery`, `startAgentWatch`, `startTaskWatch`, the stall, sleep, Codex and Pi session watches, `startCliUpdates`, `startErrorTriage`, `startTmpRetention`); **desktop** is whatever draws, asks the person at the screen, or updates the app (`setupProtocolHandler`, `createWindow`, `initTray`, `registerIpcHandlers` and every `register*Handlers`, `startHealthMonitor`, `installDesktopShell`, `initAutoUpdater`, the data-folder notice, `startOverseerWatch`). A call that fits neither is listed in the commit body with where it went and why. `CoreHandle.stop` feeds `runShutdownSteps`.
+- [ ] **Step 1: Write the failing tests.** Read `main.ts` with the TypeScript parser: each call in `WINDOW_STEPS` sits inside an `if (!HEADLESS)` block, and no other statement does (a guard around a core step would drop it from the server silently). Header: a window step unguarded (a server would throw at boot); a core step guarded; `HEADLESS` true in an Electron process (it reads `process.versions.electron`, which every Electron process has).
+- [ ] **Step 2:** FAIL (no guards yet).
+- [ ] **Step 3:** add the guards; nothing moves.
+- [ ] **Step 4:** PASS. Bites: one guard removed turns it red, naming the call.
+- [ ] **Step 5: The desktop is unchanged.** On this PC, nothing else running tests: `npm test` and `npm run e2e` (148 specs, one worker), each compared with the same runs at the commit before Task 3, never with zero (upstream has known Windows failures and this PC's symlink EPERM tests); a new failure or a moved screenshot blocks; an `Unhandled Errors` block counts as a failure. Then a dev run: agents start, the tray, a notification, quit and relaunch with restart recovery.
+- [ ] **Step 6:** commit `refactor: main.ts skips its window steps when there is no window`.
 
-- [ ] **Step 1: Write the failing tests.** Header: `startCore` twice; `stop()` leaving the API port bound (a second `startCore` in the same process cannot listen); `startCore` under the headless electron touching a window or failing on a member it lacks. The test runs `startCore` with `vi.mock('electron', () => createHeadlessElectron(...))` in the vitest sandbox HOME on an API port of its own.
-- [ ] **Step 2:** FAIL. **Step 3:** move the calls, keeping their order. **Step 4:** PASS.
-- [ ] **Step 5: The desktop is unchanged.** Both `tsc`, `npm test`, `npm run lint`, then `npm run e2e:auto` (the whole suite for any `electron/` change): every surface keeps its reference screenshot, zero page errors; then a dev run: agents start, the tray, a notification, quit and relaunch with restart recovery.
-- [ ] **Step 6:** commit `refactor: the core starts from one function the desktop calls`.
+Task 4 then shrinks: `electron/server/main.ts` installs the headless electron and requires `../main`; its spec is the first proof that the whole boot runs headless. Known risk for that boot: modules that read Electron at their own load (`@sentry/electron/main` behind `startErrorReports`, `electron-updater`); each found is answered in `headless-electron.ts` or guarded, failing case first.
 
 ### Task 4: `tars-server`: the entry, its CLI, its lock
 
@@ -235,7 +239,7 @@ Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents al
 
 - [ ] **Step 1: Write the failing tests.** Header: `serve` requiring `electron` (it runs under `node -r __tests__/fixtures/no-electron.cjs`, which throws on any load of `electron`); `refuses a data folder another Tars uses` (a fake health server on the API port: `serve` exits 1 naming it, writes nothing under `DATA_DIR`); a stale lock blocking; `status --json` printing more than one line or a log line on stdout; SIGTERM leaving a port bound or exiting non-zero after 10 s; `start` when already running starting a second one.
 - [ ] **Step 2:** run `npx tsc -p electron/tsconfig.json && npx vitest run __tests__/electron/server`. Expected: FAIL.
-- [ ] **Step 3:** implement `server/main.ts`: `installHeadlessElectron(createHeadlessElectron(...))` before any other require, then `claimDataFolder`, `startCore`, signals to the shutdown steps. The MCP bundles may be absent (a dev checkout): the server logs it once and runs on. Write the unit and `server-install.sh` (the steps OPERATIONS.md lists in Task 8, `set -eu`, no `sudo` inside: what needs root is printed for the person to run); neither is run against the server in M1.
+- [ ] **Step 3:** implement `server/main.ts`: `installHeadlessElectron(createHeadlessElectron(...))` before any other require, then `claimDataFolder`, then `require('../main')` (Task 3); SIGTERM and SIGINT call `app.quit()`, so the before-quit shutdown steps run as on the desktop. The MCP bundles may be absent (a dev checkout): the server logs it once and runs on. Write the unit and `server-install.sh` (the steps OPERATIONS.md lists in Task 8, `set -eu`, no `sudo` inside: what needs root is printed for the person to run); neither is run against the server in M1.
 - [ ] **Step 4:** PASS, then the graph test again with the new root. Expected: PASS.
 - [ ] **Step 5:** commit `feat: run tars without a window, as a server`.
 
@@ -261,7 +265,7 @@ Read `main.ts` 190 to 1107 first. The rule: **core** is whatever keeps agents al
 
 **Files:**
 - Create: `electron/services/cloud/door.ts`, `electron/services/cloud/fleet-share.ts`, `electron/services/cloud/fleet-source.ts`
-- Modify: `electron/constants/index.ts` (`CLOUD_DOOR_PORT = API_PORT + 2`), `electron/core/agent-manager.ts` (`onAgentOutput`, fed where a terminal's data is broadcast as `agent:output`, `attachAgentTerminal` near line 1339), `electron/server/main.ts` (starts the door after `startCore`, closes it first at shutdown)
+- Modify: `electron/constants/index.ts` (`CLOUD_DOOR_PORT = API_PORT + 2`), `electron/core/agent-manager.ts` (`onAgentOutput`, fed where a terminal's data is broadcast as `agent:output`, `attachAgentTerminal` near line 1339), `electron/server/main.ts` (starts the door once the boot logs `App initialization complete`, closes it first at shutdown)
 - Test: `__tests__/electron/cloud/door-admit.test.ts`, `__tests__/electron/cloud/door-see.test.ts`, `__tests__/electron/cloud/fleet-share.test.ts`, `__tests__/electron/core/agent-output-listeners.test.ts`
 
 **Interfaces:**
