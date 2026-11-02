@@ -121,8 +121,13 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
         },
         // agent:start, with no first prompt.
         start: async agentId => {
-          const launched = await launchAgent(agentId, '');
-          return launched.success ? { ok: true as const } : { ok: false as const, error: launched.error ?? 'The agent did not start.' };
+          try {
+            const launched = await launchAgent(agentId, '');
+            return launched.success ? { ok: true as const } : { ok: false as const, error: launched.error ?? 'The agent did not start.' };
+          } catch (err) {
+            // launchAgent throws a LaunchError for a CLI it cannot start: its sentence says why.
+            return { ok: false as const, error: (err as Error).message };
+          }
         },
         // agent:stop, filed under the client.
         stop: async (agentId, by, reason) => {
