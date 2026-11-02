@@ -150,11 +150,14 @@ describe.skipIf(process.platform === 'win32')('a client drives a real agent on a
     const credential = minted.credential as string;
 
     expect(await nova(door, credential)).toMatchObject({ agentId: 'nova', cliRunning: false });
+    // The stream is opened before the start, so it carries the CLI's first screen.
+    const stream = openStream(door, credential);
     const started = await call(door, 'POST', '/cloud/v1/agents/nova/start', credential, {});
     expect(started.status, JSON.stringify(started.json)).toBe(200);
     await until(() => nova(door, credential), a => a?.cliRunning === true, 60_000, 'the CLI to run');
-
-    const stream = openStream(door, credential);
+    // A person types once the prompt is up. cliRunning is true as soon as the CLI is the terminal's process, before
+    // it reads its input (measured on the ubuntu runner: keys typed then were echoed and lost).
+    await until(() => stream.text(), t => t.includes('stand-in ready'), 30_000, 'the CLI\'s prompt in the stream');
     // As a person types: the words, then the Enter. Text and Enter in one chunk are a paste to the CLI, which
     // submits nothing inside a paste (measured on the ubuntu runner: the stream echoed the line, nothing ran).
     expect((await call(door, 'POST', '/cloud/v1/agents/nova/keys', credential, { data: 'ECHO alpha' })).status).toBe(200);
