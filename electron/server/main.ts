@@ -61,6 +61,27 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   }
 
   await import('../main');
+
+  // The door for the server's clients, beside the boot: it reads the fleet at
+  // each request, so a request before the agents are loaded sees fewer.
+  const { CLOUD_DOOR_PORT } = await import('../constants');
+  const { agents } = await import('../core/agent-manager');
+  const { startDoor } = await import('../services/cloud/door');
+  const { fleetAnswer } = await import('../services/cloud/fleet-source');
+  const { serverIdentity } = await import('../services/cloud/server-identity');
+  const identity = serverIdentity(privatePath('cloud-server.json'));
+  try {
+    const door = await startDoor({
+      port: CLOUD_DOOR_PORT,
+      clientsFile: privatePath('cloud-clients.json'),
+      identity: () => ({ ...identity, version: electron.app.getVersion() }),
+      fleet: client => fleetAnswer(client, identity, agents.values()),
+    });
+    console.log(`[cloud] door on 127.0.0.1:${door.port}`);
+  } catch (err) {
+    // The agents keep running; only the clients cannot reach them, which status says.
+    console.error(`[cloud] the door could not open on 127.0.0.1:${CLOUD_DOOR_PORT}: ${(err as Error).message}`);
+  }
 }
 
 if (require.main === module) void serve({ dev: process.argv.includes('--dev') });

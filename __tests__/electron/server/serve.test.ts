@@ -40,6 +40,17 @@ function freePort(): Promise<number> {
   });
 }
 
+function get(port: number, urlPath: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.get({ host: '127.0.0.1', port, path: urlPath, headers }, res => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+  });
+}
+
 let child: ChildProcess | null = null;
 // Waits for the exit too: on Windows a killed server holds its HOME's files
 // until it is gone, and the suite's folder must be removable when the file ends.
@@ -120,6 +131,23 @@ describe('tars-server', () => {
     const status = JSON.parse(execFileSync(process.execPath, [CLI, 'status', '--json']).toString());
     expect(status.serverId).toBe(printed.serverId);
   }, 60_000);
+
+  it('opens its door on API_PORT + 2: hello, the fleet for a client, and never the master token', async () => {
+    const { port } = await boot();
+    const env = { ...process.env, DOROTHY_API_PORT: String(port) };
+    const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see'] }), env }).toString());
+    const door = port + 2;
+    const hello = await get(door, '/cloud/v1/hello');
+    expect(hello.status).toBe(200);
+    expect(JSON.parse(hello.body).serverId).toBe(minted.serverId);
+    const fleet = await get(door, '/cloud/v1/fleet', { Authorization: `Bearer ${minted.credential}` });
+    expect(fleet.status).toBe(200);
+    expect(JSON.parse(fleet.body)).toMatchObject({ v: 1, youMay: ['see'], agents: [] });
+    const master = fs.readFileSync(path.join(os.homedir(), '.tars-private', 'api-token'), 'utf-8').trim();
+    expect(master.length).toBeGreaterThan(16);
+    expect((await get(door, '/cloud/v1/fleet', { Authorization: `Bearer ${master}` })).status).toBe(401);
+    for (const answer of [hello, fleet]) expect(answer.body).not.toContain(master);
+  }, 180_000);
 
   it('status --json reads the running server, in one line', async () => {
     const { port } = await boot();
