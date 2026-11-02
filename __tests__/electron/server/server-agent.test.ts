@@ -155,7 +155,10 @@ describe.skipIf(process.platform === 'win32')('a client drives a real agent on a
     await until(() => nova(door, credential), a => a?.cliRunning === true, 60_000, 'the CLI to run');
 
     const stream = openStream(door, credential);
-    expect((await call(door, 'POST', '/cloud/v1/agents/nova/keys', credential, { data: 'ECHO alpha\r' })).status).toBe(200);
+    // As a person types: the words, then the Enter. Text and Enter in one chunk are a paste to the CLI, which
+    // submits nothing inside a paste (measured on the ubuntu runner: the stream echoed the line, nothing ran).
+    expect((await call(door, 'POST', '/cloud/v1/agents/nova/keys', credential, { data: 'ECHO alpha' })).status).toBe(200);
+    expect((await call(door, 'POST', '/cloud/v1/agents/nova/keys', credential, { data: '\r' })).status).toBe(200);
     await until(() => typedLines(log), lines => lines.some(l => l.includes('ECHO alpha')), 30_000, 'the keys in the CLI').catch(err => { throw new Error(err.message + ' LOG=' + (fs.existsSync(log) ? fs.readFileSync(log, 'utf-8').slice(-1500) : 'none') + ' STREAM=' + stream.text().slice(-1500)); });
     await until(() => stream.text(), t => t.includes('echo alpha'), 30_000, 'the answer in the stream');
 
@@ -170,4 +173,36 @@ describe.skipIf(process.platform === 'win32')('a client drives a real agent on a
     await until(() => stream.ended(), e => e, 5_000, 'the stream to end');
     expect((await call(door, 'GET', '/cloud/v1/fleet', credential)).status).toBe(401);
   }, 240_000);
+
+  // Review Focus 1: a systemd restart or an update. As at a desktop's relaunch, an agent at rest stays at rest
+  // (restart recovery resumes only the agents that were mid-turn): it is still there, and its CLI comes back,
+  // by recovery or by the client's start, and takes a message again.
+  it('keeps its agent across a SIGTERM and a new serve, and drives it again', async () => {
+    const { log } = seed();
+    const port = await freePort();
+    const env = { ...process.env, DOROTHY_API_PORT: String(port) };
+    const minted = JSON.parse(execFileSync(process.execPath, [CLI, 'clients', 'add', '--json'], { input: JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] }), env }).toString());
+    const credential = minted.credential as string;
+    const door = port + 2;
+    await boot(port);
+    expect((await call(door, 'POST', '/cloud/v1/agents/nova/start', credential, {})).status).toBe(200);
+    await until(() => nova(door, credential), a => a?.cliRunning === true, 60_000, 'the CLI to run');
+
+    const first = child!;
+    const exited = new Promise<number | null>(resolve => first.once('exit', code => resolve(code)));
+    first.kill('SIGTERM');
+    expect(await Promise.race([exited, new Promise<string>(r => setTimeout(() => r('still running'), 30_000))])).toBe(0);
+
+    await boot(port);
+    expect(await nova(door, credential)).toMatchObject({ agentId: 'nova', name: 'Nova' });
+    const back = await until(() => nova(door, credential), a => a?.cliRunning === true, 15_000, 'recovery').catch(() => null);
+    if (!back) {
+      const started = await call(door, 'POST', '/cloud/v1/agents/nova/start', credential, {});
+      expect(started.status, JSON.stringify(started.json)).toBe(200);
+      await until(() => nova(door, credential), a => a?.cliRunning === true, 60_000, 'the CLI to run again');
+    }
+    expect((await call(door, 'POST', '/cloud/v1/agents/nova/message', credential, { text: 'ECHO gamma' })).status).toBe(200);
+    const lines = await until(() => typedLines(log), l => l.some(t => t.includes('ECHO gamma')), 30_000, 'the message after the restart');
+    expect(lines.find(t => t.includes('ECHO gamma'))).toContain('Message from the machine "Mac": ');
+  }, 300_000);
 });
