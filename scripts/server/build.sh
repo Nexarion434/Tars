@@ -22,10 +22,11 @@ fi
 # The server never loads Electron: no need for its 100 MB binary.
 ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 npx tsc -p electron/tsconfig.json
-# The bundled MCP servers, whichever this checkout has.
+# The bundled MCP servers, whichever this checkout has; mcp-shared is a library they share, with nothing to
+# build (measured on the VPS trial of 2026-11-02, where `npm run build` stopped the script there).
 for dir in mcp-*/; do
   [ -f "${dir}package.json" ] || continue
-  (cd "$dir" && npm install && npm run build)
+  (cd "$dir" && npm install && npm run build --if-present)
 done
 
 echo "Built. Run in the foreground: node $ROOT/electron/dist/server/cli.js serve"
