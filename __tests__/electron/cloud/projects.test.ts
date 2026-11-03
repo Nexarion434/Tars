@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createProject, gitUrlProblem, projectNameProblem, projectsRoot, type GitRunner } from '../../../electron/services/cloud/projects';
+import { gitSshCommand } from '../../../electron/services/cloud/git-access';
 
 /**
  * A project made on a Tars server, empty or cloned (services/cloud/projects.ts,
@@ -27,6 +28,10 @@ import { createProject, gitUrlProblem, projectNameProblem, projectsRoot, type Gi
  * 6. a clone that fails, takes longer than its time, or grows past the size
  *    cap leaves its folder behind; or says nothing a person can act on
  * 7. an empty project is anything but a folder with `git init` run in it
+ * 8. (Task 2b) a clone over SSH runs without the server's own key and the
+ *    pinned hosts, or before they exist; or says nothing a person can act on
+ *    when the host is unknown or the key not allowed; or runs at all when
+ *    the key cannot be made
  */
 
 let root: string;
@@ -98,9 +103,41 @@ describe('createProject', () => {
   });
 
   it('5. a clone: the address after --, no submodules, one commit deep, run in the root', async () => {
-    const answer = await createProject('tars', { kind: 'git', url: 'git@github.com:Nexarion434/Tars.git' }, { root, git: fakeGit() });
+    const answer = await createProject('tars', { kind: 'git', url: 'https://github.com/Nexarion434/Tars.git' }, { root, git: fakeGit() });
     expect(answer).toEqual({ ok: true, path: path.join(root, 'tars') });
-    expect(calls).toEqual([{ cwd: root, args: ['clone', '--no-recurse-submodules', '--depth', '1', '--', 'git@github.com:Nexarion434/Tars.git', 'tars'] }]);
+    expect(calls).toEqual([{ cwd: root, args: ['clone', '--no-recurse-submodules', '--depth', '1', '--', 'https://github.com/Nexarion434/Tars.git', 'tars'] }]);
+  });
+
+  // 8. Over SSH: the server's own key and the pinned hosts (git-access.ts, Task 2b).
+  const access = () => ({ dir: path.join(path.dirname(root), 'git'), keygen: async (args: string[]) => {
+    const file = args[args.indexOf('-f') + 1];
+    fs.writeFileSync(file, 'PRIVATE', { mode: 0o600 });
+    fs.writeFileSync(`${file}.pub`, 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl tars-server\n');
+  } });
+
+  it('8. a clone over ssh runs with the server\'s own key and the pinned hosts, made first', async () => {
+    const gitAccess = access();
+    const answer = await createProject('tars', { kind: 'git', url: 'git@github.com:Nexarion434/Tars.git' }, { root, git: fakeGit(), gitAccess });
+    expect(answer).toEqual({ ok: true, path: path.join(root, 'tars') });
+    expect(calls).toEqual([{ cwd: root, args: ['-c', `core.sshCommand=${gitSshCommand(gitAccess)}`, 'clone', '--no-recurse-submodules', '--depth', '1', '--', 'git@github.com:Nexarion434/Tars.git', 'tars'] }]);
+    expect(fs.existsSync(path.join(gitAccess.dir, 'id_ed25519.pub'))).toBe(true);
+    expect(fs.readFileSync(path.join(gitAccess.dir, 'known_hosts'), 'utf8')).toContain('github.com ssh-ed25519 ');
+  });
+
+  it('8. a host the server does not know, or a key it may not use, is said so, and leaves no folder', async () => {
+    const unknown: GitRunner = async (cwd, args) => {
+      calls.push({ cwd, args });
+      throw Object.assign(new Error('exit 128'), { stderr: 'No ED25519 host key is known for git.example and you have requested strict checking.\nHost key verification failed.\nfatal: Could not read from remote repository.\n' });
+    };
+    const answer = await createProject('x', { kind: 'git', url: 'ssh://git@git.example/a/b' }, { root, git: unknown, gitAccess: access() });
+    expect(answer).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/does not know git\.example's key/) });
+    expect(fs.existsSync(path.join(root, 'x'))).toBe(false);
+  });
+
+  it('8. no key, no clone', async () => {
+    const answer = await createProject('x', { kind: 'git', url: 'git@github.com:a/b' }, { root, git: fakeGit(), gitAccess: { dir: path.join(path.dirname(root), 'git'), keygen: async () => { throw new Error('no ssh-keygen'); } } });
+    expect(answer).toMatchObject({ ok: false, status: 500, error: expect.stringMatching(/ssh-keygen/) });
+    expect(calls).toEqual([]);
   });
 
   it('1, 4. a bad name or address: 400, and git never runs', async () => {

@@ -71,7 +71,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 
 - [ ] Failures first: each refusal the route makes today still refused with the same status and sentence (the route's existing tests stay green unchanged); the record has exactly today's fields and defaults (`permissionMode` `auto`, `role` `worker`); nothing spawns (no PTY, no worktree); an orchestrator role refused before anything is written.
 - [ ] Tests: the route's tests unchanged, plus `agent-create.test.ts` on the function alone.
-- [ ] Commit `refactor: one function creates an agent record`.
+- [x] Commit `refactor: one function creates an agent record` (924797b5).
 
 ### Task 2: `projects.ts`, a project on the server (about 55 min)
 
@@ -79,7 +79,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 
 - [ ] Failures first: every name in Review Focus 1 refused, and a name already taken; a root that is a link or missing (created 0700 when missing, refused when a link); each URL in Review Focus 1 refused before git runs (a fake `git` records it never ran), and the three good shapes accepted; a clone that fails, hangs past the timeout or passes the size cap leaves no folder; git's argv has the URL after `--`, its env has `GIT_ALLOW_PROTOCOL=https:ssh` and `GIT_TERMINAL_PROMPT=0`; an empty project is a folder with `git init` (so worktrees work) and nothing else.
 - [ ] Tests with a fake `git` (`__tests__/fixtures/fake-git.cjs`), no network.
-- [ ] Commit `feat: the server creates a project, empty or cloned`.
+- [x] Commit `feat: the server creates a project, empty or cloned` (715672ff).
 
 ### Task 2b: the server's own Git key, and pinned host keys (about 55 min)
 
@@ -87,7 +87,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 
 - [ ] Failures first: the private key never in an answer, a log or the window (asserted on every route and CLI output); a key file with looser permissions, or a link at its path, refused and left; an existing key never overwritten; the pinned GitHub lines are exactly the published fingerprints (a test pins them); a clone to an unknown host ends with "this server does not know <host>'s key" and adds nothing to `known_hosts`; a host key that differs ends the clone; `git known-host add` refuses a line that is not `<host> <type> <base64>`, a host with a wildcard or a `@cert-authority`/`@revoked` marker.
 - [ ] Tests with a fake `ssh-keygen` and a fake `git`; the fingerprints checked once against docs.github.com when the task is built (said in the commit).
-- [ ] Commit `feat: the server clones over ssh with its own key, host keys pinned`.
+- [x] Commit `feat: the server clones over ssh with its own key, host keys pinned` (the functions and the clone; the CLI's `git key` and `git known-host add` land with Task 5, the door's `GET /cloud/v1/git-key` with Task 4, which touch those files anyway).
 
 ### Task 3: memory before a start (about 45 min)
 

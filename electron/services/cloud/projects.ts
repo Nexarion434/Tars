@@ -4,6 +4,7 @@ import * as path from 'path';
 import { isUnsafePathSegment } from '../../platform/windows-names';
 import { isUnder } from '../../platform/path-compare';
 import { safeGit } from '../../utils/safe-git';
+import { ensureKnownHosts, gitKey, gitSshCommand, gitSshProblem, type GitAccessDeps } from './git-access';
 
 /**
  * A project made on a Tars server, empty or cloned
@@ -36,7 +37,12 @@ export interface ProjectDeps {
   maxBytes?: number;
   /** How often a clone's size is read, 2 s by default. */
   pollMs?: number;
+  /** The server's own Git key and pinned hosts, for a clone over SSH (git-access.ts). */
+  gitAccess?: GitAccessDeps;
 }
+
+/** The host a git address names: for git's own words about keys. */
+const gitHost = (url: string): string => (url.startsWith('https://') || url.startsWith('ssh://') ? new URL(url).hostname : url.slice(url.indexOf('@') + 1, url.indexOf(':')));
 
 export const projectsRoot = (home: string = os.homedir()): string => path.join(home, 'projects');
 
@@ -163,13 +169,25 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
     }
   }
 
+  // Over SSH: the server's own key and the pinned hosts, both there before git runs (Task 2b).
+  const overSsh = !from.url.startsWith('https://');
+  let sshOptions: string[] = [];
+  if (overSsh) {
+    const key = await gitKey(deps.gitAccess);
+    if (!key.ok) return { ok: false, status: 500, error: key.error };
+    const hosts = ensureKnownHosts(deps.gitAccess);
+    if (!hosts.ok) return { ok: false, status: 500, error: hosts.error };
+    // After safeGit's own core.sshCommand=ssh: the last -c wins.
+    sshOptions = ['-c', `core.sshCommand=${gitSshCommand(deps.gitAccess)}`];
+  }
+
   const cap = deps.maxBytes ?? 2 * 1024 ** 3;
   let tooBig = false;
   const watch = setInterval(() => {
     if (!tooBig && bytesOver(target, cap)) { tooBig = true; abort.abort(); }
   }, deps.pollMs ?? 2000);
   try {
-    await git(root, ['clone', '--no-recurse-submodules', '--depth', '1', '--', from.url, name], { timeout, signal: abort.signal });
+    await git(root, [...sshOptions, 'clone', '--no-recurse-submodules', '--depth', '1', '--', from.url, name], { timeout, signal: abort.signal });
     clearInterval(watch);
     if (tooBig || bytesOver(target, cap)) {
       removeTarget();
@@ -182,7 +200,8 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
     if (tooBig) return { ok: false, status: 507, error: `The repository is larger than ${Math.round(cap / 1024 ** 2)} MB: the clone was stopped.` };
     const e = err as { killed?: boolean; code?: unknown };
     if (e.killed || e.code === 'ETIMEDOUT') return { ok: false, status: 504, error: `git took longer than ${Math.round(timeout / 60_000) || 1} min to clone it: stopped.` };
-    return { ok: false, status: 502, error: `git could not clone it: ${lastLine(err)}` };
+    const keys = overSsh ? gitSshProblem(String((err as { stderr?: unknown }).stderr ?? ''), gitHost(from.url)) : null;
+    return { ok: false, status: 502, error: keys ?? `git could not clone it: ${lastLine(err)}` };
   }
 }
 
