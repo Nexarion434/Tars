@@ -686271,6 +686271,60 @@
                       "fontFamily": "$font-ui",
                       "fontSize": 10.5,
                       "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "BffyH",
+                      "name": "trust",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": [
+                        4,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "F7hYh",
+                          "name": "trust row",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "op5BJ",
+                              "name": "box",
+                              "width": 12,
+                              "height": 12,
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1
+                            },
+                            {
+                              "type": "text",
+                              "id": "CAHqD",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "I trust this repository's code",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "a0uHLB",
+                          "name": "hint",
+                          "fill": "$text-muted",
+                          "content": "Its settings can run code on my-server as soon as an agent starts.",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -686341,6 +686395,7 @@
                       "type": "frame",
                       "id": "q7mWT0",
                       "name": "b Create project",
+                      "opacity": 0.4,
                       "height": 32,
                       "fill": "$accent",
                       "stroke": "$accent",
@@ -686374,7 +686429,7 @@
           "type": "frame",
           "id": "auhZr",
           "x": 340,
-          "y": 599,
+          "y": 647,
           "name": "note",
           "width": 760,
           "layout": "vertical",
@@ -691129,6 +691184,60 @@
                       "fontFamily": "$font-ui",
                       "fontSize": 10.5,
                       "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "p24J08",
+                      "name": "trust",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": [
+                        4,
+                        0,
+                        0,
+                        0
+                      ],
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "m5BOX",
+                          "name": "trust row",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "vXqum",
+                              "name": "box",
+                              "width": 12,
+                              "height": 12,
+                              "stroke": "$border-strong",
+                              "strokeWidth": 1
+                            },
+                            {
+                              "type": "text",
+                              "id": "N3D3Y3",
+                              "name": "l",
+                              "fill": "$text-primary",
+                              "content": "I trust this repository's code",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "azgfS",
+                          "name": "hint",
+                          "fill": "$text-muted",
+                          "content": "Its settings can run code on my-server as soon as an agent starts.",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 10.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -691199,6 +691308,7 @@
                       "type": "frame",
                       "id": "j2A7F",
                       "name": "b Create project",
+                      "opacity": 0.4,
                       "height": 32,
                       "fill": "$accent",
                       "stroke": "$accent",
@@ -691232,7 +691342,7 @@
           "type": "frame",
           "id": "NPSjk",
           "x": 340,
-          "y": 599,
+          "y": 647,
           "name": "note",
           "width": 760,
           "layout": "vertical",
