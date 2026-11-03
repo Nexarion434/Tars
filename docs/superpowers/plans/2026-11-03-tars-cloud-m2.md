@@ -54,69 +54,69 @@
 
 **Interfaces (produces):** `hostProblem(host: string): string | null`; `type ServerRunner`; `runnerProblem(runner: ServerRunner): string | null`; `type ServerCommand = { do: 'status' } | { do: 'start' } | { do: 'clients-add' } | { do: 'clients-list' } | { do: 'clients-revoke'; id: string }`; `remoteWords(runner, command): string[]`; `sshCommandArgv(host, runner, command): string[]`; `sshForwardArgv(host, localEnd: string, remoteSocket: string): string[]`; `spawnSsh(argv, opts?: { ssh?: { file: string; args: string[] } }): ChildProcess`.
 
-- [ ] Failures first in the test header: a host starting with `-`, holding whitespace or a control character, or a shell character, empty, over 255; a container or program word with a shell character or a leading `-`; a revoke id that is not `c_<8 hex>`; a socket path not absolute, holding `:` (it splits `-L`) or whitespace; `StrictHostKeyChecking` ever present; the host not right after `--`; a word that the remote shell would split or expand.
-- [ ] Tests: `refuses hosts that are not [user@]host`, `refuses runner words a remote shell would read`, `docker runner execs the server's cli with sudo -n`, `start goes through the runner`, `the host always follows --`, `never turns host key checking off`, `forward options are T3's plus BatchMode`, `the remote words parse back as themselves in sh` (POSIX only: `sh -c 'for w in <words>; do printf ...'`), `argv reaches ssh unchanged, no shell` (the fake `ssh` writes its argv to a file).
-- [ ] Implement; run `npx vitest run __tests__/electron/cloud-link/ssh.test.ts`; show one mutant red (a check removed); commit `feat: the cloud link's ssh argv, with the host and runner checks`.
+- [x] Failures first in the test header: a host starting with `-`, holding whitespace or a control character, or a shell character, empty, over 255; a container or program word with a shell character or a leading `-`; a revoke id that is not `c_<8 hex>`; a socket path not absolute, holding `:` (it splits `-L`) or whitespace; `StrictHostKeyChecking` ever present; the host not right after `--`; a word that the remote shell would split or expand.
+- [x] Tests: `refuses hosts that are not [user@]host`, `refuses runner words a remote shell would read`, `docker runner execs the server's cli with sudo -n`, `start goes through the runner`, `the host always follows --`, `never turns host key checking off`, `forward options are T3's plus BatchMode`, `the remote words parse back as themselves in sh` (POSIX only: `sh -c 'for w in <words>; do printf ...'`), `argv reaches ssh unchanged, no shell` (the fake `ssh` writes its argv to a file).
+- [x] Implement; run `npx vitest run __tests__/electron/cloud-link/ssh.test.ts`; show one mutant red (a check removed); commit `feat: the cloud link's ssh argv, with the host and runner checks`.
 
 ### Task 2: `remote-run.ts`, one remote command (about 50 min)
 
 **Interfaces:** `runServerCommand(profile: { host; runner }, command: ServerCommand, opts?: { stdin?: object; timeoutMs?: number; ssh? }): Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; problem: SshProblem; detail: string }>`; `type SshProblem = 'ssh-missing' | 'host-key-unknown' | 'host-key-changed' | 'key-refused' | 'unreachable' | 'timeout' | 'sudo-password' | 'not-installed' | 'container-stopped' | 'unreadable' | 'refused' | 'failed'`; `problemSentence(problem, host): string`. Added while writing it: `ssh-missing` (no `ssh` on the desktop), `container-stopped` (`docker exec` on a stopped container fails before the CLI can say `running: false`, so Task 4 reads it as "down"), `refused` (a profile failing Task 1's checks, `ssh` never started).
 
-- [ ] Failures first: `ssh` missing on the desktop; host key unknown or changed (the sentence says to run `ssh <host>` once in a terminal); key refused; no route or DNS; hung past the timeout (killed, not left); `sudo` wanting a password; the CLI or container missing (exit 127, `No such container`); a login banner before the JSON; a non-JSON answer; a JSON line over 64 KB; stdin JSON never on the command line.
-- [ ] Tests drive the fake `ssh` (Task 1's fixture), told by an environment variable which stderr and exit to produce: `reads the last json line past a login banner`, `classifies ssh's own errors in plain words`, `kills a command past its timeout`, `clients add input goes on stdin`.
-- [ ] Commit `feat: the cloud link runs one server command over ssh`.
+- [x] Failures first: `ssh` missing on the desktop; host key unknown or changed (the sentence says to run `ssh <host>` once in a terminal); key refused; no route or DNS; hung past the timeout (killed, not left); `sudo` wanting a password; the CLI or container missing (exit 127, `No such container`); a login banner before the JSON; a non-JSON answer; a JSON line over 64 KB; stdin JSON never on the command line.
+- [x] Tests drive the fake `ssh` (Task 1's fixture), told by an environment variable which stderr and exit to produce: `reads the last json line past a login banner`, `classifies ssh's own errors in plain words`, `kills a command past its timeout`, `clients add input goes on stdin`.
+- [x] Commit `feat: the cloud link runs one server command over ssh`.
 
 ### Task 3: `store.ts`, `cloud-link.json` (about 30 min)
 
 **Interfaces:** `type ServerProfile = { id: string; host: string; runner: ServerRunner; doorSocket?: string; serverId?: string; name?: string; clientId?: string; credential?: string }`; `readLink(file)`, `saveProfile(file, profile)`, `forgetProfile(file, id)`, `publicView(profile)` (no `credential`, ever).
 
-- [ ] Failures first: a missing or corrupt file reads as no server (and is not overwritten until the user saves); a profile failing Task 1's checks is refused at save; the file written 0600 in 0700; `publicView` never carries the credential (asserted on every key, recursively).
-- [ ] Commit `feat: the cloud link keeps its servers in the private folder`.
+- [x] Failures first: a missing or corrupt file reads as no server (and is not overwritten until the user saves); a profile failing Task 1's checks is refused at save; the file written 0600 in 0700; `publicView` never carries the credential (asserted on every key, recursively).
+- [x] Commit `feat: the cloud link keeps its servers in the private folder`.
 
 ### Task 4: `link.ts` part 1, status, start if down, mint once (about 50 min)
 
 **Interfaces:** `createCloudLink(deps: { file; run: typeof runServerCommand; hostname: () => string; forward: ForwardFactory; client: ClientFactory; now?; later?; random? })` returning `{ connect(id), disconnect(id), forget(id), state(id): LinkState, onState(fn) }`; `type LinkState = { phase: 'off' | 'connecting' | 'connected' | 'offline' | 'disconnected' | 'failed'; since?: string; problem?: SshProblem; sentence?: string }`.
 
-- [ ] Failures first: status not running then `start` then status again, once (no loop); `start` failing names its sentence; a mint answer without `id`, `credential` or `serverId` is refused and nothing is saved; a mint whose `serverId` differs from `status`'s is refused; Reconnect reuses the saved credential and never mints again by itself; Forget revokes its own id over SSH, then clears the profile even when the revoke cannot reach the server (said in the state).
-- [ ] Tests with fake `run`: `starts a server that is down, once`, `mints once with this machine's name`, `reconnecting reuses the credential`, `forget revokes then clears`.
-- [ ] Commit `feat: the cloud link starts the server if down and mints its credential once`.
+- [x] Failures first: status not running then `start` then status again, once (no loop); `start` failing names its sentence; a mint answer without `id`, `credential` or `serverId` is refused and nothing is saved; a mint whose `serverId` differs from `status`'s is refused; Reconnect reuses the saved credential and never mints again by itself; Forget revokes its own id over SSH, then clears the profile even when the revoke cannot reach the server (said in the state).
+- [x] Tests with fake `run`: `starts a server that is down, once`, `mints once with this machine's name`, `reconnecting reuses the credential`, `forget revokes then clears`.
+- [x] Commit `feat: the cloud link starts the server if down and mints its credential once`.
 
 ### Task 5: the forward and `hello` (about 55 min)
 
 **Files:** `electron/platform/local-forward.ts` (`localForwardEnd(serverKey): { kind: 'unix'; path } | { kind: 'tcp'; host: '127.0.0.1'; port }`, exported through `electron/platform/index.ts`), `electron/services/cloud-link/forward.ts` (`openForward(host, end, remoteSocket, { ssh? }): { ready: Promise<void>; ended: Promise<{ code; stderr }>; close() }`).
 
-- [ ] Failures first: `ssh` exits before ready (ExitOnForwardFailure: the port or path taken); ready never comes (timed out, killed); a stale local socket in our own folder is removed, anything else at that path is refused and left; the remote socket missing (`hello` fails: "the server's door is not there", which also catches a wrong `doorSocket`); `hello` answering another `serverId` never gets the credential; the credential sent only after `hello`.
-- [ ] Tests: the fake `ssh` proxies the forward to a door the test runs (a tiny `node:http` on a Unix socket or port): `hello with another server id never gets the credential`, `a forward that cannot bind ends the connect`, `closing the link ends the local ssh only`.
-- [ ] Commit `feat: the cloud link forwards to the server's door and checks it first`.
+- [x] Failures first: `ssh` exits before ready (ExitOnForwardFailure: the port or path taken); ready never comes (timed out, killed); a stale local socket in our own folder is removed, anything else at that path is refused and left; the remote socket missing (`hello` fails: "the server's door is not there", which also catches a wrong `doorSocket`); `hello` answering another `serverId` never gets the credential; the credential sent only after `hello`.
+- [x] Tests: the fake `ssh` proxies the forward to a door the test runs (a tiny `node:http` on a Unix socket or port): `hello with another server id never gets the credential`, `a forward that cannot bind ends the connect`, `closing the link ends the local ssh only`.
+- [x] Commit `feat: the cloud link forwards to the server's door and checks it first`.
 
 ### Task 6: `link.ts` part 2, the retry owner (about 45 min)
 
-- [ ] Failures first: two Connects at once make one forward; the forward ending marks offline at once and schedules a retry (jittered, doubling from 2 s, capped at 5 min, reset after 60 s connected); silence (no keep-alive answer) ends `ssh` within 45 s (`ServerAliveInterval=15`, `CountMax=3`, asserted in the argv, and the state follows the process); a 401 from the door is `disconnected` with no retry and no mint; Disconnect during a backoff cancels it; quitting the app ends every local `ssh` and sends nothing to the server.
-- [ ] Tests with injected `now`, `later`, `random`: `one forward per server at most`, `backoff is jittered and capped at 5 min`, `a 401 reads as disconnected, not offline`, `a dropped link stops nothing on the server`.
-- [ ] Commit `feat: the cloud link reconnects by itself, one retry owner`.
+- [x] Failures first: two Connects at once make one forward; the forward ending marks offline at once and schedules a retry (jittered, doubling from 2 s, capped at 5 min, reset after 60 s connected); silence (no keep-alive answer) ends `ssh` within 45 s (`ServerAliveInterval=15`, `CountMax=3`, asserted in the argv, and the state follows the process); a 401 from the door is `disconnected` with no retry and no mint; Disconnect during a backoff cancels it; quitting the app ends every local `ssh` and sends nothing to the server.
+- [x] Tests with injected `now`, `later`, `random`: `one forward per server at most`, `backoff is jittered and capped at 5 min`, `a 401 reads as disconnected, not offline`, `a dropped link stops nothing on the server`.
+- [x] Commit `feat: the cloud link reconnects by itself, one retry owner`.
 
 ### Task 7: `client.ts`, the door's routes (about 50 min)
 
 Port `git show origin/win/machines:electron/services/machines/client.ts` to the door's routes and its transport (`socketPath` for a Unix end, `127.0.0.1:<port>` otherwise; `Host: localhost`).
 
-- [ ] Failures first: a refusal at the head (401, 403, 413) closes before the body is sent and is read as that status, not a broken link; a body over 4 MB from the door is cut; a stream's chunk split across reads; a stream the door ends (revoke) ends the pane's stream; no request without the credential except `hello`.
-- [ ] Tests against a door started in the test from `electron/services/cloud/door.ts` with a real client: `fleet and screen through the forward`, `a refusal at the head is not a broken link`, `revoke ends the open stream`.
-- [ ] Commit `feat: the cloud link speaks the door's routes`.
+- [x] Failures first: a refusal at the head (401, 403, 413) closes before the body is sent and is read as that status, not a broken link; a body over 4 MB from the door is cut; a stream's chunk split across reads; a stream the door ends (revoke) ends the pane's stream; no request without the credential except `hello`.
+- [x] Tests against a door started in the test from `electron/services/cloud/door.ts` with a real client: `fleet and screen through the forward`, `a refusal at the head is not a broken link`, `revoke ends the open stream`.
+- [x] Commit `feat: the cloud link speaks the door's routes` (landed as two commits: the routes, then the stream).
 
 ### Task 8: `remote-fleet.ts`, ported (about 55 min)
 
 Port `remote-fleet.ts` and its 343-line test from `win/machines`: peers become connected server profiles, ids `c:<serverId>:<agentId>` (`parseCloudId`), `MAX_KEYS` from the door.
 
-- [ ] Keep the ported failures and add: `one fleet request in flight at most`, `reattaches a watched pane once after offline`, `keys keep their order and stop at the first failure`, `an outside-agent ceiling on keys reads as the server's sentence`.
-- [ ] Commit `feat: the server's agents as the desktop keeps them`.
+- [x] Keep the ported failures and add: `one fleet request in flight at most`, `reattaches a watched pane once after offline`, `keys keep their order and stop at the first failure`, `an outside-agent ceiling on keys reads as the server's sentence`.
+- [x] Commit `feat: the server's agents as the desktop keeps them`.
 
 ### Task 9: `cloud-handlers.ts`, preload and `electron.d.ts` (about 50 min)
 
 **Interfaces:** `window.electronAPI.cloud`: `list(): ServerView[]`, `save(profile)`, `connect(id)`, `disconnect(id)`, `forget(id)`, `clients(id)`, `revoke(id, clientId)`, `agents(): RemoteAgent[]`, `onAgents(fn)`, `onState(fn)`, `screen(remoteId)`, `watch(remoteId)`, `unwatch(remoteId)`, `onOutput(fn)`, `drive(remoteId, action, body)`, `keys(remoteId, data)`, `resize(remoteId, cols, rows)`.
 
-- [ ] Failures first: no server configured means no `ssh` spawned and no timer (`off by default, no ssh`); a window call with a remote id of another shape is refused; nothing returned to the window holds `credential`, `doorSocket` or a host key line.
-- [ ] `preload.ts` and `src/types/electron.d.ts` in the same commit; `main.ts` gets the one wiring line, guarded `if (!HEADLESS)`.
-- [ ] Commit `feat: the window reaches the cloud link`.
+- [x] Failures first: no server configured means no `ssh` spawned and no timer (`off by default, no ssh`); a window call with a remote id of another shape is refused; nothing returned to the window holds `credential`, `doorSocket` or a host key line.
+- [x] `preload.ts` and `src/types/electron.d.ts` in the same commit; `main.ts` gets the one wiring line, guarded `if (!HEADLESS)`.
+- [x] Commit `feat: the window reaches the cloud link`.
 
 ### Task 10: Settings > Cloud, frames first (about 45 min, then Nicolas's look)
 
