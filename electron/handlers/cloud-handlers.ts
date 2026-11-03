@@ -31,6 +31,44 @@ export interface CloudHandlerDeps {
   /** Runs `fn` every `ms` until the stop it returns: the fleet's poll while a server is connected. */
   every?: (fn: () => void, ms: number) => () => void;
   fleetEveryMs?: number;
+  /** The direct test route (directRoute): a door socket reached with no ssh at all. */
+  direct?: string | null;
+}
+
+/**
+ * The E2E's way to a server with no SSH (plan Task 14): TARS_CLOUD_DIRECT
+ * names a door's socket, and every saved server is reached there, its status
+ * read from the door's hello and its forward the socket itself. Only an
+ * unpackaged app reads it: a packaged Tars never does, whatever its
+ * environment says.
+ */
+export function directRoute(env: NodeJS.ProcessEnv, packaged: boolean): string | null {
+  const socket = env.TARS_CLOUD_DIRECT;
+  if (!socket) return null;
+  if (packaged) {
+    console.warn('[cloud] TARS_CLOUD_DIRECT is for development runs only: ignored');
+    return null;
+  }
+  return socket;
+}
+
+/** The link's `run` and `forward` over the direct route: hello stands for status, nothing else runs. */
+function directDeps(socket: string, doorClient: (end: LocalEnd) => DoorClient): { run: typeof runServerCommand; forward: ForwardFactory } {
+  const end: LocalEnd = { kind: 'unix', path: socket };
+  return {
+    run: async (_profile, command) => {
+      if (command.do !== 'status') return { ok: false, problem: 'refused', detail: 'The direct test route runs no server command.' };
+      const hello = await doorClient(end).hello();
+      return hello.ok
+        ? { ok: true, json: { running: true, serverId: hello.serverId, door: socket } }
+        : { ok: false, problem: 'unreachable', detail: hello.detail };
+    },
+    forward: () => {
+      let close!: () => void;
+      const ended = new Promise<{ code: number | null; stderr: string }>(resolve => { close = () => resolve({ code: 0, stderr: '' }); });
+      return { end, ready: Promise.resolve(), ended, close };
+    },
+  };
 }
 
 export interface CloudService {
@@ -72,8 +110,9 @@ function clientView(item: unknown): Array<Record<string, unknown>> {
 }
 
 export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
-  const run = deps.run ?? runServerCommand;
   const doorClient = deps.doorClient ?? createDoorClient;
+  const direct = deps.direct ? directDeps(deps.direct, doorClient) : null;
+  const run = direct?.run ?? deps.run ?? runServerCommand;
   const every = deps.every ?? ((fn, ms) => {
     const timer = setInterval(fn, ms);
     timer.unref?.();
@@ -86,7 +125,7 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
     file: deps.file,
     run,
     hostname: deps.hostname,
-    forward: deps.forward ?? (async (profile, remoteSocket) => openForward(profile.host, await localForwardEnd(profile.id, { dir: deps.forwardDir }), remoteSocket)),
+    forward: direct?.forward ?? deps.forward ?? (async (profile, remoteSocket) => openForward(profile.host, await localForwardEnd(profile.id, { dir: deps.forwardDir }), remoteSocket)),
     client: end => doorClient(end),
   });
 

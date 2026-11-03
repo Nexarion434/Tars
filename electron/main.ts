@@ -39,7 +39,7 @@ import { APP_PAGES } from './services/health/pages';
 import { abruptEndPayload } from './services/health/abrupt-end';
 import { crashTypeSince } from './platform/crash-type';
 import { registerDiagnosticHandlers } from './handlers/diagnostic-handlers';
-import { registerCloudHandlers, type CloudService } from './handlers/cloud-handlers';
+import { directRoute, registerCloudHandlers, type CloudService } from './handlers/cloud-handlers';
 
 // Core modules
 import {
@@ -632,7 +632,7 @@ app.whenReady().then(async () => {
   });
   registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE, known: healthWords });
   // A desktop's Tars servers over SSH: nothing runs until Settings > Cloud has one (a server never links to another).
-  if (!HEADLESS) cloud = registerCloudHandlers({ ipc: ipcMain, broadcast: broadcastToAllWindows, file: path.join(PRIVATE_DIR, 'cloud-link.json'), forwardDir: path.join(PRIVATE_DIR, 'cloud'), hostname: os.hostname });
+  if (!HEADLESS) cloud = registerCloudHandlers({ ipc: ipcMain, broadcast: broadcastToAllWindows, file: path.join(PRIVATE_DIR, 'cloud-link.json'), forwardDir: path.join(PRIVATE_DIR, 'cloud'), hostname: os.hostname, direct: directRoute(process.env, app.isPackaged) });
   void cloud?.start();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();

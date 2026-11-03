@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { registerCloudHandlers } from '../../../electron/handlers/cloud-handlers';
+import { directRoute, registerCloudHandlers } from '../../../electron/handlers/cloud-handlers';
 import { readLink } from '../../../electron/services/cloud-link/store';
 import type { RunResult } from '../../../electron/services/cloud-link/remote-run';
 import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
@@ -20,6 +20,7 @@ import type { DoorClient } from '../../../electron/services/cloud-link/client';
  *   credential, the door's socket path, or a host key line
  * - the window setting a profile's credential, server id or client id
  * - a profile's host changed under its credential
+ * - the E2E's direct route (no ssh) taken by a packaged app
  */
 
 const SERVER_ID = 'd795d0ff4d5d8e50';
@@ -72,6 +73,14 @@ function setup() {
 }
 
 const docker = { host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
+
+describe('the direct test route', () => {
+  it('only an unpackaged app reads TARS_CLOUD_DIRECT', () => {
+    expect(directRoute({ TARS_CLOUD_DIRECT: HOST_SOCKET }, false)).toBe(HOST_SOCKET);
+    expect(directRoute({ TARS_CLOUD_DIRECT: HOST_SOCKET }, true)).toBeNull();
+    expect(directRoute({}, false)).toBeNull();
+  });
+});
 
 describe('window.electronAPI.cloud', () => {
   it('off by default, no ssh', async () => {
