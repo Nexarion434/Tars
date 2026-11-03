@@ -8,8 +8,9 @@ import { ChevronDown } from 'lucide-react';
 import { useClaude, useSessionMessages } from '@/hooks/useClaude';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import type { ClaudeProject } from '@/lib/claude-code';
-import type { AgentStatus, AgentCharacter } from '@/types/electron';
+import type { AgentStatus, AgentCharacter, CloudServerView } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
+import NewProjectDialog from '@/components/NewProjectDialog';
 import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { wakingLine } from '@/lib/asleep-line';
@@ -181,8 +182,20 @@ export default function ProjectsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Add a new project
+  // + Project: with a Tars server connected, New project asks where it lives first (M3,
+  // frame `Overlay · New project · where`); with none, the folder picker as before.
+  const [newProjectServers, setNewProjectServers] = useState<CloudServerView[] | null>(null);
   const handleAddProject = async () => {
+    const servers = await window.electronAPI?.cloud?.list().catch(() => []) ?? [];
+    if (servers.some(s => s.state.phase === 'connected')) {
+      setNewProjectServers(servers);
+      return;
+    }
+    await pickLocalFolder();
+  };
+
+  // Add a new project
+  const pickLocalFolder = async () => {
     if (!openFolderDialog) return;
     try {
       const selectedPath = await openFolderDialog();
@@ -846,6 +859,15 @@ export default function ProjectsPage() {
           </>
         )}
       </AnimatePresence>
+
+      {newProjectServers && (
+        <NewProjectDialog
+          servers={newProjectServers}
+          onClose={() => setNewProjectServers(null)}
+          onPickLocal={() => { void pickLocalFolder(); }}
+          onCreated={() => {}}
+        />
+      )}
 
       {/* Replace Default Project Confirmation Dialog */}
       {pendingDefaultPath && (

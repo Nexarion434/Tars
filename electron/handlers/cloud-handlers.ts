@@ -250,6 +250,11 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
     const from = given.from?.kind === 'empty' ? { kind: 'empty' } : given.from?.kind === 'git' && typeof given.from.url === 'string' ? { kind: 'git', url: given.from.url } : null;
     if (typeof given.name !== 'string' || !from) return fail('A project is a name, made empty or from a git address.');
     const answer = await door.client.createProject({ name: given.name, from });
+    // A name the server has, as the frame `Overlay · New project · where · name taken` says it.
+    if (answer.status === 409) {
+      const profile = find(id as string);
+      return fail(`${profile?.name ?? profile?.host ?? 'This server'} already has a project called ${oneLine(given.name, 100) ?? ''}. Pick another name.`);
+    }
     if (!ok(answer)) return refusal(answer);
     const project = (answer.body.project ?? {}) as Record<string, unknown>;
     return { success: true as const, project: { name: oneLine(project.name, 100) ?? given.name, path: oneLine(project.path, 400) ?? '' } };

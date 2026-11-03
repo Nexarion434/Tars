@@ -230,3 +230,14 @@ describe('creating on a server from the window (M3 Task 7)', () => {
       .toEqual({ success: false, error: 'This computer may see and drive this server, not create on it: Forget this server, then Connect again to allow it.' });
   });
 });
+
+describe('a project name the server has (M3 Task 8, frame `· name taken`)', () => {
+  it('says it as the frame does, naming the server and the name', async () => {
+    const t = setup();
+    const saved = await t.call('cloud:save', docker) as { success: true; id: string };
+    await t.call('cloud:connect', saved.id);
+    t.door.createProject = async () => ({ status: 409, body: { error: 'A project named "my-app" is already on this server.' } });
+    expect(await t.call('cloud:createProject', saved.id, { name: 'my-app', from: { kind: 'empty' } }))
+      .toEqual({ success: false, error: 'srv1539916 already has a project called my-app. Pick another name.' });
+  });
+});
