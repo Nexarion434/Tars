@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 307 root frames, 68 of them drawn and not built yet: the 57 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other two hundred and thirty-five being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 315 root frames, 76 of them drawn and not built yet: the 65 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other two hundred and forty-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -293,3 +293,12 @@ For 2.0.5:
 - Browser beside an agent's terminal: Browser (2.0.5) · beside an agent's terminal (its light copy, the narrowest
   window), · states (and its light copy), · notes for the Backend.
 - The app's language: Language (2.0.5) · Settings, General, Preferences (and its light copy), · notes.
+
+For Tars Cloud M3 (a project or an agent made on a server, from this computer):
+- New project asks where it lives, This computer or a connected server, then a plain folder name and how it starts,
+  empty or cloned from Git by the server with its own Git access: Overlay · New project · where, · from Git, · name
+  taken (each with its light copy). With no server connected, + Project opens the folder picker as it does today.
+- New agent in a cloud project, the same form, its Project showing the server's badge and its last line saying where
+  it starts: Overlay · New agent · cloud project.
+- Projects mixing this computer's folders and a server's projects, each of these with the server's badge, and the
+  location filter beside + Project: Projects · with cloud.
