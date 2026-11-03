@@ -12,6 +12,13 @@ import { forgetProfile, readLink, saveProfile, type ServerProfile } from './stor
  * forward to the server's door, and `hello` through it, before the credential
  * is ever handed on. Disconnect and Forget end the local `ssh` only: nothing
  * here stops the server.
+ *
+ * One retry owner per server: a forward that ends (sleep, a network gone,
+ * keep-alive silence) is offline at once and tried again after a jittered
+ * backoff, doubling from 2 s and capped at 5 min, started over once a link
+ * held for a minute (after T3 Code's docs/internals/connection-runtime.md,
+ * MIT, © 2026 T3 Tools Inc.). A retry stops at a problem only the user can
+ * fix, and a door refusing the credential (401) is disconnected, not retried.
  */
 
 export type LinkProblem = 'not-started' | 'another-server' | 'no-door' | 'mint-refused' | 'unknown-server';
@@ -46,12 +53,19 @@ export interface CloudLinkDeps {
   forward: ForwardFactory;
   client: ClientFactory;
   now?: () => number;
+  /** Runs `fn` once after `ms`, and returns its cancel: the retry owner's only clock. */
+  later?: (fn: () => void, ms: number) => () => void;
+  random?: () => number;
 }
 
 export interface CloudLink {
   connect(id: string): Promise<void>;
   disconnect(id: string): void;
   forget(id: string): Promise<void>;
+  /** The door refused this desktop's credential (a 401): disconnected, no retry, no new mint. */
+  refused(id: string): void;
+  /** Quitting: every local `ssh` ends, every retry is dropped, the servers are sent nothing. */
+  closeAll(): void;
   state(id: string): LinkState;
   onState(fn: (id: string, state: LinkState) => void): () => void;
 }
@@ -61,6 +75,18 @@ const CLIENT_ID = /^c_[0-9a-f]{8}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 /** What this desktop may do on its server in M2. */
 const DESKTOP_SCOPES = ['see', 'drive'];
+const RETRY_FIRST_MS = 2_000;
+const RETRY_CAP_MS = 5 * 60_000;
+/** A link that held this long starts its next backoff over. */
+const RETRY_RESET_MS = 60_000;
+/** The problems a retry may outlast; any other waits for the user (a host key, a key, sudo, another server). */
+const PASSING = new Set<string>(['unreachable', 'timeout', 'failed', 'container-stopped', 'not-started', 'no-door']);
+
+/** The wait before retry `n` (from 0): doubling from 2 s, capped at 5 min, jittered over its upper half. */
+export function retryDelay(n: number, random: () => number): number {
+  const base = Math.min(RETRY_FIRST_MS * 2 ** n, RETRY_CAP_MS);
+  return Math.round(base / 2 + (random() * base) / 2);
+}
 
 function linkSentence(problem: LinkProblem, host: string): string {
   switch (problem) {
@@ -80,6 +106,15 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
   const connecting = new Map<string, Promise<void>>();
   /** Bumped by Disconnect and Forget: a connect that started before them stops at its next step. */
   const generation = new Map<string, number>();
+  const later = deps.later ?? ((fn: () => void, ms: number) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  });
+  const random = deps.random ?? Math.random;
+  /** The armed retry's cancel, per server, and the retries run since its link last held. */
+  const retries = new Map<string, () => void>();
+  const tries = new Map<string, number>();
 
   const set = (id: string, state: LinkState) => {
     states.set(id, state);
@@ -94,6 +129,44 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
     forwards.get(id)?.close();
     forwards.delete(id);
   };
+  const cancelRetry = (id: string) => {
+    retries.get(id)?.();
+    retries.delete(id);
+  };
+  /** Ends what runs for `id` on this computer; a connect in flight stops at its next step. */
+  const stop = (id: string) => {
+    generation.set(id, (generation.get(id) ?? 0) + 1);
+    cancelRetry(id);
+    closeForward(id);
+  };
+
+  function attempt(id: string): Promise<void> {
+    if (forwards.has(id) && states.get(id)?.phase === 'connected') return Promise.resolve();
+    const running = connecting.get(id);
+    if (running) return running;
+    const next = connectOnce(id).finally(() => connecting.delete(id));
+    connecting.set(id, next);
+    return next;
+  }
+
+  /** Arms the one retry for `id`; a retry that fails on a passing problem arms the next. */
+  function retryLater(id: string, since: string): void {
+    cancelRetry(id);
+    const n = tries.get(id) ?? 0;
+    tries.set(id, n + 1);
+    const ticket = generation.get(id) ?? 0;
+    const current = () => (generation.get(id) ?? 0) === ticket;
+    retries.set(id, later(() => {
+      retries.delete(id);
+      if (!current()) return;
+      void attempt(id).then(() => {
+        const state = states.get(id);
+        if (!current() || state?.phase !== 'failed' || !state.problem || !PASSING.has(state.problem)) return;
+        set(id, { phase: 'offline', since, problem: state.problem, sentence: state.sentence });
+        retryLater(id, since);
+      });
+    }, retryDelay(n, random)));
+  }
 
   async function connectOnce(id: string): Promise<void> {
     const ticket = generation.get(id) ?? 0;
@@ -164,31 +237,42 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
       closeForward(id);
       return failLink(id, host, hello.ok ? 'another-server' : 'no-door');
     }
+    const upAt = now();
     void forward.ended.then(() => {
       if (forwards.get(id) !== forward) return;
       forwards.delete(id);
-      set(id, { phase: 'offline', since: new Date(now()).toISOString() });
+      if (now() - upAt >= RETRY_RESET_MS) tries.delete(id);
+      const since = new Date(now()).toISOString();
+      set(id, { phase: 'offline', since });
+      retryLater(id, since);
     });
-    set(id, { phase: 'connected', since: new Date(now()).toISOString() });
+    set(id, { phase: 'connected', since: new Date(upAt).toISOString() });
   }
 
   return {
     connect(id) {
-      if (forwards.has(id) && states.get(id)?.phase === 'connected') return Promise.resolve();
-      const running = connecting.get(id);
-      if (running) return running;
-      const attempt = connectOnce(id).finally(() => connecting.delete(id));
-      connecting.set(id, attempt);
-      return attempt;
+      cancelRetry(id);
+      tries.delete(id);
+      return attempt(id);
     },
     disconnect(id) {
-      generation.set(id, (generation.get(id) ?? 0) + 1);
-      closeForward(id);
+      stop(id);
       set(id, { phase: 'off' });
     },
+    refused(id) {
+      stop(id);
+      const host = find(id)?.host ?? 'the server';
+      set(id, {
+        phase: 'disconnected',
+        since: new Date(now()).toISOString(),
+        sentence: `The server on ${host} refused this computer's credential, which was probably revoked there. Forget this server here and connect again to get a new one.`,
+      });
+    },
+    closeAll() {
+      for (const id of new Set([...forwards.keys(), ...retries.keys(), ...connecting.keys()])) stop(id);
+    },
     async forget(id) {
-      generation.set(id, (generation.get(id) ?? 0) + 1);
-      closeForward(id);
+      stop(id);
       const profile = find(id);
       if (!profile) return set(id, { phase: 'off' });
       let problem: SshProblem | undefined;

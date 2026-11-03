@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createCloudLink, type LinkForward } from '../../../electron/services/cloud-link/link';
+import { createCloudLink, retryDelay, type LinkForward } from '../../../electron/services/cloud-link/link';
 import { readLink, saveProfile, type ServerProfile } from '../../../electron/services/cloud-link/store';
 import { problemSentence, type RunResult, type RunOptions } from '../../../electron/services/cloud-link/remote-run';
 import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
@@ -24,6 +24,22 @@ import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
  * - Forget leaving the profile when the server cannot be reached, or not
  *   saying the credential is still valid there
  * - the forward opened, or hello asked, before the checks above
+ *
+ * The link, part 2: the retry owner (Task 6, Review Focus 3).
+ *
+ * How it fails:
+ * - two Connects at once, or a Connect during a backoff, opening two forwards
+ * - the forward ending (sleep, Wi-Fi gone, keep-alive silence) read as still
+ *   connected, or as failed with no retry
+ * - a retry loop with no backoff, a backoff past 5 min, no jitter (every
+ *   desktop retrying in step), or one that never comes back down after a link
+ *   that held for a minute
+ * - retrying past a problem only the user can fix (a host key, a key, sudo,
+ *   another server), or minting again on a retry
+ * - a 401 from the door (credential revoked) read as offline and retried
+ * - Disconnect during a backoff leaving the retry armed
+ * - quitting (or a dropped link) sending the server anything, or leaving a
+ *   local `ssh` running
  */
 
 const SERVER_ID = 'd795d0ff4d5d8e50';
@@ -34,6 +50,8 @@ const MINTED = { id: 'c_10eafeea', credential: CREDENTIAL, serverId: SERVER_ID }
 
 type Call = { command: ServerCommand; stdin?: object };
 
+type Timer = { fn: () => void; ms: number; cancelled: boolean };
+
 function setup(answers: Partial<Record<ServerCommand['do'], RunResult[]>>, over: Partial<ServerProfile> = {}) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-link-')), 'cloud-link.json');
   const profile: ServerProfile = {
@@ -41,7 +59,9 @@ function setup(answers: Partial<Record<ServerCommand['do'], RunResult[]>>, over:
   };
   saveProfile(file, profile);
   const calls: Call[] = [];
-  const forwards: Array<{ remoteSocket: string; closed: boolean }> = [];
+  const forwards: Array<{ remoteSocket: string; closed: boolean; drop: () => void }> = [];
+  const timers: Timer[] = [];
+  const clock = { now: 0, random: 1 };
   const run = async (_p: { host: string }, command: ServerCommand, opts?: RunOptions): Promise<RunResult> => {
     calls.push({ command, ...(opts?.stdin ? { stdin: opts.stdin } : {}) });
     const queue = answers[command.do];
@@ -53,15 +73,35 @@ function setup(answers: Partial<Record<ServerCommand['do'], RunResult[]>>, over:
     run,
     hostname: () => 'PC-Nicolas',
     forward: (_p, remoteSocket): LinkForward => {
-      const record = { remoteSocket, closed: false };
+      let drop!: () => void;
+      const ended = new Promise<{ code: number | null; stderr: string }>(resolve => { drop = () => resolve({ code: 255, stderr: 'Timeout, server not responding.' }); });
+      const record = { remoteSocket, closed: false, drop };
       forwards.push(record);
-      return { end: { kind: 'tcp', port: 47117 }, ready: Promise.resolve(), ended: new Promise(() => {}), close: () => { record.closed = true; } };
+      return { end: { kind: 'tcp', port: 47117 }, ready: Promise.resolve(), ended, close: () => { record.closed = true; drop(); } };
     },
     client: () => ({ hello: async () => ({ ok: true, serverId: SERVER_ID }) }),
+    now: () => clock.now,
+    later: (fn, ms) => {
+      const timer = { fn, ms, cancelled: false };
+      timers.push(timer);
+      return () => { timer.cancelled = true; };
+    },
+    random: () => clock.random,
   });
   const did = () => calls.map(c => c.command.do);
-  return { file, profile, link, calls, forwards, did };
+  const pending = () => timers.filter(t => !t.cancelled);
+  /** Fires the one armed retry and lets the attempt it starts settle. */
+  const fire = async () => {
+    const armed = pending();
+    expect(armed).toHaveLength(1);
+    armed[0].cancelled = true;
+    armed[0].fn();
+    await settle();
+  };
+  return { file, profile, link, calls, forwards, did, timers, pending, fire, clock };
 }
+
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const ok = (json: Record<string, unknown>): RunResult => ({ ok: true, json });
 
@@ -172,6 +212,133 @@ describe('forget', () => {
     expect(readLink(t.file).servers).toEqual([]);
     expect(t.link.state(t.profile.id)).toMatchObject({ phase: 'off', problem: 'unreachable' });
     expect(t.link.state(t.profile.id).sentence).toMatch(/revoke/i);
+  });
+});
+
+describe('the retry owner', () => {
+  const linked = { serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL };
+  const unreachable: RunResult = { ok: false, problem: 'unreachable', detail: 'ssh: connect to host 100.101.245.29 port 22: Network is unreachable' };
+
+  it('one forward per server at most', async () => {
+    const t = setup({ status: [ok(UP)] }, linked);
+    await Promise.all([t.link.connect(t.profile.id), t.link.connect(t.profile.id)]);
+    expect(t.forwards).toHaveLength(1);
+    t.forwards[0].drop();
+    await settle();
+    expect(t.pending()).toHaveLength(1);
+    // Reconnect pressed during the backoff: one attempt now, the armed retry gone.
+    await t.link.connect(t.profile.id);
+    expect(t.pending()).toHaveLength(0);
+    expect(t.forwards).toHaveLength(2);
+    expect(t.link.state(t.profile.id).phase).toBe('connected');
+    await t.link.connect(t.profile.id);
+    expect(t.forwards).toHaveLength(2);
+  });
+
+  it('a dropped link is offline at once, and comes back by itself without a new mint', async () => {
+    const t = setup({ status: [ok(UP)] }, linked);
+    await t.link.connect(t.profile.id);
+    t.clock.now = 5_000;
+    t.forwards[0].drop();
+    await settle();
+    expect(t.link.state(t.profile.id)).toEqual({ phase: 'offline', since: new Date(5_000).toISOString() });
+    await t.fire();
+    expect(t.link.state(t.profile.id).phase).toBe('connected');
+    expect(t.forwards).toHaveLength(2);
+    expect(t.did()).toEqual(['status', 'status']);
+  });
+
+  it('backoff is jittered and capped at 5 min', async () => {
+    for (let n = 0; n < 16; n++) {
+      const base = Math.min(2_000 * 2 ** n, 300_000);
+      expect(retryDelay(n, () => 0), `n=${n}`).toBe(base / 2);
+      expect(retryDelay(n, () => 1), `n=${n}`).toBe(base);
+    }
+    const t = setup({ status: [ok(UP), ...Array(10).fill(unreachable)] }, linked);
+    await t.link.connect(t.profile.id);
+    t.forwards[0].drop();
+    await settle();
+    const since = t.link.state(t.profile.id).since;
+    const delays: number[] = [];
+    for (let i = 0; i < 9; i++) {
+      delays.push(t.pending()[0].ms);
+      await t.fire();
+      expect(t.link.state(t.profile.id)).toMatchObject({ phase: 'offline', since, problem: 'unreachable' });
+    }
+    expect(delays).toEqual([2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 300_000]);
+  });
+
+  it('a link that held for a minute starts its backoff over', async () => {
+    const t = setup({ status: [ok(UP), unreachable, unreachable, ok(UP)] }, linked);
+    await t.link.connect(t.profile.id);
+    t.forwards[0].drop();
+    await settle();
+    await t.fire();
+    await t.fire();
+    await t.fire();
+    expect(t.link.state(t.profile.id).phase).toBe('connected');
+    const upAt = t.clock.now;
+    t.clock.now = upAt + 59_000;
+    t.forwards[1].drop();
+    await settle();
+    expect(t.pending()[0].ms).toBe(16_000);
+    const t2 = setup({ status: [ok(UP), unreachable, ok(UP)] }, linked);
+    await t2.link.connect(t2.profile.id);
+    t2.forwards[0].drop();
+    await settle();
+    await t2.fire();
+    await t2.fire();
+    t2.clock.now = 60_000;
+    t2.forwards[1].drop();
+    await settle();
+    expect(t2.pending()[0].ms).toBe(2_000);
+  });
+
+  it('stops retrying at a problem only the user can fix', async () => {
+    const t = setup({ status: [ok(UP), { ok: false, problem: 'host-key-changed', detail: 'REMOTE HOST IDENTIFICATION HAS CHANGED!' }] }, linked);
+    await t.link.connect(t.profile.id);
+    t.forwards[0].drop();
+    await settle();
+    await t.fire();
+    expect(t.link.state(t.profile.id)).toMatchObject({ phase: 'failed', problem: 'host-key-changed', sentence: problemSentence('host-key-changed', t.profile.host) });
+    expect(t.pending()).toHaveLength(0);
+  });
+
+  it('a 401 reads as disconnected, not offline', async () => {
+    const t = setup({ status: [ok(UP)] }, linked);
+    await t.link.connect(t.profile.id);
+    t.link.refused(t.profile.id);
+    await settle();
+    expect(t.link.state(t.profile.id)).toMatchObject({ phase: 'disconnected', sentence: expect.stringMatching(/refused this computer's credential/) });
+    expect(t.forwards[0].closed).toBe(true);
+    expect(t.pending()).toHaveLength(0);
+    expect(t.did()).toEqual(['status']);
+  });
+
+  it('Disconnect during a backoff cancels it', async () => {
+    const t = setup({ status: [ok(UP)] }, linked);
+    await t.link.connect(t.profile.id);
+    t.forwards[0].drop();
+    await settle();
+    expect(t.pending()).toHaveLength(1);
+    t.link.disconnect(t.profile.id);
+    expect(t.pending()).toHaveLength(0);
+    expect(t.link.state(t.profile.id).phase).toBe('off');
+  });
+
+  it('a dropped link stops nothing on the server', async () => {
+    const t = setup({ status: [ok(UP)] }, linked);
+    const other = { ...t.profile, id: 's_5e6f7a8b' };
+    saveProfile(t.file, other);
+    await t.link.connect(t.profile.id);
+    await t.link.connect(other.id);
+    t.forwards[0].drop();
+    await settle();
+    t.link.closeAll();
+    await settle();
+    expect(t.forwards[1].closed).toBe(true);
+    expect(t.pending()).toHaveLength(0);
+    expect(t.did()).toEqual(['status', 'status']);
   });
 });
 
