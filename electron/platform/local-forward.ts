@@ -13,8 +13,9 @@ import * as path from 'path';
  *
  * win32: a free port on 127.0.0.1. Another account of the same PC can race
  * for that port between this choice and `ssh`'s bind; the link sends the
- * credential only once `ssh` holds the port and the door behind it answers
- * with the expected server id (SECURITY.md says what is left).
+ * credential only once `ssh` says it listens on that port and the door behind
+ * it answers with the expected server id, which is no secret: SECURITY.md §8,
+ * "The desktop's end of the forward", says what is left.
  */
 
 export type LocalForwardEnd = { kind: 'unix'; path: string } | { kind: 'tcp'; port: number };

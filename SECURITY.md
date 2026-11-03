@@ -927,6 +927,21 @@ holds (`server.json` in the private folder, created exclusively; a pid that
 port a Tars already answers. A desktop started second on a server's folder is
 not refused yet (M2): it fails to take the API port instead.
 
+**The desktop's end of the forward.** On macOS and Linux the desktop's end of
+its `ssh -L` is a Unix socket in `~/.tars-private/cloud` (0700): no other
+account can open it. On Windows it is a free port on 127.0.0.1, which any local
+account can connect to while the forward is up. Before the credential is sent,
+the desktop waits for `ssh -v` to say it listens on that very port, then asks
+the door's `hello`, which must name the server id this desktop knows. That id is
+not a secret (`hello` answers anyone who reaches the door), so the check holds
+only while our `ssh` holds the port: another account of the same PC that took
+the port first is caught by ssh failing to bind it (ExitOnForwardFailure), and
+one that could bind beside Win32-OpenSSH's listener is not ruled out (not
+measured). A process of the same account can read `cloud-link.json` anyway.
+Every `ssh` call also refuses to forward the desktop's agent, display or local
+commands to the server, whatever the user's ssh config says
+(`electron/services/cloud-link/`).
+
 Each refusal above has a test written before the code and shown to fail on a
 deliberately broken version (`__tests__/electron/cloud/`,
-`__tests__/electron/server/`).
+`__tests__/electron/server/`, `__tests__/electron/cloud-link/`).
