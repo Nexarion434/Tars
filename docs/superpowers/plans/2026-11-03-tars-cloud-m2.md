@@ -130,14 +130,14 @@ Port `remote-fleet.ts` and its 343-line test from `win/machines`: peers become c
 
 ### Task 12: the server's agents in Dashboard and Agents (about 55 min)
 
-- [ ] Port `lib/machines.ts` (the remote half) into `src/lib/cloud.ts`, `useRemoteAgents.ts`, `MachineBadge` as `CloudBadge` (the `--machine-ink` token, renamed only if Nicolas asks), the filter ("This Tars", then each server), the offline line; frames first for any surface that changes.
-- [ ] Ported `__tests__/lib/machines.test.ts` cases, failures first for the merge (a remote id never collides with a local one; an offline server's agents keep their last state).
-- [ ] Commit `feat: a tars server's agents in dashboard and agents`.
+- [x] Port `lib/machines.ts` (the remote half) into `src/lib/cloud.ts`, `useRemoteAgents.ts`, `MachineBadge` as `CloudBadge` (the `--machine-ink` token, renamed only if Nicolas asks), the filter ("This Tars", then each server), the offline line; frames first for any surface that changes.
+- [x] Ported `__tests__/lib/machines.test.ts` cases, failures first for the merge (a remote id never collides with a local one; an offline server's agents keep their last state).
+- [x] Commit `feat: a tars server's agents in dashboard and agents` (with Task 13, one commit: they share every file).
 
 ### Task 13: driving a server's agent from the window (about 55 min)
 
-- [ ] Port `useRemoteDrive.ts`, `RemoteDriveBar.tsx`, `MachineStopReason.tsx` as `CloudStopReason.tsx`: the live pane, typing through the queue, Drive panes send their size, See panes scale the remote size to fit, start, stop with a reason, message.
-- [ ] Commit `feat: drive a tars server's agent from this tars`.
+- [x] Port `useRemoteDrive.ts`, `RemoteDriveBar.tsx`, `MachineStopReason.tsx` as `CloudStopReason.tsx`: the live pane, typing through the queue, Drive panes send their size, See panes scale the remote size to fit, start, stop with a reason, message.
+- [x] Commit `feat: drive a tars server's agent from this tars` (landed in Task 12's commit).
 
 ### Task 14: E2E `e2e/cloud-see-drive.spec.ts` (about 55 min, run on CI)
 
