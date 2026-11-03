@@ -21,6 +21,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 2. An agent made in that project through the window's API (the door's
  *    create route), started: it runs the server's fake CLI there, and the
  *    fleet shows its CLI running.
+ * 3. An agent made in it through the real New agent window: the server's
+ *    project picked in its Project list shows its server's badge; Create and
+ *    start makes it on the server, and its task is typed into its CLI once
+ *    that CLI runs (the fake CLI records what it is typed).
  * Leaves values.json and a picture per step in its run directory.
  *   E2E_PORT_OFFSET=40 npx playwright test e2e/cloud-create.spec.ts
  */
@@ -32,13 +36,16 @@ const PROFILE = 's_e2e0c11e';
 const SERVER_NAME = 'e2e-server';
 const onWindows = process.platform === 'win32';
 
-/** The server's home: no agent yet, its fake CLI the one a claude agent runs. */
+/** The server's home: no agent yet, its fake CLI the one a claude agent runs, which writes down what it is typed. */
 function serverHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-e2e-cloud-create-'));
   const data = path.join(home, '.tars');
   fs.mkdirSync(data, { recursive: true });
+  const typed = path.join(home, 'typed.log');
   const cli = writeNodeCli(path.join(home, 'ticker.cjs'), [
+    "const fs = require('node:fs');",
     'if (process.stdin.isTTY) process.stdin.setRawMode(true);',
+    `process.stdin.on('data', d => fs.appendFileSync(${JSON.stringify(typed)}, d));`,
     "let n = 0; process.stdout.write('ticker ready\\r\\n');",
     "setInterval(() => { process.stdout.write('tick ' + (++n) + '\\r\\n'); }, 500);",
     '',
@@ -48,7 +55,7 @@ function serverHome() {
   fs.writeFileSync(path.join(data, 'app-settings.json'), JSON.stringify({
     autoStartAgentsOnLaunch: false, ollamaBaseUrl: 'http://127.0.0.1:9', cliPaths: { claude: cli },
   }));
-  return { home };
+  return { home, typed };
 }
 
 const serverEnv = (home: string): NodeJS.ProcessEnv => ({
@@ -91,6 +98,11 @@ function desktopHome(minted: { id: string; credential: string; serverId: string 
     id: PROFILE, host: 'tars-e2e', runner: { kind: 'command', argv: ['node', 'cli.js'] },
     serverId: minted.serverId, name: SERVER_NAME, clientId: minted.id, credential: minted.credential,
   }] }, null, 2));
+  // One folder of this computer's, so the Projects page has a card whose Launch Agent opens New agent.
+  const local = path.join(home, 'local-repo');
+  fs.mkdirSync(local, { recursive: true });
+  fs.mkdirSync(path.join(home, '.tars'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.tars', 'projects.json'), JSON.stringify([local]));
   return home;
 }
 
@@ -139,6 +151,30 @@ test('a project and an agent made on a tars server from this computer', async ()
     const agentOnServer = async () => (await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).find(a => a.agentId === created.agent!.id);
     await expect.poll(async () => (await agentOnServer())?.cliRunning, { timeout: 60_000, message: 'its CLI running on the server' }).toBe(true);
     values.running = await agentOnServer();
+
+    // 3. The real New agent window: the server's project picked, its badge shown, its task typed once its CLI runs.
+    await page.getByRole('button', { name: 'open', exact: true }).click();
+    await page.getByRole('button', { name: 'Launch Agent', exact: true }).click();
+    const modal = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'New agent', exact: true }) });
+    await expect(modal).toBeVisible({ timeout: 30_000 });
+    await modal.getByLabel('Agent name').fill('Made in the window');
+    await modal.getByRole('button', { name: 'Project', exact: true }).click();
+    // Listed by its path there (~ only for a /home one, which this test's server home is not), its server beside it.
+    const option = page.getByRole('option').filter({ hasText: path.join('projects', 'made-here') }).filter({ hasText: SERVER_NAME });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await expect(modal.getByRole('button', { name: 'Project', exact: true }).locator(`[data-cloud-badge="${SERVER_NAME}"]`)).toBeVisible();
+    const task = 'say hello from the window';
+    await modal.getByPlaceholder('Describe what you want done.').fill(task);
+    await stepShot(page, '03-new-agent-in-the-server-project');
+    const before = new Set((await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).map(a => a.agentId));
+    await modal.getByRole('button', { name: 'Create and start', exact: true }).click();
+    await expect(modal).toHaveCount(0, { timeout: 30_000 });
+    const madeInWindow = async () => (await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).find(a => !before.has(a.agentId));
+    await expect.poll(async () => (await madeInWindow())?.cliRunning, { timeout: 60_000, message: 'the window\'s agent running on the server' }).toBe(true);
+    await expect.poll(() => fs.existsSync(server.typed) ? fs.readFileSync(server.typed, 'utf8') : '', { timeout: 60_000, message: 'its task typed into its CLI' }).toContain(task);
+    values.window = { agent: await madeInWindow(), typed: fs.readFileSync(server.typed, 'utf8') };
+    await stepShot(page, '04-its-task-sent');
     recordValues(values);
   } finally {
     await app.close();
