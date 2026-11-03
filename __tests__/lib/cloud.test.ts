@@ -4,7 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
-  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown,
+  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects,
 } from '../../src/lib/cloud';
 
 /**
@@ -263,5 +263,34 @@ describe('Projects with a server\'s projects (M3)', () => {
     expect(projectPlaceShown(server.id, rows[0])).toBe(true);
     expect(projectPlaceShown(server.id, rows[2])).toBe(false);
     expect(projectPlaceShown(server.id, null)).toBe(false);
+  });
+});
+
+/**
+ * M3, the Projects page loading a server's projects. Written before the code.
+ * How it fails:
+ * 25. a server asked that is not connected, or that this computer holds no
+ *     server id for; one server's failure taking the others with it; a
+ *     server shown under another name than its badge's
+ */
+describe('loading a server\'s projects (M3)', () => {
+  it('asks each connected server once, and keeps the others when one fails (25)', async () => {
+    const asked: string[] = [];
+    const api = {
+      list: async () => [
+        view({ id: 's_1a2b3c4d', name: 'my-server', state: { phase: 'connected' } }),
+        view({ id: 's_2b3c4d5e', name: 'down', state: { phase: 'offline' } }),
+        view({ id: 's_3c4d5e6f', name: undefined, host: 'user@third', serverId: 'bbbbbbbbbbbbbbbb', state: { phase: 'connected' } }),
+        view({ id: 's_4d5e6f70', name: 'unpaired', serverId: undefined, state: { phase: 'connected' } }),
+      ],
+      projects: async (id: string) => {
+        asked.push(id);
+        return id === 's_3c4d5e6f' ? { success: false as const, error: 'The server did not answer: the link dropped.' } : { success: true as const, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }] };
+      },
+    };
+    expect(await loadCloudProjects(api)).toEqual([
+      { server: { id: 's_1a2b3c4d', serverId: SERVER.serverId, name: 'my-server' }, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }] },
+    ]);
+    expect(asked).toEqual(['s_1a2b3c4d', 's_3c4d5e6f']);
   });
 });

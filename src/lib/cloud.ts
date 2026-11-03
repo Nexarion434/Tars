@@ -307,3 +307,20 @@ export function projectPlaceShown(filter: string, row: CloudProjectRow | null): 
   if (filter === THIS_MACHINE) return row === null;
   return row !== null && row.server.id === filter;
 }
+
+/** What the Projects page asks of window.electronAPI.cloud to list a server's projects. */
+export interface CloudProjectsApi {
+  list(): Promise<CloudServerView[]>;
+  projects(id: string): Promise<{ success: true; projects: CloudProjectView[] } | { success: false; error: string }>;
+}
+
+/** Each connected server's projects, once; a server that fails is left out, the others kept (M3). */
+export async function loadCloudProjects(api: CloudProjectsApi): Promise<Array<{ server: { id: string; serverId: string; name: string }; projects: CloudProjectView[] }>> {
+  const servers = (await api.list().catch(() => [] as CloudServerView[]))
+    .filter((s): s is CloudServerView & { serverId: string } => s.state.phase === 'connected' && typeof s.serverId === 'string');
+  const answers = await Promise.all(servers.map(s => api.projects(s.id).catch(() => null)));
+  return servers.flatMap((s, i) => {
+    const answer = answers[i];
+    return answer?.success ? [{ server: { id: s.id, serverId: s.serverId, name: s.name ?? s.host }, projects: answer.projects }] : [];
+  });
+}
