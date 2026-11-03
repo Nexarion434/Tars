@@ -117,7 +117,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 The container is started with `-e TARS_DOOR_ON_HOST=/home/<user>/tars-cloud/home/.tars-private/door.sock`; `status --json` names it as `doorOnHost`; the desktop uses it when its profile has no `doorSocket`, and Advanced's note can then say the door path is filled in for you. The runbook's `docker run` gains the variable.
 
 - [ ] Failures first: a `doorOnHost` that is not absolute, holds `:` or whitespace, is refused as `doorSocket` is today; a profile's own `doorSocket` wins; without the variable, today's behaviour.
-- [ ] Commit `feat: a docker server says where its door is on the host`.
+- [ ] Commit `feat: a docker server says where its door is on the host` (first part done: `status --json` says `doorOnHost` from TARS_DOOR_ON_HOST. Left: the store accepting a docker profile without `doorSocket` (an M2 constraint, store.test.ts pins it), the link taking `doorOnHost`, the form's door path optional and Advanced's note, with its frame, and the runbook's `docker run -e`).
 
 ### Task 7: the desktop's side (about 50 min)
 

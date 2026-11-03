@@ -53,7 +53,9 @@ async function run(command: string | undefined, args: string[]): Promise<number>
   const serverFile = privatePath('cloud-server.json');
   if (command === 'status') {
     const identity = serverIdentity(serverFile);
-    printJson({ ...serverStatus(file), serverId: identity.id, name: identity.name });
+    const { doorOnHostFrom } = await import('./door-on-host');
+    const doorOnHost = doorOnHostFrom(process.env);
+    printJson({ ...serverStatus(file), serverId: identity.id, name: identity.name, ...(doorOnHost ? { doorOnHost } : {}) });
     return 0;
   }
   if (command === 'clients') {
