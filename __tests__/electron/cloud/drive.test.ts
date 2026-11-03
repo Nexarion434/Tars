@@ -22,6 +22,9 @@ import type { MessageSender } from '../../../electron/core/pty-manager';
  * - a message empty, of controls and format characters only, or over 8,000
  *   characters typed; one typed where no terminal runs or the CLI has ended;
  *   one typed under any sender but the client's own
+ * - (M3 Task 3) a start when the server would be left under its memory floor
+ *   reaching the terminal; the refusal without its sentence; the floor not
+ *   the one the server set; a server whose memory cannot be read refused
  */
 
 function terminals() {
@@ -168,5 +171,31 @@ describe('message', () => {
     expect(await executeDrive({ action: 'message', agentId: 'asleep', text: 'hi' }, desktop, target)).toMatchObject({ ok: false, status: 409 });
     expect(await executeDrive({ action: 'message', agentId: 'ended', text: 'hi' }, desktop, target)).toMatchObject({ ok: false, status: 409 });
     expect(messages).toEqual([]);
+  });
+});
+
+describe('the memory floor (M3 Task 3)', () => {
+  const withMemory = (availableMb: number | null, floorMb?: number) => {
+    const t = terminals();
+    t.target.memory = { headroom: () => (availableMb === null ? null : { availableMb, source: 'host' }), floorMb };
+    return t;
+  };
+
+  it('refuses a start that would leave the server under 1 GB, and starts nothing', async () => {
+    const { started, target } = withMemory(900);
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, target)).toEqual({
+      ok: false, status: 503, error: 'Not started: this server has 900 MB of memory free, and Tars keeps 1 GB for the rest of it.',
+    });
+    expect(started).toEqual([]);
+  });
+
+  it('starts with room to spare, at the floor the server set, and when the memory cannot be read', async () => {
+    const roomy = withMemory(1400);
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, roomy.target)).toEqual({ ok: true });
+    const higher = withMemory(1400, 2048);
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, higher.target)).toMatchObject({ ok: false, status: 503 });
+    expect(higher.started).toEqual([]);
+    const unknown = withMemory(null);
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, unknown.target)).toEqual({ ok: true });
   });
 });

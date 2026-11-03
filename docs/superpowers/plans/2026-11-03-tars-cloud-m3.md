@@ -95,7 +95,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 
 - [ ] Failures first: 900 MB free refused with the sentence and nothing spawned; the cgroup's room used when lower than the host's (`memory.max` `max` read as no limit); an unreadable `/proc/meminfo` does not block a start (said once in the log); the floor from the server's setting, 1024 by default; a desktop's local agents never checked (the check is the server's).
 - [ ] Mutant: the comparison turned around, red.
-- [ ] Commit `feat: the server keeps 1 gb free before it starts an agent`.
+- [x] Commit `feat: the server keeps 1 gb free before it starts an agent` (the check in executeDrive's start, which the door's start and Task 4's create-and-start both reach; the floor read from the server's settings when the door opens).
 
 ### Task 4: the door's `create` routes (about 55 min)
 

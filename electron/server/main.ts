@@ -97,6 +97,12 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { scheduleTick } = await import('../utils/agents-tick');
   const { rememberPanelSize, resizeTerminalMirror } = await import('../core/terminal-mirror');
   const { executeDrive } = await import('../services/cloud/drive');
+  const { memoryHeadroom, DEFAULT_FLOOR_MB } = await import('../platform/memory-headroom');
+  const { readAppSettingsFromDisk } = await import('../providers/cli-provider');
+  const minFreeMb = () => {
+    const set = Number((readAppSettingsFromDisk() as { cloudMinFreeMb?: unknown }).cloudMinFreeMb);
+    return Number.isInteger(set) && set > 0 ? set : DEFAULT_FLOOR_MB;
+  };
   const { startDoor } = await import('../services/cloud/door');
   const { fleetAnswer } = await import('../services/cloud/fleet-source');
   const { serverIdentity } = await import('../services/cloud/server-identity');
@@ -159,6 +165,8 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
           writeProgrammaticInput(pty, text, true, { agentId, from: sender.kind === 'machine' || sender.kind === 'outside-agent' ? sender.name : 'Tars', sender });
           return 'ok';
         },
+        // Every start leaves the floor free (M3 Task 3): read now, the floor from the server's settings.
+        memory: { headroom: () => memoryHeadroom(), floorMb: minFreeMb() },
       }),
     });
     recordDoor(privatePath('server.json'), door.path);

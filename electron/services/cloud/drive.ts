@@ -1,5 +1,6 @@
 import type { MessageSender } from '../../core/pty-manager';
 import type { ClientKind } from './types';
+import { startAllowed, type Headroom } from '../../platform/memory-headroom';
 
 /**
  * Driving a Tars server's agent for a client (plan Task 7). Knows nothing of
@@ -27,7 +28,7 @@ export type DriveRequest =
 
 export interface DriveCaller { name: string; kind: ClientKind }
 
-export type DriveOutcome = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409; error: string };
+export type DriveOutcome = { ok: true } | { ok: false; status: 400 | 403 | 404 | 409 | 503; error: string };
 
 /** The server's agents and terminals, as the executor reaches them (server/main.ts gives the real ones). */
 export interface DriveTarget {
@@ -37,6 +38,8 @@ export interface DriveTarget {
   start(agentId: string): Promise<{ ok: true } | { ok: false; error: string }>;
   stop(agentId: string, by: string, reason: string): Promise<void>;
   message(agentId: string, text: string, sender: MessageSender): 'ok' | 'no-terminal' | 'not-running';
+  /** The server's memory, read before a start (M3 Task 3, platform/memory-headroom.ts). */
+  memory?: { headroom(): Headroom | null; floorMb?: number };
 }
 
 export const MAX_KEYS = 4096;
@@ -73,6 +76,9 @@ export async function executeDrive(request: DriveRequest, caller: DriveCaller, t
       return { ok: true };
     }
     case 'start': {
+      // Never below the floor: the box runs Hermes and the rest too.
+      const short = target.memory ? startAllowed(target.memory.headroom(), target.memory.floorMb) : null;
+      if (short) return { ok: false, status: 503, error: short };
       const started = await target.start(request.agentId);
       return started.ok ? { ok: true } : { ok: false, status: 409, error: started.error };
     }
