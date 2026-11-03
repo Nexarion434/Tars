@@ -676059,7 +676059,7 @@
                                       "fill": "#727272",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "How the server runs, its container and its door. Set for you on the usual Docker setup.",
+                                      "content": "How the server runs, its container and its door.",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
@@ -677194,7 +677194,7 @@
                                       "fill": "#727272",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "How the server runs, its container and its door. Set for you on the usual Docker setup.",
+                                      "content": "How the server runs, its container and its door.",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
@@ -677273,7 +677273,7 @@
                                       "fill": "$text-secondary",
                                       "textGrowth": "fixed-width",
                                       "width": "fill_container",
-                                      "content": "Filled in for you on the usual Docker setup. Change them only if your server runs Tars another way.",
+                                      "content": "Filled in for you on the usual Docker setup, except the door path. Change the rest only if your server runs Tars another way.",
                                       "lineHeight": 1.3333333333333333,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 12,
@@ -677601,7 +677601,7 @@
                                       "fill": "#727272",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "Where Tars listens on the server, so this computer can reach it. Found for you on Docker.",
+                                      "content": "Where Tars listens on the server, so this computer can reach it. On Docker, the path on the server, not inside the container.",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
@@ -678953,19 +678953,6 @@
                                                   ]
                                                 }
                                               ]
-                                            },
-                                            {
-                                              "type": "text",
-                                              "id": "MnVLV",
-                                              "name": "h",
-                                              "fill": "#727272",
-                                              "textGrowth": "fixed-width",
-                                              "width": 560,
-                                              "content": "Last used now",
-                                              "lineHeight": 1.4,
-                                              "fontFamily": "$font-ui",
-                                              "fontSize": 11,
-                                              "fontWeight": "normal"
                                             }
                                           ]
                                         },
@@ -679033,7 +679020,7 @@
                                                   "name": "icon",
                                                   "width": 13,
                                                   "height": 13,
-                                                  "icon": "laptop",
+                                                  "icon": "monitor",
                                                   "library": "lucide",
                                                   "fill": "$text-secondary"
                                                 },
@@ -679049,19 +679036,6 @@
                                                   "fontWeight": "normal"
                                                 }
                                               ]
-                                            },
-                                            {
-                                              "type": "text",
-                                              "id": "HzzeC",
-                                              "name": "h",
-                                              "fill": "#727272",
-                                              "textGrowth": "fixed-width",
-                                              "width": 560,
-                                              "content": "Last used 2 h ago",
-                                              "lineHeight": 1.4,
-                                              "fontFamily": "$font-ui",
-                                              "fontSize": 11,
-                                              "fontWeight": "normal"
                                             }
                                           ]
                                         },
@@ -679166,19 +679140,6 @@
                                                   ]
                                                 }
                                               ]
-                                            },
-                                            {
-                                              "type": "text",
-                                              "id": "M1oMUl",
-                                              "name": "h",
-                                              "fill": "#727272",
-                                              "textGrowth": "fixed-width",
-                                              "width": 560,
-                                              "content": "Last used yesterday",
-                                              "lineHeight": 1.4,
-                                              "fontFamily": "$font-ui",
-                                              "fontSize": 11,
-                                              "fontWeight": "normal"
                                             }
                                           ]
                                         },
@@ -679370,7 +679331,7 @@
                                       "fill": "#727272",
                                       "textGrowth": "fixed-width",
                                       "width": 560,
-                                      "content": "How the server runs, its container and its door. Set for you on the usual Docker setup.",
+                                      "content": "How the server runs, its container and its door.",
                                       "lineHeight": 1.4,
                                       "fontFamily": "$font-ui",
                                       "fontSize": 11,
