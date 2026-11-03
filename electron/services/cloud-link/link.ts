@@ -31,7 +31,8 @@ export interface LinkForward {
   ended: Promise<{ code: number | null; stderr: string }>;
   close(): void;
 }
-export type ForwardFactory = (profile: ServerProfile, remoteSocket: string) => LinkForward;
+/** Opens the forward; a local end that cannot be had throws (or rejects) before any `ssh` starts. */
+export type ForwardFactory = (profile: ServerProfile, remoteSocket: string) => LinkForward | Promise<LinkForward>;
 
 export type HelloResult = { ok: true; serverId: string } | { ok: false; status?: number; detail: string };
 /** The door through the forward (client.ts); `hello` is the one call made without the credential. */
@@ -138,14 +139,23 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
 
     const remoteSocket = linked.doorSocket ?? (typeof status.json.door === 'string' ? status.json.door : undefined);
     if (!remoteSocket) return failLink(id, host, 'no-door');
-    const forward = deps.forward(linked, remoteSocket);
+    const failForward = (err: unknown) => {
+      const problem = (err as { problem?: SshProblem }).problem ?? 'failed';
+      set(id, { phase: 'failed', problem, sentence: (err as Error).message });
+    };
+    let forward: LinkForward;
+    try {
+      forward = await deps.forward(linked, remoteSocket);
+    } catch (err) {
+      return current() ? failForward(err) : undefined;
+    }
+    if (!current()) return forward.close();
     forwards.set(id, forward);
     try {
       await forward.ready;
     } catch (err) {
       if (forwards.get(id) === forward) closeForward(id);
-      if (!current()) return;
-      return set(id, { phase: 'failed', problem: 'failed', sentence: (err as Error).message });
+      return current() ? failForward(err) : undefined;
     }
     if (!current()) return forward.close();
     const hello = await deps.client(forward.end).hello();

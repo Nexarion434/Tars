@@ -76,7 +76,8 @@ function readAnswer(stdout: string): RunResult {
   return unreadable;
 }
 
-function classify(code: number | null, stderr: string): RunResult {
+/** What a failed `ssh` (its exit code and stderr) means, as a problem the user can act on. */
+export function classifySshFailure(code: number | null, stderr: string): Extract<RunResult, { ok: false }> {
   const detail = lastLine(stderr).slice(0, DETAIL);
   const table = code === 255 ? [...SSH_PROBLEMS, ...SERVER_PROBLEMS] : SERVER_PROBLEMS;
   const found = table.find(([pattern]) => pattern.test(stderr));
@@ -144,7 +145,7 @@ export function runServerCommand(
     });
     child.on('close', (code: number | null) => {
       if (cut) return settle(cut);
-      settle(code === 0 ? readAnswer(Buffer.concat(out).toString('utf8')) : classify(code, err));
+      settle(code === 0 ? readAnswer(Buffer.concat(out).toString('utf8')) : classifySshFailure(code, err));
     });
 
     child.stdin?.on('error', () => { /* the remote end went away first: its exit says why */ });

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type StdioOptions } from 'child_process';
+import type { LocalForwardEnd } from '../../platform/local-forward';
 
 /**
  * The desktop's `ssh` calls to a Tars server (docs/superpowers/plans/2026-11-03-tars-cloud-m2.md).
@@ -29,8 +30,8 @@ export type ServerCommand =
   | { do: 'clients-list' }
   | { do: 'clients-revoke'; id: string };
 
-/** The desktop's end of the forward: a loopback port, or a Unix socket of its own. */
-export type LocalEnd = { kind: 'tcp'; port: number } | { kind: 'unix'; path: string };
+/** The desktop's end of the forward: a loopback port, or a Unix socket of its own (platform/local-forward.ts). */
+export type LocalEnd = LocalForwardEnd;
 
 const HOST = /^(?:[A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 /** A word of the user's: no shell character, no leading `-` (an option), `=` (zsh's `=cmd`) or `~`. */
