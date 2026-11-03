@@ -120,7 +120,7 @@ describe('sshCommandArgv', () => {
       const end = argv.indexOf('--');
       expect(argv[end + 1]).toBe('ubuntu@100.101.245.29');
       expect(argv.slice(end + 2)).toEqual([remoteWords(DOCKER, command).join(' ')]);
-      expect(argv.slice(0, end).every(a => a.startsWith('-') || /^[A-Za-z]+=[A-Za-z0-9]+$/.test(a))).toBe(true);
+      expect(argv.slice(0, end).every(a => a.startsWith('-') || /^[A-Za-z][A-Za-z0-9]*=[A-Za-z0-9]+$/.test(a))).toBe(true);
     }
   });
 
@@ -131,6 +131,19 @@ describe('sshCommandArgv', () => {
       expect(argv).toContain('BatchMode=yes');
       expect(argv).toContain('ControlPath=none');
     }
+  });
+
+  it("never forwards the desktop's agent, display or local commands, whatever the user's config says", () => {
+    const command = sshCommandArgv('tars-vps', BARE, { do: 'status' });
+    const forward = sshForwardArgv('tars-vps', { kind: 'tcp', port: 47117 }, SOCKET);
+    for (const argv of [command, forward]) {
+      for (const option of ['ForwardAgent=no', 'ForwardX11=no', 'PermitLocalCommand=no']) expect(argv, option).toContain(option);
+      // Options before the host: ssh reads nothing after it as its own.
+      expect(argv.indexOf('ForwardAgent=no')).toBeLessThan(argv.indexOf('--'));
+    }
+    // A command binds no forward of the config; the forward keeps its own -L, which this would clear.
+    expect(command).toContain('ClearAllForwardings=yes');
+    expect(forward).not.toContain('ClearAllForwardings=yes');
   });
 
   it('refuses a bad host before anything else', () => {

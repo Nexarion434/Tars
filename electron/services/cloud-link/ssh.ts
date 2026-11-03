@@ -93,13 +93,21 @@ function checkedHost(host: string): string {
   return host;
 }
 
-/** The options every call shares: no prompt, no shared connection left running behind it. */
-const COMMON = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ControlMaster=no', '-o', 'ControlPath=none'];
+/**
+ * The options every call shares: no prompt, no shared connection left running
+ * behind it, and nothing of the desktop handed to a host where agents run as
+ * the same user (its ssh agent, its display, a local command), whatever the
+ * user's ssh config says for that host (security review 1, nit 2).
+ */
+const COMMON = [
+  '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ControlMaster=no', '-o', 'ControlPath=none',
+  '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'PermitLocalCommand=no',
+];
 
-/** `ssh` arguments for one server command, its JSON input (if any) on stdin. */
+/** `ssh` arguments for one server command, its JSON input (if any) on stdin. No forward of the config binds for it. */
 export function sshCommandArgv(host: string, runner: ServerRunner, command: ServerCommand): string[] {
   const words = remoteWords(runner, command);
-  return [...COMMON, '-T', '--', checkedHost(host), words.join(' ')];
+  return [...COMMON, '-o', 'ClearAllForwardings=yes', '-T', '--', checkedHost(host), words.join(' ')];
 }
 
 function localSpec(end: LocalEnd): string {
