@@ -58,6 +58,12 @@ import { promisify } from 'node:util';
  *    terminal loses the parent's value.
  * 13. darwin/linux: a terminal gets another environment than the parent's
  *    (a PSModulePath removed on the way).
+ * 14. linux (2026-11-03): an agent's login bash loses the PATH it was handed
+ *    to its profile (Debian's /etc/profile replaces it; on the Tars server
+ *    `claude` in ~/.local/bin was "command not found") because the terminal
+ *    is not handed it again as TARS_AGENT_PATH, or a start, a bot or the API
+ *    does not put it back in front of the CLI (platform/child-env.ts,
+ *    platform/launch.ts); or darwin gets either.
  */
 
 /** PSModulePath as a process started from PowerShell 7 has it: pwsh 7's modules first. */
@@ -337,6 +343,9 @@ afterAll(() => fs.rmSync(tmpHome, { recursive: true, force: true }));
 
 describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site started before the port', (platform) => {
   const loginShell = platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
+  // 14. linux: the PATH the login bash was handed, back in front of the CLI.
+  const back = platform === 'linux' ? 'PATH="${TARS_AGENT_PATH:+$TARS_AGENT_PATH:}$PATH" ' : '';
+  const kept = platform === 'linux' ? POSIX_PATH : undefined;
   beforeEach(() => pin(platform));
 
   it('agent:create opens /bin/bash -l in the agent\'s folder, on the full PATH', async () => {
@@ -344,6 +353,7 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     expect(spawned).toHaveLength(1);
     expect([spawned[0].file, spawned[0].args, spawned[0].opts.cwd]).toEqual(['/bin/bash', ['-l'], project]);
     expect(spawned[0].opts.env.PATH).toBe(POSIX_PATH);
+    expect(spawned[0].opts.env.TARS_AGENT_PATH).toBe(kept);
   });
 
   it('agent:start types `cd \'<dir>\' && <cmd>` into that shell', async () => {
@@ -351,7 +361,7 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     await handlers.get('agent:start')!({}, { id: agent.id, prompt: TASK });
     await pause(50);
     expect(spawned).toHaveLength(1);
-    expect(typed(spawned[0])).toBe(`cd ${q(project)} && ${claudeCommand(TASK)}\r`);
+    expect(typed(spawned[0])).toBe(`cd ${q(project)} && ${back}${claudeCommand(TASK)}\r`);
   });
 
   it('the local switch reopens /bin/bash -l, then types the same line', async () => {
@@ -362,7 +372,8 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     expect(spawned).toHaveLength(2);
     expect([spawned[1].file, spawned[1].args]).toEqual(['/bin/bash', ['-l']]);
     expect(spawned[1].opts.env.PATH).toBe(POSIX_PATH);
-    expect(typed(spawned[1])).toBe(`cd ${q(project)} && 'claude' --permission-mode default --add-dir ${q(DATA_DIR)} -- ${q(TASK)}\r`);
+    expect(spawned[1].opts.env.TARS_AGENT_PATH).toBe(kept);
+    expect(typed(spawned[1])).toBe(`cd ${q(project)} && ${back}'claude' --permission-mode default --add-dir ${q(DATA_DIR)} -- ${q(TASK)}\r`);
   });
 
   it('8. the local switch\'s terminal, once replaced, exits without a completion; while named, with one', async () => {
@@ -388,6 +399,7 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     await initAgentPty(agent, null, vi.fn(), vi.fn());
     expect([spawned[0].file, spawned[0].args, spawned[0].opts.cwd]).toEqual(['/bin/bash', ['-l'], project]);
     expect(spawned[0].opts.env.PATH).toBe(POSIX_PATH);
+    expect(spawned[0].opts.env.TARS_AGENT_PATH).toBe(kept);
   });
 
   it('a bot start types the same line into a fresh terminal', async () => {
@@ -396,14 +408,15 @@ describe.each(['darwin', 'linux'] as const)('1. on %s, what each call site start
     const fleet: BotFleet = { agents, ptyProcesses, settings: () => settings, saveAgents: vi.fn(), initAgentPty: (a) => initAgentPty(a, null, vi.fn(), vi.fn()) };
     await startWithTask(fleet, agent, TASK, 'Telegram', { resume: false, reply: vi.fn() });
     expect(spawned).toHaveLength(1);
-    expect(typed(spawned[0])).toBe(`cd ${q(project)} && ${claudeCommand(TASK)}\r`);
+    expect(typed(spawned[0])).toBe(`cd ${q(project)} && ${back}${claudeCommand(TASK)}\r`);
   });
 
   it('the API start runs `/bin/bash -l -c "cd \'<dir>\' && exec <cmd>"`', async () => {
     const { args, file, env } = await apiStart();
     expect(file).toBe('/bin/bash');
-    expect(args).toEqual(['-l', '-c', `cd ${q(project)} && exec ${apiCommand()}`]);
+    expect(args).toEqual(['-l', '-c', `cd ${q(project)} && ${back}exec ${apiCommand()}`]);
     expect(env.PATH).toBe(POSIX_PATH);
+    expect(env.TARS_AGENT_PATH).toBe(kept);
   });
 
   it('pty:create, shell:startPty and createQuickPty open the login shell with -l', async () => {

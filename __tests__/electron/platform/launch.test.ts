@@ -29,6 +29,13 @@ import type { FsProbe } from '../../../electron/platform/fs-probe';
  *    typed LaunchError carrying its cause.
  * 9. win32: runsCommand is not true, so cliRunningIn cannot tell a CLI
  *    from a bare shell.
+ * 10. linux (2026-11-03): the CLI is looked up, and runs, with the PATH the
+ *    login profile left rather than the one Tars built. Debian's /etc/profile
+ *    replaces PATH, so on the Tars server `claude` (in ~/.local/bin) was
+ *    "command not found". The PATH bash was handed, kept under
+ *    TARS_AGENT_PATH (child-env.ts), does not go back in front of the CLI in
+ *    both shapes; it is dropped when the variable is unset; darwin's shape
+ *    changes by a byte.
  */
 
 // Today's call sites, copied as they stand at c349d7c1, as the reference.
@@ -54,14 +61,19 @@ describe('darwin/linux: today\'s shape, to the byte', () => {
     // Outside the Windows grammar: passed through untouched here, as today.
     "'claude' ; echo odd && $(x)",
   ];
-  it.each(['darwin', 'linux'] as const)('1, 2. on %s', (platform) => {
+  // linux: the same, with the PATH bash was handed back in front of the CLI (10).
+  const pathBack = 'PATH="${TARS_AGENT_PATH:+$TARS_AGENT_PATH:}$PATH" ';
+  it.each(['darwin', 'linux'] as const)('1, 2, 10. on %s', (platform) => {
     for (const dir of dirs) {
       for (const cmd of cmds) {
         const env = { PATH: '/usr/bin', HOME: '/Users/me' };
         const launch = toLaunch(cmd, dir, env, platform, { fs: noFs }) as PosixLaunch;
+        const back = platform === 'linux' ? pathBack : '';
+        const api = todayApi(dir, cmd);
         expect(launch.platform).toBe('posix');
-        expect({ shell: launch.shell, args: launch.args }).toEqual(todayApi(dir, cmd));
-        expect(launch.typedLine).toBe(todayTyped(dir, cmd));
+        expect({ shell: launch.shell, args: launch.args })
+          .toEqual({ ...api, args: [api.args[0], api.args[1], api.args[2].replace(' && exec ', ` && ${back}exec `)] });
+        expect(launch.typedLine).toBe(todayTyped(dir, `${back}${cmd}`));
         expect(launch.cwd).toBe(dir);
         expect(launch.env).toBe(env);
       }
