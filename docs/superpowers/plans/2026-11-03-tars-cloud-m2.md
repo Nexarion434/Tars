@@ -141,9 +141,9 @@ Port `remote-fleet.ts` and its 343-line test from `win/machines`: peers become c
 
 ### Task 14: E2E `e2e/cloud-see-drive.spec.ts` (about 55 min, run on CI)
 
-- [ ] The spec starts a headless server (`node electron/dist/server/cli.js serve` in its own HOME with the fake CLI) and a sandboxed desktop whose link takes a direct route to the server's door socket (`TARS_CLOUD_DIRECT=<socket>`, read only when `!app.isPackaged`, refused otherwise: a unit pins it), so CI needs no SSH.
-- [ ] Asserts and leaves in its run directory: the server's agent in Dashboard with the badge, its live output, keys typed reaching the fake CLI's transcript, a stop with a reason, the offline line when the server process is stopped, the same pane again when it is back; the JSON of asserted values and the reproducing command.
-- [ ] Shown to bite: the direct route pointed at a socket with another server id turns it red. Runs on the fork's CI (no local E2E on this PC).
+- [x] The spec starts a headless server (`node electron/dist/server/cli.js serve` in its own HOME with the fake CLI) and a sandboxed desktop whose link takes a direct route to the server's door socket (`TARS_CLOUD_DIRECT=<socket>`, read only when `!app.isPackaged`, refused otherwise: a unit pins it), so CI needs no SSH.
+- [x] Asserts and leaves in its run directory: the server's agent in Dashboard with the badge, its live output, keys typed reaching the fake CLI's transcript, a stop with a reason, the offline line when the server process is stopped, the same pane again when it is back; the JSON of asserted values and the reproducing command.
+- [x] Shown to bite: the direct route pointed at a socket with another server id turns it red. Runs on the fork's CI (no local E2E on this PC). Done instead with a mutant (the pane's cloud:output listener emptied: red at the live step), and the spec alone was run here with E2E_PORT_OFFSET=40 (passed).
 
 ### Task 15: docs, then the real test with Nicolas (about 45 min, then his session)
 
