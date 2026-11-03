@@ -8,6 +8,11 @@ one actually changed.
 macOS and Windows. Free and open source. No account, no cloud in the middle: the
 CLIs run on your machine and Tars is the room they work in.
 
+Tars cloud, optional: run Tars on an always-on server of your own and reach it
+from your computer over SSH, with your own key (Settings > Cloud). Its agents
+show beside yours, live, and you can type to them, start and stop them. See
+[OPERATIONS.md](OPERATIONS.md#connecting-a-desktop-to-a-tars-server-settings--cloud).
+
 ![The dashboard: every running agent in one grid, each pane a live terminal](screenshots/dashboard.png)
 
 ---

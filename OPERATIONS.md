@@ -2579,6 +2579,58 @@ Back up both folders; `cloud-clients.json` restored elsewhere keeps every client
 Stop it, pull the branch, `scripts/server/build.sh`, start it. Agents that were running come back
 through restart recovery, as after a desktop relaunch.
 
+In Docker (one container builds, another runs, both capped at 3 GB): stop the server container, run
+the build container on the same volume (`git fetch --depth 1 origin <branch>`, `git reset --hard
+FETCH_HEAD`, `scripts/server/build.sh`), remove it, start the server container again. Check that it
+says `[cloud] door on ...`, that `status --json` gives the same server id, and that the host keeps
+1 GB of memory free during the build. A stop ends the terminal of any agent running there; its state
+is kept. The project's runbook holds the exact commands.
+
+## Connecting a desktop to a Tars server (Settings > Cloud)
+
+### Add a server
+
+Settings > Cloud > Tars servers. Type the server's address, `user@server` or a `Host` from your SSH
+config, and press Connect. Tars signs in with your own SSH key; it never asks for a password and
+never stores one. Advanced holds how the server runs (Docker or installed), the container name,
+admin rights (`sudo -n`, which never prompts) and the door path. On Docker the door path is the
+socket's path on the server itself, not inside the container: Tars cannot find it for you there.
+Advanced opens by itself when one of them is missing.
+
+The first connect mints this computer's own client on the server (kind `desktop`, scopes `see` and
+`drive`), named after this computer. The credential stays in `~/.tars-private/cloud-link.json`; the
+window never sees it.
+
+### The first connect and the host key
+
+Tars runs `ssh` with `BatchMode=yes`: it answers no prompt. A server this computer has never
+connected to is refused with "This computer has never connected to ...": connect once from a
+terminal (`ssh user@server`), check the key it shows and accept it, then press Connect again. A key
+that changed is refused too, with its own sentence: if the server was not reinstalled, do not connect.
+
+On Windows, Tars runs Windows' own OpenSSH (`%SystemRoot%\System32\OpenSSH\ssh.exe`), the client your
+keys and `known_hosts` under your Windows profile belong to, even when another `ssh` (Git's) comes
+first on the PATH. It falls back to `ssh` on the PATH only when that feature is not installed.
+
+### Its agents, and the link
+
+A connected server's agents are on the Dashboard and the Agents page, with the server's name as
+their badge. Where the server lets this computer drive, the terminal takes your keys, and start and
+stop are one click; the server files each stop as `Stopped from <this computer>`. A server that goes
+away is `offline since HH:MM`: its agents keep their last output, and Tars tries again by itself
+(from 2 s, doubling, at most 5 min). A server that refuses this computer's credential is
+`disconnected`, with no retry.
+
+Disconnect ends the SSH link from this computer only: the server and its agents keep going.
+Forget this server also removes this computer's client on the server.
+
+### Revoke a device
+
+Each server's card lists the devices with access: every computer and outside agent holding a
+credential there, this one marked. Remove revokes it on the server at once (`clients revoke`): its
+open streams end and its credential is refused (401) from then on. The same from the server:
+`clients list --json`, then `clients revoke <id>`.
+
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.

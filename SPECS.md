@@ -4,7 +4,7 @@
 
 A desktop app that runs a team of AI coding-agent CLIs on your own machine, in parallel, on your own repositories. Each agent is a real terminal process (`claude`, `codex`, `gemini`, `grok`, `opencode`, `pi`, or the `claude` binary re-pointed at another vendor) running in its own git worktree, with its own model, its own permission mode and its own PTY. Tars owns the process lifecycle, the orchestration path between agents, one shared memory, and the cost accounting.
 
-Nothing runs in the cloud. No account, no server, no analytics. The state lives in `~/.tars`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the update feed, the update checks of the CLIs it runs, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
+Nothing runs in the cloud. No account, no server of anyone else's, no analytics; the one server Tars can reach is a Tars server of your own, over your own SSH, and only once you add it (§9b). The state lives in `~/.tars`, the agents read and write your working tree, and the only network calls the app itself makes are the model catalogue, the update feed, the update checks of the CLIs it runs, and whatever integration you switch on: error reports to Sentry among them, off unless you turn them on (§11, Error reports).
 
 ---
 
@@ -969,6 +969,20 @@ Consumed surfaces: `/api/memory` (files, state, session search, source `hermes` 
 - `dry_run: true` proves auth and agent resolution without dispatching, for an agent the gateway reaches.
 - Otherwise it calls the same `performDispatch()` as `/api/agents/:id/dispatch`, so semantics are identical.
 - Reachability from a VPS is the operator's job: `tailscale serve 31415` or an equivalent tunnel, since the API binds to `127.0.0.1`.
+
+---
+
+## §9b Tars cloud (2.0.7): a desktop and a Tars server
+
+Optional, and off until a server is added. A Tars server is the same app run headless (`electron/server/`, OPERATIONS.md "A Tars server (headless)"); a desktop reaches it over SSH, with the user's own key.
+
+- **The server's door** (`services/cloud/door.ts`): HTTP on a Unix socket, `~/.tars-private/door.sock` (0600, folder 0700), never a port. Routes under `/cloud/v1`: `hello` (the server's id and name, no credential), `fleet`, and per agent `screen`, `stream`, `keys`, `size`, `start`, `stop`, `message`. Every route but `hello` takes a client's credential.
+- **Clients** (`services/cloud/clients.ts`): scoped credentials, kept as sha256 hashes, minted and revoked by the server's CLI (`clients add|list|revoke`, input on stdin). Kinds `desktop` and `outside-agent`; scopes `see`, `drive`, `create`, `files`. A revoked client is refused at once and its open streams end. A stop needs a reason, 1 to 200 characters, kept beside who stopped it.
+- **The link** (`services/cloud-link/`): the system `ssh` with argv arrays (on Windows, Windows' own OpenSSH first, `platform/ssh-client.ts`), `BatchMode=yes`, no agent or X11 forwarding. One short `ssh` per server command (`status`, `start`, `clients add|list|revoke`, through `docker exec` when the server runs in Docker), and one long `ssh -N -L` per connected server, from a local end the desktop owns (a socket in a 0700 folder, or a free loopback port on Windows) to the door. Ready only on ssh's own listening line for that end. `hello` must name the server id the desktop minted for before the credential is sent.
+- **First connect**: mints this desktop's client (`desktop`, `see` and `drive`), named after the computer. The credential lives in `~/.tars-private/cloud-link.json`; nothing sent to the window holds it, the socket path or a host key line.
+- **States**: connecting, connected (since), offline (the forward ended: retried from 2 s, doubling, capped at 5 min, reset after 60 s connected), disconnected (the door refused the credential: no retry), failed (ssh's error in a sentence).
+- **In the window** (`window.electronAPI.cloud`, events `cloud:agents`, `cloud:state`, `cloud:output`): a server's agents join the Dashboard and the Agents page with ids `c:<serverId>:<agentId>`, their server's name as badge, the terminal live through the door's stream, keys typed where the server lets this desktop drive, start and stop in one click (main sends the stop's reason, `Stopped from <hostname>`). Settings > Cloud adds a server by its address, with Advanced for how it runs, and shows each server's link, Disconnect, Forget this server (also revokes this desktop there) and the devices with access, each with Remove.
+- **Not yet**: creating an agent on the server from a desktop (the server has no route for it), files, the Mac's real test.
 
 ---
 
