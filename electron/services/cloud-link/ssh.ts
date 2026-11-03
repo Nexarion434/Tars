@@ -112,11 +112,15 @@ function localSpec(end: LocalEnd): string {
   return end.path;
 }
 
+/** Why `socket` cannot be the server's door socket on the SSH host, in words, or null when it can. */
+export function remoteSocketProblem(socket: string): string | null {
+  return SOCKET_PATH.test(socket) && socket.length <= 255 ? null : `${JSON.stringify(socket)} is not the path of the server's door socket.`;
+}
+
 /** `ssh` arguments for the long forward from the desktop's end to the server's door socket. */
 export function sshForwardArgv(host: string, end: LocalEnd, remoteSocket: string): string[] {
-  if (!SOCKET_PATH.test(remoteSocket) || remoteSocket.length > 255) {
-    throw new Error(`${JSON.stringify(remoteSocket)} is not the path of the server's door socket.`);
-  }
+  const problem = remoteSocketProblem(remoteSocket);
+  if (problem) throw new Error(problem);
   return [
     ...COMMON,
     '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
