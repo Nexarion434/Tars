@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { tildePath } from '../../src/lib/display-path';
 import {
+  cloudProjectOf,
+  projectOptionOf,
   agentOptionsSummary,
   canSubmitAgent,
   canSubmitTeam,
@@ -138,5 +141,28 @@ describe('worktreeToSave', () => {
     expect(worktreeToSave({ useWorktree: false, branchName: 'feat/notes' }, {})).toBeUndefined();
     expect(worktreeToSave({ useWorktree: true, branchName: '   ' }, {})).toBeUndefined();
     expect(worktreeToSave({ useWorktree: true, branchName: 'feat/y' }, { worktreePath: '/p/.worktrees/feat-x', branchName: 'feat/x' })).toBeUndefined();
+  });
+});
+
+/**
+ * M3 Task 9, a server's project in New agent's picker (frame `Overlay · New agent · cloud project`).
+ * Written before the code. How it fails:
+ * 1. a server's project listed by its key (cloud:<serverId>:<path>) instead
+ *    of its path from the server's home, or without its server beside it
+ * 2. a local project's line changed
+ * 3. the picked server's project not found for the trigger's badge, or a
+ *    local one taken for one
+ */
+describe('a server\'s project in the picker (M3)', () => {
+  const cloud = { path: 'cloud:d795d0ff4d5d8e50:/home/tars/projects/my-app', name: 'my-app', server: 'my-server', shownPath: '~/projects/my-app' };
+  const local = { path: '/Users/me/tars', name: 'tars' };
+  it('lists it by its path there, its server beside it (1, 2)', () => {
+    expect(projectOptionOf(cloud)).toEqual({ value: cloud.path, label: '~/projects/my-app', hint: 'my-server', hintClassName: 'text-machine-ink' });
+    expect(projectOptionOf(local)).toEqual({ value: '/Users/me/tars', label: tildePath('/Users/me/tars') });
+  });
+  it('finds the picked one for the badge, and no local one (3)', () => {
+    expect(cloudProjectOf([local, cloud], cloud.path)).toEqual({ name: 'my-app', server: 'my-server' });
+    expect(cloudProjectOf([local, cloud], local.path)).toBeNull();
+    expect(cloudProjectOf([local, cloud], '')).toBeNull();
   });
 });

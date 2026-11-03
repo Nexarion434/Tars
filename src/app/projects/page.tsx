@@ -966,7 +966,7 @@ export default function ProjectsPage() {
         projects={[
           ...electronProjects.map(p => ({ path: p.path, name: p.name })),
           // A server's projects, by their own key, the server named after the project's name.
-          ...cloudRows.map(row => ({ path: row.key, name: `${row.name} (${row.server.name})` })),
+          ...cloudRows.map(row => ({ path: row.key, name: row.name, server: row.server.name, shownPath: row.shownPath })),
         ]}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
         installedSkills={installedSkills}
