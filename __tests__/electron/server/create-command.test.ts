@@ -22,6 +22,9 @@ import { runCreateCommand } from '../../../electron/server/create-command';
  * 4. the operator's client left behind after the call, even when it fails
  * 5. a refusal (a taken name) exiting 0, or without its sentence
  * 6. an unknown verb exiting 0
+ * 7. (security review 1, B1) a clone made without the operator's explicit
+ *    --trust-code, a `trusted` in the input taken for it, or the flag
+ *    asked of an empty project
  */
 
 const doors: Door[] = [];
@@ -49,6 +52,30 @@ async function setup() {
   const deps = { clientsFile, socketPath: door.path, serverRunning: () => true };
   return { deps, made, lines, out: (l: string) => lines.push(l), clientsFile };
 }
+
+describe('tars-server projects add, a clone (7)', () => {
+  const clone = (extra: Record<string, unknown> = {}) => JSON.stringify({ name: 'repo', from: { kind: 'git', url: 'https://github.com/a/b', ...extra } });
+  it('7. no --trust-code, no clone: exit 1 with the flag named, even with trusted in the input', async () => {
+    const t = await setup();
+    const said: string[] = [];
+    const write = process.stderr.write;
+    process.stderr.write = ((s: string) => { said.push(String(s)); return true; }) as typeof process.stderr.write;
+    try {
+      expect(await runCreateCommand('projects', ['add', '--json'], clone(), t.deps, t.out)).toBe(1);
+      expect(await runCreateCommand('projects', ['add', '--json'], clone({ trusted: true }), t.deps, t.out)).toBe(1);
+    } finally { process.stderr.write = write; }
+    expect(said.join('')).toMatch(/--trust-code/);
+    expect(t.made).toEqual([]);
+    expect(listClients(t.clientsFile)).toEqual([]);
+  });
+
+  it('7. with --trust-code: cloned, the trust given by the operator\'s client', async () => {
+    const t = await setup();
+    expect(await runCreateCommand('projects', ['add', '--json', '--trust-code'], clone(), t.deps, t.out)).toBe(0);
+    expect(t.made).toEqual([['project', 'repo', { kind: 'git', url: 'https://github.com/a/b', trusted: true, by: 'tars-server cli' }]]);
+    expect(await runCreateCommand('projects', ['add', '--json'], JSON.stringify({ name: 'blank', from: { kind: 'empty' } }), t.deps, t.out)).toBe(0);
+  });
+});
 
 describe('tars-server projects add | agents add', () => {
   it('3, 4. projects add: through the door, its answer printed, the operator\'s client gone after', async () => {

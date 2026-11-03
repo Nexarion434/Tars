@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createProject, gitUrlProblem, projectNameProblem, projectsRoot, type GitRunner } from '../../../electron/services/cloud/projects';
+import { createProject, gitUrlProblem, projectNameProblem, projectsRoot, type GitRunner, type ProjectFrom } from '../../../electron/services/cloud/projects';
 import { gitSshCommand } from '../../../electron/services/cloud/git-access';
 
 /**
@@ -32,12 +32,18 @@ import { gitSshCommand } from '../../../electron/services/cloud/git-access';
  *    pinned hosts, or before they exist; or says nothing a person can act on
  *    when the host is unknown or the key not allowed; or runs at all when
  *    the key cannot be made
+ * 9. (security review 1, B1) a clone runs without the user's word that they
+ *    trust the repository's code, whose own settings run on the server at an
+ *    agent's first start; or the server keeps no record of who gave it, for
+ *    which folder and address, and when; or an empty project asks for it
  */
 
 let root: string;
+let trustFile: string;
 let calls: Array<{ cwd: string; args: string[] }>;
 beforeEach(() => {
   root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-projects-')), 'projects');
+  trustFile = path.join(path.dirname(root), 'private', 'project-trust.json');
   calls = [];
 });
 
@@ -93,6 +99,35 @@ describe('gitUrlProblem', () => {
   });
 });
 
+describe('createProject, trusting a cloned repository (9)', () => {
+  it('9. a clone without the trust given is refused, says why, and git never runs', async () => {
+    for (const from of [{ kind: 'git', url: 'https://github.com/a/b' }, { kind: 'git', url: 'https://github.com/a/b', trusted: 'yes', by: 'x' }]) {
+      const answer = await createProject('x', from as unknown as ProjectFrom, { root, git: fakeGit(), trustFile });
+      expect(answer).toMatchObject({ ok: false, status: 400, error: expect.stringMatching(/trust this repository's code/) });
+    }
+    expect(calls).toEqual([]);
+    expect(fs.existsSync(path.join(root, 'x'))).toBe(false);
+    expect(fs.existsSync(trustFile)).toBe(false);
+  });
+
+  it('9. a trusted clone is recorded: its folder, its address, who trusted it and when', async () => {
+    const now = () => new Date('2026-11-03T17:00:00Z');
+    await createProject('a', { kind: 'git', trusted: true, by: 'PC-Nicolas', url: 'https://github.com/o/a' }, { root, git: fakeGit(), trustFile, now });
+    await createProject('b', { kind: 'git', trusted: true, by: 'tars-server cli', url: 'https://github.com/o/b' }, { root, git: fakeGit(), trustFile, now });
+    expect(JSON.parse(fs.readFileSync(trustFile, 'utf8'))).toEqual([
+      { path: path.join(root, 'a'), url: 'https://github.com/o/a', by: 'PC-Nicolas', at: '2026-11-03T17:00:00.000Z' },
+      { path: path.join(root, 'b'), url: 'https://github.com/o/b', by: 'tars-server cli', at: '2026-11-03T17:00:00.000Z' },
+    ]);
+    if (process.platform !== 'win32') expect(fs.statSync(trustFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('9. a clone that fails records nothing; an empty project needs no trust and records none', async () => {
+    await createProject('gone', { kind: 'git', trusted: true, by: 'PC-Nicolas', url: 'https://github.com/a/b' }, { root, git: fakeGit('fail'), trustFile });
+    expect(await createProject('blank', { kind: 'empty' }, { root, git: fakeGit(), trustFile })).toMatchObject({ ok: true });
+    expect(fs.existsSync(trustFile)).toBe(false);
+  });
+});
+
 describe('createProject', () => {
   it('7, 3. an empty project: the root made 0700, a folder, git init in it', async () => {
     const answer = await createProject('test-cloud', { kind: 'empty' }, { root, git: fakeGit() });
@@ -103,7 +138,7 @@ describe('createProject', () => {
   });
 
   it('5. a clone: the address after --, no submodules, one commit deep, run in the root', async () => {
-    const answer = await createProject('tars', { kind: 'git', url: 'https://github.com/Nexarion434/Tars.git' }, { root, git: fakeGit() });
+    const answer = await createProject('tars', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'https://github.com/Nexarion434/Tars.git' }, { root, git: fakeGit() });
     expect(answer).toEqual({ ok: true, path: path.join(root, 'tars') });
     expect(calls).toEqual([{ cwd: root, args: ['clone', '--no-recurse-submodules', '--depth', '1', '--', 'https://github.com/Nexarion434/Tars.git', 'tars'] }]);
   });
@@ -117,7 +152,7 @@ describe('createProject', () => {
 
   it('8. a clone over ssh runs with the server\'s own key and the pinned hosts, made first', async () => {
     const gitAccess = access();
-    const answer = await createProject('tars', { kind: 'git', url: 'git@github.com:Nexarion434/Tars.git' }, { root, git: fakeGit(), gitAccess });
+    const answer = await createProject('tars', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'git@github.com:Nexarion434/Tars.git' }, { root, git: fakeGit(), gitAccess });
     expect(answer).toEqual({ ok: true, path: path.join(root, 'tars') });
     expect(calls).toEqual([{ cwd: root, args: ['-c', `core.sshCommand=${gitSshCommand(gitAccess)}`, 'clone', '--no-recurse-submodules', '--depth', '1', '--', 'git@github.com:Nexarion434/Tars.git', 'tars'] }]);
     expect(fs.existsSync(path.join(gitAccess.dir, 'id_ed25519.pub'))).toBe(true);
@@ -129,20 +164,20 @@ describe('createProject', () => {
       calls.push({ cwd, args });
       throw Object.assign(new Error('exit 128'), { stderr: 'No ED25519 host key is known for git.example and you have requested strict checking.\nHost key verification failed.\nfatal: Could not read from remote repository.\n' });
     };
-    const answer = await createProject('x', { kind: 'git', url: 'ssh://git@git.example/a/b' }, { root, git: unknown, gitAccess: access() });
+    const answer = await createProject('x', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'ssh://git@git.example/a/b' }, { root, git: unknown, gitAccess: access() });
     expect(answer).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/does not know git\.example's key/) });
     expect(fs.existsSync(path.join(root, 'x'))).toBe(false);
   });
 
   it('8. no key, no clone', async () => {
-    const answer = await createProject('x', { kind: 'git', url: 'git@github.com:a/b' }, { root, git: fakeGit(), gitAccess: { dir: path.join(path.dirname(root), 'git'), keygen: async () => { throw new Error('no ssh-keygen'); } } });
+    const answer = await createProject('x', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'git@github.com:a/b' }, { root, git: fakeGit(), gitAccess: { dir: path.join(path.dirname(root), 'git'), keygen: async () => { throw new Error('no ssh-keygen'); } } });
     expect(answer).toMatchObject({ ok: false, status: 500, error: expect.stringMatching(/ssh-keygen/) });
     expect(calls).toEqual([]);
   });
 
   it('1, 4. a bad name or address: 400, and git never runs', async () => {
     expect(await createProject('..', { kind: 'empty' }, { root, git: fakeGit() })).toMatchObject({ ok: false, status: 400 });
-    expect(await createProject('x', { kind: 'git', url: 'ext::sh -c x' }, { root, git: fakeGit() })).toMatchObject({ ok: false, status: 400 });
+    expect(await createProject('x', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'ext::sh -c x' }, { root, git: fakeGit() })).toMatchObject({ ok: false, status: 400 });
     expect(calls).toEqual([]);
   });
 
@@ -170,16 +205,16 @@ describe('createProject', () => {
   });
 
   it('6. a clone that fails, or takes too long, leaves no folder and says why', async () => {
-    const failed = await createProject('gone', { kind: 'git', url: 'https://github.com/a/b' }, { root, git: fakeGit('fail') });
+    const failed = await createProject('gone', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'https://github.com/a/b' }, { root, git: fakeGit('fail') });
     expect(failed).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/repository not found/) });
     expect(fs.existsSync(path.join(root, 'gone'))).toBe(false);
-    const slow = await createProject('slow', { kind: 'git', url: 'https://github.com/a/b' }, { root, git: fakeGit('hang'), timeoutMs: 1000 });
+    const slow = await createProject('slow', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'https://github.com/a/b' }, { root, git: fakeGit('hang'), timeoutMs: 1000 });
     expect(slow).toMatchObject({ ok: false, status: 504, error: expect.stringMatching(/longer than/) });
     expect(fs.existsSync(path.join(root, 'slow'))).toBe(false);
   });
 
   it('6. a clone that grows past the size cap is stopped and its folder removed', async () => {
-    const big = await createProject('big', { kind: 'git', url: 'https://github.com/a/b' }, { root, git: fakeGit('grow'), maxBytes: 1024, pollMs: 20 });
+    const big = await createProject('big', { kind: 'git', trusted: true, by: 'PC-Nicolas', url:'https://github.com/a/b' }, { root, git: fakeGit('grow'), maxBytes: 1024, pollMs: 20 });
     expect(big).toMatchObject({ ok: false, status: 507, error: expect.stringMatching(/larger than/) });
     expect(fs.existsSync(path.join(root, 'big'))).toBe(false);
   });

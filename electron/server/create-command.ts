@@ -70,6 +70,15 @@ export async function runCreateCommand(
     process.stderr.write('The input is a JSON object, on stdin.\n');
     return 1;
   }
+  // A clone only on the operator's own flag (security review 1, B1): a `trusted` in the input is not taken for it.
+  const from = (input as { from?: unknown }).from;
+  if (what === 'projects' && from && typeof from === 'object' && (from as { kind?: unknown }).kind === 'git') {
+    if (!rest.includes('--trust-code')) {
+      process.stderr.write('A repository is cloned only once you trust its code: its settings can run code on this server as soon as an agent starts in it. Add --trust-code if you do.\n');
+      return 1;
+    }
+    input = { ...(input as object), from: { ...(from as object), trusted: true } };
+  }
   if (!deps.serverRunning()) {
     process.stderr.write('The Tars server is not running: start it first (tars-server start). Nothing was made.\n');
     return 1;

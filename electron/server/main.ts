@@ -133,7 +133,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
       // Projects and agents made from a client with `create` (M3): the same functions the server's CLI calls.
       create: {
         projects: () => listProjects(),
-        project: (name, from) => createProject(name, from, { gitAccess: { dir: privatePath('git'), serverId: identity.id } }),
+        project: (name, from) => createProject(name, from, { gitAccess: { dir: privatePath('git'), serverId: identity.id }, trustFile: privatePath('project-trust.json') }),
         agent: async fields => {
           const made = createAgentRecord(fields as unknown as NewAgentFields, {
             agents, saveAgents, appSettings: () => readAppSettingsFromDisk() as unknown as AppSettings, announce: () => scheduleTick(),

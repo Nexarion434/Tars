@@ -32,6 +32,9 @@ import type { DriveRequest } from '../../../electron/services/cloud/drive';
  *    fingerprint, in an answer
  * 9. the fleet without the server's projects, or with more than their names
  *    and paths
+ * 10. (security review 1, B1) a clone asked without the client's explicit
+ *    trust in the repository's code reaching the clone, or the client's word
+ *    passed on without who gave it (the client's own name, never the body's)
  */
 
 const doors: Door[] = [];
@@ -145,9 +148,24 @@ describe('the create routes', () => {
     const d = await open(deps);
     expect(await call(d.path, 'POST', '/cloud/v1/projects', PROJECT, credential)).toEqual({ status: 201, body: { ok: true, project: { name: 'new-one', path: '/home/tars/projects/new-one' } } });
     expect(made).toEqual([{ what: 'project', args: ['new-one', { kind: 'empty' }] }]);
-    const taken = await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'taken', from: { kind: 'git', url: 'https://github.com/a/b' } }), credential);
+    const taken = await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'taken', from: { kind: 'git', url: 'https://github.com/a/b', trusted: true } }), credential);
     expect(taken).toEqual({ status: 409, body: { error: 'A project named "taken" is already on this server.' } });
     expect((await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'x', from: 'somewhere' }), credential)).status).toBe(400);
+  });
+
+  it('10. a clone only with the client\'s trust in its code, passed on with the client\'s own name', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'create'] });
+    const d = await open(deps);
+    for (const trusted of [undefined, false, 'yes', 1]) {
+      const answer = await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'repo', from: { kind: 'git', url: 'https://github.com/a/b', trusted } }), credential);
+      expect(answer.status, String(trusted)).toBe(400);
+      expect(String(answer.body.error)).toMatch(/trust this repository's code/);
+    }
+    expect(made).toEqual([]);
+    const body = JSON.stringify({ name: 'repo', from: { kind: 'git', url: 'https://github.com/a/b', trusted: true, by: 'someone else' } });
+    expect((await call(d.path, 'POST', '/cloud/v1/projects', body, credential)).status).toBe(201);
+    expect(made).toEqual([{ what: 'project', args: ['repo', { kind: 'git', url: 'https://github.com/a/b', trusted: true, by: 'PC-Nicolas' }] }]);
   });
 
   it('6. an agent only in one of the server\'s projects, and never with a binary, a second folder or a role', async () => {

@@ -3,7 +3,7 @@ import { closeDoorSocket, prepareDoorSocket } from './door-socket';
 import { admit, may, watchClients } from './clients';
 import type { DriveCaller, DriveOutcome, DriveRequest } from './drive';
 import type { CloudClient, Scope } from './types';
-import type { ProjectFrom, ProjectResult } from './projects';
+import { UNTRUSTED, type ProjectFrom, type ProjectResult } from './projects';
 
 /**
  * The door of a Tars server (docs/superpowers/plans/2026-11-02-tars-cloud.md,
@@ -244,9 +244,12 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     const create = deps.create;
     if (!create) { json(res, 404, { error: 'Not found.' }); return; }
     if (outsideRefused(again, res)) return;
-    const from = body.from as { kind?: unknown; url?: unknown } | undefined;
+    const from = body.from as { kind?: unknown; url?: unknown; trusted?: unknown } | undefined;
+    // A clone only with the client's word that it trusts the repository's code (security review 1, B1),
+    // kept with the client's own name, never one the body gives.
+    if (from && from.kind === 'git' && from.trusted !== true) { json(res, 400, { error: UNTRUSTED }); return; }
     const shape: ProjectFrom | null = from && from.kind === 'empty' ? { kind: 'empty' }
-      : from && from.kind === 'git' && typeof from.url === 'string' ? { kind: 'git', url: from.url } : null;
+      : from && from.kind === 'git' && typeof from.url === 'string' ? { kind: 'git', url: from.url, trusted: true, by: again.name } : null;
     if (typeof body.name !== 'string' || !shape) {
       json(res, 400, { error: 'A project is a name, made empty or from a git address.' });
       return;

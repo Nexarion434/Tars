@@ -22,7 +22,13 @@ import { ensureKnownHosts, gitKey, gitSshCommand, gitSshProblem, type GitAccessD
  * out of time or grows past its cap leaves no folder behind.
  */
 
-export type ProjectFrom = { kind: 'empty' } | { kind: 'git'; url: string };
+/**
+ * A clone carries the user's word that they trust the repository's code, and
+ * who gave it (security review 1, B1): Tars trusts an agent's folder for its
+ * CLI before it starts, so a cloned repository's own settings and hooks run
+ * on the server at the first start, before any prompt, in any permission mode.
+ */
+export type ProjectFrom = { kind: 'empty' } | { kind: 'git'; url: string; trusted: true; by: string };
 export type ProjectResult = { ok: true; path: string } | { ok: false; status: 400 | 409 | 500 | 502 | 504 | 507; error: string };
 
 /** What runs git: safeGit, or a test's. */
@@ -39,6 +45,21 @@ export interface ProjectDeps {
   pollMs?: number;
   /** The server's own Git key and pinned hosts, for a clone over SSH (git-access.ts). */
   gitAccess?: GitAccessDeps;
+  /** Where each trusted clone is recorded: ~/.tars-private/project-trust.json by default. */
+  trustFile?: string;
+  now?: () => Date;
+}
+
+export const UNTRUSTED = 'A repository is cloned only once you trust its code: its settings can run code on this server as soon as an agent starts in it. Tick "I trust this repository\'s code" if you do.';
+
+/** One line per trusted clone, kept beside the server's other private records (0600). */
+function recordTrust(file: string, entry: { path: string; url: string; by: string; at: string }): void {
+  let list: unknown[] = [];
+  try { const parsed = JSON.parse(fs.readFileSync(file, 'utf8')); if (Array.isArray(parsed)) list = parsed; } catch { /* first one */ }
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify([...list, entry], null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
 
 /** The host a git address names: for git's own words about keys. */
@@ -129,6 +150,7 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
   if (from.kind === 'git') {
     const urlWrong = gitUrlProblem(from.url);
     if (urlWrong) return { ok: false, status: 400, error: urlWrong };
+    if (from.trusted !== true || typeof from.by !== 'string' || from.by === '') return { ok: false, status: 400, error: UNTRUSTED };
   } else if (from.kind !== 'empty') {
     return { ok: false, status: 400, error: 'A project is made empty or from a git address.' };
   }
@@ -192,6 +214,13 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
     if (tooBig || bytesOver(target, cap)) {
       removeTarget();
       return { ok: false, status: 507, error: `The repository is larger than ${Math.round(cap / 1024 ** 2)} MB: not kept.` };
+    }
+    try {
+      recordTrust(deps.trustFile ?? path.join(os.homedir(), '.tars-private', 'project-trust.json'),
+        { path: target, url: from.url, by: from.by.slice(0, 80), at: (deps.now ?? (() => new Date()))().toISOString() });
+    } catch (err) {
+      removeTarget();
+      return { ok: false, status: 500, error: `Tars could not record that you trust this repository, so it is not kept: ${(err as Error).message}` };
     }
     return { ok: true, path: target };
   } catch (err) {
