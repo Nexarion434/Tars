@@ -32,8 +32,8 @@ export interface DoorClient extends LinkClient {
   fleet(): Promise<DoorAnswer>;
   screen(agentId: string): Promise<DoorAnswer>;
   drive(agentId: string, action: DriveAction, body: Record<string, unknown>): Promise<DoorAnswer>;
-  /** One agent's live output: each chunk in order, then onEnd once, and nothing after it. */
-  stream(agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, opts?: { idleMs?: number }): { close(): void };
+  /** One agent's live output: onOpen once the door answered 200, each chunk in order, then onEnd once, and nothing after it. */
+  stream(agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, opts?: { idleMs?: number; onOpen?: () => void }): { close(): void };
 }
 
 const HELLO_MAX = 64 * 1024;
@@ -118,7 +118,7 @@ function endReason(event: string): StreamEnd {
 }
 
 /** Server-sent events from the door's stream route, adapted from win/machines' openStream. */
-function openStream(end: LocalForwardEnd, credential: string | undefined, agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, idleMs: number): { close(): void } {
+function openStream(end: LocalForwardEnd, credential: string | undefined, agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, idleMs: number, onOpen?: () => void): { close(): void } {
   let ended = false;
   let req: http.ClientRequest | undefined;
   const finish = (how: StreamEnd) => {
@@ -139,6 +139,7 @@ function openStream(end: LocalForwardEnd, credential: string | undefined, agentI
         res.resume();
         return finish({ reason: 'refused', status: res.statusCode ?? 0 });
       }
+      onOpen?.();
       res.setEncoding('utf8');
       let pending = '';
       res.on('data', (text: string) => {
@@ -192,6 +193,6 @@ export function createDoorClient(end: LocalForwardEnd, credential?: string): Doo
       }
       return request(end, 'POST', agentPath(agentId, action), { credential, body, timeoutMs: action === 'start' ? START_TIMEOUT_MS : TIMEOUT_MS });
     },
-    stream: (agentId, onChunk, onEnd, opts = {}) => openStream(end, credential, agentId, onChunk, onEnd, opts.idleMs ?? STREAM_IDLE_MS),
+    stream: (agentId, onChunk, onEnd, opts = {}) => openStream(end, credential, agentId, onChunk, onEnd, opts.idleMs ?? STREAM_IDLE_MS, opts.onOpen),
   };
 }

@@ -144,8 +144,9 @@ describe('the stream', () => {
     const { credential } = addClient(t.clientsFile, { name: 'PC (desktop)', kind: 'desktop', scopes: ['see'] });
     const got: string[] = [];
     const ends: StreamEnd[] = [];
-    const stream = createDoorClient(t.end, credential).stream('nova', chunk => got.push(chunk), how => ends.push(how));
-    expect(await until(() => t.door.streamCount() === 1)).toBe(true);
+    let opens = 0;
+    const stream = createDoorClient(t.end, credential).stream('nova', chunk => got.push(chunk), how => ends.push(how), { onOpen: () => { opens += 1; } });
+    expect(await until(() => t.door.streamCount() === 1 && opens === 1)).toBe(true);
     const big = 'y'.repeat(300 * 1024);
     const sent = ['one ', big, `${ESC}[31mred${ESC}[0m\n\nafter a blank line`];
     t.emit('nova', sent[0]);
@@ -178,8 +179,10 @@ describe('the stream', () => {
     const t = await setup();
     const { credential } = addClient(t.clientsFile, { name: 'Hermes', kind: 'outside-agent', scopes: ['create'] });
     const ends: StreamEnd[] = [];
-    createDoorClient(t.end, credential).stream('nova', () => {}, how => ends.push(how));
+    let opens = 0;
+    createDoorClient(t.end, credential).stream('nova', () => {}, how => ends.push(how), { onOpen: () => { opens += 1; } });
     expect(await until(() => ends.length > 0)).toBe(true);
     expect(ends).toEqual([{ reason: 'refused', status: 403 }]);
+    expect(opens).toBe(0);
   });
 });

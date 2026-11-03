@@ -96,7 +96,10 @@ const sentenceOf = (answer: DoorAnswer): string =>
   typeof answer.body.error === 'string' ? answer.body.error.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
 
 interface Kept { agents: RemoteAgent[]; status: ServerStatus; offlineSince?: string }
-interface Watched { count: number; stream: { close(): void } | null; retry: boolean }
+/** The streams in a row that ended before the door answered 200. */
+interface Watched { count: number; stream: { close(): void } | null; retry: boolean; misses: number }
+/** The longest wait before a stream the door keeps refusing is asked again. */
+const STREAM_RETRY_CAP_MS = 60_000;
 
 export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
   const now = deps.now ?? Date.now;
@@ -157,14 +160,14 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     }
   }
 
-  /** Opens a watched pane's stream again later, once, unless that pane has gone and another watches since. */
-  function openLater(remoteId: string, w: Watched, serverId: string, agentId: string): void {
+  /** Opens a watched pane's stream again after `wait`, once, unless that pane has gone and another watches since. */
+  function openLater(remoteId: string, w: Watched, serverId: string, agentId: string, wait = deps.retryMs ?? 3_000): void {
     if (watched.get(remoteId) !== w || w.count === 0 || w.retry) return;
     w.retry = true;
     later(() => {
       w.retry = false;
       if (watched.get(remoteId) === w) open(remoteId, serverId, agentId, true);
-    }, deps.retryMs ?? 3_000);
+    }, wait);
   }
 
   function open(remoteId: string, serverId: string, agentId: string, again = false): void {
@@ -179,27 +182,38 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     // screen, drawn first, and what the stream brings waits behind it.
     let held: string[] | null = again ? [] : null;
     let ended = false;
+    let answered = false;
     const stream = client.stream(agentId, chunk => {
       if (held) held.push(chunk); else relay(chunk);
     }, (how: StreamEnd) => {
       ended = true;
       if (w.stream === stream) w.stream = null;
       if (how.reason === 'revoked' || (how.reason === 'refused' && how.status === 401)) return deps.refused(server.id);
-      if (how.reason === 'closed') return;
-      // Any other refusal (an agent not loaded yet by a server coming back
-      // up, too many streams) is tried again while a pane watches: a pane
-      // whose agent is gone for good is unwatched when the fleet drops it.
-      openLater(remoteId, w, serverId, agentId);
+      // Closed here, or see taken away (403): nothing to ask again.
+      if (how.reason === 'closed' || (how.reason === 'refused' && how.status === 403)) return;
+      // Any other end is tried again while a pane watches (an agent not loaded
+      // yet by a server coming back up, too many streams); one that never
+      // opened waits twice as long each time, up to a minute. A pane whose
+      // agent is gone for good is unwatched when the fleet drops it.
+      if (!answered) w.misses += 1;
+      const base = deps.retryMs ?? 3_000;
+      openLater(remoteId, w, serverId, agentId, answered ? base : Math.min(base * 2 ** (w.misses - 1), STREAM_RETRY_CAP_MS));
+    }, {
+      // The door answered 200: the misses start over, and what the pane
+      // missed meanwhile comes back as the screen, only now.
+      onOpen: () => {
+        answered = true;
+        w.misses = 0;
+        if (!held) return;
+        void screenOf(client, agentId).then(screen => {
+          const waiting = held ?? [];
+          held = null;
+          if (screen) relay(screen.screen);
+          waiting.forEach(relay);
+        });
+      },
     });
     if (!ended) w.stream = stream;
-    if (held) {
-      void screenOf(client, agentId).then(screen => {
-        const waiting = held ?? [];
-        held = null;
-        if (screen) relay(screen.screen);
-        waiting.forEach(relay);
-      });
-    }
   }
 
   async function screenOf(client: DoorClient, agentId: string): Promise<RemoteScreen | null> {
@@ -296,7 +310,7 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     watch(remoteId) {
       const parsed = parseCloudId(remoteId);
       if (!parsed || !serverOf(parsed.serverId)) return;
-      const w = watched.get(remoteId) ?? { count: 0, stream: null, retry: false };
+      const w = watched.get(remoteId) ?? { count: 0, stream: null, retry: false, misses: 0 };
       watched.set(remoteId, w);
       w.count++;
       if (w.count === 1 && !w.stream && !w.retry) open(remoteId, parsed.serverId, parsed.agentId);

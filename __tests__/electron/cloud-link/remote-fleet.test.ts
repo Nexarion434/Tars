@@ -38,6 +38,9 @@ import { MAX_KEYS } from '../../../electron/services/cloud/drive';
  * 15. an outside-agent ceiling on keys (the door's 403) not read as the server's sentence
  * 16. a watched pane whose stream ended while its server was offline never
  *    opened again once the server is back, or opened more than once
+ * 17. a stream the door keeps refusing (429, 404, 5xx) asked again every few
+ *    seconds without end, with the whole screen appended to the pane each
+ *    time; one refused 403 (see taken away) asked again at all (review 1, R2-1)
  */
 
 const VPS: CloudServer = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916' };
@@ -50,7 +53,8 @@ let answers: Map<string, DoorAnswer | 'hang'>;
 let fleetCalls: number;
 let fleets: unknown[][];
 let outputs: Array<[string, string]>;
-let opened: Array<{ server: string; agentId: string; onChunk: (c: string) => void; onEnd: (how: StreamEnd) => void; closed: boolean }>;
+let opened: Array<{ server: string; agentId: string; onChunk: (c: string) => void; onEnd: (how: StreamEnd) => void; open: () => void; closed: boolean }>;
+let waits: number[];
 let driven: Array<[string, string, string, Record<string, unknown>]>;
 let driveAnswers: DoorAnswer[];
 let refused: string[];
@@ -70,8 +74,9 @@ function clientOf(server: CloudServer): DoorClient {
       driven.push([server.id, agentId, action, body]);
       return driveAnswers.length > 1 ? driveAnswers.shift()! : driveAnswers[0];
     },
-    stream: (agentId, onChunk, onEnd) => {
-      const s = { server: server.id, agentId, onChunk, onEnd, closed: false };
+    stream: (agentId, onChunk, onEnd, opts) => {
+      // open() stands for the door's 200 at the stream's head.
+      const s = { server: server.id, agentId, onChunk, onEnd, open: () => opts?.onOpen?.(), closed: false };
       opened.push(s);
       return { close: () => { s.closed = true; } };
     },
@@ -89,7 +94,7 @@ function deps(): RemoteFleetDeps {
     onFleet: agents => { fleets.push(agents); },
     onOutput: (id, chunk) => { outputs.push([id, chunk]); },
     now: () => clock,
-    later: (fn, ms) => { timers.push({ at: clock + ms, fn }); },
+    later: (fn, ms) => { waits.push(ms); timers.push({ at: clock + ms, fn }); },
     retryMs: 3_000,
     pollTimeoutMs: 200,
   };
@@ -110,6 +115,7 @@ beforeEach(() => {
   fleets = [];
   outputs = [];
   opened = [];
+  waits = [];
   driven = [];
   driveAnswers = [{ status: 200, body: { ok: true } }];
   refused = [];
@@ -224,6 +230,7 @@ describe('watching', () => {
     clock += 3_000;
     runTimers();
     expect(opened).toHaveLength(2);
+    opened[1].open();
     opened[1].onChunk('after');
     await settle();
     expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1'], [rid(VPS, 'a1'), 'after']]);
@@ -248,6 +255,7 @@ describe('watching', () => {
     expect(opened).toHaveLength(2);
     for (let i = 0; i < 3; i++) { clock += 3_000; runTimers(); }
     expect(opened).toHaveLength(2);
+    opened[1].open();
     await settle();
     expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1']]);
     // A pane closed while its server was away opens nothing when it is back.
@@ -269,6 +277,37 @@ describe('watching', () => {
     runTimers();
     expect(opened).toHaveLength(2);
     expect(refused).toEqual([]);
+  });
+
+  it('17. a stream the door keeps refusing waits longer each time, up to a minute, and draws its screen only once one opens', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    fleet.watch(rid(VPS, 'a1'));
+    for (let i = 0; i < 7; i++) {
+      opened[i].onEnd({ reason: 'refused', status: 429 });
+      clock += 60_000;
+      runTimers();
+      await settle();
+    }
+    expect(waits).toEqual([3_000, 6_000, 12_000, 24_000, 48_000, 60_000, 60_000]);
+    expect(outputs).toEqual([]);
+    opened[7].open();
+    await settle();
+    expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1']]);
+    // Opened once, its next end waits the first wait again.
+    opened[7].onEnd({ reason: 'dropped' });
+    expect(waits.at(-1)).toBe(3_000);
+  });
+
+  it('17. a stream refused 403 (see taken away) is not tried again', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    fleet.watch(rid(VPS, 'a1'));
+    opened[0].onEnd({ reason: 'refused', status: 403 });
+    clock += 60_000;
+    runTimers();
+    expect(opened).toHaveLength(1);
+    expect(waits).toEqual([]);
   });
 
   it('12 and 13. a stream the door ended for a revoke, or refused 401, is told to the link and not opened again', async () => {
