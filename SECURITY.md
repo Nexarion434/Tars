@@ -947,6 +947,35 @@ is, and a `RemoteForward` is a standing path from the server's agents to a
 service of the desktop. Give Tars an alias of its own, with no forwards, in
 `~/.ssh/config`.
 
+**Creating on a server (2.0.7).** Only a client minted with `create` makes
+projects and agents, checked again once its body arrives, and never an outside
+agent. A project is a plain name under `~/projects`; a clone takes three address
+shapes, never a credential, a local path or a helper, with no submodules, git's
+own hooks off, one commit deep, and is stopped past 2 GB or 10 minutes. An agent
+made by a client gets no CLI path, second folder or role, and starts only for a
+client that may drive. The server clones over SSH with a key of its own
+(`~/.tars-private/git`) and its own `known_hosts`, which starts with GitHub's
+published keys. That key is readable by every agent on the server (same user):
+add it to GitHub as a read-only deploy key of one repository, never to the
+account, whose keys can push to every repository it can write.
+
+**Trusting a cloned repository.** Tars trusts an agent's folder for its CLI
+before it starts it (Claude Code's workspace trust, codex's trust level), so a
+repository's own settings, its hooks included, run on the server as its user the
+moment an agent starts there, before any prompt and in any permission mode. They
+can read what that user reads: the server's Git key, the CLIs' sign-ins, the
+other projects. So the server clones only with the user's explicit word that
+they trust the repository's code: the New project dialog's box, unticked until
+ticked, or `--trust-code` for the operator's `projects add`. A request without
+it is refused (400), whatever the window shows, and each clone made is recorded
+with who trusted it and when (`~/.tars-private/project-trust.json`). An empty
+project needs none. Trusting a repository is trusting everyone who can push to
+it.
+
+**The memory floor.** A start the door is asked for is refused when it would
+leave the server under 1 GB free (`cloudMinFreeMb`), so a desktop cannot start
+agents until Hermes or the server itself runs out of memory.
+
 Each refusal above has a test written before the code and shown to fail on a
 deliberately broken version (`__tests__/electron/cloud/`,
 `__tests__/electron/server/`, `__tests__/electron/cloud-link/`).

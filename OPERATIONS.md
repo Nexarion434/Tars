@@ -2576,13 +2576,16 @@ same through the running server's door, the input on stdin:
 echo '{"name":"my-app","from":{"kind":"empty"}}' \
   | node electron/dist/server/cli.js projects add --json     # a git folder in ~/projects/my-app
 echo '{"name":"my-app","from":{"kind":"git","url":"git@github.com:owner/repo.git"}}' \
-  | node electron/dist/server/cli.js projects add --json     # cloned, one level deep, no submodules
+  | node electron/dist/server/cli.js projects add --json --trust-code   # cloned, one level deep, no submodules
 echo '{"projectName":"my-app","name":"Builder","provider":"claude","model":"haiku","start":true}' \
   | node electron/dist/server/cli.js agents add --json       # made there, started if "start"
 ```
 
 The command mints itself a client for this one call and revokes it after, whatever happened. A
 clone past 2 GB or 10 minutes is stopped and removed. A name already in `~/projects` is refused.
+A clone needs `--trust-code`, your word that you trust the repository's code: its settings can run
+code on the server as soon as an agent starts in it (SECURITY.md §8). The server records each
+clone it made, with who trusted it and when, in `~/.tars-private/project-trust.json`.
 
 ### Its Git key (private repositories)
 
@@ -2591,9 +2594,10 @@ needed; never yours, never an agent's. To let it read a private repository on Gi
 
 1. On the server: `node electron/dist/server/cli.js git key --json`. It prints the public key and
    its fingerprint (`SHA256:...`). Over SSH or `docker exec`, as for `clients`.
-2. On GitHub, either the repository's Settings > Deploy keys > Add deploy key (one repository,
-   leave "Allow write access" off), or your account's Settings > SSH and GPG keys > New SSH key
-   (every repository you can read). Paste the public key.
+2. On GitHub, the repository's Settings > Deploy keys > Add deploy key: paste the public key and
+   leave "Allow write access" off. One repository, read only. Do not add it to your account's SSH
+   keys: an account key can push to every repository you can write, and every agent on the server
+   can read the key.
 3. Check that the fingerprint GitHub shows for the key is the one step 1 printed.
 4. + Project > from Git with the `git@github.com:owner/repo.git` address.
 
