@@ -4,6 +4,8 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { lastPathPart } from '@/lib/display-path';
 import { ipcReason } from '@/lib/ipc-error';
+import { activeFilter, ALL_MACHINES, filterByMachine, isRemoteId, machineFilterOptions, placeRemote, tabMachines } from '@/lib/cloud';
+import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
@@ -45,7 +47,7 @@ const LAUNCH_AUTOSTART_KEY = 'tars-launch-autostart-done';
 
 export default function TerminalsView() {
   const {
-    agents,
+    agents: localAgents,
     isLoading,
     startAgent,
     stopAgent,
@@ -56,6 +58,27 @@ export default function TerminalsView() {
   } = useElectronAgents();
   const { projects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
+
+  // The other machines' agents sit beside this machine's, read only: each under
+  // the local project with the same folder name, or under its own. They are
+  // merged here and never added to useElectronAgents' list, which is the one
+  // that starts, stops and deletes agents.
+  const remoteAgents = useRemoteAgents();
+  const machines = useFleetMachines(remoteAgents);
+  const [machineChoice, setMachineChoice] = useState(ALL_MACHINES);
+  const machineFilterValue = activeFilter(machineChoice, machines);
+  const placedAgents = useMemo(() => placeRemote(localAgents, remoteAgents), [localAgents, remoteAgents]);
+  const agents = useMemo(() => filterByMachine(placedAgents, machineFilterValue), [placedAgents, machineFilterValue]);
+  const machineFilter = useMemo(
+    () => (machines.length > 0
+      ? { value: machineFilterValue, options: machineFilterOptions(machines), onChange: setMachineChoice }
+      : undefined),
+    [machines, machineFilterValue],
+  );
+  // The tab of a project only another machine has says which. Keyed as a string
+  // so the strip is not re-rendered by an agents:tick that moved nothing here.
+  const machineBadgesKey = useMemo(() => JSON.stringify([...tabMachines(agents)]), [agents]);
+  const machineBadges = useMemo(() => new Map<string, string[]>(JSON.parse(machineBadgesKey)), [machineBadgesKey]);
 
   // Read-only snapshot for callbacks that need the current agent list at call
   // time (e.g. a name lookup) without taking `agents` itself as a dependency:
@@ -106,7 +129,7 @@ export default function TerminalsView() {
   }, []);
 
   // Tab manager - core state for two-tier tab system
-  const allAgentIds = useMemo(() => agents.map(a => a.id), [agents]);
+  const allAgentIds = useMemo(() => localAgents.map(a => a.id), [localAgents]);
 
 
   // Project folders with agents - offered as one-click boards in the tab bar
@@ -344,6 +367,7 @@ export default function TerminalsView() {
   // sensor/dropData memoization documented in useTerminalDnd.ts and
   // TerminalPanel.tsx.
   const handleSkillDrop = useCallback(async (skillName: string, agentId: string) => {
+    if (isRemoteId(agentId)) return;
     await sendInput(agentId, `use this skill: ${skillName}\n`);
   }, [sendInput]);
   const dnd = useTerminalDnd({ onSkillDrop: handleSkillDrop });
@@ -650,7 +674,7 @@ export default function TerminalsView() {
     // mid-session and must not be resumed underneath it. A missing folder is
     // refused by the main process anyway, but skip it rather than collect an
     // error banner on every project you open.
-    const toResume = onScreen.filter(a => !a.ptyId && a.status === 'idle' && !a.pathMissing);
+    const toResume = onScreen.filter(a => !a.remote && !a.ptyId && a.status === 'idle' && !a.pathMissing);
     for (const agent of toResume) {
       startAgent(agent.id, '', { resume: true }).catch(err => {
         console.error(`[autostart] ${agent.name || agent.id}:`, err);
@@ -712,6 +736,8 @@ export default function TerminalsView() {
           hidden={hiddenOnThisBoard.map(a => ({ id: a.id, name: a.name || a.id }))}
           onShow={hiddenAgents.show}
           onShowAll={hiddenAgents.showAll}
+          machineBadges={machineBadges}
+          machineFilter={machineFilter}
         />
 
         {/* A start that was refused. The main process explains why - a folder
@@ -776,7 +802,7 @@ export default function TerminalsView() {
         </div>
 
         {/* Status bar - full-bleed chrome at the bottom of the frame */}
-        <StatusBar agents={filteredAgents} branch={currentBranch} />
+        <StatusBar agents={filteredAgents} branch={currentBranch} machines={machines} />
 
         {/* Context menu */}
         <ContextMenu

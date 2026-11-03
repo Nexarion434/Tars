@@ -4,14 +4,14 @@ import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ReactGridLayout, { verticalCompactor } from 'react-grid-layout';
 import type { Layout, GridLayoutProps } from 'react-grid-layout';
 import { LoadingPanel } from '@/components/ui';
-import type { AgentStatus } from '@/types/electron';
 import { GRID_GAP, GRID_MIN_ROW } from '@/lib/orchestrator-board';
+import type { PaneAgent } from '@/lib/cloud';
 import type { TerminalPanelState } from '../types';
 import TerminalPanel from './TerminalPanel';
 import OrchestratorBoard from './OrchestratorBoard';
 
 interface TerminalGridProps {
-  agents: AgentStatus[];
+  agents: PaneAgent[];
   visiblePanels: TerminalPanelState[];
   rglLayout: Layout;
   cols: number;

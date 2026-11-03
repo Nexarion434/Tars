@@ -100,7 +100,8 @@ export function runServerCommand(
   }
 
   return new Promise(resolve => {
-    let child: ChildProcess;
+    // Its events come on a later turn, after every handler below is on.
+    const child: ChildProcess = spawnSsh(argv, { ssh: opts.ssh, env: opts.env });
     let settled = false;
     let cut: RunResult | null = null;
     const out: Buffer[] = [];
@@ -119,8 +120,6 @@ export function runServerCommand(
       cut = result;
       child.kill('SIGKILL');
     };
-
-    child = spawnSsh(argv, { ssh: opts.ssh, env: opts.env });
     const timer = setTimeout(() => stop({ ok: false, problem: 'timeout', detail: '' }), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
     child.on('error', (error: NodeJS.ErrnoException) => {

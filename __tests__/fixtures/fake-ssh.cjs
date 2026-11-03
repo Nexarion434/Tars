@@ -12,7 +12,9 @@
 // `ssh` would, says so on stderr as `ssh -v` does, and pipes each connection
 // to 127.0.0.1:FAKE_SSH_FORWARD_TO (the test's door). A local end it cannot
 // take ends it as ExitOnForwardFailure does. FAKE_SSH_HANG keeps it silent.
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- a fake ssh run by node is CommonJS
 const fs = require('fs');
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- the same
 const net = require('net');
 
 const env = process.env;

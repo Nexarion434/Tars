@@ -164,6 +164,12 @@ function useEffect(effect: () => Cleanup, deps?: Deps): void {
   });
 }
 
+/** The store's value at each render; a change outside a render shows at the next rerender (no subscription). */
+function useSyncExternalStore<T>(_subscribe: (listener: () => void) => () => void, getSnapshot: () => T): T {
+  current('useSyncExternalStore');
+  return getSnapshot();
+}
+
 const unsupported = (name: string) => () => {
   throw new Error(`${name} is not served by the hook runtime: add it there before testing a component that calls it`);
 };
@@ -177,7 +183,7 @@ export const hooks = {
   useLayoutEffect: useEffect,
   useContext: unsupported('useContext'),
   useReducer: unsupported('useReducer'),
-  useSyncExternalStore: unsupported('useSyncExternalStore'),
+  useSyncExternalStore,
   useTransition: unsupported('useTransition'),
   useDeferredValue: unsupported('useDeferredValue'),
   useId: unsupported('useId'),

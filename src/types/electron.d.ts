@@ -2588,20 +2588,21 @@ export interface ElectronAPI {
   platform: string;
 }
 
-type CloudFailure = { success: false; error: string };
-type CloudDriveResult = { success: true } | CloudFailure;
-type CloudRunner = { kind: 'command'; argv: string[] } | { kind: 'docker'; container: string; sudo: boolean };
-interface CloudServerInput { id?: string; host: string; runner: CloudRunner; doorSocket?: string }
-interface CloudLinkState {
+export type CloudFailure = { success: false; error: string };
+export type CloudDriveResult = { success: true } | CloudFailure;
+export type CloudRunner = { kind: 'command'; argv: string[] } | { kind: 'docker'; container: string; sudo: boolean };
+export interface CloudServerInput { id?: string; host: string; runner: CloudRunner; doorSocket?: string }
+export type CloudServerStatus = 'connected' | 'offline' | 'disconnected';
+export interface CloudLinkState {
   phase: 'off' | 'connecting' | 'connected' | 'offline' | 'disconnected' | 'failed';
   since?: string;
   problem?: string;
   /** A sentence for the user, shown as is. */
   sentence?: string;
 }
-interface CloudServerView { id: string; host: string; runner: CloudRunner; serverId?: string; name?: string; clientId?: string; paired: boolean; state: CloudLinkState }
-interface CloudClientView { id: string; name?: string; kind?: string; scopes: string[]; createdAt?: string; expiresAt?: string; mintedVia?: string }
-interface CloudRemoteAgent {
+export interface CloudServerView { id: string; host: string; runner: CloudRunner; serverId?: string; name?: string; clientId?: string; paired: boolean; state: CloudLinkState }
+export interface CloudClientView { id: string; name?: string; kind?: string; scopes: string[]; createdAt?: string; expiresAt?: string; mintedVia?: string }
+export interface CloudRemoteAgent {
   /** `c:<serverId>:<agentId>`, never a local agent's id. */
   id: string;
   agentId: string;
@@ -2620,7 +2621,7 @@ interface CloudRemoteAgent {
   stopReason?: string;
   cols?: number;
   rows?: number;
-  server: { id: string; serverId: string; name: string; status: 'connected' | 'offline' | 'disconnected'; offlineSince?: string; drive: boolean };
+  server: { id: string; serverId: string; name: string; status: CloudServerStatus; offlineSince?: string; drive: boolean };
 }
 
 declare global {
