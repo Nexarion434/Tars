@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentStatus, CloudRemoteAgent, CloudServerView } from '../../src/types/electron';
 import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
-  machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkReason, sharesSize, shouldSendSize,
+  machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
 } from '../../src/lib/cloud';
 
@@ -27,7 +27,8 @@ import {
  *    above 1, to 0 or NaN
  * 11. a server's agent started, stopped or typed into while offline, see-only
  *    or disconnected; or not, with drive given and connected
- * 13. a blank reason sent as a stop reason
+ * 13. (gone 2026-11-03: the window asks no stop reason, main sends the
+ *    server one that names this computer, cloud-handlers.test.ts)
  * 14-16. a pane sharing its size where it should not, sending a size that did
  *    not change or is no size, or reading the fleet's echo of its own size as a change
  * New in M2:
@@ -167,11 +168,6 @@ describe('driving', () => {
     }
     expect(remoteActions({ status: 'connected' }, true).type).toBe(false);
     expect(seeOnlyLine('srv1539916')).toMatch(/^srv1539916 lets this Tars see only/);
-  });
-
-  it('never a blank stop reason (13)', () => {
-    expect(checkReason('  ')).toBeNull();
-    expect(checkReason(' done ')).toBe('done');
   });
 
   it('sizes: the screen first, whole sizes only, a scale at most 1, no echo loop (9, 10, 14, 15, 16)', () => {

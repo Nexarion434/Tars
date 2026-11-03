@@ -24,6 +24,9 @@ import type { DoorClient } from '../../../electron/services/cloud-link/client';
  * - a client's name, kind or note shown with characters nobody sees, or a
  *   list of scopes without end
  * - a server's name kept with them (link.test.ts)
+ * - a stop sent to the server without its reason (it refuses one, 1 to 200
+ *   characters), or with one that does not name this computer: since
+ *   2026-11-03 the window asks no reason, a stop is one click
  */
 
 const SERVER_ID = 'd795d0ff4d5d8e50';
@@ -40,6 +43,7 @@ function setup() {
   const runs: ServerCommand[] = [];
   const forwards: string[] = [];
   const timers: number[] = [];
+  const drives: Array<[string, string, Record<string, unknown>]> = [];
   const answers: Partial<Record<ServerCommand['do'], RunResult>> = {
     status: { ok: true, json: UP },
     'clients-add': { ok: true, json: { id: 'c_10eafeea', credential: CREDENTIAL, serverId: SERVER_ID } },
@@ -50,7 +54,7 @@ function setup() {
     hello: async () => ({ ok: true, serverId: SERVER_ID }),
     fleet: async () => ({ status: 200, body: { youMay: ['see', 'drive'], agents: [{ agentId: 'a1', name: 'Nova', status: 'running', projectPath: '/home/tars/code/tars', cliRunning: true }] } }),
     screen: async () => ({ status: 200, body: { screen: 'NOVA', cliRunning: true } }),
-    drive: async () => ({ status: 200, body: { ok: true } }),
+    drive: async (agentId, action, body) => { drives.push([agentId, action, body]); return { status: 200, body: { ok: true } }; },
     stream: () => ({ close: () => {} }),
   };
   const service = registerCloudHandlers({
@@ -72,7 +76,7 @@ function setup() {
     if (!handler) throw new Error(`no handler for ${channel}`);
     return handler({}, ...args);
   };
-  return { file, call, sent, runs, forwards, timers, service, handlers, answers };
+  return { file, call, sent, runs, forwards, timers, service, handlers, answers, drives };
 }
 
 const docker = { host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
@@ -156,5 +160,16 @@ describe('window.electronAPI.cloud', () => {
     const seen = JSON.stringify([answers, t.sent]);
     for (const secret of [CREDENTIAL, HOST_SOCKET, HOST_KEY, 'ab12']) expect(seen.includes(secret), secret).toBe(false);
     expect(t.sent.map(([channel]) => channel)).toEqual(expect.arrayContaining(['cloud:state', 'cloud:agents']));
+  });
+
+  it('a stop from the window asks no reason: the server is sent one that names this computer', async () => {
+    const t = setup();
+    const saved = await t.call('cloud:save', docker) as { success: true; id: string };
+    await t.call('cloud:connect', saved.id);
+    await t.service.pollNow();
+    expect(await t.call('cloud:drive', `c:${SERVER_ID}:a1`, 'stop', {})).toMatchObject({ success: true });
+    expect(await t.call('cloud:drive', `c:${SERVER_ID}:a1`, 'stop', { reason: '' })).toMatchObject({ success: true });
+    const stops = t.drives.filter(([, action]) => action === 'stop');
+    expect(stops).toEqual([['a1', 'stop', { reason: 'Stopped from PC-Nicolas' }], ['a1', 'stop', { reason: 'Stopped from PC-Nicolas' }]]);
   });
 });

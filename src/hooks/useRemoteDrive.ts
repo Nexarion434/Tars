@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useState, useSyncExternalStore } from 'react';
-import { checkReason } from '@/lib/cloud';
 
 type Answer = { success: true } | { success: false; error: string };
 
@@ -48,11 +47,8 @@ export function useRemoteDrive(id: string) {
   }, [id]);
 
   const start = useCallback(() => run(() => window.electronAPI?.cloud?.drive(id, 'start', {})), [id, run]);
-  /** Never sent with a blank reason. */
-  const stop = useCallback((reason: string) => {
-    const r = checkReason(reason);
-    return r ? run(() => window.electronAPI?.cloud?.drive(id, 'stop', { reason: r })) : Promise.resolve(false);
-  }, [id, run]);
+  /** One click, as a local agent's: main tells the server which computer stopped it (cloud-handlers.ts). */
+  const stop = useCallback(() => run(() => window.electronAPI?.cloud?.drive(id, 'stop', {})), [id, run]);
 
   return { error, busy, start, stop };
 }

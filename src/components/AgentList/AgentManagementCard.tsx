@@ -1,10 +1,8 @@
 'use client';
 
 import { AgentMark, Button, CloudBadge } from '@/components/ui';
-import { useState } from 'react';
 import { readOnlyTitle, remoteActions, type PaneAgent } from '@/lib/cloud';
 import { useRemoteDrive } from '@/hooks/useRemoteDrive';
-import { CloudStopReason } from '@/components/CloudStopReason';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
 import { permissionAskLine } from '@/lib/permission-ask';
@@ -59,9 +57,8 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
   const machineOffline = !!remote && remote.status !== 'connected';
   // Where its machine lets this one drive it, start and stop work, over the
-  // bridge; stop asks why first. Edit and delete never do.
+  // bridge, stop in one click as here. Edit and delete never do.
   const drive = useRemoteDrive(agent.id);
-  const [askStop, setAskStop] = useState(false);
   const allowed = remote ? remoteActions(remote, isRunning) : null;
 
   return (
@@ -136,7 +133,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
               wake
             </Button>
           ) : isRunning ? (
-            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => setAskStop(true) : onStop} disabled={!!allowed && !allowed.stop} title={allowed?.stop ? undefined : readOnly}>
+            <Button size="sm" className={ROW_ACTION} onClick={remote ? () => { void drive.stop(); } : onStop} disabled={(!!allowed && !allowed.stop) || (!!remote && drive.busy)} title={allowed?.stop ? undefined : readOnly}>
               stop
             </Button>
           ) : (
@@ -156,14 +153,6 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
         </div>
         {drive.error && (
           <p data-cloud-drive-error className="text-[11px] text-status-error">{drive.error}</p>
-        )}
-        {askStop && allowed?.stop && (
-          <CloudStopReason
-            agentName={agent.name || 'this agent'}
-            busy={drive.busy}
-            onStop={async reason => { if (await drive.stop(reason)) setAskStop(false); }}
-            onCancel={() => setAskStop(false)}
-          />
         )}
       </div>
     </div>

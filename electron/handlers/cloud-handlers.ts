@@ -215,7 +215,10 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
   ipc.handle('cloud:drive', async (_e, remoteId, action, body) => {
     if (!isRemoteId(remoteId) || typeof action !== 'string' || !ACTIONS.has(action)) return NO_AGENT;
     const given = (body ?? {}) as Record<string, unknown>;
-    const clean = action === 'stop' ? { reason: given.reason } : action === 'message' ? { text: given.text } : {};
+    // A stop is one click: the window asks no reason, and the server, which
+    // needs one, is told which computer stopped it, by the name this
+    // computer's client got when it was minted (link.ts).
+    const clean = action === 'stop' ? { reason: `Stopped from ${deps.hostname().slice(0, 48)}` } : action === 'message' ? { text: given.text } : {};
     const result = await fleet.drive(remoteId, action as DriveAction, clean);
     if (result.success) void fleet.poll();
     return result;

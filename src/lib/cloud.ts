@@ -235,11 +235,6 @@ export function serverInput(form: ServerForm): { ok: true; input: CloudServerInp
   return { ok: true, input: { host, runner: { kind: 'command', argv } } };
 }
 
-/** The reason a stop is given, or null when it is blank. */
-export function checkReason(reason: string): string | null {
-  return reason.trim() || null;
-}
-
 /** A remote pane takes the size of the pane that looks at it where its server lets this desktop drive; else it draws at the remote size. */
 export const sharesSize = (remote: Pick<RemoteInfo, 'status' | 'drive'>): boolean => remote.status === 'connected' && remote.drive === true;
 

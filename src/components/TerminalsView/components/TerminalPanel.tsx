@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { offlineLine, type PaneAgent } from '@/lib/cloud';
 import MessageWaitingNotice from '@/components/MessageWaitingNotice';
@@ -118,13 +118,13 @@ function TerminalPanel({
   }, [agent.id, onFocus]);
 
   // Another machine's agent, where that machine lets this one drive it: start
-  // goes over the bridge, and stop asks why first. Nothing else is writable.
+  // goes over the bridge, and so does stop, in one click. Nothing else is writable.
   const isRemote = !!agent.remote;
   const drive = useRemoteDrive(agent.id);
   const startRemote = drive.start;
-  const [askStop, setAskStop] = useState(false);
+  const stopRemote = drive.stop;
   const handleStart = useCallback(() => { if (isRemote) void startRemote(); else onStart(agent.id); }, [isRemote, startRemote, agent.id, onStart]);
-  const handleStop = useCallback(() => { if (isRemote) setAskStop(true); else onStop(agent.id); }, [isRemote, agent.id, onStop]);
+  const handleStop = useCallback(() => { if (isRemote) void stopRemote(); else onStop(agent.id); }, [isRemote, stopRemote, agent.id, onStop]);
   const handleRestart = useCallback(() => onRestart(agent.id), [agent.id, onRestart]);
   const handleWake = useCallback(() => onWake(agent.id), [agent.id, onWake]);
   const handleRemove = useCallback(() => onRemove(agent.id), [agent.id, onRemove]);
@@ -208,7 +208,7 @@ function TerminalPanel({
         )}
       </div>
 
-      <RemoteDriveBar agent={agent} drive={drive} askStop={askStop} onCloseStop={() => setAskStop(false)} />
+      <RemoteDriveBar agent={agent} drive={drive} />
     </div>
   );
 }

@@ -20,7 +20,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 2. Started from its pane's start, its pane shows the server's terminal live:
  *    a later tick appears.
  * 3. What is typed in the pane reaches the server's CLI as typed.
- * 4. Stop asks why, and the server files the reason.
+ * 4. Stop is one click, no reason asked: the server files the one this
+ *    desktop sends, which names this computer.
  * 5. The server process goes away: the pane says the server is offline since
  *    when, and its last output stays.
  * 6. The server is back: the offline line goes, and the agent started again
@@ -123,7 +124,7 @@ async function terminalOf(page: Page, name: string): Promise<Locator> {
 const ticksIn = (text: string) => [...text.matchAll(/tick (\d+)/g)].map(m => Number(m[1]));
 type CloudApi = { electronAPI: { cloud: { agents: () => Promise<Array<{ agentId: string; stopReason?: string; stoppedBy?: string; cliRunning: boolean }>> } } };
 
-test("a tars server's agent on the dashboard: live, typed into, stopped with a reason, offline and back", async () => {
+test("a tars server's agent on the dashboard: live, typed into, stopped in one click, offline and back", async () => {
   test.setTimeout(420_000);
   const values: Record<string, unknown> = {};
   const server = serverHome();
@@ -168,16 +169,14 @@ test("a tars server's agent on the dashboard: live, typed into, stopped with a r
     await expect.poll(readTyped, { timeout: 15_000 }).toContain('hello from the desktop\r');
     values.typedOnTheServer = JSON.stringify(readTyped());
 
-    // 4. Stop asks why, and the server files the reason.
+    // 4. Stop is one click: nothing asks why, and the server files the reason this desktop sends.
     await page.getByTitle('Stop this agent').first().click();
-    const reason = page.locator('[data-cloud-stop-reason]');
-    await expect(reason).toBeVisible();
-    await reason.fill('the e2e is done with it');
-    await reason.press('Enter');
     const agentOnServer = async () => (await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).find(a => a.agentId === AGENT.id);
-    await expect.poll(async () => (await agentOnServer())?.stopReason, { timeout: 20_000 }).toBe('the e2e is done with it');
+    await expect.poll(async () => (await agentOnServer())?.cliRunning, { timeout: 20_000, message: 'stopped by the one click' }).toBe(false);
+    await expect.poll(async () => (await agentOnServer())?.stopReason, { timeout: 20_000 }).toBe(`Stopped from ${os.hostname().slice(0, 48)}`);
+    await expect(page.getByPlaceholder(/^Why stop/)).toHaveCount(0);
     values.stopped = await agentOnServer();
-    await stepShot(page, '03-stopped-with-a-reason');
+    await stepShot(page, '03-stopped-in-one-click');
 
     // 5. The server goes away: since when, and the last output stays.
     const lastSeen = Math.max(...ticksIn(await rows.innerText()));
