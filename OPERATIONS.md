@@ -2567,6 +2567,47 @@ Scopes: `see`, `drive`, `create`, `files`. Kinds: `desktop`, `outside-agent` (He
 or resizes). An optional `"days"` sets a lifetime. `clients list` says where each was minted (`ssh from <address>`, or `on the server`, which an agent there can do too; what the minter claims, not proof), and the server's log says each mint as it happens. The input goes on stdin, never on the command
 line, so a name never reaches a remote shell.
 
+### Projects and agents
+
+A desktop allowed to create makes them from its window (+ Project, New agent). From the server, the
+same through the running server's door, the input on stdin:
+
+```bash
+echo '{"name":"my-app","from":{"kind":"empty"}}' \
+  | node electron/dist/server/cli.js projects add --json     # a git folder in ~/projects/my-app
+echo '{"name":"my-app","from":{"kind":"git","url":"git@github.com:owner/repo.git"}}' \
+  | node electron/dist/server/cli.js projects add --json     # cloned, one level deep, no submodules
+echo '{"projectName":"my-app","name":"Builder","provider":"claude","model":"haiku","start":true}' \
+  | node electron/dist/server/cli.js agents add --json       # made there, started if "start"
+```
+
+The command mints itself a client for this one call and revokes it after, whatever happened. A
+clone past 2 GB or 10 minutes is stopped and removed. A name already in `~/projects` is refused.
+
+### Its Git key (private repositories)
+
+The server clones with a key of its own, `~/.tars-private/git/id_ed25519`, made the first time it is
+needed; never yours, never an agent's. To let it read a private repository on GitHub:
+
+1. On the server: `node electron/dist/server/cli.js git key --json`. It prints the public key and
+   its fingerprint (`SHA256:...`). Over SSH or `docker exec`, as for `clients`.
+2. On GitHub, either the repository's Settings > Deploy keys > Add deploy key (one repository,
+   leave "Allow write access" off), or your account's Settings > SSH and GPG keys > New SSH key
+   (every repository you can read). Paste the public key.
+3. Check that the fingerprint GitHub shows for the key is the one step 1 printed.
+4. + Project > from Git with the `git@github.com:owner/repo.git` address.
+
+GitHub's host keys are in the server's own `known_hosts` from the start, so the first clone asks
+nothing. Another Git host is added by its line, which you check against the fingerprint the host
+publishes: `ssh-keyscan -t ed25519 git.example.org | node electron/dist/server/cli.js git known-host add --json`.
+
+### Memory
+
+An agent start that would leave the server under 1 GB of memory free is refused (503), with a
+sentence that says how much is free; an agent is counted as 300 MB, about what a Claude Code CLI
+takes. On Linux the free memory is `MemAvailable`, or the container's room when that is smaller. Set
+`"cloudMinFreeMb"` in the server's `~/.tars/app-settings.json` to move the floor.
+
 ### Files
 
 In the server user's home, as on a desktop: `~/.tars` (the agents, their records) and
@@ -2586,6 +2627,11 @@ says `[cloud] door on ...`, that `status --json` gives the same server id, and t
 1 GB of memory free during the build. A stop ends the terminal of any agent running there; its state
 is kept. The project's runbook holds the exact commands.
 
+Start the server container with `-e TARS_DOOR_ON_HOST=<the door socket's path on the host>` (the
+home bind's `.tars-private/door.sock`): `status --json` then says `doorOnHost`, and a desktop finds
+the door without being told. An environment variable is set when a container is created, so an
+existing one takes it only when it is removed and run again, on the same volume and home.
+
 ## Connecting a desktop to a Tars server (Settings > Cloud)
 
 ### Add a server
@@ -2594,12 +2640,24 @@ Settings > Cloud > Tars servers. Type the server's address, `user@server` or a `
 config, and press Connect. Tars signs in with your own SSH key; it never asks for a password and
 never stores one. Advanced holds how the server runs (Docker or installed), the container name,
 admin rights (`sudo -n`, which never prompts) and the door path. On Docker the door path is the
-socket's path on the server itself, not inside the container: Tars cannot find it for you there.
-Advanced opens by itself when one of them is missing.
+socket's path on the server itself, not inside the container: Tars finds it when the container was
+started with `TARS_DOOR_ON_HOST` (see "A Tars server (headless)", Update), and otherwise asks for it
+in Advanced. Advanced opens by itself when one of them is missing.
 
-The first connect mints this computer's own client on the server (kind `desktop`, scopes `see` and
-`drive`), named after this computer. The credential stays in `~/.tars-private/cloud-link.json`; the
-window never sees it.
+The first connect mints this computer's own client on the server (kind `desktop`, scopes `see`,
+`drive` and `create`), named after this computer. The credential stays in
+`~/.tars-private/cloud-link.json`; the window never sees it. A computer connected before 2.0.7 may
+see and drive, not create: Forget this server, then Connect again.
+
+### Projects and agents on the server
+
+With a server connected, + Project on the Projects page asks where the project lives: this computer,
+or the server, empty or from a Git address (a private repository needs the server's Git key on
+GitHub first, see "Its Git key"). The server's projects show beside this computer's, with its badge;
+"Where the projects are" filters them. In New agent, a server's projects are in the Project list with
+the server beside them; Create and start makes the agent there and types its task once its CLI runs.
+The agent works in its project's folder: a worktree of its own, its own CLI path and the orchestrator
+role are not offered on a server yet.
 
 ### The first connect and the host key
 
