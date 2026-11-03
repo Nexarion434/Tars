@@ -2578,6 +2578,13 @@ export interface ElectronAPI {
     drive: (remoteId: string, action: 'start' | 'stop' | 'message', body: { reason?: string; text?: string }) => Promise<CloudDriveResult>;
     keys: (remoteId: string, data: string) => Promise<CloudDriveResult>;
     resize: (remoteId: string, cols: number, rows: number) => Promise<CloudDriveResult>;
+    /** M3: a project made on the server, empty or cloned with the server's own git access. */
+    createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string } }) => Promise<{ success: true; project: CloudProjectView } | CloudFailure>;
+    /** An agent made in one of the server's projects; `start` starts it where this computer may drive. */
+    createAgent: (id: string, body: CloudNewAgent) => Promise<{ success: true; agent: { id: string; name: string }; started: boolean; startError?: string } | CloudFailure>;
+    /** The server's own git key, its public half: what to add to GitHub. */
+    gitKey: (id: string) => Promise<{ success: true; publicKey: string; fingerprint: string } | CloudFailure>;
+    projects: (id: string) => Promise<{ success: true; projects: CloudProjectView[] } | CloudFailure>;
     onAgents: (callback: (agents: CloudRemoteAgent[]) => void) => () => void;
     onState: (callback: (event: { id: string; state: CloudLinkState }) => void) => () => void;
     /** A watched remote agent's output, under its remote id `c:<serverId>:<agentId>`. */
@@ -2602,6 +2609,19 @@ export interface CloudLinkState {
 }
 export interface CloudServerView { id: string; host: string; runner: CloudRunner; serverId?: string; name?: string; clientId?: string; paired: boolean; state: CloudLinkState }
 export interface CloudClientView { id: string; name?: string; kind?: string; scopes: string[]; createdAt?: string; expiresAt?: string; mintedVia?: string }
+export interface CloudProjectView { name: string; path: string }
+export interface CloudNewAgent {
+  projectName?: string;
+  projectPath?: string;
+  name?: string;
+  provider?: string;
+  model?: string;
+  effort?: string;
+  permissionMode?: string;
+  skills?: string[];
+  character?: string;
+  start?: boolean;
+}
 export interface CloudRemoteAgent {
   /** `c:<serverId>:<agentId>`, never a local agent's id. */
   id: string;

@@ -124,7 +124,7 @@ The container is started with `-e TARS_DOOR_ON_HOST=/home/<user>/tars-cloud/home
 `client.ts` `createProject`, `createAgent`; `cloud-handlers.ts` and `window.electronAPI.cloud.createProject(id, body)`, `createAgent(id, body)`, `projects(id)` in `preload.ts` and `electron.d.ts`, one commit; new mints ask `see`, `drive`, `create` (decision 3); the server's `projects` kept per server for the window.
 
 - [ ] Failures first: a window call with a server id of another shape refused; nothing returned holds a credential; a 403 for `create` says "This computer may see and drive this server, not create on it: Forget this server, then Connect again to allow it." (decision 3); the existing M2 tests unchanged.
-- [ ] Commit `feat: the desktop asks a server to create`.
+- [x] Commit `feat: the desktop asks a server to create` (6ca4f39d the client and the mint's scopes; then cloud-handlers, preload and electron.d.ts in one commit: createProject, createAgent, gitKey, projects).
 
 ### Task 8: New project, Local or Cloud (about 55 min, frames first)
 

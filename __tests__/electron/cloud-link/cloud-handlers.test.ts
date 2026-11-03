@@ -27,6 +27,11 @@ import type { DoorClient } from '../../../electron/services/cloud-link/client';
  * - a stop sent to the server without its reason (it refuses one, 1 to 200
  *   characters), or with one that does not name this computer: since
  *   2026-11-03 the window asks no reason, a stop is one click
+ * - (M3 Task 7) creating on a server that is not in Settings or not
+ *   connected; the window's fields sent whole instead of the ones the door
+ *   takes; an answer passed whole to the window (a key's private half, a
+ *   name with characters nobody sees); a 403 for an old device not saying
+ *   how to get `create` (Forget this server, then Connect)
  */
 
 const SERVER_ID = 'd795d0ff4d5d8e50';
@@ -44,6 +49,7 @@ function setup() {
   const forwards: string[] = [];
   const timers: number[] = [];
   const drives: Array<[string, string, Record<string, unknown>]> = [];
+  const creates: Array<[string, Record<string, unknown>]> = [];
   const answers: Partial<Record<ServerCommand['do'], RunResult>> = {
     status: { ok: true, json: UP },
     'clients-add': { ok: true, json: { id: 'c_10eafeea', credential: CREDENTIAL, serverId: SERVER_ID } },
@@ -56,6 +62,9 @@ function setup() {
     screen: async () => ({ status: 200, body: { screen: 'NOVA', cliRunning: true } }),
     drive: async (agentId, action, body) => { drives.push([agentId, action, body]); return { status: 200, body: { ok: true } }; },
     stream: () => ({ close: () => {} }),
+    createProject: async body => { creates.push(['project', body]); return { status: 201, body: { ok: true, project: { name: body.name, path: `/home/tars/projects/${String(body.name)}` } } }; },
+    createAgent: async body => { creates.push(['agent', body]); return { status: 201, body: { ok: true, agent: { id: 'a-new', name: body.name }, started: false } }; },
+    gitKey: async () => ({ status: 200, body: { publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc', privateKey: 'NEVER' } }),
   };
   const service = registerCloudHandlers({
     ipc: { handle: (channel, listener) => { handlers.set(channel, listener); } },
@@ -76,7 +85,7 @@ function setup() {
     if (!handler) throw new Error(`no handler for ${channel}`);
     return handler({}, ...args);
   };
-  return { file, call, sent, runs, forwards, timers, service, handlers, answers, drives };
+  return { file, call, sent, runs, forwards, timers, service, handlers, answers, drives, creates, door };
 }
 
 const docker = { host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
@@ -171,5 +180,53 @@ describe('window.electronAPI.cloud', () => {
     expect(await t.call('cloud:drive', `c:${SERVER_ID}:a1`, 'stop', { reason: '' })).toMatchObject({ success: true });
     const stops = t.drives.filter(([, action]) => action === 'stop');
     expect(stops).toEqual([['a1', 'stop', { reason: 'Stopped from PC-Nicolas' }], ['a1', 'stop', { reason: 'Stopped from PC-Nicolas' }]]);
+  });
+});
+
+describe('creating on a server from the window (M3 Task 7)', () => {
+  const connected = async () => {
+    const t = setup();
+    const saved = await t.call('cloud:save', docker) as { success: true; id: string };
+    await t.call('cloud:connect', saved.id);
+    return { ...t, id: saved.id };
+  };
+
+  it('refuses a server that is not in Settings, or not connected, and sends nothing', async () => {
+    const t = setup();
+    expect(await t.call('cloud:createProject', 's_00000000', { name: 'x', from: { kind: 'empty' } })).toMatchObject({ success: false });
+    const saved = await t.call('cloud:save', docker) as { success: true; id: string };
+    expect(await t.call('cloud:createProject', saved.id, { name: 'x', from: { kind: 'empty' } })).toMatchObject({ success: false, error: expect.stringMatching(/not connected/) });
+    expect(t.creates).toEqual([]);
+  });
+
+  it('sends only the fields the door takes, and passes the answer back narrowed', async () => {
+    const t = await connected();
+    expect(await t.call('cloud:createProject', t.id, { name: 'new-one', from: { kind: 'git', url: 'git@github.com:a/b.git', extra: 1 }, extra: 2 }))
+      .toEqual({ success: true, project: { name: 'new-one', path: '/home/tars/projects/new-one' } });
+    expect(await t.call('cloud:createProject', t.id, { name: 'x', from: { kind: 'tarball' } })).toMatchObject({ success: false });
+    expect(await t.call('cloud:createAgent', t.id, { projectName: 'test-cloud', name: 'Nova', provider: 'claude', model: 'haiku', cliPath: '/bin/sh', role: 'orchestrator', start: true }))
+      .toEqual({ success: true, agent: { id: 'a-new', name: 'Nova' }, started: false });
+    expect(t.creates).toEqual([
+      ['project', { name: 'new-one', from: { kind: 'git', url: 'git@github.com:a/b.git' } }],
+      ['agent', { projectName: 'test-cloud', name: 'Nova', provider: 'claude', model: 'haiku', start: true }],
+    ]);
+  });
+
+  it('the git key: its public half and fingerprint only', async () => {
+    const t = await connected();
+    expect(await t.call('cloud:gitKey', t.id)).toEqual({ success: true, publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' });
+  });
+
+  it('the server\'s projects: names and paths, as a window may show them', async () => {
+    const t = await connected();
+    t.door.fleet = async () => ({ status: 200, body: { agents: [], projects: [{ name: 'test‮cloud', path: '/home/tars/projects/test-cloud', secret: 'x' }, { name: 5 }, 'junk'] } });
+    expect(await t.call('cloud:projects', t.id)).toEqual({ success: true, projects: [{ name: 'testcloud', path: '/home/tars/projects/test-cloud' }] });
+  });
+
+  it('a device minted before create is told how to get it', async () => {
+    const t = await connected();
+    t.door.createProject = async () => ({ status: 403, body: { error: 'srv does not let PC create projects and agents.' } });
+    expect(await t.call('cloud:createProject', t.id, { name: 'x', from: { kind: 'empty' } }))
+      .toEqual({ success: false, error: 'This computer may see and drive this server, not create on it: Forget this server, then Connect again to allow it.' });
   });
 });
