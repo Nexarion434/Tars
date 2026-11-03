@@ -162,6 +162,7 @@ export const CloudSection = () => {
 
       <SettingsRow
         wide
+        wrap
         label={listedServers.length ? 'Add another server' : 'Server address'}
         description={listedServers.length
           ? 'Like user@server, or a shortcut from your SSH settings.'
