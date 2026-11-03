@@ -119,7 +119,9 @@ export const CloudSection = () => {
               <SettingsRow
                 wrap
                 label="From this computer"
-                description="Disconnect ends the link from this computer only: the server and its agents keep going. Forget also removes this computer's access on the server."
+                description={connected
+                  ? "Disconnect ends the link from this computer only: the server and its agents keep going. Forget also removes this computer's access on the server."
+                  : "Connect links this computer to the server again. Forget also removes this computer's access on the server."}
                 control={(
                   <span className="inline-flex gap-1.5">
                     {connected
