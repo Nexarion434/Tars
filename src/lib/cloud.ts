@@ -262,16 +262,21 @@ export function newProjectPlaces(servers: CloudServerView[]): ProjectPlace[] {
   ];
 }
 
-export interface CloudProjectForm { name: string; start: 'empty' | 'git'; url: string }
+/** `trusted`: the "I trust this repository's code" box, unticked until the user ticks it (security review 1, B1). */
+export interface CloudProjectForm { name: string; start: 'empty' | 'git'; url: string; trusted: boolean }
 
-/** The form as the door takes it, or what it lacks. The server checks the name and the address again: it is the one authority. */
-export function cloudProjectInput(form: CloudProjectForm): { ok: true; body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string } } } | { ok: false; error: string } {
+/** Create project waits for the trust box on a clone: a cloned repository's settings can run code on the server at an agent's first start. */
+export const projectCreateReady = (form: CloudProjectForm): boolean => form.start !== 'git' || form.trusted;
+
+/** The form as the door takes it, or what it lacks. The server checks the name, the address and the trust again: it is the one authority. */
+export function cloudProjectInput(form: CloudProjectForm): { ok: true; body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted: true } } } | { ok: false; error: string } {
   const name = form.name.trim();
   if (!name) return { ok: false, error: 'Give the project a name.' };
   if (form.start === 'empty') return { ok: true, body: { name, from: { kind: 'empty' } } };
   const url = form.url.trim();
   if (!url) return { ok: false, error: "Give the repository's address." };
-  return { ok: true, body: { name, from: { kind: 'git', url } } };
+  if (!form.trusted) return { ok: false, error: 'Tick "I trust this repository\'s code" first: its settings can run code on the server as soon as an agent starts.' };
+  return { ok: true, body: { name, from: { kind: 'git', url, trusted: true } } };
 }
 
 /** A server's project in the Projects page. Frame: `Projects · with cloud`. */

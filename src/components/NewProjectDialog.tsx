@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button, DialogShell, Input, SegmentedControl, StatusSquare } from '@/components/ui';
 import type { CloudProjectView, CloudServerView } from '@/types/electron';
-import { cloudProjectInput, LOCAL_PLACE, newProjectPlaces, type CloudProjectForm, type ProjectPlace } from '@/lib/cloud';
+import { cloudProjectInput, LOCAL_PLACE, newProjectPlaces, projectCreateReady, type CloudProjectForm, type ProjectPlace } from '@/lib/cloud';
 
 const STARTS = [{ value: 'empty' as const, label: 'Empty' }, { value: 'git' as const, label: 'Clone from Git' }];
 const CAPTION = 'text-[10px] uppercase tracking-wider text-muted-foreground';
@@ -40,7 +40,7 @@ export function NewProjectView({ places, place, form, error, busy, onPlace, onFo
       footerRight={(
         <>
           <Button size="md" onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" size="md" disabled={busy} onClick={onCreate}>Create project</Button>
+          <Button variant="primary" size="md" disabled={busy || (!!server && !projectCreateReady(form))} onClick={onCreate}>Create project</Button>
         </>
       )}
     >
@@ -89,6 +89,23 @@ export function NewProjectView({ places, place, form, error, busy, onPlace, onFo
                   ? `${server.label} clones it with its own Git access, so a private repository needs that access on the server.`
                   : `An empty folder on ${server.label}, ready for its first agent.`}
               </p>
+              {/* Frame `· from Git`: a cloned repository's own settings run on the server at an agent's first start. */}
+              {form.start === 'git' && (
+                <div className="flex flex-col gap-1 pt-1">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={form.trusted}
+                    data-new-project-trust
+                    onClick={() => onForm({ trusted: !form.trusted })}
+                    className="flex items-center gap-2 text-left text-[12px] text-foreground"
+                  >
+                    <span className={`w-3 h-3 shrink-0 border ${form.trusted ? 'bg-primary border-primary' : 'border-border-accent'}`} />
+                    I trust this repository&apos;s code
+                  </button>
+                  <p className="text-[10.5px] text-muted-foreground">Its settings can run code on {server.label} as soon as an agent starts.</p>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -107,7 +124,7 @@ export default function NewProjectDialog({ servers, onClose, onPickLocal, onCrea
 }) {
   const places = newProjectPlaces(servers);
   const [place, setPlace] = useState(places[1]?.id ?? LOCAL_PLACE);
-  const [form, setForm] = useState<CloudProjectForm>({ name: '', start: 'empty', url: '' });
+  const [form, setForm] = useState<CloudProjectForm>({ name: '', start: 'empty', url: '', trusted: false });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

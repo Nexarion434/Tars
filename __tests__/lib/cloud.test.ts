@@ -4,7 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
-  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm, sendWhenRunning,
+  newProjectPlaces, cloudProjectInput, projectCreateReady, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm, sendWhenRunning,
 } from '../../src/lib/cloud';
 
 /**
@@ -215,10 +215,20 @@ describe('New project, where it lives (M3)', () => {
   });
 
   it('turns the form into what the door takes, or says what is missing (21)', () => {
-    expect(cloudProjectInput({ name: '  my-app ', start: 'empty', url: 'ignored' })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'empty' } } });
-    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: ' git@github.com:a/b.git ' })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'git', url: 'git@github.com:a/b.git' } } });
-    expect(cloudProjectInput({ name: ' ', start: 'empty', url: '' })).toEqual({ ok: false, error: 'Give the project a name.' });
-    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: '  ' })).toEqual({ ok: false, error: "Give the repository's address." });
+    expect(cloudProjectInput({ name: '  my-app ', start: 'empty', url: 'ignored', trusted: false })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'empty' } } });
+    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: ' git@github.com:a/b.git ', trusted: true })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'git', url: 'git@github.com:a/b.git', trusted: true } } });
+    expect(cloudProjectInput({ name: ' ', start: 'empty', url: '', trusted: false })).toEqual({ ok: false, error: 'Give the project a name.' });
+    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: '  ', trusted: true })).toEqual({ ok: false, error: "Give the repository's address." });
+  });
+
+  // Security review 1, B1, written before the code: a clone sent without the user's trust in the
+  // repository's code, or an empty project asked for it.
+  it('a clone needs the trust box ticked; an empty project does not', () => {
+    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: 'git@github.com:a/b.git', trusted: false }))
+      .toEqual({ ok: false, error: 'Tick "I trust this repository\'s code" first: its settings can run code on the server as soon as an agent starts.' });
+    expect(projectCreateReady({ name: 'my-app', start: 'git', url: 'git@github.com:a/b.git', trusted: false })).toBe(false);
+    expect(projectCreateReady({ name: 'my-app', start: 'git', url: 'git@github.com:a/b.git', trusted: true })).toBe(true);
+    expect(projectCreateReady({ name: 'my-app', start: 'empty', url: '', trusted: false })).toBe(true);
   });
 });
 
