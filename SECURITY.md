@@ -940,7 +940,12 @@ one that could bind beside Win32-OpenSSH's listener is not ruled out (not
 measured). A process of the same account can read `cloud-link.json` anyway.
 Every `ssh` call also refuses to forward the desktop's agent, display or local
 commands to the server, whatever the user's ssh config says
-(`electron/services/cloud-link/`).
+(`electron/services/cloud-link/`). The port forwards of that config stay,
+though, on the long-lived forward only: a `LocalForward`, `DynamicForward` or
+`RemoteForward` the config gives the server's host is open for as long as Tars
+is, and a `RemoteForward` is a standing path from the server's agents to a
+service of the desktop. Give Tars an alias of its own, with no forwards, in
+`~/.ssh/config`.
 
 Each refusal above has a test written before the code and shown to fail on a
 deliberately broken version (`__tests__/electron/cloud/`,
