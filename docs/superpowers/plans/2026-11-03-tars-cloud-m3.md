@@ -110,7 +110,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 `node electron/dist/server/cli.js projects add --json` and `agents add --json`, input on stdin as `clients add` does, through Tasks 1 and 2's functions, against the running server (through its local API with the server's own pass) so the server's memory and `agents.json` stay one; refused when the server is not running.
 
 - [ ] Failures first: input never on the command line; the server down is a clear exit 1; the same refusals as the door.
-- [ ] Commit `feat: the server's cli adds projects and agents`.
+- [x] Commit `feat: the server's cli adds projects and agents` (through the door: the CLI mints itself a client for the call and revokes it after; `git key` and `git known-host add` in 8dd847f2).
 
 ### Task 6: the door path on Docker, found for you (about 40 min)
 

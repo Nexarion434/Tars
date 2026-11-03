@@ -61,6 +61,18 @@ async function run(command: string | undefined, args: string[]): Promise<number>
     const stdin = args[0] === 'add' ? await readStdin() : '';
     return runClientsCommand(args, stdin, { clientsFile: privatePath('cloud-clients.json'), serverFile }, line => process.stdout.write(`${line}\n`));
   }
+  if (command === 'projects' || command === 'agents') {
+    const { runCreateCommand } = await import('./create-command');
+    const { doorSocketPath } = await import('../services/cloud/door-socket');
+    const { PRIVATE_DIR } = await import('../constants');
+    const stdin = args[0] === 'add' ? await readStdin() : '';
+    const status = serverStatus(file);
+    return runCreateCommand(command, args, stdin, {
+      clientsFile: privatePath('cloud-clients.json'),
+      socketPath: (status.running && status.door) || doorSocketPath(PRIVATE_DIR),
+      serverRunning: () => status.running,
+    }, line => process.stdout.write(`${line}\n`));
+  }
   if (command === 'git') {
     const { runGitCommand } = await import('./git-command');
     const stdin = args[0] === 'known-host' ? await readStdin() : '';
