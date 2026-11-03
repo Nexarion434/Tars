@@ -197,11 +197,10 @@ const hhmm = (iso?: string): string | null => {
   return at && !Number.isNaN(at.getTime()) ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : null;
 };
 
-/** How a server runs, in Settings > Cloud's words. */
-const runnerWords = (runner: CloudServerView['runner']): string =>
-  (runner.kind === 'docker' ? `Docker · ${runner.container}${runner.sudo ? ' · sudo' : ''}` : 'installed');
+/** How a server runs, in Settings > Cloud's words: its container and admin rights are in Advanced. */
+const runnerWords = (runner: CloudServerView['runner']): string => (runner.kind === 'docker' ? 'Docker' : 'installed');
 
-/** The line under a server in Settings > Cloud: where it is, how it runs, its link. Frame: `Settings · Cloud`. */
+/** The line under a server in Settings > Cloud: where it is, how it runs, its link. Frame: `Settings · Cloud · connected`. */
 export function serverLine(s: CloudServerView): string {
   const { phase, since, sentence } = s.state;
   const time = hhmm(since);
@@ -225,10 +224,10 @@ export interface ServerForm { host: string; runs: 'docker' | 'command'; containe
 /** A server form as main takes it, or what it lacks. Main checks every word again before ssh sees it. */
 export function serverInput(form: ServerForm): { ok: true; input: CloudServerInput } | { ok: false; error: string } {
   const host = form.host.trim();
-  if (!host) return { ok: false, error: "Enter the server's SSH host: user@host, or an alias from your SSH config." };
+  if (!host) return { ok: false, error: 'Enter the server address: user@server, or a shortcut from your SSH settings.' };
   if (form.runs === 'docker') {
-    if (!form.container.trim()) return { ok: false, error: 'Enter the Docker container the server runs in.' };
-    if (!form.doorSocket.trim()) return { ok: false, error: "Enter the door socket's path on the host: the home the container mounts, then .tars-private/door.sock." };
+    if (!form.container.trim()) return { ok: false, error: 'Enter the container name in Advanced: the container Tars lives in on your server.' };
+    if (!form.doorSocket.trim()) return { ok: false, error: 'Enter the door path in Advanced: where Tars listens, as the server sees it, not inside the container.' };
     return { ok: true, input: { host, runner: { kind: 'docker', container: form.container.trim(), sudo: form.sudo }, doorSocket: form.doorSocket.trim() } };
   }
   const argv = form.command.trim().split(/\s+/).filter(Boolean);

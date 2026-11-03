@@ -132,12 +132,13 @@ describe('the filter', () => {
 describe('Settings > Cloud', () => {
   const at = new Date(2026, 10, 3, 2, 10).toISOString();
   it('says where a server is, how it runs, and its link in words (18)', () => {
-    expect(serverLine(view({ state: { phase: 'connected', since: at } }))).toBe('ubuntu@203.0.113.10 · Docker · tars-server · sudo · connected since 02:10');
+    // The frame `Settings · Cloud · connected`: the container and admin rights are in Advanced, not on the line.
+    expect(serverLine(view({ state: { phase: 'connected', since: at } }))).toBe('ubuntu@203.0.113.10 · Docker · connected since 02:10');
     expect(serverLine(view({ runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] }, state: { phase: 'offline', since: at } })))
       .toBe('ubuntu@203.0.113.10 · installed · offline since 02:10, trying again by itself');
-    expect(serverLine(view({ state: { phase: 'disconnected', sentence: 'It refused this computer.' } }))).toBe('ubuntu@203.0.113.10 · Docker · tars-server · sudo · disconnected by the server. It refused this computer.');
-    expect(serverLine(view({ state: { phase: 'failed', problem: 'host-key-unknown', sentence: 'Run ssh once in a terminal.' } }))).toBe('ubuntu@203.0.113.10 · Docker · tars-server · sudo · Run ssh once in a terminal.');
-    expect(serverLine(view({ state: { phase: 'off' } }))).toBe('ubuntu@203.0.113.10 · Docker · tars-server · sudo · not connected');
+    expect(serverLine(view({ state: { phase: 'disconnected', sentence: 'It refused this computer.' } }))).toBe('ubuntu@203.0.113.10 · Docker · disconnected by the server. It refused this computer.');
+    expect(serverLine(view({ state: { phase: 'failed', problem: 'host-key-unknown', sentence: 'Run ssh once in a terminal.' } }))).toBe('ubuntu@203.0.113.10 · Docker · Run ssh once in a terminal.');
+    expect(serverLine(view({ state: { phase: 'off' } }))).toBe('ubuntu@203.0.113.10 · Docker · not connected');
     expect(statusWord('connected')).toEqual({ word: 'connected', tone: 'running' });
     for (const phase of ['offline', 'off', 'connecting'] as const) expect(statusWord(phase).tone, phase).toBe('idle');
     for (const phase of ['disconnected', 'failed'] as const) expect(statusWord(phase).tone, phase).toBe('error');
@@ -146,9 +147,10 @@ describe('Settings > Cloud', () => {
   it('a server form is whole before it is sent (19)', () => {
     const docker = { host: ' ubuntu@203.0.113.10 ', runs: 'docker' as const, container: 'tars-server', sudo: true, doorSocket: '/home/ubuntu/tars-cloud/home/.tars-private/door.sock', command: '' };
     expect(serverInput(docker)).toEqual({ ok: true, input: { host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: docker.doorSocket } });
-    expect(serverInput({ ...docker, host: '  ' })).toMatchObject({ ok: false, error: expect.stringMatching(/SSH host/) });
-    expect(serverInput({ ...docker, container: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/container/) });
-    expect(serverInput({ ...docker, doorSocket: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/door socket/) });
+    // Each error names the field as Settings > Cloud labels it.
+    expect(serverInput({ ...docker, host: '  ' })).toMatchObject({ ok: false, error: expect.stringMatching(/server address/) });
+    expect(serverInput({ ...docker, container: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/container name/) });
+    expect(serverInput({ ...docker, doorSocket: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/door path/) });
     const installed = { ...docker, runs: 'command' as const, command: '  node   /srv/tars/electron/dist/server/cli.js ' };
     expect(serverInput(installed)).toEqual({ ok: true, input: { host: 'ubuntu@203.0.113.10', runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] } } });
     expect(serverInput({ ...installed, command: ' ' })).toMatchObject({ ok: false, error: expect.stringMatching(/command/) });

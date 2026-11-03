@@ -213,6 +213,11 @@ test("a tars server's agent on the dashboard: live, typed into, stopped with a r
     const line = page.locator('[data-cloud-server-line]');
     await expect(line).toHaveText(/^tars-e2e · installed · connected since \d{2}:\d{2}$/, { timeout: 15_000 });
     values.settingsLine = await line.textContent();
+    // The frame `Settings · Cloud · connected`: Disconnect and Forget on the card, Advanced closed below.
+    await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Forget this server' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Advanced' })).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByLabel('Door path')).toHaveCount(0);
     await stepShot(page, '06-settings-cloud');
     recordValues(values);
   } finally {
