@@ -103,7 +103,7 @@ Move the checks of `POST /api/agents` (`electron/services/api-routes/agent-route
 
 - [ ] Failures first: `create without the scope is 403`; `an outside agent never creates`; a project path outside the server's projects refused; `create writes a record and spawns nothing` (without `start`); a body over the door's 64 KB cap is 413; the fleet's `projects` carries names and paths only; each refusal of Tasks 1 to 3 comes back with its status and sentence.
 - [ ] Tests against a door started in the test, as M1's door tests do.
-- [ ] Commit `feat: the door creates projects and agents for a client with create`.
+- [x] Commit `feat: the door creates projects and agents for a client with create` (with Task 2b's GET /cloud/v1/git-key; a client also sets no CLI path, second folder or role).
 
 ### Task 5: the server's CLI, for the operator (about 40 min)
 

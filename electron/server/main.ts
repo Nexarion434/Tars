@@ -18,6 +18,8 @@ import * as path from 'path';
 import { createHeadlessElectron } from '../host/headless-electron';
 import { installHeadlessElectron } from '../host/install-headless';
 import type { ServerRecord } from './lock';
+import type { NewAgentFields } from '../core/agent-create';
+import type { AppSettings } from '../types';
 
 export const INSTALL_ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -98,6 +100,9 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { rememberPanelSize, resizeTerminalMirror } = await import('../core/terminal-mirror');
   const { executeDrive } = await import('../services/cloud/drive');
   const { memoryHeadroom, DEFAULT_FLOOR_MB } = await import('../platform/memory-headroom');
+  const { createProject, listProjects } = await import('../services/cloud/projects');
+  const { gitKey } = await import('../services/cloud/git-access');
+  const { createAgentRecord } = await import('../core/agent-create');
   const { readAppSettingsFromDisk } = await import('../providers/cli-provider');
   const minFreeMb = () => {
     const set = Number((readAppSettingsFromDisk() as { cloudMinFreeMb?: unknown }).cloudMinFreeMb);
@@ -125,6 +130,18 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
         return { screen: terminalSnapshot(pty) ?? '', cliRunning: cliRunningIn(pty), cols: pty?.cols ?? 80, rows: pty?.rows ?? 24 };
       },
       onOutput: onAgentOutput,
+      // Projects and agents made from a client with `create` (M3): the same functions the server's CLI calls.
+      create: {
+        projects: () => listProjects(),
+        project: (name, from) => createProject(name, from, { gitAccess: { dir: privatePath('git'), serverId: identity.id } }),
+        agent: async fields => {
+          const made = createAgentRecord(fields as unknown as NewAgentFields, {
+            agents, saveAgents, appSettings: () => readAppSettingsFromDisk() as unknown as AppSettings, announce: () => scheduleTick(),
+          });
+          return made.ok ? { ok: true as const, agent: { id: made.agent.id, name: made.agent.name ?? made.agent.id } } : made;
+        },
+        gitKey: () => gitKey({ dir: privatePath('git'), serverId: identity.id }),
+      },
       // The window's own path: agent:input (writeHumanInput) and agent:resize.
       drive: (request, caller) => executeDrive(request, caller, {
         hasAgent: agentId => agents.has(agentId),

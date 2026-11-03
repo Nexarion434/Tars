@@ -3,6 +3,7 @@ import { closeDoorSocket, prepareDoorSocket } from './door-socket';
 import { admit, may, watchClients } from './clients';
 import type { DriveCaller, DriveOutcome, DriveRequest } from './drive';
 import type { CloudClient, Scope } from './types';
+import type { ProjectFrom, ProjectResult } from './projects';
 
 /**
  * The door of a Tars server (docs/superpowers/plans/2026-11-02-tars-cloud.md,
@@ -38,6 +39,16 @@ export const MAX_CONNECTIONS = 128;
 
 export interface AgentScreen { screen: string; cliRunning: boolean; cols: number; rows: number }
 
+/** What the create routes call (docs/superpowers/plans/2026-11-03-tars-cloud-m3.md, Task 4). */
+export interface DoorCreate {
+  /** The server's projects (projects.ts listProjects). */
+  projects(): Array<{ name: string; path: string }>;
+  project(name: string, from: ProjectFrom): Promise<ProjectResult>;
+  /** agent-create.ts's createAgentRecord, the fields already narrowed to a client's. */
+  agent(fields: Record<string, unknown>): Promise<{ ok: true; agent: { id: string; name: string } } | { ok: false; status: number; error: string }>;
+  gitKey(): Promise<{ ok: true; publicKey: string; fingerprint: string } | { ok: false; error: string }>;
+}
+
 export interface DoorDeps {
   /** The Unix socket the door listens on (door-socket.ts): PRIVATE_DIR/door.sock on a server. */
   socketPath: string;
@@ -49,6 +60,8 @@ export interface DoorDeps {
   onOutput?(listener: (agentId: string, chunk: string) => void): () => void;
   /** executeDrive over the server's terminals (drive.ts). */
   drive?(request: DriveRequest, caller: DriveCaller): Promise<DriveOutcome>;
+  /** Projects and agents made on the server, and its git key (M3); without it, the create routes answer 404. */
+  create?: DoorCreate;
   /** How often an open stream's credential is admitted again (default 15 s). */
   recheckMs?: number;
   /** How often the clients file is polled for a revoke (default 500 ms). */
@@ -149,11 +162,12 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
   };
 
   /**
-   * A drive route: the body read up to 64 KB (counted, chunked or not), then
-   * the client admitted again, so one revoked or stripped of `drive` while its
-   * body was on the way drives nothing; then the executor.
+   * A route with a body: the body read up to 64 KB (counted, chunked or not),
+   * then the client admitted again, so one revoked or stripped of the route's
+   * scope while its body was on the way does nothing; then `then`.
    */
-  const driveRoute = (action: DriveRequest['action']) => ({ client, credential, agentId, req, res }: Request) => {
+  const bodyRoute = (scope: Scope, then: (body: Record<string, unknown>, again: CloudClient, request: Request) => void) => (request: Request) => {
+    const { client, credential, req, res } = request;
     let size = 0;
     const chunks: Buffer[] = [];
     let refused = false;
@@ -184,30 +198,104 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
         json(res, 401, { error: 'Not a client of this Tars server, or no longer one.' });
         return;
       }
-      if (!may(again, 'drive')) {
-        json(res, 403, { error: `${deps.identity().name} does not let ${again.name} ${SCOPE_WORDS.drive}.` });
+      if (!may(again, scope)) {
+        json(res, 403, { error: `${deps.identity().name} does not let ${again.name} ${SCOPE_WORDS[scope]}.` });
         return;
       }
-      if (!deps.drive) {
-        json(res, 404, { error: 'Not found.' });
-        return;
-      }
-      const id = agentId!;
-      const request: DriveRequest =
-        action === 'keys' ? { action, agentId: id, data: body.data as string }
-          : action === 'size' ? { action, agentId: id, cols: body.cols as number, rows: body.rows as number }
-            : action === 'stop' ? { action, agentId: id, reason: body.reason as string }
-              : action === 'message' ? { action, agentId: id, text: body.text as string }
-                : { action, agentId: id };
-      deps.drive(request, { name: again.name, kind: again.kind }).then(
-        outcome => (outcome.ok ? json(res, 200, { ok: true }) : json(res, outcome.status, { error: outcome.error })),
-        err => {
-          console.error('[cloud] a drive failed:', err);
-          json(res, 500, { error: 'The server could not do it.' });
-        },
-      );
+      then(body, again, request);
     });
   };
+
+  /** A drive route: the executor, once the body is in and the client admitted again. */
+  const driveRoute = (action: DriveRequest['action']) => bodyRoute('drive', (body, again, { agentId, res }) => {
+    if (!deps.drive) {
+      json(res, 404, { error: 'Not found.' });
+      return;
+    }
+    const id = agentId!;
+    const request: DriveRequest =
+      action === 'keys' ? { action, agentId: id, data: body.data as string }
+        : action === 'size' ? { action, agentId: id, cols: body.cols as number, rows: body.rows as number }
+          : action === 'stop' ? { action, agentId: id, reason: body.reason as string }
+            : action === 'message' ? { action, agentId: id, text: body.text as string }
+              : { action, agentId: id };
+    deps.drive(request, { name: again.name, kind: again.kind }).then(
+      outcome => (outcome.ok ? json(res, 200, { ok: true }) : json(res, outcome.status, { error: outcome.error })),
+      err => {
+        console.error('[cloud] a drive failed:', err);
+        json(res, 500, { error: 'The server could not do it.' });
+      },
+    );
+  });
+
+  // Hermes and every outside agent create nothing on a server, whatever their scopes (decision 4, M3).
+  const outsideRefused = (client: CloudClient, res: http.ServerResponse): boolean => {
+    if (client.kind !== 'outside-agent') return false;
+    json(res, 403, { error: `${client.name} is an outside agent: it creates nothing on this server.` });
+    return true;
+  };
+  const failed = (res: http.ServerResponse) => (err: unknown) => {
+    console.error('[cloud] a create failed:', err);
+    json(res, 500, { error: 'The server could not do it.' });
+  };
+
+  /** POST /cloud/v1/projects { name, from }: projects.ts's createProject. */
+  const projectRoute = bodyRoute('create', (body, again, { res }) => {
+    const create = deps.create;
+    if (!create) { json(res, 404, { error: 'Not found.' }); return; }
+    if (outsideRefused(again, res)) return;
+    const from = body.from as { kind?: unknown; url?: unknown } | undefined;
+    const shape: ProjectFrom | null = from && from.kind === 'empty' ? { kind: 'empty' }
+      : from && from.kind === 'git' && typeof from.url === 'string' ? { kind: 'git', url: from.url } : null;
+    if (typeof body.name !== 'string' || !shape) {
+      json(res, 400, { error: 'A project is a name, made empty or from a git address.' });
+      return;
+    }
+    const name = body.name;
+    create.project(name, shape).then(made => {
+      if (made.ok) json(res, 201, { ok: true, project: { name, path: made.path } });
+      else json(res, made.status, { error: made.error });
+    }, failed(res));
+  });
+
+  /** What a client may set on an agent it creates: the New agent form's fields, never a binary, a second folder or a role. */
+  const AGENT_FIELDS = ['name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character'] as const;
+  const NOT_FROM_A_CLIENT = ['cliPath', 'secondaryProjectPath', 'role', 'orchestratorMode'];
+
+  /** POST /cloud/v1/agents: agent-create.ts's record in one of the server's projects, started only through the drive executor. */
+  const agentRoute = bodyRoute('create', (body, again, { res }) => {
+    const create = deps.create;
+    if (!create) { json(res, 404, { error: 'Not found.' }); return; }
+    if (outsideRefused(again, res)) return;
+    if (NOT_FROM_A_CLIENT.some(key => key in body)) {
+      json(res, 400, { error: 'A client sets no CLI path, second folder or role on a server\'s agent.' });
+      return;
+    }
+    const projects = create.projects();
+    const project = typeof body.projectName === 'string' ? projects.find(p => p.name === body.projectName)
+      : typeof body.projectPath === 'string' ? projects.find(p => p.path === body.projectPath) : undefined;
+    if (!project) {
+      json(res, 404, { error: 'No such project on this Tars server.' });
+      return;
+    }
+    const fields: Record<string, unknown> = { projectPath: project.path };
+    for (const key of AGENT_FIELDS) if (body[key] !== undefined) fields[key] = body[key];
+    create.agent(fields).then(async made => {
+      if (!made.ok) { json(res, made.status, { error: made.error }); return; }
+      let started = false;
+      let startError: string | undefined;
+      if (body.start === true) {
+        if (!may(again, 'drive') || !deps.drive) {
+          startError = `${deps.identity().name} does not let ${again.name} ${SCOPE_WORDS.drive}: the agent is made, not started.`;
+        } else {
+          const outcome = await deps.drive({ action: 'start', agentId: made.agent.id }, { name: again.name, kind: again.kind });
+          started = outcome.ok;
+          if (!outcome.ok) startError = outcome.error;
+        }
+      }
+      json(res, 201, { ok: true, agent: made.agent, started, ...(startError ? { startError } : {}) });
+    }, failed(res));
+  });
 
   const routes: Route[] = [
     {
@@ -219,7 +307,11 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     },
     {
       method: 'GET', pattern: /^\/cloud\/v1\/fleet$/, scope: 'see',
-      handle: ({ client, res }) => json(res, 200, deps.fleet(client!)),
+      handle: ({ client, res }) => {
+        const fleet = deps.fleet(client!);
+        // The server's projects, by name and path, for a desktop's Projects page and New agent (M3).
+        json(res, 200, deps.create ? { ...(fleet as object), projects: deps.create.projects().map(p => ({ name: p.name, path: p.path })) } : fleet);
+      },
     },
     {
       method: 'GET', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/screen$`), scope: 'see',
@@ -241,6 +333,20 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/start$`), scope: 'drive', handle: driveRoute('start') },
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/stop$`), scope: 'drive', handle: driveRoute('stop') },
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/message$`), scope: 'drive', handle: driveRoute('message') },
+    { method: 'POST', pattern: /^\/cloud\/v1\/projects$/, scope: 'create', handle: projectRoute },
+    { method: 'POST', pattern: /^\/cloud\/v1\/agents$/, scope: 'create', handle: agentRoute },
+    {
+      // The server's own git key, its public half: what the user adds to GitHub (git-access.ts).
+      method: 'GET', pattern: /^\/cloud\/v1\/git-key$/, scope: 'create',
+      handle: ({ client, res }) => {
+        if (!deps.create) { json(res, 404, { error: 'Not found.' }); return; }
+        if (outsideRefused(client!, res)) return;
+        deps.create.gitKey().then(key => {
+          if (key.ok) json(res, 200, { publicKey: key.publicKey, fingerprint: key.fingerprint });
+          else json(res, 500, { error: key.error });
+        }, failed(res));
+      },
+    },
   ];
 
   const server = http.createServer((req, res) => {
