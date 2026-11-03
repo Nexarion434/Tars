@@ -3,7 +3,7 @@ import type { AgentStatus, CloudRemoteAgent, CloudServerView } from '../../src/t
 import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, checkReason, sharesSize, shouldSendSize,
-  fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus,
+  fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
 } from '../../src/lib/cloud';
 
 /**
@@ -117,6 +117,41 @@ describe('the filter', () => {
   it('a remote-only project says its server; a tab with a local agent does not (8)', () => {
     const tabs = tabMachines(placeRemote([local('l1', '/a/tars')], [remote(), remote({ id: `c:${SERVER.serverId}:a2`, projectPath: '/srv/writer' })]));
     expect([...tabs]).toEqual([['/srv/writer', ['srv1539916']]]);
+  });
+});
+
+/**
+ * Settings > Cloud (Task 11), how its view can fail:
+ * 18. a server's line not saying where it is and how it runs, or reading
+ *    connected while offline, disconnected or failed; a failed connect
+ *    without the sentence main gave (the ssh error in plain words)
+ * 19. a server saved with a blank host, a Docker runner without its
+ *    container or its door socket, or an installed one without its command;
+ *    the command not split into words
+ */
+describe('Settings > Cloud', () => {
+  const at = new Date(2026, 10, 3, 2, 10).toISOString();
+  it('says where a server is, how it runs, and its link in words (18)', () => {
+    expect(serverLine(view({ state: { phase: 'connected', since: at } }))).toBe('ubuntu@100.101.245.29 · Docker · tars-server · sudo · connected since 02:10');
+    expect(serverLine(view({ runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] }, state: { phase: 'offline', since: at } })))
+      .toBe('ubuntu@100.101.245.29 · installed · offline since 02:10, trying again by itself');
+    expect(serverLine(view({ state: { phase: 'disconnected', sentence: 'It refused this computer.' } }))).toBe('ubuntu@100.101.245.29 · Docker · tars-server · sudo · disconnected by the server. It refused this computer.');
+    expect(serverLine(view({ state: { phase: 'failed', problem: 'host-key-unknown', sentence: 'Run ssh once in a terminal.' } }))).toBe('ubuntu@100.101.245.29 · Docker · tars-server · sudo · Run ssh once in a terminal.');
+    expect(serverLine(view({ state: { phase: 'off' } }))).toBe('ubuntu@100.101.245.29 · Docker · tars-server · sudo · not connected');
+    expect(statusWord('connected')).toEqual({ word: 'connected', tone: 'running' });
+    for (const phase of ['offline', 'off', 'connecting'] as const) expect(statusWord(phase).tone, phase).toBe('idle');
+    for (const phase of ['disconnected', 'failed'] as const) expect(statusWord(phase).tone, phase).toBe('error');
+  });
+
+  it('a server form is whole before it is sent (19)', () => {
+    const docker = { host: ' ubuntu@100.101.245.29 ', runs: 'docker' as const, container: 'tars-server', sudo: true, doorSocket: '/home/ubuntu/tars-cloud/home/.tars-private/door.sock', command: '' };
+    expect(serverInput(docker)).toEqual({ ok: true, input: { host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: docker.doorSocket } });
+    expect(serverInput({ ...docker, host: '  ' })).toMatchObject({ ok: false, error: expect.stringMatching(/SSH host/) });
+    expect(serverInput({ ...docker, container: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/container/) });
+    expect(serverInput({ ...docker, doorSocket: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/door socket/) });
+    const installed = { ...docker, runs: 'command' as const, command: '  node   /srv/tars/electron/dist/server/cli.js ' };
+    expect(serverInput(installed)).toEqual({ ok: true, input: { host: 'ubuntu@100.101.245.29', runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] } } });
+    expect(serverInput({ ...installed, command: ' ' })).toMatchObject({ ok: false, error: expect.stringMatching(/command/) });
   });
 });
 

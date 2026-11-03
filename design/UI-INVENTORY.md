@@ -123,7 +123,7 @@ does not read this table.
 Each frame has its `· light` copy below it. Usage · activity · notes says what each
 part shows and what the Backend would provide.
 
-## Settings (6 groups, 20 sections)
+## Settings (7 groups, 21 sections)
 
 | Group | Sections |
 |---|---|
@@ -131,6 +131,7 @@ part shows and what the Backend would provide.
 | AI & Providers | Providers (an API key set, replaced or cleared, never shown: Secrets · Settings, Providers, an API key, and its light copy), Claude accounts, CLI Paths (what Tars found as it opens, the detection Providers reads too: Secrets · CLIs, one detection, and its light copy), Permissions |
 | Hermes | Connection (+ link out to Schedules): Settings · Connection, its Incoming webhooks row pointing to Gateways; its token set and replaced, never shown: Secrets · Settings, Hermes connection (and its light copy). Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end). Gateways, every Hermes that hands Tars work, its two addresses, its secret shown and copied by Tars only, added, replaced and removed asking once, and the projects it may reach: Gateways · Settings, Hermes (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy); every key and token of these sections set, replaced or cleared, never shown, and Telegram's auth token shown once by Tars in a window of its own: Secrets · Settings, Telegram (its light copy, the narrowest window), Secrets · states (and its light copy), Secrets · notes for the Backend |
+| Cloud | Tars servers: each server's SSH host and how it runs (Docker with its container, sudo and the door socket on the host, or installed with its command), Connect, the link in words (connected since, offline since and trying again, disconnected by the server, the SSH error in plain words), Disconnect, Forget, and the server's clients with Revoke: Settings · Cloud, drawn from Settings · Machines (validated 2026-10-02), waiting for Nicolas's look |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 

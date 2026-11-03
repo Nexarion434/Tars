@@ -77,6 +77,7 @@ const SETTINGS_TREE = [
   ['permissions', 'AI & Providers', 'Permissions'],
   ['hermes', 'Hermes', 'Connection'],
   ['hermes-gateways', 'Hermes', 'Gateways'],
+  ['cloud', 'Cloud', 'Tars servers'],
   ['notifications', 'General', 'Notifications'],
   ['system', 'General', 'System'],
   ['telegram', 'Integrations', 'Telegram'],

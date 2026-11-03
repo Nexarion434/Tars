@@ -1,4 +1,4 @@
-import type { AgentStatus, CloudRemoteAgent, CloudServerStatus, CloudServerView } from '@/types/electron';
+import type { AgentStatus, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
 
 /**
  * A Tars server's agents on the Dashboard and the Agents page, and what this
@@ -190,6 +190,50 @@ export function remoteActions(remote: Pick<RemoteInfo, 'status' | 'drive'>, runn
 /** Under a pane of a server that lets this desktop see only. Frame: `Panel · machine you may only see`. */
 export function seeOnlyLine(machineName: string): string {
   return `${machineName} lets this Tars see only. To start, stop or type into its agents, it must give this computer drive: forget it in Settings > Cloud and connect again.`;
+}
+
+const hhmm = (iso?: string): string | null => {
+  const at = iso ? new Date(iso) : null;
+  return at && !Number.isNaN(at.getTime()) ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : null;
+};
+
+/** How a server runs, in Settings > Cloud's words. */
+const runnerWords = (runner: CloudServerView['runner']): string =>
+  (runner.kind === 'docker' ? `Docker · ${runner.container}${runner.sudo ? ' · sudo' : ''}` : 'installed');
+
+/** The line under a server in Settings > Cloud: where it is, how it runs, its link. Frame: `Settings · Cloud`. */
+export function serverLine(s: CloudServerView): string {
+  const { phase, since, sentence } = s.state;
+  const time = hhmm(since);
+  const link = phase === 'connected' ? `connected${time ? ` since ${time}` : ''}`
+    : phase === 'offline' ? `offline${time ? ` since ${time}` : ''}, trying again by itself`
+      : phase === 'disconnected' ? `disconnected by the server.${sentence ? ` ${sentence}` : ''}`
+        : phase === 'failed' ? sentence ?? 'could not connect'
+          : phase === 'connecting' ? 'connecting' : 'not connected';
+  return `${s.host} · ${runnerWords(s.runner)} · ${link}`;
+}
+
+/** A server's status word and its square's tone. */
+export function statusWord(phase: CloudServerView['state']['phase']): { word: string; tone: 'running' | 'idle' | 'error' } {
+  if (phase === 'connected') return { word: 'connected', tone: 'running' };
+  if (phase === 'disconnected' || phase === 'failed') return { word: phase, tone: 'error' };
+  return { word: phase === 'off' ? 'not connected' : phase, tone: 'idle' };
+}
+
+export interface ServerForm { host: string; runs: 'docker' | 'command'; container: string; sudo: boolean; doorSocket: string; command: string }
+
+/** A server form as main takes it, or what it lacks. Main checks every word again before ssh sees it. */
+export function serverInput(form: ServerForm): { ok: true; input: CloudServerInput } | { ok: false; error: string } {
+  const host = form.host.trim();
+  if (!host) return { ok: false, error: "Enter the server's SSH host: user@host, or an alias from your SSH config." };
+  if (form.runs === 'docker') {
+    if (!form.container.trim()) return { ok: false, error: 'Enter the Docker container the server runs in.' };
+    if (!form.doorSocket.trim()) return { ok: false, error: "Enter the door socket's path on the host: the home the container mounts, then .tars-private/door.sock." };
+    return { ok: true, input: { host, runner: { kind: 'docker', container: form.container.trim(), sudo: form.sudo }, doorSocket: form.doorSocket.trim() } };
+  }
+  const argv = form.command.trim().split(/\s+/).filter(Boolean);
+  if (argv.length === 0) return { ok: false, error: "Enter the command that runs the server's CLI, for instance node <install>/electron/dist/server/cli.js." };
+  return { ok: true, input: { host, runner: { kind: 'command', argv } } };
 }
 
 /** The reason a stop is given, or null when it is blank. */

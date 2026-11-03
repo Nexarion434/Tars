@@ -24,6 +24,7 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 5. The server process goes away: the pane says the server is offline since
  *    when, and its last output stays.
  * 6. The server is back: the offline line goes.
+ * 7. Settings > Cloud says where the server is, how it runs, and its link.
  * Leaves values.json and a picture per step in its run directory.
  *   E2E_PORT_OFFSET=40 npx playwright test e2e/cloud-see-drive.spec.ts
  */
@@ -193,6 +194,14 @@ test("a tars server's agent on the dashboard: live, typed into, stopped with a r
     await expect(offline).toHaveCount(0, { timeout: 30_000 });
     values.backOnline = true;
     await stepShot(page, '05-the-server-back');
+
+    // 7. Settings > Cloud: the server, how it runs and its link in words.
+    await page.goto(`${DEV_URL}/settings?section=cloud`, { waitUntil: 'domcontentloaded' });
+    await splashGone(page);
+    const line = page.locator('[data-cloud-server-line]');
+    await expect(line).toHaveText(/^tars-e2e · installed · connected since \d{2}:\d{2}$/, { timeout: 15_000 });
+    values.settingsLine = await line.textContent();
+    await stepShot(page, '06-settings-cloud');
     recordValues(values);
   } finally {
     await app.close();
