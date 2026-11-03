@@ -212,6 +212,18 @@ describe('creating on a server from the window (M3 Task 7)', () => {
     ]);
   });
 
+  // Security review 1, B1, written before the code: the window's trust in a repository's code lost on
+  // the way (the server then refuses every clone), or sent for anything but exactly true.
+  it('a clone carries the window\'s trust in its code, only when it is exactly true', async () => {
+    const t = await connected();
+    await t.call('cloud:createProject', t.id, { name: 'a', from: { kind: 'git', url: 'https://github.com/a/b', trusted: true } });
+    await t.call('cloud:createProject', t.id, { name: 'b', from: { kind: 'git', url: 'https://github.com/a/b', trusted: 'yes' } });
+    expect(t.creates).toEqual([
+      ['project', { name: 'a', from: { kind: 'git', url: 'https://github.com/a/b', trusted: true } }],
+      ['project', { name: 'b', from: { kind: 'git', url: 'https://github.com/a/b' } }],
+    ]);
+  });
+
   it('the git key: its public half and fingerprint only', async () => {
     const t = await connected();
     expect(await t.call('cloud:gitKey', t.id)).toEqual({ success: true, publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' });

@@ -2579,7 +2579,8 @@ export interface ElectronAPI {
     keys: (remoteId: string, data: string) => Promise<CloudDriveResult>;
     resize: (remoteId: string, cols: number, rows: number) => Promise<CloudDriveResult>;
     /** M3: a project made on the server, empty or cloned with the server's own git access. */
-    createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string } }) => Promise<{ success: true; project: CloudProjectView } | CloudFailure>;
+    /** A clone needs `trusted: true`, the user's word that they trust the repository's code: the server refuses it otherwise. */
+    createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted?: true } }) => Promise<{ success: true; project: CloudProjectView } | CloudFailure>;
     /** An agent made in one of the server's projects; `start` starts it where this computer may drive. */
     createAgent: (id: string, body: CloudNewAgent) => Promise<{ success: true; agent: { id: string; name: string }; started: boolean; startError?: string } | CloudFailure>;
     /** The server's own git key, its public half: what to add to GitHub. */

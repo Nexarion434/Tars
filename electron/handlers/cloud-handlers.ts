@@ -246,8 +246,10 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
   ipc.handle('cloud:createProject', async (_e, id, body) => {
     const door = doorOf(id);
     if (!('client' in door)) return door;
-    const given = (body ?? {}) as { name?: unknown; from?: { kind?: unknown; url?: unknown } };
-    const from = given.from?.kind === 'empty' ? { kind: 'empty' } : given.from?.kind === 'git' && typeof given.from.url === 'string' ? { kind: 'git', url: given.from.url } : null;
+    const given = (body ?? {}) as { name?: unknown; from?: { kind?: unknown; url?: unknown; trusted?: unknown } };
+    // A clone's trust in the repository's code goes on only as the window gave it, exactly true (security review 1, B1).
+    const from = given.from?.kind === 'empty' ? { kind: 'empty' }
+      : given.from?.kind === 'git' && typeof given.from.url === 'string' ? { kind: 'git', url: given.from.url, ...(given.from.trusted === true ? { trusted: true } : {}) } : null;
     if (typeof given.name !== 'string' || !from) return fail('A project is a name, made empty or from a git address.');
     const answer = await door.client.createProject({ name: given.name, from });
     // A name the server has, as the frame `Overlay · New project · where · name taken` says it.
