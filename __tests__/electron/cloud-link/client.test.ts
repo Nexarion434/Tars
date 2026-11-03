@@ -3,11 +3,11 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { addClient } from '../../../electron/services/cloud/clients';
+import { addClient, revokeClient } from '../../../electron/services/cloud/clients';
 import { startDoor, type Door } from '../../../electron/services/cloud/door';
 import { doorSocketPath } from '../../../electron/services/cloud/door-socket';
 import type { DriveRequest } from '../../../electron/services/cloud/drive';
-import { createDoorClient } from '../../../electron/services/cloud-link/client';
+import { createDoorClient, type StreamEnd } from '../../../electron/services/cloud-link/client';
 
 /**
  * The door's routes from the desktop (docs/superpowers/plans/2026-11-03-tars-cloud-m2.md, Task 7, first half),
@@ -23,6 +23,13 @@ import { createDoorClient } from '../../../electron/services/cloud-link/client';
  * - an answer over 4 MB read whole: cut, as no answer
  * - a call never settling when the door hangs or goes away
  * - the credential sent with hello, or a drive reaching the door without it
+ *
+ * The stream (second half):
+ * - a chunk split across reads, or holding a blank line, cut or merged wrong
+ * - another agent's output delivered
+ * - the door ending it (revoke) read as a drop, or not ending it here at all
+ * - a stream refused at its head left waiting
+ * - onEnd said twice, or a chunk after it
  */
 
 const SERVER_ID = '0123456789abcdef';
@@ -34,11 +41,15 @@ afterEach(async () => {
   for (const s of servers.splice(0)) s.close();
 });
 
-async function setup(opts: { screen?: string } = {}) {
+async function setup(opts: { screen?: string; recheckMs?: number } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-client-'));
   const clientsFile = path.join(dir, 'cloud-clients.json');
   const drives: Array<{ request: DriveRequest; caller: string }> = [];
+  const listeners = new Set<(agentId: string, chunk: string) => void>();
+  const emit = (agentId: string, chunk: string) => { for (const l of listeners) l(agentId, chunk); };
   const door = await startDoor({
+    onOutput: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    recheckMs: opts.recheckMs,
     socketPath: doorSocketPath(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-'))),
     clientsFile,
     identity: () => ({ id: SERVER_ID, name: 'srv1539916', version: '2.0.4' }),
@@ -51,7 +62,13 @@ async function setup(opts: { screen?: string } = {}) {
   });
   doors.push(door);
   const end = { kind: 'unix' as const, path: door.path };
-  return { clientsFile, door, end, drives };
+  return { clientsFile, door, end, drives, emit };
+}
+
+async function until(check: () => boolean, ms = 3000): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (!check() && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  return check();
 }
 
 describe('the door through the client', () => {
@@ -116,5 +133,53 @@ describe('the door through the client', () => {
     const t = await setup({ screen: 'x'.repeat(5 * 1024 * 1024) });
     const { credential } = addClient(t.clientsFile, { name: 'PC (desktop)', kind: 'desktop', scopes: ['see'] });
     expect(await createDoorClient(t.end, credential).screen('nova')).toEqual({ status: 0, body: {} });
+  });
+});
+
+describe('the stream', () => {
+  const ESC = String.fromCharCode(27);
+
+  it("carries its agent's output in order, a chunk split across reads", async () => {
+    const t = await setup();
+    const { credential } = addClient(t.clientsFile, { name: 'PC (desktop)', kind: 'desktop', scopes: ['see'] });
+    const got: string[] = [];
+    const ends: StreamEnd[] = [];
+    const stream = createDoorClient(t.end, credential).stream('nova', chunk => got.push(chunk), how => ends.push(how));
+    expect(await until(() => t.door.streamCount() === 1)).toBe(true);
+    const big = 'y'.repeat(300 * 1024);
+    const sent = ['one ', big, `${ESC}[31mred${ESC}[0m\n\nafter a blank line`];
+    t.emit('nova', sent[0]);
+    t.emit('ghost', 'not this one');
+    t.emit('nova', sent[1]);
+    t.emit('nova', sent[2]);
+    expect(await until(() => got.join('').length >= sent.join('').length)).toBe(true);
+    expect(got.join('')).toBe(sent.join(''));
+    stream.close();
+    stream.close();
+    t.emit('nova', 'after the end');
+    await new Promise(r => setTimeout(r, 50));
+    expect(ends).toEqual([{ reason: 'closed' }]);
+    expect(got.join('')).toBe(sent.join(''));
+  });
+
+  it('revoke ends the open stream', async () => {
+    // Minted after the door started: its next credential check (100 ms here) ends the stream at the latest.
+    const t = await setup({ recheckMs: 100 });
+    const { client, credential } = addClient(t.clientsFile, { name: 'PC (desktop)', kind: 'desktop', scopes: ['see'] });
+    const ends: StreamEnd[] = [];
+    createDoorClient(t.end, credential).stream('nova', () => {}, how => ends.push(how));
+    expect(await until(() => t.door.streamCount() === 1)).toBe(true);
+    expect(revokeClient(t.clientsFile, client.id)).toBe(true);
+    expect(await until(() => ends.length > 0)).toBe(true);
+    expect(ends).toEqual([{ reason: 'revoked' }]);
+  });
+
+  it('a stream refused at its head ends at once with its status', async () => {
+    const t = await setup();
+    const { credential } = addClient(t.clientsFile, { name: 'Hermes', kind: 'outside-agent', scopes: ['create'] });
+    const ends: StreamEnd[] = [];
+    createDoorClient(t.end, credential).stream('nova', () => {}, how => ends.push(how));
+    expect(await until(() => ends.length > 0)).toBe(true);
+    expect(ends).toEqual([{ reason: 'refused', status: 403 }]);
   });
 });
