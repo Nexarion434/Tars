@@ -61,6 +61,11 @@ async function run(command: string | undefined, args: string[]): Promise<number>
     const stdin = args[0] === 'add' ? await readStdin() : '';
     return runClientsCommand(args, stdin, { clientsFile: privatePath('cloud-clients.json'), serverFile }, line => process.stdout.write(`${line}\n`));
   }
+  if (command === 'git') {
+    const { runGitCommand } = await import('./git-command');
+    const stdin = args[0] === 'known-host' ? await readStdin() : '';
+    return runGitCommand(args, stdin, { dir: privatePath('git'), serverId: serverIdentity(serverFile).id }, line => process.stdout.write(`${line}\n`));
+  }
   if (command === 'start') {
     const { detachedEnv, startServer } = await import('./start');
     try {
