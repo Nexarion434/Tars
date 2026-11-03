@@ -4,7 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
-  newProjectPlaces, cloudProjectInput,
+  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown,
 } from '../../src/lib/cloud';
 
 /**
@@ -219,5 +219,49 @@ describe('New project, where it lives (M3)', () => {
     expect(cloudProjectInput({ name: 'my-app', start: 'git', url: ' git@github.com:a/b.git ' })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'git', url: 'git@github.com:a/b.git' } } });
     expect(cloudProjectInput({ name: ' ', start: 'empty', url: '' })).toEqual({ ok: false, error: 'Give the project a name.' });
     expect(cloudProjectInput({ name: 'my-app', start: 'git', url: '  ' })).toEqual({ ok: false, error: "Give the repository's address." });
+  });
+});
+
+/**
+ * M3, the Projects page with a server's projects (frame `Projects · with cloud`).
+ * How it fails, written before the code:
+ * 22. a server's project without its server (badge), with a key a local
+ *     path could take, or its path shown as the server's home instead of ~
+ * 23. its agents counted from another server's, or from another folder
+ * 24. the location filter: Everywhere hiding either side, This Tars showing
+ *     a server's project, a server showing this computer's or another
+ *     server's
+ */
+describe('Projects with a server\'s projects (M3)', () => {
+  const server = { id: 's_1a2b3c4d', serverId: SERVER.serverId, name: 'my-server' };
+  const other = { id: 's_9f8e7d6c', serverId: 'aaaaaaaaaaaaaaaa', name: 'other' };
+  const sets = [
+    { server, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }, { name: 'api', path: '/root/projects/api' }] },
+    { server: other, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }] },
+  ];
+
+  it('rows: the server named, a key of its own, ~ for its home (22), its agents counted (23)', () => {
+    const agents = [
+      remote({ projectPath: '/home/tars/projects/my-app' }),
+      remote({ id: `c:${SERVER.serverId}:a2`, agentId: 'a2', projectPath: '/home/tars/projects/my-app/' }),
+      remote({ id: 'c:aaaaaaaaaaaaaaaa:a3', agentId: 'a3', projectPath: '/home/tars/projects/my-app', server: { ...SERVER, id: other.id, serverId: other.serverId, name: 'other' } }),
+      remote({ id: `c:${SERVER.serverId}:a4`, agentId: 'a4', projectPath: '/home/tars/projects/elsewhere' }),
+    ];
+    expect(cloudProjectRows(sets, agents)).toEqual([
+      { key: `cloud:${SERVER.serverId}:/home/tars/projects/my-app`, name: 'my-app', path: '/home/tars/projects/my-app', shownPath: '~/projects/my-app', server: { id: server.id, name: 'my-server' }, agents: 2 },
+      { key: `cloud:${SERVER.serverId}:/root/projects/api`, name: 'api', path: '/root/projects/api', shownPath: '~/projects/api', server: { id: server.id, name: 'my-server' }, agents: 0 },
+      { key: 'cloud:aaaaaaaaaaaaaaaa:/home/tars/projects/my-app', name: 'my-app', path: '/home/tars/projects/my-app', shownPath: '~/projects/my-app', server: { id: other.id, name: 'other' }, agents: 1 },
+    ]);
+  });
+
+  it('the location filter (24)', () => {
+    const rows = cloudProjectRows(sets, []);
+    expect(projectPlaceShown(ALL_MACHINES, null)).toBe(true);
+    expect(projectPlaceShown(ALL_MACHINES, rows[0])).toBe(true);
+    expect(projectPlaceShown(THIS_MACHINE, null)).toBe(true);
+    expect(projectPlaceShown(THIS_MACHINE, rows[0])).toBe(false);
+    expect(projectPlaceShown(server.id, rows[0])).toBe(true);
+    expect(projectPlaceShown(server.id, rows[2])).toBe(false);
+    expect(projectPlaceShown(server.id, null)).toBe(false);
   });
 });

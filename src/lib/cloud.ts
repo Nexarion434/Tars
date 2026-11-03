@@ -1,4 +1,4 @@
-import type { AgentStatus, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
+import type { AgentStatus, CloudProjectView, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
 
 /**
  * A Tars server's agents on the Dashboard and the Agents page, and what this
@@ -272,4 +272,38 @@ export function cloudProjectInput(form: CloudProjectForm): { ok: true; body: { n
   const url = form.url.trim();
   if (!url) return { ok: false, error: "Give the repository's address." };
   return { ok: true, body: { name, from: { kind: 'git', url } } };
+}
+
+/** A server's project in the Projects page. Frame: `Projects · with cloud`. */
+export interface CloudProjectRow {
+  /** `cloud:<serverId>:<path>`: what hide keeps, which no local path can be. */
+  key: string;
+  name: string;
+  path: string;
+  /** The server's home as ~, as the frame shows it. */
+  shownPath: string;
+  server: { id: string; name: string };
+  agents: number;
+}
+
+/** Each server's projects as rows, its agents counted from the fleet by server and folder (M3). */
+export function cloudProjectRows(
+  sets: Array<{ server: { id: string; serverId: string; name: string }; projects: CloudProjectView[] }>,
+  remote: CloudRemoteAgent[],
+): CloudProjectRow[] {
+  return sets.flatMap(({ server, projects }) => projects.map(p => ({
+    key: `cloud:${server.serverId}:${p.path}`,
+    name: p.name,
+    path: p.path,
+    shownPath: p.path.replace(/^\/home\/[^/]+(?=\/|$)|^\/root(?=\/|$)/, '~'),
+    server: { id: server.id, name: server.name },
+    agents: remote.filter(a => a.server.serverId === server.serverId && folderKey(a.projectPath) === folderKey(p.path)).length,
+  })));
+}
+
+/** Whether a project shows under the location filter: null is this computer's. */
+export function projectPlaceShown(filter: string, row: CloudProjectRow | null): boolean {
+  if (filter === ALL_MACHINES) return true;
+  if (filter === THIS_MACHINE) return row === null;
+  return row !== null && row.server.id === filter;
 }
