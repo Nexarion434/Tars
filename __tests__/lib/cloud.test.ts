@@ -151,7 +151,8 @@ describe('Settings > Cloud', () => {
     // Each error names the field as Settings > Cloud labels it.
     expect(serverInput({ ...docker, host: '  ' })).toMatchObject({ ok: false, error: expect.stringMatching(/server address/) });
     expect(serverInput({ ...docker, container: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/container name/) });
-    expect(serverInput({ ...docker, doorSocket: '' })).toMatchObject({ ok: false, error: expect.stringMatching(/door path/) });
+    // M3 Task 6: on Docker the door path is found for you when the server says it; left empty, it is not sent.
+    expect(serverInput({ ...docker, doorSocket: '  ' })).toEqual({ ok: true, input: { host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true } } });
     const installed = { ...docker, runs: 'command' as const, command: '  node   /srv/tars/electron/dist/server/cli.js ' };
     expect(serverInput(installed)).toEqual({ ok: true, input: { host: 'ubuntu@203.0.113.10', runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] } } });
     expect(serverInput({ ...installed, command: ' ' })).toMatchObject({ ok: false, error: expect.stringMatching(/command/) });

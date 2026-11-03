@@ -1,6 +1,6 @@
 import { oneLine } from '../cloud/fleet-share';
 import { problemSentence, type runServerCommand, type RunResult, type SshProblem } from './remote-run';
-import type { LocalEnd } from './ssh';
+import { remoteSocketProblem, type LocalEnd } from './ssh';
 import { forgetProfile, readLink, saveProfile, type ServerProfile } from './store';
 
 /**
@@ -22,7 +22,7 @@ import { forgetProfile, readLink, saveProfile, type ServerProfile } from './stor
  * fix, and a door refusing the credential (401) is disconnected, not retried.
  */
 
-export type LinkProblem = 'not-started' | 'another-server' | 'no-door' | 'mint-refused' | 'unknown-server';
+export type LinkProblem = 'not-started' | 'another-server' | 'no-door' | 'no-door-on-host' | 'mint-refused' | 'unknown-server';
 export type LinkPhase = 'off' | 'connecting' | 'connected' | 'offline' | 'disconnected' | 'failed';
 
 export interface LinkState {
@@ -96,6 +96,7 @@ function linkSentence(problem: LinkProblem, host: string): string {
     case 'not-started': return `The server on ${host} did not start. Its log is in .tars-private/logs/server.log there.`;
     case 'another-server': return `This is not the server you connected to: ${host} answers as another Tars server. If it was replaced on purpose, forget it here and connect again.`;
     case 'no-door': return `The server on ${host} runs, but its door is not there. Check the door socket path in this server's settings.`;
+    case 'no-door-on-host': return `The server on ${host} runs in Docker and does not say where its door is on the host. Enter the door path under Advanced in Settings > Cloud.`;
     case 'mint-refused': return `The server on ${host} did not give this computer a credential Tars can use.`;
     case 'unknown-server': return 'This server is not in Settings any more.';
   }
@@ -215,8 +216,12 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
       saveProfile(deps.file, linked);
     }
 
-    const remoteSocket = linked.doorSocket ?? (typeof status.json.door === 'string' ? status.json.door : undefined);
-    if (!remoteSocket) return failLink(id, host, 'no-door');
+    // The profile's door path, else the host's path a Docker server says (TARS_DOOR_ON_HOST, M3 Task 6);
+    // on Docker never the container's own path, which the host does not have.
+    const onHost = typeof status.json.doorOnHost === 'string' && !remoteSocketProblem(status.json.doorOnHost) ? status.json.doorOnHost : undefined;
+    const docker = linked.runner.kind === 'docker';
+    const remoteSocket = linked.doorSocket ?? onHost ?? (!docker && typeof status.json.door === 'string' ? status.json.door : undefined);
+    if (!remoteSocket) return failLink(id, host, docker ? 'no-door-on-host' : 'no-door');
     const failForward = (err: unknown) => {
       const problem = (err as { problem?: SshProblem }).problem ?? 'failed';
       set(id, { phase: 'failed', problem, sentence: (err as Error).message });

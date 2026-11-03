@@ -26,6 +26,10 @@ import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
  * - the forward opened, or hello asked, before the checks above
  * - the server's name kept with characters nobody sees (a right-to-left
  *   override making it look like another), shown on every badge and line
+ * - (M3 Task 6) a docker profile with no door path not taking the host's
+ *   path the server says (doorOnHost), taking one that fails the socket
+ *   checks or over the profile's own, or forwarding to the container's own
+ *   path when the server says none (refused, with a sentence, no retry)
  *
  * The link, part 2: the retry owner (Task 6, Review Focus 3).
  *
@@ -195,6 +199,24 @@ describe('connect: mint once', () => {
     const bare = setup({ status: [ok(UP)], 'clients-add': [ok(MINTED)] }, { runner: { kind: 'command', argv: ['node', '/srv/tars/electron/dist/server/cli.js'] }, doorSocket: undefined });
     await bare.link.connect(bare.profile.id);
     expect(bare.forwards.map(f => f.remoteSocket)).toEqual([UP.door]);
+  });
+
+  // M3 Task 6: on Docker, the door path is found for the user when the container says it (TARS_DOOR_ON_HOST).
+  it('a docker profile with no door path takes the host path the server says, and connects nowhere without one', async () => {
+    const onHost = '/home/ubuntu/tars-cloud/home/.tars-private/door.sock';
+    const found = setup({ status: [ok({ ...UP, doorOnHost: onHost })], 'clients-add': [ok(MINTED)] }, { doorSocket: undefined });
+    await found.link.connect(found.profile.id);
+    expect(found.forwards.map(f => f.remoteSocket)).toEqual([onHost]);
+    const own = setup({ status: [ok({ ...UP, doorOnHost: '/elsewhere/door.sock' })], 'clients-add': [ok(MINTED)] });
+    await own.link.connect(own.profile.id);
+    expect(own.forwards.map(f => f.remoteSocket)).toEqual([HOST_SOCKET]);
+    for (const status of [UP, { ...UP, doorOnHost: 'relative/door.sock' }]) {
+      const none = setup({ status: [ok(status)], 'clients-add': [ok(MINTED)] }, { doorSocket: undefined });
+      await none.link.connect(none.profile.id);
+      expect(none.forwards, 'never the container\'s own path').toEqual([]);
+      expect(none.link.state(none.profile.id)).toMatchObject({ phase: 'failed', problem: 'no-door-on-host', sentence: expect.stringMatching(/Advanced/) });
+      expect(none.timers.filter(t => !t.cancelled), 'no retry: the user fixes it').toEqual([]);
+    }
   });
 
   it('an unknown profile fails without ssh', async () => {

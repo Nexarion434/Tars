@@ -85,6 +85,11 @@ describe('saveProfile', () => {
     expect(read.servers[0]).toEqual(PAIRED);
   });
 
+  // M3 Task 6: a Docker server may say where its door is on the host; link.ts refuses to connect when it does not.
+  it('keeps a docker profile with no door path', () => {
+    expect(profileProblem(profile({ doorSocket: undefined }))).toBeNull();
+  });
+
   it('refuses a profile that fails the checks, and writes nothing', () => {
     const f = file();
     for (const bad of [
@@ -92,7 +97,6 @@ describe('saveProfile', () => {
       profile({ host: 'a b' }),
       profile({ runner: { kind: 'docker', container: '-x', sudo: true } }),
       profile({ runner: { kind: 'docker', container: 'tars-server', sudo: 'yes' as unknown as boolean } }),
-      profile({ doorSocket: undefined }),
       profile({ doorSocket: 'door.sock' }),
       profile({ clientId: 'c_10eafeea' }),
       profile({ credential: CREDENTIAL }),

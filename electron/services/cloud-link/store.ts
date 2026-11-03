@@ -68,11 +68,11 @@ export function profileProblem(profile: ServerProfile): string | null {
   if (shape) return shape;
   const problem = hostProblem(profile.host) ?? runnerProblem(profile.runner);
   if (problem) return problem;
+  // A docker profile may leave it out since M3 Task 6: the server may say it (doorOnHost), and
+  // link.ts connects nowhere when it does not, never to the container's own path.
   if (profile.doorSocket !== undefined) {
     const socket = typeof profile.doorSocket === 'string' ? remoteSocketProblem(profile.doorSocket) : 'The door socket path is not text.';
     if (socket) return socket;
-  } else if (profile.runner.kind === 'docker') {
-    return "Enter the path of the server's door socket on the host: inside a container, the server names its own path.";
   }
   if (profile.serverId !== undefined && (typeof profile.serverId !== 'string' || !SERVER_ID.test(profile.serverId))) return 'The server id is not one a Tars server makes.';
   if (profile.name !== undefined && (typeof profile.name !== 'string' || profile.name.length > NAME_MAX)) return 'The server name is too long.';

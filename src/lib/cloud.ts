@@ -227,8 +227,9 @@ export function serverInput(form: ServerForm): { ok: true; input: CloudServerInp
   if (!host) return { ok: false, error: 'Enter the server address: user@server, or a shortcut from your SSH settings.' };
   if (form.runs === 'docker') {
     if (!form.container.trim()) return { ok: false, error: 'Enter the container name in Advanced: the container Tars lives in on your server.' };
-    if (!form.doorSocket.trim()) return { ok: false, error: 'Enter the door path in Advanced: where Tars listens, as the server sees it, not inside the container.' };
-    return { ok: true, input: { host, runner: { kind: 'docker', container: form.container.trim(), sudo: form.sudo }, doorSocket: form.doorSocket.trim() } };
+    // Left empty, it is found for you: a Docker server says where its door is on the host (M3 Task 6).
+    const door = form.doorSocket.trim();
+    return { ok: true, input: { host, runner: { kind: 'docker', container: form.container.trim(), sudo: form.sudo }, ...(door ? { doorSocket: door } : {}) } };
   }
   const argv = form.command.trim().split(/\s+/).filter(Boolean);
   if (argv.length === 0) return { ok: false, error: "Enter the command that runs the server's CLI, for instance node <install>/electron/dist/server/cli.js." };

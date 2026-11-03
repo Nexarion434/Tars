@@ -191,7 +191,7 @@ export const CloudSection = () => {
           <div className="px-4 py-3.5">
             <p data-cloud-advanced-note className="flex items-center gap-2.5 border border-border bg-secondary px-4 py-2.5 text-[12px] text-muted-foreground">
               <span className="h-1.5 w-1.5 shrink-0 bg-muted-foreground" aria-hidden />
-              Filled in for you on the usual Docker setup, except the door path. Change the rest only if your server runs Tars another way.
+              Filled in for you on the usual Docker setup. Change them only if your server runs Tars another way.
             </p>
           </div>
           <SettingsRow
@@ -216,7 +216,7 @@ export const CloudSection = () => {
               <SettingsRow
                 wide
                 label="Door path"
-                description="Where Tars listens on the server, so this computer can reach it. On Docker, the path on the server, not inside the container."
+                description="Where Tars listens on the server, so this computer can reach it. Found for you on Docker."
                 control={<Input mono value={form.doorSocket} onChange={e => set({ doorSocket: e.target.value })} placeholder="/home/<user>/.tars-private/door.sock" aria-label="Door path" />}
               />
             </>
