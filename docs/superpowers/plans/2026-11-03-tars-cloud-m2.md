@@ -173,3 +173,9 @@ Port `remote-fleet.ts` and its 343-line test from `win/machines`: peers become c
 | | **Total** | **about 12.5 hours of work**, plus CI runs, Nicolas's look at the frames, and the real test |
 
 Tasks 1 to 9 need nothing from Nicolas and can run tonight and tomorrow; Task 10 waits for his look before 11 to 13; Task 15's real test is his session.
+
+## Follow-ups (not in M2's tasks)
+
+- **A minted credential this desktop discards is never revoked** (security review 1, nit 5, `link.ts`): the mint's answer is dropped when it comes after Disconnect or Forget, fails the checks (`mint-refused`), or `saveProfile` throws, and the client stays on the server. Revoke it over SSH right away when its id is readable, or say in Settings which client to revoke.
+- **hello with a nonce** (security review 1, nit 3, the stronger fix): the door proves it knows the credential (HMAC of sha256(credential) over the desktop's nonce) before the desktop sends it, so the Windows loopback end no longer rests on ssh holding the port. SECURITY.md §8 says the residual today.
+- **Settings > Cloud after Nicolas's look**: the light copy and a states frame, the frame's header button (drawn "Add a server", built as the section's own first rows), and the surfaces baseline picture once approved.
