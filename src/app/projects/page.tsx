@@ -13,7 +13,7 @@ import NewChatModal from '@/components/NewChatModal';
 import NewProjectDialog from '@/components/NewProjectDialog';
 import { CloudProjectCard } from '@/components/CloudProjectCard';
 import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
-import { activeFilter, ALL_MACHINES, cloudProjectRows, loadCloudProjects, machineFilterOptions, projectPlaceShown } from '@/lib/cloud';
+import { activeFilter, ALL_MACHINES, cloudAgentFromForm, cloudProjectRows, loadCloudProjects, machineFilterOptions, projectPlaceShown, sendWhenRunning } from '@/lib/cloud';
 import { BrandSpinner, Button, DialogShell, Dropdown, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { wakingLine } from '@/lib/asleep-line';
@@ -349,6 +349,27 @@ export default function ProjectsPage() {
     role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
+    // A server's project (M3 Task 9, frame `Overlay · New agent · cloud project`): made and started
+    // on the server, its task typed once its CLI runs.
+    const cloudRow = cloudRows.find(row => row.key === projectPath);
+    if (cloudRow) {
+      const resolved = (model && model !== 'default') ? model : undefined;
+      const checked = cloudAgentFromForm(cloudRow, { skills, prompt, model: resolved, worktree, character, name, permissionMode, provider, effort, role, cliPath });
+      if (!checked.ok) return { error: checked.error };
+      const cloud = window.electronAPI?.cloud;
+      const made = await cloud?.createAgent(checked.serverId, checked.body);
+      if (!made?.success) return { error: made?.error ?? 'Tars servers are not available in this window.' };
+      setShowAgentDialog(false);
+      const serverId = cloudSets.find(set => set.server.id === checked.serverId)?.server.serverId;
+      if (checked.task && made.started && serverId && cloud) {
+        void sendWhenRunning(`c:${serverId}:${made.agent.id}`, checked.task, {
+          agents: () => cloud.agents(),
+          message: (remoteId, text) => cloud.drive(remoteId, 'message', { text }),
+          wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+        });
+      }
+      return;
+    }
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
       const agent = await createAgent({
@@ -942,7 +963,11 @@ export default function ProjectsPage() {
         open={showAgentDialog}
         onClose={() => setShowAgentDialog(false)}
         onSubmit={handleCreateAgent}
-        projects={electronProjects.map(p => ({ path: p.path, name: p.name }))}
+        projects={[
+          ...electronProjects.map(p => ({ path: p.path, name: p.name })),
+          // A server's projects, by their own key, the server named after the project's name.
+          ...cloudRows.map(row => ({ path: row.key, name: `${row.name} (${row.server.name})` })),
+        ]}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
         installedSkills={installedSkills}
         onRefreshSkills={refreshSkills}

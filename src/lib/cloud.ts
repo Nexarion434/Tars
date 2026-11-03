@@ -359,3 +359,29 @@ export function cloudAgentFromForm(project: CloudProjectRow, form: NewAgentForm)
   if (form.character) body.character = form.character;
   return { ok: true, serverId: project.server.id, body, task: form.prompt.trim() || null };
 }
+
+/**
+ * A server's new agent's task, typed once its CLI runs, never into the shell
+ * before it (M3 Task 9): the fleet read until that agent says cliRunning,
+ * then one message, through M2's drive.
+ */
+export async function sendWhenRunning(
+  remoteId: string,
+  task: string,
+  deps: {
+    agents(): Promise<CloudRemoteAgent[]>;
+    message(remoteId: string, text: string): Promise<{ success: boolean; error?: string }>;
+    wait(ms: number): Promise<void>;
+  },
+  opts: { tries?: number; everyMs?: number } = {},
+): Promise<{ sent: true } | { sent: false; error: string }> {
+  for (let i = 0; i < (opts.tries ?? 60); i++) {
+    const agent = (await deps.agents().catch(() => [] as CloudRemoteAgent[])).find(a => a.id === remoteId);
+    if (agent?.cliRunning) {
+      const answer = await deps.message(remoteId, task);
+      return answer.success ? { sent: true } : { sent: false, error: answer.error ?? 'The task was not sent.' };
+    }
+    await deps.wait(opts.everyMs ?? 1000);
+  }
+  return { sent: false, error: 'The agent started, but its CLI did not come up: the task was not sent. Type it in its terminal.' };
+}

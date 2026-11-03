@@ -4,7 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
-  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm,
+  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm, sendWhenRunning,
 } from '../../src/lib/cloud';
 
 /**
@@ -322,5 +322,40 @@ describe('New agent in a server\'s project (M3 Task 9)', () => {
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', cliPath: '/usr/local/bin/claude' })).toMatchObject({ ok: false, error: expect.stringMatching(/CLI/) });
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', role: 'orchestrator' })).toMatchObject({ ok: false, error: expect.stringMatching(/orchestrator/) });
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', worktree: { enabled: false, branchName: '' } })).toMatchObject({ ok: true });
+  });
+});
+
+/**
+ * M3 Task 9, the task of a server's new agent, sent once its CLI runs. Written before the code.
+ * How it fails:
+ * 27. the task typed before the CLI runs (into a bare shell), sent twice,
+ *     sent to another agent, or the wait without end; a refused message not
+ *     said
+ */
+describe('the task of a server\'s new agent (M3 Task 9)', () => {
+  const id = `c:${SERVER.serverId}:a-new`;
+  it('waits for the CLI, then sends the task once, to that agent (27)', async () => {
+    const seen = [[remote({ id, agentId: 'a-new', cliRunning: false })], [remote({ id: `c:${SERVER.serverId}:other`, cliRunning: true }), remote({ id, agentId: 'a-new', cliRunning: false })], [remote({ id, agentId: 'a-new', cliRunning: true })]];
+    const sent: Array<[string, string, number]> = [];
+    let reads = 0;
+    const answer = await sendWhenRunning(id, 'Fix the chart.', {
+      agents: async () => { reads += 1; return seen.shift() ?? []; },
+      message: async (remoteId, text) => { sent.push([remoteId, text, reads]); return { success: true }; },
+      wait: async () => {},
+    }, { tries: 10 });
+    expect(answer).toEqual({ sent: true });
+    // Sent at the third reading, the first where its CLI runs: never while only its shell is there.
+    expect(sent).toEqual([[id, 'Fix the chart.', 3]]);
+  });
+
+  it('gives up after its tries, and says a refused message (27)', async () => {
+    const never = await sendWhenRunning(id, 'x', { agents: async () => [], message: async () => ({ success: true }), wait: async () => {} }, { tries: 3 });
+    expect(never).toEqual({ sent: false, error: 'The agent started, but its CLI did not come up: the task was not sent. Type it in its terminal.' });
+    const refused = await sendWhenRunning(id, 'x', {
+      agents: async () => [remote({ id, agentId: 'a-new', cliRunning: true })],
+      message: async () => ({ success: false, error: 'This agent has no terminal running.' }),
+      wait: async () => {},
+    }, { tries: 3 });
+    expect(refused).toEqual({ sent: false, error: 'This agent has no terminal running.' });
   });
 });
