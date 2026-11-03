@@ -23,7 +23,8 @@ import { DEV_URL, apiPort } from './ports.mjs';
  * 4. Stop asks why, and the server files the reason.
  * 5. The server process goes away: the pane says the server is offline since
  *    when, and its last output stays.
- * 6. The server is back: the offline line goes.
+ * 6. The server is back: the offline line goes, and the agent started again
+ *    is live in the same pane.
  * 7. Settings > Cloud says where the server is, how it runs, and its link.
  * Leaves values.json and a picture per step in its run directory.
  *   E2E_PORT_OFFSET=40 npx playwright test e2e/cloud-see-drive.spec.ts
@@ -193,6 +194,17 @@ test("a tars server's agent on the dashboard: live, typed into, stopped with a r
     running = await startServer(server.home);
     await expect(offline).toHaveCount(0, { timeout: 30_000 });
     values.backOnline = true;
+    // Live again: the agent started anew, its ticks run on in the same pane
+    // (the pane takes the server's fresh screen first, which may replace the old one).
+    const lastTick = async () => ticksIn(await rows.innerText()).at(-1) ?? -1;
+    const stale = await lastTick();
+    await page.getByTitle('Start claude in this terminal').first().click({ timeout: 30_000 });
+    await expect.poll(async () => (await agentOnServer())?.cliRunning, { timeout: 30_000, message: 'the server runs its agent again' }).toBe(true);
+    await expect.poll(async () => { const now = await lastTick(); return now !== stale ? now : -1; }, { timeout: 30_000, message: 'a new tick in the same pane' }).toBeGreaterThan(0);
+    const resumed = await lastTick();
+    await expect.poll(lastTick, { timeout: 15_000, message: 'and more after it' }).toBeGreaterThan(resumed);
+    values.liveAgainAfterRestart = { resumedAt: resumed, then: await lastTick() };
+    await stepShot(page, '05b-live-again');
     await stepShot(page, '05-the-server-back');
 
     // 7. Settings > Cloud: the server, how it runs and its link in words.

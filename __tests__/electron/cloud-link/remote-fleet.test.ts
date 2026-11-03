@@ -36,6 +36,8 @@ import { MAX_KEYS } from '../../../electron/services/cloud/drive';
  * 13. a stream the door ended for a revoke opened again
  * 14. keys that keep going after the first failure of their burst
  * 15. an outside-agent ceiling on keys (the door's 403) not read as the server's sentence
+ * 16. a watched pane whose stream ended while its server was offline never
+ *    opened again once the server is back, or opened more than once
  */
 
 const VPS: CloudServer = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916' };
@@ -230,6 +232,43 @@ describe('watching', () => {
     clock += 3_000;
     runTimers();
     expect(opened).toHaveLength(2);
+  });
+
+  it('16. reattaches a watched pane once after offline', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    fleet.watch(rid(VPS, 'a1'));
+    phases.set(VPS.id, 'offline');
+    opened[0].onEnd({ reason: 'dropped' });
+    for (let i = 0; i < 3; i++) { clock += 3_000; runTimers(); }
+    expect(opened).toHaveLength(1);
+    phases.delete(VPS.id);
+    clock += 3_000;
+    runTimers();
+    expect(opened).toHaveLength(2);
+    for (let i = 0; i < 3; i++) { clock += 3_000; runTimers(); }
+    expect(opened).toHaveLength(2);
+    await settle();
+    expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1']]);
+    // A pane closed while its server was away opens nothing when it is back.
+    fleet.watch(rid(VPS, 'a2'));
+    phases.set(VPS.id, 'offline');
+    opened[2].onEnd({ reason: 'dropped' });
+    fleet.unwatch(rid(VPS, 'a2'));
+    phases.delete(VPS.id);
+    for (let i = 0; i < 3; i++) { clock += 3_000; runTimers(); }
+    expect(opened).toHaveLength(3);
+  });
+
+  it('16. a stream refused while its server comes back up (not a 401) is opened again', async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    fleet.watch(rid(VPS, 'a1'));
+    opened[0].onEnd({ reason: 'refused', status: 404 });
+    clock += 3_000;
+    runTimers();
+    expect(opened).toHaveLength(2);
+    expect(refused).toEqual([]);
   });
 
   it('12 and 13. a stream the door ended for a revoke, or refused 401, is told to the link and not opened again', async () => {

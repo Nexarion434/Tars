@@ -157,11 +157,23 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     }
   }
 
+  /** Opens a watched pane's stream again later, once, unless that pane has gone and another watches since. */
+  function openLater(remoteId: string, w: Watched, serverId: string, agentId: string): void {
+    if (watched.get(remoteId) !== w || w.count === 0 || w.retry) return;
+    w.retry = true;
+    later(() => {
+      w.retry = false;
+      if (watched.get(remoteId) === w) open(remoteId, serverId, agentId, true);
+    }, deps.retryMs ?? 3_000);
+  }
+
   function open(remoteId: string, serverId: string, agentId: string, again = false): void {
     const w = watched.get(remoteId);
     const server = serverOf(serverId);
-    const client = server && clientOf(server);
-    if (!w || w.count === 0 || stopped || !server || !client) return;
+    if (!w || w.count === 0 || stopped || !server) return;
+    const client = clientOf(server);
+    // Its server's link is down: the pane is opened again once it is back.
+    if (!client) return openLater(remoteId, w, serverId, agentId);
     const relay = (chunk: string) => { if (watched.get(remoteId) === w && w.count > 0) deps.onOutput(remoteId, chunk); };
     // Opened again after an end: what the pane missed comes back as the
     // screen, drawn first, and what the stream brings waits behind it.
@@ -173,14 +185,11 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
       ended = true;
       if (w.stream === stream) w.stream = null;
       if (how.reason === 'revoked' || (how.reason === 'refused' && how.status === 401)) return deps.refused(server.id);
-      if (how.reason === 'refused' || how.reason === 'closed') return;
-      if (watched.get(remoteId) === w && w.count > 0 && !w.retry) {
-        w.retry = true;
-        later(() => {
-          w.retry = false;
-          if (watched.get(remoteId) === w) open(remoteId, serverId, agentId, true);
-        }, deps.retryMs ?? 3_000);
-      }
+      if (how.reason === 'closed') return;
+      // Any other refusal (an agent not loaded yet by a server coming back
+      // up, too many streams) is tried again while a pane watches: a pane
+      // whose agent is gone for good is unwatched when the fleet drops it.
+      openLater(remoteId, w, serverId, agentId);
     });
     if (!ended) w.stream = stream;
     if (held) {
