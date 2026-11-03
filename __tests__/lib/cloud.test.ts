@@ -4,6 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
+  newProjectPlaces, cloudProjectInput,
 } from '../../src/lib/cloud';
 
 /**
@@ -184,5 +185,39 @@ describe('driving', () => {
     expect(shouldSendSize({ cols: 120, rows: 40 }, { cols: 80.5, rows: 40 })).toBe(false);
     expect(fleetMatchesSent({ cols: 120, rows: 40 }, { cols: 120, rows: 40 })).toBe(true);
     expect(fleetMatchesSent({ cols: 120, rows: 40 }, undefined)).toBe(false);
+  });
+});
+
+/**
+ * M3 Task 8, New project from this computer (frames `Overlay · New project · where`, `· from Git`, `· name taken`).
+ * How it fails, written before the code:
+ * 20. a server offered as a place that is not connected, or offered without
+ *     the line the frame gives it (connected · <host>); This computer not
+ *     first, or missing
+ * 21. a form sent with no name, or a Git start with no address, instead of
+ *     a sentence; a name or an address sent with spaces around it; fields
+ *     the door does not take sent along (the server checks the name and the
+ *     address again: it is the one authority)
+ */
+describe('New project, where it lives (M3)', () => {
+  it('offers this computer first, then the connected servers only (20)', () => {
+    const servers = [
+      view({ id: 's_1a2b3c4d', name: 'my-server', host: 'user@server', state: { phase: 'connected' } }),
+      view({ id: 's_2b3c4d5e', name: 'old', host: 'user@old', state: { phase: 'offline' } }),
+      view({ id: 's_3c4d5e6f', name: undefined, host: 'user@third', state: { phase: 'connected' } }),
+    ];
+    expect(newProjectPlaces(servers)).toEqual([
+      { id: 'local', label: 'This computer', line: 'a folder you pick' },
+      { id: 's_1a2b3c4d', label: 'my-server', line: 'connected · user@server' },
+      { id: 's_3c4d5e6f', label: 'user@third', line: 'connected · user@third' },
+    ]);
+    expect(newProjectPlaces([])).toEqual([{ id: 'local', label: 'This computer', line: 'a folder you pick' }]);
+  });
+
+  it('turns the form into what the door takes, or says what is missing (21)', () => {
+    expect(cloudProjectInput({ name: '  my-app ', start: 'empty', url: 'ignored' })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'empty' } } });
+    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: ' git@github.com:a/b.git ' })).toEqual({ ok: true, body: { name: 'my-app', from: { kind: 'git', url: 'git@github.com:a/b.git' } } });
+    expect(cloudProjectInput({ name: ' ', start: 'empty', url: '' })).toEqual({ ok: false, error: 'Give the project a name.' });
+    expect(cloudProjectInput({ name: 'my-app', start: 'git', url: '  ' })).toEqual({ ok: false, error: "Give the repository's address." });
   });
 });

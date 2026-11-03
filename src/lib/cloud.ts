@@ -248,3 +248,28 @@ export function shouldSendSize(last: { cols: number; rows: number }, next: { col
 export function fleetMatchesSent(sent: { cols: number; rows: number }, fleet: { cols?: number; rows?: number } | undefined): boolean {
   return !!fleet && isSize(fleet.cols) && isSize(fleet.rows) && fleet.cols === sent.cols && fleet.rows === sent.rows;
 }
+
+/** A place a new project can live in: this computer, or a connected server. Frame: `Overlay · New project · where`. */
+export interface ProjectPlace { id: string; label: string; line: string }
+
+export const LOCAL_PLACE = 'local';
+
+/** This computer first, then each connected server, as the frame lists them (M3 Task 8). */
+export function newProjectPlaces(servers: CloudServerView[]): ProjectPlace[] {
+  return [
+    { id: LOCAL_PLACE, label: 'This computer', line: 'a folder you pick' },
+    ...servers.filter(s => s.state.phase === 'connected').map(s => ({ id: s.id, label: s.name ?? s.host, line: `connected · ${s.host}` })),
+  ];
+}
+
+export interface CloudProjectForm { name: string; start: 'empty' | 'git'; url: string }
+
+/** The form as the door takes it, or what it lacks. The server checks the name and the address again: it is the one authority. */
+export function cloudProjectInput(form: CloudProjectForm): { ok: true; body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string } } } | { ok: false; error: string } {
+  const name = form.name.trim();
+  if (!name) return { ok: false, error: 'Give the project a name.' };
+  if (form.start === 'empty') return { ok: true, body: { name, from: { kind: 'empty' } } };
+  const url = form.url.trim();
+  if (!url) return { ok: false, error: "Give the repository's address." };
+  return { ok: true, body: { name, from: { kind: 'git', url } } };
+}
