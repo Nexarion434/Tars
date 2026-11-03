@@ -12,6 +12,7 @@
 // `ssh` would, says so on stderr as `ssh -v` does, and pipes each connection
 // to 127.0.0.1:FAKE_SSH_FORWARD_TO (the test's door). A local end it cannot
 // take ends it as ExitOnForwardFailure does. FAKE_SSH_HANG keeps it silent.
+// FAKE_SSH_FOREIGN_FORWARD says another forward listens before trying ours.
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- a fake ssh run by node is CommonJS
 const fs = require('fs');
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- the same
@@ -33,6 +34,8 @@ function forward() {
     door.on('error', () => socket.destroy());
     socket.on('error', () => door.destroy());
   });
+  // A forward of the user's ssh config, bound beside ours: its line comes first.
+  if (env.FAKE_SSH_FOREIGN_FORWARD === '1') process.stderr.write('debug1: Local forwarding listening on 127.0.0.1 port 1.\r\n');
   server.on('error', err => {
     process.stderr.write(`bind ${spec}: ${err.code === 'EADDRINUSE' ? 'Address already in use' : err.message}\r\nCould not request local forwarding.\r\n`);
     process.exit(255);

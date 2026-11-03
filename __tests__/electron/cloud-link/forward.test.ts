@@ -22,6 +22,9 @@ import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
  * - `ssh` ends before the forward is ready (ExitOnForwardFailure: the port or
  *   the socket taken): ready rejects, the connect fails, nothing is left running
  * - ready never comes (a hung connection): killed at the timeout
+ * - ready taken from another forward's line (a LocalForward of the user's
+ *   ssh config, bound while ours failed): hello and the credential would go
+ *   to a port ssh does not hold (security review 1, nit 1)
  * - a stale socket in our own folder left in the way; anything else at that
  *   path removed (it is not ours)
  * - the door missing behind the forward (a wrong door socket path): read as
@@ -126,6 +129,17 @@ describe('openForward', () => {
     expect(error).toBeInstanceOf(ForwardError);
     expect((error as Error).message).toMatch(/taken|forward/i);
     expect((await forward.ended).code).toBe(255);
+  });
+
+  it("another forward's listening line is not ours: ready waits for our end, and ours failing ends it", async () => {
+    const taken = net.createServer();
+    await new Promise<void>(resolve => taken.listen(0, '127.0.0.1', resolve));
+    cleanup.push(() => taken.close());
+    const port = (taken.address() as net.AddressInfo).port;
+    const forward = openForward('tars-vps', { kind: 'tcp', port }, REMOTE, { ssh: FAKE_SSH, env: { ...process.env, FAKE_SSH_FORWARD_TO: '1', FAKE_SSH_FOREIGN_FORWARD: '1' } });
+    const error = await forward.ready.then(() => null, (err: unknown) => err);
+    expect(error).toBeInstanceOf(ForwardError);
+    expect((await forward.ended).stderr).toContain('listening on 127.0.0.1 port 1.');
   });
 
   it('a forward never ready is killed at its timeout', async () => {
