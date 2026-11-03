@@ -56,3 +56,4 @@ export { installerAssetFor, offersUpdate } from './update-feed';
 export { gitCommand, currentFolderLookupsOff } from './git-command';
 export { nodeMissing } from './node-check';
 export { localForwardEnd, type LocalForwardEnd } from './local-forward';
+export { sshClient } from './ssh-client';

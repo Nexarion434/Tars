@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { sshClient } from '../../../electron/platform/ssh-client';
 import {
   hostProblem, runnerProblem, remoteWords, sshCommandArgv, sshForwardArgv, spawnSsh,
   type ServerCommand, type ServerRunner,
@@ -187,5 +188,13 @@ describe('spawnSsh', () => {
     const code = await new Promise(resolve => child.on('exit', resolve));
     expect(code).toBe(0);
     expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual(argv);
+  });
+
+  // Windows' own OpenSSH, not the first `ssh` on the PATH (platform/ssh-client.ts).
+  it('with no ssh given, runs the client the platform names', async () => {
+    const child = spawnSsh(['-V'], { stdio: 'ignore' });
+    child.on('error', () => {});
+    expect(child.spawnfile).toBe(sshClient());
+    await new Promise(resolve => { child.on('close', resolve); child.on('error', resolve); });
   });
 });

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess, type StdioOptions } from 'child_process';
 import type { LocalForwardEnd } from '../../platform/local-forward';
+import { sshClient } from '../../platform/ssh-client';
 
 /**
  * The desktop's `ssh` calls to a Tars server (docs/superpowers/plans/2026-11-03-tars-cloud-m2.md).
@@ -138,7 +139,7 @@ export function sshForwardArgv(host: string, end: LocalEnd, remoteSocket: string
 }
 
 export interface SpawnSshOptions {
-  /** The `ssh` to run, and arguments before the call's own (tests run a fake). Default: `ssh` on PATH. */
+  /** The `ssh` to run, and arguments before the call's own (tests run a fake). Default: the platform's (platform/ssh-client.ts). */
   ssh?: { file: string; args: string[] };
   env?: NodeJS.ProcessEnv;
   stdio?: StdioOptions;
@@ -146,7 +147,7 @@ export interface SpawnSshOptions {
 
 /** Starts `ssh` with `argv` as they are: no shell on the desktop reads them again. */
 export function spawnSsh(argv: string[], opts: SpawnSshOptions = {}): ChildProcess {
-  const ssh = opts.ssh ?? { file: 'ssh', args: [] };
+  const ssh = opts.ssh ?? { file: sshClient(), args: [] };
   return spawn(ssh.file, [...ssh.args, ...argv], {
     shell: false,
     windowsHide: true,
