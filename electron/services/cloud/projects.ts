@@ -170,10 +170,13 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
   const target = path.join(root, name);
   // The name was checked; this holds whatever a later change to the checks lets through.
   if (!isUnder(target, root)) return { ok: false, status: 400, error: 'This name would leave the projects folder.' };
-  // lstat, not exists: a dangling link at the name is something there too.
-  let taken = true;
-  try { fs.lstatSync(target); } catch { taken = false; }
-  if (taken) return { ok: false, status: 409, error: `A project named "${name}" is already on this server.` };
+  // The folder reserved at once, before anything awaits (security review 1, N4): a second request for the
+  // name is refused here, so a cleanup below only ever removes this call's own folder. mkdir fails on
+  // anything there, a dangling link included; git clones into an empty folder.
+  try { fs.mkdirSync(target); } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return { ok: false, status: 409, error: `A project named "${name}" is already on this server.` };
+    return { ok: false, status: 500, error: `Tars could not make the folder ${target}: ${(err as Error).message}` };
+  }
 
   const git = deps.git ?? defaultGit;
   const timeout = deps.timeoutMs ?? 10 * 60_000;
@@ -182,7 +185,6 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
 
   if (from.kind === 'empty') {
     try {
-      fs.mkdirSync(target);
       await git(target, ['init', '--quiet'], { timeout: 60_000, signal: abort.signal });
       return { ok: true, path: target };
     } catch (err) {
@@ -196,9 +198,9 @@ export async function createProject(name: string, from: ProjectFrom, deps: Proje
   let sshOptions: string[] = [];
   if (overSsh) {
     const key = await gitKey(deps.gitAccess);
-    if (!key.ok) return { ok: false, status: 500, error: key.error };
+    if (!key.ok) { removeTarget(); return { ok: false, status: 500, error: key.error }; }
     const hosts = ensureKnownHosts(deps.gitAccess);
-    if (!hosts.ok) return { ok: false, status: 500, error: hosts.error };
+    if (!hosts.ok) { removeTarget(); return { ok: false, status: 500, error: hosts.error }; }
     // After safeGit's own core.sshCommand=ssh: the last -c wins.
     sshOptions = ['-c', `core.sshCommand=${gitSshCommand(deps.gitAccess)}`];
   }

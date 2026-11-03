@@ -52,6 +52,8 @@ const fakeGit = (behave: 'ok' | 'fail' | 'hang' | 'grow' = 'ok'): GitRunner => a
   calls.push({ cwd, args });
   if (args[0] === 'init') return { stdout: '', stderr: '' };
   const dir = path.join(cwd, args[args.length - 1]);
+  // As git: a clone into a folder that is not empty fails.
+  if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) throw Object.assign(new Error('exit 128'), { stderr: `fatal: destination path '${args[args.length - 1]}' already exists and is not an empty directory.\n` });
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
   if (behave === 'fail') throw Object.assign(new Error('exit 128'), { stderr: 'Cloning into x...\nfatal: repository not found\n' });
   if (behave === 'hang') throw Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM', stderr: '' });
@@ -157,6 +159,16 @@ describe('createProject', () => {
     expect(calls).toEqual([{ cwd: root, args: ['-c', `core.sshCommand=${gitSshCommand(gitAccess)}`, 'clone', '--no-recurse-submodules', '--depth', '1', '--', 'git@github.com:Nexarion434/Tars.git', 'tars'] }]);
     expect(fs.existsSync(path.join(gitAccess.dir, 'id_ed25519.pub'))).toBe(true);
     expect(fs.readFileSync(path.join(gitAccess.dir, 'known_hosts'), 'utf8')).toContain('github.com ssh-ed25519 ');
+  });
+
+  // Security review 1, N4, written before the code: two requests for one name both passed the check before
+  // git ran, and the loser's cleanup removed the winner's folder.
+  it('10. two clones of one name at once: one is refused, and the other keeps its folder', async () => {
+    const from = { kind: 'git' as const, trusted: true as const, by: 'PC-Nicolas', url: 'git@github.com:a/b' };
+    const answers = await Promise.all([1, 2].map(() => createProject('twin', from, { root, git: fakeGit(), gitAccess: access(), trustFile })));
+    expect(answers.map(a => a.ok).sort()).toEqual([false, true]);
+    expect(answers.find(a => !a.ok)).toMatchObject({ status: 409 });
+    expect(fs.existsSync(path.join(root, 'twin', 'README.md'))).toBe(true);
   });
 
   it('8. a host the server does not know, or a key it may not use, is said so, and leaves no folder', async () => {
