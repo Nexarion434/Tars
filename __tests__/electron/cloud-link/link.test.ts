@@ -24,6 +24,8 @@ import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
  * - Forget leaving the profile when the server cannot be reached, or not
  *   saying the credential is still valid there
  * - the forward opened, or hello asked, before the checks above
+ * - the server's name kept with characters nobody sees (a right-to-left
+ *   override making it look like another), shown on every badge and line
  *
  * The link, part 2: the retry owner (Task 6, Review Focus 3).
  *
@@ -151,6 +153,14 @@ describe('connect: mint once', () => {
     t.link.disconnect(t.profile.id);
     await t.link.connect(t.profile.id);
     expect(t.did().filter(d => d === 'clients-add')).toHaveLength(1);
+  });
+
+  it("keeps the server's name as it shows: no control or format character, one line", async () => {
+    const RLO = String.fromCharCode(0x202e);
+    const ZWSP = String.fromCharCode(0x200b);
+    const t = setup({ status: [ok({ ...UP, name: `srv${RLO}61935${ZWSP}15\n1\u0007` })], 'clients-add': [ok(MINTED)] });
+    await t.link.connect(t.profile.id);
+    expect(readLink(t.file).servers[0].name).toBe('srv6193515 1');
   });
 
   it('a mint answer missing a field, or naming another server, is refused and nothing is saved', async () => {

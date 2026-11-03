@@ -21,6 +21,9 @@ import type { DoorClient } from '../../../electron/services/cloud-link/client';
  * - the window setting a profile's credential, server id or client id
  * - a profile's host changed under its credential
  * - the E2E's direct route (no ssh) taken by a packaged app
+ * - a client's name, kind or note shown with characters nobody sees, or a
+ *   list of scopes without end
+ * - a server's name kept with them (link.test.ts)
  */
 
 const SERVER_ID = 'd795d0ff4d5d8e50';
@@ -69,7 +72,7 @@ function setup() {
     if (!handler) throw new Error(`no handler for ${channel}`);
     return handler({}, ...args);
   };
-  return { file, call, sent, runs, forwards, timers, service, handlers };
+  return { file, call, sent, runs, forwards, timers, service, handlers, answers };
 }
 
 const docker = { host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
@@ -118,6 +121,20 @@ describe('window.electronAPI.cloud', () => {
     expect(await t.call('cloud:save', { ...docker, id: saved.id, host: 'evil@203.0.113.9' })).toMatchObject({ success: false });
     expect(await t.call('cloud:save', { ...docker, id: saved.id, runner: { kind: 'docker', container: 'tars-2', sudo: false } })).toEqual({ success: true, id: saved.id });
     expect(readLink(t.file).servers[0]).toMatchObject({ host: docker.host, credential: CREDENTIAL, runner: { container: 'tars-2' } });
+  });
+
+  it("the server's clients reach the window as they show: no control or format character, a few scopes", async () => {
+    const t = setup();
+    const RLO = String.fromCharCode(0x202e);
+    const BEL = String.fromCharCode(7);
+    t.answers['clients-list'] = { ok: true, json: { clients: [{
+      id: 'c_10eafeea', name: `PC${RLO}-Nicolas\nevil${BEL}`, kind: `desk${BEL}top`, scopes: [...Array(40)].map((_, i) => `s${i}${RLO}`),
+      createdAt: '2026-11-03T00:00:00.000Z', mintedVia: `ssh${RLO} from 100.64.0.9`,
+    }] } };
+    const saved = await t.call('cloud:save', docker) as { success: true; id: string };
+    const answer = await t.call('cloud:clients', saved.id) as { success: true; clients: Array<Record<string, unknown>> };
+    expect(answer.clients[0]).toMatchObject({ name: 'PC-Nicolas evil', kind: 'desktop', mintedVia: 'ssh from 100.64.0.9' });
+    expect(answer.clients[0].scopes).toEqual(['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']);
   });
 
   it('nothing sent to the window holds the credential, the socket path or a host key', async () => {

@@ -1,3 +1,4 @@
+import { oneLine } from '../cloud/fleet-share';
 import { problemSentence, type runServerCommand, type RunResult, type SshProblem } from './remote-run';
 import type { LocalEnd } from './ssh';
 import { forgetProfile, readLink, saveProfile, type ServerProfile } from './store';
@@ -205,7 +206,8 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
       if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId) || typeof credential !== 'string' || !CREDENTIAL.test(credential) || mintedFor !== serverId) {
         return failLink(id, host, 'mint-refused');
       }
-      const name = typeof status.json.name === 'string' ? status.json.name.slice(0, 120) : undefined;
+      // Shown on every badge, filter and line: as the window may show it.
+      const name = oneLine(status.json.name, 120);
       linked = { ...profile, serverId, ...(name ? { name } : {}), clientId, credential };
       saveProfile(deps.file, linked);
     } else if (linked.serverId === undefined) {

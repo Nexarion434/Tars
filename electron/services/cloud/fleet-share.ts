@@ -50,6 +50,11 @@ const UNSHOWN = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\p{Cf}]/gu;
 const text = (value: unknown, max: number): string | undefined =>
   typeof value === 'string' && value !== '' ? value.replace(UNSHOWN, '').slice(0, max) || undefined : undefined;
 
+/** A string from the other side as a window may show it on one line: bounded, cleaned as above, its spaces folded. */
+export function oneLine(value: unknown, max: number): string | undefined {
+  return text(value, max)?.replace(/\s+/g, ' ').trim() || undefined;
+}
+
 const isSize = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 1000;
 
 /** The project's folder name, from a macOS, Linux or Windows path. */

@@ -1,4 +1,5 @@
 import { localForwardEnd } from '../platform/local-forward';
+import { oneLine } from '../services/cloud/fleet-share';
 import { createDoorClient, type DoorClient, type DriveAction } from '../services/cloud-link/client';
 import { openForward } from '../services/cloud-link/forward';
 import { createCloudLink, type ForwardFactory } from '../services/cloud-link/link';
@@ -97,15 +98,19 @@ function runnerOf(input: unknown): ServerRunner {
   return { kind: 'command', argv: Array.isArray(runner.argv) ? runner.argv.map(String) : [] };
 }
 
-/** One client of the server as the window shows it: named fields only, never a hash. */
+/** More than a client holds (see, drive, create, files). */
+const MAX_SCOPES = 8;
+
+/** One client of the server as the window shows it: named fields only, never a hash, each as a window may show it. */
 function clientView(item: unknown): Array<Record<string, unknown>> {
   const source = (item ?? {}) as Record<string, unknown>;
   if (typeof source.id !== 'string' || !CLIENT_ID.test(source.id)) return [];
   const view: Record<string, unknown> = { id: source.id };
   for (const key of ['name', 'kind', 'createdAt', 'expiresAt', 'mintedVia']) {
-    if (typeof source[key] === 'string') view[key] = (source[key] as string).slice(0, 200);
+    const shown = oneLine(source[key], 200);
+    if (shown !== undefined) view[key] = shown;
   }
-  view.scopes = Array.isArray(source.scopes) ? source.scopes.filter(s => typeof s === 'string') : [];
+  view.scopes = (Array.isArray(source.scopes) ? source.scopes : []).slice(0, MAX_SCOPES).flatMap(s => oneLine(s, 20) ?? []);
   return [view];
 }
 
