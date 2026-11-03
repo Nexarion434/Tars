@@ -211,7 +211,10 @@ describe('connect: mint once', () => {
     const own = setup({ status: [ok({ ...UP, doorOnHost: '/elsewhere/door.sock' })], 'clients-add': [ok(MINTED)] });
     await own.link.connect(own.profile.id);
     expect(own.forwards.map(f => f.remoteSocket)).toEqual([HOST_SOCKET]);
-    for (const status of [UP, { ...UP, doorOnHost: 'relative/door.sock' }]) {
+    // Security review 1, N1, written before the code: code in the container names any socket of the host
+    // (the host's docker socket is root there); only a door in a private folder is taken.
+    for (const status of [UP, { ...UP, doorOnHost: 'relative/door.sock' }, { ...UP, doorOnHost: '/var/run/docker.sock' },
+      { ...UP, doorOnHost: '/home/ubuntu/tars-cloud/home/door.sock' }, { ...UP, doorOnHost: '/run/user/1000/.tars-private/agent.sock' }]) {
       const none = setup({ status: [ok(status)], 'clients-add': [ok(MINTED)] }, { doorSocket: undefined });
       await none.link.connect(none.profile.id);
       expect(none.forwards, 'never the container\'s own path').toEqual([]);

@@ -219,7 +219,10 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
 
     // The profile's door path, else the host's path a Docker server says (TARS_DOOR_ON_HOST, M3 Task 6);
     // on Docker never the container's own path, which the host does not have.
-    const onHost = typeof status.json.doorOnHost === 'string' && !remoteSocketProblem(status.json.doorOnHost) ? status.json.doorOnHost : undefined;
+    // Only a door in a private folder (security review 1, N1): code in the container writes what status says, and must
+    // not choose another socket of the host, its docker socket least of all.
+    const said = status.json.doorOnHost;
+    const onHost = typeof said === 'string' && !remoteSocketProblem(said) && said.endsWith('/.tars-private/door.sock') ? said : undefined;
     const docker = linked.runner.kind === 'docker';
     const remoteSocket = linked.doorSocket ?? onHost ?? (!docker && typeof status.json.door === 'string' ? status.json.door : undefined);
     if (!remoteSocket) return failLink(id, host, docker ? 'no-door-on-host' : 'no-door');
