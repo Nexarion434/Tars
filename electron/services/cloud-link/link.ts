@@ -77,7 +77,8 @@ const SERVER_ID = /^[0-9a-f]{16}$/;
 const CLIENT_ID = /^c_[0-9a-f]{8}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 /** What this desktop may do on its server in M2. */
-const DESKTOP_SCOPES = ['see', 'drive'];
+// M3, Nicolas's decision 3: a new device may create; an existing one gets it only by Forget then Connect.
+const DESKTOP_SCOPES = ['see', 'drive', 'create'];
 const RETRY_FIRST_MS = 2_000;
 const RETRY_CAP_MS = 5 * 60_000;
 /** A link that held this long starts its next backoff over. */

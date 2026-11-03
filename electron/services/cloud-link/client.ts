@@ -32,6 +32,9 @@ export interface DoorClient extends LinkClient {
   fleet(): Promise<DoorAnswer>;
   screen(agentId: string): Promise<DoorAnswer>;
   drive(agentId: string, action: DriveAction, body: Record<string, unknown>): Promise<DoorAnswer>;
+  createProject(body: Record<string, unknown>): Promise<DoorAnswer>;
+  createAgent(body: Record<string, unknown>): Promise<DoorAnswer>;
+  gitKey(): Promise<DoorAnswer>;
   /** One agent's live output: onOpen once the door answered 200, each chunk in order, then onEnd once, and nothing after it. */
   stream(agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, opts?: { idleMs?: number; onOpen?: () => void }): { close(): void };
 }
@@ -194,5 +197,20 @@ export function createDoorClient(end: LocalForwardEnd, credential?: string): Doo
       return request(end, 'POST', agentPath(agentId, action), { credential, body, timeoutMs: action === 'start' ? START_TIMEOUT_MS : TIMEOUT_MS });
     },
     stream: (agentId, onChunk, onEnd, opts = {}) => openStream(end, credential, agentId, onChunk, onEnd, opts.idleMs ?? STREAM_IDLE_MS, opts.onOpen),
+    // M3: a project or an agent made on the server, and its git key (the door's `create` routes).
+    createProject: body => createRequest(end, '/cloud/v1/projects', body, credential, CLONE_TIMEOUT_MS),
+    createAgent: body => createRequest(end, '/cloud/v1/agents', body, credential, START_TIMEOUT_MS),
+    gitKey: () => request(end, 'GET', '/cloud/v1/git-key', { credential }),
   };
+}
+
+/** A clone of 2 GB at most, which the server stops at 10 min: a little more here. */
+const CLONE_TIMEOUT_MS = 11 * 60_000;
+
+/** A create body, refused here past the door's 64 KB, as a drive body is. */
+function createRequest(end: LocalForwardEnd, urlPath: string, body: Record<string, unknown>, credential: string | undefined, timeoutMs: number): Promise<DoorAnswer> {
+  if (Buffer.byteLength(JSON.stringify(body)) > BODY_MAX) {
+    return Promise.resolve({ status: 413, body: { error: `A request carries ${BODY_MAX / 1024} KB at most: this one was not sent.` } });
+  }
+  return request(end, 'POST', urlPath, { credential, body, timeoutMs });
 }

@@ -30,6 +30,9 @@ import { createDoorClient, type StreamEnd } from '../../../electron/services/clo
  * - the door ending it (revoke) read as a drop, or not ending it here at all
  * - a stream refused at its head left waiting
  * - onEnd said twice, or a chunk after it
+ * - (M3 Task 7) a project or an agent not made through the door's create
+ *   routes, the git key not read, a create body over 64 KB sent anyway, a
+ *   403 for a client without create read as anything but a refusal
  */
 
 const SERVER_ID = '0123456789abcdef';
@@ -59,6 +62,12 @@ async function setup(opts: { screen?: string; recheckMs?: number } = {}) {
       drives.push({ request, caller: caller.name });
       return { ok: true };
     },
+    create: {
+      projects: () => [{ name: 'test-cloud', path: '/home/tars/projects/test-cloud' }],
+      project: async name => ({ ok: true, path: `/home/tars/projects/${name}` }),
+      agent: async fields => ({ ok: true, agent: { id: 'a-new', name: String(fields.name) } }),
+      gitKey: async () => ({ ok: true, publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' }),
+    },
   });
   doors.push(door);
   const end = { kind: 'unix' as const, path: door.path };
@@ -71,13 +80,27 @@ async function until(check: () => boolean, ms = 3000): Promise<boolean> {
   return check();
 }
 
+describe('creating through the client (M3 Task 7)', () => {
+  it('makes a project and an agent and reads the git key; a client without create is told 403, a big body never sent', async () => {
+    const t = await setup();
+    const { credential } = addClient(t.clientsFile, { name: 'PC', kind: 'desktop', scopes: ['see', 'drive', 'create'] });
+    const client = createDoorClient(t.end, credential);
+    expect(await client.createProject({ name: 'new-one', from: { kind: 'empty' } })).toEqual({ status: 201, body: { ok: true, project: { name: 'new-one', path: '/home/tars/projects/new-one' } } });
+    expect(await client.createAgent({ projectName: 'test-cloud', name: 'Nova' })).toEqual({ status: 201, body: { ok: true, agent: { id: 'a-new', name: 'Nova' }, started: false } });
+    expect(await client.gitKey()).toEqual({ status: 200, body: { publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' } });
+    const old = addClient(t.clientsFile, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
+    expect((await createDoorClient(t.end, old.credential).createProject({ name: 'x', from: { kind: 'empty' } })).status).toBe(403);
+    expect(await client.createAgent({ projectName: 'test-cloud', name: 'x'.repeat(65 * 1024) })).toMatchObject({ status: 413, body: { error: expect.stringMatching(/not sent/) } });
+  });
+});
+
 describe('the door through the client', () => {
   it('fleet and screen through the door', async () => {
     const t = await setup();
     const { credential } = addClient(t.clientsFile, { name: 'PC-Nicolas (desktop)', kind: 'desktop', scopes: ['see', 'drive'] });
     const client = createDoorClient(t.end, credential);
     expect(await client.hello()).toEqual({ ok: true, serverId: SERVER_ID });
-    expect(await client.fleet()).toEqual({ status: 200, body: { agents: [{ id: 'nova', name: 'Nova', status: 'running' }], for: 'PC-Nicolas (desktop)' } });
+    expect(await client.fleet()).toEqual({ status: 200, body: { agents: [{ id: 'nova', name: 'Nova', status: 'running' }], for: 'PC-Nicolas (desktop)', projects: [{ name: 'test-cloud', path: '/home/tars/projects/test-cloud' }] } });
     expect(await client.screen('nova')).toEqual({ status: 200, body: { screen: 'NOVA SCREEN', cliRunning: true, cols: 120, rows: 40 } });
     expect(await client.drive('nova', 'keys', { data: 'ls\r' })).toEqual({ status: 200, body: { ok: true } });
     expect(t.drives).toEqual([{ request: { action: 'keys', agentId: 'nova', data: 'ls\r' }, caller: 'PC-Nicolas (desktop)' }]);
