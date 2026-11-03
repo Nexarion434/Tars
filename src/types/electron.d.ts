@@ -2560,8 +2560,67 @@ export interface ElectronAPI {
     last: () => Promise<ErrorReportsLast | null>;
   };
 
+  // Tars servers over SSH (electron/handlers/cloud-handlers.ts). No credential, door socket path or host key ever comes back.
+  cloud: {
+    list: () => Promise<CloudServerView[]>;
+    /** A new server (no id) or an existing one's runner and door socket; its host never changes under its credential. */
+    save: (profile: CloudServerInput) => Promise<{ success: true; id: string } | CloudFailure>;
+    connect: (id: string) => Promise<{ success: true; state: CloudLinkState } | CloudFailure>;
+    disconnect: (id: string) => Promise<{ success: true } | CloudFailure>;
+    /** Revokes this desktop's client on the server, then forgets the server here even when the server cannot be reached (said in state). */
+    forget: (id: string) => Promise<{ success: true; state: CloudLinkState } | CloudFailure>;
+    clients: (id: string) => Promise<{ success: true; clients: CloudClientView[] } | CloudFailure>;
+    revoke: (id: string, clientId: string) => Promise<{ success: true } | CloudFailure>;
+    agents: () => Promise<CloudRemoteAgent[]>;
+    screen: (remoteId: string) => Promise<{ screen: string; cliRunning: boolean; cols?: number; rows?: number } | null>;
+    watch: (remoteId: string) => Promise<void>;
+    unwatch: (remoteId: string) => Promise<void>;
+    drive: (remoteId: string, action: 'start' | 'stop' | 'message', body: { reason?: string; text?: string }) => Promise<CloudDriveResult>;
+    keys: (remoteId: string, data: string) => Promise<CloudDriveResult>;
+    resize: (remoteId: string, cols: number, rows: number) => Promise<CloudDriveResult>;
+    onAgents: (callback: (agents: CloudRemoteAgent[]) => void) => () => void;
+    onState: (callback: (event: { id: string; state: CloudLinkState }) => void) => () => void;
+    /** A watched remote agent's output, under its remote id `c:<serverId>:<agentId>`. */
+    onOutput: (callback: (event: { remoteId: string; data: string }) => void) => () => void;
+  };
+
   // Platform info
   platform: string;
+}
+
+type CloudFailure = { success: false; error: string };
+type CloudDriveResult = { success: true } | CloudFailure;
+type CloudRunner = { kind: 'command'; argv: string[] } | { kind: 'docker'; container: string; sudo: boolean };
+interface CloudServerInput { id?: string; host: string; runner: CloudRunner; doorSocket?: string }
+interface CloudLinkState {
+  phase: 'off' | 'connecting' | 'connected' | 'offline' | 'disconnected' | 'failed';
+  since?: string;
+  problem?: string;
+  /** A sentence for the user, shown as is. */
+  sentence?: string;
+}
+interface CloudServerView { id: string; host: string; runner: CloudRunner; serverId?: string; name?: string; clientId?: string; paired: boolean; state: CloudLinkState }
+interface CloudClientView { id: string; name?: string; kind?: string; scopes: string[]; createdAt?: string; expiresAt?: string; mintedVia?: string }
+interface CloudRemoteAgent {
+  /** `c:<serverId>:<agentId>`, never a local agent's id. */
+  id: string;
+  agentId: string;
+  name: string;
+  character?: string;
+  provider?: string;
+  model?: string;
+  status: string;
+  currentTask?: string;
+  branch?: string;
+  projectName: string;
+  projectPath: string;
+  cliRunning: boolean;
+  lastActivity?: string;
+  stoppedBy?: string;
+  stopReason?: string;
+  cols?: number;
+  rows?: number;
+  server: { id: string; serverId: string; name: string; status: 'connected' | 'offline' | 'disconnected'; offlineSince?: string; drive: boolean };
 }
 
 declare global {

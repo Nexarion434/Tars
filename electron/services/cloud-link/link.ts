@@ -66,6 +66,8 @@ export interface CloudLink {
   refused(id: string): void;
   /** Quitting: every local `ssh` ends, every retry is dropped, the servers are sent nothing. */
   closeAll(): void;
+  /** The forward's local end while connected, which the door's client goes through; null otherwise. */
+  end(id: string): LocalEnd | null;
   state(id: string): LinkState;
   onState(fn: (id: string, state: LinkState) => void): () => void;
 }
@@ -287,6 +289,9 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
         problem,
         sentence: `Forgotten on this computer, but its credential still works on ${profile.host}: ${problemSentence(problem, profile.host)} Revoke ${profile.clientId} in the server's clients.`,
       });
+    },
+    end(id) {
+      return states.get(id)?.phase === 'connected' ? forwards.get(id)?.end ?? null : null;
     },
     state(id) {
       return states.get(id) ?? { phase: 'off' };

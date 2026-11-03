@@ -25,6 +25,7 @@ import { reportsOn } from './services/event-reports';
 import { app, dialog, ipcMain, Notification } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 // Types
@@ -38,6 +39,7 @@ import { APP_PAGES } from './services/health/pages';
 import { abruptEndPayload } from './services/health/abrupt-end';
 import { crashTypeSince } from './platform/crash-type';
 import { registerDiagnosticHandlers } from './handlers/diagnostic-handlers';
+import { registerCloudHandlers, type CloudService } from './handlers/cloud-handlers';
 
 // Core modules
 import {
@@ -195,6 +197,8 @@ import { isHeadless } from './host/headless';
  * every other step keeps the desktop's order. Always false in the desktop.
  */
 const HEADLESS = isHeadless();
+/** Settings > Cloud's link to Tars servers (desktop only). */
+let cloud: CloudService | null = null;
 
 // ============== App Settings Management ==============
 
@@ -627,6 +631,9 @@ app.whenReady().then(async () => {
     page: () => pageOf(getMainWindow()?.webContents.getURL()),
   });
   registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE, known: healthWords });
+  // A desktop's Tars servers over SSH: nothing runs until Settings > Cloud has one (a server never links to another).
+  if (!HEADLESS) cloud = registerCloudHandlers({ ipc: ipcMain, broadcast: broadcastToAllWindows, file: path.join(PRIVATE_DIR, 'cloud-link.json'), forwardDir: path.join(PRIVATE_DIR, 'cloud'), hostname: os.hostname });
+  void cloud?.start();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
@@ -1059,6 +1066,8 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // The forwards to Tars servers: the local ssh ends, the servers go on.
+      ['stopCloudLink', () => cloud?.stop()],
       // A `claude auth status` the accounts list started just before the
       // quit: it wrote .claude.json into the home after Tars was gone.
       ['endAuthCommands', endAuthCommands],
