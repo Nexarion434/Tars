@@ -177,3 +177,14 @@ With a review round per task, CI runs and the security review (critical lane: it
 - Git hosts other than GitHub pinned out of the box (today the operator adds their key line).
 - A cap on running agents per server beside the memory floor, if the floor alone proves too coarse.
 - Files (the `files` scope): reading a cloud project's files from the desktop.
+
+From security review 1 (`reports/2026-11-03-m3-security-review-1.md`); B1, N1 (shape), N2 (starts made
+together), N4, N6, N7 and N8 are fixed, these are left:
+
+- N1: pin the door path a Docker server says into the profile at the first `hello` that matches, and refuse a later, different one.
+- N2: the floor on the server's other start paths (an orchestrator's `start_agent` or `delegate_task`, schedules, restart recovery), in the server's launch path; cgroup v1 is not read.
+- N3: the operator CLI's one-call client is not revoked on SIGINT, SIGTERM or SIGHUP; mint it with a short life (`addClient` takes days only).
+- N5: one clone at a time per server, a cap on a clone's file count, and a size walk that yields to the event loop.
+- N9: refuse IP-literal, loopback and link-local hosts for a clone, and clone with `http.followRedirects=false`.
+- N10: the fleet gives every `see` client, outside agents included, the projects' absolute paths: names only for an outside agent, if that matters.
+- B1: show in the window who trusted a cloned project and when (`project-trust.json`), and a way to take that trust back.
