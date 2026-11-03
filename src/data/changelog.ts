@@ -7,6 +7,18 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: 62,
+    version: '2.0.7',
+    date: '2026-11-03',
+    updates: [
+      'Tars cloud: this computer can now reach an always-on Tars server over SSH, with your own key. In Settings > Cloud, type the server\'s address (user@server, or a shortcut from your SSH settings) and press Connect. How the server runs, its container, admin rights and its door path wait under Advanced. The first connect gives this computer its own access on the server, and nothing you type is ever a password.',
+      'A server\'s agents appear on the Dashboard and the Agents page beside yours, each with its server\'s name. Their terminal is live, you can type in it, and start and stop work in one click, where the server lets this computer drive. When the server goes away, its agents say since when and keep their last output; they come back by themselves.',
+      'Each server in Settings > Cloud shows its link in words, Disconnect (this computer only: the server and its agents keep going), Forget this server, and the devices with access. Remove one and it loses access at once.',
+      'On Windows, Tars uses Windows\' own OpenSSH, the one your keys and known hosts belong to, and only falls back to another ssh when it is not installed.',
+      'On Linux, an agent now finds its CLI when the login profile replaces PATH, as Debian\'s does: the folders Tars found the CLI in are put back in front of it.',
+    ],
+  },
+  {
     id: 61,
     version: '2.0.4',
     date: '2026-10-18',
