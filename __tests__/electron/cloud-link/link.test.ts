@@ -146,7 +146,7 @@ describe('connect: mint once', () => {
   it("mints once with this machine's name", async () => {
     const t = setup({ status: [ok(UP)], 'clients-add': [ok(MINTED)] });
     await t.link.connect(t.profile.id);
-    expect(t.calls[1]).toEqual({ command: { do: 'clients-add' }, stdin: { name: 'PC-Nicolas (desktop)', kind: 'desktop', scopes: ['see', 'drive'] } });
+    expect(t.calls[1]).toEqual({ command: { do: 'clients-add' }, stdin: { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'drive'] } });
     expect(readLink(t.file).servers[0]).toMatchObject({ serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL });
     t.link.disconnect(t.profile.id);
     await t.link.connect(t.profile.id);

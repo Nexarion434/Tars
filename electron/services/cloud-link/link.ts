@@ -196,7 +196,8 @@ export function createCloudLink(deps: CloudLinkDeps): CloudLink {
     let linked = profile;
     if (linked.credential === undefined) {
       const minted = await deps.run(profile, { do: 'clients-add' }, {
-        stdin: { name: `${deps.hostname().slice(0, 48)} (desktop)`, kind: 'desktop', scopes: DESKTOP_SCOPES },
+        // Its kind says desktop; the server adds "(machine)" to what this one does there.
+        stdin: { name: deps.hostname().slice(0, 48), kind: 'desktop', scopes: DESKTOP_SCOPES },
       });
       if (!current()) return;
       if (!minted.ok) return failSsh(id, host, minted);
