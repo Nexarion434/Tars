@@ -32,6 +32,8 @@ import type { DriveRequest } from '../../../electron/services/cloud/drive';
  *    fingerprint, in an answer
  * 9. the fleet without the server's projects, or with more than their names
  *    and paths
+ * 11. (security review 1, N8) an agent made with a name that is not a short
+ *    string, or a character Tars does not draw
  * 10. (security review 1, B1) a clone asked without the client's explicit
  *    trust in the repository's code reaching the clone, or the client's word
  *    passed on without who gave it (the client's own name, never the body's)
@@ -151,6 +153,18 @@ describe('the create routes', () => {
     const taken = await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'taken', from: { kind: 'git', url: 'https://github.com/a/b', trusted: true } }), credential);
     expect(taken).toEqual({ status: 409, body: { error: 'A project named "taken" is already on this server.' } });
     expect((await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'x', from: 'somewhere' }), credential)).status).toBe(400);
+  });
+
+  it('11. an agent\'s name is a string of 80 at most, its character one Tars draws', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'create'] });
+    const d = await open(deps);
+    for (const extra of [{ name: 42 }, { name: { a: 1 } }, { name: 'x'.repeat(81) }, { character: 'dragon' }, { character: 7 }]) {
+      const answer = await call(d.path, 'POST', '/cloud/v1/agents', JSON.stringify({ projectName: 'test-cloud', ...extra }), credential);
+      expect(answer.status, JSON.stringify(extra)).toBe(400);
+    }
+    expect(made).toEqual([]);
+    expect((await call(d.path, 'POST', '/cloud/v1/agents', JSON.stringify({ projectName: 'test-cloud', name: 'x'.repeat(80), character: 'robot' }), credential)).status).toBe(201);
   });
 
   it('10. a clone only with the client\'s trust in its code, passed on with the client\'s own name', async () => {

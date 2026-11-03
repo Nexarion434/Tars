@@ -4,6 +4,7 @@ import { admit, may, watchClients } from './clients';
 import type { DriveCaller, DriveOutcome, DriveRequest } from './drive';
 import type { CloudClient, Scope } from './types';
 import { UNTRUSTED, type ProjectFrom, type ProjectResult } from './projects';
+import type { AgentCharacter } from '../../types';
 
 /**
  * The door of a Tars server (docs/superpowers/plans/2026-11-02-tars-cloud.md,
@@ -264,6 +265,7 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
   /** What a client may set on an agent it creates: the New agent form's fields, never a binary, a second folder or a role. */
   const AGENT_FIELDS = ['name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character'] as const;
   const NOT_FROM_A_CLIENT = ['cliPath', 'secondaryProjectPath', 'role', 'orchestratorMode'];
+  const CHARACTERS: string[] = ['robot', 'ninja', 'wizard', 'astronaut', 'knight', 'pirate', 'alien', 'viking'] satisfies AgentCharacter[];
 
   /** POST /cloud/v1/agents: agent-create.ts's record in one of the server's projects, started only through the drive executor. */
   const agentRoute = bodyRoute('create', (body, again, { res }) => {
@@ -272,6 +274,12 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     if (outsideRefused(again, res)) return;
     if (NOT_FROM_A_CLIENT.some(key => key in body)) {
       json(res, 400, { error: 'A client sets no CLI path, second folder or role on a server\'s agent.' });
+      return;
+    }
+    // What a remote client names and draws (security review 1, N8): a short string, a character Tars has.
+    if ((body.name !== undefined && (typeof body.name !== 'string' || body.name.length > 80))
+      || (body.character !== undefined && !CHARACTERS.includes(body.character as string))) {
+      json(res, 400, { error: 'An agent\'s name is up to 80 characters, and its character one of ' + CHARACTERS.join(', ') + '.' });
       return;
     }
     const projects = create.projects();
