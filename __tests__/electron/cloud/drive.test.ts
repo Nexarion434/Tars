@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeDrive, MAX_KEYS, MAX_DRIVE_TEXT, type DriveTarget } from '../../../electron/services/cloud/drive';
 import type { MessageSender } from '../../../electron/core/pty-manager';
+import { startsInFlight } from '../../../electron/platform/memory-headroom';
 
 /**
  * Driving a Tars server's agent from a client (plan Task 7). The executor
@@ -197,5 +198,19 @@ describe('the memory floor (M3 Task 3)', () => {
     expect(higher.started).toEqual([]);
     const unknown = withMemory(null);
     expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, unknown.target)).toEqual({ ok: true });
+  });
+
+  // Security review 1, N2, written before the code: starts made together all read the memory before the
+  // agents just started have grown, so five within a second all passed the floor.
+  it('counts the starts still coming up: the third of three quick starts is refused, and one 30 s later is not', async () => {
+    let clock = 0;
+    const t = withMemory(1700);
+    t.target.memory = { ...t.target.memory!, starting: startsInFlight(30_000, () => clock) };
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, t.target)).toEqual({ ok: true });
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, t.target)).toEqual({ ok: true });
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, t.target)).toMatchObject({ ok: false, status: 503 });
+    expect(t.started).toHaveLength(2);
+    clock = 30_000;
+    expect(await executeDrive({ action: 'start', agentId: 'nova' }, desktop, t.target)).toEqual({ ok: true });
   });
 });

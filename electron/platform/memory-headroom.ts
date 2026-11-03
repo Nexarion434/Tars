@@ -46,9 +46,20 @@ export function memoryHeadroom(deps: {
 export const AGENT_MB = 300;
 export const DEFAULT_FLOOR_MB = 1024;
 
-/** Null when a start leaves the floor free, else the sentence a client shows. */
-export function startAllowed(headroom: Headroom | null, floorMb: number = DEFAULT_FLOOR_MB, agentMb: number = AGENT_MB): string | null {
-  if (!headroom || headroom.availableMb - agentMb >= floorMb) return null;
+/** Null when a start leaves the floor free, counting the starts still coming up (`inFlight`), else the sentence a client shows. */
+export function startAllowed(headroom: Headroom | null, floorMb: number = DEFAULT_FLOOR_MB, agentMb: number = AGENT_MB, inFlight = 0): string | null {
+  if (!headroom || headroom.availableMb - agentMb * (1 + inFlight) >= floorMb) return null;
   const kept = floorMb % 1024 === 0 ? `${floorMb / 1024} GB` : `${floorMb} MB`;
   return `Not started: this server has ${headroom.availableMb} MB of memory free, and Tars keeps ${kept} for the rest of it.`;
+}
+
+/**
+ * The starts still coming up (security review 1, N2): each holds an agent's
+ * memory for `holdMs`, which MemAvailable does not show yet, so starts made
+ * together cannot all pass the floor on the same reading.
+ */
+export function startsInFlight(holdMs = 30_000, now: () => number = Date.now): { count(): number; add(): void } {
+  const at: number[] = [];
+  const count = () => { while (at.length > 0 && now() - at[0] >= holdMs) at.shift(); return at.length; };
+  return { count, add: () => { count(); at.push(now()); } };
 }

@@ -65,5 +65,8 @@ describe('startAllowed', () => {
     expect(startAllowed({ availableMb: 2000, source: 'host' }, 2048)).toBe('Not started: this server has 2000 MB of memory free, and Tars keeps 2 GB for the rest of it.');
     expect(startAllowed({ availableMb: 1700, source: 'host' }, 1500)).toBe('Not started: this server has 1700 MB of memory free, and Tars keeps 1500 MB for the rest of it.');
     expect(startAllowed(null)).toBeNull();
+    // Security review 1, N2: each start still coming up holds an agent's memory too.
+    expect(startAllowed({ availableMb: 1700, source: 'host' }, 1024, 300, 1)).toBeNull();
+    expect(startAllowed({ availableMb: 1700, source: 'host' }, 1024, 300, 2)).toMatch(/^Not started: this server has 1700 MB/);
   });
 });

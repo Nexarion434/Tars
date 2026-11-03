@@ -99,7 +99,8 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { scheduleTick } = await import('../utils/agents-tick');
   const { rememberPanelSize, resizeTerminalMirror } = await import('../core/terminal-mirror');
   const { executeDrive } = await import('../services/cloud/drive');
-  const { memoryHeadroom, DEFAULT_FLOOR_MB } = await import('../platform/memory-headroom');
+  const { memoryHeadroom, startsInFlight, DEFAULT_FLOOR_MB } = await import('../platform/memory-headroom');
+  const starting = startsInFlight();
   const { createProject, listProjects } = await import('../services/cloud/projects');
   const { gitKey } = await import('../services/cloud/git-access');
   const { createAgentRecord } = await import('../core/agent-create');
@@ -183,7 +184,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
           return 'ok';
         },
         // Every start leaves the floor free (M3 Task 3): read now, the floor from the server's settings.
-        memory: { headroom: () => memoryHeadroom(), floorMb: minFreeMb() },
+        memory: { headroom: () => memoryHeadroom(), floorMb: minFreeMb(), starting },
       }),
     });
     recordDoor(privatePath('server.json'), door.path);

@@ -39,7 +39,7 @@ export interface DriveTarget {
   stop(agentId: string, by: string, reason: string): Promise<void>;
   message(agentId: string, text: string, sender: MessageSender): 'ok' | 'no-terminal' | 'not-running';
   /** The server's memory, read before a start (M3 Task 3, platform/memory-headroom.ts). */
-  memory?: { headroom(): Headroom | null; floorMb?: number };
+  memory?: { headroom(): Headroom | null; floorMb?: number; starting?: { count(): number; add(): void } };
 }
 
 export const MAX_KEYS = 4096;
@@ -77,8 +77,10 @@ export async function executeDrive(request: DriveRequest, caller: DriveCaller, t
     }
     case 'start': {
       // Never below the floor: the box runs Hermes and the rest too.
-      const short = target.memory ? startAllowed(target.memory.headroom(), target.memory.floorMb) : null;
+      // The starts still coming up count too (security review 1, N2): their memory is not read yet.
+      const short = target.memory ? startAllowed(target.memory.headroom(), target.memory.floorMb, undefined, target.memory.starting?.count() ?? 0) : null;
       if (short) return { ok: false, status: 503, error: short };
+      target.memory?.starting?.add();
       const started = await target.start(request.agentId);
       return started.ok ? { ok: true } : { ok: false, status: 409, error: started.error };
     }
