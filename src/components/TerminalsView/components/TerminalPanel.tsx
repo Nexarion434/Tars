@@ -187,7 +187,7 @@ function TerminalPanel({
       {/* Another machine's agent whose machine does not answer: the line is
           above the terminal, which keeps its last screen, greyed. */}
       {offline && (
-        <p data-machine-offline className="shrink-0 px-3 py-2 bg-background font-mono text-[11px] text-text-secondary select-none">
+        <p data-cloud-offline className="shrink-0 px-3 py-2 bg-background font-mono text-[11px] text-text-secondary select-none">
           {offline}
         </p>
       )}

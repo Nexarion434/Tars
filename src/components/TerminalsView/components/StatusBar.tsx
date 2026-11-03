@@ -30,7 +30,7 @@ function StatusBar({ agents, branch, machines = [] }: StatusBarProps) {
       {/* The other machines, the way a pane's machine is told apart. Frame:
           `Dashboard · two machines`. */}
       {machines.map(m => (
-        <span key={m.id} data-machine-status={m.id} className={m.status === 'connected' ? 'text-success' : undefined}>
+        <span key={m.id} data-cloud-status={m.id} className={m.status === 'connected' ? 'text-success' : undefined}>
           {machineStatusLabel(m)}
         </span>
       ))}

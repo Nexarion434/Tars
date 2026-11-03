@@ -340,7 +340,7 @@ export default function AgentsPage() {
             className="w-[220px] h-[26px] px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
           />
           {machines.length > 0 && (
-            <span data-machine-filter className="contents">
+            <span data-cloud-filter className="contents">
               <Dropdown
                 value={machineFilter}
                 options={machineOptions}

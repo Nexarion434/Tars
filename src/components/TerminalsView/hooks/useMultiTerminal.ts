@@ -25,9 +25,7 @@ interface TerminalEntry {
   release?: () => void;
   /** A remote pane that takes the size of this pane, where its machine lets this one drive. */
   shared?: boolean;
-  /** One of this machine's agents whose terminal a paired machine resized: the pane takes the size back at its next focus or key. */
-  taken?: boolean;
-  /** A shared remote pane whose terminal the other machine resized since: the same. */
+  /** A shared remote pane whose terminal was resized from elsewhere since: the pane takes the size back at its next focus or key. */
   stale?: boolean;
 }
 
@@ -88,10 +86,9 @@ function fitShared(agentId: string, entry: TerminalEntry) {
   } catch {}
 }
 
-// A pane takes its size back: what the other machine left it at is not what
-// the pane last sent, so the next fit sends it whatever it was.
+// A shared remote pane takes its size back: what its terminal was left at is
+// not what the pane last sent, so the next fit sends it whatever it was.
 function reclaimSize(agentId: string, entry: TerminalEntry) {
-  entry.taken = false;
   entry.stale = false;
   entry.lastCols = 0;
   entry.lastRows = 0;
@@ -365,8 +362,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
       term.onData((data) => {
         const cleaned = stripTerminalReplies(data);
         if (!cleaned) return;
-        // A pane whose terminal another machine resized takes it back first.
-        if (entry.taken || entry.stale) reclaimSize(agentId, entry);
+        // A shared pane whose terminal was resized from elsewhere takes it back first.
+        if (entry.stale) reclaimSize(agentId, entry);
         sendOrBroadcast(cleaned);
       });
 
@@ -565,9 +562,8 @@ export function useMultiTerminal({ agents, initialFontSize, onFontSizeChange, th
     const entry = terminalsRef.current.get(agentId);
     if (entry && !entry.disposed) {
       entry.terminal.focus();
-      // A shared remote pane sends its size again on focus, and a local one
-      // whose terminal another machine resized takes it back.
-      if (entry.shared || entry.taken) reclaimSize(agentId, entry);
+      // A shared remote pane sends its size again on focus.
+      if (entry.shared) reclaimSize(agentId, entry);
     }
   }, []);
 

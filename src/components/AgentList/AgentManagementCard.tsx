@@ -155,7 +155,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           {!remote && <AgentAccountControl agent={agent} className="ml-auto" />}
         </div>
         {drive.error && (
-          <p data-machine-drive-error className="text-[11px] text-status-error">{drive.error}</p>
+          <p data-cloud-drive-error className="text-[11px] text-status-error">{drive.error}</p>
         )}
         {askStop && allowed?.stop && (
           <CloudStopReason

@@ -138,7 +138,7 @@ function ProjectTabBar({
       {/* Which machine's agents the board shows. Only once a machine is paired:
           a control with one choice is noise. Frame: `Dashboard · two machines`. */}
       {machineFilter && (
-        <div data-machine-filter className="shrink-0 pb-1 pr-2">
+        <div data-cloud-filter className="shrink-0 pb-1 pr-2">
           <SegmentedControl
             ariaLabel="Show the agents of one machine"
             options={machineFilter.options}
