@@ -1,4 +1,4 @@
-import type { AgentStatus, CloudProjectView, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
+import type { AgentStatus, CloudNewAgent, CloudProjectView, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
 
 /**
  * A Tars server's agents on the Dashboard and the Agents page, and what this
@@ -323,4 +323,39 @@ export async function loadCloudProjects(api: CloudProjectsApi): Promise<Array<{ 
     const answer = answers[i];
     return answer?.success ? [{ server: { id: s.id, serverId: s.serverId, name: s.name ?? s.host }, projects: answer.projects }] : [];
   });
+}
+
+/** What New agent gives, as NewChatModal's onSubmit passes it (M3 Task 9). */
+export interface NewAgentForm {
+  skills: string[];
+  prompt: string;
+  model?: string;
+  worktree?: { enabled: boolean; branchName?: string };
+  character?: string;
+  name?: string;
+  permissionMode?: string;
+  provider?: string;
+  effort?: string;
+  role?: 'orchestrator' | 'worker';
+  cliPath?: string;
+}
+
+/**
+ * New agent in a server's project as the door's create route takes it, started
+ * ("Create and start", frame `Overlay · New agent · cloud project`), its task
+ * kept for once its CLI runs; or what a server's agent cannot have.
+ */
+export function cloudAgentFromForm(project: CloudProjectRow, form: NewAgentForm):
+  { ok: true; serverId: string; body: CloudNewAgent; task: string | null } | { ok: false; error: string } {
+  if (form.worktree?.enabled) return { ok: false, error: `An agent on ${project.server.name} works in its project's folder: a worktree of its own is not made there yet.` };
+  if (form.cliPath) return { ok: false, error: `The CLI an agent on ${project.server.name} runs is the server's own: leave its path empty.` };
+  if (form.role === 'orchestrator') return { ok: false, error: `An agent on ${project.server.name} is made as a worker: the orchestrator is chosen on the server's own Tars.` };
+  const body: CloudNewAgent = { projectPath: project.path, start: true, skills: form.skills };
+  if (form.name) body.name = form.name;
+  if (form.provider) body.provider = form.provider;
+  if (form.model) body.model = form.model;
+  if (form.effort) body.effort = form.effort;
+  if (form.permissionMode) body.permissionMode = form.permissionMode;
+  if (form.character) body.character = form.character;
+  return { ok: true, serverId: project.server.id, body, task: form.prompt.trim() || null };
 }

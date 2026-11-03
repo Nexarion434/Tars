@@ -4,7 +4,7 @@ import {
   ALL_MACHINES, THIS_MACHINE, isRemoteId, folderKey, remoteToAgent, placeRemote, filterByMachine, activeFilter,
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
-  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects,
+  newProjectPlaces, cloudProjectInput, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm,
 } from '../../src/lib/cloud';
 
 /**
@@ -292,5 +292,35 @@ describe('loading a server\'s projects (M3)', () => {
       { server: { id: 's_1a2b3c4d', serverId: SERVER.serverId, name: 'my-server' }, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }] },
     ]);
     expect(asked).toEqual(['s_1a2b3c4d', 's_3c4d5e6f']);
+  });
+});
+
+/**
+ * M3 Task 9, New agent in a server's project (frame `Overlay · New agent · cloud project`). Written before the code.
+ * How it fails:
+ * 26. the form sent to the server with what a server's agent cannot have
+ *     (its own worktree, a CLI path of this computer's, the orchestrator
+ *     role) instead of a sentence; the project sent by anything but its
+ *     path on the server; the agent not started ("Create and start"); the
+ *     task sent as a field the door does not take instead of kept for after
+ *     the start
+ */
+describe('New agent in a server\'s project (M3 Task 9)', () => {
+  const project = cloudProjectRows([{ server: { id: 's_1a2b3c4d', serverId: SERVER.serverId, name: 'my-server' }, projects: [{ name: 'my-app', path: '/home/tars/projects/my-app' }] }], [])[0];
+
+  it('the form as the door takes it, started, the task kept for after (26)', () => {
+    expect(cloudAgentFromForm(project, { skills: ['tdd'], prompt: '  Fix the chart.  ', model: 'haiku', name: 'Frontend Engineer', provider: 'claude', effort: 'medium', permissionMode: 'auto', character: 'robot', role: 'worker' }))
+      .toEqual({
+        ok: true, serverId: 's_1a2b3c4d', task: 'Fix the chart.',
+        body: { projectPath: '/home/tars/projects/my-app', name: 'Frontend Engineer', provider: 'claude', model: 'haiku', effort: 'medium', permissionMode: 'auto', skills: ['tdd'], character: 'robot', start: true },
+      });
+    expect(cloudAgentFromForm(project, { skills: [], prompt: ' ' })).toMatchObject({ ok: true, task: null, body: { projectPath: '/home/tars/projects/my-app', skills: [], start: true } });
+  });
+
+  it('says what a server\'s agent cannot have (26)', () => {
+    expect(cloudAgentFromForm(project, { skills: [], prompt: '', worktree: { enabled: true, branchName: 'feat/x' } })).toMatchObject({ ok: false, error: expect.stringMatching(/worktree/) });
+    expect(cloudAgentFromForm(project, { skills: [], prompt: '', cliPath: '/usr/local/bin/claude' })).toMatchObject({ ok: false, error: expect.stringMatching(/CLI/) });
+    expect(cloudAgentFromForm(project, { skills: [], prompt: '', role: 'orchestrator' })).toMatchObject({ ok: false, error: expect.stringMatching(/orchestrator/) });
+    expect(cloudAgentFromForm(project, { skills: [], prompt: '', worktree: { enabled: false, branchName: '' } })).toMatchObject({ ok: true });
   });
 });
