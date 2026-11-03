@@ -22,7 +22,7 @@
 ## Review Focus
 
 1. **The SSH user's shell prints on login** (a `.bashrc` banner, `motd`): a command's stdout is read for its last JSON line only, and a non-JSON last line is "the server answered something Tars cannot read", with the first 200 characters shown. Pinned in Task 2 (`reads the last json line past a login banner`).
-2. **`docker exec` from a desktop marks every mint "on the server"** (seen in the trial: `docker exec` drops `SSH_CONNECTION`): the desktop names itself in the mint's `name` (`<hostname> (desktop)`), so `clients list` still tells the desktops apart. Pinned in Task 4 (`mints once with this machine's name`).
+2. **`docker exec` from a desktop marks every mint "on the server"** (seen in the trial: `docker exec` drops `SSH_CONNECTION`): the desktop names itself in the mint's `name` (its hostname; the client's kind says desktop, and the server files what it does as `<hostname> (machine)`), so `clients list` still tells the desktops apart. Pinned in Task 4 (`mints once with this machine's name`).
 3. **The laptop sleeps with the forward up:** on wake the `ssh` is dead or hung; the 15 s keep-alive ends it within 45 s, the server reads offline, the retry owner reconnects with backoff and no second forward. Pinned in Task 6 (`one forward per server at most`, `offline within 45 s of silence`).
 4. **A server rebuilt or recreated** (new container on the same home): the `serverId` is unchanged and the credential still admits; a `serverId` that changed is refused before the credential is sent ("this is not the server you connected to"), and only Forget then Connect accepts the new one. Pinned in Task 5 (`hello with another server id never gets the credential`).
 5. **Typing while the link is failing:** batches leave in order, one in flight per agent, the first failure stops those behind it and the pane says not sent. Pinned in Task 8 (`keys keep their order and stop at the first failure`).
@@ -120,13 +120,13 @@ Port `remote-fleet.ts` and its 343-line test from `win/machines`: peers become c
 
 ### Task 10: Settings > Cloud, frames first (about 45 min, then Nicolas's look)
 
-- [ ] Draw in `design/tars-redesign.pen` through the `pen` CLI: the section empty, a server being added (host, "How the server runs": "Installed" with the command, or "Docker" with container, sudo and the socket path), connected, offline since, disconnected by the server with Reconnect, a failed connect with its sentence, the clients list with Revoke; dark and light. Add the surface to `design/UI-INVENTORY.md` and `e2e/surfaces.mjs`.
+- [x] (one frame, dark: `Settings · Cloud`, from `Settings · Machines`; the light copy and a states frame wait for his look) Draw in `design/tars-redesign.pen` through the `pen` CLI: the section empty, a server being added (host, "How the server runs": "Installed" with the command, or "Docker" with container, sudo and the socket path), connected, offline since, disconnected by the server with Reconnect, a failed connect with its sentence, the clients list with Revoke; dark and light. Add the surface to `design/UI-INVENTORY.md` and `e2e/surfaces.mjs`.
 - [ ] Export the frames, show them to Nicolas, wait for his go before Task 11.
 
 ### Task 11: Settings > Cloud, the TSX (about 55 min)
 
-- [ ] `CloudSection.tsx` from the frames, through `src/components/ui/` only, controls 26 or 32 px; `useCloud.ts`; the sentences from Task 2's `problemSentence`, not retyped.
-- [ ] Unit for `src/lib/cloud.ts` view logic (failures first); `npm run lint:design`; commit `feat: settings has a cloud section to connect a tars server`.
+- [x] (waiting for Nicolas's look) `CloudSection.tsx` from the frames, through `src/components/ui/` only, controls 26 or 32 px; `useCloud.ts`; the sentences from Task 2's `problemSentence`, not retyped.
+- [x] Unit for `src/lib/cloud.ts` view logic (failures first); `npm run lint:design`; commit `feat: settings has a cloud section to connect a tars server`.
 
 ### Task 12: the server's agents in Dashboard and Agents (about 55 min)
 
