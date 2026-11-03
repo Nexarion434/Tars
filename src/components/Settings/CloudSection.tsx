@@ -78,7 +78,7 @@ export const CloudSection = () => {
         <SettingsRow
           label="SSH host"
           description="user@host, or an alias from your SSH config. Your own key, never a password."
-          control={<Input mono value={form.host} onChange={e => set({ host: e.target.value })} placeholder="ubuntu@100.101.245.29" aria-label="SSH host" />}
+          control={<Input mono value={form.host} onChange={e => set({ host: e.target.value })} placeholder="user@server" aria-label="SSH host" />}
         />
         <SettingsRow
           label="How the server runs"
@@ -98,7 +98,7 @@ export const CloudSection = () => {
             <SettingsRow
               label="Door socket on the host"
               description="For Docker: the door as the host sees it, in the home the container mounts."
-              control={<Input mono value={form.doorSocket} onChange={e => set({ doorSocket: e.target.value })} placeholder="/home/ubuntu/tars-cloud/home/.tars-private/door.sock" aria-label="Door socket on the host" />}
+              control={<Input mono value={form.doorSocket} onChange={e => set({ doorSocket: e.target.value })} placeholder="/home/<user>/.tars-private/door.sock" aria-label="Door socket on the host" />}
             />
           </>
         ) : (

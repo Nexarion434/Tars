@@ -164,7 +164,7 @@ describe('the link through a real forward', () => {
   function linkTo(doorPort: number, pidFile: string, end: { dir?: string; platform?: NodeJS.Platform } = {}) {
     const file = path.join(tmp(), 'cloud-link.json');
     const profile: ServerProfile = {
-      id: 's_1a2b3c4d', host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: REMOTE,
+      id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: REMOTE,
       serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL,
     };
     saveProfile(file, profile);

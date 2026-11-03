@@ -43,7 +43,7 @@ const SOCKET = '/home/ubuntu/tars-cloud/home/.tars-private/door.sock';
 
 describe('hostProblem', () => {
   it('accepts user@host, an address and an SSH alias', () => {
-    for (const host of ['ubuntu@100.101.245.29', 'tars-vps', 'me@host.example.com', 'tars_user@srv1539916']) {
+    for (const host of ['ubuntu@203.0.113.10', 'tars-vps', 'me@host.example.com', 'tars_user@srv1539916']) {
       expect(hostProblem(host), host).toBeNull();
     }
   });
@@ -116,9 +116,9 @@ describe('remoteWords', () => {
 describe('sshCommandArgv', () => {
   it('the host always follows --, the remote command last', () => {
     for (const command of COMMANDS) {
-      const argv = sshCommandArgv('ubuntu@100.101.245.29', DOCKER, command);
+      const argv = sshCommandArgv('ubuntu@203.0.113.10', DOCKER, command);
       const end = argv.indexOf('--');
-      expect(argv[end + 1]).toBe('ubuntu@100.101.245.29');
+      expect(argv[end + 1]).toBe('ubuntu@203.0.113.10');
       expect(argv.slice(end + 2)).toEqual([remoteWords(DOCKER, command).join(' ')]);
       expect(argv.slice(0, end).every(a => a.startsWith('-') || /^[A-Za-z][A-Za-z0-9]*=[A-Za-z0-9]+$/.test(a))).toBe(true);
     }
@@ -153,13 +153,13 @@ describe('sshCommandArgv', () => {
 
 describe('sshForwardArgv', () => {
   it("forward options are T3's plus BatchMode", () => {
-    const argv = sshForwardArgv('ubuntu@100.101.245.29', { kind: 'tcp', port: 47117 }, SOCKET);
+    const argv = sshForwardArgv('ubuntu@203.0.113.10', { kind: 'tcp', port: 47117 }, SOCKET);
     for (const option of ['ExitOnForwardFailure=yes', 'ServerAliveInterval=15', 'ServerAliveCountMax=3', 'ControlMaster=no', 'ControlPath=none']) {
       expect(argv, option).toContain(option);
     }
     expect(argv).toEqual(expect.arrayContaining(['-n', '-N', '-T']));
     expect(argv[argv.indexOf('-L') + 1]).toBe(`127.0.0.1:47117:${SOCKET}`);
-    expect(argv.slice(argv.indexOf('--') + 1)).toEqual(['ubuntu@100.101.245.29']);
+    expect(argv.slice(argv.indexOf('--') + 1)).toEqual(['ubuntu@203.0.113.10']);
     const unix = sshForwardArgv('tars-vps', { kind: 'unix', path: '/Users/nicolas/.tars-private/cloud/s1.sock' }, SOCKET);
     expect(unix[unix.indexOf('-L') + 1]).toBe(`/Users/nicolas/.tars-private/cloud/s1.sock:${SOCKET}`);
   });

@@ -75,7 +75,7 @@ function setup() {
   return { file, call, sent, runs, forwards, timers, service, handlers, answers };
 }
 
-const docker = { host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
+const docker = { host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET };
 
 describe('the direct test route', () => {
   it('only an unpackaged app reads TARS_CLOUD_DIRECT', () => {

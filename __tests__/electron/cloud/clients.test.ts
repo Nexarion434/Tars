@@ -173,14 +173,14 @@ describe('a mint is visible', () => {
     const f = files();
     const saved = process.env.SSH_CONNECTION;
     try {
-      process.env.SSH_CONNECTION = '100.76.84.44 51234 100.101.245.29 22';
+      process.env.SSH_CONNECTION = '198.51.100.4 51234 203.0.113.10 22';
       runClientsCommand(['add', '--json'], JSON.stringify({ name: 'Mac', kind: 'desktop', scopes: ['see'] }), { clientsFile: f.clients, serverFile: f.server }, () => {});
       delete process.env.SSH_CONNECTION;
       runClientsCommand(['add', '--json'], JSON.stringify({ name: 'Here', kind: 'desktop', scopes: ['see'] }), { clientsFile: f.clients, serverFile: f.server }, () => {});
     } finally {
       if (saved === undefined) delete process.env.SSH_CONNECTION; else process.env.SSH_CONNECTION = saved;
     }
-    expect(listClients(f.clients).map(c => [c.name, c.mintedVia])).toEqual([['Mac', 'ssh from 100.76.84.44'], ['Here', 'on the server']]);
+    expect(listClients(f.clients).map(c => [c.name, c.mintedVia])).toEqual([['Mac', 'ssh from 198.51.100.4'], ['Here', 'on the server']]);
   });
 });
 

@@ -27,7 +27,7 @@ import { sshCommandArgv, type ServerRunner } from '../../../electron/services/cl
  */
 
 const FAKE_SSH = { file: process.execPath, args: [path.join(__dirname, '..', '..', 'fixtures', 'fake-ssh.cjs')] };
-const HOST = 'ubuntu@100.101.245.29';
+const HOST = 'ubuntu@203.0.113.10';
 const PROFILE = { host: HOST, runner: { kind: 'docker', container: 'tars-server', sudo: true } as ServerRunner };
 
 function tmp(): string {
@@ -73,14 +73,14 @@ describe('runServerCommand', () => {
 
   it("classifies ssh's own errors in plain words", async () => {
     const cases: Array<[string, number, SshProblem]> = [
-      ['No ED25519 host key is known for 100.101.245.29 and you have requested strict checking.\r\nHost key verification failed.\r\n', 255, 'host-key-unknown'],
+      ['No ED25519 host key is known for 203.0.113.10 and you have requested strict checking.\r\nHost key verification failed.\r\n', 255, 'host-key-unknown'],
       ['@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\r\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\r\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\r\nHost key verification failed.\r\n', 255, 'host-key-changed'],
-      ['ubuntu@100.101.245.29: Permission denied (publickey).\r\n', 255, 'key-refused'],
+      ['ubuntu@203.0.113.10: Permission denied (publickey).\r\n', 255, 'key-refused'],
       ['ssh: Could not resolve hostname tars-vps: Name or service not known\r\n', 255, 'unreachable'],
-      ['ssh: connect to host 100.101.245.29 port 22: Connection timed out\r\n', 255, 'unreachable'],
+      ['ssh: connect to host 203.0.113.10 port 22: Connection timed out\r\n', 255, 'unreachable'],
       ['ssh: connect to host 10.0.0.1 port 22: No route to host\r\n', 255, 'unreachable'],
-      ['ssh: connect to host 100.101.245.29 port 22: Connection refused\r\n', 255, 'unreachable'],
-      ['ssh: connect to host 100.101.245.29 port 22: Network is unreachable\r\n', 255, 'unreachable'],
+      ['ssh: connect to host 203.0.113.10 port 22: Connection refused\r\n', 255, 'unreachable'],
+      ['ssh: connect to host 203.0.113.10 port 22: Network is unreachable\r\n', 255, 'unreachable'],
       ['sudo: a password is required\n', 1, 'sudo-password'],
       ['Error response from daemon: No such container: tars-server\n', 1, 'not-installed'],
       ['bash: line 1: node: command not found\n', 127, 'not-installed'],

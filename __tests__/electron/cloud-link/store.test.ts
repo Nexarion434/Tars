@@ -32,7 +32,7 @@ function file(): string {
 function profile(over: Partial<ServerProfile> = {}): ServerProfile {
   return {
     id: 's_1a2b3c4d',
-    host: 'ubuntu@100.101.245.29',
+    host: 'ubuntu@203.0.113.10',
     runner: { kind: 'docker', container: 'tars-server', sudo: true },
     doorSocket: '/home/ubuntu/tars-cloud/home/.tars-private/door.sock',
     ...over,
@@ -157,7 +157,7 @@ describe('publicView', () => {
     });
     expect(JSON.stringify(view)).not.toContain(CREDENTIAL);
     expect(JSON.stringify(view)).not.toContain('door.sock');
-    expect(view).toMatchObject({ id: 's_1a2b3c4d', host: 'ubuntu@100.101.245.29', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916', clientId: 'c_10eafeea', paired: true });
+    expect(view).toMatchObject({ id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916', clientId: 'c_10eafeea', paired: true });
     expect(publicView(profile()).paired).toBe(false);
   });
 });

@@ -57,7 +57,7 @@ type Timer = { fn: () => void; ms: number; cancelled: boolean };
 function setup(answers: Partial<Record<ServerCommand['do'], RunResult[]>>, over: Partial<ServerProfile> = {}) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-link-')), 'cloud-link.json');
   const profile: ServerProfile = {
-    id: 's_1a2b3c4d', host: 'ubuntu@100.101.245.29', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET, ...over,
+    id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: HOST_SOCKET, ...over,
   };
   saveProfile(file, profile);
   const calls: Call[] = [];
@@ -227,7 +227,7 @@ describe('forget', () => {
 
 describe('the retry owner', () => {
   const linked = { serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL };
-  const unreachable: RunResult = { ok: false, problem: 'unreachable', detail: 'ssh: connect to host 100.101.245.29 port 22: Network is unreachable' };
+  const unreachable: RunResult = { ok: false, problem: 'unreachable', detail: 'ssh: connect to host 203.0.113.10 port 22: Network is unreachable' };
 
   it('one forward per server at most', async () => {
     const t = setup({ status: [ok(UP)] }, linked);
