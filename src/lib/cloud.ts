@@ -138,7 +138,7 @@ export function offlineLine(m: { machineName: string; offlineSince?: string; sta
 /** The title of an action that would act on a remote agent. */
 export const readOnlyTitle = (machineName: string): string => `Read only: this agent runs on ${machineName}`;
 
-/** Under the Dashboard: `srv1539916 ✓`, or `srv1539916 offline`. */
+/** Under the Dashboard: `my-vps ✓`, or `my-vps offline`. */
 export const machineStatusLabel = (m: FleetMachine): string => (m.status === 'connected' ? `${m.name} ✓` : `${m.name} ${m.status}`);
 
 /** The servers of each project that only remote agents are on, for its tab and its section. */

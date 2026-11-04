@@ -39,7 +39,7 @@ function profile(over: Partial<ServerProfile> = {}): ServerProfile {
   };
 }
 
-const PAIRED = profile({ serverId: 'd795d0ff4d5d8e50', name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL });
+const PAIRED = profile({ serverId: 'd795d0ff4d5d8e50', name: 'my-vps', clientId: 'c_10eafeea', credential: CREDENTIAL });
 
 describe('readLink', () => {
   it('a missing file is no server', () => {
@@ -161,7 +161,7 @@ describe('publicView', () => {
     });
     expect(JSON.stringify(view)).not.toContain(CREDENTIAL);
     expect(JSON.stringify(view)).not.toContain('door.sock');
-    expect(view).toMatchObject({ id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916', clientId: 'c_10eafeea', paired: true });
+    expect(view).toMatchObject({ id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', serverId: 'd795d0ff4d5d8e50', name: 'my-vps', clientId: 'c_10eafeea', paired: true });
     expect(publicView(profile()).paired).toBe(false);
   });
 });

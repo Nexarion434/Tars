@@ -57,7 +57,7 @@ async function startDoor(serverId: string) {
     seen.push({ url: req.url ?? '', authorization: req.headers.authorization, host: req.headers.host });
     if (req.url === '/cloud/v1/hello') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ v: 1, serverId, name: 'srv1539916', version: '2.0.4' }));
+      res.end(JSON.stringify({ v: 1, serverId, name: 'my-vps', version: '2.0.4' }));
       return;
     }
     res.writeHead(401).end();
@@ -165,7 +165,7 @@ describe('the link through a real forward', () => {
     const file = path.join(tmp(), 'cloud-link.json');
     const profile: ServerProfile = {
       id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true }, doorSocket: REMOTE,
-      serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL,
+      serverId: SERVER_ID, name: 'my-vps', clientId: 'c_10eafeea', credential: CREDENTIAL,
     };
     saveProfile(file, profile);
     const calls: ServerCommand[] = [];
@@ -174,7 +174,7 @@ describe('the link through a real forward', () => {
       file,
       run: async (_p, command): Promise<RunResult> => {
         calls.push(command);
-        return { ok: true, json: { running: true, serverId: SERVER_ID, name: 'srv1539916', door: '/home/tars/.tars-private/door.sock' } };
+        return { ok: true, json: { running: true, serverId: SERVER_ID, name: 'my-vps', door: '/home/tars/.tars-private/door.sock' } };
       },
       hostname: () => 'PC-Nicolas',
       forward: async (p, remoteSocket) => openForward(p.host, await localForwardEnd(p.id, { dir, platform: end.platform }), remoteSocket, {

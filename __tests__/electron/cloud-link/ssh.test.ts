@@ -44,7 +44,7 @@ const SOCKET = '/home/ubuntu/tars-cloud/home/.tars-private/door.sock';
 
 describe('hostProblem', () => {
   it('accepts user@host, an address and an SSH alias', () => {
-    for (const host of ['ubuntu@203.0.113.10', 'tars-vps', 'me@host.example.com', 'tars_user@srv1539916']) {
+    for (const host of ['ubuntu@203.0.113.10', 'tars-vps', 'me@host.example.com', 'tars_user@my-vps']) {
       expect(hostProblem(host), host).toBeNull();
     }
   });

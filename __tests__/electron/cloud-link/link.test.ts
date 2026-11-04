@@ -51,7 +51,7 @@ import type { ServerCommand } from '../../../electron/services/cloud-link/ssh';
 const SERVER_ID = 'd795d0ff4d5d8e50';
 const CREDENTIAL = 'Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-abc';
 const HOST_SOCKET = '/home/ubuntu/tars-cloud/home/.tars-private/door.sock';
-const UP = { running: true, pid: 7, apiPort: 31415, version: '2.0.4', door: '/home/tars/.tars-private/door.sock', serverId: SERVER_ID, name: 'srv1539916' };
+const UP = { running: true, pid: 7, apiPort: 31415, version: '2.0.4', door: '/home/tars/.tars-private/door.sock', serverId: SERVER_ID, name: 'my-vps' };
 const MINTED = { id: 'c_10eafeea', credential: CREDENTIAL, serverId: SERVER_ID };
 
 type Call = { command: ServerCommand; stdin?: object };
@@ -113,7 +113,7 @@ const ok = (json: Record<string, unknown>): RunResult => ({ ok: true, json });
 
 describe('connect: status, start if down', () => {
   it('starts a server that is down, once', async () => {
-    const t = setup({ status: [ok({ running: false, serverId: SERVER_ID, name: 'srv1539916' }), ok(UP)], start: [ok({})], 'clients-add': [ok(MINTED)] });
+    const t = setup({ status: [ok({ running: false, serverId: SERVER_ID, name: 'my-vps' }), ok(UP)], start: [ok({})], 'clients-add': [ok(MINTED)] });
     await t.link.connect(t.profile.id);
     expect(t.did()).toEqual(['status', 'start', 'status', 'clients-add']);
     expect(t.link.state(t.profile.id).phase).toBe('connected');
@@ -154,7 +154,7 @@ describe('connect: mint once', () => {
     await t.link.connect(t.profile.id);
     // M3, Nicolas's decision 3: a new device may create; an existing one only by Forget then Connect, never silently.
     expect(t.calls[1]).toEqual({ command: { do: 'clients-add' }, stdin: { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'drive', 'create'] } });
-    expect(readLink(t.file).servers[0]).toMatchObject({ serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL });
+    expect(readLink(t.file).servers[0]).toMatchObject({ serverId: SERVER_ID, name: 'my-vps', clientId: 'c_10eafeea', credential: CREDENTIAL });
     t.link.disconnect(t.profile.id);
     await t.link.connect(t.profile.id);
     expect(t.did().filter(d => d === 'clients-add')).toHaveLength(1);
@@ -187,7 +187,7 @@ describe('connect: mint once', () => {
   });
 
   it('reconnecting reuses the credential', async () => {
-    const t = setup({ status: [ok(UP)] }, { serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL });
+    const t = setup({ status: [ok(UP)] }, { serverId: SERVER_ID, name: 'my-vps', clientId: 'c_10eafeea', credential: CREDENTIAL });
     await t.link.connect(t.profile.id);
     expect(t.did()).toEqual(['status']);
     expect(t.link.state(t.profile.id).phase).toBe('connected');
@@ -252,7 +252,7 @@ describe('forget', () => {
 });
 
 describe('the retry owner', () => {
-  const linked = { serverId: SERVER_ID, name: 'srv1539916', clientId: 'c_10eafeea', credential: CREDENTIAL };
+  const linked = { serverId: SERVER_ID, name: 'my-vps', clientId: 'c_10eafeea', credential: CREDENTIAL };
   const unreachable: RunResult = { ok: false, problem: 'unreachable', detail: 'ssh: connect to host 203.0.113.10 port 22: Network is unreachable' };
 
   it('one forward per server at most', async () => {

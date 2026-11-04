@@ -38,7 +38,7 @@ const SERVER_ID = 'd795d0ff4d5d8e50';
 const CREDENTIAL = 'Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-Zx9_Zx9-abc';
 const HOST_SOCKET = '/home/ubuntu/tars-cloud/home/.tars-private/door.sock';
 const HOST_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG9vZGJ5ZQ';
-const UP = { running: true, door: '/home/tars/.tars-private/door.sock', serverId: SERVER_ID, name: 'srv1539916' };
+const UP = { running: true, door: '/home/tars/.tars-private/door.sock', serverId: SERVER_ID, name: 'my-vps' };
 
 function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-cloud-ipc-'));
@@ -250,6 +250,6 @@ describe('a project name the server has (M3 Task 8, frame `· name taken`)', () 
     await t.call('cloud:connect', saved.id);
     t.door.createProject = async () => ({ status: 409, body: { error: 'A project named "my-app" is already on this server.' } });
     expect(await t.call('cloud:createProject', saved.id, { name: 'my-app', from: { kind: 'empty' } }))
-      .toEqual({ success: false, error: 'srv1539916 already has a project called my-app. Pick another name.' });
+      .toEqual({ success: false, error: 'my-vps already has a project called my-app. Pick another name.' });
   });
 });

@@ -37,7 +37,7 @@ import {
  *    told to wait instead of to connect again
  */
 
-const SERVER = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916', status: 'connected' as const, drive: true };
+const SERVER = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'my-vps', status: 'connected' as const, drive: true };
 const remote = (over: Partial<CloudRemoteAgent> = {}): CloudRemoteAgent => ({
   id: `c:${SERVER.serverId}:a1`, agentId: 'a1', server: SERVER,
   name: 'QA Engineer', status: 'waiting', projectName: 'tars', projectPath: '/home/tars/code/tars', cliRunning: true, ...over,
@@ -46,7 +46,7 @@ const local = (id: string, projectPath: string): AgentStatus =>
   ({ id, name: id, status: 'idle', projectPath, skills: [], output: [], lastActivity: '2026-11-03T10:00:00.000Z' }) as AgentStatus;
 const view = (over: Partial<CloudServerView> = {}): CloudServerView => ({
   id: 's_1a2b3c4d', host: 'ubuntu@203.0.113.10', runner: { kind: 'docker', container: 'tars-server', sudo: true },
-  serverId: SERVER.serverId, name: 'srv1539916', paired: true, state: { phase: 'connected' }, ...over,
+  serverId: SERVER.serverId, name: 'my-vps', paired: true, state: { phase: 'connected' }, ...over,
 });
 
 describe('folders and ids', () => {
@@ -68,7 +68,7 @@ describe('a server agent as a pane reads it', () => {
   it('carries what a pane draws, its server and its path (2, 3)', () => {
     const a = remoteToAgent(remote({ provider: 'claude', branch: 'feat/qa', cols: 120, rows: 40 }));
     expect(a).toMatchObject({ id: `c:${SERVER.serverId}:a1`, status: 'waiting', provider: 'claude', branchName: 'feat/qa', skills: [], output: [] });
-    expect(a.remote).toEqual({ machineId: 's_1a2b3c4d', machineName: 'srv1539916', status: 'connected', offlineSince: undefined, drive: true, projectPath: '/home/tars/code/tars', cols: 120, rows: 40 });
+    expect(a.remote).toEqual({ machineId: 's_1a2b3c4d', machineName: 'my-vps', status: 'connected', offlineSince: undefined, drive: true, projectPath: '/home/tars/code/tars', cols: 120, rows: 40 });
     expect(remoteToAgent(remote({ status: 'rebooting' })).status).toBe('idle');
   });
 
@@ -85,13 +85,13 @@ describe('a server agent as a pane reads it', () => {
     const since = new Date(2026, 10, 3, 9, 5).toISOString();
     const a = remoteToAgent(remote({ status: 'running', server: { ...SERVER, status: 'offline', offlineSince: since, drive: false } }));
     expect(a.status).toBe('running');
-    expect(offlineLine(a.remote!)).toBe('srv1539916 offline since 09:05. Its last output stays below, and the pane is live again when srv1539916 is back.');
-    expect(offlineLine({ machineName: 'srv1539916', offlineSince: 'garbled' })).not.toMatch(/Invalid/);
+    expect(offlineLine(a.remote!)).toBe('my-vps offline since 09:05. Its last output stays below, and the pane is live again when my-vps is back.');
+    expect(offlineLine({ machineName: 'my-vps', offlineSince: 'garbled' })).not.toMatch(/Invalid/);
   });
 
   it('a disconnected server says to connect again, not to wait (17)', () => {
-    expect(offlineLine({ machineName: 'srv1539916', status: 'disconnected' })).toMatch(/no longer admits this computer.*connect again/);
-    expect(machineStatusLabel({ id: 's_1a2b3c4d', name: 'srv1539916', status: 'disconnected' })).toBe('srv1539916 disconnected');
+    expect(offlineLine({ machineName: 'my-vps', status: 'disconnected' })).toMatch(/no longer admits this computer.*connect again/);
+    expect(machineStatusLabel({ id: 's_1a2b3c4d', name: 'my-vps', status: 'disconnected' })).toBe('my-vps disconnected');
     expect(serverStatus('disconnected')).toBe('disconnected');
     for (const phase of ['off', 'connecting', 'offline', 'failed'] as const) expect(serverStatus(phase), phase).toBe('offline');
   });
@@ -110,15 +110,15 @@ describe('the filter', () => {
 
   it('lists the servers this desktop holds a credential for, once each, by name (5, 7)', () => {
     const servers = fleetMachines([view(), view({ id: 's_00000000', paired: false, name: undefined })], [remote(), remote()]);
-    expect(servers).toEqual([{ id: 's_1a2b3c4d', name: 'srv1539916', status: 'connected' }]);
+    expect(servers).toEqual([{ id: 's_1a2b3c4d', name: 'my-vps', status: 'connected' }]);
     expect(fleetMachines([view({ state: { phase: 'offline' } })], [])[0].status).toBe('offline');
-    expect(machineFilterOptions(servers).map(o => o.label)).toEqual(['Everywhere', 'This Tars', 'srv1539916']);
-    expect(machineStatusLabel({ id: 's_1a2b3c4d', name: 'srv1539916', status: 'offline' })).toBe('srv1539916 offline');
+    expect(machineFilterOptions(servers).map(o => o.label)).toEqual(['Everywhere', 'This Tars', 'my-vps']);
+    expect(machineStatusLabel({ id: 's_1a2b3c4d', name: 'my-vps', status: 'offline' })).toBe('my-vps offline');
   });
 
   it('a remote-only project says its server; a tab with a local agent does not (8)', () => {
     const tabs = tabMachines(placeRemote([local('l1', '/a/tars')], [remote(), remote({ id: `c:${SERVER.serverId}:a2`, projectPath: '/srv/writer' })]));
-    expect([...tabs]).toEqual([['/srv/writer', ['srv1539916']]]);
+    expect([...tabs]).toEqual([['/srv/writer', ['my-vps']]]);
   });
 });
 
@@ -169,7 +169,7 @@ describe('driving', () => {
       expect(remoteActions({ status, drive: true }, true), status).toEqual({ start: false, stop: false, type: false, seeOnly: false });
     }
     expect(remoteActions({ status: 'connected' }, true).type).toBe(false);
-    expect(seeOnlyLine('srv1539916')).toMatch(/^srv1539916 lets this Tars see only/);
+    expect(seeOnlyLine('my-vps')).toMatch(/^my-vps lets this Tars see only/);
   });
 
   it('sizes: the screen first, whole sizes only, a scale at most 1, no echo loop (9, 10, 14, 15, 16)', () => {

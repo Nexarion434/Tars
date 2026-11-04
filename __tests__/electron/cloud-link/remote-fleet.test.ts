@@ -43,7 +43,7 @@ import { MAX_KEYS } from '../../../electron/services/cloud/drive';
  *    time; one refused 403 (see taken away) asked again at all (review 1, R2-1)
  */
 
-const VPS: CloudServer = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'srv1539916' };
+const VPS: CloudServer = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'my-vps' };
 const BOX: CloudServer = { id: 's_5e6f7a8b', serverId: 'aaaaaaaaaaaaaaaa', name: 'box' };
 const NO_ANSWER: DoorAnswer = { status: 0, body: {} };
 
@@ -133,7 +133,7 @@ describe("a server's agents", () => {
     await fleet.poll();
     expect(fleet.list()).toEqual([{
       id: rid(VPS, 'a1'), agentId: 'a1', name: 'Nova', status: 'running', projectName: 'tars', projectPath: '/home/tars/code/tars', cliRunning: true,
-      server: { id: VPS.id, serverId: VPS.serverId, name: 'srv1539916', status: 'connected', drive: false },
+      server: { id: VPS.id, serverId: VPS.serverId, name: 'my-vps', status: 'connected', drive: false },
     }]);
     expect(parseCloudId(rid(VPS, 'a1'))).toEqual({ serverId: VPS.serverId, agentId: 'a1' });
     for (const id of ['a1', 'm:m-aaaaaaaaaaaaaaaa:a1', 'c:short:a1', `c:${VPS.serverId}:a/b`]) expect(parseCloudId(id), id).toBeNull();
@@ -146,7 +146,7 @@ describe("a server's agents", () => {
     clock += 3_000;
     await fleet.poll();
     const since = new Date(clock).toISOString();
-    expect(fleet.list().map(a => a.server)).toEqual([0, 1].map(() => ({ id: VPS.id, serverId: VPS.serverId, name: 'srv1539916', status: 'offline', offlineSince: since, drive: false })));
+    expect(fleet.list().map(a => a.server)).toEqual([0, 1].map(() => ({ id: VPS.id, serverId: VPS.serverId, name: 'my-vps', status: 'offline', offlineSince: since, drive: false })));
     clock += 3_000;
     phases.set(VPS.id, 'offline');
     await fleet.poll();
@@ -233,7 +233,7 @@ describe('watching', () => {
     opened[1].open();
     opened[1].onChunk('after');
     await settle();
-    expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1'], [rid(VPS, 'a1'), 'after']]);
+    expect(outputs).toEqual([[rid(VPS, 'a1'), 'my-vps:a1'], [rid(VPS, 'a1'), 'after']]);
     fleet.unwatch(rid(VPS, 'a1'));
     opened[1].onEnd({ reason: 'closed' });
     clock += 3_000;
@@ -257,7 +257,7 @@ describe('watching', () => {
     expect(opened).toHaveLength(2);
     opened[1].open();
     await settle();
-    expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1']]);
+    expect(outputs).toEqual([[rid(VPS, 'a1'), 'my-vps:a1']]);
     // A pane closed while its server was away opens nothing when it is back.
     fleet.watch(rid(VPS, 'a2'));
     phases.set(VPS.id, 'offline');
@@ -293,7 +293,7 @@ describe('watching', () => {
     expect(outputs).toEqual([]);
     opened[7].open();
     await settle();
-    expect(outputs).toEqual([[rid(VPS, 'a1'), 'srv1539916:a1']]);
+    expect(outputs).toEqual([[rid(VPS, 'a1'), 'my-vps:a1']]);
     // Opened once, its next end waits the first wait again.
     opened[7].onEnd({ reason: 'dropped' });
     expect(waits.at(-1)).toBe(3_000);
@@ -334,11 +334,11 @@ describe('driving', () => {
     driveAnswers = [{ status: 409, body: { error: `It is\nalready ${RLO}running.` } }];
     expect(await fleet.drive(rid(VPS, 'a1'), 'start', {})).toEqual({ success: false, error: 'It is already running.' });
     driveAnswers = [NO_ANSWER];
-    expect(await fleet.drive(rid(VPS, 'a1'), 'start', {})).toEqual({ success: false, error: 'srv1539916 did not answer in time. The agent may have started anyway.' });
-    expect(await fleet.drive(rid(VPS, 'a1'), 'message', { text: 'hi' })).toEqual({ success: false, error: 'srv1539916 did not answer.' });
+    expect(await fleet.drive(rid(VPS, 'a1'), 'start', {})).toEqual({ success: false, error: 'my-vps did not answer in time. The agent may have started anyway.' });
+    expect(await fleet.drive(rid(VPS, 'a1'), 'message', { text: 'hi' })).toEqual({ success: false, error: 'my-vps did not answer.' });
     expect(await fleet.drive('a1', 'stop', {})).toEqual({ success: false, error: 'There is no such agent.' });
     phases.set(VPS.id, 'offline');
-    expect(await fleet.drive(rid(VPS, 'a1'), 'stop', {})).toEqual({ success: false, error: 'srv1539916 is not connected.' });
+    expect(await fleet.drive(rid(VPS, 'a1'), 'stop', {})).toEqual({ success: false, error: 'my-vps is not connected.' });
     expect(driven).toHaveLength(4);
   });
 
@@ -364,7 +364,7 @@ describe('driving', () => {
 
   it('14 and 15. a burst stops at its first failure, with the server sentence, and later keys still go', async () => {
     const fleet = createRemoteFleet(deps());
-    const ceiling = 'srv1539916 does not let Hermes type into its terminals.';
+    const ceiling = 'my-vps does not let Hermes type into its terminals.';
     driveAnswers = [{ status: 200, body: { ok: true } }, { status: 403, body: { error: ceiling } }, { status: 200, body: { ok: true } }];
     const burst = await fleet.keys(rid(VPS, 'a1'), 'x'.repeat(MAX_KEYS * 3));
     expect(burst).toEqual({ success: false, error: ceiling });
@@ -377,6 +377,6 @@ describe('driving', () => {
     const fleet = createRemoteFleet(deps());
     await fleet.resize(rid(VPS, 'a1'), 120, 40);
     expect(driven).toEqual([[VPS.id, 'a1', 'size', { cols: 120, rows: 40 }]]);
-    expect(await fleet.screen(rid(VPS, 'a1'))).toEqual({ screen: 'srv1539916:a1', cliRunning: true });
+    expect(await fleet.screen(rid(VPS, 'a1'))).toEqual({ screen: 'my-vps:a1', cliRunning: true });
   });
 });

@@ -55,7 +55,7 @@ async function setup(opts: { screen?: string; recheckMs?: number } = {}) {
     recheckMs: opts.recheckMs,
     socketPath: doorSocketPath(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-'))),
     clientsFile,
-    identity: () => ({ id: SERVER_ID, name: 'srv1539916', version: '2.0.4' }),
+    identity: () => ({ id: SERVER_ID, name: 'my-vps', version: '2.0.4' }),
     fleet: client => ({ agents: [{ id: 'nova', name: 'Nova', status: 'running' }], for: client.name }),
     screenOf: agentId => (agentId === 'nova' ? { screen: opts.screen ?? 'NOVA SCREEN', cliRunning: true, cols: 120, rows: 40 } : null),
     drive: async (request, caller) => {
