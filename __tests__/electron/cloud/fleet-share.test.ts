@@ -65,6 +65,14 @@ describe('shareAgent', () => {
     });
   });
 
+  // "L'orchestrateur en cloud" (2026-11-04), written before the code: a desktop making a server
+  // project's orchestrator asks first when the project has one, so it must know which agent it is,
+  // and nothing else of a role.
+  it('says which agent is its project\'s orchestrator, and nothing for a worker or an odd value', () => {
+    expect(shareAgent(agent({ role: 'orchestrator' }))).toMatchObject({ role: 'orchestrator' });
+    for (const role of ['worker', 'boss', 7, undefined]) expect(shareAgent(agent({ role } as never))).not.toHaveProperty('role');
+  });
+
   it('bounds every string', () => {
     const shared = shareAgent(agent({ name: 'n'.repeat(500), currentTask: 't'.repeat(5000), projectPath: `/${'p'.repeat(5000)}` }))!;
     expect(shared.name).toHaveLength(80);

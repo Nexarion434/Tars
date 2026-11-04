@@ -32,11 +32,13 @@ export interface SharedAgent {
   stopReason?: string;
   cols?: number;
   rows?: number;
+  /** Set for its project's orchestrator only: a desktop making one there asks first, as on its own. */
+  role?: 'orchestrator';
 }
 
 export const SHARED_FIELDS = [
   'agentId', 'name', 'character', 'provider', 'model', 'status', 'currentTask', 'branch',
-  'projectName', 'projectPath', 'cliRunning', 'lastActivity', 'stoppedBy', 'stopReason', 'cols', 'rows',
+  'projectName', 'projectPath', 'cliRunning', 'lastActivity', 'stoppedBy', 'stopReason', 'cols', 'rows', 'role',
 ] as const satisfies readonly (keyof SharedAgent)[];
 
 /** More than any fleet holds. */
@@ -84,6 +86,7 @@ export function shareAgent(agent: AgentStatus): SharedAgent | null {
     stoppedBy: text(source.stoppedBy, 80),
     stopReason: text(source.stopReason, 200),
     ...(isSize(source.cols) && isSize(source.rows) ? { cols: source.cols, rows: source.rows } : {}),
+    ...(source.role === 'orchestrator' ? { role: 'orchestrator' as const } : {}),
   };
   return Object.fromEntries(Object.entries(shared).filter(([, v]) => v !== undefined)) as unknown as SharedAgent;
 }

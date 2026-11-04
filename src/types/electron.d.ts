@@ -2642,6 +2642,8 @@ export interface CloudRemoteAgent {
   stopReason?: string;
   cols?: number;
   rows?: number;
+  /** Its project's orchestrator on that server; never copied onto a local agent (remoteToAgent). */
+  role?: 'orchestrator';
   server: { id: string; serverId: string; name: string; status: CloudServerStatus; offlineSince?: string; drive: boolean };
 }
 
