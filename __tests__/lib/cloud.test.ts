@@ -5,7 +5,7 @@ import {
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
   newProjectPlaces, cloudProjectInput, projectCreateReady, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm, sendWhenRunning,
-  newAgentProjects, createOnServer, type CloudCreateApi,
+  newAgentProjects, createOnServer, serverOrchestratorOf, type CloudCreateApi,
 } from '../../src/lib/cloud';
 
 /**
@@ -384,8 +384,24 @@ describe('New agent in a server\'s project (M3 Task 9)', () => {
   it('says what a server\'s agent cannot have (26)', () => {
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', worktree: { enabled: true, branchName: 'feat/x' } })).toMatchObject({ ok: false, error: expect.stringMatching(/worktree/) });
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', cliPath: '/usr/local/bin/claude' })).toMatchObject({ ok: false, error: expect.stringMatching(/CLI/) });
-    expect(cloudAgentFromForm(project, { skills: [], prompt: '', role: 'orchestrator' })).toMatchObject({ ok: false, error: expect.stringMatching(/orchestrator/) });
     expect(cloudAgentFromForm(project, { skills: [], prompt: '', worktree: { enabled: false, branchName: '' } })).toMatchObject({ ok: true });
+  });
+
+  // "L'orchestrateur en cloud" (2026-11-04), written before the code: the role refused or lost on the
+  // way, sent for a worker; the project's orchestrator on the server not found for the question asked
+  // first, or another server's, project's or a worker taken for it.
+  it('sends the orchestrator role, and finds the project\'s current orchestrator on its server', () => {
+    expect(cloudAgentFromForm(project, { skills: [], prompt: '', role: 'orchestrator' })).toMatchObject({ ok: true, body: { role: 'orchestrator' } });
+    expect((cloudAgentFromForm(project, { skills: [], prompt: '', role: 'worker' }) as { body: object }).body).not.toHaveProperty('role');
+    const remote = (over: Partial<CloudRemoteAgent>) => ({ id: 'c:x:a', agentId: 'a', name: 'Lead', status: 'idle', projectName: 'my-app', projectPath: '/home/tars/projects/my-app', cliRunning: false, server: { id: 's_1a2b3c4d', serverId: SERVER.serverId, name: 'my-server', status: 'connected' as const, drive: true }, ...over });
+    const fleet = [
+      remote({ name: 'Worker' }),
+      remote({ name: 'Other server', role: 'orchestrator', server: { id: 's_2', serverId: 'ffffffffffffffff', name: 'b', status: 'connected', drive: true } }),
+      remote({ name: 'Other project', role: 'orchestrator', projectPath: '/home/tars/projects/else' }),
+    ];
+    expect(serverOrchestratorOf(project.key, fleet)).toBeNull();
+    expect(serverOrchestratorOf(project.key, [...fleet, remote({ name: 'Lead', role: 'orchestrator' })])).toMatchObject({ name: 'Lead' });
+    expect(serverOrchestratorOf('/Users/me/tars', fleet)).toBeNull();
   });
 });
 

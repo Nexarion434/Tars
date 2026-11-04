@@ -266,7 +266,8 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
     if (!('client' in door)) return door;
     const given = (body ?? {}) as Record<string, unknown>;
     const fields: Record<string, unknown> = {};
-    for (const key of ['projectName', 'projectPath', 'name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character', 'start']) {
+    // The role too: the server decides who may make its project's orchestrator (create and drive).
+    for (const key of ['projectName', 'projectPath', 'name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character', 'role', 'start']) {
       if (given[key] !== undefined) fields[key] = given[key];
     }
     const answer = await door.client.createAgent(fields);

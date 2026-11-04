@@ -45,8 +45,6 @@ export function AgentOptionsBody(props: {
   onBranchNameChange: (name: string) => void;
   isOrchestrator: boolean;
   onOrchestratorToggle: (enabled: boolean) => void;
-  /** A server's project is picked: its agents are workers, the switch locked off. */
-  orchestratorLocked?: boolean;
   /** Editing an agent that exists, which a save restarts to apply the role. */
   editing?: boolean;
   cliPath: string;
@@ -130,7 +128,6 @@ export function AgentOptionsBody(props: {
         onToggle={props.onOrchestratorToggle}
         provider={props.provider}
         editing={props.editing}
-        onServer={props.orchestratorLocked}
       />
 
       {detectedClis.length > 0 && (

@@ -2621,6 +2621,8 @@ export interface CloudNewAgent {
   permissionMode?: string;
   skills?: string[];
   character?: string;
+  /** Its project's orchestrator there: only for a computer the server lets create and drive. */
+  role?: 'orchestrator' | 'worker';
   start?: boolean;
 }
 export interface CloudRemoteAgent {

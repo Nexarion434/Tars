@@ -204,11 +204,12 @@ describe('creating on a server from the window (M3 Task 7)', () => {
     expect(await t.call('cloud:createProject', t.id, { name: 'new-one', from: { kind: 'git', url: 'git@github.com:a/b.git', extra: 1 }, extra: 2 }))
       .toEqual({ success: true, project: { name: 'new-one', path: '/home/tars/projects/new-one' } });
     expect(await t.call('cloud:createProject', t.id, { name: 'x', from: { kind: 'tarball' } })).toMatchObject({ success: false });
+    // The role goes on ("l'orchestrateur en cloud", 2026-11-04): the server decides who may give it.
     expect(await t.call('cloud:createAgent', t.id, { projectName: 'test-cloud', name: 'Nova', provider: 'claude', model: 'haiku', cliPath: '/bin/sh', role: 'orchestrator', start: true }))
       .toEqual({ success: true, agent: { id: 'a-new', name: 'Nova' }, started: false });
     expect(t.creates).toEqual([
       ['project', { name: 'new-one', from: { kind: 'git', url: 'git@github.com:a/b.git' } }],
-      ['agent', { projectName: 'test-cloud', name: 'Nova', provider: 'claude', model: 'haiku', start: true }],
+      ['agent', { projectName: 'test-cloud', name: 'Nova', provider: 'claude', model: 'haiku', role: 'orchestrator', start: true }],
     ]);
   });
 

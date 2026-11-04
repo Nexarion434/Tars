@@ -37,7 +37,7 @@ afterEach(() => {
 
 describe('the Orchestrator row', () => {
   const asked: string[] = [];
-  const row = async (props: { provider?: string; editing?: boolean; isOrchestrator?: boolean; onToggle?: (on: boolean) => void; onServer?: boolean }) => {
+  const row = async (props: { provider?: string; editing?: boolean; isOrchestrator?: boolean; onToggle?: (on: boolean) => void }) => {
     page?.unmount();
     asked.length = 0;
     g.window = {
@@ -68,14 +68,6 @@ describe('the Orchestrator row', () => {
     (toggle.props.onChange as () => void)();
     expect(onToggle).toHaveBeenCalledWith(false);
     expect(asked).toEqual([]);
-  });
-
-  // Nicolas's test of 2026-11-04, written before the fix: a server's project picked, the role still
-  // offered (and on, out of sight under a folded Options row), then refused at submit.
-  it('a server\'s project: the switch off and disabled, with one line saying why', async () => {
-    expect(await row({ provider: 'claude', isOrchestrator: false, onServer: true })).toEqual(['Orchestrator', 'Agents on a server are workers.']);
-    const toggle = (elements(page!.result) as unknown as El[]).find(el => typeof el.props.onChange === 'function')!;
-    expect(toggle.props).toMatchObject({ enabled: false, disabled: true });
   });
 });
 

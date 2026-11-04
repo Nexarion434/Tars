@@ -354,8 +354,9 @@ export function cloudAgentFromForm(project: CloudProjectRow, form: NewAgentForm)
   { ok: true; serverId: string; body: CloudNewAgent; task: string | null } | { ok: false; error: string } {
   if (form.worktree?.enabled) return { ok: false, error: `An agent on ${project.server.name} works in its project's folder: a worktree of its own is not made there yet.` };
   if (form.cliPath) return { ok: false, error: `The CLI an agent on ${project.server.name} runs is the server's own: leave its path empty.` };
-  if (form.role === 'orchestrator') return { ok: false, error: `An agent on ${project.server.name} is made as a worker: the orchestrator is chosen on the server's own Tars.` };
   const body: CloudNewAgent = { projectPath: project.path, start: true, skills: form.skills };
+  // Its project's orchestrator on the server ("l'orchestrateur en cloud", 2026-11-04): the server checks who may.
+  if (form.role === 'orchestrator') body.role = 'orchestrator';
   if (form.name) body.name = form.name;
   if (form.provider) body.provider = form.provider;
   if (form.model) body.model = form.model;
@@ -389,6 +390,16 @@ export async function sendWhenRunning(
     await deps.wait(opts.everyMs ?? 1000);
   }
   return { sent: false, error: 'The agent started, but its CLI did not come up: the task was not sent. Type it in its terminal.' };
+}
+
+/**
+ * A server project's current orchestrator, from the fleet the desktop reads: what New agent asks
+ * about before giving the role to another, as it does for this computer's (ReplaceOrchestratorDialog).
+ */
+export function serverOrchestratorOf(projectKey: string, remote: CloudRemoteAgent[]): CloudRemoteAgent | null {
+  const m = /^cloud:([0-9a-f]{16}):(.+)$/.exec(projectKey);
+  if (!m) return null;
+  return remote.find(a => a.role === 'orchestrator' && a.server.serverId === m[1] && a.projectPath === m[2]) ?? null;
 }
 
 /**

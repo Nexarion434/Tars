@@ -11,8 +11,6 @@ interface OrchestratorModeToggleProps {
   provider?: string;
   /** An agent that already exists, which a save restarts to apply the role. */
   editing?: boolean;
-  /** A server's project is picked: its agents are workers, so the switch is off and locked. */
-  onServer?: boolean;
 }
 
 /**
@@ -35,7 +33,6 @@ export default function OrchestratorModeToggle({
   onToggle,
   provider,
   editing,
-  onServer,
 }: OrchestratorModeToggleProps) {
   // Fourteen providers run the Claude binary and genuinely lose the editing
   // and subagent tools. The CLIs with their own syntax have no verified
@@ -51,7 +48,7 @@ export default function OrchestratorModeToggle({
     return null;
   }
 
-  const hint = onServer ? 'Agents on a server are workers.' : [
+  const hint = [
     enforced
       // Every orchestrator is a member of the global room; Telegram and Slack
       // pick the fleet's first one (getSuperAgent with no project).
@@ -69,10 +66,10 @@ export default function OrchestratorModeToggle({
     <div className={OPTION_ROW}>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">Orchestrator</p>
-        <p className={`text-[11px] ${enforced || onServer ? 'text-muted-foreground' : 'text-warning'}`}>{hint}</p>
+        <p className={`text-[11px] ${enforced ? 'text-muted-foreground' : 'text-warning'}`}>{hint}</p>
       </div>
       <div className="shrink-0">
-        <Toggle enabled={isOrchestrator && !onServer} disabled={onServer} onChange={() => onToggle(!isOrchestrator)} />
+        <Toggle enabled={isOrchestrator} onChange={() => onToggle(!isOrchestrator)} />
       </div>
     </div>
   );

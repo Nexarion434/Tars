@@ -94,16 +94,6 @@ export function projectOptionOf(p: Project): { value: string; label: string; hin
     : { value: p.path, label: tildePath(p.path) };
 }
 
-/**
- * The Orchestrator switch for the picked project (Nicolas's test of 2026-11-04): a server's agent is
- * made as a worker, so there the switch shows off and locked and the role sent is worker; the state
- * the user set is kept, and a local project shows it again.
- */
-export function orchestratorFor(isOrchestrator: boolean, projects: Project[], path: string): { on: boolean; locked: boolean; role: 'orchestrator' | 'worker' } {
-  if (cloudProjectOf(projects, path)) return { on: false, locked: true, role: 'worker' };
-  return { on: isOrchestrator, locked: false, role: isOrchestrator ? 'orchestrator' : 'worker' };
-}
-
 /** The picked project, when it is a server's: what the picker's trigger shows with the server's badge. */
 export function cloudProjectOf(projects: Project[], path: string): { name: string; server: string } | null {
   const p = path ? projects.find(project => project.path === path) : undefined;
