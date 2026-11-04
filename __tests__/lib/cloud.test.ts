@@ -5,7 +5,61 @@ import {
   machineFilterOptions, remoteSize, scaleToFit, remoteActions, seeOnlyLine, sharesSize, shouldSendSize,
   fleetMatchesSent, fleetMachines, offlineLine, machineStatusLabel, tabMachines, serverStatus, serverLine, statusWord, serverInput,
   newProjectPlaces, cloudProjectInput, projectCreateReady, cloudProjectRows, projectPlaceShown, loadCloudProjects, cloudAgentFromForm, sendWhenRunning,
+  newAgentProjects, createOnServer, type CloudCreateApi,
 } from '../../src/lib/cloud';
+
+/**
+ * New agent's projects, the same on every page that opens it (Nicolas's real test of 2026-11-04: a
+ * server's project made, then New agent opened from the Agents page did not offer it). Written before
+ * the code. How it fails:
+ * 1. a server's project left out of the list, or listed by its key, or without its server
+ * 2. this computer's projects changed, or put after the servers'
+ * 3. a server's project's agent made on this computer, or one of this computer's sent to a server
+ * 4. the task of a server's agent lost, or typed before its CLI runs; a refusal not said
+ */
+describe('New agent\'s projects and where its agent is made, for every page', () => {
+  const rows = cloudProjectRows([{ server: { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'my-vps' }, projects: [{ name: 'test', path: '/home/tars/projects/test' }] }], []);
+  const local = [{ path: '/Users/me/tars', name: 'tars' }];
+  const api = (over: Partial<CloudCreateApi> = {}) => {
+    const calls: unknown[][] = [];
+    const cloud: CloudCreateApi = {
+      createAgent: async (id, body) => { calls.push(['create', id, body]); return { success: true, agent: { id: 'a1', name: 'Nova' }, started: true }; },
+      agents: async () => [{ id: 'c:d795d0ff4d5d8e50:a1', cliRunning: true } as CloudRemoteAgent],
+      drive: async (remoteId, action, body) => { calls.push(['drive', remoteId, action, body]); return { success: true }; },
+      ...over,
+    };
+    return { calls, cloud };
+  };
+
+  it('1, 2. this computer\'s projects first, then each server\'s, with its server and its path there', () => {
+    expect(newAgentProjects(local, rows)).toEqual([
+      { path: '/Users/me/tars', name: 'tars' },
+      { path: 'cloud:d795d0ff4d5d8e50:/home/tars/projects/test', name: 'test', server: 'my-vps', shownPath: '~/projects/test' },
+    ]);
+    expect(newAgentProjects(local, [])).toEqual(local);
+  });
+
+  it('3, 4. a server\'s project: made there, its task typed once its CLI runs; this computer\'s: left to the page', async () => {
+    const { calls, cloud } = api();
+    expect(await createOnServer(rows, '/Users/me/tars', { skills: [], prompt: 'hi' }, cloud)).toBeNull();
+    expect(calls).toEqual([]);
+    const made = await createOnServer(rows, rows[0].key, { skills: [], prompt: ' say hi ', name: 'Nova' }, cloud, async () => {});
+    expect(made).toMatchObject({ made: true });
+    await (made as { sending: Promise<unknown> }).sending;
+    expect(calls).toEqual([
+      ['create', 's_1a2b3c4d', { projectPath: '/home/tars/projects/test', start: true, skills: [], name: 'Nova' }],
+      ['drive', 'c:d795d0ff4d5d8e50:a1', 'message', { text: 'say hi' }],
+    ]);
+  });
+
+  it('4. a form or a server that refuses says why, and nothing is typed', async () => {
+    const { calls, cloud } = api({ createAgent: async () => ({ success: false, error: 'my-vps does not let PC create projects and agents.' }) });
+    expect(await createOnServer(rows, rows[0].key, { skills: [], prompt: 'hi' }, cloud)).toEqual({ error: 'my-vps does not let PC create projects and agents.' });
+    expect(await createOnServer(rows, rows[0].key, { skills: [], prompt: '', cliPath: '/bin/sh' }, cloud)).toEqual({ error: expect.stringMatching(/leave its path empty/) });
+    expect(await createOnServer(rows, rows[0].key, { skills: [], prompt: '' }, null)).toEqual({ error: 'Tars servers are not available in this window.' });
+    expect(calls).toEqual([]);
+  });
+});
 
 /**
  * What the Dashboard and the Agents page say about a Tars server's agents

@@ -6,6 +6,7 @@ import { lastPathPart } from '@/lib/display-path';
 import { ipcReason } from '@/lib/ipc-error';
 import { activeFilter, ALL_MACHINES, filterByMachine, isRemoteId, machineFilterOptions, placeRemote, tabMachines } from '@/lib/cloud';
 import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
+import { useCloudProjects } from '@/hooks/useCloudProjects';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
@@ -65,6 +66,8 @@ export default function TerminalsView() {
   // that starts, stops and deletes agents.
   const remoteAgents = useRemoteAgents();
   const machines = useFleetMachines(remoteAgents);
+  // New agent offers the connected servers' projects too, and makes an agent there on its server.
+  const { newAgentProjects, createOnServer } = useCloudProjects(remoteAgents);
   const [machineChoice, setMachineChoice] = useState(ALL_MACHINES);
   const machineFilterValue = activeFilter(machineChoice, machines);
   const placedAgents = useMemo(() => placeRemote(localAgents, remoteAgents), [localAgents, remoteAgents]);
@@ -598,6 +601,12 @@ export default function TerminalsView() {
     role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
+    const onServer = await createOnServer(projectPath, { skills, prompt, model, worktree, character, name, permissionMode, provider, effort, role, cliPath });
+    if (onServer) {
+      if ('error' in onServer) return { error: onServer.error };
+      setShowNewChatModal(false);
+      return;
+    }
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
       const agent = await createAgent({
@@ -636,7 +645,7 @@ export default function TerminalsView() {
       return { error: ipcReason(error, 'no reason was given') };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- named fields of tabManager, not the object itself; see comment on handleRemoveFromTab above
-  }, [createAgent, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.addAgentToTab]);
+  }, [createAgent, createOnServer, tabManager.isCustomTabActive, tabManager.activeCustomTab, tabManager.addAgentToTab]);
 
   // Each project starts its agents once, the first time you look at it.
   //
@@ -822,7 +831,7 @@ export default function TerminalsView() {
             open={showNewChatModal}
             onClose={() => setShowNewChatModal(false)}
             onSubmit={handleNewAgent}
-            projects={projects}
+            projects={newAgentProjects(projects)}
             onBrowseFolder={openFolderDialog}
             installedSkills={installedSkills}
             onRefreshSkills={refreshSkills}

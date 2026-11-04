@@ -21,6 +21,7 @@ import {
 import { Button, Chip, CloudBadge, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
 import { activeFilter, ALL_MACHINES, filterByMachine, machineFilterOptions, placeRemote, tabMachines } from '@/lib/cloud';
 import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
+import { useCloudProjects } from '@/hooks/useCloudProjects';
 import { statusWord } from './constants';
 import type { AgentPermissionMode } from '@/types/agent';
 import { templateModeOf } from '@/lib/plan-mode';
@@ -62,6 +63,8 @@ export default function AgentsPage() {
   // Merged here, never in useElectronAgents' list.
   const remoteAgents = useRemoteAgents();
   const machines = useFleetMachines(remoteAgents);
+  // New agent offers the connected servers' projects too, and makes an agent there on its server.
+  const { newAgentProjects, createOnServer } = useCloudProjects(remoteAgents);
   const [machineChoice, setMachineChoice] = useState(ALL_MACHINES);
   const machineFilter = activeFilter(machineChoice, machines);
   const agents = useMemo(
@@ -172,6 +175,12 @@ export default function AgentsPage() {
     role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
+    const onServer = await createOnServer(projectPath, { skills, prompt, model, worktree, character, name, permissionMode, provider, effort, role, cliPath });
+    if (onServer) {
+      if ('error' in onServer) return { error: onServer.error };
+      setShowNewChatModal(false);
+      return;
+    }
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
       const agent = await createAgent({ projectPath, skills, worktree, character, name, secondaryProjectPath, permissionMode, effort, provider, model: resolvedModel, localModel, obsidianVaultPaths, role, cliPath });
@@ -186,7 +195,7 @@ export default function AgentsPage() {
       // a worktree it could not make, without Electron's words before it.
       return { error: ipcReason(error, 'no reason was given') };
     }
-  }, [createAgent, startAgent]);
+  }, [createAgent, startAgent, createOnServer]);
 
   const handleUpdateAgent = useCallback(async (id: string, updates: {
     projectPath?: string;
@@ -442,7 +451,7 @@ export default function AgentsPage() {
         open={showNewChatModal}
         onClose={() => setShowNewChatModal(false)}
         onSubmit={handleCreateAgent}
-        projects={projects.map(p => ({ path: p.path, name: p.name }))}
+        projects={newAgentProjects(projects.map(p => ({ path: p.path, name: p.name })))}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
         installedSkills={installedSkills}
         allInstalledSkills={claudeData?.skills || []}
@@ -452,7 +461,8 @@ export default function AgentsPage() {
         initialMode={newChatMode}
       />
 
-      {/* Edit Modal - reuses NewChatModal pre-filled with agent data */}
+      {/* Edit Modal - reuses NewChatModal pre-filled with agent data. This computer's projects only:
+          an agent of this computer cannot move to a server (that is Move to cloud). */}
       <NewChatModal
         open={!!editAgentId}
         onClose={() => setEditAgentId(null)}

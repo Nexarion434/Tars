@@ -1,4 +1,4 @@
-import type { AgentStatus, CloudNewAgent, CloudProjectView, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView } from '@/types/electron';
+import type { AgentStatus, CloudNewAgent, CloudProjectView, CloudRemoteAgent, CloudServerInput, CloudServerStatus, CloudServerView, ElectronAPI } from '@/types/electron';
 
 /**
  * A Tars server's agents on the Dashboard and the Agents page, and what this
@@ -389,4 +389,50 @@ export async function sendWhenRunning(
     await deps.wait(opts.everyMs ?? 1000);
   }
   return { sent: false, error: 'The agent started, but its CLI did not come up: the task was not sent. Type it in its terminal.' };
+}
+
+/**
+ * New agent's projects, the same wherever it opens (Nicolas's test of 2026-11-04): this computer's,
+ * then each connected server's by its key, with its server and its path there (frame `Overlay · New
+ * agent · cloud project`). Never for an agent's settings: an agent of this computer stays on it.
+ */
+export function newAgentProjects(
+  local: Array<{ path: string; name: string }>,
+  rows: CloudProjectRow[],
+): Array<{ path: string; name: string; server?: string; shownPath?: string }> {
+  return [...local, ...rows.map(row => ({ path: row.key, name: row.name, server: row.server.name, shownPath: row.shownPath }))];
+}
+
+/** What making a server's agent takes from `window.electronAPI.cloud`. */
+export type CloudCreateApi = Pick<ElectronAPI['cloud'], 'createAgent' | 'agents' | 'drive'>;
+
+/**
+ * New agent's submit for a server's project (M3 Task 9), shared by every page that opens it: made and
+ * started on the server, its task typed once its CLI runs (`sending`, not awaited by a page, so the
+ * dialog closes). Null for one of this computer's projects: the page makes it as it always did.
+ */
+export async function createOnServer(
+  rows: CloudProjectRow[],
+  projectPath: string,
+  form: NewAgentForm,
+  cloud: CloudCreateApi | null,
+  wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+): Promise<null | { error: string } | { made: true; sending: Promise<unknown> | null }> {
+  const row = rows.find(r => r.key === projectPath);
+  if (!row) return null;
+  const checked = cloudAgentFromForm(row, { ...form, model: form.model && form.model !== 'default' ? form.model : undefined });
+  if (!checked.ok) return { error: checked.error };
+  if (!cloud) return { error: 'Tars servers are not available in this window.' };
+  const made = await cloud.createAgent(checked.serverId, checked.body);
+  if (!made.success) return { error: made.error };
+  // The key is `cloud:<serverId>:<path>`: the server's own id, which its agents' remote ids carry.
+  const serverId = row.key.split(':')[1];
+  const sending = checked.task && made.started
+    ? sendWhenRunning(`c:${serverId}:${made.agent.id}`, checked.task, {
+      agents: () => cloud.agents(),
+      message: (remoteId, text) => cloud.drive(remoteId, 'message', { text }),
+      wait,
+    })
+    : null;
+  return { made: true, sending };
 }
