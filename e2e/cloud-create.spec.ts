@@ -25,6 +25,10 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    project picked in its Project list shows its server's badge; Create and
  *    start makes it on the server, and its task is typed into its CLI once
  *    that CLI runs (the fake CLI records what it is typed).
+ * 4. The project's orchestrator, made from the same window with the
+ *    Orchestrator switch on: the server makes it with the role, and the task
+ *    it hands a worker of the project (run-task with its own token, as
+ *    delegate_task does) is typed into that worker's terminal.
  * Leaves values.json and a picture per step in its run directory.
  *   E2E_PORT_OFFSET=40 npx playwright test e2e/cloud-create.spec.ts
  */
@@ -42,10 +46,30 @@ function serverHome() {
   const data = path.join(home, '.tars');
   fs.mkdirSync(data, { recursive: true });
   const typed = path.join(home, 'typed.log');
+  // Each agent's input also in typed-<its id>.log. "DELEGATE <id> <task>" typed into one makes it hand
+  // <task> to agent <id> as the orchestrator's delegate_task does: run-task on the server's API, with
+  // the agent's own token from its terminal; the answer goes to typed-<its id>.log.delegated.
   const cli = writeNodeCli(path.join(home, 'ticker.cjs'), [
     "const fs = require('node:fs');",
+    `const typed = ${JSON.stringify(typed)};`,
+    "const own = typed.slice(0, -4) + '-' + (process.env.CLAUDE_AGENT_ID || 'none') + '.log';",
     'if (process.stdin.isTTY) process.stdin.setRawMode(true);',
-    `process.stdin.on('data', d => fs.appendFileSync(${JSON.stringify(typed)}, d));`,
+    // Its SessionStart, as claude's hook posts it (hooks/session-start.sh), so the server knows it takes keys.
+    "if (process.env.CLAUDE_AGENT_ID) void fetch(`${process.env.CLAUDE_MGR_API_URL}/api/hooks/status`, { method: 'POST',",
+    "  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.CLAUDE_MGR_API_TOKEN },",
+    "  body: JSON.stringify({ agent_id: process.env.CLAUDE_AGENT_ID, session_id: require('node:crypto').randomUUID(), status: 'idle', source: 'startup', hook: 'SessionStart', cli_pid: String(process.pid) }),",
+    '}).catch(() => {});',
+    "let seen = '';",
+    'const delegate = (id, task) => fetch(`${process.env.CLAUDE_MGR_API_URL}/api/agents/${id}/run-task`, {',
+    "  method: 'POST', body: JSON.stringify({ task, clientRequestId: 'e2e-' + Date.now(), answer: 'started' }),",
+    "  headers: { 'Content-Type': 'application/json', 'X-Tars-Client': 'mcp', Authorization: 'Bearer ' + process.env.CLAUDE_MGR_API_TOKEN, 'X-Tars-Caller-Id': process.env.CLAUDE_AGENT_ID },",
+    "}).then(async r => fs.appendFileSync(own + '.delegated', r.status + ' ' + (await r.text()).slice(0, 300) + '\\n'), e => fs.appendFileSync(own + '.delegated', 'error ' + e.message + '\\n'));",
+    "process.stdin.on('data', d => {",
+    '  fs.appendFileSync(typed, d); fs.appendFileSync(own, d);',
+    '  seen += String(d);',
+    '  const m = /DELEGATE (\\S+) ([^\\r\\n\\x1b]+)/.exec(seen);',
+    "  if (m && /[\\r\\n\\x1b]/.test(seen.slice(m.index + m[0].length))) { seen = ''; void delegate(m[1], m[2].trim()); }",
+    '});',
     "let n = 0; process.stdout.write('ticker ready\\r\\n');",
     "setInterval(() => { process.stdout.write('tick ' + (++n) + '\\r\\n'); }, 500);",
     '',
@@ -108,7 +132,7 @@ function desktopHome(minted: { id: string; credential: string; serverId: string 
 
 type CloudApi = { electronAPI: { cloud: {
   createAgent: (id: string, body: Record<string, unknown>) => Promise<{ success: boolean; agent?: { id: string }; started?: boolean; error?: string; startError?: string }>;
-  agents: () => Promise<Array<{ agentId: string; projectPath: string; cliRunning: boolean }>>;
+  agents: () => Promise<Array<{ agentId: string; projectPath: string; cliRunning: boolean; role?: string }>>;
 } } };
 
 test('a project and an agent made on a tars server from this computer', async () => {
@@ -175,11 +199,37 @@ test('a project and an agent made on a tars server from this computer', async ()
     await expect.poll(() => fs.existsSync(server.typed) ? fs.readFileSync(server.typed, 'utf8') : '', { timeout: 60_000, message: 'its task typed into its CLI' }).toContain(task);
     values.window = { agent: await madeInWindow(), typed: fs.readFileSync(server.typed, 'utf8') };
     await stepShot(page, '04-its-task-sent');
+
+    // 4. The project's orchestrator on the server, from the same window ("l'orchestrateur en cloud"):
+    //    the Orchestrator switch on for a server's project, made there with the role, and it hands a
+    //    task to a worker of that project, which gets it typed into its terminal.
+    const worker = created.agent!.id;
+    await page.getByRole('button', { name: 'Launch Agent', exact: true }).click();
+    await expect(modal).toBeVisible({ timeout: 30_000 });
+    await modal.getByLabel('Agent name').fill('Lead');
+    await modal.getByRole('button', { name: 'Project', exact: true }).click();
+    await option.click();
+    await modal.getByRole('button', { name: 'Options' }).click();
+    await modal.getByText('Orchestrator', { exact: true }).locator('xpath=../..').getByRole('switch').click();
+    await modal.getByPlaceholder('Describe what you want done.').fill(`DELEGATE ${worker} hand-off from the lead`);
+    await stepShot(page, '05-an-orchestrator-on-the-server');
+    const known = new Set((await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).map(a => a.agentId));
+    await modal.getByRole('button', { name: 'Create and start', exact: true }).click();
+    await expect(modal).toHaveCount(0, { timeout: 30_000 });
+    const lead = async () => (await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents())).find(a => !known.has(a.agentId));
+    await expect.poll(async () => (await lead())?.role, { timeout: 60_000, message: 'made as its project\'s orchestrator' }).toBe('orchestrator');
+    const workerTyped = path.join(server.home, `typed-${worker}.log`);
+    await expect.poll(() => fs.existsSync(workerTyped) ? fs.readFileSync(workerTyped, 'utf8') : '', { timeout: 90_000, message: 'the task the lead handed typed into the worker' }).toContain('hand-off from the lead');
+    const leadId = (await lead())!.agentId;
+    values.orchestrator = { agent: await lead(), delegated: fs.readFileSync(path.join(server.home, `typed-${leadId}.log.delegated`), 'utf8') };
+    await stepShot(page, '06-the-worker-got-its-task');
     recordValues(values);
   } finally {
     await app.close();
     await stopServer(running);
     running = null;
-    for (const dir of [home, server.home]) await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
+    // E2E_KEEP_HOMES=1 keeps both homes to read what the server and its fake CLIs wrote.
+    if (process.env.E2E_KEEP_HOMES === '1') console.log(`[e2e] kept: ${home} ${server.home}`);
+    else for (const dir of [home, server.home]) await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
   }
 });
