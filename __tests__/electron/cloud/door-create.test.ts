@@ -33,7 +33,8 @@ import type { DriveRequest } from '../../../electron/services/cloud/drive';
  * 9. the fleet without the server's projects, or with more than their names
  *    and paths
  * 12. ("l'orchestrateur en cloud", 2026-11-04) an orchestrator made for a
- *    client that may not drive, or a role that is neither, or the role lost
+ *    client that may not drive, or for an outside agent that may (security
+ *    review 1, R3-3), or a role that is neither, or the role lost
  * 11. (security review 1, N8) an agent made with a name that is not a short
  *    string, or a character Tars does not draw
  * 10. (security review 1, B1) a clone asked without the client's explicit
@@ -161,9 +162,12 @@ describe('the create routes', () => {
     const { deps, file, made } = setup();
     const seeCreate = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'create'] }).credential;
     const full = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'drive', 'create'] }).credential;
+    const hermes = addClient(file, { name: 'Hermes', kind: 'outside-agent', scopes: ['see', 'drive', 'create'] }).credential;
     const d = await open(deps);
     const body = (role: unknown) => JSON.stringify({ projectName: 'test-cloud', name: 'Lead', role });
     expect(await call(d.path, 'POST', '/cloud/v1/agents', body('orchestrator'), seeCreate)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/drive/) } });
+    // An outside agent with every scope (security review 1, R3-3): refused as one, whatever role it asks.
+    expect(await call(d.path, 'POST', '/cloud/v1/agents', body('orchestrator'), hermes)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/outside agent/) } });
     expect((await call(d.path, 'POST', '/cloud/v1/agents', body('boss'), full)).status).toBe(400);
     expect(made).toEqual([]);
     expect((await call(d.path, 'POST', '/cloud/v1/agents', body('orchestrator'), full)).status).toBe(201);
