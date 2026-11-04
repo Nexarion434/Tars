@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { tildePath } from '../../src/lib/display-path';
 import {
   cloudProjectOf,
+  orchestratorFor,
   projectOptionOf,
   agentOptionsSummary,
   canSubmitAgent,
@@ -164,5 +165,15 @@ describe('a server\'s project in the picker (M3)', () => {
     expect(cloudProjectOf([local, cloud], cloud.path)).toEqual({ name: 'my-app', server: 'my-server' });
     expect(cloudProjectOf([local, cloud], local.path)).toBeNull();
     expect(cloudProjectOf([local, cloud], '')).toBeNull();
+  });
+
+  // Nicolas's test of 2026-11-04, written before the fix: "Not created: An agent on <server> is made
+  // as a worker" for a role switched on out of sight. How it fails: a server's project sends
+  // orchestrator, or shows the switch on or usable; a local project loses the switch's state.
+  it('a server\'s project is made as a worker, the switch shown off and locked; a local one keeps the switch', () => {
+    expect(orchestratorFor(true, [local, cloud], cloud.path)).toEqual({ on: false, locked: true, role: 'worker' });
+    expect(orchestratorFor(false, [local, cloud], cloud.path)).toEqual({ on: false, locked: true, role: 'worker' });
+    expect(orchestratorFor(true, [local, cloud], local.path)).toEqual({ on: true, locked: false, role: 'orchestrator' });
+    expect(orchestratorFor(false, [local, cloud], local.path)).toEqual({ on: false, locked: false, role: 'worker' });
   });
 });

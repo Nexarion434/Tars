@@ -88,7 +88,7 @@ export function AgentPanel(props: {
       <div>
         <PanelCaption className="mb-1.5">Name</PanelCaption>
         <div className="flex items-center gap-2.5">
-          <AgentMark name={props.name.trim() || props.namePlaceholder} orchestrator={props.isOrchestrator} size={24} />
+          <AgentMark name={props.name.trim() || props.namePlaceholder} orchestrator={props.isOrchestrator && !pickedCloud} size={24} />
           <Input
             aria-label="Agent name"
             value={props.name}
@@ -183,6 +183,7 @@ export function AgentPanel(props: {
           onBranchNameChange={props.onBranchNameChange}
           isOrchestrator={props.isOrchestrator}
           onOrchestratorToggle={props.onOrchestratorToggle}
+          orchestratorLocked={!!pickedCloud}
           editing={props.editing}
           cliPath={props.cliPath}
           onCliPathChange={props.onCliPathChange}

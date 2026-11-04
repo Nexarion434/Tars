@@ -16,7 +16,7 @@ import { AgentPanel } from './AgentPanel';
 import { TeamPanel } from './TeamPanel';
 import SkillInstallTerminal from './SkillInstallTerminal';
 import { blankMember } from './team-defaults';
-import { canSubmitAgent, canSubmitTeam, deployButtonLabel, deployedMemberName, ownWorktreeOf, worktreeToSave } from './logic';
+import { canSubmitAgent, canSubmitTeam, deployButtonLabel, deployedMemberName, orchestratorFor, ownWorktreeOf, worktreeToSave } from './logic';
 import type { CreationMode } from './types';
 import { ReplaceOrchestratorDialog } from './ReplaceOrchestratorDialog';
 import type { PendingReplace } from './ReplaceOrchestratorDialog';
@@ -316,6 +316,8 @@ export default function NewChatModal({
   }, [existingAgents]);
 
   /* ── submit: one agent ───────────────────────────────────────────── */
+  // A server's project makes a worker whatever the switch says; the switch keeps its state for a local one.
+  const orchestrator = orchestratorFor(isOrchestrator, projects, projectPath);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const commitAgent = useCallback(async () => {
     const agentCharacter = character;
@@ -337,7 +339,7 @@ export default function NewChatModal({
           provider,
           savedPrompt: prompt.trim() || null,
           worktree: worktreeConfig,
-          role: isOrchestrator ? 'orchestrator' : 'worker',
+          role: orchestrator.role,
           cliPath: cliPath || null,
         });
         if (result === false) return;
@@ -354,7 +356,7 @@ export default function NewChatModal({
       const worktreeConfig = useWorktree ? { enabled: true, branchName: branchName.trim() } : undefined;
 
       setSaveRefusal(null);
-      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, undefined, permissionMode, provider, undefined, undefined, effort, isOrchestrator ? 'orchestrator' : 'worker', cliPath || undefined);
+      const result = await onSubmit(projectPath, selectedSkills, finalPrompt, model, worktreeConfig, agentCharacter, finalName, undefined, permissionMode, provider, undefined, undefined, effort, orchestrator.role, cliPath || undefined);
       if (result === false) return;
       if (result && typeof result === 'object' && 'error' in result) {
         setSaveRefusal(result.error);
@@ -377,13 +379,13 @@ export default function NewChatModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, character, onSubmit, isEditMode, editAgent, onUpdate, onClose, isOrchestrator]);
+  }, [projectPath, prompt, selectedSkills, useWorktree, branchName, model, permissionMode, effort, provider, cliPath, agentName, character, onSubmit, isEditMode, editAgent, onUpdate, onClose, orchestrator.role]);
 
   // Switching the toggle on, creating with it on and moving an orchestrator into
   // another project all end here: the project is the one the dialog now names.
   const handleSubmitAgent = useCallback(async () => {
     if (!canSubmitAgent({ projectPath, useWorktree, branchName })) return;
-    if (isOrchestrator) {
+    if (orchestrator.on) {
       // Busy while it looks, as it is while it saves: a second click in
       // between would otherwise save twice.
       setIsSubmitting(true);
@@ -404,7 +406,7 @@ export default function NewChatModal({
       }
     }
     await commitAgent();
-  }, [projectPath, useWorktree, branchName, isOrchestrator, currentOrchestrator, editAgent, isEditMode, agentName, commitAgent]);
+  }, [projectPath, useWorktree, branchName, orchestrator.on, currentOrchestrator, editAgent, isEditMode, agentName, commitAgent]);
 
   /* ── submit: a team ──────────────────────────────────────────────── */
   const selectedMembers = useMemo(
