@@ -197,6 +197,12 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
       console.log(`[cloud] a client was minted: ${client.name} (${client.id}, ${client.kind}, ${client.scopes.join(' ')}), ${client.mintedVia ?? 'from an unknown place'}`);
     });
     console.log(`[cloud] door on ${door.path}`);
+    // Without bash, jq and curl the agents' hooks tell Tars nothing (hook-tools.ts): said once, at boot.
+    if (process.platform === 'linux') {
+      const { missingHookTools, hookToolsSentence } = await import('./hook-tools');
+      const said = hookToolsSentence(missingHookTools());
+      if (said) console.error(`[server] ${said}`);
+    }
   } catch (err) {
     // Fatal: a server without its door serves no client, and a door that did not open may be one another
     // process holds. A non-zero exit lets systemd (or the container) try again.

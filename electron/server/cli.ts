@@ -55,7 +55,10 @@ async function run(command: string | undefined, args: string[]): Promise<number>
     const identity = serverIdentity(serverFile);
     const { doorOnHostFrom } = await import('./door-on-host');
     const doorOnHost = doorOnHostFrom(process.env);
-    printJson({ ...serverStatus(file), serverId: identity.id, name: identity.name, ...(doorOnHost ? { doorOnHost } : {}) });
+    // The tools the agents' hooks run (hook-tools.ts): what is missing, said where the operator looks.
+    const { missingHookTools } = await import('./hook-tools');
+    const missingTools = process.platform === 'linux' ? missingHookTools() : [];
+    printJson({ ...serverStatus(file), serverId: identity.id, name: identity.name, ...(doorOnHost ? { doorOnHost } : {}), ...(missingTools.length ? { missingTools } : {}) });
     return 0;
   }
   if (command === 'clients') {
