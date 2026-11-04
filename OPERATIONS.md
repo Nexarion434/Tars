@@ -2508,7 +2508,10 @@ admits and what it refuses is in [SECURITY.md](SECURITY.md) §8.
 ### Requirements
 
 Linux (on Windows `serve` refuses to run, except a development run with `--dev`), a non-root user, Node 22.12 or later, and the compiler tools `node-pty` needs (it has no
-Linux prebuild): on Ubuntu, as root, `apt-get install -y build-essential python3`. Each CLI the
+Linux prebuild): on Ubuntu, as root, `apt-get install -y build-essential python3`. The agents' hooks
+need `bash`, `jq` and `curl` (`apt-get install -y jq curl`): without jq a Claude agent's SessionStart and
+Stop never reach the server, so it reads as starting for 3 minutes and an orchestrator's delegation is
+refused. `status --json` lists what is missing as `missingTools`, and the server says it in its log at boot. Each CLI the
 agents run is installed and signed in for that user (`claude login` and the like, once, in a
 terminal on the server).
 

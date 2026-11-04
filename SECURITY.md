@@ -953,7 +953,10 @@ agent. A project is a plain name under `~/projects`; a clone takes three address
 shapes, never a credential, a local path or a helper, with no submodules, git's
 own hooks off, one commit deep, and is stopped past 2 GB or 10 minutes. An agent
 made by a client gets no CLI path, second folder or role, and starts only for a
-client that may drive. The server clones over SSH with a key of its own
+client that may drive. A server project's orchestrator is made only for a
+desktop that may create and drive there, never an outside agent: the server
+gives it its tools from the role, as a desktop does, and it takes the role
+from the project's current orchestrator, one per project. The server clones over SSH with a key of its own
 (`~/.tars-private/git`) and its own `known_hosts`, which starts with GitHub's
 published keys. That key is readable by every agent on the server (same user):
 add it to GitHub as a read-only deploy key of one repository, never to the
