@@ -32,6 +32,8 @@ import type { DriveRequest } from '../../../electron/services/cloud/drive';
  *    fingerprint, in an answer
  * 9. the fleet without the server's projects, or with more than their names
  *    and paths
+ * 12. ("l'orchestrateur en cloud", 2026-11-04) an orchestrator made for a
+ *    client that may not drive, or a role that is neither, or the role lost
  * 11. (security review 1, N8) an agent made with a name that is not a short
  *    string, or a character Tars does not draw
  * 10. (security review 1, B1) a clone asked without the client's explicit
@@ -155,6 +157,20 @@ describe('the create routes', () => {
     expect((await call(d.path, 'POST', '/cloud/v1/projects', JSON.stringify({ name: 'x', from: 'somewhere' }), credential)).status).toBe(400);
   });
 
+  it('12. an orchestrator only for a desktop that may create and drive, its role passed on; any other role refused', async () => {
+    const { deps, file, made } = setup();
+    const seeCreate = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'create'] }).credential;
+    const full = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'drive', 'create'] }).credential;
+    const d = await open(deps);
+    const body = (role: unknown) => JSON.stringify({ projectName: 'test-cloud', name: 'Lead', role });
+    expect(await call(d.path, 'POST', '/cloud/v1/agents', body('orchestrator'), seeCreate)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/drive/) } });
+    expect((await call(d.path, 'POST', '/cloud/v1/agents', body('boss'), full)).status).toBe(400);
+    expect(made).toEqual([]);
+    expect((await call(d.path, 'POST', '/cloud/v1/agents', body('orchestrator'), full)).status).toBe(201);
+    expect((await call(d.path, 'POST', '/cloud/v1/agents', body('worker'), seeCreate)).status).toBe(201);
+    expect(made.map(m => (m.args[0] as { role?: string }).role)).toEqual(['orchestrator', 'worker']);
+  });
+
   it('11. an agent\'s name is a string of 80 at most, its character one Tars draws', async () => {
     const { deps, file, made } = setup();
     const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'create'] });
@@ -188,7 +204,7 @@ describe('the create routes', () => {
     const d = await open(deps);
     expect((await call(d.path, 'POST', '/cloud/v1/agents', JSON.stringify({ projectName: 'elsewhere', name: 'Nova' }), credential)).status).toBe(404);
     expect((await call(d.path, 'POST', '/cloud/v1/agents', JSON.stringify({ projectPath: '/etc', name: 'Nova' }), credential)).status).toBe(404);
-    for (const extra of [{ cliPath: '/bin/sh' }, { secondaryProjectPath: '/home/tars' }, { role: 'orchestrator' }, { orchestratorMode: true }]) {
+    for (const extra of [{ cliPath: '/bin/sh' }, { secondaryProjectPath: '/home/tars' }, { orchestratorMode: true }]) {
       const answer = await call(d.path, 'POST', '/cloud/v1/agents', JSON.stringify({ projectName: 'test-cloud', name: 'Nova', ...extra }), credential);
       expect(answer.status, JSON.stringify(extra)).toBe(400);
     }

@@ -263,8 +263,8 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
   });
 
   /** What a client may set on an agent it creates: the New agent form's fields, never a binary, a second folder or a role. */
-  const AGENT_FIELDS = ['name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character'] as const;
-  const NOT_FROM_A_CLIENT = ['cliPath', 'secondaryProjectPath', 'role', 'orchestratorMode'];
+  const AGENT_FIELDS = ['name', 'provider', 'model', 'effort', 'permissionMode', 'skills', 'character', 'role'] as const;
+  const NOT_FROM_A_CLIENT = ['cliPath', 'secondaryProjectPath', 'orchestratorMode'];
   const CHARACTERS: string[] = ['robot', 'ninja', 'wizard', 'astronaut', 'knight', 'pirate', 'alien', 'viking'] satisfies AgentCharacter[];
 
   /** POST /cloud/v1/agents: agent-create.ts's record in one of the server's projects, started only through the drive executor. */
@@ -273,7 +273,18 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     if (!create) { json(res, 404, { error: 'Not found.' }); return; }
     if (outsideRefused(again, res)) return;
     if (NOT_FROM_A_CLIENT.some(key => key in body)) {
-      json(res, 400, { error: 'A client sets no CLI path, second folder or role on a server\'s agent.' });
+      json(res, 400, { error: 'A client sets no CLI path or second folder on a server\'s agent.' });
+      return;
+    }
+    // Its project's orchestrator ("l'orchestrateur en cloud", 2026-11-04): a desktop that may create and drive
+    // here, never an outside agent (refused above). The server gives it its tools from the role, and it takes
+    // the role from its project's current one (core/agent-role.ts), as on a desktop.
+    if (body.role !== undefined && body.role !== 'orchestrator' && body.role !== 'worker') {
+      json(res, 400, { error: 'An agent\'s role is orchestrator or worker.' });
+      return;
+    }
+    if (body.role === 'orchestrator' && !may(again, 'drive')) {
+      json(res, 403, { error: `${deps.identity().name} does not let ${again.name} ${SCOPE_WORDS.drive}: only a computer that may makes an orchestrator there.` });
       return;
     }
     // What a remote client names and draws (security review 1, N8): a short string, a character Tars has.

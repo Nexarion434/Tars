@@ -46,6 +46,12 @@ export interface AgentCreateContext {
   announce(agent: AgentStatus): void;
   /** The new agent's id; uuid v4 unless a test names one. */
   newId?: () => string;
+  /**
+   * An orchestrator may be made: given by a Tars server's door only, for a desktop that may create
+   * and drive there, since that server has no Agents page to make one in (Nicolas's "l'orchestrateur
+   * en cloud", 2026-11-04). The API's create_agent never gives it.
+   */
+  orchestratorAllowed?: boolean;
 }
 
 export type AgentCreateResult = { ok: true; agent: AgentStatus } | { ok: false; status: 400 | 403; error: string };
@@ -110,7 +116,7 @@ export function createAgentRecord(fields: NewAgentFields, ctx: AgentCreateContex
   // "Rogue" orchestrator of its project, and with allowCrossProject, in
   // bypass, of another one. Nothing asks for it legitimately: the MCP's
   // create_agent sends no role. Decided on 2026-09-23, for every caller.
-  if (role === 'orchestrator') {
+  if (role === 'orchestrator' && ctx.orchestratorAllowed !== true) {
     return refuse(403, 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; the user can make it the orchestrator there.');
   }
 

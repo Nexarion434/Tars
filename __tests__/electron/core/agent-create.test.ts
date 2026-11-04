@@ -27,6 +27,9 @@ import type { AgentStatus, AppSettings } from '../../../electron/types';
  * 4. creating spawns anything: a terminal, a worktree (no ptyId, no
  *    worktreePath on the record)
  * 5. a record made is not saved once and announced once
+ * 6. (Tars cloud, "l'orchestrateur en cloud", 2026-11-04) an orchestrator made
+ *    without the caller's explicit leave (`orchestratorAllowed`, given by a
+ *    Tars server's door only), or, with it, not the project's only one
  */
 
 const project = path.join(os.tmpdir(), 'tars-agent-create-project');
@@ -37,6 +40,18 @@ const context = (settings: Partial<AppSettings> = {}) => {
   const ctx: AgentCreateContext = { agents, saveAgents, appSettings: () => settings as AppSettings, announce, newId: () => 'a-new-id' };
   return { ctx, agents, saveAgents, announce };
 };
+
+describe('createAgentRecord, an orchestrator with the door\'s leave (6)', () => {
+  it('6. made as its project\'s orchestrator only with the leave, the one it had becoming a worker', () => {
+    const { ctx, agents } = context();
+    agents.set('old', { id: 'old', projectPath: project, role: 'orchestrator', orchestratorMode: true, status: 'idle' } as AgentStatus);
+    agents.set('elsewhere', { id: 'elsewhere', projectPath: `${project}-2`, role: 'orchestrator', orchestratorMode: true, status: 'idle' } as AgentStatus);
+    expect(createAgentRecord({ projectPath: project, role: 'orchestrator' }, ctx)).toMatchObject({ ok: false, status: 403 });
+    expect(createAgentRecord({ projectPath: project, role: 'orchestrator' }, { ...ctx, orchestratorAllowed: true })).toMatchObject({ ok: true, agent: { role: 'orchestrator' } });
+    expect(agents.get('old')?.role).toBe('worker');
+    expect(agents.get('elsewhere')?.role).toBe('orchestrator');
+  });
+});
 
 describe('createAgentRecord', () => {
   it.each([

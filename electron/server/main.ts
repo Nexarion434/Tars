@@ -136,8 +136,10 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
         projects: () => listProjects(),
         project: (name, from) => createProject(name, from, { gitAccess: { dir: privatePath('git'), serverId: identity.id }, trustFile: privatePath('project-trust.json') }),
         agent: async fields => {
+          // The door checked who may make an orchestrator (create and drive, never an outside agent).
           const made = createAgentRecord(fields as unknown as NewAgentFields, {
             agents, saveAgents, appSettings: () => readAppSettingsFromDisk() as unknown as AppSettings, announce: () => scheduleTick(),
+            orchestratorAllowed: true,
           });
           return made.ok ? { ok: true as const, agent: { id: made.agent.id, name: made.agent.name ?? made.agent.id } } : made;
         },
