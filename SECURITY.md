@@ -952,11 +952,28 @@ projects and agents, checked again once its body arrives, and never an outside
 agent. A project is a plain name under `~/projects`; a clone takes three address
 shapes, never a credential, a local path or a helper, with no submodules, git's
 own hooks off, one commit deep, and is stopped past 2 GB or 10 minutes. An agent
-made by a client gets no CLI path, second folder or role, and starts only for a
-client that may drive. A server project's orchestrator is made only for a
-desktop that may create and drive there, never an outside agent: the server
-gives it its tools from the role, as a desktop does, and it takes the role
-from the project's current orchestrator, one per project. The server clones over SSH with a key of its own
+made by a client goes in one of the server's projects, with the New agent form's
+fields only: a name of 80 characters at most, a provider, a model, an effort, a
+permission mode, skills, a character Tars draws, and a role, worker or
+orchestrator. A CLI path, a second folder or `orchestratorMode` in the request
+is refused (400). It starts only through the drive executor, for a client that
+may drive. A server project's orchestrator is made only for a desktop that may
+create and drive there, never an outside agent: the server gives it its tools
+from the role, as a desktop does, and it takes the role from the project's
+current orchestrator, one per project, however that one's path is spelled.
+
+These limits are on what a client asks the door. They are hygiene, not a
+boundary: a client that may create and drive already holds the server user's
+powers, since it can start an agent in `bypass` and type anything into it. And a
+server orchestrator, once made, acts under the local API's rules (§2), as a
+desktop's does. Its `create_agent` makes an agent in its own project, or at any
+path of the server it names with `allowCrossProject: true`, with a CLI path and a
+second folder, never an orchestrator. Its `update_agent` changes its own
+project's workers, their CLI path and second folder included, never a role or a
+project. With `allowCrossProject: true` it messages, starts, stops and hands
+work to every agent of the server.
+
+The server clones over SSH with a key of its own
 (`~/.tars-private/git`) and its own `known_hosts`, which starts with GitHub's
 published keys. That key is readable by every agent on the server (same user):
 add it to GitHub as a read-only deploy key of one repository, never to the
