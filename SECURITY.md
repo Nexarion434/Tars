@@ -962,6 +962,17 @@ create and drive there, never an outside agent: the server gives it its tools
 from the role, as a desktop does, and it takes the role from the project's
 current orchestrator, one per project, however that one's path is spelled.
 
+**Deleting on a server.** `DELETE /cloud/v1/agents/:id` takes the same `create`
+and is refused to an outside agent whatever its scopes, as a create is. It
+answers 404 for an agent the server does not have, and leaves an agent at work
+alone (running, or waiting on its user: 409, "stop it first, then delete it"):
+stopping takes `drive`, which `create` alone does not give, and a turn cut short
+loses its work. Otherwise it goes the way the window's own Delete goes
+(`core/agent-remove.ts`): its runs and permission questions ended, its terminal
+killed, its record gone, an orchestrator like any other. No folder is removed:
+an agent made by a client works in its project's folder, never a worktree of its
+own, and the project stays.
+
 These limits are on what a client asks the door. They are hygiene, not a
 boundary: a client that may create and drive already holds the server user's
 powers, since it can start an agent in `bypass` and type anything into it. And a

@@ -48,6 +48,10 @@ export interface DoorCreate {
   /** agent-create.ts's createAgentRecord, the fields already narrowed to a client's. */
   agent(fields: Record<string, unknown>): Promise<{ ok: true; agent: { id: string; name: string } } | { ok: false; status: number; error: string }>;
   gitKey(): Promise<{ ok: true; publicKey: string; fingerprint: string } | { ok: false; error: string }>;
+  /** One of the server's agents, as a removal reads it, or null for one it does not have. */
+  agentOf(agentId: string): { name: string; status: string } | null;
+  /** core/agent-remove.ts's removeAgent: what the window's Delete does, its worktree saved or kept as there. */
+  remove(agentId: string): Promise<{ savedTo?: string; worktreeKept?: string }>;
 }
 
 export interface DoorDeps {
@@ -229,10 +233,10 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     );
   });
 
-  // Hermes and every outside agent create nothing on a server, whatever their scopes (decision 4, M3).
+  // Hermes and every outside agent create and delete nothing on a server, whatever their scopes (decision 4, M3).
   const outsideRefused = (client: CloudClient, res: http.ServerResponse): boolean => {
     if (client.kind !== 'outside-agent') return false;
-    json(res, 403, { error: `${client.name} is an outside agent: it creates nothing on this server.` });
+    json(res, 403, { error: `${client.name} is an outside agent: it creates and deletes nothing on this server.` });
     return true;
   };
   const failed = (res: http.ServerResponse) => (err: unknown) => {
@@ -319,6 +323,24 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     }, failed(res));
   });
 
+  /**
+   * DELETE /cloud/v1/agents/:agentId: the window's own Delete, for a client that may create. An agent at work
+   * (running, or waiting on its user: what a card offers to stop) is left alone and the client told to stop it
+   * first: stopping takes `drive`, which `create` alone does not give, and a turn cut short loses its work.
+   */
+  const removeRoute = ({ client, agentId, res }: Request) => {
+    const create = deps.create;
+    if (!create) { json(res, 404, { error: 'Not found.' }); return; }
+    if (outsideRefused(client!, res)) return;
+    const agent = create.agentOf(agentId!);
+    if (!agent) { json(res, 404, { error: NO_SUCH_AGENT }); return; }
+    if (agent.status === 'running' || agent.status === 'waiting') {
+      json(res, 409, { error: `${agent.name} is at work on ${deps.identity().name}: stop it first, then delete it.` });
+      return;
+    }
+    create.remove(agentId!).then(gone => json(res, 200, { ok: true, ...gone }), failed(res));
+  };
+
   const routes: Route[] = [
     {
       method: 'GET', pattern: /^\/cloud\/v1\/hello$/, scope: null,
@@ -357,6 +379,7 @@ export function startDoor(deps: DoorDeps): Promise<Door> {
     { method: 'POST', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}/message$`), scope: 'drive', handle: driveRoute('message') },
     { method: 'POST', pattern: /^\/cloud\/v1\/projects$/, scope: 'create', handle: projectRoute },
     { method: 'POST', pattern: /^\/cloud\/v1\/agents$/, scope: 'create', handle: agentRoute },
+    { method: 'DELETE', pattern: new RegExp(`^/cloud/v1/agents/${AGENT_PATH}$`), scope: 'create', handle: removeRoute },
     {
       // The server's own git key, its public half: what the user adds to GitHub (git-access.ts).
       method: 'GET', pattern: /^\/cloud\/v1\/git-key$/, scope: 'create',

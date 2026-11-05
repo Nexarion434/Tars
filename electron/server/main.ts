@@ -104,6 +104,7 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
   const { createProject, listProjects } = await import('../services/cloud/projects');
   const { gitKey } = await import('../services/cloud/git-access');
   const { createAgentRecord } = await import('../core/agent-create');
+  const { removeAgent } = await import('../core/agent-remove');
   const { readAppSettingsFromDisk } = await import('../providers/cli-provider');
   const minFreeMb = () => {
     const set = Number((readAppSettingsFromDisk() as { cloudMinFreeMb?: unknown }).cloudMinFreeMb);
@@ -144,6 +145,17 @@ export async function serve(opts: { dev: boolean }): Promise<void> {
           return made.ok ? { ok: true as const, agent: { id: made.agent.id, name: made.agent.name ?? made.agent.id } } : made;
         },
         gitKey: () => gitKey({ dir: privatePath('git'), serverId: identity.id }),
+        agentOf: agentId => {
+          const agent = agents.get(agentId);
+          return agent ? { name: agent.name ?? agent.id, status: agent.status } : null;
+        },
+        // The window's Delete (agent:remove): its runs and questions ended, its terminal killed, its record gone.
+        // A server's agent works in its project's folder, never a worktree of its own: no folder is removed.
+        remove: async agentId => {
+          const { savedTo, worktreeKept } = await removeAgent(agentId);
+          scheduleTick();
+          return { savedTo, worktreeKept };
+        },
       },
       // The window's own path: agent:input (writeHumanInput) and agent:resize.
       drive: (request, caller) => executeDrive(request, caller, {

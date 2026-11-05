@@ -40,6 +40,13 @@ import type { DriveRequest } from '../../../electron/services/cloud/drive';
  * 10. (security review 1, B1) a clone asked without the client's explicit
  *    trust in the repository's code reaching the clone, or the client's word
  *    passed on without who gave it (the client's own name, never the body's)
+ * 13. (Delete on a server's agent, 2026-11-05) DELETE /cloud/v1/agents/:id
+ *    removing for a client without `create`, or for an outside agent with
+ *    every scope; an agent the server does not have answered as removed; an
+ *    agent at work (running, or waiting on its user) removed under it rather
+ *    than refused with a sentence that says to stop it first; the removal
+ *    not going through the server's own (the window's Delete), or an
+ *    orchestrator kept from it
  */
 
 const doors: Door[] = [];
@@ -51,6 +58,13 @@ function setup() {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-create-')), 'cloud-clients.json');
   const made: Array<{ what: string; args: unknown[] }> = [];
   const driven: DriveRequest[] = [];
+  // The server's agents a removal can name: one idle, one at work, one asking its user, its orchestrator stopped.
+  const fleet = new Map<string, { name: string; status: string }>([
+    ['nova', { name: 'Nova', status: 'idle' }],
+    ['busy', { name: 'Busy', status: 'running' }],
+    ['asking', { name: 'Asking', status: 'waiting' }],
+    ['lead', { name: 'Lead', status: 'stopped' }],
+  ]);
   const create: DoorCreate = {
     projects: () => PROJECTS,
     project: async (name, from) => {
@@ -62,6 +76,12 @@ function setup() {
       return { ok: true, agent: { id: 'a-new', name: String(fields.name) } };
     },
     gitKey: async () => ({ ok: true, publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' }),
+    agentOf: id => fleet.get(id) ?? null,
+    remove: async id => {
+      made.push({ what: 'remove', args: [id] });
+      fleet.delete(id);
+      return {};
+    },
   };
   const deps = {
     socketPath: doorSocketPath(fs.mkdtempSync(path.join(os.tmpdir(), 'tars-door-'))),
@@ -244,5 +264,54 @@ describe('the create routes', () => {
     const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see'] });
     const d = await open(deps);
     expect(await call(d.path, 'GET', '/cloud/v1/fleet', null, credential)).toEqual({ status: 200, body: { youMay: ['see'], agents: [], projects: PROJECTS } });
+  });
+});
+
+describe('the removal route', () => {
+  it('13a. a client with create removes an agent through the server\'s own removal, an orchestrator like any other', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'create'] });
+    const d = await open(deps);
+    expect(await call(d.path, 'DELETE', '/cloud/v1/agents/nova', null, credential)).toEqual({ status: 200, body: { ok: true } });
+    expect(await call(d.path, 'DELETE', '/cloud/v1/agents/lead', null, credential)).toEqual({ status: 200, body: { ok: true } });
+    expect(made).toEqual([{ what: 'remove', args: ['nova'] }, { what: 'remove', args: ['lead'] }]);
+    // Gone: a second removal is told so.
+    expect((await call(d.path, 'DELETE', '/cloud/v1/agents/nova', null, credential)).status).toBe(404);
+  });
+
+  it('13b. a client without create removes nothing', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
+    const d = await open(deps);
+    expect(await call(d.path, 'DELETE', '/cloud/v1/agents/nova', null, credential)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/create/) } });
+    expect(made).toEqual([]);
+  });
+
+  it('13c. an outside agent removes nothing, whatever its scopes', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'Hermes', kind: 'outside-agent', scopes: ['see', 'drive', 'create'] });
+    const d = await open(deps);
+    expect(await call(d.path, 'DELETE', '/cloud/v1/agents/nova', null, credential)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/outside agent/) } });
+    expect(made).toEqual([]);
+  });
+
+  it('13d. an agent the server does not have is not answered as removed', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'create'] });
+    const d = await open(deps);
+    expect(await call(d.path, 'DELETE', '/cloud/v1/agents/ghost', null, credential)).toEqual({ status: 404, body: { error: 'No such agent on this Tars server.' } });
+    expect(made).toEqual([]);
+  });
+
+  it('13e. an agent at work is left alone, with a sentence that says to stop it first', async () => {
+    const { deps, file, made } = setup();
+    const { credential } = addClient(file, { name: 'PC-Nicolas', kind: 'desktop', scopes: ['see', 'drive', 'create'] });
+    const d = await open(deps);
+    for (const [id, name] of [['busy', 'Busy'], ['asking', 'Asking']]) {
+      const answer = await call(d.path, 'DELETE', `/cloud/v1/agents/${id}`, null, credential);
+      expect(answer.status, id).toBe(409);
+      expect(String(answer.body.error), id).toBe(`${name} is at work on vps: stop it first, then delete it.`);
+    }
+    expect(made).toEqual([]);
   });
 });
