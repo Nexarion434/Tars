@@ -1025,6 +1025,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     drive: (remoteId: string, action: string, body: unknown) => ipcRenderer.invoke('cloud:drive', remoteId, action, body),
     keys: (remoteId: string, data: string) => ipcRenderer.invoke('cloud:keys', remoteId, data),
     resize: (remoteId: string, cols: number, rows: number) => ipcRenderer.invoke('cloud:resize', remoteId, cols, rows),
+    remove: (remoteId: string) => ipcRenderer.invoke('cloud:remove', remoteId),
     // M3: creating on a server (cloud-handlers.ts).
     createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted?: true } }) => ipcRenderer.invoke('cloud:createProject', id, body),
     createAgent: (id: string, body: Record<string, unknown>) => ipcRenderer.invoke('cloud:createAgent', id, body),

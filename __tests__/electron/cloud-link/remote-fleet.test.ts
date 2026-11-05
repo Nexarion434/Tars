@@ -41,6 +41,10 @@ import { MAX_KEYS } from '../../../electron/services/cloud/drive';
  * 17. a stream the door keeps refusing (429, 404, 5xx) asked again every few
  *    seconds without end, with the whole screen appended to the pane each
  *    time; one refused 403 (see taken away) asked again at all (review 1, R2-1)
+ * Added for Delete on a server's agent (2026-11-05):
+ * 18. `create` read when the fleet does not say it; a deleted agent kept in the
+ *    list until the next poll, or dropped though the server refused, its
+ *    sentence lost; a delete sent for an id that is not remote
  */
 
 const VPS: CloudServer = { id: 's_1a2b3c4d', serverId: 'd795d0ff4d5d8e50', name: 'my-vps' };
@@ -57,6 +61,8 @@ let opened: Array<{ server: string; agentId: string; onChunk: (c: string) => voi
 let waits: number[];
 let driven: Array<[string, string, string, Record<string, unknown>]>;
 let driveAnswers: DoorAnswer[];
+let removed: Array<[string, string]>;
+let removeAnswer: DoorAnswer;
 let refused: string[];
 let clock: number;
 let timers: Array<{ at: number; fn: () => void }>;
@@ -73,6 +79,10 @@ function clientOf(server: CloudServer): DoorClient {
     drive: async (agentId, action, body) => {
       driven.push([server.id, agentId, action, body]);
       return driveAnswers.length > 1 ? driveAnswers.shift()! : driveAnswers[0];
+    },
+    removeAgent: async agentId => {
+      removed.push([server.id, agentId]);
+      return removeAnswer;
     },
     stream: (agentId, onChunk, onEnd, opts) => {
       // open() stands for the door's 200 at the stream's head.
@@ -118,6 +128,8 @@ beforeEach(() => {
   waits = [];
   driven = [];
   driveAnswers = [{ status: 200, body: { ok: true } }];
+  removed = [];
+  removeAnswer = { status: 200, body: { ok: true } };
   refused = [];
   clock = Date.parse('2026-11-03T02:00:00.000Z');
   timers = [];
@@ -378,5 +390,28 @@ describe('driving', () => {
     await fleet.resize(rid(VPS, 'a1'), 120, 40);
     expect(driven).toEqual([[VPS.id, 'a1', 'size', { cols: 120, rows: 40 }]]);
     expect(await fleet.screen(rid(VPS, 'a1'))).toEqual({ screen: 'my-vps:a1', cliRunning: true });
+  });
+});
+
+describe('a delete', () => {
+  it("18. leaves the list as soon as the server says it is done; a refusal keeps it, with the server's sentence", async () => {
+    const fleet = createRemoteFleet(deps());
+    await fleet.poll();
+    expect(fleet.list()[0].server.create).toBeUndefined();
+    answers.set(VPS.id, fleetOf(['a1', 'a2'], ['see', 'create']));
+    await fleet.poll();
+    expect(fleet.list()[0].server.create).toBe(true);
+    const busy = 'Agent a1 is at work on my-vps: stop it first, then delete it.';
+    removeAnswer = { status: 409, body: { error: busy } };
+    expect(await fleet.remove(rid(VPS, 'a1'))).toEqual({ success: false, error: busy });
+    expect(fleet.list().map(a => a.agentId)).toEqual(['a1', 'a2']);
+    removeAnswer = { status: 200, body: { ok: true } };
+    const told = fleets.length;
+    expect(await fleet.remove(rid(VPS, 'a1'))).toEqual({ success: true });
+    expect(fleet.list().map(a => a.agentId)).toEqual(['a2']);
+    expect(fleets.slice(told).map(list => (list as Array<{ agentId: string }>).map(a => a.agentId))).toEqual([['a2']]);
+    expect(removed).toEqual([[VPS.id, 'a1'], [VPS.id, 'a1']]);
+    expect(await fleet.remove('a1')).toEqual({ success: false, error: 'There is no such agent.' });
+    expect(removed).toHaveLength(2);
   });
 });

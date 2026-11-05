@@ -2578,6 +2578,8 @@ export interface ElectronAPI {
     drive: (remoteId: string, action: 'start' | 'stop' | 'message', body: { reason?: string; text?: string }) => Promise<CloudDriveResult>;
     keys: (remoteId: string, data: string) => Promise<CloudDriveResult>;
     resize: (remoteId: string, cols: number, rows: number) => Promise<CloudDriveResult>;
+    /** One of a server's agents deleted there, where it lets this computer create; the server's sentence when it refuses. */
+    remove: (remoteId: string) => Promise<CloudDriveResult>;
     /** M3: a project made on the server, empty or cloned with the server's own git access. */
     /** A clone needs `trusted: true`, the user's word that they trust the repository's code: the server refuses it otherwise. */
     createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted?: true } }) => Promise<{ success: true; project: CloudProjectView } | CloudFailure>;
@@ -2646,7 +2648,8 @@ export interface CloudRemoteAgent {
   rows?: number;
   /** Its project's orchestrator on that server; never copied onto a local agent (remoteToAgent). */
   role?: 'orchestrator';
-  server: { id: string; serverId: string; name: string; status: CloudServerStatus; offlineSince?: string; drive: boolean };
+  /** `create` only where the server lets this computer create there, and so delete its agents. */
+  server: { id: string; serverId: string; name: string; status: CloudServerStatus; offlineSince?: string; drive: boolean; create?: true };
 }
 
 declare global {

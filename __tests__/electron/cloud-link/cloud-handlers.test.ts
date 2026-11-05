@@ -120,6 +120,7 @@ describe('window.electronAPI.cloud', () => {
     for (const remoteId of ['a1', 'm:m-aaaaaaaaaaaaaaaa:a1', `c:${SERVER_ID}:a/b`, null]) {
       expect(await t.call('cloud:drive', remoteId, 'stop', { reason: 'x' }), String(remoteId)).toMatchObject({ success: false });
       expect(await t.call('cloud:keys', remoteId, 'ls'), String(remoteId)).toMatchObject({ success: false });
+      expect(await t.call('cloud:remove', remoteId), String(remoteId)).toMatchObject({ success: false });
       expect(await t.call('cloud:screen', remoteId)).toBeNull();
     }
     expect(await t.call('cloud:drive', `c:${SERVER_ID}:a1`, 'delete', {})).toMatchObject({ success: false });

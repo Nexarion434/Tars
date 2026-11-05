@@ -29,6 +29,11 @@ import { DEV_URL, apiPort } from './ports.mjs';
  *    Orchestrator switch on: the server makes it with the role, and the task
  *    it hands a worker of the project (run-task with its own token, as
  *    delegate_task does) is typed into that worker's terminal.
+ * 5. Delete on a server's agent (2026-11-05): on the Agents page its card's
+ *    delete is offered (this computer may create there). The worker at work
+ *    (its handed task) is refused, the server's sentence under its card; an
+ *    idle agent and the project's orchestrator, confirmed, are deleted there,
+ *    their cards go, and the project's folder stays on the server.
  * Leaves values.json and a picture per step in its run directory.
  *   E2E_PORT_OFFSET=40 npx playwright test e2e/cloud-create.spec.ts
  */
@@ -132,7 +137,7 @@ function desktopHome(minted: { id: string; credential: string; serverId: string 
 
 type CloudApi = { electronAPI: { cloud: {
   createAgent: (id: string, body: Record<string, unknown>) => Promise<{ success: boolean; agent?: { id: string }; started?: boolean; error?: string; startError?: string }>;
-  agents: () => Promise<Array<{ agentId: string; projectPath: string; cliRunning: boolean; role?: string }>>;
+  agents: () => Promise<Array<{ agentId: string; projectPath: string; cliRunning: boolean; role?: string; server: { create?: true } }>>;
 } } };
 
 test('a project and an agent made on a tars server from this computer', async () => {
@@ -223,6 +228,44 @@ test('a project and an agent made on a tars server from this computer', async ()
     const leadId = (await lead())!.agentId;
     values.orchestrator = { agent: await lead(), delegated: fs.readFileSync(path.join(server.home, `typed-${leadId}.log.delegated`), 'utf8') };
     await stepShot(page, '06-the-worker-got-its-task');
+
+    // 5. Delete on a server's agent, from its card on the Agents page: offered, confirmed, gone there and here.
+    const doomed = await page.evaluate(([id, p]) => (window as unknown as CloudApi).electronAPI.cloud.createAgent(id, { projectPath: p, name: 'To delete', provider: 'claude' }), [PROFILE, projectPath] as const);
+    expect(doomed).toMatchObject({ success: true, started: false });
+    const doomedId = `c:${status.serverId}:${doomed.agent!.id}`;
+    await page.goto(`${DEV_URL}/agents`, { waitUntil: 'domcontentloaded' });
+    await splashGone(page);
+    const doomedCard = page.locator(`[data-agent-card="${doomedId}"]`);
+    await expect(doomedCard).toBeVisible({ timeout: 30_000 });
+    const deleteButton = doomedCard.getByRole('button', { name: 'delete', exact: true });
+    await expect(deleteButton).toBeEnabled();
+    await stepShot(page, '07-delete-offered-on-the-server-agent');
+    const confirmDelete = async (card: typeof doomedCard): Promise<string> => {
+      const confirmed = new Promise<string>(resolve => page.once('dialog', dialog => { resolve(dialog.message()); void dialog.accept(); }));
+      await card.getByRole('button', { name: 'delete', exact: true }).click();
+      return confirmed;
+    };
+    // The worker is at work on the task the lead handed it: the server leaves it, and says why under its card.
+    const busyCard = page.locator(`[data-agent-card="c:${status.serverId}:${worker}"]`);
+    values.refusedConfirm = await confirmDelete(busyCard);
+    await expect(busyCard.locator('[data-cloud-drive-error]')).toHaveText(/^Made from the desktop is at work on .+: stop it first, then delete it\.$/, { timeout: 30_000 });
+    await expect(busyCard).toBeVisible();
+    await stepShot(page, '08-an-agent-at-work-refused');
+    values.deleteConfirm = await confirmDelete(doomedCard);
+    expect(values.deleteConfirm).toContain(`on ${SERVER_NAME}`);
+    await expect(doomedCard).toHaveCount(0, { timeout: 30_000 });
+    // The project's orchestrator, removed like any other agent.
+    const leadCard = page.locator(`[data-agent-card="c:${status.serverId}:${leadId}"]`);
+    await confirmDelete(leadCard);
+    await expect(leadCard).toHaveCount(0, { timeout: 30_000 });
+    const left = await page.evaluate(() => (window as unknown as CloudApi).electronAPI.cloud.agents());
+    expect(left.map(a => a.agentId)).not.toContain(doomed.agent!.id);
+    expect(left.map(a => a.agentId)).not.toContain(leadId);
+    expect(left.map(a => a.agentId)).toContain(worker);
+    expect(left.every(a => a.server.create === true)).toBe(true);
+    expect(fs.existsSync(path.join(made, '.git'))).toBe(true);
+    values.deleted = { agents: [doomed.agent, leadId], leftOnServer: left.map(a => a.agentId), folderKept: made };
+    await stepShot(page, '09-their-cards-gone');
     recordValues(values);
   } finally {
     await app.close();

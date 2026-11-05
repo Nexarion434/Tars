@@ -67,6 +67,8 @@ async function setup(opts: { screen?: string; recheckMs?: number } = {}) {
       project: async name => ({ ok: true, path: `/home/tars/projects/${name}` }),
       agent: async fields => ({ ok: true, agent: { id: 'a-new', name: String(fields.name) } }),
       gitKey: async () => ({ ok: true, publicKey: 'ssh-ed25519 AAAA tars-server', fingerprint: 'SHA256:abc' }),
+      agentOf: agentId => (agentId === 'nova' ? { name: 'Nova', status: 'running' } : agentId === 'rest' ? { name: 'Rest', status: 'idle' } : null),
+      remove: async () => ({}),
     },
   });
   doors.push(door);
@@ -91,6 +93,14 @@ describe('creating through the client (M3 Task 7)', () => {
     const old = addClient(t.clientsFile, { name: 'Mac', kind: 'desktop', scopes: ['see', 'drive'] });
     expect((await createDoorClient(t.end, old.credential).createProject({ name: 'x', from: { kind: 'empty' } })).status).toBe(403);
     expect(await client.createAgent({ projectName: 'test-cloud', name: 'x'.repeat(65 * 1024) })).toMatchObject({ status: 413, body: { error: expect.stringMatching(/not sent/) } });
+  });
+
+  it("deletes one of the server's agents with DELETE, the door's refusal kept whole", async () => {
+    const t = await setup();
+    const { credential } = addClient(t.clientsFile, { name: 'PC', kind: 'desktop', scopes: ['see', 'create'] });
+    const client = createDoorClient(t.end, credential);
+    expect(await client.removeAgent('rest')).toEqual({ status: 200, body: { ok: true } });
+    expect(await client.removeAgent('nova')).toEqual({ status: 409, body: { error: 'Nova is at work on my-vps: stop it first, then delete it.' } });
   });
 });
 

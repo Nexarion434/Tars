@@ -22,6 +22,7 @@ import { Button, Chip, CloudBadge, Dropdown, LoadingState, type DropdownOption }
 import { activeFilter, ALL_MACHINES, filterByMachine, machineFilterOptions, placeRemote, tabMachines } from '@/lib/cloud';
 import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
 import { useCloudProjects } from '@/hooks/useCloudProjects';
+import { reportDriveAnswer } from '@/hooks/useRemoteDrive';
 import { statusWord } from './constants';
 import type { AgentPermissionMode } from '@/types/agent';
 import { templateModeOf } from '@/lib/plan-mode';
@@ -250,6 +251,19 @@ export default function AgentsPage() {
   const handleRemoveAgent = useCallback(async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     const agentName = agent?.name || 'this agent';
+
+    // A server's agent is deleted there, where it lets this computer create: its card goes once the server
+    // says it is done, and the server's sentence shows under the card when it will not (an agent at work).
+    if (agent?.remote) {
+      const where = agent.remote.machineName;
+      if (!window.confirm(`Delete "${agentName}" on ${where}? It is removed from ${where} and cannot be undone. Its project folder stays.`)) return;
+      try {
+        reportDriveAnswer(agentId, await window.electronAPI?.cloud?.remove(agentId));
+      } catch (err) {
+        reportDriveAnswer(agentId, undefined, err);
+      }
+      return;
+    }
 
     let worktreeNote = '';
     if (agent?.worktreePath && agent?.branchName) {

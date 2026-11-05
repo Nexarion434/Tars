@@ -35,6 +35,8 @@ export interface DoorClient extends LinkClient {
   createProject(body: Record<string, unknown>): Promise<DoorAnswer>;
   createAgent(body: Record<string, unknown>): Promise<DoorAnswer>;
   gitKey(): Promise<DoorAnswer>;
+  /** One of the server's agents deleted there, as its own window's Delete does (the door's DELETE route). */
+  removeAgent(agentId: string): Promise<DoorAnswer>;
   /** One agent's live output: onOpen once the door answered 200, each chunk in order, then onEnd once, and nothing after it. */
   stream(agentId: string, onChunk: (chunk: string) => void, onEnd: (how: StreamEnd) => void, opts?: { idleMs?: number; onOpen?: () => void }): { close(): void };
 }
@@ -201,6 +203,8 @@ export function createDoorClient(end: LocalForwardEnd, credential?: string): Doo
     createProject: body => createRequest(end, '/cloud/v1/projects', body, credential, CLONE_TIMEOUT_MS),
     createAgent: body => createRequest(end, '/cloud/v1/agents', body, credential, START_TIMEOUT_MS),
     gitKey: () => request(end, 'GET', '/cloud/v1/git-key', { credential }),
+    // Its runs ended and its terminal killed first, as a start takes its time: the start's wait.
+    removeAgent: agentId => request(end, 'DELETE', `/cloud/v1/agents/${encodeURIComponent(agentId)}`, { credential, timeoutMs: START_TIMEOUT_MS }),
   };
 }
 

@@ -223,6 +223,8 @@ export function registerCloudHandlers(deps: CloudHandlerDeps): CloudService {
     if (result.success) void fleet.poll();
     return result;
   });
+  // Delete on a server's agent: the server decides (create, not an outside agent, not at work) and says why not.
+  ipc.handle('cloud:remove', (_e, remoteId) => (isRemoteId(remoteId) ? fleet.remove(remoteId) : NO_AGENT));
   ipc.handle('cloud:keys', (_e, remoteId, data) => (isRemoteId(remoteId) && typeof data === 'string' && data !== '' ? fleet.keys(remoteId, data) : NO_AGENT));
   ipc.handle('cloud:resize', (_e, remoteId, cols, rows) =>
     (isRemoteId(remoteId) && Number.isInteger(cols) && Number.isInteger(rows) ? fleet.resize(remoteId, cols as number, rows as number) : NO_AGENT));

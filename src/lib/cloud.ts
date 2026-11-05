@@ -24,6 +24,8 @@ export interface RemoteInfo {
   rows?: number;
   /** The server lets this desktop start, stop and type into its agents. */
   drive?: boolean;
+  /** The server lets this desktop create there, and so delete its agents. */
+  create?: boolean;
 }
 
 /** An agent of this Tars, or a server's (`remote` set) shaped like it. */
@@ -64,7 +66,7 @@ export function remoteToAgent(r: CloudRemoteAgent): PaneAgent {
     stopReason: r.stopReason,
     skills: [],
     output: [],
-    remote: { machineId: r.server.id, machineName: r.server.name, status: r.server.status, offlineSince: r.server.offlineSince, drive: r.server.drive, projectPath: r.projectPath, cols: r.cols, rows: r.rows },
+    remote: { machineId: r.server.id, machineName: r.server.name, status: r.server.status, offlineSince: r.server.offlineSince, drive: r.server.drive, ...(r.server.create ? { create: true } : {}), projectPath: r.projectPath, cols: r.cols, rows: r.rows },
   };
 }
 
@@ -185,6 +187,16 @@ export function remoteActions(remote: Pick<RemoteInfo, 'status' | 'drive'>, runn
   const connected = remote.status === 'connected';
   const drive = connected && remote.drive === true;
   return { start: drive && !running, stop: drive && running, type: drive, seeOnly: connected && !drive };
+}
+
+/**
+ * Delete on a server's agent: offered where the server lets this desktop create there, which is what it
+ * checks, and greyed otherwise with why. Whether the agent is at work the server says when asked.
+ */
+export function remoteDelete(remote: Pick<RemoteInfo, 'status' | 'create' | 'machineName'>): { allowed: boolean; title?: string } {
+  if (remote.status !== 'connected') return { allowed: false, title: `${remote.machineName} is not connected: its agents are deleted from here once it is.` };
+  if (remote.create !== true) return { allowed: false, title: `${remote.machineName} does not let this computer delete its agents: forget it in Settings > Cloud, then connect again to allow it.` };
+  return { allowed: true };
 }
 
 /** Under a pane of a server that lets this desktop see only. Frame: `Panel · machine you may only see`. */

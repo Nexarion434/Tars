@@ -24,7 +24,8 @@ export interface CloudServer {
 }
 
 export type ServerStatus = 'connected' | 'offline' | 'disconnected';
-export interface ServerTag { id: string; serverId: string; name: string; status: ServerStatus; offlineSince?: string; drive: boolean }
+/** `create`, set only where the server's fleet says it, lets this desktop delete the server's agents. */
+export interface ServerTag { id: string; serverId: string; name: string; status: ServerStatus; offlineSince?: string; drive: boolean; create?: true }
 export type RemoteAgent = Omit<SharedAgent, 'agentId'> & { id: string; agentId: string; server: ServerTag };
 export interface RemoteScreen { screen: string; cliRunning: boolean; cols?: number; rows?: number }
 export type DriveResult = { success: true } | { success: false; error: string };
@@ -56,6 +57,8 @@ export interface RemoteFleet {
   /** Keys typed in a remote pane: in order, one batch on its way per agent, those typed meanwhile gathered behind it. */
   keys(remoteId: string, data: string): Promise<DriveResult>;
   resize(remoteId: string, cols: number, rows: number): Promise<DriveResult>;
+  /** One of a server's agents deleted there: out of the list once the server says so, or its sentence why not. */
+  remove(remoteId: string): Promise<DriveResult>;
   screen(remoteId: string): Promise<RemoteScreen | null>;
   watch(remoteId: string): void;
   unwatch(remoteId: string): void;
@@ -141,7 +144,8 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
       if (answer?.status === 200) {
         // Drivable only while the server says so; it checks each action again.
         const drive = Array.isArray(answer.body.youMay) && answer.body.youMay.includes('drive');
-        const tag: ServerTag = { id: server.id, serverId: server.serverId, name: server.name, status: 'connected', drive };
+        const create = Array.isArray(answer.body.youMay) && answer.body.youMay.includes('create');
+        const tag: ServerTag = { id: server.id, serverId: server.serverId, name: server.name, status: 'connected', drive, ...(create ? { create: true as const } : {}) };
         kept.set(server.id, { status: 'connected', agents: readFleet(answer.body, tag) });
         return;
       }
@@ -152,6 +156,11 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
       kept.set(server.id, { status, offlineSince, agents: (before?.agents ?? []).map(a => ({ ...a, server: tag })) });
     }));
     if (stopped) return;
+    tell();
+  }
+
+  /** The window told the list, when it moved. */
+  function tell(): void {
     const agents = list();
     const shown = JSON.stringify(agents);
     if (shown !== told) {
@@ -251,6 +260,25 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     return { success: false, error: sentenceOf(answer) || `${server.name} refused it (${answer.status}).` };
   }
 
+  async function remove(remoteId: string): Promise<DriveResult> {
+    const parsed = parseCloudId(remoteId);
+    const server = parsed && serverOf(parsed.serverId);
+    if (!parsed || !server) return { success: false, error: NO_SUCH_AGENT };
+    const client = clientOf(server);
+    if (!client) return { success: false, error: `${server.name} is not connected.` };
+    const answer = await client.removeAgent(parsed.agentId).catch(() => ({ status: 0, body: {} }));
+    if (answer.status === 200) {
+      // Gone there: out of the list now, not at the next poll.
+      const k = kept.get(server.id);
+      if (k) k.agents = k.agents.filter(a => a.id !== remoteId);
+      tell();
+      return { success: true };
+    }
+    if (answer.status === 0) return { success: false, error: `${server.name} did not answer. The agent may be deleted anyway.` };
+    if (answer.status === 401) deps.refused(server.id);
+    return { success: false, error: sentenceOf(answer) || `${server.name} refused it (${answer.status}).` };
+  }
+
   /**
    * Sends what has gathered for one agent, in batches the server takes
    * (MAX_KEYS, never cutting a character in two), then what gathered
@@ -291,6 +319,7 @@ export function createRemoteFleet(deps: RemoteFleetDeps): RemoteFleet {
     },
     list,
     drive,
+    remove,
     resize: (remoteId, cols, rows) => drive(remoteId, 'size', { cols, rows }),
     keys(remoteId, data) {
       if (!parseCloudId(remoteId)) return Promise.resolve({ success: false, error: NO_SUCH_AGENT });

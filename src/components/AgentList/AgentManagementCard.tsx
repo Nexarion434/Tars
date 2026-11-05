@@ -1,7 +1,7 @@
 'use client';
 
 import { AgentMark, Button, CloudBadge } from '@/components/ui';
-import { readOnlyTitle, remoteActions, type PaneAgent } from '@/lib/cloud';
+import { readOnlyTitle, remoteActions, remoteDelete, type PaneAgent } from '@/lib/cloud';
 import { useRemoteDrive } from '@/hooks/useRemoteDrive';
 import { errorReason } from '@/app/agents/constants';
 import { stopLine } from '@/lib/stop-line';
@@ -57,9 +57,11 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
   const readOnly = remote ? readOnlyTitle(remote.machineName) : undefined;
   const machineOffline = !!remote && remote.status !== 'connected';
   // Where its machine lets this one drive it, start and stop work, over the
-  // bridge, stop in one click as here. Edit and delete never do.
+  // bridge, stop in one click as here. Edit never does; delete does where it
+  // lets this one create there, and its refusal shows under the card.
   const drive = useRemoteDrive(agent.id);
   const allowed = remote ? remoteActions(remote, isRunning) : null;
+  const deletion = remote ? remoteDelete(remote) : null;
 
   return (
     <div
@@ -144,7 +146,7 @@ export function AgentManagementCard({ agent, onClick, onEdit, onStart, onStop, o
           <Button size="sm" className={ROW_ACTION} onClick={onEdit} disabled={!!remote} title={readOnly}>
             edit
           </Button>
-          <Button size="sm" className={ROW_ACTION} onClick={onDelete} disabled={!!remote} title={readOnly}>
+          <Button size="sm" className={ROW_ACTION} onClick={onDelete} disabled={!!deletion && !deletion.allowed} title={deletion?.title}>
             delete
           </Button>
           {/* The Claude account it runs on, at the right of the buttons, when
