@@ -22,6 +22,11 @@ import { EventEmitter } from 'node:events';
  * The renderer hooks themselves cannot run here, the repo has no DOM renderer
  * for tests, so these stop at the boundary they cross: what the main process
  * sends, read as it was sent.
+ *
+ * And a third listener, on a Tars server: its door, which streams an agent's
+ * output to the desktops (core/agent-output.ts). A terminal started here, a
+ * delegated worker's, was never told to it: the desktop's pane for that worker
+ * stayed black (2026-11-05, on the VPS).
  */
 
 type Pushed = { channel: string; payload: unknown };
@@ -94,6 +99,7 @@ import { agents } from '../../../../electron/core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../../../electron/core/pty-manager';
 import { startAgentWatch, stopAgentWatch } from '../../../../electron/services/agent-watch';
 import { spawnAgentPty } from '../../../../electron/core/agent-pty';
+import { onAgentOutput } from '../../../../electron/core/agent-output';
 import type { RouteApp, RouteContext, RouteRequest } from '../../../../electron/services/api-routes/types';
 import type { AgentStatus, AppSettings } from '../../../../electron/types';
 import type { AgentTickItem } from '../../../../electron/utils/agents-tick';
@@ -249,6 +255,19 @@ describe('an agent changed over the API', () => {
     spawned[0].emitData('compiling...\r\n');
 
     expect(await cardOf('a1')).toBeDefined();
+  });
+
+  it("streams its terminal's output to a server's door, as a terminal Tars opened itself does", async () => {
+    const heard: Array<[string, string]> = [];
+    const stop = onAgentOutput((id, chunk) => { heard.push([id, chunk]); });
+    try {
+      putAgent({ id: 'a1' });
+      await call('POST', '/api/agents/a1/start', { prompt: 'build it' });
+      spawned[0].emitData('compiling...\r\n');
+      expect(heard).toEqual([['a1', 'compiling...\r\n']]);
+    } finally {
+      stop();
+    }
   });
 
   it('shows as done when its process exits, names no terminal, and still tells whoever delegated it', async () => {

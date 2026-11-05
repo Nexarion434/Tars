@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { emitAgentOutput } from '../../core/agent-output';
 import { killPty } from '../../core/pty-kill';
 import { hasEndOfTurn } from '../../core/end-of-turn';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
@@ -542,6 +543,9 @@ async function spawnAgentSessionInSlot(
       data,
       timestamp: new Date().toISOString(),
     });
+    // And to a server's door, as attachAgentTerminal does: without it, a delegated worker's pane on a
+    // desktop linked to the server stayed black (core/agent-output.ts).
+    emitAgentOutput(agent.id, data);
     // As initAgentPty does: the tick carries the line the cards show.
     scheduleTick();
   });
