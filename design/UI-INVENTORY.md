@@ -4,8 +4,8 @@ Every surface the app can render today. A frame must exist for each line here;
 `npm run e2e:guard` checks the routed ones are covered by the visual suite too.
 
 The frames live in two Pencil documents, and the second is a fork of the first
-rather than a companion to it. `design/tars-redesign.pen` holds 299 root frames, 68 of them drawn and not built yet: the 57 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
-`design/chat-design.pen` holds 72 of those, the other two hundred and twenty-seven being newer than the
+rather than a companion to it. `design/tars-redesign.pen` holds 315 root frames, 76 of them drawn and not built yet: the 65 listed at the end, and the 11 of the Usage activity grid in their own section. Every frame but the app icon, the launch pictures and the library sheet uses the tokens, so each has its light version.
+`design/chat-design.pen` holds 72 of those, the other two hundred and forty-three being newer than the
 fork; the two panel history frames this document dropped with the history view;
 and the eleven frames of the Chat
 room listed on the `/chat` line below: 85 in all. 71 share their ids
@@ -123,7 +123,7 @@ does not read this table.
 Each frame has its `· light` copy below it. Usage · activity · notes says what each
 part shows and what the Backend would provide.
 
-## Settings (6 groups, 20 sections)
+## Settings (7 groups, 21 sections)
 
 | Group | Sections |
 |---|---|
@@ -131,6 +131,7 @@ part shows and what the Backend would provide.
 | AI & Providers | Providers (an API key set, replaced or cleared, never shown: Secrets · Settings, Providers, an API key, and its light copy), Claude accounts, CLI Paths (what Tars found as it opens, the detection Providers reads too: Secrets · CLIs, one detection, and its light copy), Permissions |
 | Hermes | Connection (+ link out to Schedules): Settings · Connection, its Incoming webhooks row pointing to Gateways; its token set and replaced, never shown: Secrets · Settings, Hermes connection (and its light copy). Its Telegram through Hermes switch moves to Relay, drawn for 2.0.4 (listed at the end). Gateways, every Hermes that hands Tars work, its two addresses, its secret shown and copied by Tars only, added, replaced and removed asking once, and the projects it may reach: Gateways · Settings, Hermes (its light copy, the narrowest window), · states (and its light copy), · notes for the Backend |
 | Integrations | Telegram, Slack, Discord, X (Twitter), Google Workspace; Telegram with Telegram through Hermes on, the bot off and nothing to type: Settings · Telegram · Telegram through Hermes (and its light copy); every key and token of these sections set, replaced or cleared, never shown, and Telegram's auth token shown once by Tars in a window of its own: Secrets · Settings, Telegram (its light copy, the narrowest window), Secrets · states (and its light copy), Secrets · notes for the Backend |
+| Cloud | Tars servers: the server address and Connect, with Advanced closed (how it runs, Docker or installed, the container name, admin rights, the door path or the command; it opens by itself when one is missing); then one card per server: its name, the link in words (connected since, offline since and trying again, disconnected by the server, the SSH error in plain words), Disconnect or Connect, Forget this server, and the devices with access, each with Remove; below, Add another server: Settings · Cloud · simple, · advanced open and · connected (approved by Nicolas 2026-11-03; the first draft, Settings · Cloud, stays beside them), each with its light copy below it; Settings · Cloud · states, the server card in each other state its link can be in: connecting, offline and trying again by itself, disconnected by the server (its access was removed there, no retry), and never connected over SSH (the host key to accept in a terminal) |
 | Extensions | Skills & Plugins, Custom MCP, Tasmania |
 | Workspace | Git, Memory Backends |
 
@@ -292,3 +293,12 @@ For 2.0.5:
 - Browser beside an agent's terminal: Browser (2.0.5) · beside an agent's terminal (its light copy, the narrowest
   window), · states (and its light copy), · notes for the Backend.
 - The app's language: Language (2.0.5) · Settings, General, Preferences (and its light copy), · notes.
+
+For Tars Cloud M3 (a project or an agent made on a server, from this computer):
+- New project asks where it lives, This computer or a connected server, then a plain folder name and how it starts,
+  empty or cloned from Git by the server with its own Git access: Overlay · New project · where, · from Git, · name
+  taken (each with its light copy). With no server connected, + Project opens the folder picker as it does today.
+- New agent in a cloud project, the same form, its Project showing the server's badge and its last line saying where
+  it starts: Overlay · New agent · cloud project.
+- Projects mixing this computer's folders and a server's projects, each of these with the server's badge, and the
+  location filter beside + Project: Projects · with cloud.

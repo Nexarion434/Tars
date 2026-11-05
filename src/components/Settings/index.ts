@@ -24,6 +24,7 @@ export { SlackSection } from './SlackSection';
 export { DiscordSection } from './DiscordSection';
 export { SocialDataSection } from './SocialDataSection';
 export { TasmaniaSection } from './TasmaniaSection';
+export { CloudSection } from './CloudSection';
 export { TasmaniaIcon } from './TasmaniaIcon';
 export { GoogleWorkspaceSection } from './GoogleWorkspaceSection';
 export { AIProvidersSection } from './AIProvidersSection';

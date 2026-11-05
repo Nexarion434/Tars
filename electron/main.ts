@@ -25,6 +25,7 @@ import { reportsOn } from './services/event-reports';
 import { app, dialog, ipcMain, Notification } from 'electron';
 import { endPermissionAsks } from './services/permission-asks';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 // Types
@@ -38,6 +39,7 @@ import { APP_PAGES } from './services/health/pages';
 import { abruptEndPayload } from './services/health/abrupt-end';
 import { crashTypeSince } from './platform/crash-type';
 import { registerDiagnosticHandlers } from './handlers/diagnostic-handlers';
+import { directRoute, registerCloudHandlers, type CloudService } from './handlers/cloud-handlers';
 
 // Core modules
 import {
@@ -187,6 +189,16 @@ import { endAuthCommands } from './services/claude-accounts/auth';
 import { TOOL_TOPIC } from './services/agent-guide';
 import { getAllProviders } from './providers';
 import { cliEnv, currentFolderLookupsOff, nodeMissing } from './platform';
+import { isHeadless } from './host/headless';
+
+/**
+ * A Tars server (tars-server: plain Node, its `electron` the headless one) runs
+ * this same boot and skips, each where it stands, the steps that need a window:
+ * every other step keeps the desktop's order. Always false in the desktop.
+ */
+const HEADLESS = isHeadless();
+/** Settings > Cloud's link to Tars servers (desktop only). */
+let cloud: CloudService | null = null;
 
 // ============== App Settings Management ==============
 
@@ -531,7 +543,7 @@ const isPrimaryInstance = claimSingleInstance(showMainWindow);
 if (!isPrimaryInstance) app.exit(0);
 
 // Register protocol schemes before app is ready
-registerProtocolSchemes();
+if (!HEADLESS) registerProtocolSchemes();
 
 /** How often the app looks for a new version while it is running. */
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
@@ -619,15 +631,20 @@ app.whenReady().then(async () => {
     page: () => pageOf(getMainWindow()?.webContents.getURL()),
   });
   registerDiagnosticHandlers({ reports: errorReports, samplesFile: HEALTH_FILE, known: healthWords });
+  // A desktop's Tars servers over SSH: nothing runs until Settings > Cloud has one (a server never links to another).
+  if (!HEADLESS) cloud = registerCloudHandlers({ ipc: ipcMain, broadcast: broadcastToAllWindows, file: path.join(PRIVATE_DIR, 'cloud-link.json'), forwardDir: path.join(PRIVATE_DIR, 'cloud'), hostname: os.hostname, direct: directRoute(process.env, app.isPackaged) });
+  void cloud?.start();
   // Bound how much a crash can lose: PTY-driven fields reach disk on a timer.
   startAgentAutosave();
 
   // Setup protocol handler for production
-  setupProtocolHandler();
+  if (!HEADLESS) setupProtocolHandler();
 
   // Create the main window
-  createWindow();
-  uncaught.windowOpened();
+  if (!HEADLESS) {
+    createWindow();
+    uncaught.windowOpened();
+  }
   // Two data folders (core/data-dir-move.ts): which one Tars runs on is said
   // where the user sees it, once per start, and the window can ask for it
   // (app:dataDir). Never from an E2E run, which must put nothing on the screen.
@@ -635,27 +652,31 @@ app.whenReady().then(async () => {
     new Notification({ title: 'Tars: two data folders', body: DATA_DIR_MOVE.notice }).show();
   }
   // Windows: no menu, toasts, close to the tray (desktop-lifecycle.ts).
-  installDesktopShell({
-    getMainWindow,
-    explanation: {
-      explained: () => appSettings.closeToTrayExplained === true,
-      markExplained: () => {
-        appSettings = { ...appSettings, closeToTrayExplained: true };
-        saveAppSettingsToFile(appSettings);
+  if (!HEADLESS) {
+    installDesktopShell({
+      getMainWindow,
+      explanation: {
+        explained: () => appSettings.closeToTrayExplained === true,
+        markExplained: () => {
+          appSettings = { ...appSettings, closeToTrayExplained: true };
+          saveAppSettingsToFile(appSettings);
+        },
       },
-    },
-  });
+    });
+  }
 
   // Set the main window reference in utils
   setUtilsMainWindow(getMainWindow());
 
   // Initialize macOS menu bar tray with custom popup panel
-  initTray();
+  if (!HEADLESS) initTray();
 
   // Windows: the hooks and the bundled tools run on Node, which a native
   // claude.exe does not bring. Said at each launch until it is installed.
-  const noNode = nodeMissing(cliEnv() ?? process.env);
-  if (noNode) void dialog.showMessageBox({ type: 'warning', ...noNode });
+  if (!HEADLESS) {
+    const noNode = nodeMissing(cliEnv() ?? process.env);
+    if (noNode) void dialog.showMessageBox({ type: 'warning', ...noNode });
+  }
 
   // Register all IPC handlers
   const deps = createIpcDependencies();
@@ -926,30 +947,33 @@ app.whenReady().then(async () => {
   await configureStatusHooks();
   removeLegacyHookLogs();
 
-  // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
-  initAutoUpdater(getMainWindow);
-  setMainWindowGetter(getMainWindow);
+  // A server has no window to offer an update in, and updates by its own install.
+  if (!HEADLESS) {
+    // Initialize electron-updater (wires up IPC events for progress, downloaded, error)
+    initAutoUpdater(getMainWindow);
+    setMainWindowGetter(getMainWindow);
 
-  // Updates: once shortly after launch, then on a timer.
-  //
-  // It used to be the launch check alone, which is the one moment it helps
-  // least: Tars is left open for days at a time, so someone who never quits
-  // never learned there was a new version. Half an hour is well inside
-  // GitHub's unauthenticated rate limit and the check itself is one request.
-  //
-  // "Check for updates" is read at every tick, not once at launch: turning it
-  // off stops the next check, and turning it on starts one within half an hour,
-  // without a restart. It is the one switch for these and the CLIs' below.
-  const check = () => {
-    if (appSettings.autoCheckUpdates === false || !checksForUpdates({ sandbox: SANDBOX_BUILD })) return;
-    checkForUpdates().catch((err) => {
-      console.error('Auto-update check failed:', err);
-    });
-  };
-  setTimeout(check, 5000);
-  const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
-  // Never hold the process open for a version check.
-  timer.unref?.();
+    // Updates: once shortly after launch, then on a timer.
+    //
+    // It used to be the launch check alone, which is the one moment it helps
+    // least: Tars is left open for days at a time, so someone who never quits
+    // never learned there was a new version. Half an hour is well inside
+    // GitHub's unauthenticated rate limit and the check itself is one request.
+    //
+    // "Check for updates" is read at every tick, not once at launch: turning it
+    // off stops the next check, and turning it on starts one within half an hour,
+    // without a restart. It is the one switch for these and the CLIs' below.
+    const check = () => {
+      if (appSettings.autoCheckUpdates === false || !checksForUpdates({ sandbox: SANDBOX_BUILD })) return;
+      checkForUpdates().catch((err) => {
+        console.error('Auto-update check failed:', err);
+      });
+    };
+    setTimeout(check, 5000);
+    const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+    // Never hold the process open for a version check.
+    timer.unref?.();
+  }
 
   // And the CLIs the agents run, which Tars keeps from updating themselves:
   // claude and Amp, when at least one agent runs them, 5 s after launch and
@@ -1042,6 +1066,8 @@ app.on('before-quit', (event) => {
       // A CLI's --version asked for by Settings just before the quit: amp's
       // kept writing into the home after Tars was gone (gate of #298).
       ['endVersionProbes', endVersionProbes],
+      // The forwards to Tars servers: the local ssh ends, the servers go on.
+      ['stopCloudLink', () => cloud?.stop()],
       // A `claude auth status` the accounts list started just before the
       // quit: it wrote .claude.json into the home after Tars was gone.
       ['endAuthCommands', endAuthCommands],

@@ -18,6 +18,7 @@ import {
   DiscordSection,
   SocialDataSection,
   TasmaniaSection,
+  CloudSection,
   GoogleWorkspaceSection,
   AIProvidersSection,
   ClaudeAccountsSection,
@@ -62,6 +63,8 @@ const HEADER_ACTIONS: Record<SettingsSection, { label: string; kind: HeaderActio
   'ai-providers': { label: 'Detect', kind: 'unwired' },
   // Every control acts at once, as drawn: add an account sits in its list.
   'claude-accounts': { label: '', kind: 'none' },
+  // Adding a server is the section's own first rows, with their Connect.
+  cloud: { label: '', kind: 'none' },
   cli: { label: 'Detect', kind: 'unwired' },
   hermes: { label: 'Test connection', kind: 'unwired' },
   // Opens the name row at the top of the list, as drawn: Gateways · states, adding a gateway.
@@ -184,6 +187,8 @@ function SettingsPageInner() {
             onUpdateLocalSettings={updateLocalAppSettings}
           />
         );
+      case 'cloud':
+        return <CloudSection />;
       case 'google-workspace':
         return (
           <GoogleWorkspaceSection

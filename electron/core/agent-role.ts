@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { pathKey } from '../platform/path-compare';
 import type { AgentRole, AgentStatus } from '../types';
 
 /**
@@ -54,6 +57,20 @@ export function requestedRole(params: { role?: unknown; orchestratorMode?: unkno
   return undefined;
 }
 
+/**
+ * The project an agent's path names, for the one-orchestrator rule: `./`, `..`
+ * and a trailing separator resolved, then the folder a link leads to where it
+ * exists, then folded as path-compare folds it. Compared as written, a
+ * project spelled two ways had two orchestrators, and a client can now reach
+ * the rule on a server (security review 1, round 3, R3-2).
+ */
+function projectKey(projectPath: string): string {
+  const resolved = path.resolve(projectPath);
+  let real = resolved;
+  try { real = fs.realpathSync(resolved); } catch { /* not on this disk: its spelling decides */ }
+  return pathKey(real);
+}
+
 function writeRole(agent: AgentStatus, role: AgentRole): void {
   agent.role = role;
   agent.orchestratorMode = role === 'orchestrator';
@@ -70,8 +87,9 @@ export function assignRole(agent: AgentStatus, role: AgentRole, fleet: Iterable<
   writeRole(agent, role);
   if (role !== 'orchestrator') return [];
   const demoted: AgentStatus[] = [];
+  const project = projectKey(agent.projectPath);
   for (const other of fleet) {
-    if (other.id === agent.id || other.role !== 'orchestrator' || other.projectPath !== agent.projectPath) continue;
+    if (other.id === agent.id || other.role !== 'orchestrator' || projectKey(other.projectPath) !== project) continue;
     writeRole(other, 'worker');
     demoted.push(other);
   }
@@ -119,11 +137,12 @@ export function rolesOnLoad(list: AgentStatus[], fileVersion: number): AgentStat
   const hasOne = new Set<string>();
   for (const agent of list) {
     if (agent.role !== 'orchestrator') continue;
-    if (hasOne.has(agent.projectPath)) {
+    const project = projectKey(agent.projectPath);
+    if (hasOne.has(project)) {
       writeRole(agent, 'worker');
       demoted.push(agent);
     } else {
-      hasOne.add(agent.projectPath);
+      hasOne.add(project);
     }
   }
   return demoted;

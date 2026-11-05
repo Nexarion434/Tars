@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { assignRole, hasOrchestratorPowers, requestedRole, rolesOnLoad, roleFromName } from '../../../electron/core/agent-role';
 import type { AgentStatus } from '../../../electron/types';
 
@@ -75,6 +78,33 @@ describe('assignRole', () => {
     expect(elsewhere).toMatchObject({ role: 'orchestrator', orchestratorMode: true });
   });
 
+  // Security review 1, round 3, R3-2: a server project reached by a client whose orchestrator's
+  // path was spelled otherwise kept it, and the project had two.
+  it("takes the role from its project's orchestrator however that one's path is spelled", () => {
+    for (const spelling of ['/p/tars/', '/p/./tars', '/p/sak/../tars', '/p//tars']) {
+      const current = agent('current', { role: 'orchestrator', projectPath: spelling });
+      const next = agent('next', { role: 'worker' });
+
+      expect(assignRole(next, 'orchestrator', [current, next]), spelling).toEqual([current]);
+      expect(current.role, spelling).toBe('worker');
+    }
+  });
+
+  it('takes it from an orchestrator whose path is a link to the project, where the folder exists', () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'tars-role-'));
+    const link = `${real}-link`;
+    fs.symlinkSync(real, link, 'junction');
+    try {
+      const current = agent('current', { role: 'orchestrator', projectPath: link });
+      const next = agent('next', { role: 'worker', projectPath: real });
+
+      expect(assignRole(next, 'orchestrator', [current, next])).toEqual([current]);
+    } finally {
+      fs.rmSync(link, { force: true, recursive: false });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+
   it('demotes nobody when it makes a worker', () => {
     const current = agent('current', { role: 'orchestrator' });
     const other = agent('other', { role: 'orchestrator' });
@@ -140,6 +170,13 @@ describe('rolesOnLoad', () => {
 
     expect(rolesOnLoad([first, second, other], 3)).toEqual([second]);
     expect([first.role, second.role, other.role]).toEqual(['orchestrator', 'worker', 'orchestrator']);
+  });
+
+  it('reads one project in two spellings of its path as one', () => {
+    const first = agent('first', { role: 'orchestrator' });
+    const second = agent('second', { role: 'orchestrator', projectPath: '/p/sak/../tars/' });
+
+    expect(rolesOnLoad([first, second], 3)).toEqual([second]);
   });
 });
 

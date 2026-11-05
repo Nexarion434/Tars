@@ -1,4 +1,5 @@
 import { realFs, type Env, type FsProbe } from './fs-probe';
+import { KEPT_PATH } from './child-env';
 import { getPath, withPath } from './path-env';
 import { posixWords, PosixWordsError } from './posix-words';
 import { resolveCliBinary, type CliBinaryFailure } from './cli-binary';
@@ -75,11 +76,14 @@ export function toLaunch(
 ): Launch {
   if (platform !== 'win32') {
     const quotedDir = cwd.replace(/'/g, "'\\''");
+    // linux: the PATH the login bash was handed, which its profile may have
+    // replaced (child-env.ts), back in front of the CLI's. Nothing when unset.
+    const pathBack = platform === 'linux' ? `PATH="\${${KEPT_PATH}:+$${KEPT_PATH}:}$PATH" ` : '';
     return {
       platform: 'posix',
       shell: '/bin/bash',
-      args: ['-l', '-c', `cd '${quotedDir}' && exec ${cliCommand}`],
-      typedLine: `cd '${quotedDir}' && ${cliCommand}`,
+      args: ['-l', '-c', `cd '${quotedDir}' && ${pathBack}exec ${cliCommand}`],
+      typedLine: `cd '${quotedDir}' && ${pathBack}${cliCommand}`,
       cwd,
       env,
     };

@@ -367,6 +367,7 @@ function fromOf(sender: MessageSender): string {
   if (sender.kind === 'agent') return sender.name || sender.id;
   if (sender.kind === 'channel') return sender.channel;
   if (sender.kind === 'user') return `the user via ${sender.via}`;
+  if (sender.kind === 'machine' || sender.kind === 'outside-agent') return sender.name;
   return 'Tars';
 }
 

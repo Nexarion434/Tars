@@ -18,7 +18,11 @@ import {
   AgentListHeader,
   AgentManagementCard,
 } from '@/components/AgentList';
-import { Button, Chip, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
+import { Button, Chip, CloudBadge, Dropdown, LoadingState, type DropdownOption } from '@/components/ui';
+import { activeFilter, ALL_MACHINES, filterByMachine, machineFilterOptions, placeRemote, tabMachines } from '@/lib/cloud';
+import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
+import { useCloudProjects } from '@/hooks/useCloudProjects';
+import { reportDriveAnswer } from '@/hooks/useRemoteDrive';
 import { statusWord } from './constants';
 import type { AgentPermissionMode } from '@/types/agent';
 import { templateModeOf } from '@/lib/plan-mode';
@@ -40,7 +44,7 @@ const agentCount = (n: number) => `${n} agent${n === 1 ? '' : 's'}`;
 
 export default function AgentsPage() {
   const {
-    agents,
+    agents: localAgents,
     isLoading: agentsLoading,
     isElectron: hasElectron,
     createAgent,
@@ -54,6 +58,23 @@ export default function AgentsPage() {
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
   const { create: createTemplate } = useElectronTemplates();
   const { data: claudeData } = useClaude();
+
+  // The other machines' agents are listed beside this machine's, read only:
+  // each under the local project with the same folder name, or under its own.
+  // Merged here, never in useElectronAgents' list.
+  const remoteAgents = useRemoteAgents();
+  const machines = useFleetMachines(remoteAgents);
+  // New agent offers the connected servers' projects too, and makes an agent there on its server.
+  const { newAgentProjects, createOnServer } = useCloudProjects(remoteAgents);
+  const [machineChoice, setMachineChoice] = useState(ALL_MACHINES);
+  const machineFilter = activeFilter(machineChoice, machines);
+  const agents = useMemo(
+    () => filterByMachine(placeRemote(localAgents, remoteAgents), machineFilter),
+    [localAgents, remoteAgents, machineFilter],
+  );
+  const machineOptions = useMemo(() => machineFilterOptions(machines), [machines]);
+  // The projects only another machine has, and which machine.
+  const remoteOnly = useMemo(() => tabMachines(agents), [agents]);
 
   // Local state
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -69,7 +90,7 @@ export default function AgentsPage() {
 
 
   // Custom hooks
-  const { superAgent } = useSuperAgent({ agents });
+  const { superAgent } = useSuperAgent({ agents: localAgents });
 
   // A project whose last agent is gone has nothing to show, so the page falls
   // back to every project rather than to an empty list under a stale name.
@@ -155,6 +176,12 @@ export default function AgentsPage() {
     role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
+    const onServer = await createOnServer(projectPath, { skills, prompt, model, worktree, character, name, permissionMode, provider, effort, role, cliPath });
+    if (onServer) {
+      if ('error' in onServer) return { error: onServer.error };
+      setShowNewChatModal(false);
+      return;
+    }
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
       const agent = await createAgent({ projectPath, skills, worktree, character, name, secondaryProjectPath, permissionMode, effort, provider, model: resolvedModel, localModel, obsidianVaultPaths, role, cliPath });
@@ -169,7 +196,7 @@ export default function AgentsPage() {
       // a worktree it could not make, without Electron's words before it.
       return { error: ipcReason(error, 'no reason was given') };
     }
-  }, [createAgent, startAgent]);
+  }, [createAgent, startAgent, createOnServer]);
 
   const handleUpdateAgent = useCallback(async (id: string, updates: {
     projectPath?: string;
@@ -225,6 +252,19 @@ export default function AgentsPage() {
     const agent = agents.find(a => a.id === agentId);
     const agentName = agent?.name || 'this agent';
 
+    // A server's agent is deleted there, where it lets this computer create: its card goes once the server
+    // says it is done, and the server's sentence shows under the card when it will not (an agent at work).
+    if (agent?.remote) {
+      const where = agent.remote.machineName;
+      if (!window.confirm(`Delete "${agentName}" on ${where}? It is removed from ${where} and cannot be undone. Its project folder stays.`)) return;
+      try {
+        reportDriveAnswer(agentId, await window.electronAPI?.cloud?.remove(agentId));
+      } catch (err) {
+        reportDriveAnswer(agentId, undefined, err);
+      }
+      return;
+    }
+
     let worktreeNote = '';
     if (agent?.worktreePath && agent?.branchName) {
       let dirtyCount: number | null = null;
@@ -277,7 +317,7 @@ export default function AgentsPage() {
     return <DesktopRequiredMessage />;
   }
 
-  if (agentsLoading && agents.length === 0) {
+  if (agentsLoading && localAgents.length === 0) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <LoadingState loading what="Still loading your agents…" detail="reading ~/.tars/agents.json" />
@@ -322,6 +362,19 @@ export default function AgentsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-[220px] h-[26px] px-2.5 text-sm border border-border bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
           />
+          {machines.length > 0 && (
+            <span data-cloud-filter className="contents">
+              <Dropdown
+                value={machineFilter}
+                options={machineOptions}
+                onChange={setMachineChoice}
+                size="sm"
+                align="right"
+                ariaLabel="Show the agents of one machine"
+                className="w-48"
+              />
+            </span>
+          )}
           <Dropdown
             value={project ?? ALL_PROJECTS}
             options={projectOptions}
@@ -358,6 +411,7 @@ export default function AgentsPage() {
               <section key={group.path} className="flex flex-col gap-2">
                 <div className="flex items-baseline gap-2 min-w-0" title={group.path}>
                   <h2 className="shrink-0 text-[13px] leading-[1.4] font-medium text-foreground">{projectName(group.path)}</h2>
+                  {remoteOnly.get(group.path)?.map(machine => <CloudBadge key={machine} name={machine} className="self-center" />)}
                   <span className="min-w-0 truncate font-mono text-[11px] text-text-muted">{tildePath(group.path)}</span>
                   <span className="ml-auto shrink-0 font-mono text-[11px] text-text-muted">{agentCount(group.agents.length)}</span>
                 </div>
@@ -411,7 +465,7 @@ export default function AgentsPage() {
         open={showNewChatModal}
         onClose={() => setShowNewChatModal(false)}
         onSubmit={handleCreateAgent}
-        projects={projects.map(p => ({ path: p.path, name: p.name }))}
+        projects={newAgentProjects(projects.map(p => ({ path: p.path, name: p.name })))}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
         installedSkills={installedSkills}
         allInstalledSkills={claudeData?.skills || []}
@@ -421,7 +475,8 @@ export default function AgentsPage() {
         initialMode={newChatMode}
       />
 
-      {/* Edit Modal - reuses NewChatModal pre-filled with agent data */}
+      {/* Edit Modal - reuses NewChatModal pre-filled with agent data. This computer's projects only:
+          an agent of this computer cannot move to a server (that is Move to cloud). */}
       <NewChatModal
         open={!!editAgentId}
         onClose={() => setEditAgentId(null)}
@@ -450,7 +505,7 @@ export default function AgentsPage() {
         onStart={(id, prompt) => handleStartAgent(id, prompt)}
         onStop={stopAgent}
         projects={projects.map(p => ({ path: p.path, name: p.name }))}
-        agents={agents}
+        agents={localAgents}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
       />
     </div>

@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { agents, saveAgents, killStalePty, ensureProjectTrusted, appendAgentOutput, armTaskStartWatch } from '../../core/agent-manager';
 import { noteTurnCut, ptyProcesses, writeProgrammaticInput, type MessageSender } from '../../core/pty-manager';
 import { spawnAgentPty, cliRunningIn } from '../../core/agent-pty';
+import { emitAgentOutput } from '../../core/agent-output';
 import { killPty } from '../../core/pty-kill';
 import { hasEndOfTurn } from '../../core/end-of-turn';
 import { agentStatusOnExit, isQuitting } from '../../core/quit-state';
@@ -27,7 +28,7 @@ import { handedFolderProblem } from '../../utils/handed-folder';
 import { buildFullPath } from '../../utils/path-builder';
 import { toLaunch, withPath, LaunchError, type Launch } from '../../platform';
 import { cliPathDirs } from '../../utils/cli-path-dirs';
-import { AgentStatus, AgentCharacter, AgentRole, AgentProvider, AgentEffort, AgentPermissionMode } from '../../types';
+import { AgentStatus, AgentCharacter, AgentProvider, AgentEffort, AgentPermissionMode } from '../../types';
 import { RouteApp, RouteContext, RouteRequest, SendJson } from './types';
 import { getSuperAgentInstructionsPath } from '../../utils';
 import { assembleDigest, needsPromptInjection, wrapDigestForPrompt } from '../memory-hub';
@@ -54,14 +55,15 @@ import { scheduleTick } from '../../utils/agents-tick';
 import { noteWaitingOn } from '../agent-watch';
 import { lastInterruptAt, pendingBackgroundWork, withSessionTruth } from '../agent-truth';
 import { turnInterruptedAt } from '../task-watch';
-import { noteLaunch, launchSettings, restartForSettings, forgetRestart, type RestartOutcome, type RestartWait } from '../../core/agent-restart';
+import { noteLaunch, launchSettings, forgetRestart, type RestartOutcome, type RestartWait } from '../../core/agent-restart';
 import { cliAtWork, updateAgent, type AgentUpdate } from '../../core/agent-update';
-import { assignRole, hasOrchestratorPowers, requestedRole } from '../../core/agent-role';
+import { hasOrchestratorPowers } from '../../core/agent-role';
+import { createAgentRecord, missingKeyRefusal, MODEL_NAME, type NewAgentFields } from '../../core/agent-create';
 import { callerId as resolveCallerId, callerProject } from './utils';
 import { envelopeValue } from '../../utils/envelope-value';
 import { replyTargetOf } from '../../core/reply-target';
 import { oneTaskQueue, workerOrderRefusal, workerStopRefusal, isReportTo, noteFrom, behindText, unknownTaskText, terminalTurnOf, holdsMessages, type Busy } from '../../core/one-task';
-import { chatIdentityOf, chatOfAsker, orchestratorMoved } from '../../core/chat-identity';
+import { chatIdentityOf, chatOfAsker } from '../../core/chat-identity';
 
 /**
  * The orchestrator instructions, or nothing for a regular agent. The UI start
@@ -541,6 +543,9 @@ async function spawnAgentSessionInSlot(
       data,
       timestamp: new Date().toISOString(),
     });
+    // And to a server's door, as attachAgentTerminal does: without it, a delegated worker's pane on a
+    // desktop linked to the server stayed black (core/agent-output.ts).
+    emitAgentOutput(agent.id, data);
     // As initAgentPty does: the tick carries the line the cards show.
     scheduleTick();
   });
@@ -1695,22 +1700,6 @@ function messageTarget(req: RouteRequest, sendJson: SendJson): { agent: AgentSta
   return { agent, reply: (data, status) => sendJson(status && status >= 400 ? data : { ...(data as object), deliveredTo }, status) };
 }
 
-/**
- * Alt providers re-point the claude binary at another vendor. Without a key
- * there is no ANTHROPIC_BASE_URL and the session would silently run on the
- * user's Anthropic account: refused, at a launch and, since 2.0.2, at a
- * creation through the API, with the same sentence.
- */
-function missingKeyRefusal(provider: AgentStatus['provider'], providerEnvVars: Record<string, string>): string | null {
-  const isAltProvider = getProvider(provider).binaryName === 'claude' && !!provider && provider !== 'claude' && provider !== 'local';
-  return isAltProvider && !providerEnvVars.ANTHROPIC_BASE_URL
-    ? `No API key configured for provider "${provider}". Add it (or an OpenRouter key) in Settings > AI Providers.`
-    : null;
-}
-
-/** A model's name as a command line takes it: what create_agent and update_agent accept. */
-const MODEL_NAME = /^[a-zA-Z0-9._:\/\[\]-]+$/;
-
 /** What update_agent changes, as POST /api/agents/:id/update takes it. */
 const UPDATE_FIELDS = [
   'name', 'character', 'provider', 'model', 'localModel', 'effort', 'permissionMode', 'cliPath', 'skills', 'secondaryProjectPath',
@@ -2185,21 +2174,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     const driver = resolveDriver(req, sendJson);
     if (!driver) return;
 
-    const { projectPath, name, skills = [], character, permissionMode, secondaryProjectPath, provider, model, effort, cliPath } = req.body as {
-      projectPath: string;
-      name?: string;
-      skills?: string[];
-      character?: AgentCharacter;
-      permissionMode?: AgentStatus['permissionMode'];
-      secondaryProjectPath?: string;
-      /** The Orchestrator toggle, or its old name: see requestedRole. */
-      role?: AgentRole;
-      orchestratorMode?: boolean;
-      provider?: string;
-      model?: string;
-      effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-      cliPath?: string;
-    };
+    const fields = req.body as unknown as NewAgentFields;
+    const { projectPath } = fields;
 
     if (!projectPath) {
       sendJson({ error: 'projectPath is required' }, 400);
@@ -2212,115 +2188,14 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     // the audit of lot 4; the code was brought to the document, since
     // creating in the wrong project is the mistake this guard exists for.
     if (!mayActIn(req, driver, projectPath, `a new agent would belong to project ${projectPath}`, sendJson)) return;
-    // The folder it is handed besides its project: never ~/.tars-private (the Audit's L1 on #480), as update_agent.
-    if (secondaryProjectPath !== undefined && secondaryProjectPath !== null && secondaryProjectPath !== '') {
-      const handed = typeof secondaryProjectPath === 'string'
-        ? handedFolderProblem(secondaryProjectPath)
-        : 'secondaryProjectPath is the path of a folder';
-      if (handed) {
-        sendJson({ error: handed }, 400);
-        return;
-      }
-    }
-    if (provider !== undefined && !isValidProvider(provider)) {
-      sendJson({ error: `Unknown provider "${provider}". Providers: ${getAllProviders().map((p) => p.id).join(', ')}.` }, 400);
+    // Every other check, and the record itself, as the door and the server's
+    // CLI make it too (core/agent-create.ts).
+    const created = createAgentRecord(fields, { agents, saveAgents, appSettings: () => ctx.getAppSettings(), announce: announceAgent });
+    if (!created.ok) {
+      sendJson({ error: created.error }, created.status);
       return;
     }
-    if (permissionMode !== undefined && !['plan', 'normal', 'auto', 'bypass'].includes(permissionMode)) {
-      sendJson({ error: 'Invalid permission mode: plan, normal, auto or bypass' }, 400);
-      return;
-    }
-    // Plan on a provider that has none would run as normal (the Audit's Low 2 on #407).
-    const noPlan = planModeRefusal(provider, permissionMode);
-    if (noPlan) {
-      sendJson({ error: noPlan }, 400);
-      return;
-    }
-    if (cliPath !== undefined) {
-      const why = cliPathProblem(cliPath);
-      if (why) {
-        sendJson({ error: why }, 400);
-        return;
-      }
-    }
-    // Every task the agent is given opens with its skills (gate of #204).
-    const skillsWrong = skillsProblem(skills);
-    if (skillsWrong) {
-      sendJson({ error: `Not created: ${skillsWrong}` }, 400);
-      return;
-    }
-    if (model !== undefined && !MODEL_NAME.test(model)) {
-      sendJson({ error: 'Invalid model name' }, 400);
-      return;
-    }
-    if (effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) {
-      sendJson({ error: 'Invalid effort level' }, 400);
-      return;
-    }
-    let role: AgentRole;
-    try {
-      role = requestedRole(req.body as { role?: unknown; orchestratorMode?: unknown }) ?? 'worker';
-    } catch (err) {
-      sendJson({ error: err instanceof Error ? err.message : 'Invalid role' }, 400);
-      return;
-    }
-    // An orchestrator is made in the Agents page and nowhere else. Made here,
-    // it took the role from the project's current one and restarted it on the
-    // word of whoever held a token, with none of the confirmation JeanBrasse asked
-    // for: the QA's gate of #123 measured a worker's own token making itself a
-    // "Rogue" orchestrator of its project, and with allowCrossProject, in
-    // bypass, of another one. Nothing asks for it legitimately: the MCP's
-    // create_agent sends no role. Decided on 2026-09-23, for every caller.
-    if (role === 'orchestrator') {
-      sendJson({
-        error: 'An orchestrator is made in the Agents page of Tars, not over the API. Create the agent as a worker; the user can make it the orchestrator there.',
-      }, 403);
-      return;
-    }
-
-    // The name is typed before the task id in the line that says who a message
-    // is from: one that carries a task id would read as Tars's own (the Audit's
-    // gate of #351; core/task-requests.ts reads the envelope, this keeps the
-    // line plain for whoever reads it).
-    if (typeof name === 'string' && /,\s*task\s+t-/i.test(name)) {
-      sendJson({ error: 'An agent\'s name cannot contain ", task t-": Tars types the task id after the name in the line that says who a message is from.' }, 400);
-      return;
-    }
-
-    const id = uuidv4();
-    // Refused as its first launch would be: an API-key provider without its key.
-    const keyRefusal = missingKeyRefusal(provider as AgentStatus['provider'], getProvider(provider as AgentStatus['provider']).getPtyEnvVars(id, projectPath, skills, ctx.getAppSettings()));
-    if (keyRefusal) {
-      sendJson({ error: keyRefusal }, 400);
-      return;
-    }
-    const resolvedName = name || `Agent ${id.slice(0, 6)}`;
-    const agent: AgentStatus = {
-      id,
-      status: 'idle',
-      projectPath,
-      secondaryProjectPath,
-      skills,
-      output: [],
-      lastActivity: new Date().toISOString(),
-      character,
-      name: resolvedName,
-      permissionMode: permissionMode || 'auto',
-      provider: provider as AgentStatus['provider'],
-      model,
-      effort,
-      cliPath,
-    };
-    // The role asked for, never the name; an orchestrator takes the role from
-    // its project's current one, whoever creates it (core/agent-role.ts).
-    const demoted = assignRole(agent, role, agents.values());
-    agents.set(id, agent);
-    saveAgents();
-    // An orchestrator made here: its project's Main follows it (core/chat-identity.ts).
-    orchestratorMoved();
-    for (const other of demoted) restartForSettings(other.id, ['orchestrator']);
-    announceAgent(agent);
-    sendJson({ agent });
+    sendJson({ agent: created.agent });
   });
 
   // POST /api/agents/:id/update: an agent's settings, changed by its

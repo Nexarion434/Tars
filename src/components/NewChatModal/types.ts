@@ -5,6 +5,9 @@ import type { ClaudeSkill } from '@/lib/claude-code';
 export interface Project {
   path: string;
   name: string;
+  /** A Tars server's project (M3): its server's name, and its path from the server's home. */
+  server?: string;
+  shownPath?: string;
 }
 
 export interface WorktreeConfig {

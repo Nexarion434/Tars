@@ -2560,8 +2560,96 @@ export interface ElectronAPI {
     last: () => Promise<ErrorReportsLast | null>;
   };
 
+  // Tars servers over SSH (electron/handlers/cloud-handlers.ts). No credential, door socket path or host key ever comes back.
+  cloud: {
+    list: () => Promise<CloudServerView[]>;
+    /** A new server (no id) or an existing one's runner and door socket; its host never changes under its credential. */
+    save: (profile: CloudServerInput) => Promise<{ success: true; id: string } | CloudFailure>;
+    connect: (id: string) => Promise<{ success: true; state: CloudLinkState } | CloudFailure>;
+    disconnect: (id: string) => Promise<{ success: true } | CloudFailure>;
+    /** Revokes this desktop's client on the server, then forgets the server here even when the server cannot be reached (said in state). */
+    forget: (id: string) => Promise<{ success: true; state: CloudLinkState } | CloudFailure>;
+    clients: (id: string) => Promise<{ success: true; clients: CloudClientView[] } | CloudFailure>;
+    revoke: (id: string, clientId: string) => Promise<{ success: true } | CloudFailure>;
+    agents: () => Promise<CloudRemoteAgent[]>;
+    screen: (remoteId: string) => Promise<{ screen: string; cliRunning: boolean; cols?: number; rows?: number } | null>;
+    watch: (remoteId: string) => Promise<void>;
+    unwatch: (remoteId: string) => Promise<void>;
+    drive: (remoteId: string, action: 'start' | 'stop' | 'message', body: { reason?: string; text?: string }) => Promise<CloudDriveResult>;
+    keys: (remoteId: string, data: string) => Promise<CloudDriveResult>;
+    resize: (remoteId: string, cols: number, rows: number) => Promise<CloudDriveResult>;
+    /** One of a server's agents deleted there, where it lets this computer create; the server's sentence when it refuses. */
+    remove: (remoteId: string) => Promise<CloudDriveResult>;
+    /** M3: a project made on the server, empty or cloned with the server's own git access. */
+    /** A clone needs `trusted: true`, the user's word that they trust the repository's code: the server refuses it otherwise. */
+    createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted?: true } }) => Promise<{ success: true; project: CloudProjectView } | CloudFailure>;
+    /** An agent made in one of the server's projects; `start` starts it where this computer may drive. */
+    createAgent: (id: string, body: CloudNewAgent) => Promise<{ success: true; agent: { id: string; name: string }; started: boolean; startError?: string } | CloudFailure>;
+    /** The server's own git key, its public half: what to add to GitHub. */
+    gitKey: (id: string) => Promise<{ success: true; publicKey: string; fingerprint: string } | CloudFailure>;
+    projects: (id: string) => Promise<{ success: true; projects: CloudProjectView[] } | CloudFailure>;
+    onAgents: (callback: (agents: CloudRemoteAgent[]) => void) => () => void;
+    onState: (callback: (event: { id: string; state: CloudLinkState }) => void) => () => void;
+    /** A watched remote agent's output, under its remote id `c:<serverId>:<agentId>`. */
+    onOutput: (callback: (event: { remoteId: string; data: string }) => void) => () => void;
+  };
+
   // Platform info
   platform: string;
+}
+
+export type CloudFailure = { success: false; error: string };
+export type CloudDriveResult = { success: true } | CloudFailure;
+export type CloudRunner = { kind: 'command'; argv: string[] } | { kind: 'docker'; container: string; sudo: boolean };
+export interface CloudServerInput { id?: string; host: string; runner: CloudRunner; doorSocket?: string }
+export type CloudServerStatus = 'connected' | 'offline' | 'disconnected';
+export interface CloudLinkState {
+  phase: 'off' | 'connecting' | 'connected' | 'offline' | 'disconnected' | 'failed';
+  since?: string;
+  problem?: string;
+  /** A sentence for the user, shown as is. */
+  sentence?: string;
+}
+export interface CloudServerView { id: string; host: string; runner: CloudRunner; serverId?: string; name?: string; clientId?: string; paired: boolean; state: CloudLinkState }
+export interface CloudClientView { id: string; name?: string; kind?: string; scopes: string[]; createdAt?: string; expiresAt?: string; mintedVia?: string }
+export interface CloudProjectView { name: string; path: string }
+export interface CloudNewAgent {
+  projectName?: string;
+  projectPath?: string;
+  name?: string;
+  provider?: string;
+  model?: string;
+  effort?: string;
+  permissionMode?: string;
+  skills?: string[];
+  character?: string;
+  /** Its project's orchestrator there: only for a computer the server lets create and drive. */
+  role?: 'orchestrator' | 'worker';
+  start?: boolean;
+}
+export interface CloudRemoteAgent {
+  /** `c:<serverId>:<agentId>`, never a local agent's id. */
+  id: string;
+  agentId: string;
+  name: string;
+  character?: string;
+  provider?: string;
+  model?: string;
+  status: string;
+  currentTask?: string;
+  branch?: string;
+  projectName: string;
+  projectPath: string;
+  cliRunning: boolean;
+  lastActivity?: string;
+  stoppedBy?: string;
+  stopReason?: string;
+  cols?: number;
+  rows?: number;
+  /** Its project's orchestrator on that server; never copied onto a local agent (remoteToAgent). */
+  role?: 'orchestrator';
+  /** `create` only where the server lets this computer create there, and so delete its agents. */
+  server: { id: string; serverId: string; name: string; status: CloudServerStatus; offlineSince?: string; drive: boolean; create?: true };
 }
 
 declare global {

@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow, Notification } from 'electron';
 import { AgentStatus, AppSettings } from '../types';
 import { broadcastToAllWindows } from '../utils/broadcast';
+import { emitAgentOutput } from './agent-output';
 import { AGENTS_FILE, API_TOKEN_FILE, DATA_DIR, dataPath } from '../constants';
 import { dropRejectedTails, keysHandedToClaude, maskKeyFragments } from './key-fragments';
 import { ensureDataDir, isSuperAgent } from '../utils';
@@ -1343,6 +1344,7 @@ function attachAgentTerminal(
       data,
       timestamp: new Date().toISOString(),
     });
+    emitAgentOutput(agent.id, data);
     scheduleTick();
   });
 

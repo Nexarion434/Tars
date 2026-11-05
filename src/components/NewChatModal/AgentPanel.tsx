@@ -4,11 +4,11 @@ import { useMemo } from 'react';
 import { tildePath } from '@/lib/display-path';
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
 import type { AgentProvider } from '@/types/electron';
-import { AgentMark, Button, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
+import { AgentMark, Button, CloudBadge, Dropdown, Input, PanelCaption, Textarea } from '@/components/ui';
 import { ProviderAndModel } from './ProviderAndModel';
 import { OptionsRow } from './OptionsRow';
 import { AgentOptionsBody } from './AgentOptionsBody';
-import { agentOptionsSummary } from './logic';
+import { agentOptionsSummary, cloudProjectOf, projectOptionOf } from './logic';
 import type { Project } from './types';
 
 
@@ -67,6 +67,7 @@ export function AgentPanel(props: {
   }, [props.projects, props.favoriteProjects, props.hiddenProjects, props.defaultProjectPath]);
 
   const currentIsListed = orderedProjects.some((p) => p.path === props.projectPath);
+  const pickedCloud = cloudProjectOf(props.projects, props.projectPath);
 
   const summary = agentOptionsSummary({
     skillsCount: props.selectedSkills.length,
@@ -113,8 +114,12 @@ export function AgentPanel(props: {
               ...(props.projectPath && !currentIsListed
                 ? [{ value: props.projectPath, label: tildePath(props.projectPath) }]
                 : []),
-              ...orderedProjects.map((p) => ({ value: p.path, label: tildePath(p.path) })),
+              ...orderedProjects.map(projectOptionOf),
             ]}
+            // A server's project picked: its name and its server's badge, as the frame draws it.
+            triggerLabel={pickedCloud ? (
+              <span className="inline-flex items-center gap-1.5">{pickedCloud.name}<CloudBadge name={pickedCloud.server} /></span>
+            ) : undefined}
             onChange={props.onSelectProject}
           />
         </div>

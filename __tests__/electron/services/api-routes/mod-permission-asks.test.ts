@@ -56,6 +56,12 @@
  *     told to the window: permissionAsk goes without an event.
  * 18. (gap 2) permissionAsk is on neither agent:status nor agents:tick.
  * 19. (gap 3) The window cannot tell when the question goes back: no `until`.
+ * And from the VPS (2026-11-05): a Tars server has no window, and its
+ * desktops are not handed its questions, so a worker held 10 minutes on a
+ * question nobody could see, its spinner turning, and its orchestrator with it:
+ * 20. On a Tars server a question is held at all, or marks the agent waiting
+ *     on Tars: it must go back to the CLI's own dialog at once, which every
+ *     desktop linked to the server sees in its pane and answers with its keys.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
@@ -66,7 +72,9 @@ vi.mock('../../../../electron/core/agent-manager', () => ({
   noteSessionRegistered: vi.fn(),
   noteTurnStarted: vi.fn(),
 }));
-vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: vi.fn(() => []) } }));
+// The app a Tars server marks headless (host/headless.ts); a desktop's otherwise.
+const { serverApp } = vi.hoisted(() => ({ serverApp: { headless: false } }));
+vi.mock('electron', () => ({ app: serverApp, BrowserWindow: { getAllWindows: vi.fn(() => []) } }));
 const { pushed } = vi.hoisted(() => ({ pushed: [] as Array<{ channel: string; payload: unknown }> }));
 vi.mock('../../../../electron/utils/broadcast', () => ({
   broadcastToAllWindows: (channel: string, payload: unknown) => { pushed.push({ channel, payload }); },
@@ -161,6 +169,19 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  serverApp.headless = false;
+});
+
+describe('on a Tars server', () => {
+  it('20. a question goes back to the dialog at once: no window there to hold it for', async () => {
+    serverApp.headless = true;
+    pushed.length = 0;
+    const a = agent();
+    expect(await ask(question())).toEqual({ decision: 'ask' });
+    expect(a.status).toBe('running');
+    expect(a.permissionAsk).toBeUndefined();
+    expect(pushed).toEqual([]);
+  });
 });
 
 describe("the mod's question to Tars", () => {

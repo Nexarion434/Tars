@@ -13,6 +13,7 @@ import { onTurnEnded, onUsageLimit } from '../claude-accounts/switching';
 import { restPendingOf } from '../../core/agent-asleep';
 import { modRunsSession, noteModBeat, noteModSession } from '../state-mod';
 import { dropPermissionAsks, holdPermissionAsk } from '../permission-asks';
+import { isHeadless } from '../../host/headless';
 import { isTerminalsOwnCli, ownCliAtOnce } from '../../core/terminal-cli';
 import { terminalIsTheCli } from '../../core/agent-pty';
 
@@ -679,6 +680,14 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
     const fields = askedFields(input);
     if (!agent || !session_id || agent.currentSessionId !== session_id || agent.status === 'stopped'
       || typeof tool !== 'string' || !tool || typeof tool_use_id !== 'string' || !tool_use_id || !fields) {
+      sendJson({ decision: 'ask' });
+      return;
+    }
+    // A Tars server has no window, and its desktops are not handed its questions: held, one waited for
+    // nobody (a worker spun 10 minutes on the VPS, 2026-11-05). The CLI's own dialog instead, which every
+    // desktop linked to the server sees in its pane and answers with its keys.
+    if (isHeadless()) {
+      console.log(`[permission] ${agent.name || agent.id} asks: ${tool.slice(0, 200)}: no window on a server, back to its dialog`);
       sendJson({ decision: 'ask' });
       return;
     }

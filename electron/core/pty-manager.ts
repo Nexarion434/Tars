@@ -454,7 +454,14 @@ export type MessageSender =
    * there and nowhere else, so no message an agent sends is ever typed after
    * this line.
    */
-  | { kind: 'user'; via: 'Telegram' };
+  | { kind: 'user'; via: 'Telegram' }
+  /**
+   * A client of this Tars server (services/cloud/): a desktop with `drive`
+   * (the machine it runs on, as the server minted its credential), or an
+   * outside agent such as Hermes. The name is the client's, checked at minting.
+   */
+  | { kind: 'machine'; name: string }
+  | { kind: 'outside-agent'; name: string };
 
 /**
  * The line typed before a pasted message: who sent it, and, when Tars hands
@@ -469,6 +476,8 @@ export function senderLine(sender: MessageSender, taskRef?: string): string {
   }
   if (sender.kind === 'channel') return `Message from ${sender.channel}${task}: `;
   if (sender.kind === 'user') return `Message from the user via ${sender.via}${task}: `;
+  if (sender.kind === 'machine') return `Message from the machine ${envelopeValue(sender.name)}${task}: `;
+  if (sender.kind === 'outside-agent') return `Message from the outside agent ${envelopeValue(sender.name)}${task}: `;
   return `Message from Tars${task}: `;
 }
 

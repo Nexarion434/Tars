@@ -72,6 +72,14 @@ export const SECTION_GROUPS: SettingsGroup[] = [
     ],
   },
   {
+    id: 'cloud',
+    label: 'Cloud',
+    icon: Cloud,
+    children: [
+      { id: 'cloud', label: 'Tars servers', description: 'Reach your always-on Tars server from this computer.', icon: Cloud },
+    ],
+  },
+  {
     id: 'integrations',
     label: 'Integrations',
     icon: Plug,

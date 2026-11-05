@@ -67,6 +67,8 @@ const tag = (text: string, name: string): string | undefined => new RegExp(`<${n
 /** The envelope Tars types before a message (core/pty-manager.ts senderLine). */
 const AGENT_ENVELOPE = /^Message from agent ("(?:[^"\\]|\\.)*") \("(?:[^"\\]|\\.)*"\)(?:, task t-[0-9a-f]{8})?: /;
 const OTHER_ENVELOPE = /^Message from (Tars|the user via [A-Za-z]+|[A-Z][A-Za-z]+)(?:, task t-[0-9a-f]{8})?: /;
+/** A Tars server's client: a desktop (the machine) or an outside agent such as Hermes (services/cloud/). */
+const CLIENT_ENVELOPE = /^Message from the (?:machine|outside agent) ("(?:[^"\\]|\\.)*")(?:, task t-[0-9a-f]{8})?: /;
 
 /** A user line's words, said as who they are from. Undefined: not conversation. */
 function userItem(text: string): Pick<ChatItem, 'kind' | 'text' | 'from'> | undefined {
@@ -87,6 +89,12 @@ function userItem(text: string): Pick<ChatItem, 'kind' | 'text' | 'from'> | unde
     let name: string;
     try { name = JSON.parse(agent[1]) as string; } catch { name = agent[1]; }
     return { kind: 'message', from: name, text: t.slice(agent[0].length) };
+  }
+  const client = CLIENT_ENVELOPE.exec(t);
+  if (client) {
+    let name: string;
+    try { name = JSON.parse(client[1]) as string; } catch { name = client[1]; }
+    return { kind: 'message', from: name, text: t.slice(client[0].length) };
   }
   const other = OTHER_ENVELOPE.exec(t);
   if (other) {

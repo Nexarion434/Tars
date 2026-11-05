@@ -21,7 +21,9 @@
     "utils/**/*.ts",
     "core/**/*.ts",
     "services/**/*.ts",
-    "handlers/**/*.ts"
+    "handlers/**/*.ts",
+    "host/**/*.ts",
+    "server/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

@@ -23,7 +23,16 @@ import { childEnv } from '../../../electron/platform';
  *    its own modules first), cmd.exe, Git Bash, a CLI, or a program whose name
  *    only contains `powershell`, loses it or gets a copy.
  * 6. darwin/linux: anything changes, for any program, even one named
- *    powershell: the same object comes back.
+ *    powershell: the same object comes back. Except, new on 2026-11-03:
+ * 7. linux: a login bash's profile replaces PATH (Debian's /etc/profile does,
+ *    the Tars server's image among them), and with it every folder Tars put
+ *    there (~/.local/bin, where claude's native installer puts it): an
+ *    agent's `claude` was "command not found" on the server. bash on linux
+ *    does not get the PATH it was handed again under TARS_AGENT_PATH, which
+ *    no profile touches (platform/launch.ts puts it back in front of the
+ *    CLI); the caller's object is changed; a bash given no PATH gets a copy;
+ *    any other program, or bash on darwin (path_helper keeps the PATH it is
+ *    handed), gets a copy.
  */
 
 const POLLUTED = 'C:\\Users\\n\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules';
@@ -71,11 +80,29 @@ describe('childEnv on win32', () => {
 });
 
 describe.each(['darwin', 'linux'] as const)('childEnv on %s', (platform) => {
-  it('6. returns the env it was given, the same object, whatever the program', () => {
-    for (const file of ['/bin/bash', '/bin/zsh', '/usr/local/bin/pwsh', 'powershell', 'powershell.exe', POWERSHELL, '/usr/bin/afplay']) {
+  it('6. returns the env it was given, the same object, whatever the program (bash on linux aside, 7)', () => {
+    const files = ['/bin/zsh', '/usr/local/bin/pwsh', 'powershell', 'powershell.exe', POWERSHELL, '/usr/bin/afplay', '/usr/bin/bashful', '/opt/bash/zsh'];
+    for (const file of platform === 'darwin' ? ['/bin/bash', 'bash', ...files] : files) {
       const given = parent();
       expect(childEnv(file, given, platform), file).toBe(given);
       expect(given.PSModulePath).toBe(POLLUTED);
     }
+  });
+});
+
+describe('childEnv on linux, for bash', () => {
+  it('7. bash keeps the PATH it was handed under TARS_AGENT_PATH, every other variable as it was', () => {
+    for (const file of ['/bin/bash', '/usr/bin/bash', 'bash', '  /bin/bash  ']) {
+      const given = { PATH: '/home/tars/.local/bin:/usr/local/bin:/usr/bin:/bin', HOME: '/home/tars', TARS_X: 'kept' };
+      const before = { ...given };
+      const env = childEnv(file, given, 'linux');
+      expect(env, file).toEqual({ ...before, TARS_AGENT_PATH: before.PATH });
+      expect(given, file).toEqual(before);
+    }
+  });
+
+  it('7. a bash handed no PATH gets the env it was given, the same object', () => {
+    const given = { HOME: '/home/tars' };
+    expect(childEnv('/bin/bash', given, 'linux')).toBe(given);
   });
 });

@@ -372,7 +372,9 @@ describe('a super agent whose status still says it works, over a bare shell', ()
   const typed = (terminal: FakePty) => terminal.write.mock.calls.map(call => String(call[0])).join('');
   /** The message went in as the task of a launch, never as a line of its own. */
   const onlyAsTheTaskOfALaunch = (text: string, marker: string) => {
-    expect(text).toContain(`cd '${project}' && '`);
+    // On linux, the PATH the login bash was handed goes back in front of the CLI first (platform/launch.ts).
+    const pathBack = process.platform === 'linux' ? 'PATH="${TARS_AGENT_PATH:+$TARS_AGENT_PATH:}$PATH" ' : '';
+    expect(text).toContain(`cd '${project}' && ${pathBack}'`);
     expect(text.indexOf(`cd '${project}'`), 'the message was typed before any launch').toBeLessThan(text.indexOf(marker));
   };
 

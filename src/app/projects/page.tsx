@@ -8,9 +8,14 @@ import { ChevronDown } from 'lucide-react';
 import { useClaude, useSessionMessages } from '@/hooks/useClaude';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
 import type { ClaudeProject } from '@/lib/claude-code';
-import type { AgentStatus, AgentCharacter } from '@/types/electron';
+import type { AgentStatus, AgentCharacter, CloudServerView } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
-import { BrandSpinner, Button, DialogShell, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
+import NewProjectDialog from '@/components/NewProjectDialog';
+import { CloudProjectCard } from '@/components/CloudProjectCard';
+import { useFleetMachines, useRemoteAgents } from '@/hooks/useRemoteAgents';
+import { activeFilter, ALL_MACHINES, machineFilterOptions, projectPlaceShown } from '@/lib/cloud';
+import { useCloudProjects } from '@/hooks/useCloudProjects';
+import { BrandSpinner, Button, DialogShell, Dropdown, ErrorState, LoadingState, MetaChip, PageHeader, Panel, PanelCaption, StatusSquare } from '@/components/ui';
 import { STATUS_COLORS, statusTone, statusWord } from '@/app/agents/constants';
 import { wakingLine } from '@/lib/asleep-line';
 import { lastActiveLabel } from '@/lib/last-active';
@@ -181,8 +186,28 @@ export default function ProjectsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Add a new project
+  // + Project: with a Tars server connected, New project asks where it lives first (M3,
+  // frame `Overlay · New project · where`); with none, the folder picker as before.
+  const [newProjectServers, setNewProjectServers] = useState<CloudServerView[] | null>(null);
+
+  // A connected server's projects beside this computer's (M3, frame `Projects · with cloud`),
+  // read again when a link changes; the location filter beside + Project once a server is known.
+  const remoteAgents = useRemoteAgents();
+  const machines = useFleetMachines(remoteAgents);
+  const [location, setLocation] = useState<string>(ALL_MACHINES);
+  const shownLocation = activeFilter(location, machines);
+  const { rows: cloudRows, read: readCloudProjects, newAgentProjects, createOnServer } = useCloudProjects(remoteAgents);
   const handleAddProject = async () => {
+    const servers = await window.electronAPI?.cloud?.list().catch(() => []) ?? [];
+    if (servers.some(s => s.state.phase === 'connected')) {
+      setNewProjectServers(servers);
+      return;
+    }
+    await pickLocalFolder();
+  };
+
+  // Add a new project
+  const pickLocalFolder = async () => {
     if (!openFolderDialog) return;
     try {
       const selectedPath = await openFolderDialog();
@@ -316,6 +341,14 @@ export default function ProjectsPage() {
     role?: 'orchestrator' | 'worker',
     cliPath?: string,
   ) => {
+    // A server's project (M3 Task 9, frame `Overlay · New agent · cloud project`): made and started
+    // on the server, its task typed once its CLI runs.
+    const onServer = await createOnServer(projectPath, { skills, prompt, model, worktree, character, name, permissionMode, provider, effort, role, cliPath });
+    if (onServer) {
+      if ('error' in onServer) return { error: onServer.error };
+      setShowAgentDialog(false);
+      return;
+    }
     try {
       const resolvedModel = (provider !== 'local' && model && model !== 'default') ? model : undefined;
       const agent = await createAgent({
@@ -443,15 +476,20 @@ export default function ProjectsPage() {
         title="Projects"
         subtitle="Every folder Tars knows about, and what is running in it."
         actions={hasElectron ? (
-          <Button variant="primary" size="md" onClick={handleAddProject}>
-            + Project
-          </Button>
+          <div className="flex items-center gap-2">
+            {machines.length > 0 && (
+              <Dropdown value={shownLocation} options={machineFilterOptions(machines)} onChange={setLocation} ariaLabel="Where the projects are" />
+            )}
+            <Button variant="primary" size="md" onClick={handleAddProject}>
+              + Project
+            </Button>
+          </div>
         ) : undefined}
       />
 
       {/* Projects Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {projects.map((project) => {
+        {projects.filter(() => projectPlaceShown(shownLocation, null)).map((project) => {
           const isSelected = selectedProject?.id === project.id;
           const linkedAgents = agents.filter(a => pathsMatch(a.projectPath, project.path));
           const hidden = isHidden(project.path);
@@ -516,6 +554,9 @@ export default function ProjectsPage() {
             </div>
           );
         })}
+        {cloudRows.filter(row => projectPlaceShown(shownLocation, row)).map(row => (
+          <CloudProjectCard key={row.key} row={row} hidden={isHidden(row.key)} onToggleHidden={(key, e) => toggleHidden(key, e)} />
+        ))}
       </div>
 
       {/* Empty state. The page used to also carry a full-width "Add a folder"
@@ -847,6 +888,15 @@ export default function ProjectsPage() {
         )}
       </AnimatePresence>
 
+      {newProjectServers && (
+        <NewProjectDialog
+          servers={newProjectServers}
+          onClose={() => setNewProjectServers(null)}
+          onPickLocal={() => { void pickLocalFolder(); }}
+          onCreated={() => readCloudProjects()}
+        />
+      )}
+
       {/* Replace Default Project Confirmation Dialog */}
       {pendingDefaultPath && (
         <DialogShell
@@ -892,7 +942,7 @@ export default function ProjectsPage() {
         open={showAgentDialog}
         onClose={() => setShowAgentDialog(false)}
         onSubmit={handleCreateAgent}
-        projects={electronProjects.map(p => ({ path: p.path, name: p.name }))}
+        projects={newAgentProjects(electronProjects.map(p => ({ path: p.path, name: p.name })))}
         onBrowseFolder={isElectron() ? openFolderDialog : undefined}
         installedSkills={installedSkills}
         onRefreshSkills={refreshSkills}

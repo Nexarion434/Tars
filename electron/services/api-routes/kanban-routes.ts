@@ -134,7 +134,8 @@ export function carryKanban(items: CarriedKanban[]): void {
     const s = item.sender as Record<string, unknown>;
     const named = s.kind === 'agent' ? String(s.name || s.id || 'an agent')
       : s.kind === 'channel' ? String(s.channel ?? 'a chat')
-        : s.kind === 'user' ? 'the user' : 'Tars';
+        : s.kind === 'user' ? 'the user'
+          : s.kind === 'machine' || s.kind === 'outside-agent' ? String(s.name ?? 'a client') : 'Tars';
     list.push({
       message: item.message, purpose: item.purpose, what: item.what,
       sender: { kind: 'tars' }, since: at, carried: true, carriedFrom: named.slice(0, 80),

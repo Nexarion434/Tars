@@ -22,6 +22,7 @@ import { ReplaceOrchestratorDialog } from './ReplaceOrchestratorDialog';
 import type { PendingReplace } from './ReplaceOrchestratorDialog';
 import { modeForProvider } from '@/lib/plan-mode';
 import { ipcReason } from '@/lib/ipc-error';
+import { serverOrchestratorOf } from '@/lib/cloud';
 
 const MODE_OPTIONS: SegmentedOption<CreationMode>[] = [
   { value: 'agent', label: 'One agent' },
@@ -310,7 +311,12 @@ export default function NewChatModal({
   // The other orchestrator of the project an agent is saved into, read from the
   // main process at the moment of saving rather than from this dialog's copy of
   // the fleet: a role can change hands elsewhere, and nothing pushes it here.
-  const currentOrchestrator = useCallback(async (inProject: string, selfId?: string) => {
+  const currentOrchestrator = useCallback(async (inProject: string, selfId?: string): Promise<{ id: string; name?: string } | null> => {
+    // A server's project: its orchestrator is read from that server's fleet, asked about the same way.
+    if (inProject.startsWith('cloud:')) {
+      const remote = await window.electronAPI?.cloud?.agents().catch(() => []) ?? [];
+      return serverOrchestratorOf(inProject, remote);
+    }
     const fleet = (await window.electronAPI?.agent?.list()) ?? existingAgents;
     return fleet.find(a => a.projectPath === inProject && a.role === 'orchestrator' && a.id !== selfId) ?? null;
   }, [existingAgents]);

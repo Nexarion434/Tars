@@ -1,0 +1,26 @@
+# Tars server as a systemd user unit (docs/superpowers/plans/2026-11-02-tars-cloud.md).
+# A template: scripts/server/install-user-unit.sh fills @NODE@, @ROOT@ and @PATH@
+# and installs it in ~/.config/systemd/user/. A container install does not use
+# it: the container's restart policy keeps `cli.js serve` running instead.
+[Unit]
+Description=Tars server (headless)
+After=network-online.target
+# Five tries in five minutes, then it stays down: a door that can never open does not loop for ever.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+# The PATH the agents' CLIs (claude, codex...) were installed on, taken at install.
+Environment=PATH=@PATH@
+# What `status` reports as the server's starter.
+Environment=TARS_SERVER_STARTED_BY=systemd
+ExecStart=@NODE@ @ROOT@/electron/dist/server/cli.js serve
+Restart=on-failure
+RestartSec=5
+# SIGTERM runs Tars's quit: agents saved, terminals ended.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

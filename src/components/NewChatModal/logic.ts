@@ -1,6 +1,7 @@
 import type { AgentEffort, AgentPermissionMode } from '@/types/agent';
-import { lastPathPart } from '@/lib/display-path';
+import { lastPathPart, tildePath } from '@/lib/display-path';
 import type { TeamTemplateMember } from '@/types/electron';
+import type { Project } from './types';
 
 /**
  * Everything about the new one-screen creation flow that is not JSX, so it can
@@ -80,4 +81,21 @@ export function deployedMemberName(memberName: string, projectPath: string): str
 export function deployButtonLabel(selectedCount: number): string {
   if (selectedCount <= 0) return 'Deploy a team';
   return `Deploy ${selectedCount} agent${selectedCount === 1 ? '' : 's'}`;
+}
+
+/**
+ * A project as the picker lists it (M3, frame `Overlay · New agent · cloud
+ * project`): a server's by its path from the server's home, its server beside
+ * it in the badge's ink; this computer's as it always was.
+ */
+export function projectOptionOf(p: Project): { value: string; label: string; hint?: string; hintClassName?: string } {
+  return p.server
+    ? { value: p.path, label: p.shownPath ?? p.name, hint: p.server, hintClassName: 'text-machine-ink' }
+    : { value: p.path, label: tildePath(p.path) };
+}
+
+/** The picked project, when it is a server's: what the picker's trigger shows with the server's badge. */
+export function cloudProjectOf(projects: Project[], path: string): { name: string; server: string } | null {
+  const p = path ? projects.find(project => project.path === path) : undefined;
+  return p?.server ? { name: p.name, server: p.server } : null;
 }

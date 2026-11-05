@@ -2498,6 +2498,204 @@ and crash the app. Any other stream error still rethrows.
 
 ---
 
+## A Tars server (headless)
+
+`tars-server` is Tars without a window, under plain Node, for a Linux machine that keeps the agents
+running while the desktops come and go. It runs `main.ts` itself, answering `require('electron')`
+with `electron/host/headless-electron.ts`, which skips the window steps where they stand. What it
+admits and what it refuses is in [SECURITY.md](SECURITY.md) §8.
+
+### Requirements
+
+Linux (on Windows `serve` refuses to run, except a development run with `--dev`), a non-root user, Node 22.12 or later, and the compiler tools `node-pty` needs (it has no
+Linux prebuild): on Ubuntu, as root, `apt-get install -y build-essential python3`. The agents' hooks
+need `bash`, `jq` and `curl` (`apt-get install -y jq curl`): without jq a Claude agent's SessionStart and
+Stop never reach the server, so it reads as starting for 3 minutes and an orchestrator's delegation is
+refused. `status --json` lists what is missing as `missingTools`, and the server says it in its log at boot. Each CLI the
+agents run is installed and signed in for that user (`claude login` and the like, once, in a
+terminal on the server).
+
+### Build
+
+From a checkout of the branch, as the server's user:
+
+```bash
+scripts/server/build.sh        # Node and tools checked, npm ci without Electron's binary,
+                               # the main build, every mcp-* found
+```
+
+The same script is the build step of a container image; a container's entry is
+`node electron/dist/server/cli.js serve`.
+
+### Run
+
+```bash
+node electron/dist/server/cli.js serve      # in the foreground; SIGTERM is Tars's quit
+node electron/dist/server/cli.js start      # unless it runs: the user unit, else detached
+node electron/dist/server/cli.js status     # one JSON line: running, pid, apiPort, startedBy, serverId
+```
+
+As a systemd user unit: `scripts/server/install-user-unit.sh` fills the template
+`scripts/server/tars-server.service` (this Node, this checkout, this PATH), enables and starts it,
+and prints the one command that needs root: `loginctl enable-linger <user>`, so it keeps running
+after logout. A detached start logs to `~/.tars-private/logs/server.log` (not under `~/.tars`, which agents can write) and leaves the SSH session's variables behind; the unit logs to the journal
+(`journalctl --user -u tars-server`).
+
+One server per data folder: it refuses to start on a folder another server holds, or whose API
+port a Tars already answers.
+
+### Where it listens
+
+| What | Where |
+|---|---|
+| Local API (agents, hooks, MCP servers) | `127.0.0.1:31415`, as on the desktop |
+| The door, for clients | the Unix socket `~/.tars-private/door.sock` (0600, its folder 0700) |
+
+Nothing listens on another address, and no port is the door: a port could be taken by any local
+process while the server is down (SECURITY.md §8). A desktop reaches the door through an SSH
+forward to the socket: `ssh -N -L 127.0.0.1:<local port>:/home/<user>/.tars-private/door.sock <host>`.
+A door that cannot open (a link or a file at its path, a folder others can enter, another door on
+it) ends the server with exit 1, and `status` names the socket once it listens.
+
+### Clients
+
+```bash
+echo '{"name":"Mac","kind":"desktop","scopes":["see","drive"]}' \
+  | node electron/dist/server/cli.js clients add --json      # prints { id, credential, serverId } once
+node electron/dist/server/cli.js clients list --json         # no credential, no hash
+node electron/dist/server/cli.js clients revoke c_1a2b3c4d   # its open streams end at once
+```
+
+Scopes: `see`, `drive`, `create`, `files`. Kinds: `desktop`, `outside-agent` (Hermes: never types
+or resizes). An optional `"days"` sets a lifetime. `clients list` says where each was minted (`ssh from <address>`, or `on the server`, which an agent there can do too; what the minter claims, not proof), and the server's log says each mint as it happens. The input goes on stdin, never on the command
+line, so a name never reaches a remote shell.
+
+### Projects and agents
+
+A desktop allowed to create makes them from its window (+ Project, New agent). From the server, the
+same through the running server's door, the input on stdin:
+
+```bash
+echo '{"name":"my-app","from":{"kind":"empty"}}' \
+  | node electron/dist/server/cli.js projects add --json     # a git folder in ~/projects/my-app
+echo '{"name":"my-app","from":{"kind":"git","url":"git@github.com:owner/repo.git"}}' \
+  | node electron/dist/server/cli.js projects add --json --trust-code   # cloned, one level deep, no submodules
+echo '{"projectName":"my-app","name":"Builder","provider":"claude","model":"haiku","start":true}' \
+  | node electron/dist/server/cli.js agents add --json       # made there, started if "start"
+```
+
+The command mints itself a client for this one call and revokes it after, whatever happened. A
+clone past 2 GB or 10 minutes is stopped and removed. A name already in `~/projects` is refused.
+A clone needs `--trust-code`, your word that you trust the repository's code: its settings can run
+code on the server as soon as an agent starts in it (SECURITY.md §8). The server records each
+clone it made, with who trusted it and when, in `~/.tars-private/project-trust.json`.
+
+### Its Git key (private repositories)
+
+The server clones with a key of its own, `~/.tars-private/git/id_ed25519`, made the first time it is
+needed; never yours, never an agent's. To let it read a private repository on GitHub:
+
+1. On the server: `node electron/dist/server/cli.js git key --json`. It prints the public key and
+   its fingerprint (`SHA256:...`). Over SSH or `docker exec`, as for `clients`.
+2. On GitHub, the repository's Settings > Deploy keys > Add deploy key: paste the public key and
+   leave "Allow write access" off. One repository, read only. Do not add it to your account's SSH
+   keys: an account key can push to every repository you can write, and every agent on the server
+   can read the key.
+3. Check that the fingerprint GitHub shows for the key is the one step 1 printed.
+4. + Project > from Git with the `git@github.com:owner/repo.git` address.
+
+GitHub's host keys are in the server's own `known_hosts` from the start, so the first clone asks
+nothing. Another Git host is added by its line, which you check against the fingerprint the host
+publishes: `ssh-keyscan -t ed25519 git.example.org | node electron/dist/server/cli.js git known-host add --json`.
+
+### Memory
+
+An agent start that would leave the server under 1 GB of memory free is refused (503), with a
+sentence that says how much is free; an agent is counted as 300 MB, about what a Claude Code CLI
+takes. On Linux the free memory is `MemAvailable`, or the container's room when that is smaller. Set
+`"cloudMinFreeMb"` in the server's `~/.tars/app-settings.json` to move the floor.
+
+### Files
+
+In the server user's home, as on a desktop: `~/.tars` (the agents, their records) and
+`~/.tars-private`, which adds `server.json` (the running server's pid and port),
+`cloud-server.json` (the server's id and name) and `cloud-clients.json` (the clients, hashes only).
+Back up both folders; `cloud-clients.json` restored elsewhere keeps every client admitted.
+
+### Update
+
+Stop it, pull the branch, `scripts/server/build.sh`, start it. Agents that were running come back
+through restart recovery, as after a desktop relaunch.
+
+In Docker (one container builds, another runs, both capped at 3 GB): stop the server container, run
+the build container on the same volume (`git fetch --depth 1 origin <branch>`, `git reset --hard
+FETCH_HEAD`, `scripts/server/build.sh`), remove it, start the server container again. Check that it
+says `[cloud] door on ...`, that `status --json` gives the same server id, and that the host keeps
+1 GB of memory free during the build. A stop ends the terminal of any agent running there; its state
+is kept. The project's runbook holds the exact commands.
+
+Start the server container with `-e TARS_DOOR_ON_HOST=<the door socket's path on the host>` (the
+home bind's `.tars-private/door.sock`): `status --json` then says `doorOnHost`, and a desktop finds
+the door without being told. An environment variable is set when a container is created, so an
+existing one takes it only when it is removed and run again, on the same volume and home.
+
+## Connecting a desktop to a Tars server (Settings > Cloud)
+
+### Add a server
+
+Settings > Cloud > Tars servers. Type the server's address, `user@server` or a `Host` from your SSH
+config, and press Connect. Tars signs in with your own SSH key; it never asks for a password and
+never stores one. Advanced holds how the server runs (Docker or installed), the container name,
+admin rights (`sudo -n`, which never prompts) and the door path. On Docker the door path is the
+socket's path on the server itself, not inside the container: Tars finds it when the container was
+started with `TARS_DOOR_ON_HOST` (see "A Tars server (headless)", Update), and otherwise asks for it
+in Advanced. Advanced opens by itself when one of them is missing.
+
+The first connect mints this computer's own client on the server (kind `desktop`, scopes `see`,
+`drive` and `create`), named after this computer. The credential stays in
+`~/.tars-private/cloud-link.json`; the window never sees it. A computer connected before 2.0.7 may
+see and drive, not create: Forget this server, then Connect again.
+
+### Projects and agents on the server
+
+With a server connected, + Project on the Projects page asks where the project lives: this computer,
+or the server, empty or from a Git address (a private repository needs the server's Git key on
+GitHub first, see "Its Git key"). The server's projects show beside this computer's, with its badge;
+"Where the projects are" filters them. In New agent, a server's projects are in the Project list with
+the server beside them; Create and start makes the agent there and types its task once its CLI runs.
+The agent works in its project's folder: a worktree of its own, its own CLI path and the orchestrator
+role are not offered on a server yet.
+
+### The first connect and the host key
+
+Tars runs `ssh` with `BatchMode=yes`: it answers no prompt. A server this computer has never
+connected to is refused with "This computer has never connected to ...": connect once from a
+terminal (`ssh user@server`), check the key it shows and accept it, then press Connect again. A key
+that changed is refused too, with its own sentence: if the server was not reinstalled, do not connect.
+
+On Windows, Tars runs Windows' own OpenSSH (`%SystemRoot%\System32\OpenSSH\ssh.exe`), the client your
+keys and `known_hosts` under your Windows profile belong to, even when another `ssh` (Git's) comes
+first on the PATH. It falls back to `ssh` on the PATH only when that feature is not installed.
+
+### Its agents, and the link
+
+A connected server's agents are on the Dashboard and the Agents page, with the server's name as
+their badge. Where the server lets this computer drive, the terminal takes your keys, and start and
+stop are one click; the server files each stop as `Stopped from <this computer>`. A server that goes
+away is `offline since HH:MM`: its agents keep their last output, and Tars tries again by itself
+(from 2 s, doubling, at most 5 min). A server that refuses this computer's credential is
+`disconnected`, with no retry.
+
+Disconnect ends the SSH link from this computer only: the server and its agents keep going.
+Forget this server also removes this computer's client on the server.
+
+### Revoke a device
+
+Each server's card lists the devices with access: every computer and outside agent holding a
+credential there, this one marked. Remove revokes it on the server at once (`clients revoke`): its
+open streams end and its credential is refused (401) from then on. The same from the server:
+`clients list --json`, then `clients revoke <id>`.
+
 ## Repo hygiene
 
 `.worktrees/` and `.claude/worktrees/` are agent-created embedded checkouts and are gitignored.

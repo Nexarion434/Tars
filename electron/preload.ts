@@ -1009,6 +1009,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
     last: () => ipcRenderer.invoke('errorReports:last'),
   },
 
+  // Tars servers over SSH (electron/handlers/cloud-handlers.ts): Settings > Cloud, and their agents.
+  cloud: {
+    list: () => ipcRenderer.invoke('cloud:list'),
+    save: (profile: unknown) => ipcRenderer.invoke('cloud:save', profile),
+    connect: (id: string) => ipcRenderer.invoke('cloud:connect', id),
+    disconnect: (id: string) => ipcRenderer.invoke('cloud:disconnect', id),
+    forget: (id: string) => ipcRenderer.invoke('cloud:forget', id),
+    clients: (id: string) => ipcRenderer.invoke('cloud:clients', id),
+    revoke: (id: string, clientId: string) => ipcRenderer.invoke('cloud:revoke', id, clientId),
+    agents: () => ipcRenderer.invoke('cloud:agents'),
+    screen: (remoteId: string) => ipcRenderer.invoke('cloud:screen', remoteId),
+    watch: (remoteId: string) => ipcRenderer.invoke('cloud:watch', remoteId),
+    unwatch: (remoteId: string) => ipcRenderer.invoke('cloud:unwatch', remoteId),
+    drive: (remoteId: string, action: string, body: unknown) => ipcRenderer.invoke('cloud:drive', remoteId, action, body),
+    keys: (remoteId: string, data: string) => ipcRenderer.invoke('cloud:keys', remoteId, data),
+    resize: (remoteId: string, cols: number, rows: number) => ipcRenderer.invoke('cloud:resize', remoteId, cols, rows),
+    remove: (remoteId: string) => ipcRenderer.invoke('cloud:remove', remoteId),
+    // M3: creating on a server (cloud-handlers.ts).
+    createProject: (id: string, body: { name: string; from: { kind: 'empty' } | { kind: 'git'; url: string; trusted?: true } }) => ipcRenderer.invoke('cloud:createProject', id, body),
+    createAgent: (id: string, body: Record<string, unknown>) => ipcRenderer.invoke('cloud:createAgent', id, body),
+    gitKey: (id: string) => ipcRenderer.invoke('cloud:gitKey', id),
+    projects: (id: string) => ipcRenderer.invoke('cloud:projects', id),
+    onAgents: (callback: (agents: unknown[]) => void) => {
+      const listener = (_: unknown, agents: unknown[]) => callback(agents);
+      ipcRenderer.on('cloud:agents', listener);
+      return () => ipcRenderer.removeListener('cloud:agents', listener);
+    },
+    onState: (callback: (event: { id: string; state: unknown }) => void) => {
+      const listener = (_: unknown, event: { id: string; state: unknown }) => callback(event);
+      ipcRenderer.on('cloud:state', listener);
+      return () => ipcRenderer.removeListener('cloud:state', listener);
+    },
+    onOutput: (callback: (event: { remoteId: string; data: string }) => void) => {
+      const listener = (_: unknown, event: { remoteId: string; data: string }) => callback(event);
+      ipcRenderer.on('cloud:output', listener);
+      return () => ipcRenderer.removeListener('cloud:output', listener);
+    },
+  },
+
   // Platform info
   platform: process.platform,
 });

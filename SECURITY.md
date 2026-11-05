@@ -846,3 +846,167 @@ installer's first run, and `electron-updater` installs an update without
 checking a publisher: whoever can write to the releases of
 `cooper-labs-tech/Tars` ships code to every Windows install. On macOS the
 update must carry the app's own signature; on Windows nothing stands in for it.
+
+## 8. A Tars server and its clients
+
+A Tars server (`electron/server/`) is the desktop's core under plain Node, with
+no window: the same agents, terminals, hooks and local API. What it adds is a
+door for its clients and what each client may do there. Measured on the fork's
+`up/tars-cloud`, on Windows 11 and on GitHub's ubuntu runner, in November 2026.
+
+**The door is a Unix socket in the private folder** (`services/cloud/door.ts`,
+`door-socket.ts`): `~/.tars-private/door.sock`, 0600 in a folder that must be
+0700, owned by the server's user and not a link. It was a loopback port until
+the review of 6096a87d found the hole: while the server is down (a restart, a
+boot), any local process, another account or a container on the host's network
+can bind that port first, answer `/hello` with the real server's id (which
+`/hello` gives anyone) and collect the credentials desktops send. A path in a
+folder no one else can enter cannot be taken that way. A link at the socket's
+path is never followed, a file there is never removed, a socket another door
+answers on is refused, and a socket left by a killed server is removed. A door
+that cannot open ends the server (exit 1), checked before `main.ts` loads so no
+agent restarts in vain, and systemd or the container tries again, five times
+at most, and `status` names the socket the door listens on. A desktop reaches it
+with `ssh -L 127.0.0.1:<local port>:<socket path>`; nothing on any network
+does. Its gates, in this order: a path that is not a route (404, before any
+credential is read, so no answer tells whether one is good); an `Origin`
+header, which only a web page sends; a `Host` other than `localhost` or
+`127.0.0.1`, which is what a page rebinding a name to a desktop's forward would
+send; a body over 64 KB, refused unread; then the client's credential and the
+route's scope. 128 connections at most, headers within 10 s, a request within
+30 s; 64 streams in all, 32 a client, a reader 1 MB behind cut.
+An agent is looked up only after those, and an unknown one gets one sentence
+that names none.
+
+**SSH access is the real authority over a server, and so is every agent on
+it.** Whoever can `ssh` there as its user can mint a credential (`cli.js clients
+add`), read the private folder, or run a shell; and every agent and MCP server
+the server runs, running as that same user, can do the same. A credential
+scopes what a client does through the door; it is no boundary against that
+user, nor against an agent driven into minting one. What makes a mint visible:
+the server logs each client that appears in its clients file, and `clients
+list` shows where each was minted from (over SSH, with the address, or on the
+server itself). That is what the minter claims, not proof: it is read from the
+minting process's `SSH_CONNECTION`, which anything running as the server's
+user can set.
+
+**A client credential is not the master token.** 32 random bytes, shown once on
+stdout when minted, kept only as their sha256 in `cloud-clients.json` in the
+private folder (0600, never handed to a CLI). The door compares hashes in
+constant time and reads the file again at every request: a revoked or expired
+credential, a malformed one, and the master API token itself are refused. The
+local API never accepts a client credential. `clients list` shows no
+credential and no hash. A revoke ends that client's open streams within half a
+second (the file is watched); an expiry, or losing see, ends them at the next re-check (15 s).
+
+**Scopes.** `see`: the fleet, an agent's screen, its live output. `drive`:
+start, stop with a reason, message, keys, size. `create` and `files` come with
+later milestones. The server checks them at every request, and again once a
+body is in: a client revoked or stripped of `drive` while its body travels
+drives nothing.
+
+**What `see` shows.** An agent's fields are picked one by one
+(`services/cloud/fleet-share.ts`): no token, environment, CLI path, session id,
+skills, permission mode or worktree, and no control or format character in what
+is left. The screen and the stream are the terminal as it is: a secret a CLI
+prints there is shown to every client with `see`.
+
+**What `drive` gives away.** Keys reach the CLI as a person's would, its `!` and
+the shell behind it included: `drive` is a shell as the server's user. A message
+goes in after `Message from the machine "<name>": `, and a stop is filed under
+`<name> (machine)` with its reason, so the agent and the window know who did it.
+
+**An outside agent has a ceiling, not only scopes.** Hermes, as a client of kind
+`outside-agent`, may start, stop and message (after `Message from the outside
+agent "<name>": `); it never types keys and never sets a size, whatever scopes it
+holds, since those are a person at a keyboard.
+
+**One server per data folder.** A server refuses a folder another live server
+holds (`server.json` in the private folder, created exclusively; a pid that
+/proc shows running something else is a server that died) and one whose API
+port a Tars already answers. A desktop started second on a server's folder is
+not refused yet (M2): it fails to take the API port instead.
+
+**The desktop's end of the forward.** On macOS and Linux the desktop's end of
+its `ssh -L` is a Unix socket in `~/.tars-private/cloud` (0700): no other
+account can open it. On Windows it is a free port on 127.0.0.1, which any local
+account can connect to while the forward is up. Before the credential is sent,
+the desktop waits for `ssh -v` to say it listens on that very port, then asks
+the door's `hello`, which must name the server id this desktop knows. That id is
+not a secret (`hello` answers anyone who reaches the door), so the check holds
+only while our `ssh` holds the port: another account of the same PC that took
+the port first is caught by ssh failing to bind it (ExitOnForwardFailure), and
+one that could bind beside Win32-OpenSSH's listener is not ruled out (not
+measured). A process of the same account can read `cloud-link.json` anyway.
+Every `ssh` call also refuses to forward the desktop's agent, display or local
+commands to the server, whatever the user's ssh config says
+(`electron/services/cloud-link/`). The port forwards of that config stay,
+though, on the long-lived forward only: a `LocalForward`, `DynamicForward` or
+`RemoteForward` the config gives the server's host is open for as long as Tars
+is, and a `RemoteForward` is a standing path from the server's agents to a
+service of the desktop. Give Tars an alias of its own, with no forwards, in
+`~/.ssh/config`.
+
+**Creating on a server (2.0.7).** Only a client minted with `create` makes
+projects and agents, checked again once its body arrives, and never an outside
+agent. A project is a plain name under `~/projects`; a clone takes three address
+shapes, never a credential, a local path or a helper, with no submodules, git's
+own hooks off, one commit deep, and is stopped past 2 GB or 10 minutes. An agent
+made by a client goes in one of the server's projects, with the New agent form's
+fields only: a name of 80 characters at most, a provider, a model, an effort, a
+permission mode, skills, a character Tars draws, and a role, worker or
+orchestrator. A CLI path, a second folder or `orchestratorMode` in the request
+is refused (400). It starts only through the drive executor, for a client that
+may drive. A server project's orchestrator is made only for a desktop that may
+create and drive there, never an outside agent: the server gives it its tools
+from the role, as a desktop does, and it takes the role from the project's
+current orchestrator, one per project, however that one's path is spelled.
+
+**Deleting on a server.** `DELETE /cloud/v1/agents/:id` takes the same `create`
+and is refused to an outside agent whatever its scopes, as a create is. It
+answers 404 for an agent the server does not have, and leaves an agent at work
+alone (running, or waiting on its user: 409, "stop it first, then delete it"):
+stopping takes `drive`, which `create` alone does not give, and a turn cut short
+loses its work. Otherwise it goes the way the window's own Delete goes
+(`core/agent-remove.ts`): its runs and permission questions ended, its terminal
+killed, its record gone, an orchestrator like any other. No folder is removed:
+an agent made by a client works in its project's folder, never a worktree of its
+own, and the project stays.
+
+These limits are on what a client asks the door. They are hygiene, not a
+boundary: a client that may create and drive already holds the server user's
+powers, since it can start an agent in `bypass` and type anything into it. And a
+server orchestrator, once made, acts under the local API's rules (§2), as a
+desktop's does. Its `create_agent` makes an agent in its own project, or at any
+path of the server it names with `allowCrossProject: true`, with a CLI path and a
+second folder, never an orchestrator. Its `update_agent` changes its own
+project's workers, their CLI path and second folder included, never a role or a
+project. With `allowCrossProject: true` it messages, starts, stops and hands
+work to every agent of the server.
+
+The server clones over SSH with a key of its own
+(`~/.tars-private/git`) and its own `known_hosts`, which starts with GitHub's
+published keys. That key is readable by every agent on the server (same user):
+add it to GitHub as a read-only deploy key of one repository, never to the
+account, whose keys can push to every repository it can write.
+
+**Trusting a cloned repository.** Tars trusts an agent's folder for its CLI
+before it starts it (Claude Code's workspace trust, codex's trust level), so a
+repository's own settings, its hooks included, run on the server as its user the
+moment an agent starts there, before any prompt and in any permission mode. They
+can read what that user reads: the server's Git key, the CLIs' sign-ins, the
+other projects. So the server clones only with the user's explicit word that
+they trust the repository's code: the New project dialog's box, unticked until
+ticked, or `--trust-code` for the operator's `projects add`. A request without
+it is refused (400), whatever the window shows, and each clone made is recorded
+with who trusted it and when (`~/.tars-private/project-trust.json`). An empty
+project needs none. Trusting a repository is trusting everyone who can push to
+it.
+
+**The memory floor.** A start the door is asked for is refused when it would
+leave the server under 1 GB free (`cloudMinFreeMb`), so a desktop cannot start
+agents until Hermes or the server itself runs out of memory.
+
+Each refusal above has a test written before the code and shown to fail on a
+deliberately broken version (`__tests__/electron/cloud/`,
+`__tests__/electron/server/`, `__tests__/electron/cloud-link/`).

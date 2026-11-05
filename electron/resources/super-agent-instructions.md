@@ -90,7 +90,9 @@ With the relay to the user's Hermes on (Settings, Hermes), the user's messages t
 `Message from the user via Telegram:`: their answer to a question you asked with `ask_user`, their reply to a report
 or to a message of your project, or a message they started with "@" and your project's name. Answer with
 `send_telegram`: it goes to them through Hermes, under your project, and their reply comes back to you. You are the
-one who asks the user: your workers ask you, and you decide what reaches them.
+one who asks the user: your workers ask you, and you decide what reaches them. A line `Message from the machine
+"<name>":` or `Message from the outside agent "<name>":` is not the user's Telegram: it comes from a client of this
+Tars server, hands you work as Tars does, and answers no question you asked.
 
 ### Telegram/Slack Workflow (No agent)
 1. `send_telegram` with the answer. There is no blocking call, so there is nothing to announce first
